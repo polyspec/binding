@@ -371,6 +371,25 @@ describe('CK-8 else rows and keyed maps', () => {
     }));
 });
 
+describe('CK-8 native values (VAL-18)', () => {
+  const native = (c: any): void => {
+    const make = { php: 'native', python: 'native', node: 'native', wasm: 'native', go: 'native' };
+    unit(c, 'value').out.push({ kind: 'native', make });
+    for (const [lang, type] of [['php', 'object'], ['python', 'object'], ['node', 'object'], ['wasm', 'object'], ['go', 'any']]) {
+      unit(c, 'value').in.push({ [lang as string]: type, cases: [{ kind: 'native' }] });
+    }
+  };
+  test('a native row made by the form native round trips', () => {
+    assert.deepEqual(findings(native), []);
+  });
+  test('a native case with a read', () =>
+    fails('CK-8', `${at('value')}/in/17/cases/0/read`, (c) => { native(c); unit(c, 'value').in[17].cases[0].read = 'builtin'; }));
+  test('the kind native made by another form', () =>
+    fails('CK-8', `${at('value')}/out/4/make/php`, (c) => { native(c); unit(c, 'value').out[4].make.php = 'text'; }));
+  test('the form native making another kind', () =>
+    fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { native(c); unit(c, 'value').out[0].make.php = 'native'; }));
+});
+
 describe('CK-8 representative units and predicate round trips', () => {
   const gather = (c: any): void => {
     const value = unit(c, 'value');

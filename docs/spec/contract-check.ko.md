@@ -38,7 +38,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   - `by`가 있으면 `by`는 계약의 `enum` unit을 돌려주는 공개 member이고, 모든 case가 `is`를 갖고 `when`이 없으며, enum의
     모든 값이 정확히 한 case의 `is`다. `by`가 없으면 class의 행은 case 하나이고 `is`가 없으며, 내장 타입의 행은 한 kind의
     행처럼(아래) `when`으로 case를 나눌 수 있고 술어는 코어가 판정한다(U-7 (f)).
-  - class의 case는 공개 member인 `read`를 적고, 내장 타입의 case는 `read: builtin`이다(U-7 (e)). kind `null`인 case는 내용이 없으므로 `read`가 없다(U-1).
+  - class의 case는 공개 member인 `read`를 적고, 내장 타입의 case는 `read: builtin`이다(U-7 (e)). kind `null`이나 `native`인 case는 내용이 없거나 코어가 열어 보지 않으므로 `read`가 없다(U-1, VAL-18). kind `native`는 형태 `native`로 만들고 그 형태는 다른 kind를 만들지 않는다. native 값은 `OutValue::Native`의 handle로 들어온 언어 객체 그대로이기 때문이다(VAL-18).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태(`keyed_map`은 `{keyed_map: {key: [...]}}`),
     대표 class나 alias가 모으는 class의 공개 `constructor`·`static` member, 또는 kind `nested:X`의 `{value: X}`다.
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
@@ -108,6 +108,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   | `keyed_map` | `array` | `dict` | `Map` | 없음 |
   | `php_object` | `stdClass` | 없음 | 없음 | 없음 |
   | `php_reference` | `reference` | 없음 | 없음 | 없음 |
+  | `native` | `object` | `object` | `object` | `any` |
 
   `keyed_map`은 섞을 수 있는 key 종류(`int`, `bytes`, `text`)와 함께 `{keyed_map: {key: [...]}}`로 적는다(U-7 (c)).
 

@@ -20,7 +20,7 @@ import {
   type Unit,
 } from './contract.ts';
 import { convert, sameName, type Role } from './names.ts';
-import { BUILTIN_FORMS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
+import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
 const LANG_KEYS = ['php', 'python', 'node', 'go', 'wasm'] as const;
 
@@ -574,9 +574,9 @@ class Checker {
         }
       }
       for (const [c, kase] of row.cases.entries()) {
-        // U-1: a kind without content (null) has nothing to read.
-        if (kase.kind === 'null') {
-          if (kase.read !== undefined) this.report('CK-8', `${rowPath}/cases/${c}/read`, 'a case of kind null has nothing to read (U-1)');
+        // U-1: a kind without content (null, and native, which the core never opens) has nothing to read.
+        if (CONTENTLESS_KINDS.has(kase.kind)) {
+          if (kase.read !== undefined) this.report('CK-8', `${rowPath}/cases/${c}/read`, `a case of kind ${kase.kind} has nothing to read (U-1)`);
           continue;
         }
         if (isBuiltin && kase.read !== 'builtin') {
@@ -620,6 +620,11 @@ class Checker {
         const make = typeof given === 'object' ? 'keyed_map' : given;
         let made: string | undefined;
         let form: string | undefined;
+        // VAL-18: the form native and the kind native go together; a native value is the object that entered.
+        if ((make === 'native') !== (row.kind === 'native')) {
+          this.report('CK-8', makePath, row.kind === 'native' ? 'the kind native is made by the form native' : `the form native makes the kind native, not ${row.kind}`);
+          continue;
+        }
         if ((BUILTIN_FORMS as readonly string[]).includes(make)) {
           made = MADE_TYPE[lang][make];
           form = make;

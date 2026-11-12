@@ -19,11 +19,17 @@ export const PREDICATE_KIND: Readonly<Record<string, string>> = {
 
 export const BUILTIN_FORMS = [
   'null', 'bool', 'int', 'bigint', 'float', 'text', 'bytes', 'list', 'map', 'keyed_map', 'php_object', 'php_reference',
+  'native',
 ] as const;
+
+// VAL-18: the form `native` gives back the language object that entered as the handle of an OutValue::Native, so the
+// value it makes is any object of the language; only the kind `native` is made by it, and the kind has no content to
+// read.
+export const CONTENTLESS_KINDS: ReadonlySet<string> = new Set(['null', 'native']);
 
 const JS: Readonly<Record<string, string>> = {
   null: 'null', bool: 'boolean', int: 'number', bigint: 'bigint', float: 'number', text: 'string',
-  bytes: 'Uint8Array', list: 'Array', map: 'Map', keyed_map: 'Map',
+  bytes: 'Uint8Array', list: 'Array', map: 'Map', keyed_map: 'Map', native: 'object',
 };
 
 // The language type that a built-in form makes, per language; a form missing from a language has no built-in value
@@ -31,17 +37,17 @@ const JS: Readonly<Record<string, string>> = {
 export const MADE_TYPE: Readonly<Record<Lang, Readonly<Record<string, string>>>> = {
   php: {
     null: 'null', bool: 'bool', int: 'int', float: 'float', text: 'string', bytes: 'string', list: 'array', map: 'array',
-    keyed_map: 'array', php_object: 'stdClass', php_reference: 'reference',
+    keyed_map: 'array', php_object: 'stdClass', php_reference: 'reference', native: 'object',
   },
   python: {
     null: 'None', bool: 'bool', int: 'int', bigint: 'int', float: 'float', text: 'str', bytes: 'bytes', list: 'list',
-    map: 'dict', keyed_map: 'dict',
+    map: 'dict', keyed_map: 'dict', native: 'object',
   },
   node: JS,
   wasm: JS,
   go: {
     null: 'nil', bool: 'bool', int: 'int64', float: 'float64', text: 'string', bytes: '[]byte', list: '[]any',
-    map: 'map[string]any',
+    map: 'map[string]any', native: 'any',
   },
 };
 
