@@ -11,7 +11,7 @@
 
 - **GN-1** 생성기는 functions unit, record(parameter와 결과 형태), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4),
   Python(PyO3 0.30.1, abi3-py314), Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait,
-  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 다른 타입 안의 서로 다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
+  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 다른 타입 안의 서로 다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다. Go와 WASM은 class unit(T-5)과 다른 레포의 record(T-3)를 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   bindgen 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.

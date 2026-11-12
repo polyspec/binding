@@ -8,8 +8,9 @@
 //   Writes the generated sources into the directories that bindgen owns (L-1). --out writes the same files under another
 //   directory, for the comparison of I-5.
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
@@ -42,9 +43,26 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
   const wanted = libraries(contract);
   const found = new Map<string, unknown>();
   if (wanted.size === 0) return found;
-  const metadata = JSON.parse(
-    execFileSync('cargo', ['metadata', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], { encoding: 'utf8' }),
-  ) as { packages: { name: string; manifest_path: string }[] };
+  // Cargo writes the metadata into a file rather than a pipe, so its size (megabytes for a workspace with the binding
+  // crates) meets no buffer limit of the child process.
+  const scratch = mkdtempSync(join(tmpdir(), 'bindgen-metadata-'));
+  let metadata: { packages: { name: string; manifest_path: string }[] };
+  try {
+    const out = join(scratch, 'metadata.json');
+    const fd = openSync(out, 'w');
+    try {
+      const run = spawnSync('cargo', ['metadata', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
+        stdio: ['ignore', fd, 'inherit'],
+      });
+      if (run.error !== undefined) throw run.error;
+      if (run.status !== 0) usage(`cargo metadata failed with status ${String(run.status)}`);
+    } finally {
+      closeSync(fd);
+    }
+    metadata = JSON.parse(readFileSync(out, 'utf8')) as typeof metadata;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
   for (const library of wanted) {
     const crate = metadata.packages.find((p) => p.name === `polyspec-${library}`);
     if (crate === undefined) continue;
@@ -80,7 +98,8 @@ if (command === 'check') {
   contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
-const findings = checkContract(contract, { dependencies: dependencies(contract, dirname(contractPath)) });
+const foreign = dependencies(contract, dirname(contractPath));
+const findings = checkContract(contract, { dependencies: foreign });
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
@@ -144,7 +163,7 @@ for (const kase of checked.cases) {
 }
 let files: ReturnType<typeof generate>;
 try {
-  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles });
+  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> });
 } catch (error) {
   // G-4: an item that the generator cannot generate yet is named, and nothing is written.
   if (error instanceof Unsupported) usage(`not generated (G-4): ${error.message}`);

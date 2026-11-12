@@ -15,7 +15,8 @@ the design ids are those of the bindgen design.
   item (a class, a callback, a value unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a
   dependency kind, the type `source`, a record of another repository) is refused by name
   before anything is written (G-4, P-4). Go also refuses a tuple of different types inside
-  another type (a Go array has one element type) and a tuple parameter.
+  another type (a Go array has one element type) and a tuple parameter; Go and WASM refuse a class unit (T-5) and a
+  record of another repository (T-3).
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice

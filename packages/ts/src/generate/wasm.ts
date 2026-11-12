@@ -532,6 +532,11 @@ ${constants}
 }
 
 export function wasm(model: Model, files: Files): void {
+  // G-4: a class unit (T-5) and a record of another repository (T-3) are not generated for WASM yet.
+  const [object] = model.objects;
+  if (object !== undefined) throw new Unsupported(`${object.unit.id}: a class unit is not generated for WASM yet`);
+  const [foreign] = model.foreignRecords;
+  if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));
   files.set(`${ROOT}/index.d.ts`, indexDts(model));

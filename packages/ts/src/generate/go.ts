@@ -997,6 +997,11 @@ pub unsafe extern "C" fn ${prefix(model)}_panic_test(args: *const u8, len: usize
 
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate.
 export function go(model: Model, files: Files): void {
+  // G-4: a class unit (T-5) and a record of another repository (T-3) are not generated for Go yet.
+  const [object] = model.objects;
+  if (object !== undefined) throw new Unsupported(`${object.unit.id}: a class unit is not generated for Go yet`);
+  const [foreign] = model.foreignRecords;
+  if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
   const modules = [...new Set([...model.functions.map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module)])];
   for (const module of modules) {
     files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module));

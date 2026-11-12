@@ -19,6 +19,8 @@ export interface Inputs {
   coreLib: string;
   // The case files that the contract's cases name, by their path (K-1).
   caseFiles: ReadonlyMap<string, unknown>;
+  // The contracts of the libraries that the contract names, read from the packages Cargo resolved (T-3).
+  foreign?: ReadonlyMap<string, Contract>;
 }
 
 // The directories that bindgen owns and writes whole (L-1); the tracked thin packages around them are written by
@@ -40,7 +42,7 @@ export function generate(inputs: Inputs): Files {
     if (!Array.isArray(group)) throw new Error(`${kase.file} has no group ${kase.group}`);
     cases.set(kase.member, [...(cases.get(kase.member) ?? []), ...group]);
   }
-  const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases);
+  const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
   const files: Files = new Map();
   const targets = inputs.contract.targets;
   if (targets.includes('python')) python(model, files);
