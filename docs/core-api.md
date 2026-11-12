@@ -9,7 +9,7 @@ types of the design rules named below and no rule of any library.
 ## Crate
 
 - Path: `packages/core/rust` of this repository; package `polyspec-bindgen-core`, library name `bindgen_core`, version
-  0.0.1, edition 2021, toolchain 1.99.0 (`rust-toolchain.toml`).
+  0.0.1, edition 2021, rust-version 1.99.0, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
   (the entries of `OrderedMap`).
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
@@ -29,6 +29,7 @@ types of the design rules named below and no rule of any library.
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, idempotent. |
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
+| `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | Insertion-ordered map whose keys are `Key::Int(i64)`, `Key::Bytes(Vec<u8>)` or `Key::Text(String)`; the same API and rules as `OrderedMap`. |
 | `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
 | `Failure<E>` | E-1c | `Kind(E)` or `Raised(Raised)`: the error type of a core function that calls a callback; `From<Raised>`, `Display`, `std::error::Error`. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`; `ALL`, `as_str()`. |

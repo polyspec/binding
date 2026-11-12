@@ -23,7 +23,7 @@ export function dependency(): any {
     targets: ['php', 'python', 'node'],
     packages: {
       php: { package: 'polyspec/forms-dep', namespace: 'Polyspec\\FormsDep' },
-      python: { package: 'polyspec-forms-dep', module: 'polyspec_forms_dep' },
+      python: { package: 'polyspec-forms-dep', module: 'polyspec.forms_dep' },
       node: { package: '@polyspec/forms-dep', entries: { '.': { formats: ['import'] } } },
     },
     naming: { exceptions: [] },
@@ -73,7 +73,7 @@ export function contract(): any {
     targets: [...LANGS],
     packages: {
       php: { package: 'polyspec/sample', namespace: 'Polyspec\\Sample' },
-      python: { package: 'polyspec-sample', module: 'polyspec_sample' },
+      python: { package: 'polyspec-sample', module: 'polyspec.sample' },
       node: {
         package: '@polyspec/sample',
         entries: { '.': { conditions: { node: 'napi', browser: 'wasm' }, formats: ['import', 'require'] } },

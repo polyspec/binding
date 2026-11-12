@@ -370,3 +370,79 @@ describe('CK-8 else rows and keyed maps', () => {
       }
     }));
 });
+
+describe('CK-8 representative units and predicate round trips', () => {
+  const gather = (c: any): void => {
+    const value = unit(c, 'value');
+    c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', out: value.out, in: value.in });
+    for (const row of value.in) if (Object.values(row).includes('value')) for (const lang of ['php', 'python', 'node', 'go', 'wasm']) if (row[lang] === 'value') row[lang] = 'value';
+    delete value.out;
+    delete value.in;
+  };
+  test('an alias that gathers the class holds the tables', () => {
+    assert.deepEqual(findings(gather), []);
+  });
+  test('a gathered class that holds tables too', () =>
+    fails('CK-8', at('value'), (c) => { gather(c); unit(c, 'value').out = structuredClone(unit(c, 'values').out); }));
+  test('a value class that represents its type without tables', () =>
+    fails('CK-8', at('value'), (c) => { delete unit(c, 'value').out; }));
+  test('an alias whose origin is not value', () =>
+    fails('CK-8', '/units/', (c) => { gather(c); unit(c, 'values').origin = 'generated'; delete unit(c, 'values').out; delete unit(c, 'values').in; }));
+  const numberCases = [{ when: { predicate: 'integral_float', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }];
+  const splitNumbers = (c: any): void => {
+    for (const row of unit(c, 'value').in) for (const lang of ['node', 'wasm']) if (row[lang] === 'number') row.cases = structuredClone(numberCases);
+  };
+  test('in cases split by a predicate that the made value tells', () => {
+    assert.deepEqual(findings(splitNumbers), []);
+  });
+  test('a float row whose value does not tell the predicate the in row asks', () =>
+    fails('CK-8', `${at('value')}/out/4/make/node`, (c) => {
+      splitNumbers(c);
+      unit(c, 'value').out.push({ kind: 'float', make: { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' } });
+      for (const [lang, type] of [['php', 'float'], ['python', 'float'], ['go', 'float64']] as [string, string][]) unit(c, 'value').in.push({ [lang]: type, cases: [{ kind: 'float', read: 'builtin' }] });
+    }));
+  test('an integral float comes back as int', () =>
+    fails('CK-8', `${at('value')}/out/4/make/node`, (c) => {
+      splitNumbers(c);
+      unit(c, 'value').out.push({ kind: 'float', when: { predicate: 'integral_float', is: true }, make: { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' } });
+      unit(c, 'value').out.push({ kind: 'float', when: 'else', make: { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' } });
+      for (const [lang, type] of [['php', 'float'], ['python', 'float'], ['go', 'float64']] as [string, string][]) unit(c, 'value').in.push({ [lang]: type, cases: [{ kind: 'float', read: 'builtin' }] });
+    }));
+  test('a by row with two cases of the made kind', () =>
+    fails('CK-8', `${at('value')}/out/1/make/php`, (c) => {
+      unit(c, 'value_type').variants.push({ name: ['other'], value: 'other' });
+      unit(c, 'value').in[0].cases.push({ is: 'other', kind: 'list', read: 'value.items' });
+    }));
+  test('when on the cases of a value class', () =>
+    fails('CK-8', `${at('value')}/in/0/cases/0/when`, (c) => { unit(c, 'value').in[0].cases[0].when = 'else'; }));
+});
+
+describe('CK-18 package names', () => {
+  test('a Python root module outside the polyspec namespace package', () =>
+    fails('CK-18', '/packages/python/module', (c) => { c.packages.python.module = 'polyspec_sample'; }));
+  test('a Composer package with a suffix', () =>
+    fails('CK-18', '/packages/php/package', (c) => { c.packages.php.package = 'polyspec/sample-php-ext'; }));
+  test('an npm package of another name', () =>
+    fails('CK-18', '/packages/node/package', (c) => { c.packages.node.package = '@polyspec/other'; }));
+  test('a core crate of another name', () => fails('CK-18', '/core/crate', (c) => { c.core.crate = 'sample-core'; }));
+});
+
+describe('CK-11 errors held as a source', () => {
+  test('a kind of the repository that holds a dependency error forwards or drops its properties', () =>
+    fails('CK-11', '/errors/wrapped', (c) => { c.errors.kinds.push({ variant: 'sample::Error::Form', category: 'value', source: 'forms-dep' }); }));
+  test('a dependency kind passed on has no source', () =>
+    fails('CK-1', '/errors/kinds/2', (c) => { c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep', source: 'forms-dep' }); }));
+});
+
+test('CK-8: an else row takes the other value of its sibling predicate', () => {
+  const result = findings((c) => {
+    for (const row of unit(c, 'value').in) for (const lang of ['node', 'wasm']) if (row[lang] === 'number') row.cases = [{ when: { predicate: 'integral_float', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }];
+    for (const [lang, type] of [['php', 'float'], ['python', 'float'], ['go', 'float64']] as [string, string][]) unit(c, 'value').in.push({ [lang]: type, cases: [{ kind: 'float', read: 'builtin' }] });
+    const float = { php: 'float', python: 'float', node: 'float', wasm: 'float', go: 'float' };
+    unit(c, 'value').out.push({ kind: 'float', when: { predicate: 'integral_float', is: false }, make: float });
+    unit(c, 'value').out.push({ kind: 'float', when: 'else', make: float });
+  });
+  // The else row's floats are integral, which the in row of number classifies as int (P-3); the other row is sound.
+  assert.deepEqual(result.map((f) => f.path).sort(), [`${at('value')}/out/5/make/node`, `${at('value')}/out/5/make/wasm`], JSON.stringify(result));
+  assert.ok(result.every((f) => f.check === 'CK-8' && /comes back as int/.test(f.message)), JSON.stringify(result));
+});

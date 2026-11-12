@@ -23,7 +23,9 @@ fn write_crate(name: &str, features: &str, body: &str) -> Result<PathBuf, String
 
 fn check(root: &Path) -> Result<(bool, String), String> {
     let output = Command::new(env!("CARGO"))
-        .args(["check", "--offline", "--quiet", "--manifest-path"])
+        // The toolchain that builds this test builds the crate under test; whether it meets rust-version was decided by
+        // the build of this test, so the inner check does not decide it again.
+        .args(["check", "--offline", "--quiet", "--ignore-rust-version", "--manifest-path"])
         .arg(root.join("Cargo.toml"))
         .env("CARGO_TARGET_DIR", root.join("target"))
         .output()

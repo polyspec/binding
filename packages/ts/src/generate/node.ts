@@ -528,6 +528,7 @@ export function node(model: Model, files: Files): void {
 name = ${JSON.stringify(`polyspec-${model.contract.library}-node`)}
 version = ${JSON.stringify(model.version)}
 edition = "2021"
+rust-version = "1.99.0"
 publish = false
 
 [lib]

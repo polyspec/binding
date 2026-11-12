@@ -11,6 +11,7 @@ mod cancel;
 mod cleanup;
 mod error;
 mod failure;
+mod keyed;
 mod map;
 pub mod naming;
 mod raised;
@@ -21,6 +22,7 @@ pub use cancel::{cancel_pair, Cancel, CancelTrigger};
 pub use cleanup::Cleanup;
 pub use error::{BindingError, Category, Kinds, NumberType, TextCause};
 pub use failure::Failure;
+pub use keyed::{Key, KeyedMap};
 pub use map::OrderedMap;
 pub use raised::Raised;
 pub use value::{

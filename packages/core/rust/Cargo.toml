@@ -2,7 +2,7 @@
 name = "polyspec-bindgen-core"
 version = "0.0.1"
 edition = "2021"
-rust-version = "1.97.0"
+rust-version = "1.99.0"
 description = "Runtime support shared by bindgen's generated binding crates and the core crates they wrap"
 repository = "https://github.com/polyspec/bindgen.git"
 license = "MIT"

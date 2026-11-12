@@ -49,3 +49,32 @@ export const MADE_TYPE: Readonly<Record<Lang, Readonly<Record<string, string>>>>
 export function builtinTypes(lang: Lang): Set<string> {
   return new Set(Object.values(MADE_TYPE[lang]));
 }
+
+// U-7 (f): what bindgen knows of a value that an out row makes with a built-in form, as the predicates of HostValue that
+// the core judges: a predicate of the row's when holds as it says; text is UTF-8; an integer form is an integral number
+// in the safe range; a list has the keys 0 to n-1. A predicate that is not here is not known.
+//
+// An else row takes what its sibling rows of the same kind leave: when they select one value of a predicate, the else
+// row's values have the other.
+type When = { predicate: string; is: boolean } | 'else';
+export function madePredicates(form: string | undefined, row: { kind: string; when?: When }, siblings: readonly { when?: When }[]): Map<string, boolean> {
+  const known = new Map<string, boolean>();
+  if (row.when !== undefined && row.when !== 'else') known.set(row.when.predicate, row.when.is);
+  if (row.when === 'else') {
+    const selected = new Map<string, Set<boolean>>();
+    for (const sibling of siblings) {
+      if (sibling.when === undefined || sibling.when === 'else') continue;
+      selected.set(sibling.when.predicate, (selected.get(sibling.when.predicate) ?? new Set()).add(sibling.when.is));
+    }
+    for (const [predicate, values] of selected) {
+      if (values.size === 1) known.set(predicate, !values.has(true));
+    }
+  }
+  if (form === 'text') known.set('utf8', true);
+  if (form === 'int') {
+    known.set('integral_float', true);
+    known.set('safe_integer', true);
+  }
+  if (form === 'list') known.set('sequence_keys', true);
+  return known;
+}

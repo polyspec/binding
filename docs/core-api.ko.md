@@ -9,7 +9,7 @@ crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 ## Crate
 
 - 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-bindgen-core`, 라이브러리 이름 `bindgen_core`, 버전 0.0.1, edition
-  2021, toolchain 1.99.0(`rust-toolchain.toml`).
+  2021, rust-version 1.99.0, toolchain 1.99.0(`rust-toolchain.toml`).
 - 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목).
 - feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
@@ -28,6 +28,7 @@ crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. |
 | `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |
+| `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | key가 `Key::Int(i64)`, `Key::Bytes(Vec<u8>)`, `Key::Text(String)`인 삽입 순서 보존 맵. API와 규칙은 `OrderedMap`과 같다. |
 | `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 handle로 담는다. `Raised::from_generated(Handle)`와 `handle()`은 `construct`에서만. `Display`, `std::error::Error`. kind 없음. |
 | `Failure<E>` | E-1c | `Kind(E)` 또는 `Raised(Raised)`. callback을 부르는 코어 함수의 오류 타입. `From<Raised>`, `Display`, `std::error::Error`. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`. `ALL`, `as_str()`. |

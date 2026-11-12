@@ -494,6 +494,7 @@ export function python(model: Model, files: Files): void {
 name = ${JSON.stringify(`polyspec-${crate}`)}
 version = ${JSON.stringify(model.version)}
 edition = "2021"
+rust-version = "1.99.0"
 publish = false
 
 [lib]

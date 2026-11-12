@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// bindgen check | generate [--root <repository>] [--out <directory>]
+// bindgen check <interface.json> | generate [--root <repository>] [--out <directory>]
 //
-// check: the contract check of packages/rust/interface.json (I-1).
+// check: the contract check of a contract (I-1, I-2), with the contracts of the libraries it names.
 // generate: the checked contract's bindings, written into the directories that bindgen owns (L-1). --out writes the
 // same files under another directory, for the comparison of I-5.
 
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
@@ -12,23 +13,70 @@ import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
 import { GENERATED_DIRS, generate } from './generate/index.ts';
 
+// The libraries that a contract names: in its types, its implements and recognize references, its value type owners
+// and its error kinds.
+function libraries(contract: unknown): Set<string> {
+  const found = new Set<string>();
+  const own = (contract as { library?: unknown }).library;
+  const walk = (value: unknown, key: string): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, key);
+    } else if (typeof value === 'object' && value !== null) {
+      for (const [k, v] of Object.entries(value)) walk(v, k);
+    } else if ((key === 'library' || key === 'source' || key === 'from') && typeof value === 'string' && value !== own) {
+      found.add(value);
+    }
+  };
+  for (const [key, value] of Object.entries(contract as object)) {
+    if (key !== 'library') walk(value, key);
+  }
+  return found;
+}
+
+// The contracts of the named libraries, read from the packages that Cargo resolved for the crate beside the contract:
+// each library's crate is polyspec-<library> (P-1) and ships its interface.json (I-1). No other checkout is read (S15).
+function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
+  const wanted = libraries(contract);
+  const found = new Map<string, unknown>();
+  if (wanted.size === 0) return found;
+  const metadata = JSON.parse(
+    execFileSync('cargo', ['metadata', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], { encoding: 'utf8' }),
+  ) as { packages: { name: string; manifest_path: string }[] };
+  for (const library of wanted) {
+    const crate = metadata.packages.find((p) => p.name === `polyspec-${library}`);
+    if (crate === undefined) continue;
+    found.set(library, JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')));
+  }
+  return found;
+}
+
 function usage(message: string): never {
-  process.stderr.write(`bindgen: ${message}\nusage: bindgen check|generate [--root <repository>] [--out <directory>]\n`);
+  process.stderr.write(`bindgen: ${message}\nusage: bindgen check <interface.json> | bindgen generate [--root <repository>] [--out <directory>]\n`);
   process.exit(2);
 }
 
 const [command, ...rest] = process.argv.slice(2);
+let contractPath: string;
+let root: string;
 const options = new Map<string, string>();
-for (let i = 0; i < rest.length; i += 2) {
-  const key = rest[i];
-  const value = rest[i + 1];
-  if (key === undefined || value === undefined || !['--root', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
-  options.set(key, value);
+if (command === 'check') {
+  // bindgen check <interface.json>: the contract check, with the contracts of the libraries it names (T-3, E-1b).
+  const [path, ...extra] = rest;
+  if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
+  contractPath = resolve(path);
+  root = dirname(contractPath);
+} else {
+  for (let i = 0; i < rest.length; i += 2) {
+    const key = rest[i];
+    const value = rest[i + 1];
+    if (key === undefined || value === undefined || !['--root', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    options.set(key, value);
+  }
+  root = resolve(options.get('--root') ?? '.');
+  contractPath = join(root, 'packages/rust/interface.json');
 }
-const root = resolve(options.get('--root') ?? '.');
-const contractPath = join(root, 'packages/rust/interface.json');
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
-const findings = checkContract(contract);
+const findings = checkContract(contract, { dependencies: dependencies(contract, dirname(contractPath)) });
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);

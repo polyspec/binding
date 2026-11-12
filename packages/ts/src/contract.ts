@@ -15,6 +15,7 @@ export type Type =
   | { list: Type }
   | { map: Type }
   | { optional: Type }
+  | { keyed_map: Type; key: string[] }
   | { tuple: Type[] }
   | { function: { parameters: Type[]; returns: Type } }
   | { passthrough: string }
@@ -79,15 +80,17 @@ export interface UnitRef {
   library?: string;
 }
 
+export type When = { predicate: string; is: boolean } | 'else';
+
 export interface OutRow {
   kind: string;
-  when?: { predicate: string; is: boolean } | 'else';
+  when?: When;
   make: Partial<Record<Lang, string | { value: string } | { keyed_map: { key: string[] } }>>;
 }
 
 export interface InRow extends Partial<Record<Lang, string>> {
   by?: string;
-  cases: { is?: string; kind: string; read?: string }[];
+  cases: { is?: string; when?: When; kind: string; read?: string }[];
 }
 
 export interface Unit {
@@ -95,7 +98,6 @@ export interface Unit {
   name: Name;
   module: string;
   kind: 'class' | 'variant' | 'functions' | 'interface' | 'record' | 'enum' | 'error' | 'alias';
-  of?: Type[];
   visibility: 'public' | 'internal';
   origin: 'generated' | 'host' | 'callback' | 'value';
   category?: Category;
@@ -132,7 +134,7 @@ export interface NamingException {
 export interface Errors {
   classes: Partial<Record<Category, Partial<Record<Lang, string>>>>;
   fixed: { lang: Lang; class: string }[];
-  kinds: { variant: string; category?: Category; library?: string; class?: string }[];
+  kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string }[];
   binding: { kind: string; class: string }[];
   wrapped: { library: string; unit: string; property: Name; forward?: string; drop?: { reason: string } }[];
 }

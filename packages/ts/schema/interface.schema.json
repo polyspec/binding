@@ -217,6 +217,16 @@
         { "type": "object", "additionalProperties": false, "required": ["map"], "properties": { "map": { "$ref": "#/$defs/type" } } },
         { "type": "object", "additionalProperties": false, "required": ["optional"], "properties": { "optional": { "$ref": "#/$defs/type" } } },
         {
+          "description": "A map whose keys mix the kinds listed (T-2, U-7 (c)).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["keyed_map", "key"],
+          "properties": {
+            "keyed_map": { "$ref": "#/$defs/type" },
+            "key": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["int", "bytes", "text"] } }
+          }
+        },
+        {
           "type": "object",
           "additionalProperties": false,
           "required": ["tuple"],
@@ -298,10 +308,14 @@
             "properties": {
               "variant": { "$ref": "#/$defs/rustPath" },
               "category": { "$ref": "#/$defs/category" },
-              "library": { "$ref": "#/$defs/library" },
+              "library": { "description": "(a) the kind of a dependency, passed on as it is (E-1b).", "$ref": "#/$defs/library" },
+              "source": { "description": "(b) the library whose error this kind of the repository holds as its source (E-1b).", "$ref": "#/$defs/library" },
               "class": { "$ref": "#/$defs/id" }
             },
-            "oneOf": [{ "required": ["category"], "not": { "required": ["library"] } }, { "required": ["library"], "not": { "required": ["category"] } }]
+            "oneOf": [
+              { "required": ["category"], "not": { "required": ["library"] } },
+              { "required": ["library"], "not": { "anyOf": [{ "required": ["category"] }, { "required": ["source"] }] } }
+            ]
           }
         },
         "binding": {
@@ -356,27 +370,28 @@
         { "enum": ["nested:json_value", "nested:template_value", "nested:php_value"] }
       ]
     },
+    "when": {
+      "description": "A predicate and its value, or else: the rows or cases of the same kind that no other selects (U-1, U-7 (b), (f)).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["predicate", "is"],
+          "properties": {
+            "predicate": { "enum": ["utf8", "sequence_keys", "safe_integer", "integral_float"] },
+            "is": { "type": "boolean" }
+          }
+        },
+        { "const": "else" }
+      ]
+    },
     "outRow": {
       "type": "object",
       "additionalProperties": false,
       "required": ["kind", "make"],
       "properties": {
         "kind": { "$ref": "#/$defs/valueKind" },
-        "when": {
-          "description": "A predicate and its value, or else: the rows of the same kind that no other row selects (U-1, U-7 (b)).",
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["predicate", "is"],
-              "properties": {
-                "predicate": { "enum": ["utf8", "sequence_keys", "safe_integer", "integral_float"] },
-                "is": { "type": "boolean" }
-              }
-            },
-            { "const": "else" }
-          ]
-        },
+        "when": { "$ref": "#/$defs/when" },
         "make": {
           "description": "Per language: a built-in form or the id of a public constructor or static factory of a value unit.",
           "type": "object",
@@ -434,6 +449,7 @@
             "required": ["kind"],
             "properties": {
               "is": { "type": "string" },
+              "when": { "$ref": "#/$defs/when" },
               "kind": { "$ref": "#/$defs/valueKind" },
               "read": { "description": "A public member, or builtin for a built-in language type (U-7 (e)).", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "builtin" }] }
             }
@@ -579,12 +595,6 @@
         "name": { "$ref": "#/$defs/name" },
         "module": { "$ref": "#/$defs/module" },
         "kind": { "enum": ["class", "variant", "functions", "interface", "record", "enum", "error", "alias"] },
-        "of": {
-          "description": "The types whose union an alias names (U-7 (a)).",
-          "type": "array",
-          "minItems": 2,
-          "items": { "$ref": "#/$defs/type" }
-        },
         "visibility": { "enum": ["public", "internal"] },
         "origin": { "enum": ["generated", "host", "callback", "value"] },
         "category": { "$ref": "#/$defs/category" },
@@ -631,7 +641,6 @@
       "allOf": [
         { "if": { "properties": { "kind": { "const": "enum" } } }, "then": { "required": ["variants"] }, "else": { "not": { "required": ["variants"] } } },
         { "if": { "properties": { "kind": { "const": "record" } } }, "then": { "required": ["fields"] }, "else": { "not": { "required": ["fields"] } } },
-        { "if": { "properties": { "kind": { "const": "alias" } } }, "then": { "required": ["of"] }, "else": { "not": { "required": ["of"] } } },
         {
           "if": { "properties": { "kind": { "const": "variant" } } },
           "then": { "required": ["tag", "cases"] },
@@ -643,9 +652,8 @@
           "else": { "not": { "anyOf": [{ "required": ["core"] }, { "required": ["thread"] }] } }
         },
         {
-          "if": { "properties": { "origin": { "const": "value" } } },
-          "then": { "required": ["out", "in"] },
-          "else": { "not": { "anyOf": [{ "required": ["out"] }, { "required": ["in"] }] } }
+          "if": { "not": { "properties": { "origin": { "const": "value" } } } },
+          "then": { "not": { "anyOf": [{ "required": ["out"] }, { "required": ["in"] }] } }
         }
       ]
     },
