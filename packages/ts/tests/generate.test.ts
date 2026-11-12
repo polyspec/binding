@@ -9,6 +9,7 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
 import { closure } from '../src/generate/text.ts';
+import { trackedPackages } from '../src/generate/packages.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
@@ -213,4 +214,19 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('WASM: the module, its ES entry and tests are generated, and the npm package exports ./wasm (GN-18)', () => {
+  const { contract, caseFiles } = load();
+  contract.targets.push('wasm');
+  contract.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
+  for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /#\[allow\(clippy::disallowed_methods, reason = "GN-18: the wasm_bindgen expansion"\)\]\nmod exports \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /^export function init\(\) \{$/m);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function init\(\): Promise<void>;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /from '@polyspec\/sample\/wasm';\n\nawait pkg\.init\(\);/);
+  const manifest = JSON.parse(String(trackedPackages(contract, '0.0.0').get('packages/ts/package.json')));
+  assert.deepEqual(manifest.exports['./wasm'], { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' });
+  assert.deepEqual(Object.keys(manifest.exports['.']), ['browser', 'types', 'import', 'require']);
 });

@@ -3,6 +3,7 @@
 
 import type { Contract } from '../contract.ts';
 import { go } from './go.ts';
+import { wasm } from './wasm.ts';
 import { buildModel } from './model.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -23,7 +24,7 @@ export interface Inputs {
 // The directories that bindgen owns and writes whole (L-1); the tracked thin packages around them are written by
 // `bindgen scaffold` (packages.ts).
 export const generatedDirs = (contract: Contract): string[] =>
-  ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated', 'packages/go/internal/ffi/generated'].map((dir) => place(contract, dir));
+  ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated', 'packages/go/internal/ffi/generated', 'packages/ts/wasm/generated'].map((dir) => place(contract, dir));
 
 // L-1: the Go module holds the tracked generated files zz_generated_*.go beside hand-written folders (host, tests), so
 // bindgen owns those files rather than a directory: a generation removes every one of them under the Go module and
@@ -46,5 +47,6 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('node')) node(model, files);
   if (targets.includes('php')) php(model, files);
   if (targets.includes('go')) go(model, files);
+  if (targets.includes('wasm')) wasm(model, files);
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

@@ -18,6 +18,9 @@
 // BINDGEN_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
 // for a machine that cannot install the pinned one; the run says so. BINDGEN_E2E_LOCAL_GO=1 writes the release of the
 // installed Go into the go directive of the copy's go.mod, for a machine without the pinned Go; the run says so too.
+// A run with the target wasm needs the Rust target wasm32-unknown-unknown and the wasm-bindgen CLI of the crate's
+// release; BINDGEN_E2E_SKIP_WASM=1 runs the rest without building it (the WASM crate is still linted on the host) and
+// says that the WASM tests did not run.
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -85,6 +88,10 @@ if (addTargets.length > 0) {
     if (added === 'wasm') {
       const node = own.packages['node'] as { entries: Record<string, { conditions?: unknown }> };
       for (const entry of Object.values(node.entries)) entry.conditions = { node: 'napi', browser: 'wasm' };
+      // E-2: the WASM classes are the library's classes, of the one name of every language.
+      for (const row of Object.values(own.errors.classes)) {
+        if (row !== undefined && row.node !== undefined) row.wasm = row.node;
+      }
     }
     process.stdout.write(`added: the target ${added} (P-1, P-5)\n`);
   }
@@ -100,6 +107,7 @@ const members = `[${[
   'packages/ts',
   'packages/php-ext',
   ...(contract.targets.includes('go') ? ['packages/go/internal/ffi'] : []),
+  ...(contract.targets.includes('wasm') ? ['packages/ts/wasm'] : []),
 ].map((m) => JSON.stringify(m)).join(', ')}]`;
 const rootManifest = join(copy, 'Cargo.toml');
 const workspaceAt = manifest.indexOf('\n[workspace]');
@@ -216,6 +224,25 @@ const generatedPython = join(copy, 'packages/python/generated/tests');
 run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython], { cwd: work });
 if (caseRunners) run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
 
+let wasmBuilt = false;
+if (contract.targets.includes('wasm')) {
+  step('WASM: build the module and its glue with wasm-bindgen');
+  const libdir = execFileSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' }).trim();
+  const installed = existsSync(libdir) && readdirSync(libdir).some((name) => name.startsWith('libcore-'));
+  if (!installed || process.env['BINDGEN_E2E_SKIP_WASM'] === '1') {
+    if (process.env['BINDGEN_E2E_SKIP_WASM'] !== '1') throw new Error(`the Rust target wasm32-unknown-unknown is not installed (${libdir}); BINDGEN_E2E_SKIP_WASM=1 runs without it`);
+    process.stdout.write('note: the WASM module is not built and its tests and cases do NOT run (BINDGEN_E2E_SKIP_WASM=1)\n');
+  } else {
+    const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
+    const cli = execFileSync('wasm-bindgen', ['--version'], { encoding: 'utf8' }).trim();
+    if (cli !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${cli} is not the release of the crate, ${wanted ?? 'unknown'}`);
+    run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
+    const glue = `${library.replaceAll('-', '_')}_wasm`;
+    run('wasm-bindgen', ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
+    wasmBuilt = true;
+  }
+}
+
 step('Node: build the addon, pack and install the package, run the generated tests and the cases');
 run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', 'panic-test']);
 const npm = (contract.packages['node'] as { package: string }).package;
@@ -232,6 +259,13 @@ run('npm', ['install', '--no-audit', '--no-fund', join(nodeDir, tarball)], { cwd
 copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
 if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
 run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
+if (wasmBuilt) {
+  // P-5: the WASM binding passes the same tests and cases through the subpath ./wasm of the same package.
+  copyFileSync(join(copy, 'packages/ts/wasm/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.wasm.test.mjs'));
+  const wasmCases = caseRunners && existsSync(join(e2e, 'cases.wasm.test.mjs'));
+  if (wasmCases) copyFileSync(join(e2e, 'cases.wasm.test.mjs'), join(nodeDir, 'cases.wasm.test.mjs'));
+  run(process.execPath, ['--test', 'generated.wasm.test.mjs', ...(wasmCases ? ['cases.wasm.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
+}
 
 step('PHP: build the extension, run the generated tests and the cases with it loaded');
 run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-php-ext`, '--features', 'panic-test']);
@@ -266,4 +300,7 @@ if (contract.targets.includes('go')) {
 
 step('declarations');
 run(join(bindgen, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
+if (contract.targets.includes('wasm')) {
+  run(join(bindgen, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/wasm/generated/index.d.ts')]);
+}
 process.stdout.write('\nall steps passed\n');

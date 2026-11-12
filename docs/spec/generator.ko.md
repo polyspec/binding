@@ -10,8 +10,8 @@
 ## 범위
 
 - **GN-1** 생성기는 functions unit, record(parameter와 결과 형태), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4),
-  Python(PyO3 0.30.1, abi3-py314), Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15)를 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait,
-  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). WASM은 아직 생성하지 않는다. Go는 다른 타입 안의 서로 다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
+  Python(PyO3 0.30.1, abi3-py314), Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait,
+  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 다른 타입 안의 서로 다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   bindgen 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -20,7 +20,7 @@
 
 - **GN-3** bindgen은 세 디렉터리를 소유하고 각각을 staging 디렉터리를 거쳐 통째로 쓴다. 그래서 이전 생성의 파일이 남지
   않고 읽는 쪽은 일부만 보지 않는다: `packages/php-ext/generated`, `packages/python/generated`, `packages/ts/generated`,
-  `packages/go/internal/ffi/generated`. 생성 패키지 옆에 손으로 쓰는 폴더가 있는 Go 모듈(L-1)에서는 디렉터리가 아니라
+  `packages/go/internal/ffi/generated`, `packages/ts/wasm/generated`. 생성 패키지 옆에 손으로 쓰는 폴더가 있는 Go 모듈(L-1)에서는 디렉터리가 아니라
   `zz_generated_*.go` 파일을 소유한다: 생성은 `packages/go` 아래의 그 파일을 모두 지우고 자기 것을 쓰며, 그 파일은 추적한다(G-6).
   bindgen의 소스는 레포에 복사하지 않는다. 코어와 바인딩 crate는 `polyspec-bindgen-core`에 의존하며, 첫 릴리스 전에는
   bindgen 레포의 Git 의존이고 레포의 `Cargo.lock`이 커밋을 고정한다.
@@ -103,6 +103,19 @@
   모든 함수는 `catch_unwind` 아래에서 실행하므로 panic이 C ABI를 넘지 않는다(B-7). wait `none` member의 호출은 코어가 돌아올
   때 돌아온다.
 
+- **GN-18** WASM(P-5, B-9): crate `polyspec-<repository>-wasm`은 Node npm 패키지 안의 추적하는 얇은 package
+  `packages/ts/wasm`(crate-type `cdylib`, wasm-bindgen 0.2.130, js-sys 0.3.107)이고, `packages/ts/wasm/generated`가 그 소스,
+  ES 모듈 `index.mjs`, 선언, 시험을 담는다. 같은 릴리스의 `wasm-bindgen --target web`이 모듈 `<library>_wasm_bg.wasm`과
+  glue `<library>_wasm.js`를 그곳에 쓴다. npm manifest는 WASM 진입점을 subpath `./wasm`으로 늘 내보내고, conditions가
+  `{node: napi, browser: wasm}`인 entry에서는 그 entry의 조건 `browser`로도 내보낸다. ES 모듈은 `init()`(P-5)을 내보내며
+  이것이 모듈을 한 번 읽는다: `file:` URL은 `node:fs/promises`로 읽고(Node), 그 밖의 URL은 fetch한다(브라우저). Node 진입점과
+  같이 정의한 라이브러리 클래스는 모듈을 읽을 때 넘긴다. 값은 Node의 것이고(T-7, B-2), 짝 없는 surrogate가 든 문자열은 kind
+  `invalid_text`이며(B-9, `JsString::is_valid_utf16`), ES 모듈이 인자의 개수와 이름을 검사한다(G-7). `wasm_bindgen` 전개가
+  `Option::unwrap_or_default`를 부르므로 export는 그 allow 하나를 가진 모듈 하나에 둔다. `wasm32-unknown-unknown`의 표준
+  라이브러리는 `panic=abort`로 빌드되므로 거기서 `catch_unwind`는 panic을 잡지 못한다: panic은 trap이 되고 그 인스턴스는 더
+  호출을 실행하지 못한다. 마지막에 실행하는 생성 B-7 시험은 그런 빌드에서 실패하며, 이것이 WASM에서 B-7의 알려진 빈틈이다
+  (P-6). `init()`이 끝나기 전의 호출은 kind가 없는 glue의 `TypeError`로 실패한다.
+
 ## 생성 시험(G-5)
 
 - **GN-13** 함수마다 각 언어의 시험 module은 다음을 확인한다. B-2: 수 parameter와 field마다 G-5의 값(NaN, 무한대, 1.5,
@@ -117,13 +130,17 @@
   errno). B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다. case의 latin1 값은 문자마다 한
   바이트인 Go 문자열이다.
+- **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
+  `./wasm`에 대해 `init()` 뒤에 `node --test`로 실행하며, B-7 시험이 마지막이다.
 
 ## 끝에서 끝까지 확인
 
-- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`는
+- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
+  [--add-targets go,wasm]`는
   레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, bindgen_core 의존과 `Kinds`,
   `bindgen scaffold`의 추적 package)을 하며 하나씩 출력하고, `bindgen check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
   따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
   패키지를 빌드해 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
-  실행한다. bindgen의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
+  실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test`로 실행한다.
+  `--add-targets`는 그 target을 P-1과 P-5의 package 항목과 함께 사본에 더하고 그 사실을 출력한다. bindgen의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
   (`url.<base>.insteadOf`).

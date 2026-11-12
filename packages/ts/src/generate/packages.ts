@@ -95,16 +95,16 @@ python-source = "generated/python"
     ], '\nbuild = "build.rs"').replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'napi: a value is cast to its type after its type was checked']]));
-    files.set('packages/ts/package.json', `${JSON.stringify({
-      name: npm,
-      version,
-      description: `The ${contract.library} library of polyspec for Node`,
-      license: 'MIT',
-      main: './generated/index.cjs',
-      types: './generated/index.d.ts',
-      exports: { '.': { types: './generated/index.d.ts', import: './generated/index.mjs', require: './generated/index.cjs' } },
-      files: ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts', 'generated/*.node'],
-    }, null, 2)}\n`);
+  }
+  if (contract.targets.includes('node') || contract.targets.includes('wasm')) files.set('packages/ts/package.json', npmManifest(contract, version));
+  if (contract.targets.includes('wasm')) {
+    // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
+    // into packages/ts/wasm/generated beside the generated entry.
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, 'wasm', `${extensionName(contract)}_wasm`, [
+      `wasm-bindgen = "=${WASM_BINDGEN}"`,
+      'js-sys = "=0.3.107"',
+    ], '', { type: 'cdylib', core: '../../rust' }));
+    files.set('packages/ts/wasm/src/lib.rs', entry(`The WebAssembly module of ${(contract.packages['node'] as { package: string }).package}.`, [MANY]));
   }
   if (contract.targets.includes('php')) {
     const php = contract.packages['php'] as { package: string };
@@ -134,6 +134,40 @@ python-source = "generated/python"
     ]));
   }
   return placed(contract, files);
+}
+
+// The release of wasm-bindgen: the crate and the wasm-bindgen CLI that writes the glue are the same release.
+export const WASM_BINDGEN = '0.2.130';
+
+// The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
+// at each entry whose conditions choose it in the browser.
+function npmManifest(contract: Contract, version: string): string {
+  const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
+  const node = contract.targets.includes('node');
+  const wasm = contract.targets.includes('wasm');
+  const browser = { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' };
+  const exports: Record<string, unknown> = {};
+  if (node) {
+    exports['.'] = {
+      ...(wasm && npm.entries['.']?.conditions !== undefined ? { browser } : {}),
+      types: './generated/index.d.ts',
+      import: './generated/index.mjs',
+      require: './generated/index.cjs',
+    };
+  }
+  if (wasm) exports['./wasm'] = browser;
+  return `${JSON.stringify({
+    name: npm.package,
+    version,
+    description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
+    license: 'MIT',
+    ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
+    exports,
+    files: [
+      ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts', 'generated/*.node'] : []),
+      ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
+    ],
+  }, null, 2)}\n`;
 }
 
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.

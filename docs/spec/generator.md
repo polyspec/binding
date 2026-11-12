@@ -9,12 +9,12 @@ the design ids are those of the bindgen design.
 
 ## Scope
 
-- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2) and Go
-  (cgo over a C ABI static library, GN-15) for
+- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
+  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
   functions units, records (as parameters and in their result form), enums, constants and error classes. Any other
   item (a class, a callback, a value unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a
   dependency kind, the type `source`, a record of another repository) is refused by name
-  before anything is written (G-4, P-4); WASM is not generated yet. Go also refuses a tuple of different types inside
+  before anything is written (G-4, P-4). Go also refuses a tuple of different types inside
   another type (a Go array has one element type) and a tuple parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
@@ -25,7 +25,7 @@ the design ids are those of the bindgen design.
 
 - **GN-3** bindgen owns three directories and writes each whole through a staging directory, so no file of an earlier
   generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
-  `packages/ts/generated`, `packages/go/internal/ffi/generated`. In the Go module, which holds hand-written folders
+  `packages/ts/generated`, `packages/go/internal/ffi/generated`, `packages/ts/wasm/generated`. In the Go module, which holds hand-written folders
   beside the generated packages (L-1), bindgen owns the files `zz_generated_*.go` rather than a directory: a generation
   removes every one of them under `packages/go` and writes its own; they are tracked (G-6). No source of bindgen is copied into the repository: the core and the binding crates depend on
   `polyspec-bindgen-core`, a Git dependency of the bindgen repository before its first release, whose commit the
@@ -124,6 +124,22 @@ the design ids are those of the bindgen design.
   `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
   returns.
 
+- **GN-18** WASM (P-5, B-9): the crate `polyspec-<repository>-wasm` is the tracked thin package `packages/ts/wasm`
+  (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
+  `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
+  `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
+  `<library>_wasm.js` there. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
+  whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
+  exports `init()` (P-5), which loads the module once: a `file:` URL is read with `node:fs/promises` (Node), any other
+  URL is fetched (a browser); the library classes, which it defines as the Node entry does, are handed to the module
+  when it loads. The values are those of Node (T-7, B-2), a string with an unpaired surrogate is kind `invalid_text`
+  (B-9, `JsString::is_valid_utf16`), and the ES module checks the count and names of the arguments (G-7). The
+  expansion of `wasm_bindgen` calls `Option::unwrap_or_default`, so the exports are in one module that holds that one
+  allow. The standard library of `wasm32-unknown-unknown` is built with `panic=abort`, so `catch_unwind` catches no
+  panic there: a panic traps and the instance runs no further call; the generated B-7 test, which runs last, fails on
+  such a build, which is the known gap of B-7 for WASM (P-6). A call before `init()` has finished fails with the
+  glue's `TypeError`, which has no kind.
+
 ## Generated tests (G-5)
 
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
@@ -140,14 +156,19 @@ the design ids are those of the bindgen design.
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag. A case's latin1
   value is a Go string of one byte per character.
+- **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
+  `node --test` against the subpath `./wasm` of the installed package after `init()`, the B-7 test last.
 
 ## End-to-end check
 
-- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
+- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
+  [--add-targets go,wasm]`
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen
   scaffold`), runs `bindgen check`, tests the core without the generator, rewrites a case file that does not follow
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
   builds and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
-  contract cases on unittest, `node --test` and PHPUnit. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+  contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
+  and `go vet`) and on `node --test` through the subpath `./wasm`. `--add-targets` adds those targets to the copy
+  with the package entries of P-1 and P-5, and says so. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands).
