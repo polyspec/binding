@@ -26,7 +26,8 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   `template_value`, `php_value`)은 `types`에 소유자가 있다(T-3).
 - **CK-4** 이름 예외(N-3): 예외는 target과, 있는 unit, 그 unit의 member, 그 member의 parameter, 그 record의 field를 가리킨다.
   기호와 언어마다 예외는 하나다. 예외는 변환한 이름(N-2)과 달라야 한다. 아무것도 바꾸지 않는 예외에는 근거가 없기 때문이다.
-- **CK-5** optional 반환(T-5): `optional<T>`를 돌려주는 member는 `optional_reason`을 갖고, 그런 member만 갖는다.
+- **CK-5** optional 반환과 field(T-5, T-4): `optional<T>`를 돌려주는 member는 `optional_reason`을 갖고, 그런 member만
+  갖는다. `default`가 있는 record field는 `reason`을 갖고, 그런 field만 갖는다.
 - **CK-6** 순환(P-4): `implements`와 오류 `parent`는 순환하지 않는다.
 - **CK-8** value unit(U-1):
   - `in` 행은 target과, 아래 표의 내장 타입이나 `value` unit인 언어 타입을 가리킨다. 언어와 타입마다 행은 하나다.
@@ -49,7 +50,8 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   `types`의 값 타입은 소유자의 `value` unit을 가리킨다.
 - **CK-10** 오류(E-1, E-1a, E-2, U-1): 오류 unit은 category를 갖고, category와 parent는 오류 unit만 갖는다. parent는 같은
   category의 오류 unit이고 `final`이 아니다. `errors.classes`는 Go를 뺀 모든 target에서 모든 category의 클래스를 갖는다(Go의
-  category 타입은 E-7이 정한다). `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
+  category 타입은 E-7이 정한다). category 클래스 이름은 `<Library><Category>Error`이며(category의 `<Category>Error`로
+  끝나고 그보다 길다) 모든 언어에서 같고, PHP 클래스는 `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
   덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). 변형과 binding kind는 한 번만
   선언한다.
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 감싸는 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
@@ -59,7 +61,7 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
 - **CK-13** Go 이름(E-7, P-2): 오류 unit의 Go 이름은 category 오류 타입(`ValueError`, `TypeError`, `IoError`, `StoreError`,
   `BusyError`, `InternalError`)이 아니다. 한 Go 패키지(module) 안에서 타입 이름, `functions` unit의 함수, `New<Unit>` 생성자는
   서로 다르다. host unit은 세지 않는다. 그 Go 코드는 별도 패키지이기 때문이다(L-1).
-- **CK-14** module(L-1): module의 첫 마디는 `host`나 `tests`가 아니다.
+- **CK-14** module(L-1): module의 첫 마디는 `host`나 `tests`가 아니다. 빈 module은 패키지의 루트다(P-2).
 - **CK-15** WASM(Q-4): `wasm`이 target이면, parameter·반환·yields에 `path`가 있거나(record·variant 안 포함) wait가
   `blocking_io`·`process_wait`인 member는 자신이나 unit에 `wasm`이 없는 `only`와 그 규칙 id를 갖는다.
 - **CK-16** Python awaitable(N-5, U-3): wait가 `none`이 아닌 member나 `async_allowed: true`인 callback member의 `a<name>`은

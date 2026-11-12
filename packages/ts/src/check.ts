@@ -373,6 +373,21 @@ class Checker {
   // ---- CK-5: optional returns (T-5) ----
 
   optionalReturns(): void {
+    // T-4: an optional record field states the rule that makes it optional, as an optional return does (T-5).
+    for (const { value: unit, path } of this.units.values()) {
+      const fields: Located<Field>[] = [
+        ...(unit.fields ?? []).map((f, i) => ({ value: f, path: `${path}${pointer('fields', i)}` })),
+        ...(unit.cases ?? []).flatMap((c, ci) => c.fields.map((f, i) => ({ value: f, path: `${path}${pointer('cases', ci, 'fields', i)}` }))),
+      ];
+      for (const { value: field, path: fieldPath } of fields) {
+        if (field.default !== undefined && field.reason === undefined) {
+          this.report('CK-5', fieldPath, 'an optional field states the rule that makes it optional (T-4)');
+        }
+        if (field.default === undefined && field.reason !== undefined) {
+          this.report('CK-5', `${fieldPath}/reason`, 'a required field has no reason (T-4)');
+        }
+      }
+    }
     for (const { member, path } of this.members.values()) {
       const optional = typeof member.returns === 'object' && 'optional' in member.returns;
       if (optional && member.optional_reason === undefined) {
@@ -684,6 +699,26 @@ class Checker {
       for (const lang of Object.keys(errors.classes[category] ?? {})) {
         if (!classLangs.includes(lang as Lang)) this.report('CK-10', `/errors/classes/${category}/${lang}`, `${lang} is not a target with a class table`);
       }
+    }
+    // E-2: a category class of the repository is <Library><Category>Error, one name in every language, so that it
+    // never takes the name of a language's own class (Python ValueError); a PHP class is in the package namespace.
+    const namespace = (this.contract.packages['php'] as { namespace?: string } | undefined)?.namespace;
+    for (const category of CATEGORIES) {
+      const row = errors.classes[category] ?? {};
+      const suffix = `${convert([category], 'go', 'class')}Error`;
+      const simple = new Set<string>();
+      for (const [lang, name] of Object.entries(row)) {
+        const path = `/errors/classes/${category}/${lang}`;
+        const last = name.slice(name.lastIndexOf('\\') + 1);
+        simple.add(last);
+        if (!last.endsWith(suffix) || last === suffix) {
+          this.report('CK-10', path, `${name} is not <Library>${suffix} (E-2)`);
+        }
+        if (lang === 'php' && namespace !== undefined && name !== `${namespace}\\${last}`) {
+          this.report('CK-10', path, `${name} is not in the namespace ${namespace} (E-2, P-1)`);
+        }
+      }
+      if (simple.size > 1) this.report('CK-10', `/errors/classes/${category}`, `the ${category} class has the names ${[...simple].join(', ')}; it has one name in every language (E-2)`);
     }
     for (const [i, row] of errors.fixed.entries()) {
       if (!classLangs.includes(row.lang)) {

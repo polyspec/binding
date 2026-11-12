@@ -80,9 +80,9 @@
       "items": { "$ref": "#/$defs/word" }
     },
     "module": {
-      "description": "A neutral module path (P-2); its first segment is not host or tests (L-1).",
+      "description": "A neutral module path (P-2), or the empty string for the root of the package; its first segment is not host or tests (L-1).",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$"
+      "pattern": "^$|^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$"
     },
     "only": {
       "description": "The targets where the item exists, with the rule that removes it from the others (Q-4).",
@@ -478,6 +478,7 @@
         "required": { "const": true },
         "default": { "$ref": "#/$defs/default" },
         "default_core": { "$ref": "#/$defs/rustPath" },
+        "reason": { "description": "The rule that makes the field optional (T-4, T-5).", "$ref": "#/$defs/ruleId" },
         "only": { "$ref": "#/$defs/only" }
       },
       "oneOf": [{ "required": ["required"] }, { "required": ["default"] }]

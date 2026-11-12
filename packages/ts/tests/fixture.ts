@@ -6,10 +6,10 @@ const each = <T>(make: (lang: (typeof LANGS)[number]) => T): Record<string, T> =
   Object.fromEntries(LANGS.map((lang) => [lang, make(lang)]));
 
 const classes = (base: string): Record<string, string> => ({
-  php: `Polyspec\\Sample\\${base}`,
-  python: `${base}`,
-  node: `${base}`,
-  wasm: `${base}`,
+  php: `Polyspec\\Sample\\Sample${base}`,
+  python: `Sample${base}`,
+  node: `Sample${base}`,
+  wasm: `Sample${base}`,
 });
 
 const STRING: Record<string, string> = { php: 'string', python: 'str', node: 'string', wasm: 'string', go: 'string' };
@@ -32,7 +32,7 @@ export function dependency(): any {
       classes: Object.fromEntries(
         ['value', 'type', 'io', 'store', 'busy', 'internal'].map((c) => [
           c,
-          { php: `Polyspec\\FormsDep\\${c}`, python: c, node: c },
+          { php: `Polyspec\\FormsDep\\Forms${c[0]!.toUpperCase()}${c.slice(1)}Error`, python: `Forms${c[0]!.toUpperCase()}${c.slice(1)}Error`, node: `Forms${c[0]!.toUpperCase()}${c.slice(1)}Error` },
         ]),
       ),
       fixed: [],
@@ -162,8 +162,8 @@ export function contract(): any {
       {
         id: 'session_options', name: ['session', 'options'], module: 'session', kind: 'record', visibility: 'public', origin: 'generated',
         fields: [
-          { name: [{ acronym: 'csrf' }, 'token'], type: 'bool', default: { literal: true }, default_core: 'sample::CSRF_TOKEN' },
-          { name: ['ttl'], type: 'uint', default: { const: 'session.limit' }, default_core: 'sample::LIMIT' },
+          { name: [{ acronym: 'csrf' }, 'token'], type: 'bool', default: { literal: true }, default_core: 'sample::CSRF_TOKEN', reason: 'HY-24' },
+          { name: ['ttl'], type: 'uint', default: { const: 'session.limit' }, default_core: 'sample::LIMIT', reason: 'HY-104' },
         ],
       },
       {

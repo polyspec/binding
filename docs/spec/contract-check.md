@@ -30,7 +30,8 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
 - **CK-4** Naming exceptions (N-3): the exception names a target, an existing unit, member of that unit, parameter of
   that member or field of that record; one exception per symbol and language; and the exception differs from the
   converted name (N-2), since an exception that changes nothing has no ground.
-- **CK-5** Optional returns (T-5): a member that returns `optional<T>` has `optional_reason`, and only such a member.
+- **CK-5** Optional returns and fields (T-5, T-4): a member that returns `optional<T>` has `optional_reason`, and only
+  such a member; a record field with a `default` has a `reason`, and only such a field.
 - **CK-6** Cycles (P-4): `implements` and error `parent` form no cycle.
 - **CK-8** Value units (U-1):
   - an `in` row names a target and a language type that is either a built-in type of the table below or a `value` unit;
@@ -55,7 +56,9 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   units of its own library, checked recursively; a value type in `types` names a `value` unit of its owner.
 - **CK-10** Errors (E-1, E-1a, E-2, U-1): an error unit has a category and only an error unit has a category or a
   parent; a parent is an error unit of the same category and not `final`; `errors.classes` has a class for every
-  category in every target but Go, whose category types E-7 fixes; `errors.fixed` has no Go row (G-7 is a compile
+  category in every target but Go, whose category types E-7 fixes; a category class is named `<Library><Category>Error`
+  (ending in the category's `<Category>Error` and longer than it), with the same name in every language, and a PHP class
+  is in the namespace of `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
   takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once.
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
@@ -67,7 +70,8 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
   `functions` units and the `New<Unit>` constructors are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
-- **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`.
+- **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`. The empty module is the root of the
+  package (P-2).
 - **CK-15** WASM (Q-4): when `wasm` is a target, a member whose parameters, return or yields contain `path` (through
   records and variants too) or whose wait is `blocking_io` or `process_wait` has an `only` without `wasm`, on itself or
   on its unit, with its rule id.

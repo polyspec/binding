@@ -119,6 +119,9 @@ describe('CK-4 naming exceptions', () => {
 describe('CK-5 optional returns', () => {
   test('optional without a reason', () => fails('CK-5', '/units/', (c) => { delete member(c, 'store.read').optional_reason; }));
   test('a reason without optional', () => fails('CK-5', '/units/', (c) => { member(c, 'forms.parse').optional_reason = 'P-2'; }));
+  test('an optional field without a reason', () => fails('CK-5', `${at('session_options')}/fields/0`, (c) => { delete unit(c, 'session_options').fields[0].reason; }));
+  test('a required field with a reason', () =>
+    fails('CK-5', `${at('session_options')}/fields/2/reason`, (c) => { unit(c, 'session_options').fields.push({ name: ['dir'], type: 'text', required: true, reason: 'T-4' }); }));
 });
 
 describe('CK-6 cycles', () => {
@@ -203,6 +206,12 @@ describe('CK-10 errors', () => {
   test('a parent on a class', () => fails('CK-10', '/units/', (c) => { unit(c, 'memory_store').parent = 'form_error'; }));
   test('a parent of another category', () => fails('CK-10', `${at('too_large')}/parent`, (c) => { unit(c, 'form_error').category = 'store'; }));
   test('a final parent', () => fails('CK-10', `${at('too_large')}/parent`, (c) => { unit(c, 'form_error').final = true; }));
+  test('a category class with the name of the language class', () =>
+    fails('CK-10', '/errors/classes/value/python', (c) => { c.errors.classes.value.python = 'ValueError'; }));
+  test('a category class with another name in one language', () =>
+    fails('CK-10', '/errors/classes/value', (c) => { c.errors.classes.value.node = 'OtherValueError'; }));
+  test('a PHP category class outside the package namespace', () =>
+    fails('CK-10', '/errors/classes/value/php', (c) => { c.errors.classes.value.php = 'Other\\SampleValueError'; }));
   test('a category without a class in one language', () =>
     fails('CK-10', '/errors/classes/busy', (c) => { delete c.errors.classes.busy.node; }));
   test('a kind overridden by an error unit of another category', () =>

@@ -47,6 +47,7 @@ export interface Field {
   required?: true;
   default?: Default;
   default_core?: string;
+  reason?: string;
   only?: Only;
 }
 
