@@ -4,7 +4,7 @@
 import type { Unit } from '../contract.ts';
 import { type Model, langName } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -63,6 +63,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
                 self::assertSame(${cls('value')}::class, $error::class);
                 self::assertSame('invalid_number', $error->kind());
             }
+        }
+    }`);
+      }
+      const refused = refusedKeyMap(model, ctx, arg.type);
+      if (refused !== undefined) {
+        methods.push(`
+    public function testT2${name}${argName}RefusesA${refused.kind.charAt(0).toUpperCase()}${refused.kind.slice(1)}Key(): void
+    {
+        try {
+            ${call(new Map([[arg, refused.value]]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_argument_type', $error->kind());
         }
     }`);
       }

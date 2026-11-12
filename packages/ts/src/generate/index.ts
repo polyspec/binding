@@ -51,9 +51,9 @@ export function generate(inputs: Inputs): Files {
   ].find(([, type]) => hasMap(type));
   const others = inputs.contract.targets.filter((target) => target !== 'go');
   if (withMap !== undefined && others.length > 0) throw new Unsupported(`${withMap[0]}: map<T> is generated for Go only, not for ${others.join(', ')} yet`);
-  // T-2: keyed_map<T>. Go and Python take it anywhere; Node and WASM, whose JavaScript entry turns a Map into its
+  // T-2: keyed_map<T>. Go, Python and PHP take it anywhere; Node and WASM, whose JavaScript entry turns a Map into its
   // entries, take it as a whole parameter or return (or an optional one) with integer and text keys (a Map compares a
-  // Uint8Array key by identity, GN-12); PHP does not generate it yet.
+  // Uint8Array key by identity, GN-12).
   const hasKeyed = (type: unknown): boolean => JSON.stringify(type).includes('"keyed_map"');
   const whole = (type: Type): Type => (typeof type === 'object' && 'optional' in type ? type.optional : type);
   const keyedPlaces = [
@@ -62,7 +62,6 @@ export function generate(inputs: Inputs): Files {
     ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => ({ id: unit.id, type: f.type, top: false }))),
   ].filter((place) => hasKeyed(place.type));
   for (const place of keyedPlaces) {
-    if (inputs.contract.targets.includes('php')) throw new Unsupported(`${place.id}: keyed_map<T> is not generated for php yet`);
     const js = inputs.contract.targets.filter((target) => target === 'node' || target === 'wasm');
     if (js.length === 0) continue;
     const base = whole(place.type);

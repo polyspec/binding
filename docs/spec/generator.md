@@ -96,6 +96,11 @@ the design ids are those of the binding design.
   the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
   enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
+  `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
+  contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
+  is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
+  `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
+  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4).
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
@@ -144,8 +149,8 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go only so far, and `keyed_map<T>` for every target but PHP (GN-11,
-  GN-12, GN-18): a contract with one of them and a target that does not generate it is refused by name.
+  `invalid_argument_type`. `map<T>` is generated for Go only so far, so a contract with a map and another target is
+  refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight

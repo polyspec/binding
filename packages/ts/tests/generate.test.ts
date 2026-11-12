@@ -293,10 +293,17 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /range \[\]string\{"\\u0100", "\\xff"\}/);
 });
 
-test('Go: keyed_map<T> is an ordered KeyedMap of mixed key kinds, refused for a target that does not generate it (T-2, GW-8)', () => {
+test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
   const { contract, caseFiles } = load();
+  contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
+  // GN-12: the JavaScript entry turns a Map into its entries, so Node takes a keyed map only as a whole.
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a keyed_map<T> inside another type is not generated for node yet/);
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /keyed_map<T> is not generated for php yet/);
+  const all = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn out_keyed_map<T>/);
+  assert.match(text(all, 'packages/python/generated/lib.rs'), /fn out_keyed_map<'py, T>/);
+  assert.match(text(all, 'packages/ts/generated/index.cjs'), /return fromEntries\(addon\./);
+  assert.match(text(all, 'packages/ts/generated/index.d.ts'), /ReadonlyMap<number \| string, string>/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
