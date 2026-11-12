@@ -128,6 +128,10 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     return;
   }
   if ('list' in type) return supportedType(type.list, units, where, foreign);
+  // T-2: map<T> is generated for Go only; generate() refuses it for the other targets (G-4).
+  if ('map' in type) return supportedType(type.map, units, where, foreign);
+  // T-2, U-7 (c): keyed_map<T>{key}, an ordered map whose keys mix the listed kinds.
+  if ('keyed_map' in type) return supportedType(type.keyed_map, units, where, foreign);
   if ('optional' in type) return supportedType(type.optional, units, where, foreign);
   if ('tuple' in type) {
     for (const part of type.tuple) supportedType(part, units, where, foreign);
@@ -281,7 +285,8 @@ export function buildModel(
   }
   const classes: ErrorClass[] = CATEGORIES.map((category) => {
     const row = contract.errors.classes[category] ?? {};
-    const name = Object.values(row)[0];
+    // E-7: Go has no class table; its category types have fixed names, so a contract whose only target is Go names none.
+    const name = Object.values(row)[0] ?? (contract.targets.every((t) => t === 'go') ? '' : undefined);
     if (name === undefined) throw new Unsupported(`errors.classes.${category} names no class`);
     const names = Object.fromEntries(Object.entries(row).map(([lang, value]) => [lang, simple(value)]));
     return { category, name: simple(name), names };
@@ -343,6 +348,8 @@ export function rustType(model: Model, type: Type): string {
     return found;
   }
   if ('list' in type) return `Vec<${rustType(model, type.list)}>`;
+  if ('map' in type) return `binding_core::OrderedMap<${rustType(model, type.map)}>`;
+  if ('keyed_map' in type) return `binding_core::KeyedMap<${rustType(model, type.keyed_map)}>`;
   if ('optional' in type) return `Option<${rustType(model, type.optional)}>`;
   if ('tuple' in type) return `(${type.tuple.map((t) => rustType(model, t)).join(', ')})`;
   if ('unit' in type) {

@@ -2,7 +2,7 @@
 
 import type { Model } from './model.ts';
 import { langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -58,6 +58,14 @@ export function pythonTests(model: Model, module: string): string {
                     ${call(new Map([[arg, 'bad']]))}
                 self.assertIs(type(caught.exception), pkg.${cls('value')})
                 self.assertEqual(caught.exception.kind, "invalid_number")`);
+      }
+      const refused = refusedKeyMap(model, ctx, arg.type);
+      if (refused !== undefined) {
+        out.push(`
+    def test_t2_${name}_${argName}_refuses_a_${refused.kind}_key(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${call(new Map([[arg, refused.value]]))}
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
       }
       const text = textKind(arg.type);
       if (text !== undefined) {

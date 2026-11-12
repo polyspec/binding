@@ -9,14 +9,17 @@ the design ids are those of the binding design.
 
 ## Scope
 
-- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
+- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
+  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
   functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
   `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
   `source`) is refused by name
-  before anything is written (G-4, P-4); Go and WASM are not generated yet.
+  before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
+  repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -24,9 +27,12 @@ the design ids are those of the binding design.
 
 ## Layout (L-1, L-2)
 
-- **GN-3** binding owns three directories and writes each whole through a staging directory, so no file of an earlier
+- **GN-3** binding owns five directories and writes each whole through a staging directory, so no file of an earlier
   generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
-  `packages/ts/generated`. No source of binding is copied into the repository: the core and the binding crates depend on
+  `packages/ts/generated`, `packages/go/internal/ffi/generated`, `packages/ts/wasm/generated`. In the Go module, which
+  holds hand-written folders beside the generated packages (L-1), binding owns the files `zz_generated_*.go` rather
+  than a directory: a generation removes every one of them under `packages/go` and writes its own; they are tracked
+  (G-6). No source of binding is copied into the repository: the core and the binding crates depend on
   `polyspec-binding-core`, a Git dependency of the binding repository before its first release, whose commit the
   repository's `Cargo.lock` pins.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
@@ -126,17 +132,91 @@ the design ids are those of the binding design.
   the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
   enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
+  `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
+  contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
+  is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
+  `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
+  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4).
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
   and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
-  (abi3-py314). A list parameter takes a list or a tuple. `polyspec` has no
-  `__init__.py` (P-1).
+  (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
+  `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
+  map leaves as such a `dict` (T-2). `polyspec` has no `__init__.py` (P-1).
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
+  `keyed_map<T>{key}` is a `Map` whose keys are safe integers or strings of the listed kinds (T-2): the entry passes
+  the entries of a `Map` to the addon, which judges each key (any other key or value is kind `invalid_argument_type`),
+  and makes a `Map` of the entries that the addon gives back. Because the entry does it, a keyed map is a whole
+  parameter or return, or an optional one; one inside another type, and byte string keys, which a `Map` compares by
+  identity, are refused by name (G-4).
+
+- **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
+  `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
+  separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
+  `httpcookie`): the last element of its import path, `go`, cannot be an identifier, so the package name differs from
+  it, which Go allows without an import alias. Its file `zz_generated_<package>.go` holds the functions, records (structs of
+  exported fields), enums (a typed string and a constant `<Enum><Variant>` per value) and constants (typed `const`) of
+  the module. Package `errors` names the six category types of E-7, named as the classes of E-2 with the Go capitals of
+  N-2 (`HTTPCookieValueError` to `HTTPCookieInternalError`), each with
+  `Error()`, `Kind() string`, `Status() (int, bool)`, `Errno() (int, bool)` and `Unwrap() error`; they are aliases of
+  the types of `internal/binding`, which also holds the cgo calls and the encoding, so their constructor is not public
+  API (L-3). The C ABI crate `polyspec-<repository>-go` is the tracked thin package `packages/go/internal/ffi`
+  (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
+  directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
+  consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
+  is a Go keyword or a name of the generated body takes a trailing `_`.
+- **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
+  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
+  type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
+  that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a Go string of runes U+0000 to U+00FF, one per byte,
+  because Go reads a string as UTF-8: the C ABI takes it as UTF-8 and refuses a rune above U+00FF as kind
+  `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
+  the core leaves as its UTF-8 bytes. An enum value that is not one of the
+  constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
+  hold by the Go types and the compiler. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
+  package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
+  others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
+  crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
+  `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
+  a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
+  crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
+  `invalid_argument_type`. `map<T>` is generated for Go only so far, so a contract with a map and another target is
+  refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
+- **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
+  Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
+  bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
+  bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
+  ABI decodes and judges them (T-8), and the arguments must end where the last parameter ends; the core's result, or
+  the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
+  allocates, writes into `result` and Go frees with `polyspec_<repository>__free`; the return is 0 for a result and 1
+  for a failure. A buffer that does not follow the encoding is kind `internal`. The symbols that are not members
+  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no member name has. Every function runs under
+  `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
+  returns.
+
+- **GN-18** WASM (P-5, B-9): the crate `polyspec-<repository>-wasm` is the tracked thin package `packages/ts/wasm`
+  (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
+  `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
+  `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
+  `<library>_wasm.js` there. A `keyed_map<T>` is a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
+  whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
+  loads the WebAssembly module when it is imported, with a top-level await (GW-5), so no export can run before the
+  module is ready and there is no `init()`: a `file:` URL is read with `node:fs/promises` (Node), any other URL is
+  fetched (a browser); the library classes, which it defines as the Node entry does, are handed to the module
+  when it loads. The values are those of Node (T-7, B-2), a string with an unpaired surrogate is kind `invalid_text`
+  (B-9, `JsString::is_valid_utf16`), and the ES module checks the count and names of the arguments (G-7). The
+  expansion of `wasm_bindgen` calls `Option::unwrap_or_default`, so the exports are in one module that holds that one
+  allow. The standard library of `wasm32-unknown-unknown` is built with `panic=abort`, so `catch_unwind` catches no
+  panic there and a panic traps (GW-7): every export runs its call through `state.mjs`, a module that the package does
+  not export, which turns a `WebAssembly.RuntimeError` into kind `internal` of the internal class and marks the
+  instance broken; every later call fails with the same kind. The module is not instantiated again, because the state
+  that earlier handles point to would be gone. Where the module unwinds, `catch_unwind` gives kind `internal` as in
+  every binding (B-7).
 
 ## Generated tests (G-5)
 
@@ -155,7 +235,9 @@ the design ids are those of the binding design.
   (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
-  The end-to-end check fails a run in which a case was left out. The members of a
+  The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
+  every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
+  that array of `[key, value]`. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
@@ -169,15 +251,36 @@ the design ids are those of the binding design.
   of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
   closed set that each language's generated test implements.
 
+- **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
+  every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
+  contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
+  `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
+  ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
+  `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
+  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. With the build tag
+  `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
+  (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
+  and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
+  U+00FF, the order of a map and the order and kinds of the keys of a keyed map come back the same and that U+0100 is
+  refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
+  missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
+  an object of its entries in order and a `keyed_map` as GN-13 does.
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
+  `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
+  point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
+  trapped and that works when the module unwinds (GW-7).
+
 ## End-to-end check
 
-- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
-  (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet;
+- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
+  [--add-targets go,wasm]` (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet;
   `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
   builds and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
-  contract cases on unittest, `node --test` and PHPUnit. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+  contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
+  and `go vet`) and on `node --test` through the subpath `./wasm`. `--add-targets` adds those targets to the copy
+  with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands).

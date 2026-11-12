@@ -3,7 +3,7 @@
 
 import { type Model, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -54,6 +54,13 @@ test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
   for (const bad of [${(BAD_NUMBERS[number] ?? []).join(', ')}]) {
     assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number', String(bad));
   }
+});`);
+      }
+      const refused = refusedKeyMap(model, ctx, arg.type);
+      if (refused !== undefined) {
+        out.push(`
+test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
       const text = textKind(arg.type);

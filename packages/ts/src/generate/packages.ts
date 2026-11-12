@@ -61,12 +61,14 @@ function foreignCrates(contract: Contract, dependencies: CoreDependencies, host 
 
 // I-1: a target with a row in core.features builds the core with those features only.
 function coreFeatures(contract: Contract, suffix: string): string {
-  const lang = ({ python: 'python', node: 'node', 'php-ext': 'php' } as const)[suffix as 'python' | 'node' | 'php-ext'];
+  const lang = ({ python: 'python', node: 'node', 'php-ext': 'php', go: 'go', wasm: 'wasm' } as const)[suffix as 'python' | 'node' | 'php-ext' | 'go' | 'wasm'];
   const features = contract.core.features?.[lang];
   return features === undefined ? '' : `, default-features = false, features = [${features.map((f) => JSON.stringify(f)).join(', ')}]`;
 }
 
-function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false): string {
+// crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
+// staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm).
+function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -78,13 +80,13 @@ publish = false${extra}
 [lib]
 name = ${JSON.stringify(lib)}
 path = "src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["${crate?.type ?? 'cdylib'}"]
 
 [features]
 panic-test = []
 
 [dependencies]
-${contract.core.crate} = { path = "${host ? '../../rust' : '../rust'}"${coreFeatures(contract, suffix)} }
+${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
 ${BINDING_CORE}
 ${dependencies.join('\n')}
 
@@ -172,16 +174,17 @@ python-source = "generated/python"
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'napi: a value is cast to its type after its type was checked']]));
-    languageManifest('node', 'packages/ts/package.json', `${JSON.stringify({
-      name: npm,
-      version,
-      description: `The ${contract.library} library of polyspec for Node`,
-      license: 'MIT',
-      main: './generated/index.cjs',
-      types: './generated/index.d.ts',
-      exports: { '.': { types: './generated/index.d.ts', import: './generated/index.mjs', require: './generated/index.cjs' } },
-      files: ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts', 'generated/*.node'],
-    }, null, 2)}\n`);
+    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
+  }
+  if (contract.targets.includes('wasm')) {
+    if (!contract.targets.includes('node')) files.set('packages/ts/package.json', npmManifest(contract, version));
+    // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
+    // into packages/ts/wasm/generated beside the generated entry.
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, 'wasm', `${extensionName(contract)}_wasm`, [
+      `wasm-bindgen = "=${WASM_BINDGEN}"`,
+      'js-sys = "=0.3.107"',
+    ], '', false, { type: 'cdylib', core: '../../rust' }));
+    files.set('packages/ts/wasm/src/lib.rs', entry(`The WebAssembly module of ${(contract.packages['node'] as { package: string }).package}.`, [MANY]));
   }
   if (contract.targets.includes('php')) {
     const php = contract.packages['php'] as { package: string };
@@ -201,8 +204,57 @@ python-source = "generated/python"
       'php-ext': { 'extension-name': extensionName(contract) },
     }, null, 2)}\n`);
   }
+  if (contract.targets.includes('go')) {
+    const module = (contract.packages['go'] as { module: string }).module;
+    // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
+    // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
+    files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, [], '', false, { type: 'staticlib', core: '../../../rust' })
+      // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
+      .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
+    files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
+      ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
+    ]));
+  }
   return placed(contract, files);
 }
+
+// The release of wasm-bindgen: the crate and the wasm-bindgen CLI that writes the glue are the same release.
+export const WASM_BINDGEN = '0.2.130';
+
+// The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
+// at each entry whose conditions choose it in the browser.
+function npmManifest(contract: Contract, version: string): string {
+  const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
+  const node = contract.targets.includes('node');
+  const wasm = contract.targets.includes('wasm');
+  const browser = { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' };
+  const exports: Record<string, unknown> = {};
+  if (node) {
+    exports['.'] = {
+      ...(wasm && npm.entries['.']?.conditions !== undefined ? { browser } : {}),
+      types: './generated/index.d.ts',
+      import: './generated/index.mjs',
+      require: './generated/index.cjs',
+    };
+  }
+  if (wasm) exports['./wasm'] = browser;
+  return `${JSON.stringify({
+    name: npm.package,
+    version,
+    description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
+    license: 'MIT',
+    ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
+    exports,
+    files: [
+      ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts', 'generated/*.node'] : []),
+      ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
+    ],
+  }, null, 2)}\n`;
+}
+
+// The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
+export const GO_VERSION = '1.27.3';
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
 // the path of the manifest, the item and the value it must have.

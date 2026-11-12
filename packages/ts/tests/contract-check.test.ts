@@ -301,6 +301,7 @@ describe('CK-13 Go names', () => {
 describe('CK-14 modules', () => {
   test('a module under host', () => fails('CK-14', `${at('forms')}/module`, (c) => { unit(c, 'forms').module = 'host/forms'; }));
   test('a module under tests', () => fails('CK-14', `${at('forms')}/module`, (c) => { unit(c, 'forms').module = 'tests'; }));
+  test('a module under internal', () => fails('CK-14', `${at('forms')}/module`, (c) => { unit(c, 'forms').module = 'internal/forms'; }));
 });
 
 describe('CK-15 members that WASM cannot run', () => {

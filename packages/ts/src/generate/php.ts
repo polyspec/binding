@@ -34,6 +34,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('keyed_map' in type) {
+    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+    return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+  }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || (unit !== undefined && objectUnit(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
@@ -48,6 +52,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `${fn[type]}(${value})`;
   }
   if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
+  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
+  if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
@@ -184,6 +190,66 @@ fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     for item in items {
         array.push(item).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+    }
+    let mut zval = Zval::new();
+    zval.set_hashtable(array);
+    Ok(zval)
+}
+
+/// T-2, U-7 (c): an array in its order. An int key is an integer key, or its decimal text when the contract lists text
+/// and not integers (PHP makes a decimal string key an int, so an array cannot hold the text); a string key is a text
+/// when it is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
+/// invalid_argument_type.
+fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
+    let Some(array) = value.array() else { return Err(type_error(subject, expected)) };
+    let mut map = binding_core::KeyedMap::new();
+    let mut entries = array.iter();
+    while let Some((key, value)) = entries.next_zval() {
+        let key = if let Some(integer) = key.long() {
+            match (kinds.contains(&0), kinds.contains(&2)) {
+                (true, _) => binding_core::Key::Int(integer),
+                (false, true) => binding_core::Key::Text(integer.to_string()),
+                (false, false) => return Err(type_error(subject, expected)),
+            }
+        } else if let Some(text) = key.zend_str() {
+            let bytes = text.as_bytes();
+            match (std::str::from_utf8(bytes), kinds.contains(&2), kinds.contains(&1)) {
+                (Ok(text), true, _) => binding_core::Key::Text(text.to_owned()),
+                (_, _, true) => binding_core::Key::Bytes(bytes.to_vec()),
+                _ => return Err(type_error(subject, expected)),
+            }
+        } else {
+            return Err(binding_error(BindingError::Internal { detail: String::from("an array key that is neither an int nor a string") }));
+        };
+        if map.insert(key, item(value)?).is_some() {
+            return Err(binding_error(BindingError::Internal { detail: String::from("an array gave a key twice") }));
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: a keyed map, owned or borrowed, as an array in its order. PHP makes a decimal text or byte string key an int,
+/// so a map whose keys PHP makes one (Int(1) and Text("1")) cannot be an array: kind internal, not a lost entry (P-4).
+fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+    let mut array = ZendHashTable::new();
+    let failed = |error: ext_php_rs::error::Error| binding_error(BindingError::Internal { detail: error.to_string() });
+    for (key, value) in value.borrow().iter() {
+        let before = array.len();
+        let value = item(value)?;
+        match key {
+            binding_core::Key::Int(integer) => array.insert(*integer, value).map_err(failed)?,
+            binding_core::Key::Text(text) => array.insert(text.as_str(), value).map_err(failed)?,
+            binding_core::Key::Bytes(bytes) => match std::str::from_utf8(bytes) {
+                Ok(text) => array.insert(text, value).map_err(failed)?,
+                Err(_not_utf8) => {
+                    let name = ZendStr::new(bytes, false);
+                    array.insert(ext_php_rs::types::ArrayKey::ZendString(&name), value).map_err(failed)?;
+                }
+            },
+        }
+        if array.len() == before {
+            return Err(binding_error(BindingError::Internal { detail: format!("PHP makes two keys of the map one: {key:?}") }));
+        }
     }
     let mut zval = Zval::new();
     zval.set_hashtable(array);
@@ -837,7 +903,7 @@ function stub(model: Model, layout: PhpLayout): string {
     if (typeof type === 'string') {
       return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void' } as Record<string, string>)[type] ?? 'mixed';
     }
-    if ('list' in type || 'tuple' in type || 'map' in type) return 'array';
+    if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
     const unit = unitOf(model, type);
     const library = libraryOf(type);
@@ -846,6 +912,7 @@ function stub(model: Model, layout: PhpLayout): string {
   };
   const docType = (type: Type): string => {
     if (typeof type === 'object' && 'list' in type) return `list<${docType(type.list)}>`;
+    if (typeof type === 'object' && 'keyed_map' in type) return `array<${type.key.includes('int') || type.key.includes('text') ? 'array-key' : 'string'}, ${docType(type.keyed_map)}>`;
     if (typeof type === 'object' && 'tuple' in type) return `array{${type.tuple.map(docType).join(', ')}}`;
     if (typeof type === 'object' && 'optional' in type) return `${docType(type.optional)}|null`;
     return phpType(type);
