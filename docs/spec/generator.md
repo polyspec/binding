@@ -134,6 +134,14 @@ the design ids are those of the binding design.
   built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
   handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound.
+- **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
+  borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
+  iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
+  Python gives the items by `__iter__`, or the keys by `__iter__` and the pairs by `items()`, as a dict does; Node makes
+  the class iterable by `Symbol.iterator` over the items or `[key, value]`; PHP makes it an `IteratorAggregate` whose
+  `getIterator` gives the items under their positions, or the values under their keys, through the extension's
+  iterator `<namespace>\Internal\Pairs`, because a key may be an object. An iterate that raises, or a second
+  iterate of a class, is refused by name (G-4).
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is

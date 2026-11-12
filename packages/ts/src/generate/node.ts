@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -359,7 +359,32 @@ ${writes.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: the addon's __iterate gives the items, or [key, value] for the entries, as an array converted when the
+// iteration starts (a snapshot of the class's value); the JavaScript entry makes it the class's Symbol.iterator.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const body = yields.key === undefined
+    ? `                items.push(${item(yields.value, 'item')});`
+    : `                let (key, value) = item;
+                items.push(out_tuple(env, vec![${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
+  return `
+    #[napi(js_name = "__iterate", enumerable = false)]
+    pub fn iterate<'env>(&self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let mut items = Vec::new();
+            for item in ${fn.corePath}(&self.inner) {
+${body}
+            }
+            out_tuple(env, items)
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+`;
+}
+
 function functionRust(model: Model, fn: Fn): string {
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
   const jsName = langName('node', fn.member.name, 'callable');
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
@@ -780,6 +805,16 @@ ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${
   });
 }`;
     });
+    // N-4 iterate: the class is iterable over the snapshot that the addon's __iterate gives.
+    if (o.members.some((fn) => fn.kind === 'iterate')) {
+      wraps.push(`Object.defineProperty(${cls}.prototype, Symbol.iterator, {
+  value: function iterator() {
+    return this.__iterate()[Symbol.iterator]();
+  },
+  writable: true,
+  configurable: true,
+});`);
+    }
     const constructor = o.members.find((fn) => fn.kind === 'constructor');
     const construct = constructor === undefined ? `addon.${cls}` : `new Proxy(addon.${cls}, {
   construct(target, args) {
@@ -902,6 +937,11 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
       if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
+      if (fn.kind === 'iterate') {
+        const yields = fn.yields ?? { value: 'none' };
+        const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
+        return `  [Symbol.iterator](): IterableIterator<${item}>;`;
+      }
       return `  ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
     });
     if (!o.constructible) lines.unshift('  private constructor();');

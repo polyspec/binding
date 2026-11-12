@@ -361,6 +361,26 @@
             "path": "polyspec_sample::Tag::name",
             "receiver": "&self"
           }
+        },
+        {
+          "id": "tag.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "iterate",
+          "visibility": "public",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::entries",
+            "receiver": "&self"
+          },
+          "yields": {
+            "key": "text",
+            "value": {
+              "unit": "tag"
+            }
+          }
         }
       ]
     },
@@ -660,6 +680,11 @@
       "member": "sample.size",
       "file": "contracts/cases.json",
       "group": "size"
+    },
+    {
+      "member": "tag.entries",
+      "file": "contracts/cases.json",
+      "group": "tag_entries"
     }
   ]
 }

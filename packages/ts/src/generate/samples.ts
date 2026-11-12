@@ -165,7 +165,8 @@ export interface RaisingCase {
 }
 
 // The callables whose tests are generated: the functions, then the members of each class unit.
-export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members)];
+// An iterate has no arguments to test; it is iterated in the round trip of GN-13a.
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate'))];
 
 export interface Receiver {
   factory: Fn;

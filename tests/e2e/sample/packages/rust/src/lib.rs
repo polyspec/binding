@@ -125,6 +125,11 @@ impl Tag {
         Self { name: name.to_owned() }
     }
 
+    /// The entries of the tag, its name with the tag itself (N-4: iterate with a key and a value).
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &Self)> {
+        std::iter::once((&self.name, self))
+    }
+
     /// The name of the tag.
     #[must_use]
     pub fn name(&self) -> &str {

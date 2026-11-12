@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -359,7 +359,39 @@ ${writes.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: __iter__ gives the items, or the keys of the entries with items() for the pairs, as a dict does; the
+// items are converted when the iteration starts, a snapshot of the class's value.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const call = `${fn.corePath}(&self.inner)`;
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const iter = (body: string): string => `
+        guard(py, || {
+            let items = PyList::empty(py);
+            for item in ${call} {
+${body}
+            }
+            Ok(items.try_iter()?.into_any())
+        })`;
+  if (yields.key === undefined) {
+    return `
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                items.append(${item(yields.value, 'item')})?;`)}
+    }
+`;
+  }
+  return `
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                let (key, _value) = item;
+                items.append(${item(yields.key, 'key')})?;`)}
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {${iter(`                let (key, value) = item;
+                items.append(PyTuple::new(py, [${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?)?;`)}
+    }
+`;
+}
+
 function functionRust(model: Model, fn: Fn): string {
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
   const name = langName('python', fn.member.name, 'callable');
   const positional = fn.args.filter((a) => !a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
@@ -406,7 +438,7 @@ ${lines.join('\n')}
 }
 `;
   }
-  const attributes = { static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind];
+  const attributes = { static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind] ?? [];
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
 ${attributes.map((a) => `    ${a}`).join('\n')}
@@ -797,12 +829,18 @@ function nativePyi(model: Model): string {
       if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
       if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
       if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
+      if (fn.kind === 'iterate') {
+        const yields = fn.yields ?? { value: 'none' };
+        if (yields.key === undefined) return `    def __iter__(self) -> Iterator[${pyType(model, yields.value, false)}]: ...`;
+        const key = pyType(model, yields.key, false);
+        return `    def __iter__(self) -> Iterator[${key}]: ...\n    def items(self) -> Iterator[tuple[${key}, ${pyType(model, yields.value, false)}]]: ...`;
+      }
       return `    def ${name}(${['self', ...params(fn)].join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
     });
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
   return `${pyHeader()}
-from collections.abc import Sequence
+from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
 from typing import final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}

@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -377,7 +377,75 @@ ${args.join('\n')}
 
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
+// N-4 iterate: the class is an IteratorAggregate whose getIterator gives the items under their positions, or the
+// entries under their keys, converted when the iteration starts (a snapshot of the class's value), through the
+// extension's Pairs iterator, because a key of an entry may be an object, which no array key is.
+function iterateRust(model: Model, fn: Fn): string {
+  const yields = fn.yields ?? { value: 'none' };
+  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const body = yields.key === undefined
+    ? `                let position = i64::try_from(position).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+                pairs.push((out_int(position)?, ${item(yields.value, 'item')}));`
+    : `                let (key, value) = item;
+                pairs.push((${item(yields.key, 'key')}, ${item(yields.value, 'value')}));`;
+  return `
+    #[php(name = "getIterator")]
+    pub fn get_iterator(&self) -> Result<Zval, PhpException> {
+        guard(|| {
+            let mut pairs = Vec::new();
+            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${fn.corePath}(&self.inner)${yields.key === undefined ? '.enumerate()' : ''} {
+${body}
+            }
+            pairs_iterator(pairs)
+        })
+    }
+`;
+}
+
+// N-4 iterate: the iterator of the extension over converted pairs, which getIterator gives.
+const PAIRS = (layout: PhpLayout): string => `
+/// N-4: an iterator over the pairs that a getIterator converted.
+#[php_class]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\Pairs`)})]
+#[php(flags = ClassFlags::Final)]
+#[php(implements(ce = ext_php_rs::zend::ce::iterator, stub = "\\\\Iterator"))]
+pub struct PhpPairs {
+    pub(crate) pairs: Vec<(Zval, Zval)>,
+    pub(crate) position: usize,
+}
+
+#[php_impl]
+impl PhpPairs {
+    pub fn current(&self) -> Zval {
+        match self.pairs.get(self.position) {
+            Some((_key, value)) => value.shallow_clone(),
+            None => Zval::new(),
+        }
+    }
+
+    pub fn key(&self) -> Zval {
+        match self.pairs.get(self.position) {
+            Some((key, _value)) => key.shallow_clone(),
+            None => Zval::new(),
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.position = self.position.saturating_add(1);
+    }
+
+    pub fn rewind(&mut self) {
+        self.position = 0;
+    }
+
+    pub fn valid(&self) -> bool {
+        self.position < self.pairs.len()
+    }
+}
+`;
+
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
+  if (fn.kind === 'iterate') return iterateRust(model, fn);
   const callable = langName('php', fn.member.name, 'callable');
   const phpName = `${phpNamespace(layout, fn.module)}\\${callable}`;
   const variables = fn.args.map((a) => langName('php', a.name, 'variable'));
@@ -563,7 +631,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]
+#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${object.unit.core_type ?? ''},
 }
@@ -595,12 +663,21 @@ fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> 
 
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('');
+  const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
+  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '');
   const enums = [
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.objects.map((object) => objectOut(model, object)),
+    iterates ? `
+/// N-4: the iterator over the converted pairs of a getIterator.
+fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
+    ZendClassObject::new(entry::PhpPairs { pairs, position: 0 })
+        .into_zval(false)
+        .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+}
+` : '',
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
@@ -680,6 +757,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
+    ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
@@ -941,6 +1019,16 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
   const method = (fn: Fn, indent: string): string => {
     const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}`);
     const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}`);
+    if (fn.kind === 'iterate') {
+      const yields = fn.yields ?? { value: 'none' };
+      return `${indent}/**
+${indent} * N-4: the items${yields.key === undefined ? ' under their positions' : ' under their keys'}, a snapshot of the value.
+${indent} *
+${indent} * @return \\Iterator<${yields.key === undefined ? 'int' : docType(yields.key)}, ${docType(yields.value)}>
+${indent} */
+${indent}public function getIterator(): \\Iterator {}
+`;
+    }
     const name = fn.kind === 'constructor' ? '__construct' : langName('php', fn.member.name, 'callable');
     const prefix = fn.kind === 'function' ? 'function' : fn.kind === 'static' ? 'public static function' : 'public function';
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
@@ -984,7 +1072,7 @@ ${lines.join('\n')}    }
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
       items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}
+    final class ${langName('php', object.unit.name, 'class')}${object.members.some((fn) => fn.kind === 'iterate') ? ' implements \\IteratorAggregate' : ''}
     {
 ${members.join('\n')}    }
 `);
@@ -1002,6 +1090,24 @@ ${(unit.variants ?? []).map((v) => `        case ${langName('php', v.name, 'clas
     for (const fn of model.functions.filter((f) => f.module === module)) items.push(method(fn, '    '));
     blocks.push(`namespace ${phpNamespace(layout, module)} {
 ${items.join('\n')}}`);
+  }
+  if (model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'))) {
+    blocks.push(`namespace ${layout.namespace}\\Internal {
+    /**
+     * N-4: the iterator over the pairs that a getIterator converted; only the extension makes it.
+     *
+     * @implements \\Iterator<mixed, mixed>
+     */
+    final class Pairs implements \\Iterator
+    {
+        private function __construct() {}
+        public function current(): mixed {}
+        public function key(): mixed {}
+        public function next(): void {}
+        public function rewind(): void {}
+        public function valid(): bool {}
+    }
+}`);
   }
   return `<?php
 

@@ -41,7 +41,7 @@ export interface Fn {
   unit: Unit;
   member: Member;
   // function (a member of a functions unit), or a member of a class unit: constructor, static, method, property (U-2).
-  kind: 'function' | 'constructor' | 'static' | 'method' | 'property';
+  kind: 'function' | 'constructor' | 'static' | 'method' | 'property' | 'iterate';
   // The receiver of a method or property in the core (U-2 core.receiver).
   receiver?: '&self' | '&mut self';
   module: string;
@@ -49,6 +49,8 @@ export interface Fn {
   record?: { unit: Unit; param: Parameter };
   args: Arg[];
   returns: Type;
+  // N-4 iterate: what the core's iterator gives, an item or the key and the value of an entry, each borrowed.
+  yields?: { key?: Type; value: Type };
   fallible: boolean;
   // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
   failure: boolean;
@@ -184,7 +186,7 @@ export function buildModel(
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
     const corePath = typeof core === 'string' ? core : core.path;
     const receiver = typeof core === 'object' ? core.receiver : undefined;
-    const wantsReceiver = kind === 'method' || kind === 'property';
+    const wantsReceiver = kind === 'method' || kind === 'property' || kind === 'iterate';
     if (receiver === 'self') throw new Unsupported(`${member.id}: a receiver self is not generated yet`);
     if (receiver === '&mut self') throw new Unsupported(`${member.id}: a receiver &mut self (B-5c busy) is not generated yet`);
     if (wantsReceiver !== (receiver !== undefined)) throw new Unsupported(`${member.id}: a ${kind} ${wantsReceiver ? 'needs' : 'takes no'} receiver`);
@@ -208,6 +210,16 @@ export function buildModel(
     const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     supportedType(returns, units, `${member.id} returns`, foreign);
+    let yields: Fn['yields'];
+    if (kind === 'iterate') {
+      const given = member.yields;
+      if (given === undefined) throw new Unsupported(`${member.id}: an iterate without yields`);
+      if (receiver !== '&self') throw new Unsupported(`${member.id}: an iterate takes &self`);
+      if (params.length > 0) throw new Unsupported(`${member.id}: an iterate takes no parameter`);
+      if ((member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: an iterate that raises is not generated yet`);
+      yields = typeof given === 'object' && 'key' in given && 'value' in given ? { key: given.key, value: given.value } : { value: given as Type };
+      for (const type of [yields.key, yields.value]) if (type !== undefined) supportedType(type, units, `${member.id} yields`, foreign);
+    }
     return {
       unit,
       member,
@@ -217,6 +229,7 @@ export function buildModel(
       params,
       args,
       returns,
+      ...(yields === undefined ? {} : { yields }),
       fallible: (member.raises ?? []).length > 0 || takesCallback,
       failure: takesCallback,
       corePath,
@@ -246,7 +259,8 @@ export function buildModel(
       if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a class without core_type`);
       const members: Fn[] = [];
       for (const member of unit.members ?? []) {
-        if (!['constructor', 'static', 'method', 'property'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (!['constructor', 'static', 'method', 'property', 'iterate'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (member.kind === 'iterate' && (unit.members ?? []).filter((m) => m.kind === 'iterate').length > 1) throw new Unsupported(`${unit.id}: a class iterates once (N-4)`);
         if (member.kind === 'property' && member.writable === true) throw new Unsupported(`${member.id}: a writable property is not generated yet`);
         members.push(toFn(unit, member, member.kind as Fn['kind']));
       }
@@ -399,6 +413,15 @@ export function byValue(model: Model, type: Type): boolean {
   if ('optional' in type) return byValue(model, type.optional);
   if ('unit' in type) return unitOf(model, type)?.kind === 'enum';
   return false;
+}
+
+// N-4 iterate: an item of the core's iterator is borrowed from the class; a conversion out takes a value type by value
+// and a class by a copy of its core value.
+export function borrowedItem(model: Model, type: Type, value: string): string {
+  if (byValue(model, type)) return `*${value}`;
+  const unit = unitOf(model, type);
+  if (unit !== undefined && libraryOf(type) === undefined && model.objects.some((o) => o.unit === unit)) return `${value}.clone()`;
+  return value;
 }
 
 export const unitOf = (model: Model, type: Type): Unit | undefined => {
