@@ -6,7 +6,7 @@
 
 import type { Type } from '../contract.ts';
 import { type Model, langName, unitOf } from './model.ts';
-import { goBytes, goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
+import { goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
 import { raisingCases } from './samples.ts';
 
 
@@ -39,12 +39,11 @@ function placeholder(v: Values, type: Type): string {
   throw new Error(`no Go placeholder for ${JSON.stringify(type)}`);
 }
 
-// A case value (JSON) as a Go value: latin1 text is a string of one byte per character (B-8).
+// A case value (JSON) as a Go value; latin1 text is a Go string of its runes, as text is (B-8).
 function fromJson(v: Values, type: Type, value: unknown): string {
   if (value === null) return 'nil';
   if (typeof type === 'string') {
-    if (type === 'text') return goString(String(value));
-    if (type === 'latin1') return goBytes([...String(value)].map((c) => c.codePointAt(0) ?? 0));
+    if (type === 'text' || type === 'latin1') return goString(String(value));
     if (type === 'bool') return String(value === true);
     if (['uint', 'int', 'int64', 'float'].includes(type)) return String(value);
     throw new Error(`no Go case value of the type ${type}`);
@@ -119,6 +118,18 @@ export function goTests(model: Model, module: string): string | undefined {
         base = base.list;
         const outer = wrap;
         wrap = (value) => outer(`${listType}{${value}}`);
+      }
+      if (base === 'latin1') {
+        out.push(`
+func TestB8${name}Refuses${testName(slot.label.split('.'))}AboveU00FF(t *testing.T) {
+	for _, bad := range []string{"\\u0100", "\\xff"} {
+		${assign} ${slot.replace(wrap('bad'))}
+		var failure *liberrors.${types['value'] ?? ''}
+		if !errors.As(err, &failure) || failure.Kind() != "invalid_text" {
+			t.Fatalf("B-8: %q: %#v", bad, err)
+		}
+	}
+}`);
       }
       if (base === 'text') {
         out.push(`
@@ -264,4 +275,57 @@ func TestT2TheEncodingKeepsTheOrderOfAMap(t *testing.T) {
 	}
 }
 `;
+}
+
+// GW-4, T-2: the round trips through the C ABI: every latin1 character comes back the same and a rune above U+00FF
+// or bytes that are not UTF-8 are kind invalid_text; a map comes back in its order.
+export function goCodecTest(_contract: unknown, echo: { latin1: boolean; map: boolean }, valueType: string): string {
+  const latin1 = echo.latin1 ? `
+func TestB8Latin1RoundTrips(t *testing.T) {
+	runes := make([]rune, 0, 256)
+	for code := rune(0); code <= 0xff; code++ {
+		runes = append(runes, code)
+	}
+	text := string(runes)
+	back, err := EchoLatin1(text)
+	if err != nil || back != text {
+		t.Fatalf("B-8: %q, %v", back, err)
+	}
+	for _, bad := range []string{"\\u0100", "\\xff"} {
+		_, err := EchoLatin1(bad)
+		failure, ok := err.(*${valueType})
+		if !ok || failure.Kind() != "invalid_text" {
+			t.Fatalf("B-8: %q: %#v", bad, err)
+		}
+	}
+}
+` : '';
+  const map = echo.map ? `
+func TestT2AMapRoundTripsInItsOrder(t *testing.T) {
+	m := &Map[string]{}
+	for _, key := range []string{"z", "a", "\\u00e9", "m"} {
+		m.Set(key, key+key)
+	}
+	back, err := EchoMap(m)
+	if err != nil || !reflect.DeepEqual(back.Keys(), m.Keys()) {
+		t.Fatalf("T-2: %q, %v", back.Keys(), err)
+	}
+	for _, key := range m.Keys() {
+		want, _ := m.Get(key)
+		if got, _ := back.Get(key); got != want {
+			t.Fatalf("T-2: %q is %q", key, got)
+		}
+	}
+}
+` : '';
+  return `${goHeader()}
+
+//go:build polyspec_codec_test
+
+package binding
+
+import (
+${echo.map ? '\t"reflect"\n' : ''}\t"testing"
+)
+${latin1}${map}`;
 }

@@ -1,5 +1,4 @@
-// The contract cases of http-cookie run against the Go package (V-1). A latin1 text of a case is a Go string of one
-// byte per character (B-8).
+// The contract cases of http-cookie run against the Go package (V-1). A latin1 text is a Go string of its runes (B-8).
 package tests
 
 import (
@@ -7,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 
 	httpcookie "github.com/polyspec/http-cookie/packages/go"
@@ -56,15 +54,6 @@ func load(t *testing.T) cases {
 	return all
 }
 
-// latin1 is the bytes of a text whose characters are U+0000 to U+00FF, one byte each.
-func latin1(text string) string {
-	var out strings.Builder
-	for _, r := range text {
-		out.WriteByte(byte(r))
-	}
-	return out.String()
-}
-
 // The error type of each category (E-7), with its kind and status.
 type failure interface {
 	error
@@ -102,11 +91,7 @@ func TestParse(t *testing.T) {
 		t.Fatal("no cases")
 	}
 	for _, c := range group {
-		lines := make([]string, len(c.Lines))
-		for i, line := range c.Lines {
-			lines[i] = latin1(line)
-		}
-		got, err := httpcookie.ParseCookie(lines)
+		got, err := httpcookie.ParseCookie(c.Lines)
 		if err != nil {
 			t.Fatalf("%s: %v", c.ID, err)
 		}
@@ -148,7 +133,7 @@ func TestSetCookie(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || c.Header == nil || header != latin1(*c.Header) {
+		if err != nil || c.Header == nil || header != *c.Header {
 			t.Errorf("%s: got %q, %v", c.ID, header, err)
 		}
 	}

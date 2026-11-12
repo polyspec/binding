@@ -382,7 +382,8 @@ if (caseRunners) run('php', [...extensions, phpunit, join(e2e, 'CasesTest.php')]
 
 if (contract.targets.includes('go')) {
   step('Go: build the static library, run the generated tests and the cases with go test');
-  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test']);
+  run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test', '--', '-D', 'warnings']);
+  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
   const goModule = join(copy, 'packages/go');
   if (process.env['BINDING_E2E_LOCAL_GO'] === '1') {
     const local = /go(\d+\.\d+(\.\d+)?)/.exec(execFileSync('go', ['env', 'GOVERSION'], { encoding: 'utf8' }))?.[1];
@@ -395,7 +396,7 @@ if (contract.targets.includes('go')) {
     mkdirSync(join(goModule, 'tests'), { recursive: true });
     copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
   }
-  const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test', CASES: cases ?? '' };
+  const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test,polyspec_codec_test', CASES: cases ?? '' };
   process.stdout.write('$ gofmt -l .\n');
   const unformatted = execFileSync('gofmt', ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
   if (unformatted !== '') throw new Error(`gofmt would change:\n${unformatted}`);

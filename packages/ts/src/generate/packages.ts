@@ -163,7 +163,9 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, [], '', { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, [], '', { type: 'staticlib', core: '../../../rust' })
+      // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
+      .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));

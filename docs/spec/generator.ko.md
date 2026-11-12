@@ -102,7 +102,9 @@
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안의 tuple `[N]T`(원소 타입 하나), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은
-  바이트 하나가 문자 하나인 문자열이므로 거부할 값이 없다. 코어의 문자열은 UTF-8 바이트로 나간다. 상수가 아닌 enum 값은 kind
+  U+0000~U+00FF의 rune이 바이트마다 하나인 Go 문자열이다(Go는 문자열을 UTF-8로 읽기 때문이다): C ABI는 UTF-8로 받아 U+00FF를
+  넘는 rune을 kind `invalid_text`로 거부하고, 바이트는 같은 code point의 rune으로 나간다(B-8, 모든 언어와 같은 규칙). 코어의
+  문자열은 UTF-8 바이트로 나간다. 상수가 아닌 enum 값은 kind
   `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지킨다. `Map[T]`는 T-2의 순서 있는 map이며,
   쓰는 패키지가 선언하는 `internal/binding.Map`의 별칭이다. 반복 순서가 무작위인 Go map이 아니다: `Set`은 새 key를 끝에
   두고 있는 key의 자리는 지키며, `Keys`는 순서대로 주고, 0값이나 nil `*Map`은 비어 있다. C ABI는 길이와 순서대로의 항목으로
@@ -118,13 +120,13 @@
   때 돌아온다.
 
 - **GN-18** WASM(P-5, B-9): crate `polyspec-<repository>-wasm`은 Node npm 패키지 안의 추적하는 얇은 package
-  `packages/ts/wasm`(crate-type `cdylib`, wasm-binding 0.2.130, js-sys 0.3.107)이고, `packages/ts/wasm/generated`가 그 소스,
-  ES 모듈 `index.mjs`, 선언, 시험을 담는다. 같은 릴리스의 `wasm-binding --target web`이 모듈 `<library>_wasm_bg.wasm`과
+  `packages/ts/wasm`(crate-type `cdylib`, wasm-bindgen 0.2.130, js-sys 0.3.107)이고, `packages/ts/wasm/generated`가 그 소스,
+  ES 모듈 `index.mjs`, 선언, 시험을 담는다. 같은 릴리스의 `wasm-bindgen --target web`이 모듈 `<library>_wasm_bg.wasm`과
   glue `<library>_wasm.js`를 그곳에 쓴다. npm manifest는 WASM 진입점을 subpath `./wasm`으로 늘 내보내고, conditions가
   `{node: napi, browser: wasm}`인 entry에서는 그 entry의 조건 `browser`로도 내보낸다. ES 모듈은 `init()`(P-5)을 내보내며
   이것이 모듈을 한 번 읽는다: `file:` URL은 `node:fs/promises`로 읽고(Node), 그 밖의 URL은 fetch한다(브라우저). Node 진입점과
   같이 정의한 라이브러리 클래스는 모듈을 읽을 때 넘긴다. 값은 Node의 것이고(T-7, B-2), 짝 없는 surrogate가 든 문자열은 kind
-  `invalid_text`이며(B-9, `JsString::is_valid_utf16`), ES 모듈이 인자의 개수와 이름을 검사한다(G-7). `wasm_binding` 전개가
+  `invalid_text`이며(B-9, `JsString::is_valid_utf16`), ES 모듈이 인자의 개수와 이름을 검사한다(G-7). `wasm_bindgen` 전개가
   `Option::unwrap_or_default`를 부르므로 export는 그 allow 하나를 가진 모듈 하나에 둔다. `wasm32-unknown-unknown`의 표준
   라이브러리는 `panic=abort`로 빌드되므로 거기서 `catch_unwind`는 panic을 잡지 못한다: panic은 trap이 되고 그 인스턴스는 더
   호출을 실행하지 못한다. 마지막에 실행하는 생성 B-7 시험은 그런 빌드에서 실패하며, 이것이 WASM에서 B-7의 알려진 빈틈이다
@@ -145,8 +147,11 @@
   B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, raise하는 contract case마다 B-4(E-7의 정확한 타입, kind, status,
   errno). B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
-  `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다. case의 latin1 값은 문자마다 한
-  바이트인 Go 문자열이다.
+  `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
+  latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. build tag `polyspec_codec_test`와 C ABI
+  crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때)과 `map<text>`(map of text를 받고 줄
+  때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는 U+0000~U+00FF와 map의 순서가 그대로 돌아오고
+  U+0100이 거부되는지 확인한다. case의 latin1 값은 그 rune의 Go 문자열이다.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
   `./wasm`에 대해 `init()` 뒤에 `node --test`로 실행하며, B-7 시험이 마지막이다.
 

@@ -271,3 +271,20 @@ test('Go: map<T> is an ordered Map, and a contract with a map and another target
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /out_map\(output, result, \|output, item\| out_list\(/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_map_test.go'), /func TestT2TheEncodingKeepsTheOrderOfAMap/);
 });
+
+test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip entry point and its tests (GW-4)', () => {
+  const { contract, caseFiles } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const member = contract.units[0].members[0];
+  member.parameters[0].type = 'latin1';
+  member.returns = 'latin1';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rust, /fn in_latin1\(input: &mut &\[u8\], subject: &str\)[^]*TextCause::AboveLatin1/);
+  assert.match(rust, /fn out_latin1\([^]*char::from\(\*byte\)/);
+  assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample_echo_latin1\(/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /range \[\]string\{"\\u0100", "\\xff"\}/);
+});

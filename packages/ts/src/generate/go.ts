@@ -11,7 +11,7 @@ import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../c
 import { convert, libraryName } from '../names.ts';
 import { type Constant, type Fn, type Model, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { extensionName } from './packages.ts';
-import { goMapTest, goTests, goPanicTest } from './tests_go.ts';
+import { goCodecTest, goMapTest, goTests, goPanicTest } from './tests_go.ts';
 import { type Files, header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
 
 const GO = 'packages/go';
@@ -662,7 +662,8 @@ type ${name} = binding.${name}
 function convertIn(model: Model, type: Type, input: string, subject: string): string {
   if (typeof type === 'string') {
     if (type === 'text') return `in_text(${input}, ${subject})`;
-    const fn: Record<string, string> = { latin1: 'in_bytes', bytes: 'in_bytes', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
+    if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
+    const fn: Record<string, string> = { bytes: 'in_bytes', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
     return `${name}(${input})`;
@@ -678,7 +679,7 @@ function convertIn(model: Model, type: Type, input: string, subject: string): st
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type] ?? ''}(output, ${value})`;
   }
   if ('list' in type) return `out_list(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
@@ -758,7 +759,19 @@ fn in_text(input: &mut &[u8], subject: &str) -> Result<String, Fail> {
         .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
 }
 
-/// B-8: a Go string of the contract type latin1 is its bytes, one character each, and a []byte is its bytes.
+/// B-8, T-1 latin1: a Go string of UTF-8 whose runes are U+0000 to U+00FF, one byte each; a rune above U+00FF is kind
+/// invalid_text, as in every language.
+fn in_latin1(input: &mut &[u8], subject: &str) -> Result<Vec<u8>, Fail> {
+    let text = in_text(input, subject)?;
+    text.chars()
+        .map(|character| {
+            u8::try_from(u32::from(character))
+                .map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 }))
+        })
+        .collect()
+}
+
+/// A []byte is its bytes.
 fn in_bytes(input: &mut &[u8]) -> Result<Vec<u8>, Fail> {
     Ok(read_bytes(input)?.to_vec())
 }
@@ -820,6 +833,12 @@ fn out_bytes(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
 
 fn out_text(output: &mut Vec<u8>, value: impl AsRef<str>) {
     out_bytes(output, value.as_ref().as_bytes());
+}
+
+/// T-1 latin1: each byte leaves as the rune of the same code point, so a Go string reads it as UTF-8.
+fn out_latin1(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
+    let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
+    out_text(output, text);
 }
 
 fn out_bool(output: &mut Vec<u8>, value: impl Borrow<bool>) {
@@ -964,11 +983,61 @@ ${arms}
 `;
 }
 
+// The Rust helpers that the contract's functions use.
+function rustUsed(model: Model): string {
+  const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
+  const units = [...model.enums.map(enumRust), ...model.records.map((u) => recordRust(model, u))].join('\n');
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, functions);
+}
+
+// GW-4, T-2: the conversions that the test entry points of the feature codec-test send back unchanged, for the
+// round-trip tests: latin1 when the contract takes and gives it, map<text> when it takes and gives a map of text.
+interface Echoes {
+  latin1: boolean;
+  map: boolean;
+}
+
+function echoes(model: Model): Echoes {
+  const used = rustUsed(model);
+  const has = (...names: string[]): boolean => names.every((name) => new RegExp(`\\bfn ${name}\\b`).test(used));
+  return { latin1: has('in_latin1', 'out_latin1'), map: has('in_map', 'out_map', 'in_text', 'out_text') };
+}
+
+function echoRust(model: Model, name: string, read: string, write: string): string {
+  return `
+/// GW-4, T-2: a test entry point that gives back the value it takes, through the conversions of the binding.
+///
+/// # Safety
+///
+/// As for every function of this library.
+#[cfg(feature = "codec-test")]
+#[no_mangle]
+pub unsafe extern "C" fn ${prefix(model)}_echo_${name}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
+    // SAFETY: the caller's contract above.
+    let input = unsafe { arguments(args, len) };
+    let outcome = guard(move || {
+        let mut input = input;
+        let value = ${read};
+        finish_input(input)?;
+        let mut buffer = Vec::new();
+        ${write};
+        Ok(buffer)
+    });
+    // SAFETY: the caller's contract above.
+    unsafe { respond(result, outcome) }
+}
+`;
+}
+
 function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const units = [...model.enums.map(enumRust), ...model.records.map((u) => recordRust(model, u))].join('\n');
-  const used = usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, functions);
+  const used = rustUsed(model);
+  const echo = echoes(model);
+  const echoEntries = [
+    echo.latin1 ? echoRust(model, 'latin1', 'in_latin1(&mut input, "value")?', 'out_latin1(&mut buffer, &value)') : '',
+    echo.map ? echoRust(model, 'map', 'in_map(&mut input, "value", |input| in_text(input, "value"))?', 'out_map(&mut buffer, &value, |output, item| out_text(output, item))') : '',
+  ].join('');
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
@@ -1110,7 +1179,43 @@ pub unsafe extern "C" fn ${prefix(model)}_panic_test(args: *const u8, len: usize
     // SAFETY: the caller's contract above.
     unsafe { respond(result, outcome) }
 }
+${echoEntries}`;
+}
+
+// GW-4, T-2: the Go side of the codec test entry points, with the build tag polyspec_codec_test.
+function goBindingCodec(model: Model, echo: Echoes): string {
+  const buffer = `C.${prefix(model)}_buffer`;
+  const symbols = [...(echo.latin1 ? ['latin1'] : []), ...(echo.map ? ['map'] : [])].map((n) => `${prefix(model)}_echo_${n}`);
+  const wrap = (symbol: string, params: string, encode: string[], result: string, decode: string[]): string => `
+func ${goName(symbol.split('_').slice(-2))}(${params}) (${result}, error) {
+	var zero ${result}
+	enc := NewWriter()
+${encode.map((l) => `	${l}`).join('\n')}
+	out, err := call(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${symbol}(pointer, length, result)
+	}, enc.Done())
+	if err != nil {
+		return zero, err
+	}
+	dec := NewReader(out)
+${decode.map((l) => `	${l}`).join('\n')}
+	if err := dec.Finish(); err != nil {
+		return zero, err
+	}
+	return value, nil
+}
 `;
+  return `${goHeader()}
+
+//go:build polyspec_codec_test
+
+package binding
+
+/*
+${cDeclarations(model, symbols)}
+*/
+import "C"
+${echo.latin1 ? wrap(`${prefix(model)}_echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${prefix(model)}_echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}`;
 }
 
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate.
@@ -1131,5 +1236,10 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
+  const echo = echoes(model);
+  if (echo.latin1 || echo.map) {
+    files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));
+    files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model.contract, echo, goErrorTypes(model.contract).find(([c]) => c === 'value')?.[1] ?? ''));
+  }
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
 }

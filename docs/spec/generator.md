@@ -125,8 +125,10 @@ the design ids are those of the binding design.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
   type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
-  that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a string whose bytes are the characters, one each, so it
-  has no value to refuse; a string of the core leaves as its UTF-8 bytes. An enum value that is not one of the
+  that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a Go string of runes U+0000 to U+00FF, one per byte,
+  because Go reads a string as UTF-8: the C ABI takes it as UTF-8 and refuses a rune above U+00FF as kind
+  `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
+  the core leaves as its UTF-8 bytes. An enum value that is not one of the
   constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
   hold by the Go types and the compiler. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
   package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
@@ -146,16 +148,16 @@ the design ids are those of the binding design.
   returns.
 
 - **GN-18** WASM (P-5, B-9): the crate `polyspec-<repository>-wasm` is the tracked thin package `packages/ts/wasm`
-  (crate-type `cdylib`, wasm-binding 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
+  (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
   `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
-  `wasm-binding --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
+  `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
   `<library>_wasm.js` there. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
   whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
   exports `init()` (P-5), which loads the module once: a `file:` URL is read with `node:fs/promises` (Node), any other
   URL is fetched (a browser); the library classes, which it defines as the Node entry does, are handed to the module
   when it loads. The values are those of Node (T-7, B-2), a string with an unpaired surrogate is kind `invalid_text`
   (B-9, `JsString::is_valid_utf16`), and the ES module checks the count and names of the arguments (G-7). The
-  expansion of `wasm_binding` calls `Option::unwrap_or_default`, so the exports are in one module that holds that one
+  expansion of `wasm_bindgen` calls `Option::unwrap_or_default`, so the exports are in one module that holds that one
   allow. The standard library of `wasm32-unknown-unknown` is built with `panic=abort`, so `catch_unwind` catches no
   panic there: a panic traps and the instance runs no further call; the generated B-7 test, which runs last, fails on
   such a build, which is the known gap of B-7 for WASM (P-6). A call before `init()` has finished fails with the
@@ -179,8 +181,12 @@ the design ids are those of the binding design.
   contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
-  `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways. A case's latin1
-  value is a Go string of one byte per character.
+  `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
+  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. With the build tag
+  `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
+  (when the contract takes and gives latin1) and a `map<text>` (when it takes and gives a map of text) through the
+  conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to U+00FF and the order of a map come
+  back the same and that U+0100 is refused. A case's latin1 value is a Go string of its runes.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
   `node --test` against the subpath `./wasm` of the installed package after `init()`, the B-7 test last.
 
