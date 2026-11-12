@@ -250,9 +250,13 @@ test('WASM: the module, its ES entry and tests are generated, and the npm packag
   for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /#\[allow\(clippy::disallowed_methods, reason = "GN-18: the wasm_bindgen expansion"\)\]\nmod exports \{/);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /^export function init\(\) \{$/m);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function init\(\): Promise<void>;/);
-  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /from '@polyspec\/sample\/wasm';\n\nawait pkg\.init\(\);/);
+  // GW-5: the import loads the module; there is no init.
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /^await load\(\{ module_or_path: await source \}\);$/m);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs') + text(out, 'packages/ts/wasm/generated/index.d.ts'), /\binit\b/);
+  // GW-7: a trap is kind internal and breaks the instance.
+  assert.match(text(out, 'packages/ts/wasm/generated/state.mjs'), /if \(!\(error instanceof WebAssembly\.RuntimeError\)\) throw error;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return enter\(SampleInternalError, \(\) => glue\./);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /if \(state\.broken\(\)\) assert\.throws\(later, internal\);/);
   const manifest = JSON.parse(String(trackedPackages(contract, '0.0.0').get('packages/ts/package.json')));
   assert.deepEqual(manifest.exports['./wasm'], { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' });
   assert.deepEqual(Object.keys(manifest.exports['.']), ['browser', 'types', 'import', 'require']);

@@ -153,15 +153,18 @@ the design ids are those of the binding design.
   `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
   `<library>_wasm.js` there. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
   whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
-  exports `init()` (P-5), which loads the module once: a `file:` URL is read with `node:fs/promises` (Node), any other
-  URL is fetched (a browser); the library classes, which it defines as the Node entry does, are handed to the module
+  loads the WebAssembly module when it is imported, with a top-level await (GW-5), so no export can run before the
+  module is ready and there is no `init()`: a `file:` URL is read with `node:fs/promises` (Node), any other URL is
+  fetched (a browser); the library classes, which it defines as the Node entry does, are handed to the module
   when it loads. The values are those of Node (T-7, B-2), a string with an unpaired surrogate is kind `invalid_text`
   (B-9, `JsString::is_valid_utf16`), and the ES module checks the count and names of the arguments (G-7). The
   expansion of `wasm_bindgen` calls `Option::unwrap_or_default`, so the exports are in one module that holds that one
   allow. The standard library of `wasm32-unknown-unknown` is built with `panic=abort`, so `catch_unwind` catches no
-  panic there: a panic traps and the instance runs no further call; the generated B-7 test, which runs last, fails on
-  such a build, which is the known gap of B-7 for WASM (P-6). A call before `init()` has finished fails with the
-  glue's `TypeError`, which has no kind.
+  panic there and a panic traps (GW-7): every export runs its call through `state.mjs`, a module that the package does
+  not export, which turns a `WebAssembly.RuntimeError` into kind `internal` of the internal class and marks the
+  instance broken; every later call fails with the same kind. The module is not instantiated again, because the state
+  that earlier handles point to would be gone. Where the module unwinds, `catch_unwind` gives kind `internal` as in
+  every binding (B-7).
 
 ## Generated tests (G-5)
 
@@ -188,7 +191,9 @@ the design ids are those of the binding design.
   conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to U+00FF and the order of a map come
   back the same and that U+0100 is refused. A case's latin1 value is a Go string of its runes.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
-  `node --test` against the subpath `./wasm` of the installed package after `init()`, the B-7 test last.
+  `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
+  point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
+  trapped and that works when the module unwinds (GW-7).
 
 ## End-to-end check
 

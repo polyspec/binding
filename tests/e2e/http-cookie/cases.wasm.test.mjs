@@ -5,8 +5,6 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as cookies from '@polyspec/http-cookie/wasm';
 
-await cookies.init();
-
 const cases = JSON.parse(readFileSync(process.env.CASES, 'utf8'));
 
 test('parse', () => {

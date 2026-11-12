@@ -123,14 +123,16 @@
   `packages/ts/wasm`(crate-type `cdylib`, wasm-bindgen 0.2.130, js-sys 0.3.107)이고, `packages/ts/wasm/generated`가 그 소스,
   ES 모듈 `index.mjs`, 선언, 시험을 담는다. 같은 릴리스의 `wasm-bindgen --target web`이 모듈 `<library>_wasm_bg.wasm`과
   glue `<library>_wasm.js`를 그곳에 쓴다. npm manifest는 WASM 진입점을 subpath `./wasm`으로 늘 내보내고, conditions가
-  `{node: napi, browser: wasm}`인 entry에서는 그 entry의 조건 `browser`로도 내보낸다. ES 모듈은 `init()`(P-5)을 내보내며
-  이것이 모듈을 한 번 읽는다: `file:` URL은 `node:fs/promises`로 읽고(Node), 그 밖의 URL은 fetch한다(브라우저). Node 진입점과
+  `{node: napi, browser: wasm}`인 entry에서는 그 entry의 조건 `browser`로도 내보낸다. ES 모듈은 import될 때 top-level
+  await로 WebAssembly 모듈을 읽으므로(GW-5) 모듈이 준비되기 전에 실행되는 export가 없고 `init()`도 없다: `file:` URL은 `node:fs/promises`로 읽고(Node), 그 밖의 URL은 fetch한다(브라우저). Node 진입점과
   같이 정의한 라이브러리 클래스는 모듈을 읽을 때 넘긴다. 값은 Node의 것이고(T-7, B-2), 짝 없는 surrogate가 든 문자열은 kind
   `invalid_text`이며(B-9, `JsString::is_valid_utf16`), ES 모듈이 인자의 개수와 이름을 검사한다(G-7). `wasm_bindgen` 전개가
   `Option::unwrap_or_default`를 부르므로 export는 그 allow 하나를 가진 모듈 하나에 둔다. `wasm32-unknown-unknown`의 표준
-  라이브러리는 `panic=abort`로 빌드되므로 거기서 `catch_unwind`는 panic을 잡지 못한다: panic은 trap이 되고 그 인스턴스는 더
-  호출을 실행하지 못한다. 마지막에 실행하는 생성 B-7 시험은 그런 빌드에서 실패하며, 이것이 WASM에서 B-7의 알려진 빈틈이다
-  (P-6). `init()`이 끝나기 전의 호출은 kind가 없는 glue의 `TypeError`로 실패한다.
+  라이브러리는 `panic=abort`로 빌드되므로 거기서 `catch_unwind`는 panic을 잡지 못하고 panic은 trap이 된다(GW-7): 모든 export는
+  패키지가 내보내지 않는 모듈 `state.mjs`를 거쳐 호출하며, 이 모듈은 `WebAssembly.RuntimeError`를 internal 클래스의 kind
+  `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. 모듈을 다시 인스턴스화하지
+  않는다. 그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
+  `internal`을 낸다(B-7).
 
 ## 생성 시험(G-5)
 
@@ -153,7 +155,8 @@
   때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는 U+0000~U+00FF와 map의 순서가 그대로 돌아오고
   U+0100이 거부되는지 확인한다. case의 latin1 값은 그 rune의 Go 문자열이다.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
-  `./wasm`에 대해 `init()` 뒤에 `node --test`로 실행하며, B-7 시험이 마지막이다.
+  `./wasm`에 대해 `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
+  `internal`을 기대하고, 그 뒤의 호출은 인스턴스가 trap했으면 kind `internal`이고 모듈이 unwind하면 성공해야 한다(GW-7).
 
 ## 끝에서 끝까지 확인
 

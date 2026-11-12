@@ -22,6 +22,13 @@ export function wasmTests(model: Model): string {
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
+  // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
+  // trapped, a call that works when the module unwinds.
+  const [firstFn] = model.functions;
+  const laterCall = firstFn === undefined ? '' : `
+  const later = () => pkg.${langName('wasm', firstFn.member.name, 'callable')}(${callArgs(model, ctx, firstFn, (arg) => placeholder(model, ctx, arg.type))});
+  if (state.broken()) assert.throws(later, internal);
+  else assert.doesNotThrow(() => { try { later(); } catch (error) { if (internal(error)) throw error; } });`;
   for (const fn of model.functions) {
     const name = langName('wasm', fn.member.name, 'callable');
     const call = (override: Map<unknown, string>): string =>
@@ -78,14 +85,14 @@ test('G-7: ${name} counts and names its arguments', () => {
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as pkg from ${jsString(entry)};
-
-await pkg.init();
 ${out.join('\n')}
 
-// Last: a module built with panic=abort traps here and cannot run another call (GN-18).
-test('B-7: a panic is kind internal', async () => {
+// Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.
+test('B-7: a panic is kind internal, and a trap breaks the instance for every later call', async () => {
   const glue = await import(new URL('./${wasmGlue(model)}.js', import.meta.resolve(${jsString(entry)})).href);
-  assert.throws(() => glue.__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
+  const state = await import(new URL('./state.mjs', import.meta.resolve(${jsString(entry)})).href);
+  const internal = (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal';
+  assert.throws(() => state.enter(pkg.${cls('internal')}, () => glue.__panicTest()), internal);${laterCall}
 });
 `;
 }

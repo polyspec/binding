@@ -1,5 +1,5 @@
 // The browser and JavaScript binding (wasm-bindgen): the Rust crate that wasm-bindgen turns into a WebAssembly module
-// and its JavaScript glue, the ES module around it (the library classes, init and the argument checks of G-7), the
+// and its JavaScript glue, the ES module around it (the library classes, the loading of the module at import and the argument checks of G-7), the
 // declarations and the generated tests (G-5). The npm package of Node carries it: the subpath ./wasm always, and an
 // entry with the conditions of P-5 chooses it in the browser.
 
@@ -325,7 +325,7 @@ struct Fail {
 }
 
 thread_local! {
-    /// B-4: the library classes, which the JavaScript entry hands over when init loads the module, in the order of the
+    /// B-4: the library classes, which the JavaScript entry hands over when it loads the module, in the order of the
     /// contract. A WebAssembly module runs on the thread that loaded it.
     static CLASSES: RefCell<Vec<Function>> = const { RefCell::new(Vec::new()) };
 }
@@ -446,7 +446,7 @@ export class ${c.name} extends globalThis.${jsBase(c.category)} {
       }
       return typeof p.type === 'object' && 'list' in p.type ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(`  return glue.${name}(${passed.join(', ')});`);
+    lines.push(`  return enter(${model.classes.find((c) => c.category === 'internal')?.name ?? ''}, () => glue.${name}(${passed.join(', ')}));`);
     return `
 export function ${name}(...args) {
 ${lines.join('\n')}
@@ -455,22 +455,16 @@ ${lines.join('\n')}
   const constants = model.constants.map((c) => `export const ${langName('wasm', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   return `${header('//')}
 import load, * as glue from './${glue}.js';
+import { enter } from './state.mjs';
 ${classes}
 
-let ready;
-
-// P-5: init loads the WebAssembly module once; every call of the module waits for it. A file: URL is read from the
-// file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
-export function init() {
-  ready ??= (async () => {
-    const url = new URL('./${glue}_bg.wasm', import.meta.url);
-    const source = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
-    await load({ module_or_path: await source });
-    // B-4: the module throws instances of these classes; it keeps them from here on.
-    glue.__register([${model.classes.map((c) => c.name).join(', ')}]);
-  })();
-  return ready;
-}
+// GW-5: the import loads the WebAssembly module (top-level await), so no export runs before it is ready. A file: URL
+// is read from the file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
+const url = new URL('./${glue}_bg.wasm', import.meta.url);
+const source = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
+await load({ module_or_path: await source });
+// B-4: the module throws instances of these classes; it keeps them from here on.
+glue.__register([${model.classes.map((c) => c.name).join(', ')}]);
 
 // T-7: a list parameter takes any iterable but a string; the module judges anything else.
 function toList(value) {
@@ -497,6 +491,32 @@ ${constants}
 `;
 }
 
+// GW-7: the state of the instance, a module of its own that the package does not export, so the generated B-7 test can
+// run the panic entry point under the same rule. A trap (WebAssembly.RuntimeError: a panic with panic=abort, the
+// default of wasm32-unknown-unknown) leaves the instance unusable: it becomes kind internal, the instance is marked
+// broken, and every later call fails with the same kind. The module is not instantiated again, because the state that
+// earlier handles point to would be gone.
+function stateMjs(): string {
+  return `${header('//')}
+let trapped = null;
+
+// Whether a trap broke the instance.
+export const broken = () => trapped !== null;
+
+// Runs a call of the module; Internal is the library class of category internal.
+export function enter(Internal, call) {
+  if (trapped !== null) throw new Internal(trapped, 'internal', null, null);
+  try {
+    return call();
+  } catch (error) {
+    if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+    trapped = \`internal error: the WebAssembly instance trapped and runs no further call: \${error.message}\`;
+    throw new Internal(trapped, 'internal', null, null);
+  }
+}
+`;
+}
+
 function indexDts(model: Model): string {
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
@@ -519,8 +539,6 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('wasm', f.name, 'variable')
   }).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   return `${header('//')}
-/** P-5: loads the WebAssembly module; every other export needs it to have finished. */
-export declare function init(): Promise<void>;
 ${classes}
 ${enums}
 ${records}
@@ -540,5 +558,6 @@ export function wasm(model: Model, files: Files): void {
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));
   files.set(`${ROOT}/index.d.ts`, indexDts(model));
+  files.set(`${ROOT}/state.mjs`, stateMjs());
   files.set(`${ROOT}/tests/generated.test.mjs`, wasmTests(model));
 }
