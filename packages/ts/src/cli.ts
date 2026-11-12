@@ -1,21 +1,23 @@
 #!/usr/bin/env node
-// bindgen check <interface.json> | generate [--root <repository>] [--out <directory>]
-//
-// check: the contract check of a contract (I-1, I-2), with the contracts of the libraries it names.
-// generate: the checked contract's bindings, written into the directories that bindgen owns (L-1). --out writes the
-// same files under another directory, for the comparison of I-5.
+// bindgen check <interface.json>
+//   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
+//   tracked binding packages with what `bindgen scaffold` writes (L-2).
+// bindgen scaffold [--root <repository>]
+//   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
+// bindgen generate [--root <repository>] [--out <directory>]
+//   Writes the generated sources into the directories that bindgen owns (L-1). --out writes the same files under another
+//   directory, for the comparison of I-5.
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
 import { GENERATED_DIRS, generate } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
+import { trackedPackages } from './generate/packages.ts';
 
-// The libraries that a contract names: in its types, its implements and recognize references, its value type owners
-// and its error kinds.
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
   const own = (contract as { library?: unknown }).library;
@@ -56,16 +58,15 @@ function usage(message: string): never {
   process.exit(2);
 }
 
+
 const [command, ...rest] = process.argv.slice(2);
-let contractPath: string;
-let root: string;
+if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
+let contractPath: string;
 if (command === 'check') {
-  // bindgen check <interface.json>: the contract check, with the contracts of the libraries it names (T-3, E-1b).
   const [path, ...extra] = rest;
   if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
   contractPath = resolve(path);
-  root = dirname(contractPath);
 } else {
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
@@ -73,8 +74,7 @@ if (command === 'check') {
     if (key === undefined || value === undefined || !['--root', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
     options.set(key, value);
   }
-  root = resolve(options.get('--root') ?? '.');
-  contractPath = join(root, 'packages/rust/interface.json');
+  contractPath = join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 const findings = checkContract(contract, { dependencies: dependencies(contract, dirname(contractPath)) });
@@ -82,24 +82,47 @@ if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
 }
-if (command === 'check') process.exit(0);
-if (command !== 'generate') usage(`unknown command ${command ?? ''}`);
-
 const checked = contract as Contract;
-// The version and the library name of the core crate from its manifest (T-3). The manifest is read as TOML rather than
-// through cargo metadata, because the workspace names the generated members, which do not exist before generation.
+// The repository root: the contract is packages/rust/interface.json of the core crate (I-1).
+const root = resolve(dirname(contractPath), ...checked.core.path.split('/').map(() => '..'));
+
+// The version and the library name of the core crate from its manifest (T-3), read as TOML: a version inherited from the
+// workspace (version.workspace = true) is the root manifest's workspace.package.version.
 const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'), 'utf8')) as {
   package?: { name?: string; version?: string | { workspace?: boolean } };
   lib?: { name?: string };
 };
 const core = manifest.package;
 let version = core?.version;
-// A version inherited from the workspace (version.workspace = true) is the repository root's workspace.package.version.
 if (typeof version === 'object' && version.workspace === true) {
   const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string } } };
   version = workspace.workspace?.package?.version;
 }
 if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
+const tracked = trackedPackages(checked, version);
+
+if (command === 'check') {
+  // L-2: each tracked file of the binding packages is what bindgen scaffold writes.
+  let differs = false;
+  for (const [path, text] of tracked) {
+    const full = join(root, path);
+    const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;
+    if (found !== text) {
+      differs = true;
+      process.stderr.write(`${full}: CK-19 ${found === undefined ? 'is missing' : 'differs from what bindgen scaffold writes'} (L-2)\n`);
+    }
+  }
+  process.exit(differs ? 1 : 0);
+}
+
+if (command === 'scaffold') {
+  for (const [path, text] of tracked) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  process.exit(0);
+}
+
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
 const caseFiles = new Map<string, unknown>();
 for (const kase of checked.cases) {
@@ -113,11 +136,14 @@ try {
   if (error instanceof Unsupported) usage(`not generated (G-4): ${error.message}`);
   throw error;
 }
-
 const out = resolve(options.get('--out') ?? root);
-// Each owned directory is written whole into a staging directory and then renamed into place, so a reader never sees a
-// part of it and no file of an earlier generation stays.
+for (const path of files.keys()) {
+  if (!GENERATED_DIRS.some((dir) => path.startsWith(`${dir}/`))) usage(`internal: ${path} is outside the generated directories`);
+}
+// Each owned directory of a target is written whole into a staging directory and then renamed into place, so a reader
+// never sees a part of it and no file of an earlier generation stays.
 for (const dir of GENERATED_DIRS) {
+  if (![...files.keys()].some((path) => path.startsWith(`${dir}/`))) continue;
   const staging = join(out, `${dir}.staging`);
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
@@ -129,7 +155,4 @@ for (const dir of GENERATED_DIRS) {
   }
   rmSync(join(out, dir), { recursive: true, force: true });
   renameSync(staging, join(out, dir));
-}
-for (const path of files.keys()) {
-  if (!GENERATED_DIRS.some((dir) => path.startsWith(`${dir}/`))) usage(`internal: ${path} is outside the generated directories`);
 }

@@ -80,6 +80,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `Polyspec\<Library의 PascalCase>`, PyPI `polyspec-<library>`, Python 루트 `polyspec.<library의 - 를 _로>`, npm
   `@polyspec/<library>`.
 
+- **CK-19** 추적하는 바인딩 package(L-2): `bindgen check`는 바인딩 package의 추적 파일(docs/spec/generator.md
+  GN-3a)을 `bindgen scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다.
+
 ## bindgen의 표
 
 이 닫힌 집합은 bindgen의 것이다. Rust 이름은 `bindgen_core`의 것이다(`docs/core-api.md`).

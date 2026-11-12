@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
-import { GENERATED_LINTS, type Files, header, jsString, rustString, usedHelpers } from './text.ts';
+import { type Files, header, jsString, rustString, usedHelpers } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -267,23 +267,24 @@ function functionRust(model: Model, fn: Fn): string {
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   return `
 #[napi(js_name = ${rustString(jsName)})]
-pub fn ${rustField(fn.member.name)}<'env>(env: &'env Env, ${params}) -> Result<Unknown<'env>, Fail> {
+pub fn ${rustField(fn.member.name)}<'env>(env: &'env Env, ${params}) -> napi::Result<Unknown<'env>> {
     guard(|| {
 ${lines.join('\n')}
     })
+    .map_err(|fail| throw(env, fail))
 }
 `;
 }
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.className)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
   return `
 /// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: bindgen reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class = match error {
+    let class: usize = match error {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -292,7 +293,7 @@ ${arms}
 }
 
 function libRust(model: Model): string {
-  const classOf = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
   const enums = model.enums.map(enumRust).join('');
@@ -302,50 +303,73 @@ function libRust(model: Model): string {
   if (/\.(is_array|to_unknown)\(/.test(used)) napiTypes.push('JsValue');
   if (/\.get_named_property/.test(used)) napiTypes.push('JsObjectValue');
   return `${header('//')}
-//! The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
-//! checks the count and the names of the arguments (G-7) and turns a failure into its library class (B-4).
-#![allow(clippy::too_many_arguments, reason = "T-4: a record parameter is one argument per field")]
-#![allow(unsafe_code, reason = "napi: a value is cast to its type after its type was checked")]
+// The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
+// checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue').join(', ')}};
+use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Object' && t !== 'JsObjectValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
 
-/// A failure on its way to the JavaScript entry, whose code names the library class, the kind, the status and the
-/// errno; the entry throws an instance of that class with the message (B-4).
-type Fail = napi::Error<String>;
+/// A failure on its way to the caller: the library class (an index of CLASSES), the message, the kind, the status and the
+/// errno (B-4). It becomes an instance of the class where the call returns, which has the env.
+struct Fail {
+    class: usize,
+    message: String,
+    kind: &'static str,
+    status: Option<u16>,
+    errno: Option<i32>,
+}
 
-fn library_error(class: &str, message: String, kind: &str, status: Option<u16>, errno: Option<i32>) -> Fail {
-    let status = match status {
-        Some(status) => status.to_string(),
-        None => String::new(),
+/// The arguments of the constructor of a library class: message, kind, status, errno.
+type ClassArgs = FnArgs<(String, String, Option<u32>, Option<i32>)>;
+
+/// B-4: the library classes, which the JavaScript entry hands over when the module loads, in the order of the contract.
+static CLASSES: OnceLock<Vec<FunctionRef<ClassArgs, ()>>> = OnceLock::new();
+
+/// B-4: the module keeps a reference to each library class when it loads; a missing class fails the load.
+#[napi(js_name = "__register")]
+pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
+    if classes.len() != ${model.classes.length} {
+        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length} library classes, {} given", classes.len())));
+    }
+    let references = classes.iter().map(Function::create_ref).collect::<napi::Result<Vec<_>>>()?;
+    CLASSES.set(references).map_err(|_registered| napi::Error::from_reason("B-4: the library classes are registered once"))
+}
+
+/// The instance of the library class of a failure, as the error that the call throws (B-4).
+fn throw(env: &Env, fail: Fail) -> napi::Error {
+    let Some(class) = CLASSES.get().and_then(|classes| classes.get(fail.class)) else {
+        return napi::Error::from_reason(format!("B-4: the library classes are not registered: {}", fail.message));
     };
-    let errno = match errno {
-        Some(errno) => errno.to_string(),
-        None => String::new(),
-    };
-    let code = format!("polyspec\\u{0}{class}\\u{0}{kind}\\u{0}{status}\\u{0}{errno}");
-    napi::Error::new(code, message)
+    let args: ClassArgs = FnArgs::from((fail.message, String::from(fail.kind), fail.status.map(u32::from), fail.errno));
+    match class.borrow_back(env).and_then(|class| class.new_instance(args)) {
+        Ok(error) => napi::Error::from(error),
+        Err(error) => error,
+    }
+}
+
+fn library_error(class: usize, message: String, kind: &'static str, status: Option<u16>, errno: Option<i32>) -> Fail {
+    Fail { class, message, kind, status, errno }
 }
 
 /// E-1a: an error that the binding raises itself, in the class of its fixed category.
 fn binding_error(error: BindingError) -> Fail {
-    let class = match error.category() {
-        Category::Value => ${rustString(classOf('value'))},
-        Category::Type => ${rustString(classOf('type'))},
-        Category::Io => ${rustString(classOf('io'))},
-        Category::Store => ${rustString(classOf('store'))},
-        Category::Busy => ${rustString(classOf('busy'))},
-        Category::Internal => ${rustString(classOf('internal'))},
+    let class: usize = match error.category() {
+        Category::Value => ${classIndex('value')},
+        Category::Type => ${classIndex('type')},
+        Category::Io => ${classIndex('io')},
+        Category::Store => ${classIndex('store')},
+        Category::Busy => ${classIndex('busy')},
+        Category::Internal => ${classIndex('internal')},
     };
     library_error(class, error.to_string(), error.kind(), error.status(), error.errno())
 }
-
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
 fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
@@ -365,8 +389,8 @@ ${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
-pub fn panic_test() -> Result<(), Fail> {
-    guard(|| panic!("panic-test"))
+pub fn panic_test(env: &Env) -> napi::Result<()> {
+    guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
 `;
 }
@@ -414,7 +438,7 @@ class ${c.name} extends globalThis.${nodeBase(c.category)} {
       }
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(`  return call(() => addon.${name}(${passed.join(', ')}));`);
+    lines.push(`  return addon.${name}(${passed.join(', ')});`);
     return `
 function ${name}(...args) {
 ${lines.join('\n')}
@@ -432,20 +456,9 @@ ${lines.join('\n')}
 const addon = require(\`./${base}.\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}.node\`);
 ${classes}
 
-const classes = { ${model.classes.map((c) => c.name).join(', ')} };
 
-// B-4: a failure of the addon carries its library class, kind, status and errno in its code.
-function call(body) {
-  try {
-    return body();
-  } catch (error) {
-    if (error instanceof Error && typeof error.code === 'string' && error.code.startsWith('polyspec\\u0000')) {
-      const [, name, kind, status, errno] = error.code.split('\\u0000');
-      throw new classes[name](error.message, kind, status === '' ? null : Number(status), errno === '' ? null : Number(errno));
-    }
-    throw error;
-  }
-}
+// B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
+addon.__register([${model.classes.map((c) => c.name).join(', ')}]);
 
 // T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
@@ -523,44 +536,10 @@ ${constants}
 
 export function node(model: Model, files: Files): void {
   const npm = model.contract.packages['node'] as { package: string };
-  files.set(`${ROOT}/Cargo.toml`, `${header('#')}
-[package]
-name = ${JSON.stringify(`polyspec-${model.contract.library}-node`)}
-version = ${JSON.stringify(model.version)}
-edition = "2021"
-rust-version = "1.99.0"
-publish = false
-
-[lib]
-crate-type = ["cdylib"]
-
-[features]
-panic-test = []
-
-[dependencies]
-${model.coreCrate} = { path = "../../rust" }
-polyspec-bindgen-core = { path = "../../rust/generated/bindgen-core" }
-napi = { version = "=3.16.2", default-features = false, features = ["napi8"] }
-napi-derive = "=3.7.1"
-
-[build-dependencies]
-napi-build = "=2.6.0"
-
-${GENERATED_LINTS}`);
-  files.set(`${ROOT}/build.rs`, `${header('//')}\n//! napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
-  files.set(`${ROOT}/src/lib.rs`, libRust(model));
+  files.set(`${ROOT}/build.rs`, `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
+  files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.cjs`, indexCjs(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));
   files.set(`${ROOT}/index.d.ts`, indexDts(model));
-  files.set(`${ROOT}/package.json`, `${JSON.stringify({
-    name: npm.package,
-    version: model.version,
-    description: `Generated by bindgen from the interface contract of ${model.contract.library}`,
-    license: 'MIT',
-    main: './index.cjs',
-    types: './index.d.ts',
-    exports: { '.': { types: './index.d.ts', import: './index.mjs', require: './index.cjs' } },
-    files: ['index.cjs', 'index.mjs', 'index.d.ts', `${addonBase(model)}.*.node`],
-  }, null, 2)}\n`);
   files.set(`${ROOT}/tests/generated.test.mjs`, nodeTests(model));
 }

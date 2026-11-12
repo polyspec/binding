@@ -9,7 +9,7 @@ the design ids are those of the bindgen design.
 
 ## Scope
 
-- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py310) and Node (napi 3.16.2) for
+- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
   functions units, record parameters, enums, constants and error classes. Any other item (a class, a callback, a value
   unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a dependency kind) is refused by name
   before anything is written (G-4, P-4); Go and WASM are not generated yet.
@@ -18,13 +18,21 @@ the design ids are those of the bindgen design.
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
   in two directories and compare the bytes.
 
-## Layout (L-1)
+## Layout (L-1, L-2)
 
-- **GN-3** bindgen owns four directories and writes each whole through a staging directory, so no file of an earlier
-  generation stays and a reader never sees a part: `packages/rust/generated/bindgen-core` (a copy of the crate
-  `bindgen_core` of this bindgen, so that the runtime support has the version of the generator that the lock pins),
-  `packages/php-ext/generated`, `packages/python/generated`, `packages/ts/generated`.
-- **GN-4** Each generated crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
+- **GN-3** bindgen owns three directories and writes each whole through a staging directory, so no file of an earlier
+  generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
+  `packages/ts/generated`. No source of bindgen is copied into the repository: the core and the binding crates depend on
+  `polyspec-bindgen-core`, a Git dependency of the bindgen repository before its first release, whose commit the
+  repository's `Cargo.lock` pins.
+- **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
+  entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
+  them), and the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
+  needs beside the crate. `bindgen scaffold` writes them and `bindgen check` compares them with what it would write
+  (CK-19), so a change of bindgen that changes them shows in the repository's diff. They depend only on the library
+  name, the targets and the core version. The core builds and tests without the generator; only the binding crates
+  need `make bindings`.
+- **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
   code holds only the helper functions it uses, because the lints deny dead code.
@@ -58,15 +66,14 @@ the design ids are those of the bindgen design.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
-  and `<root>` re-exports every public name (P-3). An enum is `class X(str, Enum)`, because `enum.StrEnum` is Python
-  3.11 and the package supports 3.10 (abi3-py310). A list parameter takes a list or a tuple. `polyspec` has no
+  and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
+  (abi3-py314). A list parameter takes a list or a tuple. `polyspec` has no
   `__init__.py` (P-1).
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
-  the names and the presence of the options record's members (G-7, T-4), turns any iterable but a string into an array
-  for a list parameter (T-7), and throws the library class of a failure. The addon carries the class, kind, status and
-  errno of a failure in the error's code (`polyspec\0<class>\0<kind>\0<status>\0<errno>`), because napi-rs cannot throw
-  an instance of a class that JavaScript defines; the entry throws an instance of that class with the same message. The
-  ESM entry re-exports the CommonJS one, so both share their classes.
+  the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
+  array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
+  reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
+  kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
 
 ## Generated tests (G-5)
 
@@ -81,7 +88,10 @@ the design ids are those of the bindgen design.
 
 ## End-to-end check
 
-- **GN-14** `node scripts/e2e.mts --repo <http-cookies> --work <directory> --phpunit <phpunit>` copies the committed tree
-  of http-cookies, gives the copy the layout that GN-4 and F-2 need and prints each such change, generates, lints the
-  workspace, builds and installs each package, and runs the generated tests and the contract cases
-  (`tests/e2e/http-cookies`) on unittest, `node --test` and PHPUnit.
+- **GN-14** `node scripts/e2e.mts --repo <http-cookies> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
+  copies the committed tree of http-cookies, makes the changes that the repository has not made yet and prints each
+  (the root workspace, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen scaffold`), runs
+  `bindgen check`, tests the core without the generator, generates, lints the workspace, builds and installs each
+  package, and runs the generated tests and the contract cases (`tests/e2e/http-cookies`) on unittest, `node --test`
+  and PHPUnit. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+  run's commands).

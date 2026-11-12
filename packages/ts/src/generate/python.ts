@@ -2,11 +2,12 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { GENERATED_LINTS, type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
 import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
+const PYTHON_PACKAGE = `${ROOT}/python`;
 
 export interface PythonLayout {
   module: string;
@@ -300,8 +301,7 @@ fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
   const register = model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`).join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
   return `${header('//')}
-//! The native module ${layout.module}._native of ${model.contract.library}.
-#![allow(clippy::too_many_arguments, reason = "T-4: a record parameter is one argument per field")]
+// The native module ${layout.module}._native of ${model.contract.library}.
 
 use bindgen_core::{BindingError, Category, Kinds, NumberType, TextCause};
 use pyo3::prelude::*;
@@ -417,15 +417,15 @@ function typesPy(model: Model): string {
     const members = (u.variants ?? []).map((v) => `    ${langName('python', v.name, 'constant')} = ${pyString(v.value)}`).join('\n');
     return `
 
-class ${langName('python', u.name, 'class')}(str, Enum):
-    """T-6: an enum whose members are their text values (enum.StrEnum is Python 3.11; the package supports 3.10)."""
+class ${langName('python', u.name, 'class')}(StrEnum):
+    """T-6."""
 
 ${members}`;
   }).join('');
   return `${pyHeader()}
 """The enums of ${model.contract.library} (T-6)."""
 
-from enum import Enum
+from enum import StrEnum
 
 __all__ = [${model.enums.map((u) => pyString(langName('python', u.name, 'class'))).join(', ')}]${enums}
 `;
@@ -487,45 +487,9 @@ __all__ = [${names.map(pyString).join(', ')}]
 
 export function python(model: Model, files: Files): void {
   const layout = pythonLayout(model);
-  const pkg = `${ROOT}/python/${layout.modulePath}`;
+  const pkg = `${PYTHON_PACKAGE}/${layout.modulePath}`;
   const crate = `${model.contract.library}-python`;
-  files.set(`${ROOT}/Cargo.toml`, `${header('#')}
-[package]
-name = ${JSON.stringify(`polyspec-${crate}`)}
-version = ${JSON.stringify(model.version)}
-edition = "2021"
-rust-version = "1.99.0"
-publish = false
-
-[lib]
-name = "_native"
-crate-type = ["cdylib"]
-
-[features]
-panic-test = []
-
-[dependencies]
-${model.coreCrate} = { path = "../../rust" }
-polyspec-bindgen-core = { path = "../../rust/generated/bindgen-core" }
-pyo3 = { version = "=0.30.1", features = ["abi3-py310", "extension-module"] }
-
-${GENERATED_LINTS}`);
-  const python = model.contract.packages['python'] as { package: string };
-  files.set(`${ROOT}/pyproject.toml`, `${header('#')}
-[build-system]
-requires = ["maturin>=1.16,<2"]
-build-backend = "maturin"
-
-[project]
-name = ${JSON.stringify(python.package)}
-version = ${JSON.stringify(model.version)}
-requires-python = ">=3.10"
-
-[tool.maturin]
-module-name = ${JSON.stringify(`${layout.module}._native`)}
-python-source = "python"
-`);
-  files.set(`${ROOT}/src/lib.rs`, libRust(model, layout));
+  files.set(`${ROOT}/lib.rs`, libRust(model, layout));
   files.set(`${pkg}/_errors.py`, errorsPy(model));
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));

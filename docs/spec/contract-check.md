@@ -95,6 +95,9 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   namespace `Polyspec\<Library in PascalCase>`, PyPI `polyspec-<library>`, the Python root `polyspec.<library with _>`,
   npm `@polyspec/<library>`.
 
+- **CK-19** Tracked binding packages (L-2): `bindgen check` compares each tracked file of the binding packages
+  (docs/spec/generator.md GN-3a) with what `bindgen scaffold` writes; a missing or different file is a finding.
+
 ## Tables of bindgen
 
 These closed sets are bindgen's own; the Rust names are those of `bindgen_core` (`docs/core-api.md`).

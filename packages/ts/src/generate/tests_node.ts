@@ -82,7 +82,7 @@ test('B-7: a panic is kind internal', () => {
   const entry = require.resolve(${jsString(npm)});
   const suffix = process.platform === 'linux' ? '-gnu' : '';
   const addon = require(join(dirname(entry), \`${addonBase(model)}.\${process.platform}-\${process.arch}\${suffix}.node\`));
-  assert.throws(() => addon.__panicTest(), (error) => typeof error.code === 'string' && error.code.split('\\u0000')[2] === 'internal');
+  assert.throws(() => addon.__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
 });
 
 test('the CommonJS and the ESM entries share their classes', () => {

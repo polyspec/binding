@@ -33,7 +33,7 @@ test('two generations in two directories give the same bytes and name neither di
     execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', second]);
     const a = files(first);
     const b = files(second);
-    assert.ok(a.size > 20, `only ${a.size} files were generated`);
+    assert.ok(a.size > 10, `only ${a.size} files were generated`);
     assert.deepEqual([...a.keys()], [...b.keys()]);
     for (const [path, bytes] of a) {
       assert.ok(bytes.equals(b.get(path) ?? Buffer.alloc(0)), `${path} differs`);
@@ -80,5 +80,21 @@ test('a contract that fails the check is not generated', () => {
     rmSync(root, { recursive: true, force: true });
   } finally {
     rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('check compares the tracked binding packages with what scaffold writes (L-2)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bindgen-f-'));
+  try {
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    const contract = join(root, 'packages/rust/interface.json');
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-19 is missing/);
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
+    const entry = join(root, 'packages/python/src/lib.rs');
+    execFileSync('sh', ['-c', `echo '// edited' >> ${entry}`]);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /lib\.rs: CK-19 differs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
