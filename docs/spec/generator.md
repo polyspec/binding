@@ -28,8 +28,11 @@ the design ids are those of the bindgen design.
   repository's `Cargo.lock` pins.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
   entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
-  them), and the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
-  needs beside the crate. `bindgen scaffold` writes them and `bindgen check` compares them with what it would write
+  them), the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
+  needs beside the crate, and a file of the crate that does not depend on the contract (the Node `build.rs`, which the
+  manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
+  `packages/<component>/rust` (L-1) has its binding packages and generated directories at
+  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`. `bindgen scaffold` writes them and `bindgen check` compares them with what it would write
   (CK-19), so a change of bindgen that changes them shows in the repository's diff. They depend only on the library
   name, the targets and the core version. The core builds and tests without the generator; only the binding crates
   need `make bindings`.

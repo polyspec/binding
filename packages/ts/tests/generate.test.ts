@@ -158,3 +158,28 @@ test('check refuses a bindgen_core of another version than the CLI (CK-20)', () 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the binding packages of a component core sit beside it (L-1)', () => {
+  const { contract, caseFiles } = load();
+  contract.core.path = 'packages/server/rust';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  const dirs = new Set([...out.keys()].map((path) => path.split('/').slice(0, 4).join('/')));
+  assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated']);
+  const root = mkdtempSync(join(tmpdir(), 'bindgen-h-'));
+  try {
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    execFileSync('mkdir', ['-p', join(root, 'packages/server')]);
+    execFileSync('mv', [join(root, 'packages/rust'), join(root, 'packages/server/rust')]);
+    const path = join(root, 'packages/server/rust/interface.json');
+    writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), core: { ...contract.core } }));
+    execFileSync(process.execPath, [cli, 'scaffold', '--contract', path]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    assert.ok(files(root).has('packages/server/ts/build.rs'));
+    assert.ok(files(root).has('packages/server/python/Cargo.toml'));
+    execFileSync(process.execPath, [cli, 'generate', '--contract', path]);
+    assert.ok(files(root).has('packages/server/php-ext/generated/lib.rs'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

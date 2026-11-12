@@ -563,7 +563,6 @@ ${constants}
 
 export function node(model: Model, files: Files): void {
   const npm = model.contract.packages['node'] as { package: string };
-  files.set(`${ROOT}/build.rs`, `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.cjs`, indexCjs(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));

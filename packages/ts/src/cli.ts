@@ -2,9 +2,9 @@
 // bindgen check <interface.json>
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
 //   tracked binding packages with what `bindgen scaffold` writes (L-2).
-// bindgen scaffold [--root <repository>]
+// bindgen scaffold [--root <repository> | --contract <interface.json>]
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
-// bindgen generate [--root <repository>] [--out <directory>]
+// bindgen generate [--root <repository> | --contract <interface.json>] [--out <directory>]
 //   Writes the generated sources into the directories that bindgen owns (L-1). --out writes the same files under another
 //   directory, for the comparison of I-5.
 
@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
-import { GENERATED_DIRS, generate } from './generate/index.ts';
+import { generate, generatedDirs } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { trackedPackages } from './generate/packages.ts';
 
@@ -54,7 +54,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
 }
 
 function usage(message: string): never {
-  process.stderr.write(`bindgen: ${message}\nusage: bindgen check <interface.json> | bindgen generate [--root <repository>] [--out <directory>]\n`);
+  process.stderr.write(`bindgen: ${message}\nusage: bindgen check <interface.json> | bindgen scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -71,10 +71,13 @@ if (command === 'check') {
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
     const value = rest[i + 1];
-    if (key === undefined || value === undefined || !['--root', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--root', '--contract', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
     options.set(key, value);
   }
-  contractPath = join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
+  // L-1: a core at packages/<component>/rust names its contract with --contract; --root finds packages/rust.
+  const given = options.get('--contract');
+  if (given !== undefined && options.has('--root')) usage('give --root or --contract, not both');
+  contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 const findings = checkContract(contract, { dependencies: dependencies(contract, dirname(contractPath)) });
@@ -148,12 +151,13 @@ try {
   throw error;
 }
 const out = resolve(options.get('--out') ?? root);
+const owned = generatedDirs(checked);
 for (const path of files.keys()) {
-  if (!GENERATED_DIRS.some((dir) => path.startsWith(`${dir}/`))) usage(`internal: ${path} is outside the generated directories`);
+  if (!owned.some((dir) => path.startsWith(`${dir}/`))) usage(`internal: ${path} is outside the generated directories`);
 }
 // Each owned directory of a target is written whole into a staging directory and then renamed into place, so a reader
 // never sees a part of it and no file of an earlier generation stays.
-for (const dir of GENERATED_DIRS) {
+for (const dir of owned) {
   if (![...files.keys()].some((path) => path.startsWith(`${dir}/`))) continue;
   const staging = join(out, `${dir}.staging`);
   rmSync(staging, { recursive: true, force: true });

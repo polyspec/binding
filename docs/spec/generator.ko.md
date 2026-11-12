@@ -24,7 +24,10 @@
   bindgen 레포의 Git 의존이고 레포의 `Cargo.lock`이 커밋을 고정한다.
 - **GN-3a** 바인딩마다 최종 자리에 추적하는 얇은 package가 있다: `packages/<python|ts|php-ext>/Cargo.toml`, crate의 속성을
   갖고 `generated/lib.rs`를 include하는 진입 `src/lib.rs`(include된 파일은 그 속성을 가질 수 없다), 언어의 manifest
-  (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다). `bindgen scaffold`가 이것을
+  (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
+  가리키는 Node `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). 코어가
+  `packages/<component>/rust`이면(L-1) 바인딩 package와 생성 디렉터리는 `packages/<component>/<python|ts|php-ext>`이고,
+  `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다. `bindgen scaffold`가 이것을
   쓰고 `bindgen check`가 쓸 내용과 비교한다(CK-19). 그래서 이것을 바꾸는 bindgen 변경은 레포의 diff에 드러난다. 이 파일들은
   라이브러리 이름, target, 코어 버전에만 기댄다. 코어는 생성기 없이 빌드와 시험이 되고, 바인딩 crate만 `make bindings`가
   필요하다.

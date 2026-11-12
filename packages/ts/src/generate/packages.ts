@@ -49,6 +49,21 @@ ${GENERATED_LINTS}`;
 
 const MANY = ['clippy::too_many_arguments', 'T-4: a record parameter is one argument per field'] as [string, string];
 
+// L-1: the binding packages sit beside their core: a core at packages/rust has packages/<python|ts|php-ext>, a core at
+// packages/<component>/rust has packages/<component>/<python|ts|php-ext>. The writers name the first layout; place maps
+// a path to the contract's.
+export function componentBase(contract: Contract): string {
+  const path = contract.core.path;
+  if (!/^packages(\/[a-z0-9][a-z0-9-]*)?\/rust$/.test(path)) throw new Error(`core.path ${path} is neither packages/rust nor packages/<component>/rust (L-1)`);
+  return path.slice(0, -'/rust'.length);
+}
+
+export const place = (contract: Contract, path: string): string => path.replace(/^packages\//, `${componentBase(contract)}/`);
+
+export function placed(contract: Contract, files: Files): Files {
+  return new Map([...files].map(([path, text]) => [place(contract, path), text]));
+}
+
 export const extensionName = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
 export function trackedPackages(contract: Contract, version: string): Files {
@@ -77,7 +92,8 @@ python-source = "generated/python"
     files.set('packages/ts/Cargo.toml', manifest(contract, version, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       'napi = { version = "=3.16.2", default-features = false, features = ["napi8"] }',
       'napi-derive = "=3.7.1"',
-    ], '\nbuild = "generated/build.rs"').replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
+    ], '\nbuild = "build.rs"').replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
+    files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'napi: a value is cast to its type after its type was checked']]));
     files.set('packages/ts/package.json', `${JSON.stringify({
       name: npm,
@@ -107,5 +123,5 @@ python-source = "generated/python"
       'php-ext': { 'extension-name': extensionName(contract) },
     }, null, 2)}\n`);
   }
-  return files;
+  return placed(contract, files);
 }

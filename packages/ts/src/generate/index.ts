@@ -6,6 +6,7 @@ import { buildModel } from './model.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
+import { place, placed } from './packages.ts';
 import type { Files } from './text.ts';
 
 export interface Inputs {
@@ -20,11 +21,8 @@ export interface Inputs {
 
 // The directories that bindgen owns and writes whole (L-1); the tracked thin packages around them are written by
 // `bindgen scaffold` (packages.ts).
-export const GENERATED_DIRS = [
-  'packages/php-ext/generated',
-  'packages/python/generated',
-  'packages/ts/generated',
-] as const;
+export const generatedDirs = (contract: Contract): string[] =>
+  ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated'].map((dir) => place(contract, dir));
 
 export function generate(inputs: Inputs): Files {
   const cases = new Map<string, unknown[]>();
@@ -40,5 +38,5 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('python')) python(model, files);
   if (targets.includes('node')) node(model, files);
   if (targets.includes('php')) php(model, files);
-  return new Map([...files.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

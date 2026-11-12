@@ -16,7 +16,11 @@
       "required": ["crate", "path"],
       "properties": {
         "crate": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
-        "path": { "$ref": "#/$defs/relativePath" }
+        "path": {
+          "description": "packages/rust, or packages/<component>/rust when the repository has several cores; the binding packages sit beside it (L-1).",
+          "type": "string",
+          "pattern": "^packages(/[a-z0-9][a-z0-9-]*)?/rust$"
+        }
       }
     },
     "targets": {

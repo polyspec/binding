@@ -38,6 +38,11 @@ test('the dependency fixture passes every check', () => {
 });
 
 describe('CK-1 schema', () => {
+  test('a core outside packages/rust and packages/<component>/rust (L-1)', () =>
+    fails('CK-1', '/core/path', (c) => { c.core.path = 'crates/core'; }));
+  test('a core of a component is accepted (L-1)', () => {
+    assert.deepEqual(findings((c) => { c.core.path = 'packages/server/rust'; }), []);
+  });
   test('a native declaration without a reason', () => {
     fails('CK-1', '/units/', (c) => {
       member(c, 'forms.parse').native = { node: { signature: 'parse<S>(body: S): Map<string, string>' } };
