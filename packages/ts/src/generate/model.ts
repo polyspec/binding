@@ -436,6 +436,28 @@ export const objectUnit = (model: Model, type: Type): ObjectClass | undefined =>
   return libraryOf(type) === undefined ? model.objects.find((o) => o.unit === unit) : undefined;
 };
 
+// T-5: whether a value of the class comes in from the language: a type of a parameter, of a callback's return or of a
+// field of a record in them names it. Only then does an emitter write the conversion in, which copies the value the
+// class holds, so a class that never comes in needs neither the conversion nor Clone.
+export function takesObject(model: Model, object: ObjectClass): boolean {
+  const seen = new Set<string>();
+  const names = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(names);
+    if (typeof value !== 'object' || value === null) return false;
+    const record = value as Record<string, unknown>;
+    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
+      if (record['unit'] === object.unit.id) return true;
+      const unit = model.contract.units.find((u) => u.id === record['unit']);
+      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+      seen.add(unit.id);
+      return names(unit.fields ?? []);
+    }
+    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+  };
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
+  return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
+}
+
 // The model as one language's emitter reads it: each error class and kind has the class name of that language (E-2).
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));

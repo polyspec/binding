@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -572,18 +572,18 @@ impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).jo
 `;
 }
 
-function objectOut(object: ObjectClass): string {
+function objectOut(model: Model, object: ObjectClass): string {
   const struct = `entry::Php${langName('php', object.unit.name, 'class')}`;
   const label = langName('php', object.unit.name, 'class');
   return `
-/// T-5: a value of the class ${label} is an instance of it; the core takes a copy of the value it holds.
+${takesObject(model, object) ? `/// T-5: a value of the class ${label} is an instance of it; the core takes a copy of the value it holds.
 fn in_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${object.unit.core_type ?? ''}, Fail> {
     match <&${struct} as FromZval>::from_zval(value) {
         Some(object) => Ok(object.inner.clone()),
         None => Err(type_error(subject, ${rustString(label)})),
     }
 }
-
+` : ''}
 fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
     ZendClassObject::new(${struct} { inner: value })
         .into_zval(false)
@@ -599,7 +599,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.enums.map((u) => enumRust(layout, u)),
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
-    ...model.objects.map(objectOut),
+    ...model.objects.map((object) => objectOut(model, object)),
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
   ].join('\n');

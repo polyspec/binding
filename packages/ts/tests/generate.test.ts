@@ -463,3 +463,16 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);
   assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
 });
+
+test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = new Map([['contracts/cases.json', { join: [] }]]);
+  const paths = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs'];
+  const taken = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const path of paths) assert.match(text(taken, path), /\nfn in_tag[(<]/, path);
+  const owner = sample.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => !['sample.join', 'sample.shout'].includes(m.id));
+  sample.cases = [];
+  const kept = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const path of paths) assert.doesNotMatch(text(kept, path), /\nfn in_tag[(<]/, path);
+});

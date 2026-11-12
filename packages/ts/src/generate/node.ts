@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -517,7 +517,7 @@ fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unkno
     ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: value }, env).map_err(internal)
 }
 
-/// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
+${takesObject(model, object) ? `/// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
 fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
     // SAFETY: napi unwraps the native object of an instance of the class and refuses any other value.
     match unsafe { <&class_${rustField(object.unit.name)}::${struct} as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
@@ -525,7 +525,7 @@ fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>,
         Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
     }
 }
-`;
+` : ''}`;
 }
 
 function coreErrorRust(model: Model): string {

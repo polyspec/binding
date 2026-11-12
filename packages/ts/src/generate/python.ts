@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { pythonTests } from './tests_python.ts';
 
@@ -398,14 +398,14 @@ fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResul
     Ok(Bound::new(py, ${struct} { inner: value })?.into_any())
 }
 
-/// T-5: a value of the class ${pyClass} is an instance of it; the core takes a copy of the value it holds.
+${takesObject(model, object) ? `/// T-5: a value of the class ${pyClass} is an instance of it; the core takes a copy of the value it holds.
 fn in_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
     match value.cast::<${struct}>() {
         Ok(object) => Ok(object.get().inner.clone()),
         Err(_other) => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
     }
 }
-`;
+` : ''}`;
 }
 
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
