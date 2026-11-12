@@ -12,5 +12,9 @@
   ["!csrf token", "php", "variable", "csrfToken"],
   ["max !http age", "node", "variable", "maxHttpAge"],
   ["max !http age", "python", "variable", "max_http_age"],
-  ["same site", "wasm", "class", "SameSite"]
+  ["same site", "wasm", "class", "SameSite"],
+  ["max !http age", "php", "constant", "MAX_HTTP_AGE"],
+  ["max !http age", "python", "constant", "MAX_HTTP_AGE"],
+  ["max !http age", "node", "constant", "MAX_HTTP_AGE"],
+  ["max !http age", "go", "constant", "MaxHTTPAge"]
 ]

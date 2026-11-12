@@ -2,7 +2,7 @@
 
 import type { Lang, Name, Word } from './contract.ts';
 
-export type Role = 'class' | 'callable' | 'variable';
+export type Role = 'class' | 'callable' | 'variable' | 'constant';
 
 const text = (word: Word): string => (typeof word === 'string' ? word : word.acronym);
 const isAcronym = (word: Word): boolean => typeof word !== 'string';
@@ -27,6 +27,8 @@ function snake(name: Name): string {
 // The name of a symbol in a language. role: 'class' for units, 'callable' for functions, methods and properties,
 // 'variable' for parameters and record fields.
 export function convert(name: Name, lang: Lang | 'rust', role: Role): string {
+  // A constant is UPPER_SNAKE_CASE in PHP (PSR-1), Python (PEP 8), JavaScript and Rust, and PascalCase in Go.
+  if (role === 'constant') return lang === 'go' ? pascal(name, true) : snake(name).toUpperCase();
   switch (lang) {
     case 'rust':
       return role === 'class' ? pascal(name, false) : snake(name);

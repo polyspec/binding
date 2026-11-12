@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import type { Lang, Word } from '../src/contract.ts';
 import { convert, type Role } from '../src/names.ts';
 
-const vectors = JSON.parse(readFileSync(new URL('./vectors/naming.json', import.meta.url), 'utf8')) as [string, Lang | 'rust', Role, string][];
+const vectors = JSON.parse(readFileSync(new URL('../../core/rust/tests/vectors/naming.json', import.meta.url), 'utf8')) as [string, Lang | 'rust', Role, string][];
 
 test('the shared naming vectors', () => {
   assert.ok(vectors.length >= 10);

@@ -1,5 +1,5 @@
 //! The name conversion of design N-2, public so that code which generates names at run time or in another generator
-//! (such as entity code) writes the same names as bindgen. The vectors of `packages/ts/tests/vectors/naming.json`
+//! (such as entity code) writes the same names as bindgen. The vectors of `packages/core/rust/tests/vectors/naming.json`
 //! are shared with bindgen's TypeScript conversion, so the two cannot differ unnoticed.
 
 /// One word of a name (N-1).
@@ -35,6 +35,8 @@ pub enum Role {
     Callable,
     /// A parameter or a record field.
     Variable,
+    /// A constant.
+    Constant,
 }
 
 fn text(word: Word<'_>) -> &str {
@@ -80,10 +82,13 @@ fn snake(name: &[Word<'_>]) -> String {
 
 /// The name of a symbol in a language (N-2): PHP and JavaScript camelCase and PascalCase classes with an acronym as
 /// one capitalised word; Python snake_case and PascalCase classes with acronyms in capitals (PEP 8); Go PascalCase
-/// with acronyms in capitals; Rust snake_case and PascalCase types.
+/// with acronyms in capitals; Rust snake_case and PascalCase types. A constant is UPPER_SNAKE_CASE (PSR-1, PEP 8) and
+/// PascalCase in Go.
 #[must_use]
 pub fn convert(name: &[Word<'_>], lang: Lang, role: Role) -> String {
     match (lang, role) {
+        (Lang::Go, Role::Constant) => pascal(name, true),
+        (Lang::Php | Lang::Python | Lang::Js | Lang::Rust, Role::Constant) => snake(name).to_uppercase(),
         (Lang::Go, Role::Class | Role::Callable | Role::Variable) => pascal(name, true),
         (Lang::Python, Role::Class) => pascal(name, true),
         (Lang::Python | Lang::Rust, Role::Callable | Role::Variable) => snake(name),
@@ -98,7 +103,7 @@ mod tests {
     use super::{convert, Lang, Role, Word};
 
     // The shared vectors: [[words], lang, role, expected], a word being "plain" or {"acronym": "x"}.
-    const VECTORS: &str = include_str!("../../../ts/tests/vectors/naming.json");
+    const VECTORS: &str = include_str!("../tests/vectors/naming.json");
 
     // A word written "!x" in the vectors is an acronym.
     fn words(text: &str) -> Vec<Word<'_>> {
@@ -127,6 +132,7 @@ mod tests {
                 "class" => Role::Class,
                 "callable" => Role::Callable,
                 "variable" => Role::Variable,
+                "constant" => Role::Constant,
                 other => return Err(format!("unknown role {other}")),
             };
             assert_eq!(&convert(&words(name), lang, role), expected, "{name} {lang:?} {role:?}");

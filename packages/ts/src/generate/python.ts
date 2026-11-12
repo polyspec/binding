@@ -1,0 +1,541 @@
+// The Python binding (PyO3, abi3-py310): the Rust crate, the Python package around its `_native` module, the type
+// stubs and the generated tests (G-5).
+
+import type { Type, Unit } from '../contract.ts';
+import { type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
+import { type Fn, type Model, byValue, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { pythonTests } from './tests_python.ts';
+
+const ROOT = 'packages/python/generated';
+
+export interface PythonLayout {
+  module: string;
+  modulePath: string;
+}
+
+export function pythonLayout(model: Model): PythonLayout {
+  const python = model.contract.packages['python'] as { module: string };
+  return { module: python.module, modulePath: python.module.replaceAll('.', '/') };
+}
+
+const moduleOf = (layout: PythonLayout, module: string): string => (module === '' ? layout.module : `${layout.module}.${module.replaceAll('/', '.')}`);
+
+// ---- Rust: conversion of one contract type ----
+
+const HELPERS = `
+fn type_error(subject: &str, expected: &str) -> BindingError {
+    BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: expected.to_owned() }
+}
+
+/// B-3: text is a str whose code points are Unicode scalar values.
+fn in_text(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<String> {
+    let Ok(text) = value.cast::<PyString>() else { return Err(binding_error(py, type_error(subject, "str"))) };
+    match text.to_str() {
+        Ok(text) => Ok(text.to_owned()),
+        Err(_unpaired) => Err(binding_error(py, BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::UnpairedSurrogate })),
+    }
+}
+
+/// B-3, T-1 latin1: a str whose characters are U+0000 to U+00FF, one byte each.
+fn in_latin1(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+    let Ok(text) = value.cast::<PyString>() else { return Err(binding_error(py, type_error(subject, "str"))) };
+    let above = || binding_error(py, BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 });
+    let Ok(text) = text.to_str() else { return Err(above()) };
+    text.chars().map(|character| u8::try_from(u32::from(character)).map_err(|_above| above())).collect()
+}
+
+/// T-7: bytes from the buffer protocol types bytes, bytearray and memoryview.
+fn in_bytes(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+    if value.cast::<PyString>().is_ok() {
+        return Err(binding_error(py, type_error(subject, "bytes")));
+    }
+    match value.extract::<Vec<u8>>() {
+        Ok(bytes) => Ok(bytes),
+        Err(_not_bytes) => Err(binding_error(py, type_error(subject, "bytes"))),
+    }
+}
+
+fn in_bool(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<bool> {
+    match value.cast_exact::<PyBool>() {
+        Ok(flag) => Ok(flag.is_true()),
+        Err(_not_bool) => Err(binding_error(py, type_error(subject, "bool"))),
+    }
+}
+
+/// B-2: an int that is not a bool, in the range of the contract type; any other value is kind invalid_number.
+fn in_uint(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
+    let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
+    if !value.is_exact_instance_of::<PyInt>() {
+        return Err(invalid());
+    }
+    value.extract::<u64>().map_err(|_out_of_range| invalid())
+}
+
+/// B-2: as in_uint for the contract type int.
+fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
+    let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
+    if !value.is_exact_instance_of::<PyInt>() {
+        return Err(invalid());
+    }
+    value.extract::<i64>().map_err(|_out_of_range| invalid())
+}
+
+/// B-2: a float; an int or a bool is not a float.
+fn in_float(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<f64> {
+    match value.cast_exact::<PyFloat>() {
+        Ok(float) => Ok(float.value()),
+        Err(_not_float) => Err(binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
+    }
+}
+
+/// T-2: a list or a tuple, each item converted.
+fn in_list<'py, T>(
+    py: Python<'py>,
+    value: &Bound<'py, PyAny>,
+    subject: &str,
+    item: impl Fn(Python<'py>, &Bound<'py, PyAny>) -> PyResult<T>,
+) -> PyResult<Vec<T>> {
+    if let Ok(list) = value.cast::<PyList>() {
+        return list.iter().map(|value| item(py, &value)).collect();
+    }
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        return tuple.iter().map(|value| item(py, &value)).collect();
+    }
+    Err(binding_error(py, type_error(subject, "list")))
+}
+
+/// T-2: None is the absence; any other value is converted.
+fn in_optional<'py, T>(value: &Bound<'py, PyAny>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+    item(value).map(Some)
+}
+
+fn out_text<'py>(py: Python<'py>, value: String) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyString::new(py, &value).into_any())
+}
+
+/// T-1 latin1: each byte is one character.
+fn out_latin1<'py>(py: Python<'py>, value: Vec<u8>) -> PyResult<Bound<'py, PyAny>> {
+    let text: String = value.iter().map(|byte| char::from(*byte)).collect();
+    Ok(PyString::new(py, &text).into_any())
+}
+
+fn out_bytes<'py>(py: Python<'py>, value: Vec<u8>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyBytes::new(py, &value).into_any())
+}
+
+fn out_bool<'py>(py: Python<'py>, value: bool) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyBool::new(py, value).to_owned().into_any())
+}
+
+fn out_uint<'py>(py: Python<'py>, value: u64) -> PyResult<Bound<'py, PyAny>> {
+    Ok(value.into_pyobject(py)?.into_any())
+}
+
+fn out_int<'py>(py: Python<'py>, value: i64) -> PyResult<Bound<'py, PyAny>> {
+    Ok(value.into_pyobject(py)?.into_any())
+}
+
+fn out_float<'py>(py: Python<'py>, value: f64) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyFloat::new(py, value).into_any())
+}
+
+fn out_none(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    Ok(py.None().into_bound(py))
+}
+
+fn out_list<'py, T>(py: Python<'py>, value: Vec<T>, item: impl Fn(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    let items = value.into_iter().map(|value| item(py, value)).collect::<PyResult<Vec<_>>>()?;
+    Ok(PyList::new(py, items)?.into_any())
+}
+
+fn out_tuple<'py>(py: Python<'py>, items: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyTuple::new(py, items)?.into_any())
+}
+
+fn out_optional<'py, T>(py: Python<'py>, value: Option<T>, item: impl FnOnce(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    match value {
+        Some(value) => item(py, value),
+        None => out_none(py),
+    }
+}
+`;
+
+function convertIn(model: Model, type: Type, value: string, subject: string): string {
+  if (typeof type === 'string') {
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', bytes: 'in_bytes', float: 'in_float' };
+    return `${fn[type]}(py, ${value}, ${subject})`;
+  }
+  if ('list' in type) return `in_list(py, ${value}, ${subject}, |py, item| ${convertIn(model, type.list, 'item', subject)})`;
+  if ('optional' in type) return `in_optional(${value}, |value| ${convertIn(model, type.optional, 'value', subject)})`;
+  const unit = unitOf(model, type);
+  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
+}
+
+function convertOut(model: Model, type: Type, value: string): string {
+  if (typeof type === 'string') {
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
+  }
+  if ('list' in type) return `out_list(py, ${value}, |py, item| ${convertOut(model, type.list, 'item')})`;
+  if ('optional' in type) return `out_optional(py, ${value}, |py, value| ${convertOut(model, type.optional, 'value')})`;
+  if ('tuple' in type) {
+    const parts = type.tuple.map((t, i) => convertOut(model, t, `${value}.${i}`));
+    return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
+  }
+  const unit = unitOf(model, type);
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
+  throw new Error(`no Python output conversion for ${JSON.stringify(type)}`);
+}
+
+function enumRust(model: Model, unit: Unit): string {
+  const name = rustField(unit.name);
+  const core = unit.core_type ?? '';
+  const pyClass = langName('python', unit.name, 'class');
+  const arms = (unit.variants ?? []).map((v) => `        ${rustString(v.value)} => Ok(${core}::${rustVariant(v.name)}),`).join('\n');
+  const outArms = (unit.variants ?? []).map((v) => `        ${core}::${rustVariant(v.name)} => ${rustString(langName('python', v.name, 'constant'))},`).join('\n');
+  return `
+/// T-6: a value of the enum ${pyClass}, which is an instance of the class itself; any other value is refused.
+fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    let class = types(py)?.getattr(${rustString(pyClass)})?;
+    if !value.is_instance(&class)? {
+        return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
+    }
+    let raw = value.getattr("value")?;
+    let text: String = in_text(py, &raw, subject)?;
+    match text.as_str() {
+${arms}
+        _ => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
+    }
+}
+
+fn out_${name}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
+    let member = match value {
+${outArms}
+    };
+    types(py)?.getattr(${rustString(pyClass)})?.getattr(member)
+}
+`;
+}
+
+const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
+
+function functionRust(model: Model, fn: Fn): string {
+  const name = langName('python', fn.member.name, 'callable');
+  const positional = fn.args.filter((a) => !a.field).map((a) => langName('python', a.name, 'variable'));
+  const keyword = fn.args.filter((a) => a.field).map((a) => langName('python', a.name, 'variable'));
+  const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
+  const all = [...positional, ...keyword];
+  const params = all.map((p) => `${p}: &Bound<'py, PyAny>`).join(', ');
+  const lines: string[] = [];
+  for (const arg of fn.args) {
+    const variable = langName('python', arg.name, 'variable');
+    lines.push(`        let ${variable}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(variable))}?;`);
+  }
+  const callArgs: string[] = [];
+  for (const parameter of fn.params) {
+    if (fn.record !== undefined && parameter === fn.record.param) {
+      const recordType = fn.record.unit.core_type ?? '';
+      const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), langName('python', f.name, 'variable'))).join(', ');
+      lines.push(`        let ${rustField(parameter.name)}: ${recordType} = ${recordType} { ${fields} };`);
+      callArgs.push(`&${rustField(parameter.name)}`);
+    } else {
+      const variable = langName('python', parameter.name, 'variable');
+      callArgs.push(byValue(model, parameter.type) ? variable : `&${variable}`);
+    }
+  }
+  const resultType = rustType(model, fn.returns);
+  const call = `${fn.corePath}(${callArgs.join(', ')})`;
+  if (fn.fallible) {
+    lines.push(`        let result: ${resultType} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(py, error)),\n        };`);
+  } else {
+    lines.push(`        let result: ${resultType} = ${call};`);
+  }
+  lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  return `
+#[pyfunction]
+#[pyo3(signature = (${signature}))]
+fn ${name}<'py>(py: Python<'py>, ${params}) -> PyResult<Bound<'py, PyAny>> {
+    guard(py, || {
+${lines.join('\n')}
+    })
+}
+`;
+}
+
+function coreErrorRust(model: Model): string {
+  if (model.coreError === undefined) return '';
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.className)},`).join('\n');
+  return `
+/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
+/// variant with or without data, which the generator does not see (I-2: bindgen reads no Rust source).
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
+    let class = match error {
+${arms}
+    };
+    library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+`;
+}
+
+function libRust(model: Model, layout: PythonLayout): string {
+  const classOf = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const constants = model.constants
+    .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
+    .join('\n');
+  const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
+  const enums = model.enums.map((u) => enumRust(model, u)).join('');
+  const typesFn = `
+fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
+    static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
+    TYPES.get_or_try_init(py, || py.import(${rustString(`${layout.module}._types`)}).map(Bound::unbind)).map(|module| module.bind(py))
+}
+`;
+  const used = usedHelpers(`${HELPERS}\n${typesFn}\n${enums}`, `${functions}${coreErrorRust(model)}`);
+  const pyTypes = ['PyBool', 'PyBytes', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`) || t === 'PyModule');
+  const register = model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`).join('\n');
+  const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
+  return `${header('//')}
+//! The native module ${layout.module}._native of ${model.contract.library}.
+#![allow(clippy::too_many_arguments, reason = "T-4: a record parameter is one argument per field")]
+
+use bindgen_core::{BindingError, Category, Kinds, NumberType, TextCause};
+use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{${pyTypes.join(', ')}};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
+// U-5: the constants of the contract are the constants of the core.
+${constants}
+
+static ERRORS: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
+
+fn errors(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
+    ERRORS.get_or_try_init(py, || py.import(${rustString(`${layout.module}._errors`)}).map(Bound::unbind)).map(|module| module.bind(py))
+}
+
+
+/// B-4: an error of the library, an instance of its class with its kind, status and errno.
+fn library_error(py: Python<'_>, class: &str, message: String, kind: &str, status: Option<u16>, errno: Option<i32>) -> PyErr {
+    match errors(py).and_then(|module| module.getattr(class)).and_then(|class| class.call1((message, kind, status, errno))) {
+        Ok(error) => PyErr::from_value(error),
+        Err(error) => error,
+    }
+}
+
+/// E-1a: an error that the binding raises itself, in the class of its fixed category.
+fn binding_error(py: Python<'_>, error: BindingError) -> PyErr {
+    let class = match error.category() {
+        Category::Value => ${rustString(classOf('value'))},
+        Category::Type => ${rustString(classOf('type'))},
+        Category::Io => ${rustString(classOf('io'))},
+        Category::Store => ${rustString(classOf('store'))},
+        Category::Busy => ${rustString(classOf('busy'))},
+        Category::Internal => ${rustString(classOf('internal'))},
+    };
+    library_error(py, class, error.to_string(), error.kind(), error.status(), error.errno())
+}
+${coreErrorRust(model)}
+/// B-7: a panic of the call reaches the caller as kind internal.
+fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    match catch_unwind(AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(payload) => {
+            let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
+                (Some(text), _) => (*text).to_owned(),
+                (None, Some(text)) => text.clone(),
+                (None, None) => String::from("a panic without a message"),
+            };
+            Err(binding_error(py, BindingError::Internal { detail }))
+        }
+    }
+}
+
+${used}${functions}
+/// B-7: the entry point of the generated panic test.
+#[cfg(feature = "panic-test")]
+#[pyfunction]
+fn _panic_test(py: Python<'_>) -> PyResult<()> {
+    guard(py, || panic!("panic-test"))
+}
+
+#[pymodule]
+fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    // B-4: the classes are found when the module loads; a missing one fails the import.
+${classChecks}
+${register}
+    #[cfg(feature = "panic-test")]
+    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;
+    Ok(())
+}
+`;
+}
+
+// ---- Python sources ----
+
+function pyType(model: Model, type: Type, input: boolean): string {
+  if (typeof type === 'string') {
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None' };
+    return map[type] ?? 'object';
+  }
+  if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
+  if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
+  if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
+  const unit = unitOf(model, type);
+  return unit === undefined ? 'object' : langName('python', unit.name, 'class');
+}
+
+function errorsPy(model: Model): string {
+  const classes = model.classes.map((c) => `
+
+class ${c.name}(builtins.${pythonBase(c.category)}):
+    """The errors of category ${c.category} (E-2): kind, status and errno are attributes (E-3)."""
+
+    def __init__(self, message: str, kind: str, status: int | None = None, errno: int | None = None) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.status = status
+        self.errno = errno`).join('');
+  return `${pyHeader()}
+"""The error classes of ${model.contract.library} (E-2, B-4)."""
+
+import builtins
+
+__all__ = [${model.classes.map((c) => pyString(c.name)).join(', ')}]${classes}
+`;
+}
+
+const pythonBase = (category: string): string =>
+  ({ value: 'ValueError', type: 'TypeError', io: 'OSError', store: 'RuntimeError', busy: 'RuntimeError', internal: 'RuntimeError' })[category] ?? 'Exception';
+
+function typesPy(model: Model): string {
+  const enums = model.enums.map((u) => {
+    const members = (u.variants ?? []).map((v) => `    ${langName('python', v.name, 'constant')} = ${pyString(v.value)}`).join('\n');
+    return `
+
+class ${langName('python', u.name, 'class')}(str, Enum):
+    """T-6: an enum whose members are their text values (enum.StrEnum is Python 3.11; the package supports 3.10)."""
+
+${members}`;
+  }).join('');
+  return `${pyHeader()}
+"""The enums of ${model.contract.library} (T-6)."""
+
+from enum import Enum
+
+__all__ = [${model.enums.map((u) => pyString(langName('python', u.name, 'class'))).join(', ')}]${enums}
+`;
+}
+
+function modulePy(model: Model, module: string): string {
+  const fns = model.functions.filter((f) => f.module === module).map((f) => langName('python', f.member.name, 'callable'));
+  const enums = model.enums.filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
+  const constants = model.constants.filter((c) => c.module === module);
+  const names = [...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
+  const imports = [
+    fns.length > 0 ? `from ._native import ${fns.map((f) => `${f} as ${f}`).join(', ')}` : '',
+    enums.length > 0 ? `from ._types import ${enums.map((e) => `${e} as ${e}`).join(', ')}` : '',
+    constants.length > 0 ? 'from typing import Final' : '',
+  ].filter((l) => l !== '');
+  const values = constants.map((c) => `${langName('python', c.member.name, 'constant')}: Final = ${JSON.stringify(c.member.value)}`);
+  return `${pyHeader()}
+"""The module ${module === '' ? '(root)' : module} of ${model.contract.library} (P-2)."""
+
+${imports.join('\n')}
+
+__all__ = [${names.map(pyString).join(', ')}]
+${values.length > 0 ? `\n${values.join('\n')}\n` : ''}`;
+}
+
+function nativePyi(model: Model): string {
+  const enumImports = model.enums.map((u) => langName('python', u.name, 'class'));
+  const fns = model.functions.map((fn) => {
+    const positional = fn.args.filter((a) => !a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    const keyword = fn.args.filter((a) => a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    const params = keyword.length === 0 ? positional : [...positional, '*', ...keyword];
+    return `def ${langName('python', fn.member.name, 'callable')}(${params.join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+  });
+  return `${pyHeader()}
+from collections.abc import Sequence
+${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}
+${fns.join('\n')}
+`;
+}
+
+function initPy(model: Model): string {
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module)])].sort();
+  const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
+  const names = [
+    ...model.classes.map((c) => c.name),
+    ...model.functions.map((f) => langName('python', f.member.name, 'callable')),
+    ...model.enums.map((u) => langName('python', u.name, 'class')),
+    ...model.constants.map((c) => langName('python', c.member.name, 'constant')),
+  ];
+  return `${pyHeader()}
+"""${model.contract.library}: the public API (P-3)."""
+
+from ._errors import *  # noqa: F403
+${imports.join('\n')}
+
+__all__ = [${names.map(pyString).join(', ')}]
+`;
+}
+
+export function python(model: Model, files: Files): void {
+  const layout = pythonLayout(model);
+  const pkg = `${ROOT}/python/${layout.modulePath}`;
+  const crate = `${model.contract.library}-python`;
+  files.set(`${ROOT}/Cargo.toml`, `${header('#')}
+[package]
+name = ${JSON.stringify(`polyspec-${crate}`)}
+version = ${JSON.stringify(model.version)}
+edition = "2021"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[features]
+panic-test = []
+
+[dependencies]
+${model.coreCrate} = { path = "../../rust" }
+polyspec-bindgen-core = { path = "../../rust/generated/bindgen-core" }
+pyo3 = { version = "=0.30.1", features = ["abi3-py310", "extension-module"] }
+
+[lints]
+workspace = true
+`);
+  const python = model.contract.packages['python'] as { package: string };
+  files.set(`${ROOT}/pyproject.toml`, `${header('#')}
+[build-system]
+requires = ["maturin>=1.16,<2"]
+build-backend = "maturin"
+
+[project]
+name = ${JSON.stringify(python.package)}
+version = ${JSON.stringify(model.version)}
+requires-python = ">=3.10"
+
+[tool.maturin]
+module-name = ${JSON.stringify(`${layout.module}._native`)}
+python-source = "python"
+`);
+  files.set(`${ROOT}/src/lib.rs`, libRust(model, layout));
+  files.set(`${pkg}/_errors.py`, errorsPy(model));
+  files.set(`${pkg}/_types.py`, typesPy(model));
+  files.set(`${pkg}/_native.pyi`, nativePyi(model));
+  files.set(`${pkg}/py.typed`, '');
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module)])];
+  for (const module of modules) {
+    files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
+  }
+  files.set(`${pkg}/__init__.py`, initPy(model));
+  files.set(`${ROOT}/tests/test_generated.py`, pythonTests(model, layout.module));
+  void moduleOf;
+}
