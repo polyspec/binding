@@ -89,6 +89,10 @@
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
   만든 그 클래스의 인스턴스이며 addon이 던진다(B-4). ESM 진입점은 CommonJS 진입점을 다시 내보내므로 둘은 클래스를 함께 쓴다.
+  `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2): 진입점이 `Map`의 항목을 addon에 넘기고
+  addon이 key마다 판정하며(그 밖의 key나 값은 kind `invalid_argument_type`), addon이 돌려준 항목으로 진입점이 `Map`을 만든다.
+  진입점이 하는 일이므로 keyed map은 parameter나 반환 전체(또는 그 optional)여야 하고, 다른 타입 안의 것과 `Map`이 정체성으로
+  비교하는 바이트 문자열 key는 이름으로 거부한다(G-4).
 
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
@@ -114,8 +118,8 @@
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
-  `map<T>`는 아직 Go에만, `keyed_map<T>`는 Go와 Python에만 생성한다: 그중 하나와 다른 target을 가진 계약은 이름으로
-  거부한다.
+  `map<T>`는 아직 Go에만, `keyed_map<T>`는 PHP를 뺀 모든 target에 생성한다(GN-11, GN-12, GN-18): 그중 하나와 그것을
+  생성하지 않는 target을 가진 계약은 이름으로 거부한다.
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
@@ -129,7 +133,7 @@
 - **GN-18** WASM(P-5, B-9): crate `polyspec-<repository>-wasm`은 Node npm 패키지 안의 추적하는 얇은 package
   `packages/ts/wasm`(crate-type `cdylib`, wasm-bindgen 0.2.130, js-sys 0.3.107)이고, `packages/ts/wasm/generated`가 그 소스,
   ES 모듈 `index.mjs`, 선언, 시험을 담는다. 같은 릴리스의 `wasm-bindgen --target web`이 모듈 `<library>_wasm_bg.wasm`과
-  glue `<library>_wasm.js`를 그곳에 쓴다. npm manifest는 WASM 진입점을 subpath `./wasm`으로 늘 내보내고, conditions가
+  glue `<library>_wasm.js`를 그곳에 쓴다. `keyed_map<T>`는 `Map`이며 Node의 GN-12 규칙을 따른다. npm manifest는 WASM 진입점을 subpath `./wasm`으로 늘 내보내고, conditions가
   `{node: napi, browser: wasm}`인 entry에서는 그 entry의 조건 `browser`로도 내보낸다. ES 모듈은 import될 때 top-level
   await로 WebAssembly 모듈을 읽으므로(GW-5) 모듈이 준비되기 전에 실행되는 export가 없고 `init()`도 없다: `file:` URL은 `node:fs/promises`로 읽고(Node), 그 밖의 URL은 fetch한다(브라우저). Node 진입점과
   같이 정의한 라이브러리 클래스는 모듈을 읽을 때 넘긴다. 값은 Node의 것이고(T-7, B-2), 짝 없는 surrogate가 든 문자열은 kind

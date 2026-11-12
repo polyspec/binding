@@ -1,7 +1,7 @@
 // generate(): every generated file of a repository from its checked contract, as relative paths and texts. The result
 // depends only on its inputs: the contract, the case files, the core version and binding itself (I-5).
 
-import type { Contract } from '../contract.ts';
+import type { Contract, Type } from '../contract.ts';
 import { go } from './go.ts';
 import { buildModel, forLanguage, Unsupported } from './model.ts';
 import { wasm } from './wasm.ts';
@@ -51,14 +51,25 @@ export function generate(inputs: Inputs): Files {
   ].find(([, type]) => hasMap(type));
   const others = inputs.contract.targets.filter((target) => target !== 'go');
   if (withMap !== undefined && others.length > 0) throw new Unsupported(`${withMap[0]}: map<T> is generated for Go only, not for ${others.join(', ')} yet`);
-  // T-2: keyed_map<T> is generated for Go and Python so far.
+  // T-2: keyed_map<T>. Go and Python take it anywhere; Node and WASM, whose JavaScript entry turns a Map into its
+  // entries, take it as a whole parameter or return (or an optional one) with integer and text keys (a Map compares a
+  // Uint8Array key by identity, GN-12); PHP does not generate it yet.
   const hasKeyed = (type: unknown): boolean => JSON.stringify(type).includes('"keyed_map"');
-  const withKeyed = [
-    ...model.functions.flatMap((fn) => [...fn.params.map((p) => [fn.member.id, p.type] as const), [fn.member.id, fn.returns] as const]),
-    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => [unit.id, f.type] as const)),
-  ].find(([, type]) => hasKeyed(type));
-  const keyedOthers = inputs.contract.targets.filter((target) => target !== 'go' && target !== 'python');
-  if (withKeyed !== undefined && keyedOthers.length > 0) throw new Unsupported(`${withKeyed[0]}: keyed_map<T> is generated for Go and Python only, not for ${keyedOthers.join(', ')} yet`);
+  const whole = (type: Type): Type => (typeof type === 'object' && 'optional' in type ? type.optional : type);
+  const keyedPlaces = [
+    ...model.functions.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type, top: !a.field })), { id: fn.member.id, type: fn.returns, top: true }]),
+    ...model.objects.flatMap((o) => o.members.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type, top: !a.field })), { id: fn.member.id, type: fn.returns, top: true }])),
+    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => ({ id: unit.id, type: f.type, top: false }))),
+  ].filter((place) => hasKeyed(place.type));
+  for (const place of keyedPlaces) {
+    if (inputs.contract.targets.includes('php')) throw new Unsupported(`${place.id}: keyed_map<T> is not generated for php yet`);
+    const js = inputs.contract.targets.filter((target) => target === 'node' || target === 'wasm');
+    if (js.length === 0) continue;
+    const base = whole(place.type);
+    const isWhole = place.top && typeof base === 'object' && 'keyed_map' in base && !hasKeyed(base.keyed_map);
+    if (!isWhole) throw new Unsupported(`${place.id}: a keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
+    if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) throw new Unsupported(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
+  }
   const files: Files = new Map();
   const targets = inputs.contract.targets;
   if (targets.includes('python')) python(forLanguage(model, 'python'), files);

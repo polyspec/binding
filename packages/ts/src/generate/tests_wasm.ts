@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Model, langName } from './model.ts';
-import { type Context, callArgs, fromJson, isNumber, placeholder, raisingCases, textKind, wrapText } from './samples.ts';
+import { type Context, callArgs, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 
@@ -42,6 +42,13 @@ test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
   for (const bad of [${(BAD_NUMBERS[number] ?? []).join(', ')}]) {
     assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number', String(bad));
   }
+});`);
+      }
+      const refused = refusedKeyMap(model, ctx, arg.type);
+      if (refused !== undefined) {
+        out.push(`
+test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
       const text = textKind(arg.type);

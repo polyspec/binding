@@ -24,6 +24,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('keyed_map' in type) {
+    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+    return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+  }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
@@ -39,6 +43,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `${name}(${value})`;
   }
   if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
+  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
+  if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(${value}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`).join(', ')}])`;
   const unit = unitOf(model, type);
@@ -171,6 +177,47 @@ fn out_list<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Js
         array.push(&item(value)?);
     }
     Ok(array.into())
+}
+
+/// T-2, U-7 (c): the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a keyed map is a
+/// whole parameter, GN-18): a key that is a safe integer or a string of a kind that the contract lists; any other key is
+/// kind invalid_argument_type.
+fn in_keyed_map<T>(value: &JsValue, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&JsValue) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
+    let entries = value.dyn_ref::<Array>().ok_or_else(|| type_error(subject, expected))?;
+    let mut map = binding_core::KeyedMap::new();
+    for entry in entries.iter() {
+        let pair = entry.dyn_ref::<Array>().filter(|pair| pair.length() == 2).ok_or_else(|| type_error(subject, expected))?;
+        let key = pair.get(0);
+        let (tag, key) = if key.as_f64().is_some() {
+            (0, binding_core::Key::Int(safe_integer(&key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?))
+        } else if key.is_string() {
+            (2, binding_core::Key::Text(in_text(&key, subject)?))
+        } else {
+            return Err(type_error(subject, expected));
+        };
+        if !kinds.contains(&tag) {
+            return Err(type_error(subject, expected));
+        }
+        if map.insert(key, item(&pair.get(1))?).is_some() {
+            return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: a keyed map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map; a byte
+/// string key, which no WASM contract lists, is kind internal.
+fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<JsValue, Fail>) -> Result<JsValue, Fail> {
+    let entries = Array::new();
+    for (key, value) in value.borrow().iter() {
+        let key = match key {
+            binding_core::Key::Int(integer) => out_int(integer)?,
+            binding_core::Key::Text(text) => out_text(text)?,
+            binding_core::Key::Bytes(_bytes) => return Err(binding_error(BindingError::Internal { detail: String::from("a byte string key of a keyed map") })),
+        };
+        entries.push(&out_tuple(&[key, item(value)?])?);
+    }
+    Ok(entries.into())
 }
 
 fn out_tuple(items: &[JsValue]) -> Result<JsValue, Fail> {
@@ -406,6 +453,9 @@ ${functions.replace(/\n(?=.)/g, '\n    ')}
 
 // ---- JavaScript and declarations ----
 
+// T-2: a keyed map, whole or optional, which the JavaScript entry passes as the entries of a Map (GN-18).
+const keyedType = (type: Type): boolean => typeof type === 'object' && ('keyed_map' in type || ('optional' in type && typeof type.optional === 'object' && 'keyed_map' in type.optional));
+
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
 function tsType(model: Model, type: Type, input: boolean): string {
@@ -414,6 +464,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
+  if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
@@ -444,9 +495,11 @@ export class ${c.name} extends globalThis.${jsBase(c.category)} {
         lines.push(`  checkRecord(${jsString(`${name}()`)}, ${jsString(langName('wasm', p.name, 'variable'))}, args[${i}], [${names.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
+      if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return typeof p.type === 'object' && 'list' in p.type ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(`  return enter(${model.classes.find((c) => c.category === 'internal')?.name ?? ''}, () => glue.${name}(${passed.join(', ')}));`);
+    if (keyedType(fn.returns)) lines.push(`  return fromEntries(enter(${model.classes.find((c) => c.category === 'internal')?.name ?? ''}, () => glue.${name}(${passed.join(', ')})));`);
+    else lines.push(`  return enter(${model.classes.find((c) => c.category === 'internal')?.name ?? ''}, () => glue.${name}(${passed.join(', ')}));`);
     return `
 export function ${name}(...args) {
 ${lines.join('\n')}
@@ -472,6 +525,18 @@ function toList(value) {
     return Array.from(value);
   }
   return value;
+}
+
+// T-2: a keyed map crosses as its entries, [key, value], which only a Map gives: null stays the absence, and any other
+// value reaches the module as undefined, which it refuses as kind invalid_argument_type (an array of pairs is not a Map).
+function toEntries(value) {
+  if (value instanceof Map) return Array.from(value);
+  return value === null ? null : undefined;
+}
+
+// T-2: the entries of a keyed map, as a Map; null is the absence.
+function fromEntries(value) {
+  return value === null ? null : new Map(value);
 }
 
 // G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent; a value

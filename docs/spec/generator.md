@@ -108,6 +108,11 @@ the design ids are those of the binding design.
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
+  `keyed_map<T>{key}` is a `Map` whose keys are safe integers or strings of the listed kinds (T-2): the entry passes
+  the entries of a `Map` to the addon, which judges each key (any other key or value is kind `invalid_argument_type`),
+  and makes a `Map` of the entries that the addon gives back. Because the entry does it, a keyed map is a whole
+  parameter or return, or an optional one; one inside another type, and byte string keys, which a `Map` compares by
+  identity, are refused by name (G-4).
 
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
@@ -139,8 +144,8 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go only so far and `keyed_map<T>` for Go and Python: a contract
-  with one of them and another target is refused by name.
+  `invalid_argument_type`. `map<T>` is generated for Go only so far, and `keyed_map<T>` for every target but PHP (GN-11,
+  GN-12, GN-18): a contract with one of them and a target that does not generate it is refused by name.
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
@@ -157,7 +162,7 @@ the design ids are those of the binding design.
   (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
   `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
   `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
-  `<library>_wasm.js` there. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
+  `<library>_wasm.js` there. A `keyed_map<T>` is a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
   whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
   loads the WebAssembly module when it is imported, with a top-level await (GW-5), so no export can run before the
   module is ready and there is no `init()`: a `file:` URL is read with `node:fs/promises` (Node), any other URL is
