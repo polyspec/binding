@@ -12,7 +12,9 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
 
 ## 검사
 
-- **CK-1** 스키마: 계약이 `schema/interface.schema.json`(JSON Schema 2020-12, Ajv)을 통과한다. 모든 reason은 규칙 id이므로
+스키마는 npm 패키지 `@polyspec/bindgen`에 들어 있고 `./schema/interface.schema.json`으로 내보낸다(S15).
+
+- **CK-1** 스키마: 계약이 `packages/ts/schema/interface.schema.json`(JSON Schema 2020-12, Ajv)을 통과한다. 모든 reason은 규칙 id이므로
   (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`) "지금 이름" 같은 산문 reason은 거부된다(N-3, P-10). `reason` 없는 `native`는
   거부된다(I-3). callback member의 `errors`는 `{recognize, reason}`뿐이다(U-3).
 - **CK-2** todo: `bindgen import`가 남긴 `"todo"` 문자열이나 `todo` 키를 가진 객체가 있으면 실패한다(M-2). todo 자리와 그
@@ -38,6 +40,8 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   - 왕복(P-3): `make`가 만드는 언어 타입은 그 언어의 `in` 행을 갖고, 그 행은 그것을 행의 kind로 분류한다. `by` 없는 행은
     정확히 그 kind여야 하고, `by` 있는 행은 case 중 하나여야 한다. `is`는 실행 때만 알 수 있으므로 G-5의 생성 왕복 시험이
     증명으로 남는다.
+  - `{value: X}`인 `make`는 kind `nested:X`인 행에 속하고, kind `nested:X`인 행은 모든 값을 `{value: X}`로 만든다. 그런 값의
+    왕복은 소유 레포의 계약이 증명한다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
 - **CK-9** 다른 레포의 unit(T-3): 타입에 쓴 다른 라이브러리의 unit은 그 계약의 `value`, `callback`, `enum`, `record`,
   `variant` unit이다. 다른 라이브러리의 callback·record·variant는 자기 라이브러리의 unit만 쓰며 재귀적으로 확인한다.
@@ -67,8 +71,9 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
 
 이 닫힌 집합은 bindgen의 것이다. Rust 이름은 `bindgen_core`의 것이다(`docs/core-api.md`).
 
-- 값 kind: `null`, `bool`, `int`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`, `native`
-  (`ValueKind`).
+- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`,
+  `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
+  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
 - 내장 형태와 각각이 만드는 언어 타입:

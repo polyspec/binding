@@ -5,9 +5,12 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./schema/interface.schema.json": "./schema/interface.schema.json"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

@@ -1,0 +1,16 @@
+[
+  ["file over", "php", "callable", "fileOver"],
+  ["file over", "node", "callable", "fileOver"],
+  ["file over", "python", "callable", "file_over"],
+  ["file over", "go", "callable", "FileOver"],
+  ["file over", "rust", "callable", "file_over"],
+  ["!csrf token", "php", "class", "CsrfToken"],
+  ["!csrf token", "node", "class", "CsrfToken"],
+  ["!csrf token", "python", "class", "CSRFToken"],
+  ["!csrf token", "go", "class", "CSRFToken"],
+  ["!csrf token", "rust", "class", "CsrfToken"],
+  ["!csrf token", "php", "variable", "csrfToken"],
+  ["max !http age", "node", "variable", "maxHttpAge"],
+  ["max !http age", "python", "variable", "max_http_age"],
+  ["same site", "wasm", "class", "SameSite"]
+]

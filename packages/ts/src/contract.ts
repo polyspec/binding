@@ -1,4 +1,4 @@
-// The shape of an interface contract after schema validation (schema/interface.schema.json). The contract check reads a
+// The shape of an interface contract after schema validation (packages/ts/schema/interface.schema.json). The contract check reads a
 // contract only through these types, and only after the schema accepted it.
 
 export type Lang = 'php' | 'python' | 'node' | 'go' | 'wasm';
@@ -81,7 +81,7 @@ export interface UnitRef {
 export interface OutRow {
   kind: string;
   when?: { predicate: string; is: boolean };
-  make: Partial<Record<Lang, string>>;
+  make: Partial<Record<Lang, string | { value: string }>>;
 }
 
 export interface InRow extends Partial<Record<Lang, string>> {

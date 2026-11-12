@@ -14,7 +14,9 @@ its shape.
 
 ## Checks
 
-- **CK-1** Schema: the contract passes `schema/interface.schema.json` (JSON Schema 2020-12, Ajv). Every reason is a rule
+The schema is part of the npm package `@polyspec/bindgen` and is exported as `./schema/interface.schema.json` (S15).
+
+- **CK-1** Schema: the contract passes `packages/ts/schema/interface.schema.json` (JSON Schema 2020-12, Ajv). Every reason is a rule
   id (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`), so a reason in prose, such as "the current name", is refused (N-3,
   P-10). A `native` entry without its `reason` is refused (I-3). A callback member's `errors` is only
   `{recognize, reason}` (U-3).
@@ -43,6 +45,8 @@ its shape.
   - round trip (P-3): the language type that a `make` produces has an `in` row in that language, and that row
     classifies it as the row's kind: exactly, for a row without `by`; as one of its cases, for a row with `by`, whose
     `is` is known only at run time, which is why the generated round-trip test of G-5 remains the proof;
+  - a `make` of `{value: X}` belongs to a row of kind `nested:X`, and a row of kind `nested:X` makes every value with
+    `{value: X}`; the owning repository's contract proves the round trip of such a value;
   - only a property of a `value` unit is `writable` (U-2).
 - **CK-9** Units of other repositories (T-3): a unit of another library in a type is a `value`, `callback`, `enum`,
   `record` or `variant` unit of that library's contract; a callback, record or variant of another library uses only
@@ -76,8 +80,9 @@ its shape.
 
 These closed sets are bindgen's own; the Rust names are those of `bindgen_core` (`docs/core-api.md`).
 
-- Value kinds: `null`, `bool`, `int`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`,
-  `native` (`ValueKind`).
+- Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
+  `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
+  `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).
 - Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float)
   (`Predicate`). A row writes `when: {predicate, is}`.
 - Built-in forms and the language type each makes:

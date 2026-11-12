@@ -8,7 +8,7 @@ tools judged against those requirements, the verdict for each, and the implement
 
 ## Requirements
 
-bindgen reads one interface contract per repository (`contracts/interface.json`, schema `schema/interface.schema.json`)
+bindgen reads one interface contract per repository (`contracts/interface.json`, schema `packages/ts/schema/interface.schema.json`)
 and the core crate, and produces the bindings and their declarations. A tool fits only when it meets all of the
 following, because each one is a rule that every repository's bindings must keep (design ids of `docs/spec/`):
 

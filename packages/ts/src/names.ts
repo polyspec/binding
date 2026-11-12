@@ -26,8 +26,10 @@ function snake(name: Name): string {
 
 // The name of a symbol in a language. role: 'class' for units, 'callable' for functions, methods and properties,
 // 'variable' for parameters and record fields.
-export function convert(name: Name, lang: Lang, role: Role): string {
+export function convert(name: Name, lang: Lang | 'rust', role: Role): string {
   switch (lang) {
+    case 'rust':
+      return role === 'class' ? pascal(name, false) : snake(name);
     case 'go':
       return pascal(name, true);
     case 'python':

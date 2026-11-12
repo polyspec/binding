@@ -35,8 +35,10 @@ pub enum ValueKind {
     Null,
     /// A boolean.
     Bool,
-    /// An integer in the range of `i64`.
+    /// An integer of the contract type `int` (T-1): a JavaScript `number`, so it is a safe integer.
     Int,
+    /// An integer of the contract type `int64` (T-1): a JavaScript `bigint`.
+    Int64,
     /// A binary64 floating point number.
     Float,
     /// A number kept as its literal token (F-1 (a)).
@@ -55,14 +57,43 @@ pub enum ValueKind {
     SafeText,
     /// A language object that passes through the core unopened (F-1 (b), VAL-18).
     Native,
+    /// A value of the value type of another repository, made by that repository's binding (U-1 `nested:<type>`).
+    Nested(ValueType),
+}
+
+/// A value type that one repository owns and another nests (T-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValueType {
+    /// `json_value` (F-1 (a)).
+    Json,
+    /// `template_value` (F-1 (b)).
+    Template,
+    /// `php_value` (F-1 (c)).
+    Php,
+}
+
+impl ValueType {
+    /// Every value type.
+    pub const ALL: [Self; 3] = [Self::Json, Self::Template, Self::Php];
+
+    /// The contract name of the value type.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json_value",
+            Self::Template => "template_value",
+            Self::Php => "php_value",
+        }
+    }
 }
 
 impl ValueKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 16] = [
         Self::Null,
         Self::Bool,
         Self::Int,
+        Self::Int64,
         Self::Float,
         Self::Number,
         Self::Text,
@@ -72,6 +103,9 @@ impl ValueKind {
         Self::Object,
         Self::SafeText,
         Self::Native,
+        Self::Nested(ValueType::Json),
+        Self::Nested(ValueType::Template),
+        Self::Nested(ValueType::Php),
     ];
 
     /// The name that contracts use.
@@ -81,6 +115,7 @@ impl ValueKind {
             Self::Null => "null",
             Self::Bool => "bool",
             Self::Int => "int",
+            Self::Int64 => "int64",
             Self::Float => "float",
             Self::Number => "number",
             Self::Text => "text",
@@ -90,6 +125,9 @@ impl ValueKind {
             Self::Object => "object",
             Self::SafeText => "safe_text",
             Self::Native => "native",
+            Self::Nested(ValueType::Json) => "nested:json_value",
+            Self::Nested(ValueType::Template) => "nested:template_value",
+            Self::Nested(ValueType::Php) => "nested:php_value",
         }
     }
 }
@@ -276,6 +314,8 @@ pub enum OutValue {
     Bool(bool),
     /// Kind `int`.
     Int(IntOut),
+    /// Kind `int64`.
+    Int64(i64),
     /// Kind `float`.
     Float(FloatOut),
     /// Kind `number`: the literal token of a number (F-1 (a)).
@@ -304,6 +344,14 @@ pub enum OutValue {
     SafeText(String),
     /// Kind `native`: the language object that entered as this handle goes back unchanged.
     Native(Handle),
+    /// Kind `nested:<value type>`: a value of another repository's value type, which that repository's binding makes
+    /// from its own `out` table (U-1).
+    Nested {
+        /// The value type.
+        value_type: ValueType,
+        /// The value, described by the owning repository's core.
+        value: Box<OutValue>,
+    },
 }
 
 impl OutValue {
@@ -314,6 +362,7 @@ impl OutValue {
             Self::Null => ValueKind::Null,
             Self::Bool(_) => ValueKind::Bool,
             Self::Int(_) => ValueKind::Int,
+            Self::Int64(_) => ValueKind::Int64,
             Self::Float(_) => ValueKind::Float,
             Self::Number(_) => ValueKind::Number,
             Self::Text(_) => ValueKind::Text,
@@ -323,6 +372,7 @@ impl OutValue {
             Self::Object { .. } => ValueKind::Object,
             Self::SafeText(_) => ValueKind::SafeText,
             Self::Native(_) => ValueKind::Native,
+            Self::Nested { value_type, .. } => ValueKind::Nested(*value_type),
         }
     }
 
@@ -375,10 +425,15 @@ pub enum HostValue {
     /// PHP `IS_LONG`, a JavaScript number that is a safe integer, a Python `int` (exactly, not a subclass) in the
     /// range of `i64`, a Go integer.
     Int(i64),
+    /// A Python `int` (exactly) outside the range of `i64`, as its decimal token, without loss. Whether it is accepted
+    /// is the core's rule (B-1).
+    Number(String),
     /// PHP `IS_DOUBLE`, any other JavaScript number, a Python `float` (exactly), a Go float.
     Float(f64),
     /// A string of any language, in its own units.
     Text(HostText),
+    /// A Python `bytes` (exactly).
+    Bytes(Vec<u8>),
     /// A JavaScript `Array`, a Python `list`, a Go slice.
     List {
         /// The handle of the list.
@@ -439,7 +494,7 @@ pub enum HostValue {
         handle: Handle,
     },
     /// Any value outside the closed set: a PHP resource, a JavaScript `Symbol`, `BigInt` or typed array, a Python
-    /// `bytes` or a subclass of `int` or `str`, a Python `int` outside the range of `i64`.
+    /// subclass of `int`, `str` or `bytes`.
     Other {
         /// The type name as the language reports it.
         type_name: String,
@@ -450,7 +505,9 @@ pub enum HostValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{BytesOut, FloatOut, Handle, IntOut, MapOut, OutValue, Predicate, ValueKind, MAX_SAFE_INTEGER};
+    use super::{
+        BytesOut, FloatOut, Handle, IntOut, MapOut, OutValue, Predicate, ValueKind, ValueType, MAX_SAFE_INTEGER,
+    };
 
     #[test]
     fn safe_integer_is_the_exact_range_of_a_javascript_number() {
@@ -510,6 +567,17 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), Predicate::ALL.len());
+    }
+
+    #[test]
+    fn a_nested_value_has_the_kind_of_its_value_type() {
+        let nested = OutValue::Nested {
+            value_type: ValueType::Json,
+            value: Box::new(OutValue::Null),
+        };
+        assert_eq!(nested.kind(), ValueKind::Nested(ValueType::Json));
+        assert_eq!(nested.kind().as_str(), "nested:json_value");
+        assert_eq!(OutValue::Int64(1).kind().as_str(), "int64");
     }
 
     #[test]

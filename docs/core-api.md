@@ -9,7 +9,7 @@ types of the design rules named below and no rule of any library.
 ## Crate
 
 - Path: `packages/core/rust` of this repository; package `polyspec-bindgen-core`, library name `bindgen_core`, version
-  0.0.1, edition 2021, toolchain 1.97.0 (`rust-toolchain.toml`).
+  0.0.1, edition 2021, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
   (the entries of `OrderedMap`).
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
@@ -30,17 +30,20 @@ types of the design rules named below and no rule of any library.
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
 | `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
+| `Failure<E>` | E-1c | `Kind(E)` or `Raised(Raised)`: the error type of a core function that calls a callback; `From<Raised>`, `Display`, `std::error::Error`. |
+| `ValueType` | T-3 | `Json`, `Template`, `Php`; `ALL`, `as_str()`. |
+| `naming::{convert, Word, Lang, Role}` | N-2 | The name conversion, public for generators outside bindgen; `naming::Lang` is `Php`, `Python`, `Js`, `Go`, `Rust`. Its vectors are shared with bindgen's TypeScript conversion. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, all required; implemented by every core error enum and by `BindingError`. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`; `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`; `category()`, `KINDS` (kind and category table), `Kinds`, `Display` (the whole message, E-4), `std::error::Error`. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
 | `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
 | `Handle` | B-1, T-3 | Opaque `u64` of the side that made it: `new(u64)`, `raw()`. |
-| `ValueKind` | U-1 `value`, T-3 | `null`, `bool`, `int`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`, `native`; `ALL`, `as_str()`. The `kind` of `out` and `in` rows. |
+| `ValueKind` | U-1 `value`, T-3 | `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`, `native`, `nested:<value type>`; `ALL`, `as_str()`. The `kind` of `out` and `in` rows. |
 | `Predicate` | U-1 `when` | `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float); `ALL`, `as_str()`, `kind()`. |
-| `OutValue` | T-3 | One level of an outgoing value: `Null`, `Bool`, `Int(IntOut)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `SafeText(String)`, `Native(Handle)`; `kind()`, `predicate(Predicate) -> Option<bool>` (`None` when the predicate does not apply to the kind). |
+| `OutValue` | T-3 | One level of an outgoing value: `Null`, `Bool`, `Int(IntOut)`, `Int64(i64)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `SafeText(String)`, `Native(Handle)`, `Nested { value_type, value }`; `kind()`, `predicate(Predicate) -> Option<bool>` (`None` when the predicate does not apply to the kind). |
 | `IntOut`, `FloatOut`, `BytesOut`, `MapOut` | U-1 `when` | Wrappers whose predicate is computed here (`MapOut::new` takes `sequence_keys` from the core, which sees the keys). |
-| `HostValue` | B-1, T-2 `host_value` | One level of an incoming value: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Float(f64)`, `Text(HostText)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
+| `HostValue` | B-1, T-2 `host_value` | `Number` is a Python `int` outside `i64` as its decimal token; `Bytes` is a Python `bytes`. One level of an incoming value: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
 | `HostText` | B-1, B-3 | `Bytes(Vec<u8>)` (PHP, Go), `Utf16(Vec<u16>)` (JavaScript), `CodePoints(Vec<u32>)` (Python). |
 | `Prototype` | B-1 | `Object`, `Null`. |
 
@@ -49,5 +52,3 @@ types of the design rules named below and no rule of any library.
 The protocol through which a core asks the binding for the children of a `HostValue` handle, and the binding asks the
 core for the children of an `OutValue` handle, is not defined: the design names the handles but not the calls.
 
-How a core returns a `Raised` through its error enum is not decided either: the generated `match` of I-2 (3) needs to know
-which variant carries it, and `Kinds` has no kind for it.

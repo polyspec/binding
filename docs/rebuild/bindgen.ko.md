@@ -8,7 +8,7 @@ PRINCIPLES S1과 P14는 맞는 기존 도구가 있으면 그것을 쓰라고 �
 
 ## 요구
 
-bindgen은 레포마다 인터페이스 계약 하나(`contracts/interface.json`, 스키마 `schema/interface.schema.json`)와 코어 crate를
+bindgen은 레포마다 인터페이스 계약 하나(`contracts/interface.json`, 스키마 `packages/ts/schema/interface.schema.json`)와 코어 crate를
 읽고 바인딩과 그 선언을 만든다. 도구는 다음을 모두 만족할 때만 맞는다. 각 항목은 모든 레포의 바인딩이 지켜야 하는
 규칙이기 때문이다(`docs/spec/`의 설계 id).
 

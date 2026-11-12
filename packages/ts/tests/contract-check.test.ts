@@ -317,3 +317,24 @@ describe('CK-17 callbacks', () => {
   test('a generated implementation that waits, behind a callback member that is not async_allowed', () =>
     fails('CK-17', `${at('store')}/members/0`, (c) => { member(c, 'store.read').async_allowed = false; }));
 });
+
+describe('CK-8 nested values', () => {
+  const nested = (c: any, kind: string, value: string): void => {
+    c.types.json_value = { library: 'forms-dep', unit: 'dep_value' };
+    unit(c, 'value').out.push({ kind, make: { php: { value }, python: { value }, node: { value }, go: { value }, wasm: { value } } });
+  };
+  const withDepValue = (d: any): void => {
+    d.units.push({
+      id: 'dep_value', name: ['value'], module: 'value', kind: 'class', visibility: 'public', origin: 'value', members: [],
+      out: [{ kind: 'null', make: { php: 'null', python: 'null', node: 'null' } }],
+      in: [{ php: 'null', cases: [{ kind: 'null' }] }, { python: 'None', cases: [{ kind: 'null' }] }, { node: 'null', cases: [{ kind: 'null' }] }],
+    });
+  };
+  test('a nested make with its kind is accepted', () => {
+    assert.deepEqual(findings((c, d) => { withDepValue(d); nested(c, 'nested:json_value', 'json_value'); }), []);
+  });
+  test('a nested make under another kind', () =>
+    fails('CK-8', `${at('value')}/out/4/make/php`, (c, d) => { withDepValue(d); nested(c, 'nested:php_value', 'json_value'); }));
+  test('a nested kind made by a built-in form', () =>
+    fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'nested:json_value'; }));
+});

@@ -5,7 +5,8 @@
 import type { Lang } from './contract.ts';
 
 export const VALUE_KINDS = [
-  'null', 'bool', 'int', 'float', 'number', 'text', 'bytes', 'list', 'map', 'object', 'safe_text', 'native',
+  'null', 'bool', 'int', 'int64', 'float', 'number', 'text', 'bytes', 'list', 'map', 'object', 'safe_text', 'native',
+  'nested:json_value', 'nested:template_value', 'nested:php_value',
 ] as const;
 
 export const PREDICATE_KIND: Readonly<Record<string, string>> = {

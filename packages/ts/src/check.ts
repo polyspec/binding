@@ -32,7 +32,7 @@ export interface CheckOptions {
 }
 
 const schema: unknown = JSON.parse(
-  readFileSync(new URL('../../../schema/interface.schema.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../schema/interface.schema.json', import.meta.url), 'utf8'),
 );
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
 const validate = ajv.compile(schema as object);
@@ -509,10 +509,22 @@ class Checker {
       for (const lang of targets) {
         if (row.make[lang] === undefined) this.report('CK-8', `${rowPath}/make`, `the row makes no ${lang} value`);
       }
-      for (const [lang, make] of Object.entries(row.make) as [Lang, string][]) {
+      for (const [lang, make] of Object.entries(row.make) as [Lang, string | { value: string }][]) {
         const makePath = `${rowPath}/make/${lang}`;
         if (!targets.includes(lang)) {
           this.report('CK-8', makePath, `${lang} is not a target`);
+          continue;
+        }
+        // U-1: a value of another repository's value type is made by that repository's binding; the row's kind is
+        // nested:<value type>, and the owning contract proves its own round trip.
+        if (typeof make === 'object') {
+          if (row.kind !== `nested:${make.value}`) {
+            this.report('CK-8', makePath, `make {value: ${make.value}} belongs to the kind nested:${make.value}, not to ${row.kind}`);
+          }
+          continue;
+        }
+        if (row.kind.startsWith('nested:')) {
+          this.report('CK-8', makePath, `the kind ${row.kind} is made by {value: ${row.kind.slice('nested:'.length)}}`);
           continue;
         }
         let made: string | undefined;

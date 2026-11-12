@@ -351,7 +351,10 @@
     },
     "valueKind": {
       "description": "bindgen_core::ValueKind.",
-      "enum": ["null", "bool", "int", "float", "number", "text", "bytes", "list", "map", "object", "safe_text", "native"]
+      "oneOf": [
+        { "enum": ["null", "bool", "int", "int64", "float", "number", "text", "bytes", "list", "map", "object", "safe_text", "native"] },
+        { "enum": ["nested:json_value", "nested:template_value", "nested:php_value"] }
+      ]
     },
     "builtinForm": { "enum": ["null", "bool", "int", "bigint", "float", "text", "bytes", "list", "map"] },
     "outRow": {
@@ -374,7 +377,19 @@
           "type": "object",
           "minProperties": 1,
           "additionalProperties": false,
-          "patternProperties": { "^(php|python|node|go|wasm)$": { "type": "string", "minLength": 1 } }
+          "patternProperties": {
+            "^(php|python|node|go|wasm)$": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["value"],
+                  "properties": { "value": { "enum": ["json_value", "template_value", "php_value"] } }
+                }
+              ]
+            }
+          }
         }
       }
     },

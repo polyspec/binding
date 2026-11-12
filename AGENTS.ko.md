@@ -6,7 +6,7 @@
 모든 polyspec repository의 작업 원칙은 [PRINCIPLES.md](PRINCIPLES.ko.md)에 있다. 이 파일은 이 repository의 규칙만 적는다.
 
 - Own: bindgen은 모든 polyspec repository의 바인딩을 그 인터페이스 계약에서 생성한다. 계약 형식은
-  `schema/interface.schema.json`이고, 생성기와 계약 검사의 규칙은 `docs/spec/`에 있다. bindgen을 만드는 이유와 구현 언어는
+  `packages/ts/schema/interface.schema.json`이고, 생성기와 계약 검사의 규칙은 `docs/spec/`에 있다. bindgen을 만드는 이유와 구현 언어는
   `docs/rebuild/bindgen.md`에 있다.
   Enforced by: none, 어느 문서가 주제를 소유하는지는 판단이다.
 - Own: `packages/core/rust`는 생성 crate와 코어 crate가 의존하는 런타임 지원 crate `bindgen_core`이고, `packages/ts`는 생성기와

@@ -7,7 +7,7 @@ The working principles of every polyspec repository are in [PRINCIPLES.md](PRINC
 rules of this repository.
 
 - Own: bindgen generates the bindings of every polyspec repository from its interface contract. The contract format is
-  `schema/interface.schema.json`, and the rules of the generator and of the contract check are in `docs/spec/`. Why
+  `packages/ts/schema/interface.schema.json`, and the rules of the generator and of the contract check are in `docs/spec/`. Why
   bindgen is built and in which language is in `docs/rebuild/bindgen.md`.
   Enforced by: none, which document owns a topic is a judgement.
 - Own: `packages/core/rust` is the crate `bindgen_core`, the runtime support that generated crates and core crates
