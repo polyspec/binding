@@ -1,4 +1,4 @@
-//! Runtime support shared by the binding crates that bindgen generates and the core crates they wrap.
+//! Runtime support shared by the binding crates that binding generates and the core crates they wrap.
 //!
 //! Every item carries the id of the design rule that defines it. The crate holds no rule of a library: it holds the
 //! types through which a generated binding and a core agree on waiting (I-2 (4)), cancellation (T-1 `cancel`),

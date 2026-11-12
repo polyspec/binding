@@ -19,7 +19,7 @@ import {
   type Type,
   type Unit,
 } from './contract.ts';
-import { convert, sameName, type Role } from './names.ts';
+import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
 const LANG_KEYS = ['php', 'python', 'node', 'go', 'wasm'] as const;
@@ -31,7 +31,7 @@ export interface Finding {
 }
 
 export interface CheckOptions {
-  // The contracts of the libraries that this contract names, by library name (T-3, E-1b). bindgen reads them from the
+  // The contracts of the libraries that this contract names, by library name (T-3, E-1b). binding reads them from the
   // packages that Cargo resolved; the check takes them as values.
   dependencies?: ReadonlyMap<string, unknown>;
 }
@@ -42,7 +42,7 @@ const schema: unknown = JSON.parse(
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
 const validate = ajv.compile(schema as object);
 
-// E-1a: the kinds of bindgen_core::BindingError and their fixed categories.
+// E-1a: the kinds of binding_core::BindingError and their fixed categories.
 export const BINDING_KINDS: Readonly<Record<string, Category>> = {
   invalid_number: 'value',
   invalid_text: 'value',
@@ -59,7 +59,7 @@ export const BINDING_KINDS: Readonly<Record<string, Category>> = {
 const escape = (segment: string | number): string => String(segment).replaceAll('~', '~0').replaceAll('/', '~1');
 const pointer = (...segments: (string | number)[]): string => segments.map((s) => `/${escape(s)}`).join('');
 
-// CK-2: the markers that `bindgen import` leaves (M-2).
+// CK-2: the markers that `binding import` leaves (M-2).
 function findTodos(value: unknown, path: string, out: string[]): void {
   if (value === 'todo') {
     out.push(path);
@@ -92,7 +92,7 @@ export function checkContract(raw: unknown, options: CheckOptions = {}): Finding
   const findings: Finding[] = todos.map((path) => ({
     check: 'CK-2',
     path,
-    message: 'a todo of bindgen import is left; the contract is a draft (M-2)',
+    message: 'a todo of binding import is left; the contract is a draft (M-2)',
   }));
   if (validate(raw) !== true) findings.push(...schemaFindings(validate.errors ?? [], todos));
   if (findings.length > 0) return findings;
@@ -532,7 +532,7 @@ class Checker {
       if (!targets.includes(lang)) this.report('CK-8', `${rowPath}/${lang}`, `${lang} is not a target`);
       const isBuiltin = builtinTypes(lang).has(type);
       if (!isBuiltin && !ownTypes.has(type)) {
-        this.report('CK-8', `${rowPath}/${lang}`, `${type} is neither a built-in ${lang} type of bindgen nor ${unit.kind === 'alias' ? 'a class gathered by ' : ''}${unit.id}`);
+        this.report('CK-8', `${rowPath}/${lang}`, `${type} is neither a built-in ${lang} type of binding nor ${unit.kind === 'alias' ? 'a class gathered by ' : ''}${unit.id}`);
       }
       const key = `${lang}\u0000${type}`;
       if (rows.has(key)) this.report('CK-8', rowPath, `${lang} ${type} has two in rows`);
@@ -651,7 +651,7 @@ class Checker {
     for (const [kind, kindRows] of byKind) this.partition(`out rows of ${kind}`, kindRows);
   }
 
-  // U-7 (f): the in case that a made value meets. A built-in value's predicates come from bindgen's closed table (the
+  // U-7 (f): the in case that a made value meets. A built-in value's predicates come from binding's closed table (the
   // form and the out row's kind and when); the case is the first whose when holds. A value of a class is classified by
   // its by member at run time, so the row's kind must name exactly one case. Whether the case's kind is the row's kind
   // is the round trip (P-3); a check that passes when any case matches would pass a wrong classification.
@@ -790,25 +790,21 @@ class Checker {
         if (!classLangs.includes(lang as Lang)) this.report('CK-10', `/errors/classes/${category}/${lang}`, `${lang} is not a target with a class table`);
       }
     }
-    // E-2: a category class of the repository is <Library><Category>Error, one name in every language, so that it
-    // never takes the name of a language's own class (Python ValueError); a PHP class is in the package namespace.
+    // E-2: a category class of the repository is <Library><Category>Error, with <Library> in the class form of each
+    // language (N-2: PHP and Node HttpCookie, Python and Go HTTPCookie), so that it never takes the name of a language's
+    // own class (Python ValueError); a PHP class is in the package namespace.
     const namespace = (this.contract.packages['php'] as { namespace?: string } | undefined)?.namespace;
     for (const category of CATEGORIES) {
       const row = errors.classes[category] ?? {};
-      const suffix = `${convert([category], 'go', 'class')}Error`;
-      const simple = new Set<string>();
-      for (const [lang, name] of Object.entries(row)) {
+      for (const [lang, name] of Object.entries(row) as [Lang, string][]) {
         const path = `/errors/classes/${category}/${lang}`;
+        const want = `${convert(libraryName(libraryParts(this.contract).repository), lang === 'wasm' ? 'node' : lang, 'class')}${convert([category], 'go', 'class')}Error`;
         const last = name.slice(name.lastIndexOf('\\') + 1);
-        simple.add(last);
-        if (!last.endsWith(suffix) || last === suffix) {
-          this.report('CK-10', path, `${name} is not <Library>${suffix} (E-2)`);
-        }
+        if (last !== want) this.report('CK-10', path, `${name} is not ${want}, <Library><Category>Error (E-2)`);
         if (lang === 'php' && namespace !== undefined && name !== `${namespace}\\${last}`) {
           this.report('CK-10', path, `${name} is not in the namespace ${namespace} (E-2, P-1)`);
         }
       }
-      if (simple.size > 1) this.report('CK-10', `/errors/classes/${category}`, `the ${category} class has the names ${[...simple].join(', ')}; it has one name in every language (E-2)`);
     }
     for (const [i, row] of errors.fixed.entries()) {
       if (!classLangs.includes(row.lang)) {
@@ -1024,7 +1020,14 @@ class Checker {
 
   packageNames(): void {
     const library = this.contract.library;
-    const pascal = library.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('');
+    const { repository, component } = libraryParts(this.contract);
+    if (component !== undefined && library !== `${repository}-${component}`) {
+      this.report('CK-18', '/library', `${library} is not <repository>-${component}, the library of the component at ${this.contract.core.path} (P-1, L-1)`);
+    }
+    // P-1: a component's PHP namespace and Python module are below the repository's (Polyspec\CrudUi\Validator,
+    // polyspec.crud_ui.validator); the package names are the library's.
+    const pascal = [repository, ...(component === undefined ? [] : [component])].map((part) => convert(libraryName(part), 'php', 'class')).join('\\');
+    const module = [repository, ...(component === undefined ? [] : [component])].map((part) => part.replaceAll('-', '_')).join('.');
     const expected: [string, unknown, string][] = [
       ['/core/crate', this.contract.core.crate, `polyspec-${library}`],
     ];
@@ -1035,7 +1038,7 @@ class Checker {
     }
     if (packages['python'] !== undefined) {
       expected.push(['/packages/python/package', packages['python']['package'], `polyspec-${library}`]);
-      expected.push(['/packages/python/module', packages['python']['module'], `polyspec.${library.replaceAll('-', '_')}`]);
+      expected.push(['/packages/python/module', packages['python']['module'], `polyspec.${module}`]);
     }
     if (packages['node'] !== undefined) expected.push(['/packages/node/package', packages['node']['package'], `@polyspec/${library}`]);
     for (const [path, found, want] of expected) {
@@ -1082,4 +1085,13 @@ class Checker {
       }
     }
   }
+}
+
+// L-1, P-1: the repository and the component of a contract. A core at packages/<component>/rust is the library
+// <repository>-<component>; a core at packages/rust is the library of the whole repository.
+export function libraryParts(contract: Contract): { repository: string; component?: string } {
+  const match = /^packages\/([a-z0-9][a-z0-9-]*)\/rust$/.exec(contract.core.path);
+  const component = match?.[1];
+  if (component === undefined || !contract.library.endsWith(`-${component}`)) return { repository: contract.library };
+  return { repository: contract.library.slice(0, -component.length - 1), component };
 }

@@ -49,3 +49,12 @@ export function sameName(a: Name, b: Name): boolean {
     return other !== undefined && text(word) === text(other) && isAcronym(word) === isAcronym(other);
   });
 }
+
+// P-1, E-2: the name of a library as words. A repository name is lower-case words joined by '-'; the words that are
+// acronyms (N-2), which a repository name cannot mark, are binding's closed table. The class form of the result is the
+// <Library> of P-1 and E-2 in each language: PHP and Node HttpCookie, Python and Go HTTPCookie.
+export const LIBRARY_ACRONYMS: ReadonlySet<string> = new Set([
+  'api', 'crud', 'csrf', 'css', 'fsm', 'html', 'http', 'id', 'io', 'json', 'orm', 'php', 'sql', 'ui', 'uri', 'url', 'xml',
+]);
+
+export const libraryName = (library: string): Name => library.split('-').map((word) => (LIBRARY_ACRONYMS.has(word) ? { acronym: word } : word));

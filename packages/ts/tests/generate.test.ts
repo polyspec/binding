@@ -1,4 +1,4 @@
-// I-5: the same contract and the same bindgen give the same bytes, in any directory, with no path, time or host of
+// I-5: the same contract and the same binding give the same bytes, in any directory, with no path, time or host of
 // the run; and an item that the generator cannot generate is refused by name (G-4).
 
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { trackedPackages } from '../src/generate/packages.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
-const lock = (core: string): string => `version = 4\n\n[[package]]\nname = "polyspec-bindgen-core"\nversion = "${core}"\n`;
+const lock = (core: string): string => `version = 4\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "${core}"\n`;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
 
 function files(dir: string): Map<string, Buffer> {
@@ -30,8 +30,8 @@ function files(dir: string): Map<string, Buffer> {
 }
 
 test('two generations in two directories give the same bytes and name neither directory', () => {
-  const first = mkdtempSync(join(tmpdir(), 'bindgen-a-'));
-  const second = mkdtempSync(join(tmpdir(), 'bindgen-b-'));
+  const first = mkdtempSync(join(tmpdir(), 'binding-a-'));
+  const second = mkdtempSync(join(tmpdir(), 'binding-b-'));
   try {
     execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', first]);
     execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', second]);
@@ -52,7 +52,7 @@ test('two generations in two directories give the same bytes and name neither di
 });
 
 test('a generation leaves no file of an earlier one', () => {
-  const out = mkdtempSync(join(tmpdir(), 'bindgen-c-'));
+  const out = mkdtempSync(join(tmpdir(), 'binding-c-'));
   try {
     execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out]);
     const stale = join(out, 'packages/python/generated/stale.py');
@@ -72,9 +72,9 @@ test('an item that is not generated yet is refused by its name (G-4)', () => {
 });
 
 test('a contract that fails the check is not generated', () => {
-  const out = mkdtempSync(join(tmpdir(), 'bindgen-d-'));
+  const out = mkdtempSync(join(tmpdir(), 'binding-d-'));
   try {
-    const root = mkdtempSync(join(tmpdir(), 'bindgen-e-'));
+    const root = mkdtempSync(join(tmpdir(), 'binding-e-'));
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
@@ -88,7 +88,7 @@ test('a contract that fails the check is not generated', () => {
 });
 
 test('check compares the tracked binding packages with what scaffold writes (L-2)', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bindgen-f-'));
+  const root = mkdtempSync(join(tmpdir(), 'binding-f-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const contract = join(root, 'packages/rust/interface.json');
@@ -146,15 +146,15 @@ test('a closure that only calls a function is the function (clippy redundant_clo
   assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
 });
 
-test('check refuses a bindgen_core of another version than the CLI (CK-20)', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bindgen-g-'));
+test('check refuses a binding_core of another version than the CLI (CK-20)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-g-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const contract = join(root, 'packages/rust/interface.json');
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
     writeFileSync(join(root, 'Cargo.lock'), lock('0.0.0-other'));
-    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-bindgen-core 0\.0\.0-other/);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-binding-core 0\.0\.0-other/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -166,7 +166,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const dirs = new Set([...out.keys()].map((path) => path.split('/').slice(0, 4).join('/')));
   assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated']);
-  const root = mkdtempSync(join(tmpdir(), 'bindgen-h-'));
+  const root = mkdtempSync(join(tmpdir(), 'binding-h-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     execFileSync('mkdir', ['-p', join(root, 'packages/server')]);
@@ -186,7 +186,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
 });
 
 test('Go: the C ABI, the packages and their tests are generated, and a generation removes old zz_generated files (GN-15)', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bindgen-go-'));
+  const root = mkdtempSync(join(tmpdir(), 'binding-go-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
@@ -205,11 +205,11 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
     execFileSync(process.execPath, [cli, 'generate', '--root', root]);
     const out = files(join(root, 'packages/go'));
     assert.ok(!out.has('zz_generated_stale.go'), 'a zz_generated file of an earlier generation stays');
-    assert.ok(out.has('go.mod'), 'a file that bindgen does not own was removed');
+    assert.ok(out.has('go.mod'), 'a file that binding does not own was removed');
     for (const file of ['zz_generated_sample.go', 'zz_generated_test.go', 'errors/zz_generated_errors.go', 'internal/binding/zz_generated_binding.go', 'internal/ffi/generated/lib.rs']) {
       assert.ok(out.has(file), `${file} is missing`);
     }
-    assert.match(String(out.get('zz_generated_sample.go')), /^\/\/ Code generated by bindgen from the interface contract\. DO NOT EDIT\.$/m);
+    assert.match(String(out.get('zz_generated_sample.go')), /^\/\/ Code generated by binding from the interface contract\. DO NOT EDIT\.$/m);
     assert.match(String(out.get('internal/ffi/generated/lib.rs')), /pub unsafe extern "C" fn polyspec_sample_split_words\(/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -218,14 +218,14 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
 
 test('check reads cargo metadata of any size for the contracts it depends on (T-3)', async () => {
   const { contract: sample, dependency } = await import('./fixture.ts');
-  const root = mkdtempSync(join(tmpdir(), 'bindgen-i-'));
+  const root = mkdtempSync(join(tmpdir(), 'binding-i-'));
   try {
     const contract = sample();
     contract.units.find((u: any) => u.id === 'forms').members.find((m: any) => m.id === 'forms.parse').parameters[0].type = { unit: 'dep_reader', library: 'forms-dep' };
     execFileSync('mkdir', ['-p', join(root, 'packages/rust'), join(root, 'dep'), join(root, 'bin')]);
     writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
     writeFileSync(join(root, 'dep/interface.json'), JSON.stringify(dependency()));
-    writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n');
+    writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n');
     // A cargo that answers metadata with 4 MB of packages before the one the check needs.
     const filler = Array.from({ length: 20000 }, (_, i) => ({ name: `filler-${i}`, manifest_path: `/nowhere/${'x'.repeat(160)}/${i}/Cargo.toml` }));
     const metadata = { packages: [...filler, { name: 'polyspec-forms-dep', manifest_path: join(root, 'dep/Cargo.toml') }] };

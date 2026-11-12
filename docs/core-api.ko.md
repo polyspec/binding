@@ -1,20 +1,20 @@
 <!-- doc-id: core-api -->
-# bindgen_core 공개 API
+# binding_core 공개 API
 
 [English](core-api.md)
 
-crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 런타임 지원이다. 아래에 적은 설계 규칙의 타입만 두며
+crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 런타임 지원이다. 아래에 적은 설계 규칙의 타입만 두며
 어느 라이브러리의 규칙도 두지 않는다.
 
 ## Crate
 
-- 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-bindgen-core`, 라이브러리 이름 `bindgen_core`, 버전 0.0.1, edition
+- 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-binding-core`, 라이브러리 이름 `binding_core`, 버전 0.0.1, edition
   2021, rust-version 1.99.0, toolchain 1.99.0(`rust-toolchain.toml`).
 - 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목).
 - feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - 개발 중 다른 레포에서 쓰는 법: 이 폴더에 대한 경로 의존
-  `bindgen_core = { package = "polyspec-bindgen-core", path = "<checkout>/packages/core/rust" }`. 추적하는 매니페스트가 아니라
+  `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`. 추적하는 매니페스트가 아니라
   로컬 link로 정한다(PRINCIPLES P30).
 
 ## 항목
@@ -34,7 +34,7 @@ crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 handle로 담는다. `Raised::from_generated(Handle)`와 `handle()`은 `construct`에서만. `Display`, `std::error::Error`. kind 없음. |
 | `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)`, `Callback(Box<dyn std::error::Error + Send + Sync>)`. callback을 부르는 코어 함수의 오류 타입. 마지막 변형은 Rust 역호출의 오류를 Rust 호출자에게 그대로 돌려주며 `construct` 없이 만들고 생성 코드에는 오지 않는다. `From<Raised>`, `Display`, `std::error::Error`(source는 Rust 역호출의 오류). `Debug`만 derive한다. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`. `ALL`, `as_str()`. |
-| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. bindgen 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 시험 벡터를 bindgen의 TypeScript 변환과 함께 쓴다. |
+| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. binding 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 시험 벡터를 binding의 TypeScript 변환과 함께 쓴다. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |

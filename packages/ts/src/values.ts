@@ -1,6 +1,6 @@
-// The closed tables of bindgen for value units (design U-1 `value`): the language type that each built-in `make` form
+// The closed tables of binding for value units (design U-1 `value`): the language type that each built-in `make` form
 // produces, the built-in language types that an `in` row may name, and the kind each predicate applies to. The kind and
-// predicate names are those of bindgen_core::ValueKind and bindgen_core::Predicate.
+// predicate names are those of binding_core::ValueKind and binding_core::Predicate.
 
 import type { Lang } from './contract.ts';
 
@@ -56,7 +56,7 @@ export function builtinTypes(lang: Lang): Set<string> {
   return new Set(Object.values(MADE_TYPE[lang]));
 }
 
-// U-7 (f): what bindgen knows of a value that an out row makes with a built-in form, as the predicates of HostValue that
+// U-7 (f): what binding knows of a value that an out row makes with a built-in form, as the predicates of HostValue that
 // the core judges: a predicate of the row's when holds as it says; text is UTF-8; an integer form is an integral number
 // in the safe range; a list has the keys 0 to n-1. A predicate that is not here is not known.
 //

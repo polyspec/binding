@@ -2,7 +2,8 @@
 
 import type { Model } from './model.ts';
 import { langName } from './model.ts';
-import { type Context, callArgs, fromJson, isNumber, placeholder, raisingCases, textKind, wrapText } from './samples.ts';
+import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
+import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
@@ -19,11 +20,27 @@ export function pythonTests(model: Model, module: string): string {
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
-  for (const fn of model.functions) {
-    const name = langName('python', fn.member.name, 'callable');
+  // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
+  // property of an instance that a factory makes (T-5).
+  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+  const invoke = (fn: Fn, args: string, receiver: string): string => {
+    const member = langName('python', fn.member.name, 'callable');
+    const cls = `pkg.${langName('python', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    if (fn.kind === 'constructor') return `${cls}(${args})`;
+    if (fn.kind === 'static') return `${cls}.${member}(${args})`;
+    if (fn.kind === 'property') return `${receiver}.${member}`;
+    return `${receiver}.${member}(${args})`;
+  };
+  for (const fn of callables(model)) {
+    const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
+    const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
+    const recv = sample === undefined ? '' : made(sample, (arg) => fromJson(model, ctx, arg.type, sample.args.get(arg) ?? null));
+    const target = (args: string): string => invoke(fn, args, recv);
     const call = (override: Map<unknown, string>): string =>
-      `pkg.${name}(${callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type))})`;
-    for (const arg of fn.args) {
+      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
+    const reachable = fn.receiver === undefined || sample !== undefined;
+    for (const arg of reachable ? fn.args : []) {
       const number = isNumber(arg.type);
       const argName = langName('python', arg.name, 'variable');
       if (number !== undefined) {
@@ -47,10 +64,11 @@ export function pythonTests(model: Model, module: string): string {
       }
     }
     for (const kase of raisingCases(model, fn)) {
+      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => fromJson(model, ctx, arg.type, kase.receiver?.args.get(arg) ?? null));
       out.push(`
     def test_b4_${name}_${kase.id}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
-            ${`pkg.${name}(${callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null))})`}
+            ${invoke(fn, callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null)), receiver)}
         error = caught.exception
         self.assertIs(type(error), pkg.${cls(kase.raises.category)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
@@ -59,14 +77,15 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIsNone(error.errno)`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    if (fn.kind === 'property' || !reachable) continue;
     out.push(`
-    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:
+    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.length === 0 ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
-            pkg.${name}()
+            ${target('')}`}
         with self.assertRaisesRegex(TypeError, "positional"):
-            pkg.${name}(${callArgs(model, ctx, fn, values, 'None')})
+            ${target(callArgs(model, ctx, fn, values, 'None'))}
         with self.assertRaisesRegex(TypeError, "unexpected keyword"):
-            pkg.${name}(${callArgs(model, ctx, fn, values)}, not_a_parameter=1)`);
+            ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
   }
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""

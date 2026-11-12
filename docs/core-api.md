@@ -1,21 +1,21 @@
 <!-- doc-id: core-api -->
-# bindgen_core public API
+# binding_core public API
 
 [한국어](core-api.ko.md)
 
-The crate `bindgen_core` is the runtime support that generated binding crates and core crates share. It holds only the
+The crate `binding_core` is the runtime support that generated binding crates and core crates share. It holds only the
 types of the design rules named below and no rule of any library.
 
 ## Crate
 
-- Path: `packages/core/rust` of this repository; package `polyspec-bindgen-core`, library name `bindgen_core`, version
+- Path: `packages/core/rust` of this repository; package `polyspec-binding-core`, library name `binding_core`, version
   0.0.1, edition 2021, rust-version 1.99.0, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
   (the entries of `OrderedMap`).
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Use from another repository during development: a path dependency on this folder,
-  `bindgen_core = { package = "polyspec-bindgen-core", path = "<checkout>/packages/core/rust" }`, named by a local link
+  `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`, named by a local link
   and never by a tracked manifest (PRINCIPLES P30).
 
 ## Items
@@ -35,7 +35,7 @@ types of the design rules named below and no rule of any library.
 | `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
 | `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)` or `Callback(Box<dyn std::error::Error + Send + Sync>)`: the error type of a core function that calls a callback; the last arm returns a Rust callback's error to its Rust caller unchanged, is built without `construct` and never reaches generated code. `From<Raised>`, `Display`, `std::error::Error` (its source is the Rust callback's error); `Debug` only. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`; `ALL`, `as_str()`. |
-| `naming::{convert, Word, Lang, Role}` | N-2 | The name conversion, public for generators outside bindgen; `naming::Lang` is `Php`, `Python`, `Js`, `Go`, `Rust`; `naming::Role` is `Class`, `Callable`, `Variable`, `Constant`. Its vectors are shared with bindgen's TypeScript conversion. |
+| `naming::{convert, Word, Lang, Role}` | N-2 | The name conversion, public for generators outside binding; `naming::Lang` is `Php`, `Python`, `Js`, `Go`, `Rust`; `naming::Role` is `Class`, `Callable`, `Variable`, `Constant`. Its vectors are shared with binding's TypeScript conversion. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, all required; implemented by every core error enum and by `BindingError`. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`; `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`; `category()`, `KINDS` (kind and category table), `Kinds`, `Display` (the whole message, E-4), `std::error::Error`. |

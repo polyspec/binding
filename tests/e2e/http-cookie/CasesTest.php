@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Polyspec\HttpCookies\E2e;
+namespace Polyspec\HttpCookie\E2e;
 
 use PHPUnit\Framework\TestCase;
-use Polyspec\HttpCookies as Cookies;
+use Polyspec\HttpCookie as Cookies;
 
-/** The contract cases of http-cookies run with the extension loaded (V-1). */
+/** The contract cases of http-cookie run with the extension loaded (V-1). */
 final class CasesTest extends TestCase
 {
     /** @return array<string, list<array<string, mixed>>> */
@@ -57,7 +57,7 @@ final class CasesTest extends TestCase
                     $call();
                     self::fail('no error: ' . $case['id']);
                 } catch (\Throwable $error) {
-                    $class = 'Polyspec\\HttpCookies\\Cookies' . ucfirst($raises['category']) . 'Error';
+                    $class = 'Polyspec\\HttpCookie\\HttpCookie' . ucfirst($raises['category']) . 'Error';
                     self::assertSame($class, $error::class, $case['id']);
                     self::assertSame($raises['kind'], $error->kind(), $case['id']);
                     self::assertSame($raises['status'], $error->status(), $case['id']);

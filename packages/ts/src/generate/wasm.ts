@@ -281,7 +281,7 @@ function coreErrorRust(model: Model): string {
   const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
   return `
 /// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
-/// variant with or without data, which the generator does not see (I-2: bindgen reads no Rust source).
+/// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
@@ -304,7 +304,7 @@ function libRust(model: Model): string {
 // JavaScript entry checks the count and the names of the arguments (G-7); a failure is an instance of its library class
 // (B-4).
 
-use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
+use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
 use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 use std::panic::{catch_unwind, AssertUnwindSafe};

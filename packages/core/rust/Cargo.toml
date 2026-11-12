@@ -1,15 +1,15 @@
 [package]
-name = "polyspec-bindgen-core"
+name = "polyspec-binding-core"
 version = "0.0.1"
 edition = "2021"
 rust-version = "1.99.0"
-description = "Runtime support shared by bindgen's generated binding crates and the core crates they wrap"
-repository = "https://github.com/polyspec/bindgen.git"
+description = "Runtime support shared by binding's generated binding crates and the core crates they wrap"
+repository = "https://github.com/polyspec/binding.git"
 license = "MIT"
 publish = false
 
 [lib]
-name = "bindgen_core"
+name = "binding_core"
 path = "src/lib.rs"
 
 [features]

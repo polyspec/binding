@@ -116,7 +116,7 @@ impl TextCause {
 
 /// An error that generated code raises itself, never a core (design E-1a).
 ///
-/// Its kind and category are fixed by bindgen; its message is its `Display`, to which a binding adds nothing (E-4).
+/// Its kind and category are fixed by binding; its message is its `Display`, to which a binding adds nothing (E-4).
 /// A `subject` or `class` is the name that the caller sees in its own language, which the generated code passes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BindingError {

@@ -16,8 +16,8 @@
 /// A core function that does short blocking I/O, such as reading or writing a file, takes `Io` as its first argument.
 ///
 /// ```compile_fail
-/// fn read(_io: bindgen_core::Io) {}
-/// fn wait_lock(token: bindgen_core::ProcessWait) {
+/// fn read(_io: binding_core::Io) {}
+/// fn wait_lock(token: binding_core::ProcessWait) {
 ///     read(token); // a ProcessWait is not an Io
 /// }
 /// ```
@@ -33,8 +33,8 @@ pub struct Io {
 /// argument.
 ///
 /// ```compile_fail
-/// fn wait_lock(_token: bindgen_core::ProcessWait) {}
-/// fn read(io: bindgen_core::Io) {
+/// fn wait_lock(_token: binding_core::ProcessWait) {}
+/// fn read(io: binding_core::Io) {
 ///     wait_lock(io); // an Io is not a ProcessWait
 /// }
 /// ```

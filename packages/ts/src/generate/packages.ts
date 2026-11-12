@@ -1,14 +1,14 @@
 // L-2: the tracked package of each binding. It is thin: a Cargo manifest, an entry file that includes the generated
-// source of `generated/`, and the language's own package manifest. bindgen writes these files (`bindgen scaffold`) and
-// `bindgen check` compares them with what bindgen would write, so a repository builds its core without the generator
+// source of `generated/`, and the language's own package manifest. binding writes these files (`binding scaffold`) and
+// `binding check` compares them with what binding would write, so a repository builds its core without the generator
 // and only the binding crates need `make bindings`. They depend on nothing but the library name, the targets and the
 // core version, so a contract that the generator cannot generate yet still has them.
 
 import type { Contract } from '../contract.ts';
 import { type Files, GENERATED_LINTS, header } from './text.ts';
 
-// Before its first release, bindgen is a Git dependency; the repository's Cargo.lock pins the commit.
-const BINDGEN_CORE = 'polyspec-bindgen-core = { git = "https://github.com/polyspec/bindgen.git", branch = "v1/rust-core" }';
+// Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
+const BINDING_CORE = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }';
 
 function entry(what: string, allows: [string, string][]): string {
   return `${header('//')}
@@ -20,6 +20,38 @@ ${allows.map(([lint, reason]) => `#![allow(${lint}, reason = ${JSON.stringify(re
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/lib.rs"));
 `;
+}
+
+// T-3: the crates of the other repositories whose types the contract names, as the core's manifest gives them (the
+// binding sits at the same depth as the core, so a relative path means the same place).
+export type CoreDependencies = ReadonlyMap<string, unknown>;
+
+const tomlValue = (value: unknown): string => {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(', ')}]`;
+  return `{ ${Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k} = ${tomlValue(v)}`).join(', ')} }`;
+};
+
+export function namedLibraries(contract: Contract): string[] {
+  const found = new Set<string>();
+  const walk = (value: unknown, key: string): void => {
+    if (Array.isArray(value)) value.forEach((item) => walk(item, key));
+    else if (typeof value === 'object' && value !== null) for (const [k, v] of Object.entries(value)) walk(v, k);
+    else if (key === 'library' && typeof value === 'string' && value !== contract.library) found.add(value);
+  };
+  walk(contract.units, '');
+  walk(contract.types, '');
+  return [...found].sort();
+}
+
+function foreignCrates(contract: Contract, dependencies: CoreDependencies): string[] {
+  return namedLibraries(contract).map((library) => {
+    const crate = `polyspec-${library}`;
+    const spec = dependencies.get(crate);
+    if (spec === undefined) throw new Error(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names (T-3)`);
+    return `${crate} = ${tomlValue(spec)}`;
+  });
 }
 
 function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', crate = { type: 'cdylib', core: '../rust' }): string {
@@ -41,7 +73,7 @@ panic-test = []
 
 [dependencies]
 ${contract.core.crate} = { path = "${crate.core}" }
-${BINDGEN_CORE}
+${BINDING_CORE}
 ${dependencies.join('\n')}
 
 ${GENERATED_LINTS}`;
@@ -66,11 +98,12 @@ export function placed(contract: Contract, files: Files): Files {
 
 export const extensionName = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
-export function trackedPackages(contract: Contract, version: string): Files {
+export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map()): Files {
   const files: Files = new Map();
+  const foreign = foreignCrates(contract, coreDependencies);
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, 'python', '_native', ['pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }']));
+    files.set('packages/python/Cargo.toml', manifest(contract, version, 'python', '_native', [...foreign, 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }']));
     files.set('packages/python/src/lib.rs', entry(`The native module ${python.module}._native.`, [MANY]));
     files.set('packages/python/pyproject.toml', `${header('#')}
 [build-system]
@@ -80,7 +113,8 @@ build-backend = "maturin"
 [project]
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
-requires-python = ">=3.14"
+requires-python = ">=3.14"${namedLibraries(contract).length === 0 ? '' : `
+dependencies = [${namedLibraries(contract).map((library) => JSON.stringify(`polyspec-${library}`)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}
@@ -90,6 +124,7 @@ python-source = "generated/python"
   if (contract.targets.includes('node')) {
     const npm = (contract.packages['node'] as { package: string }).package;
     files.set('packages/ts/Cargo.toml', manifest(contract, version, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
+      ...foreign,
       'napi = { version = "=3.16.2", default-features = false, features = ["napi8"] }',
       'napi-derive = "=3.7.1"',
     ], '\nbuild = "build.rs"').replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
@@ -108,7 +143,7 @@ python-source = "generated/python"
   }
   if (contract.targets.includes('php')) {
     const php = contract.packages['php'] as { package: string };
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, 'php-ext', extensionName(contract), ['ext-php-rs = "=0.16.4"']));
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, 'php-ext', extensionName(contract), [...foreign, 'ext-php-rs = "=0.16.4"']));
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
       ['non_snake_case', 'G-7: a parameter is named as the PHP named argument, in camelCase'],
       MANY,

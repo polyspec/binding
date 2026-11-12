@@ -1,11 +1,8 @@
-// The contract cases of http-cookies run against the WASM binding of the installed package, its subpath ./wasm (V-1,
-// P-5).
+// The contract cases of http-cookie run against the installed Node package (V-1).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import * as cookies from '@polyspec/http-cookies/wasm';
-
-await cookies.init();
+import * as cookies from '@polyspec/http-cookie';
 
 const cases = JSON.parse(readFileSync(process.env.CASES, 'utf8'));
 
@@ -25,7 +22,7 @@ test('set_cookie', () => {
     if (kase.raises !== undefined) {
       const category = kase.raises.category[0].toUpperCase() + kase.raises.category.slice(1);
       assert.throws(call, (error) =>
-        error.constructor === cookies[`Cookies${category}Error`] &&
+        error.constructor === cookies[`HttpCookie${category}Error`] &&
         error.kind === kase.raises.kind &&
         error.status === kase.raises.status &&
         (kase.raises.message === null || error.message === kase.raises.message), kase.id);

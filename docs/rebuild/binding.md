@@ -1,14 +1,14 @@
-<!-- doc-id: rebuild-bindgen -->
-# Rebuild record: bindgen
+<!-- doc-id: rebuild-binding -->
+# Rebuild record: binding
 
-[한국어](bindgen.ko.md)
+[한국어](binding.ko.md)
 
-PRINCIPLES S1 and P14 require an existing tool to be used when one fits. This record states what bindgen must do, the
+PRINCIPLES S1 and P14 require an existing tool to be used when one fits. This record states what binding must do, the
 tools judged against those requirements, the verdict for each, and the implementation language that follows (S9).
 
 ## Requirements
 
-bindgen reads one interface contract per repository (`contracts/interface.json`, schema `packages/ts/schema/interface.schema.json`)
+binding reads one interface contract per repository (`contracts/interface.json`, schema `packages/ts/schema/interface.schema.json`)
 and the core crate, and produces the bindings and their declarations. A tool fits only when it meets all of the
 following, because each one is a rule that every repository's bindings must keep (design ids of `docs/spec/`):
 
@@ -28,7 +28,7 @@ following, because each one is a rule that every repository's bindings must keep
   generated from the receiver (U-2).
 - R5 Contract first: the language-neutral contract, not the Rust source, is the declaration of the public API. Names are
   word lists converted by one rule per language, and an exception needs a rule id; the package layout, inheritance,
-  `changes` and `cases` are in the contract; bindgen does not parse Rust source, and the agreement of contract and core
+  `changes` and `cases` are in the contract; binding does not parse Rust source, and the agreement of contract and core
   is decided by compiling the generated crate (I-2, I-3, N-1 to N-3).
 
 ## Tools judged
@@ -58,20 +58,20 @@ requirement as shipped; "no" names the part that is missing.
 No surveyed tool meets the five requirements. The nearest, alef, covers the targets, but its input is the Rust source,
 its error model is a class per Rust variant, and its wait model has no distinction between short blocking I/O and
 waiting on another process; each of these is a rule of R2, R4 and R5, so using it would mean replacing those parts of
-it. bindgen is therefore built, and it uses the per-language frameworks as they are: the generated code calls
-ext-php-rs, PyO3, napi-rs, wasm-bindgen and cgo, and bindgen does not reimplement any of them (P14). A C header writer
+it. binding is therefore built, and it uses the per-language frameworks as they are: the generated code calls
+ext-php-rs, PyO3, napi-rs, wasm-bindgen and cgo, and binding does not reimplement any of them (P14). A C header writer
 for the Go C ABI layer (cbindgen 0.29.4) is judged again when the Go target is built; that layer is generated from the
 contract, so the header can be generated with it.
 
 ## Implementation language
 
-bindgen is written in TypeScript, checked by `tsc` with `erasableSyntaxOnly`, and run by Node:
+binding is written in TypeScript, checked by `tsc` with `erasableSyntaxOnly`, and run by Node:
 
-- S9 states that cross-language orchestration and checks are TypeScript. bindgen reads one contract and writes code for
+- S9 states that cross-language orchestration and checks are TypeScript. binding reads one contract and writes code for
   five languages and the contract check judges rules that span them (inheritance, Go names, value round trips), so it
   is cross-language orchestration and a cross-language check.
 - The S9 exceptions keep their own languages: the symbol extractors of `check-host` (I-1) run each ecosystem's tool
   (`tsc`, Python `inspect`, PHP Reflection), and the per-language generated tests run on each standard runner (S3).
-- The runtime support that generated Rust code links against is a Rust crate, `bindgen_core` (packages/core/rust),
+- The runtime support that generated Rust code links against is a Rust crate, `binding_core` (packages/core/rust),
   because it is a dependency of the generated crates and of the core crates, not orchestration.
-- The schema is validated with Ajv (JSON Schema 2020-12) rather than a validator of bindgen's own (P14).
+- The schema is validated with Ajv (JSON Schema 2020-12) rather than a validator of binding's own (P14).

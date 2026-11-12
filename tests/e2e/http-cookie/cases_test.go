@@ -1,4 +1,4 @@
-// The contract cases of http-cookies run against the Go package (V-1). A latin1 text of a case is a Go string of one
+// The contract cases of http-cookie run against the Go package (V-1). A latin1 text of a case is a Go string of one
 // byte per character (B-8).
 package tests
 
@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	httpcookies "github.com/polyspec/http-cookies/packages/go"
-	liberrors "github.com/polyspec/http-cookies/packages/go/errors"
+	httpcookie "github.com/polyspec/http-cookie/packages/go"
+	liberrors "github.com/polyspec/http-cookie/packages/go/errors"
 )
 
 type raises struct {
@@ -73,12 +73,12 @@ type failure interface {
 }
 
 func category(err error) string {
-	var value *liberrors.ValueError
-	var typ *liberrors.TypeError
-	var io *liberrors.IoError
-	var store *liberrors.StoreError
-	var busy *liberrors.BusyError
-	var internal *liberrors.InternalError
+	var value *liberrors.HTTPCookieValueError
+	var typ *liberrors.HTTPCookieTypeError
+	var io *liberrors.HTTPCookieIoError
+	var store *liberrors.HTTPCookieStoreError
+	var busy *liberrors.HTTPCookieBusyError
+	var internal *liberrors.HTTPCookieInternalError
 	switch {
 	case errors.As(err, &value):
 		return "value"
@@ -106,7 +106,7 @@ func TestParse(t *testing.T) {
 		for i, line := range c.Lines {
 			lines[i] = latin1(line)
 		}
-		got, err := httpcookies.ParseCookie(lines)
+		got, err := httpcookie.ParseCookie(lines)
 		if err != nil {
 			t.Fatalf("%s: %v", c.ID, err)
 		}
@@ -127,12 +127,12 @@ func TestSetCookie(t *testing.T) {
 	}
 	for _, c := range group {
 		a := c.Attributes
-		attributes := httpcookies.Attributes{Path: a.Path, MaxAge: a.MaxAge, Secure: a.Secure, HttpOnly: a.HTTPOnly}
+		attributes := httpcookie.Attributes{Path: a.Path, MaxAge: a.MaxAge, Secure: a.Secure, HttpOnly: a.HTTPOnly}
 		if a.SameSite != nil {
-			sameSite := httpcookies.SameSite(*a.SameSite)
+			sameSite := httpcookie.SameSite(*a.SameSite)
 			attributes.SameSite = &sameSite
 		}
-		header, err := httpcookies.SetCookie(c.Name, c.Value, attributes)
+		header, err := httpcookie.SetCookie(c.Name, c.Value, attributes)
 		if c.Raises != nil {
 			var f failure
 			if !errors.As(err, &f) || category(err) != c.Raises.Category || f.Kind() != c.Raises.Kind {

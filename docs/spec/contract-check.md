@@ -3,7 +3,7 @@
 
 [한국어](contract-check.ko.md)
 
-`bindgen check <interface.json>` and `checkContract(contract, { dependencies })` of `packages/ts` judge every rule of an interface contract that the Rust
+`binding check <interface.json>` and `checkContract(contract, { dependencies })` of `packages/ts` judge every rule of an interface contract that the Rust
 compiler cannot judge (design I-2) and every rule that the design gives to the contract check. A contract with a
 finding is refused. Each finding names one check id below, the JSON pointer of the item and the rule. `dependencies`
 holds the contracts of the libraries the contract names (T-3, E-1b). The command reads them from the packages that
@@ -16,13 +16,13 @@ its shape.
 
 ## Checks
 
-The schema is part of the npm package `@polyspec/bindgen` and is exported as `./schema/interface.schema.json` (S15).
+The schema is part of the npm package `@polyspec/binding` and is exported as `./schema/interface.schema.json` (S15).
 
 - **CK-1** Schema: the contract passes `packages/ts/schema/interface.schema.json` (JSON Schema 2020-12, Ajv). Every reason is a rule
   id (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`), so a reason in prose, such as "the current name", is refused (N-3,
   P-10). A `native` entry without its `reason` is refused (I-3). A callback member's `errors` is only
   `{recognize, reason}` (U-3).
-- **CK-2** Todo: a `"todo"` string or an object with a `todo` key, which `bindgen import` leaves, fails the contract
+- **CK-2** Todo: a `"todo"` string or an object with a `todo` key, which `binding import` leaves, fails the contract
   (M-2). A schema error at or around a todo is not reported separately.
 - **CK-3** References: unit and member ids are unique; `parent`, `implements` (an `interface` unit), `cleanup` (a member
   of the same unit), unit types, `{const}` defaults (a constant), `cases[].member`, `changes[].to` resolve; `only`,
@@ -52,7 +52,7 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
     row, are one without `when`, or a predicate's `is: true` and `is: false`, or distinct predicate values and one
     `else` for the rest (U-7 (b));
   - round trip (P-3): the language type that a `make` produces has an `in` row in that language, and that row
-    classifies the value as the row's kind. For a built-in form, bindgen's closed table gives the predicates of the
+    classifies the value as the row's kind. For a built-in form, binding's closed table gives the predicates of the
     made value (the row's own `when`; for an `else` row, the other value of a predicate that its sibling rows select
     with one value; `text` is UTF-8; `int` is an integral safe integer; `list` has the keys 0 to n-1), the first case
     whose `when` holds is the case, and a predicate that the table does not give is a finding. For a class with `by`,
@@ -64,9 +64,11 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   units of its own library, checked recursively; a value type in `types` names a `value` unit of its owner.
 - **CK-10** Errors (E-1, E-1a, E-2, U-1): an error unit has a category and only an error unit has a category or a
   parent; a parent is an error unit of the same category and not `final`; `errors.classes` has a class for every
-  category in every target but Go, whose category types E-7 fixes; a category class is named `<Library><Category>Error`
-  (ending in the category's `<Category>Error` and longer than it), with the same name in every language, and a PHP class
-  is in the namespace of `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
+  category in every target but Go, whose category types E-7 fixes; a category class is named `<Library><Category>Error`,
+  where `<Library>` is the repository name in the class form of each language (N-2: an acronym word is one capital
+  word in PHP and Node and all capitals in Python and Go, so `HttpCookieValueError` and `HTTPCookieValueError`; the
+  acronym words of a repository name are binding's table, below), and a PHP class is in the namespace of
+  `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
   takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once.
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
@@ -93,19 +95,23 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   `async_allowed: true`.
 
 - **CK-18** Package names (P-1): the core crate is `polyspec-<library>`; Composer `polyspec/<library>`, the PHP
-  namespace `Polyspec\<Library in PascalCase>`, PyPI `polyspec-<library>`, the Python root `polyspec.<library with _>`,
-  npm `@polyspec/<library>`.
+  namespace `Polyspec\<Repository>`, PyPI `polyspec-<library>`, the Python root `polyspec.<repository with _>`, npm
+  `@polyspec/<library>`, where `<Repository>` is the repository name in the PHP class form. A core at
+  `packages/<component>/rust` (L-1) is the library `<repository>-<component>`, whose namespace and module are below the
+  repository's: `Polyspec\CrudUi\Validator`, `polyspec.crud_ui.validator`.
 
-- **CK-19** Tracked binding packages (L-2): `bindgen check` compares each tracked file of the binding packages
-  (docs/spec/generator.md GN-3a) with what `bindgen scaffold` writes; a missing or different file is a finding.
-- **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-bindgen-core`, of the version
-  of the running bindgen, because one release gives the CLI (npm package `@polyspec/bindgen`, bin `bindgen`) and the
+- **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
+  (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding.
+- **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
+  of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.
 
-## Tables of bindgen
+## Tables of binding
 
-These closed sets are bindgen's own; the Rust names are those of `bindgen_core` (`docs/core-api.md`).
+These closed sets are binding's own; the Rust names are those of `binding_core` (`docs/core-api.md`).
 
+- Acronym words of a repository name (P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`,
+  `json`, `orm`, `php`, `sql`, `ui`, `uri`, `url`, `xml`.
 - Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
   `reference`, `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
   `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).
@@ -134,4 +140,4 @@ These closed sets are bindgen's own; the Rust names are those of `bindgen_core` 
   The built-in types an `in` row may name are the types of this table. The contract type `keyed_map<T>` is written
   `{keyed_map: T, key: [...]}` (T-2).
 - `types` names the owner of each value type the contract uses: `{library, unit}` for `json_value`, `template_value`
-  and `php_value`; `host_value` belongs to bindgen (T-2).
+  and `php_value`; `host_value` belongs to binding (T-2).

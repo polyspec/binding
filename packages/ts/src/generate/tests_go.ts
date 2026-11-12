@@ -6,12 +6,9 @@
 
 import type { Type } from '../contract.ts';
 import { type Model, langName, unitOf } from './model.ts';
-import { goBytes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
+import { goBytes, goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
 import { raisingCases } from './samples.ts';
 
-const CATEGORY_TYPE: Record<string, string> = {
-  value: 'ValueError', type: 'TypeError', io: 'IoError', store: 'StoreError', busy: 'BusyError', internal: 'InternalError',
-};
 
 interface Values {
   model: Model;
@@ -83,6 +80,7 @@ export function goTests(model: Model, module: string): string | undefined {
   if (fns.length === 0) return undefined;
   const pkg = goPackage(model.contract, module);
   const v: Values = { model, pkg, usesPtr: false };
+  const types = Object.fromEntries(goErrorTypes(model.contract));
   const out: string[] = [];
   for (const fn of fns) {
     const name = langName('go', fn.member.name, 'callable');
@@ -126,7 +124,7 @@ export function goTests(model: Model, module: string): string | undefined {
         out.push(`
 func TestB3${name}Refuses${testName(slot.label.split('.'))}ThatIsNotUTF8(t *testing.T) {
 	${assign} ${slot.replace(wrap('"\\xff"'))}
-	var failure *liberrors.ValueError
+	var failure *liberrors.${types['value'] ?? ''}
 	if !errors.As(err, &failure) || failure.Kind() != "invalid_text" {
 		t.Fatalf("B-3: %#v", err)
 	}
@@ -137,7 +135,7 @@ func TestB3${name}Refuses${testName(slot.label.split('.'))}ThatIsNotUTF8(t *test
         out.push(`
 func TestT6${name}Refuses${testName(slot.label.split('.'))}ThatIsNoConstant(t *testing.T) {
 	${assign} ${slot.replace(wrap(`${pkg}.${goName(unit.name)}("\\x00")`))}
-	var failure *liberrors.TypeError
+	var failure *liberrors.${types['type'] ?? ''}
 	if !errors.As(err, &failure) || failure.Kind() != "invalid_argument_type" {
 		t.Fatalf("T-6: %#v", err)
 	}
@@ -156,7 +154,7 @@ func TestT6${name}Refuses${testName(slot.label.split('.'))}ThatIsNoConstant(t *t
           const found = [...kase.args].find(([a]) => !a.field && a.name === p.name);
           return fromJson(v, p.type, found?.[1] ?? null);
         });
-        const type = CATEGORY_TYPE[kase.raises.category] ?? '';
+        const type = Object.fromEntries(goErrorTypes(model.contract))[kase.raises.category] ?? '';
         const status = kase.raises.status === null ? 'if _, ok := failure.Status(); ok {' : `if status, ok := failure.Status(); !ok || status != ${kase.raises.status} {`;
         return `
 	t.Run(${goString(kase.id)}, func(t *testing.T) {
@@ -195,8 +193,8 @@ ${out.join('\n')}
 `;
 }
 
-// B-7: the panic of the core reaches Go as an *InternalError of kind internal.
-export function goPanicTest(): string {
+// B-7: the panic of the core reaches Go as the internal error type of kind internal.
+export function goPanicTest(internal: string): string {
   return `${goHeader()}
 
 //go:build polyspec_panic_test
@@ -207,7 +205,7 @@ import "testing"
 
 func TestB7APanicIsKindInternal(t *testing.T) {
 	err := PanicTest()
-	failure, ok := err.(*InternalError)
+	failure, ok := err.(*${internal})
 	if !ok || failure.Kind() != "internal" {
 		t.Fatalf("B-7: %#v", err)
 	}

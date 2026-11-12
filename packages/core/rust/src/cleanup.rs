@@ -11,14 +11,14 @@
 ///
 /// ```
 /// struct File;
-/// impl bindgen_core::Cleanup for File {}
-/// fn assert_cleanup<T: bindgen_core::Cleanup>() {}
+/// impl binding_core::Cleanup for File {}
+/// fn assert_cleanup<T: binding_core::Cleanup>() {}
 /// assert_cleanup::<File>();
 /// ```
 ///
 /// ```compile_fail
 /// struct Parser;
-/// fn assert_cleanup<T: bindgen_core::Cleanup>() {}
+/// fn assert_cleanup<T: binding_core::Cleanup>() {}
 /// assert_cleanup::<Parser>(); // Parser does not declare Cleanup
 /// ```
 pub trait Cleanup {}

@@ -1,10 +1,10 @@
-"""The contract cases of http-cookies run against the installed Python package (V-1)."""
+"""The contract cases of http-cookie run against the installed Python package (V-1)."""
 
 import json
 import os
 import unittest
 
-import polyspec.http_cookies as cookies
+import polyspec.http_cookie as cookies
 
 CASES = os.environ["CASES"]
 
@@ -47,7 +47,7 @@ class ContractCaseTest(unittest.TestCase):
                     self.assertEqual(error.kind, raises["kind"])
                     self.assertEqual(error.status, raises["status"])
                     category = raises["category"].capitalize()
-                    self.assertIs(type(error), getattr(cookies, f"Cookies{category}Error"))
+                    self.assertIs(type(error), getattr(cookies, f"HTTPCookie{category}Error"))
                     if raises["message"] is not None:
                         self.assertEqual(str(error), raises["message"])
                 else:

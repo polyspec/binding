@@ -1,14 +1,14 @@
-<!-- doc-id: rebuild-bindgen -->
-# 재구현 기록: bindgen
+<!-- doc-id: rebuild-binding -->
+# 재구현 기록: binding
 
-[English](bindgen.md)
+[English](binding.md)
 
-PRINCIPLES S1과 P14는 맞는 기존 도구가 있으면 그것을 쓰라고 요구한다. 이 기록은 bindgen이 해야 하는 일, 그 요구에 비추어
+PRINCIPLES S1과 P14는 맞는 기존 도구가 있으면 그것을 쓰라고 요구한다. 이 기록은 binding이 해야 하는 일, 그 요구에 비추어
 판정한 도구와 각각의 판정, 그리고 그에 따른 구현 언어(S9)를 적는다.
 
 ## 요구
 
-bindgen은 레포마다 인터페이스 계약 하나(`contracts/interface.json`, 스키마 `packages/ts/schema/interface.schema.json`)와 코어 crate를
+binding은 레포마다 인터페이스 계약 하나(`contracts/interface.json`, 스키마 `packages/ts/schema/interface.schema.json`)와 코어 crate를
 읽고 바인딩과 그 선언을 만든다. 도구는 다음을 모두 만족할 때만 맞는다. 각 항목은 모든 레포의 바인딩이 지켜야 하는
 규칙이기 때문이다(`docs/spec/`의 설계 id).
 
@@ -24,7 +24,7 @@ bindgen은 레포마다 인터페이스 계약 하나(`contracts/interface.json`
   `AsyncTask`와 전용 스레드와 `ThreadsafeFunction`, Python은 `py.detach`와 생성된 `a<name>` awaitable), 코어 시그니처의 서로
   다른 토큰 타입으로 증명되며, busy 규칙 B-5c는 receiver에서 생성된다(U-2).
 - R5 계약 먼저: Rust 소스가 아니라 언어 중립 계약이 공개 API의 선언이다. 이름은 언어마다 한 규칙으로 바꾸는 낱말 목록이고
-  예외에는 규칙 id가 필요하다. 패키지 배치, 상속, `changes`, `cases`가 계약에 있다. bindgen은 Rust 소스를 파싱하지 않고,
+  예외에는 규칙 id가 필요하다. 패키지 배치, 상속, `changes`, `cases`가 계약에 있다. binding은 Rust 소스를 파싱하지 않고,
   계약과 코어의 일치는 생성 crate의 컴파일로 판정한다(I-2, I-3, N-1~N-3).
 
 ## 판정한 도구
@@ -53,18 +53,18 @@ bindgen은 레포마다 인터페이스 계약 하나(`contracts/interface.json`
 
 조사한 도구 가운데 다섯 요구를 만족하는 것은 없다. 가장 가까운 alef는 대상을 덮지만 입력이 Rust 소스이고, 오류 모델이
 Rust 변형마다 클래스이며, wait 모델이 짧은 블로킹 I/O와 다른 프로세스 기다림을 구별하지 않는다. 각각이 R2, R4, R5의
-규칙이므로 alef를 쓰려면 그 부분들을 바꿔야 한다. 그래서 bindgen을 만들고, 언어별 프레임워크는 그대로 쓴다. 생성 코드가
-ext-php-rs, PyO3, napi-rs, wasm-bindgen, cgo를 부르며 bindgen은 그 어느 것도 다시 구현하지 않는다(P14). Go C ABI 층의
+규칙이므로 alef를 쓰려면 그 부분들을 바꿔야 한다. 그래서 binding을 만들고, 언어별 프레임워크는 그대로 쓴다. 생성 코드가
+ext-php-rs, PyO3, napi-rs, wasm-bindgen, cgo를 부르며 binding은 그 어느 것도 다시 구현하지 않는다(P14). Go C ABI 층의
 C 헤더 작성기(cbindgen 0.29.4)는 Go 대상을 만들 때 다시 판정한다. 그 층은 계약에서 생성되므로 헤더도 함께 생성할 수 있다.
 
 ## 구현 언어
 
-bindgen은 TypeScript로 쓰고 `erasableSyntaxOnly`를 켠 `tsc`로 검사하며 Node로 실행한다.
+binding은 TypeScript로 쓰고 `erasableSyntaxOnly`를 켠 `tsc`로 검사하며 Node로 실행한다.
 
-- S9는 언어를 가로지르는 조율과 검사를 TypeScript로 쓴다고 정한다. bindgen은 계약 하나를 읽어 다섯 언어의 코드를 쓰고,
+- S9는 언어를 가로지르는 조율과 검사를 TypeScript로 쓴다고 정한다. binding은 계약 하나를 읽어 다섯 언어의 코드를 쓰고,
   계약 검사는 언어를 가로지르는 규칙(상속, Go 이름, 값 왕복)을 판정하므로 언어를 가로지르는 조율이자 검사다.
 - S9의 예외는 자기 언어를 유지한다. `check-host`(I-1)의 기호 추출기는 각 생태계의 도구(`tsc`, Python `inspect`, PHP
   Reflection)를 실행하고, 언어별 생성 시험은 각 표준 runner(S3)에서 실행한다.
-- 생성된 Rust 코드가 링크하는 런타임 지원은 Rust crate `bindgen_core`(packages/core/rust)다. 생성 crate와 코어 crate의
+- 생성된 Rust 코드가 링크하는 런타임 지원은 Rust crate `binding_core`(packages/core/rust)다. 생성 crate와 코어 crate의
   의존이며 조율이 아니기 때문이다.
-- 스키마 검증은 bindgen 자체 검증기가 아니라 Ajv(JSON Schema 2020-12)로 한다(P14).
+- 스키마 검증은 binding 자체 검증기가 아니라 Ajv(JSON Schema 2020-12)로 한다(P14).
