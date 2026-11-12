@@ -51,6 +51,13 @@ export function generate(inputs: Inputs): Files {
   ].find(([, type]) => hasMap(type));
   const others = inputs.contract.targets.filter((target) => target !== 'go');
   if (withMap !== undefined && others.length > 0) throw new Unsupported(`${withMap[0]}: map<T> is generated for Go only, not for ${others.join(', ')} yet`);
+  // T-2: keyed_map<T> is generated for Go so far.
+  const hasKeyed = (type: unknown): boolean => JSON.stringify(type).includes('"keyed_map"');
+  const withKeyed = [
+    ...model.functions.flatMap((fn) => [...fn.params.map((p) => [fn.member.id, p.type] as const), [fn.member.id, fn.returns] as const]),
+    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => [unit.id, f.type] as const)),
+  ].find(([, type]) => hasKeyed(type));
+  if (withKeyed !== undefined && others.length > 0) throw new Unsupported(`${withKeyed[0]}: keyed_map<T> is generated for Go only, not for ${others.join(', ')} yet`);
   const files: Files = new Map();
   const targets = inputs.contract.targets;
   if (targets.includes('python')) python(forLanguage(model, 'python'), files);

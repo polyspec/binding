@@ -23,6 +23,7 @@ function goTypeName(v: Values, type: Type): string {
   }
   if ('list' in type) return `[]${goTypeName(v, type.list)}`;
   if ('map' in type) return `*${v.pkg}.Map[${goTypeName(v, type.map)}]`;
+  if ('keyed_map' in type) return `*${v.pkg}.KeyedMap[${goTypeName(v, type.keyed_map)}]`;
   if ('optional' in type) return `*${goTypeName(v, type.optional)}`;
   if ('tuple' in type) return `[${type.tuple.length}]${goTypeName(v, type.tuple[0] ?? 'none')}`;
   const unit = unitOf(v.model, type);
@@ -31,7 +32,7 @@ function goTypeName(v: Values, type: Type): string {
 
 function placeholder(v: Values, type: Type): string {
   if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil' } as Record<string, string>)[type] ?? '0';
-  if ('list' in type || 'optional' in type || 'map' in type) return 'nil';
+  if ('list' in type || 'optional' in type || 'map' in type || 'keyed_map' in type) return 'nil';
   const unit = unitOf(v.model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return `${v.pkg}.${goName(unit.name)}${goName(first.name)}`;
@@ -55,6 +56,15 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     return `ptr(${typed})`;
   }
   if ('list' in type) return `${goTypeName(v, type)}{${(value as unknown[]).map((item) => fromJson(v, type.list, item)).join(', ')}}`;
+  if ('keyed_map' in type) {
+    // T-2: a case gives a keyed map as its entries in order, [key, value] with a number key an integer and a string key
+    // a text; a byte string key has no JSON form.
+    const sets = (value as [unknown, unknown][]).map(([key, item]) => {
+      const goKey = typeof key === 'number' ? `${v.pkg}.IntKey(${key})` : `${v.pkg}.TextKey(${goString(String(key))})`;
+      return `m.Set(${goKey}, ${fromJson(v, type.keyed_map, item)}); `;
+    }).join('');
+    return `func() ${goTypeName(v, type)} { m := &${v.pkg}.KeyedMap[${goTypeName(v, type.keyed_map)}]{}; ${sets}return m }()`;
+  }
   if ('map' in type) {
     // T-2: the entries of the case in their order.
     const sets = Object.entries(value as Record<string, unknown>).map(([key, item]) => `m.Set(${goString(key)}, ${fromJson(v, type.map, item)}); `).join('');
@@ -141,6 +151,25 @@ func TestB3${name}Refuses${testName(slot.label.split('.'))}ThatIsNotUTF8(t *test
 	}
 }`);
       }
+      if (typeof base === 'object' && 'keyed_map' in base) {
+        // T-2: a key of a kind that the contract does not list is kind invalid_argument_type.
+        const missing = (['int', 'bytes', 'text'] as const).find((kind) => !base.key.includes(kind));
+        if (missing !== undefined) {
+          const key = { int: `${pkg}.IntKey(1)`, bytes: `${pkg}.BytesKey([]byte("b"))`, text: `${pkg}.TextKey("t")` }[missing];
+          const mapType = goTypeName(v, base);
+          out.push(`
+func TestT2${name}Refuses${testName(slot.label.split('.'))}WithA${testName([missing])}Key(t *testing.T) {
+	m := &${mapType.slice(1)}{}
+	var entry ${goTypeName(v, base.keyed_map)}
+	m.Set(${key}, entry)
+	${assign} ${slot.replace(wrap('m'))}
+	var failure *liberrors.${types['type'] ?? ''}
+	if !errors.As(err, &failure) || failure.Kind() != "invalid_argument_type" {
+		t.Fatalf("T-2: %#v", err)
+	}
+}`);
+        }
+      }
       const unit = unitOf(model, base);
       if (unit?.kind === 'enum') {
         out.push(`
@@ -215,7 +244,7 @@ package binding
 import "testing"
 
 func TestB7APanicIsKindInternal(t *testing.T) {
-	err := PanicTest()
+	err := panicTest()
 	failure, ok := err.(*${internal})
 	if !ok || failure.Kind() != "internal" {
 		t.Fatalf("B-7: %#v", err)
@@ -279,7 +308,7 @@ func TestT2TheEncodingKeepsTheOrderOfAMap(t *testing.T) {
 
 // GW-4, T-2: the round trips through the C ABI: every latin1 character comes back the same and a rune above U+00FF
 // or bytes that are not UTF-8 are kind invalid_text; a map comes back in its order.
-export function goCodecTest(_contract: unknown, echo: { latin1: boolean; map: boolean }, valueType: string): string {
+export function goCodecTest(_contract: unknown, echo: { latin1: boolean; map: boolean; keyed: boolean }, valueType: string): string {
   const latin1 = echo.latin1 ? `
 func TestB8Latin1RoundTrips(t *testing.T) {
 	runes := make([]rune, 0, 256)
@@ -287,12 +316,12 @@ func TestB8Latin1RoundTrips(t *testing.T) {
 		runes = append(runes, code)
 	}
 	text := string(runes)
-	back, err := EchoLatin1(text)
+	back, err := echoLatin1(text)
 	if err != nil || back != text {
 		t.Fatalf("B-8: %q, %v", back, err)
 	}
 	for _, bad := range []string{"\\u0100", "\\xff"} {
-		_, err := EchoLatin1(bad)
+		_, err := echoLatin1(bad)
 		failure, ok := err.(*${valueType})
 		if !ok || failure.Kind() != "invalid_text" {
 			t.Fatalf("B-8: %q: %#v", bad, err)
@@ -306,7 +335,7 @@ func TestT2AMapRoundTripsInItsOrder(t *testing.T) {
 	for _, key := range []string{"z", "a", "\\u00e9", "m"} {
 		m.Set(key, key+key)
 	}
-	back, err := EchoMap(m)
+	back, err := echoMap(m)
 	if err != nil || !reflect.DeepEqual(back.Keys(), m.Keys()) {
 		t.Fatalf("T-2: %q, %v", back.Keys(), err)
 	}
@@ -318,6 +347,24 @@ func TestT2AMapRoundTripsInItsOrder(t *testing.T) {
 	}
 }
 ` : '';
+  const keyed = echo.keyed ? `
+func TestT2AKeyedMapRoundTripsInItsOrder(t *testing.T) {
+	m := &KeyedMap[string]{}
+	for i, key := range []Key{TextKey("1"), IntKey(1), BytesKey([]byte{0xff}), IntKey(-7), TextKey("a")} {
+		m.Set(key, string(rune('a'+i)))
+	}
+	back, err := echoKeyedMap(m)
+	if err != nil || !reflect.DeepEqual(back.Keys(), m.Keys()) {
+		t.Fatalf("T-2: %v, %v", back.Keys(), err)
+	}
+	for _, key := range m.Keys() {
+		want, _ := m.Get(key)
+		if got, _ := back.Get(key); got != want {
+			t.Fatalf("T-2: %v is %q", key, got)
+		}
+	}
+}
+` : '';
   return `${goHeader()}
 
 //go:build polyspec_codec_test
@@ -325,7 +372,7 @@ func TestT2AMapRoundTripsInItsOrder(t *testing.T) {
 package binding
 
 import (
-${echo.map ? '\t"reflect"\n' : ''}\t"testing"
+${echo.map || echo.keyed ? '\t"reflect"\n' : ''}\t"testing"
 )
-${latin1}${map}`;
+${latin1}${map}${keyed}`;
 }

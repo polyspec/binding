@@ -73,6 +73,8 @@ interface GoScope {
   imports: Set<string>;
   // Whether the package names the ordered map of T-2, which it declares as an alias of binding.Map.
   usesMap?: boolean;
+  // Whether the package names the keyed map of T-2 and its Key.
+  usesKeyed?: boolean;
 }
 
 function goUnitName(scope: GoScope, unit: Unit): string {
@@ -93,6 +95,10 @@ export function goType(scope: GoScope, type: Type): string {
     // T-2: an ordered map, not a Go map, whose iteration order is random.
     scope.usesMap = true;
     return `*Map[${goType(scope, type.map)}]`;
+  }
+  if ('keyed_map' in type) {
+    scope.usesKeyed = true;
+    return `*KeyedMap[${goType(scope, type.keyed_map)}]`;
   }
   if ('optional' in type) return `*${goType(scope, type.optional)}`;
   if ('tuple' in type) {
@@ -132,6 +138,18 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
       `${t}}`,
     ];
   }
+  if ('keyed_map' in type) {
+    const key = `key${depth}`;
+    const entry = `entry${depth}`;
+    return [
+      `${t}enc.Len(${expr}.Len())`,
+      `${t}for _, ${key} := range ${expr}.Keys() {`,
+      `${t}\t${entry}, _ := ${expr}.Get(${key})`,
+      `${t}\tenc.Key(${key})`,
+      ...goEncode(scope, type.keyed_map, entry, indent + 1, depth + 1),
+      `${t}}`,
+    ];
+  }
   if ('optional' in type) {
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
   }
@@ -168,6 +186,20 @@ function goDecode(scope: GoScope, type: Type, target: string, indent: number, de
       `${t}	var ${entry} ${goType(scope, type.map)}`,
       ...goDecode(scope, type.map, entry, indent + 1, depth + 1),
       `${t}	${target}.Set(key${depth}, ${entry})`,
+      `${t}}`,
+    ];
+  }
+  if ('keyed_map' in type) {
+    const index = `i${depth}`;
+    const count = `n${depth}`;
+    const entry = `entry${depth}`;
+    return [
+      `${t}${target} = &KeyedMap[${goType(scope, type.keyed_map)}]{}`,
+      `${t}for ${index}, ${count} := 0, dec.Len(); ${index} < ${count}; ${index}++ {`,
+      `${t}\tkey${depth} := dec.Key()`,
+      `${t}\tvar ${entry} ${goType(scope, type.keyed_map)}`,
+      ...goDecode(scope, type.keyed_map, entry, indent + 1, depth + 1),
+      `${t}\t${target}.Set(key${depth}, ${entry})`,
       `${t}}`,
     ];
   }
@@ -297,7 +329,7 @@ function goPackageFile(model: Model, module: string): string {
     ...model.constants.filter((c) => c.module === module).map(goConstant),
     ...model.functions.filter((f) => f.module === module).map((f) => goFunction(scope, f)),
   ].join('');
-  const usesBinding = model.functions.some((f) => f.module === module) || scope.usesMap === true;
+  const usesBinding = model.functions.some((f) => f.module === module) || scope.usesMap === true || scope.usesKeyed === true;
   const alias = scope.usesMap === true
     ? `
 // Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each with its value. Its
@@ -305,12 +337,31 @@ function goPackageFile(model: Model, module: string): string {
 type Map[T any] = binding.Map[T]
 `
     : '';
+  const keyed = scope.usesKeyed === true
+    ? `
+// KeyedMap is the contract type keyed_map<T> (T-2): keys of the kinds that the contract lists, in the order in which
+// they were first set, each with its value. Its zero value is an empty map; a nil *KeyedMap is an empty map too.
+type KeyedMap[T any] = binding.KeyedMap[T]
+
+// Key is a key of a KeyedMap: an integer, a byte string or a text, which are different keys even with the same digits.
+type Key = binding.Key
+
+// IntKey is the integer key of a value.
+func IntKey(value int64) Key { return binding.IntKey(value) }
+
+// BytesKey is the byte string key of a value.
+func BytesKey(value []byte) Key { return binding.BytesKey(value) }
+
+// TextKey is the text key of a value.
+func TextKey(value string) Key { return binding.TextKey(value) }
+`
+    : '';
   const imports = usesBinding || scope.imports.size > 0 ? `\n${goImports(scope, usesBinding ? [goImport(model.contract, 'internal/binding')] : [])}` : '';
   return `${goHeader()}
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
 package ${goPackage(model.contract, module)}
-${imports}${alias}${body}`;
+${imports}${alias}${keyed}${body}`;
 }
 
 const internalType = (model: Model): string => goErrorTypes(model.contract).find(([c]) => c === 'internal')?.[1] ?? '';
@@ -379,7 +430,7 @@ package binding
 #cgo linux LDFLAGS: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
 #cgo darwin LDFLAGS: -lSystem -lc -lm
 ${cDeclarations(model, model.functions.map((fn) => cSymbol(model, fn)))}
-void ${prefix(model)}_free(${prefix(model)}_buffer buffer);
+void ${prefix(model)}__free(${prefix(model)}_buffer buffer);
 */
 import "C"
 
@@ -407,7 +458,7 @@ func call(fn entry, args []byte) ([]byte, error) {
 	if result.len > 0 {
 		copy(out, unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), int(result.len)))
 	}
-	C.${prefix(model)}_free(result)
+	C.${prefix(model)}__free(result)
 	if status != 0 {
 		return nil, decodeFailure(out)
 	}
@@ -583,6 +634,114 @@ func (m *Map[T]) Len() int {
 	return len(m.keys)
 }
 
+// Key is a key of the contract type keyed_map<T> (T-2): an integer, a byte string or a text. Keys of different kinds
+// are different keys, as IntKey(1), BytesKey([]byte("1")) and TextKey("1").
+type Key struct {
+	kind    byte
+	integer int64
+	text    string
+}
+
+// IntKey is the integer key of a value.
+func IntKey(value int64) Key { return Key{kind: 0, integer: value} }
+
+// BytesKey is the byte string key of a value.
+func BytesKey(value []byte) Key { return Key{kind: 1, text: string(value)} }
+
+// TextKey is the text key of a value.
+func TextKey(value string) Key { return Key{kind: 2, text: value} }
+
+// Int is the integer of an integer key.
+func (k Key) Int() (int64, bool) { return k.integer, k.kind == 0 }
+
+// Bytes is the byte string of a byte string key.
+func (k Key) Bytes() ([]byte, bool) {
+	if k.kind != 1 {
+		return nil, false
+	}
+	return []byte(k.text), true
+}
+
+// Text is the text of a text key.
+func (k Key) Text() (string, bool) {
+	if k.kind != 2 {
+		return "", false
+	}
+	return k.text, true
+}
+
+// KeyedMap is the contract type keyed_map<T> (T-2): keys in the order in which they were first set, each once with
+// its value.
+type KeyedMap[T any] struct {
+	keys   []Key
+	values map[Key]T
+}
+
+// Set sets the value of a key: a new key goes after the others, a key that the map has keeps its place.
+func (m *KeyedMap[T]) Set(key Key, value T) {
+	if m.values == nil {
+		m.values = map[Key]T{}
+	}
+	if _, ok := m.values[key]; !ok {
+		m.keys = append(m.keys, key)
+	}
+	m.values[key] = value
+}
+
+// Get is the value of a key and whether the map has the key.
+func (m *KeyedMap[T]) Get(key Key) (T, bool) {
+	if m == nil {
+		var zero T
+		return zero, false
+	}
+	value, ok := m.values[key]
+	return value, ok
+}
+
+// Keys is the keys in their order.
+func (m *KeyedMap[T]) Keys() []Key {
+	if m == nil {
+		return nil
+	}
+	return append([]Key(nil), m.keys...)
+}
+
+// Len is the count of the keys.
+func (m *KeyedMap[T]) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.keys)
+}
+
+// Key encodes a key: its kind (0 integer, 1 byte string, 2 text) and its value.
+func (w *Writer) Key(key Key) {
+	w.bytes = append(w.bytes, key.kind)
+	if key.kind == 0 {
+		w.Int(key.integer)
+	} else {
+		w.Text(key.text)
+	}
+}
+
+// Key decodes a key.
+func (r *Reader) Key() Key {
+	head := r.take(1)
+	if r.failed {
+		return Key{}
+	}
+	switch head[0] {
+	case 0:
+		return IntKey(r.Int())
+	case 1:
+		return Key{kind: 1, text: r.Text()}
+	case 2:
+		return TextKey(r.Text())
+	}
+	r.failed = true
+	return Key{}
+}
+
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -629,15 +788,15 @@ function goBindingPanic(model: Model): string {
 package binding
 
 /*
-${cDeclarations(model, [`${prefix(model)}_panic_test`])}
+${cDeclarations(model, [`${prefix(model)}__panic_test`])}
 */
 import "C"
 
-// PanicTest calls the entry point of the B-7 test, which panics in the core; the static library has it with the
+// panicTest calls the entry point of the B-7 test, which panics in the core; the static library has it with the
 // feature panic-test.
-func PanicTest() error {
+func panicTest() error {
 	_, err := call(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
-		return C.${prefix(model)}_panic_test(pointer, length, result)
+		return C.${prefix(model)}__panic_test(pointer, length, result)
 	}, nil)
 	return err
 }
@@ -671,6 +830,10 @@ function convertIn(model: Model, type: Type, input: string, subject: string): st
   }
   if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
   if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
+  if ('keyed_map' in type) {
+    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+    return `in_keyed_map(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
+  }
   if ('optional' in type) return `in_optional(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
@@ -686,6 +849,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('list' in type) return `out_list(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
   // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
+  if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(output, ${value}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
   const unit = unitOf(model, type);
@@ -814,6 +978,58 @@ fn out_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::OrderedMap<
     write_length(output, map.len());
     for (key, value) in map.iter() {
         out_text(output, key);
+        item(output, value);
+    }
+}
+
+/// T-2, U-7 (c): a keyed map, its keys each once: kind 0 an integer, 1 a byte string, 2 a text; a key of a kind that
+/// the contract does not list is kind invalid_argument_type, a key twice a fault of the generated Go code.
+fn in_keyed_map<'a, T>(
+    input: &mut &'a [u8],
+    subject: &str,
+    kinds: &[u8],
+    expected: &str,
+    item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>,
+) -> Result<binding_core::KeyedMap<T>, Fail> {
+    let count = read_length(input)?;
+    let mut map = binding_core::KeyedMap::new();
+    for _ in 0..count {
+        let (tag, key) = match take(input, 1)? {
+            [0] => (0, binding_core::Key::Int(in_int(input)?)),
+            [1] => (1, binding_core::Key::Bytes(in_bytes(input)?)),
+            [2] => (2, binding_core::Key::Text(in_text(input, subject)?)),
+            _ => return Err(malformed()),
+        };
+        if !kinds.contains(&tag) {
+            return Err(type_error(subject, expected));
+        }
+        let value = item(input)?;
+        if map.insert(key, value).is_some() {
+            return Err(malformed());
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: a keyed map, owned or borrowed, in its order.
+fn out_keyed_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
+    let map = value.borrow();
+    write_length(output, map.len());
+    for (key, value) in map.iter() {
+        match key {
+            binding_core::Key::Int(integer) => {
+                output.push(0);
+                out_int(output, integer);
+            }
+            binding_core::Key::Bytes(bytes) => {
+                output.push(1);
+                out_bytes(output, bytes);
+            }
+            binding_core::Key::Text(text) => {
+                output.push(2);
+                out_text(output, text);
+            }
+        }
         item(output, value);
     }
 }
@@ -996,12 +1212,17 @@ function rustUsed(model: Model): string {
 interface Echoes {
   latin1: boolean;
   map: boolean;
+  keyed: boolean;
 }
 
 function echoes(model: Model): Echoes {
   const used = rustUsed(model);
   const has = (...names: string[]): boolean => names.every((name) => new RegExp(`\\bfn ${name}\\b`).test(used));
-  return { latin1: has('in_latin1', 'out_latin1'), map: has('in_map', 'out_map', 'in_text', 'out_text') };
+  return {
+    latin1: has('in_latin1', 'out_latin1'),
+    map: has('in_map', 'out_map', 'in_text', 'out_text'),
+    keyed: has('in_keyed_map', 'out_keyed_map', 'in_text', 'out_text'),
+  };
 }
 
 function echoRust(model: Model, name: string, read: string, write: string): string {
@@ -1013,7 +1234,7 @@ function echoRust(model: Model, name: string, read: string, write: string): stri
 /// As for every function of this library.
 #[cfg(feature = "codec-test")]
 #[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}_echo_${name}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
+pub unsafe extern "C" fn ${prefix(model)}__echo_${name}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
     // SAFETY: the caller's contract above.
     let input = unsafe { arguments(args, len) };
     let outcome = guard(move || {
@@ -1038,12 +1259,13 @@ function libRust(model: Model): string {
   const echoEntries = [
     echo.latin1 ? echoRust(model, 'latin1', 'in_latin1(&mut input, "value")?', 'out_latin1(&mut buffer, &value)') : '',
     echo.map ? echoRust(model, 'map', 'in_map(&mut input, "value", |input| in_text(input, "value"))?', 'out_map(&mut buffer, &value, |output, item| out_text(output, item))') : '',
+    echo.keyed ? echoRust(model, 'keyed_map', 'in_keyed_map(&mut input, "value", &[0, 1, 2], "a key", |input| in_text(input, "value"))?', 'out_keyed_map(&mut buffer, &value, |output, item| out_text(output, item))') : '',
   ].join('');
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure
-// in a buffer that Go copies and frees with ${prefix(model)}_free.
+// in a buffer that Go copies and frees with ${prefix(model)}__free.
 
 use binding_core::{BindingError, Category, Kinds${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::mem::ManuallyDrop;
@@ -1156,7 +1378,7 @@ unsafe fn respond(result: *mut Buffer, outcome: Result<Vec<u8>, Fail>) -> i32 {
 ///
 /// \`buffer\` is a buffer that a function of this library wrote, freed once.
 #[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}_free(buffer: Buffer) {
+pub unsafe extern "C" fn ${prefix(model)}__free(buffer: Buffer) {
     if !buffer.ptr.is_null() {
         // SAFETY: the buffer is the parts of a Vec<u8> that respond gave away (the caller's contract above).
         drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
@@ -1170,7 +1392,7 @@ ${used}${functions}
 /// As for every function of this library.
 #[cfg(feature = "panic-test")]
 #[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}_panic_test(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
+pub unsafe extern "C" fn ${prefix(model)}__panic_test(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
     // SAFETY: the caller's contract above.
     let input = unsafe { arguments(args, len) };
     let outcome = guard(move || {
@@ -1186,9 +1408,9 @@ ${echoEntries}`;
 // GW-4, T-2: the Go side of the codec test entry points, with the build tag polyspec_codec_test.
 function goBindingCodec(model: Model, echo: Echoes): string {
   const buffer = `C.${prefix(model)}_buffer`;
-  const symbols = [...(echo.latin1 ? ['latin1'] : []), ...(echo.map ? ['map'] : [])].map((n) => `${prefix(model)}_echo_${n}`);
+  const symbols = [...(echo.latin1 ? ['latin1'] : []), ...(echo.map ? ['map'] : []), ...(echo.keyed ? ['keyed_map'] : [])].map((n) => `${prefix(model)}__echo_${n}`);
   const wrap = (symbol: string, params: string, encode: string[], result: string, decode: string[]): string => `
-func ${goName(symbol.split('_').slice(-2))}(${params}) (${result}, error) {
+func echo${goName(symbol.slice(`${prefix(model)}__echo_`.length).split('_'))}(${params}) (${result}, error) {
 	var zero ${result}
 	enc := NewWriter()
 ${encode.map((l) => `	${l}`).join('\n')}
@@ -1216,7 +1438,7 @@ package binding
 ${cDeclarations(model, symbols)}
 */
 import "C"
-${echo.latin1 ? wrap(`${prefix(model)}_echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${prefix(model)}_echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}`;
+${echo.latin1 ? wrap(`${prefix(model)}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${prefix(model)}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${prefix(model)}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}`;
 }
 
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate.
@@ -1238,7 +1460,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   const echo = echoes(model);
-  if (echo.latin1 || echo.map) {
+  if (echo.latin1 || echo.map || echo.keyed) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));
     files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model.contract, echo, goErrorTypes(model.contract).find(([c]) => c === 'value')?.[1] ?? ''));
   }

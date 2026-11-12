@@ -135,16 +135,20 @@ the design ids are those of the binding design.
   package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
   others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
   crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
-  `invalid_text`). `map<T>` is generated for Go only so far: a contract with a map and another target is refused by
-  name. `keyed_map<T>` is not generated for any target yet.
+  `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
+  a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
+  crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
+  `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for Go only so far: a contract with one of them
+  and another target is refused by name.
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
   bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
   ABI decodes and judges them (T-8), and the arguments must end where the last parameter ends; the core's result, or
   the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
-  allocates, writes into `result` and Go frees with `polyspec_<repository>_free`; the return is 0 for a result and 1
-  for a failure. A buffer that does not follow the encoding is kind `internal`. Every function runs under
+  allocates, writes into `result` and Go frees with `polyspec_<repository>__free`; the return is 0 for a result and 1
+  for a failure. A buffer that does not follow the encoding is kind `internal`. The symbols that are not members
+  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no member name has. Every function runs under
   `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
   returns.
 
@@ -188,9 +192,13 @@ the design ids are those of the binding design.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
-  (when the contract takes and gives latin1) and a `map<text>` (when it takes and gives a map of text) through the
-  conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to U+00FF and the order of a map come
-  back the same and that U+0100 is refused. A case's latin1 value is a Go string of its runes.
+  (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
+  and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
+  U+00FF, the order of a map and the order and kinds of the keys of a keyed map come back the same and that U+0100 is
+  refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
+  missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
+  an object of its entries in order and a `keyed_map` as an array of `[key, value]`, a number key an integer and a
+  string key a text.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
   `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance

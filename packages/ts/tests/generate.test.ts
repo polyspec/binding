@@ -288,7 +288,24 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rust, /fn in_latin1\(input: &mut &\[u8\], subject: &str\)[^]*TextCause::AboveLatin1/);
   assert.match(rust, /fn out_latin1\([^]*char::from\(\*byte\)/);
-  assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample_echo_latin1\(/);
+  assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__echo_latin1\(/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /range \[\]string\{"\\u0100", "\\xff"\}/);
+});
+
+test('Go: keyed_map<T> is an ordered KeyedMap of mixed key kinds, refused for the other targets (T-2, GW-8)', () => {
+  const { contract, caseFiles } = load();
+  contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /keyed_map<T> is generated for Go only/);
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  contract.units[0].members[0].parameters[0].type = { keyed_map: 'text', key: ['int', 'text'] };
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^type KeyedMap\[T any\] = binding\.KeyedMap\[T\]$/m);
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^func TextKey\(value string\) Key \{ return binding\.TextKey\(value\) \}$/m);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /in_keyed_map\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
 });

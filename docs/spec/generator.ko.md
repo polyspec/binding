@@ -109,14 +109,17 @@
   `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지킨다. `Map[T]`는 T-2의 순서 있는 map이며,
   쓰는 패키지가 선언하는 `internal/binding.Map`의 별칭이다. 반복 순서가 무작위인 Go map이 아니다: `Set`은 새 key를 끝에
   두고 있는 key의 자리는 지키며, `Keys`는 순서대로 주고, 0값이나 nil `*Map`은 비어 있다. C ABI는 길이와 순서대로의 항목으로
-  넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `map<T>`는 아직 Go에만 생성한다: map과 다른
-  target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 아직 어느 target에도 생성하지 않는다.
+  넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
+  `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
+  종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
+  `map<T>`와 `keyed_map<T>`는 아직 Go에만 생성한다: 그중 하나와 다른 target을 가진 계약은 이름으로 거부한다.
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
   순서의 field, enum은 값 텍스트. C ABI는 디코딩하며 판정하고(T-8), 인자는 마지막 parameter에서 끝나야 한다. 코어의 결과나
   실패(E-1의 category 번호, 메시지, kind, status, errno)는 같은 방식으로 Rust가 할당한 버퍼에 인코딩해 `result`에 쓰고, Go는
-  그것을 `polyspec_<repository>_free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
+  그것을 `polyspec_<repository>__free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
+  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member 이름도 그렇지 않다.
   모든 함수는 `catch_unwind` 아래에서 실행하므로 panic이 C ABI를 넘지 않는다(B-7). wait `none` member의 호출은 코어가 돌아올
   때 돌아온다.
 
@@ -152,9 +155,11 @@
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
   latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. build tag `polyspec_codec_test`와 C ABI
-  crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때)과 `map<text>`(map of text를 받고 줄
-  때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는 U+0000~U+00FF와 map의 순서가 그대로 돌아오고
-  U+0100이 거부되는지 확인한다. case의 latin1 값은 그 rune의 Go 문자열이다.
+  crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
+  `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
+  U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 계약이 모든 key 종류를
+  적지 않은 `keyed_map` parameter·field는 빠진 종류의 key로 kind `invalid_argument_type`을 시험한다. case의 latin1 값은 그 rune의 Go 문자열이다. case는 `map`을 순서대로의 항목을 가진 객체로,
+  `keyed_map`을 `[key, value]`의 배열로 준다(수 key는 정수, 문자열 key는 텍스트).
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
   `./wasm`에 대해 `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
   `internal`을 기대하고, 그 뒤의 호출은 인스턴스가 trap했으면 kind `internal`이고 모듈이 unwind하면 성공해야 한다(GW-7).
