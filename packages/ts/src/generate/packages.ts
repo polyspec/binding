@@ -59,6 +59,13 @@ function foreignCrates(contract: Contract, dependencies: CoreDependencies, host 
   });
 }
 
+// I-1: a target with a row in core.features builds the core with those features only.
+function coreFeatures(contract: Contract, suffix: string): string {
+  const lang = ({ python: 'python', node: 'node', 'php-ext': 'php' } as const)[suffix as 'python' | 'node' | 'php-ext'];
+  const features = contract.core.features?.[lang];
+  return features === undefined ? '' : `, default-features = false, features = [${features.map((f) => JSON.stringify(f)).join(', ')}]`;
+}
+
 function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false): string {
   return `${header('#')}
 [package]
@@ -77,7 +84,7 @@ crate-type = ["cdylib"]
 panic-test = []
 
 [dependencies]
-${contract.core.crate} = { path = "${host ? '../../rust' : '../rust'}" }
+${contract.core.crate} = { path = "${host ? '../../rust' : '../rust'}"${coreFeatures(contract, suffix)} }
 ${BINDING_CORE}
 ${dependencies.join('\n')}
 
@@ -101,11 +108,26 @@ export const isHost = (contract: Contract, lang: 'php' | 'python' | 'node'): boo
 
 const LANG_DIRS: Record<string, 'php' | 'python' | 'node'> = { 'php-ext': 'php', python: 'python', ts: 'node' };
 
+// L-2a, one form for every host package:
+// - Python: the binding crate is native/ of the host package, and the generated Python package is the subpackage
+//   <module>._binding in the host's source root src/ (maturin python-source), which binding owns whole; its native
+//   module is <module>._binding._native.
+// - Node: the binding crate and its generated entry and addon are native/ of the host package, which packs them.
+// - PHP: an extension is a Composer package of its own (type php-ext), <host package>-native, at native/ of the host
+//   library php/ (the crate and its composer.json), and the host's composer.json requires ext-<extension name>; a
+//   host layout has no php-ext/ directory.
+export const HOST_PYTHON_SUBPACKAGE = '_binding';
+
 export const place = (contract: Contract, path: string): string => {
   const [, dir, rest] = /^packages\/([a-z-]+)(\/.*)?$/.exec(path) ?? [];
-  const lang = dir === undefined ? undefined : LANG_DIRS[dir];
-  const native = lang !== undefined && isHost(contract, lang) ? '/native' : '';
-  return dir === undefined ? path : `${componentBase(contract)}/${dir}${native}${rest ?? ''}`;
+  if (dir === undefined) return path;
+  const base = `${componentBase(contract)}/${dir}`;
+  const lang = LANG_DIRS[dir];
+  if (lang === undefined || !isHost(contract, lang)) return `${base}${rest ?? ''}`;
+  if (lang === 'php') return `${componentBase(contract)}/php/native${rest ?? ''}`;
+  const sources = '/generated/python/';
+  if (lang === 'python' && rest?.startsWith(sources) === true) return `${base}/src/${rest.slice(sources.length)}`;
+  return `${base}/native${rest ?? ''}`;
 };
 
 export function placed(contract: Contract, files: Files): Files {
@@ -169,8 +191,9 @@ python-source = "generated/python"
       MANY,
       ['unsafe_code', "B-4: the base classes are found in the engine's class table at module startup"],
     ]));
-    languageManifest('php', 'packages/php-ext/composer.json', `${JSON.stringify({
-      name: php.package,
+    files.set('packages/php-ext/composer.json', `${JSON.stringify({
+      // L-2a: the extension of a host package is the package <host package>-native.
+      name: isHost(contract, 'php') ? `${php.package}-native` : php.package,
       description: `The ${contract.library} library of polyspec as a PHP extension`,
       type: 'php-ext',
       license: 'MIT',
@@ -196,24 +219,28 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
   const json = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>;
   if (contract.targets.includes('python') && isHost(contract, 'python')) {
     const python = contract.packages['python'] as { module: string };
-    const path = place(contract, 'packages/python/pyproject.toml').replace('/native/', '/');
+    const path = `${componentBase(contract)}/python/pyproject.toml`;
     out.push({ path, item: 'build-system.build-backend', want: 'maturin', found: (t) => toml(t)['build-system']?.['build-backend'] });
-    out.push({ path, item: 'tool.maturin.module-name', want: `${python.module}._native`, found: (t) => toml(t)['tool']?.['maturin']?.['module-name'] });
     out.push({ path, item: 'tool.maturin.manifest-path', want: 'native/Cargo.toml', found: (t) => toml(t)['tool']?.['maturin']?.['manifest-path'] });
+    out.push({ path, item: 'tool.maturin.python-source', want: 'src', found: (t) => toml(t)['tool']?.['maturin']?.['python-source'] });
+    out.push({
+      path, item: 'tool.maturin.module-name', want: `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native`,
+      found: (t) => toml(t)['tool']?.['maturin']?.['module-name'],
+    });
   }
   if (contract.targets.includes('node') && isHost(contract, 'node')) {
     const npm = (contract.packages['node'] as { package: string }).package;
-    const path = place(contract, 'packages/ts/package.json').replace('/native/', '/');
+    const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
-    // The addon file, <name>.<platform>-<arch>[-gnu].node in native/generated, is in the package.
-    out.push({
-      path, item: 'files (the addon)', want: 'native/generated/*.node',
-      found: (t) => ((json(t)['files'] ?? []) as string[]).find((f) => f === 'native/generated/*.node'),
-    });
+    // The generated entry, its declarations and the addon (<name>.<platform>-<arch>[-gnu].node) are in the package.
+    for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node']) {
+      out.push({ path, item: `files (${file})`, want: file, found: (t) => ((json(t)['files'] ?? []) as string[]).find((f) => f === file) });
+    }
   }
   if (contract.targets.includes('php') && isHost(contract, 'php')) {
-    const path = place(contract, 'packages/php-ext/composer.json').replace('/native/', '/');
-    out.push({ path, item: 'php-ext.extension-name', want: extensionName(contract), found: (t) => json(t)['php-ext']?.['extension-name'] });
+    const path = `${componentBase(contract)}/php/composer.json`;
+    const extension = `ext-${extensionName(contract)}`;
+    out.push({ path, item: `require.${extension}`, want: '*', found: (t) => json(t)['require']?.[extension] });
   }
   return out;
 }

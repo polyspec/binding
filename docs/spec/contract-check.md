@@ -89,7 +89,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-16** Python awaitables (N-5, U-3): the name `a<name>` of a member whose wait is not `none`, or of a callback
   member with `async_allowed: true`, is not the Python name of another member of the unit.
 - **CK-17** Callbacks (U-3, T-3): only callback members have `async_allowed` and `errors`, and every callback member
-  states `async_allowed`; `recognize` names error units; a generated class of this contract that implements a callback
+  states `async_allowed` and names its trait method and receiver in `core: {path, receiver}` with the receiver `&self`
+  or `&mut self`, because the generated struct implements the trait and binding reads no Rust source; `recognize`
+  names error units; a generated class of this contract that implements a callback
   of this contract with a member whose wait is not `none` makes the callback member of the same name
   `async_allowed: true`.
 
@@ -102,6 +104,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
   (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding. For
   a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module needs.
+- **CK-21** The build of the core and exclusive members (I-1, U-6): `core.features` names targets only; `exclusive` is
+  on a member with the receiver `&self` of a generated class only. A function type (T-2) states `async_allowed` and
+  its `recognize` names error units, as a callback member does (CK-17).
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.

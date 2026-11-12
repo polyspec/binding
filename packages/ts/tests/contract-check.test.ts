@@ -318,11 +318,15 @@ describe('CK-16 Python awaitable names', () => {
     }));
   test('an awaitable callback name taken by another member', () =>
     fails('CK-16', `${at('store')}/members/0`, (c) => {
-      unit(c, 'store').members.push({ id: 'store.aread', name: ['aread'], kind: 'method', visibility: 'public', async_allowed: false });
+      unit(c, 'store').members.push({ id: 'store.aread', name: ['aread'], kind: 'method', visibility: 'public', async_allowed: false, core: { path: 'sample::Store::aread', receiver: '&mut self' } });
     }));
 });
 
 describe('CK-17 callbacks', () => {
+  test('a callback member without its trait receiver', () =>
+    fails('CK-17', `${at('store')}/members/0`, (c) => { delete member(c, 'store.read').core; }));
+  test('a callback member with the receiver self', () =>
+    fails('CK-17', `${at('store')}/members/0`, (c) => { member(c, 'store.read').core.receiver = 'self'; }));
   test('async_allowed outside a callback', () => fails('CK-17', '/units/', (c) => { member(c, 'forms.parse').async_allowed = true; }));
   test('errors outside a callback', () =>
     fails('CK-17', '/units/', (c) => { member(c, 'forms.parse').errors = { recognize: [{ unit: 'too_large' }], reason: 'HY-24' }; }));
@@ -472,6 +476,38 @@ describe('CK-18 package names', () => {
       for (const row of Object.values(c.errors.classes) as Record<string, string>[]) {
         row['php'] = (row['php'] ?? '').replace('Polyspec\\Sample\\Validator\\', 'Polyspec\\SampleValidator\\');
       }
+    }));
+});
+
+describe('CK-21 the build of the core and exclusive members', () => {
+  test('features of the core for each target are accepted (I-1)', () => {
+    assert.deepEqual(findings((c) => { c.core.features = { wasm: ['pure'], node: ['io', 'redis'] }; }), []);
+  });
+  test('features for a language that is not a target', () => {
+    // The dependency fixture has the targets php, python and node.
+    const d = dependency();
+    d.core.features = { go: ['io'] };
+    assert.deepEqual(checkContract(d, {}).map((f) => [f.check, f.path]), [['CK-21', '/core/features/go']]);
+  });
+  test('an exclusive member of a &self class is accepted (U-6)', () => {
+    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.core.receiver = '&self'; m.exclusive = 'HY-104'; }), []);
+  });
+  test('an exclusive member with the receiver &mut self', () =>
+    fails('CK-21', `${at('session')}/members/`, (c) => { member(c, 'session.load').exclusive = 'HY-104'; }));
+});
+
+describe('CK-17 function types (T-2, U-3)', () => {
+  const fn = (extra: object): object => ({ function: { parameters: ['text'], returns: 'none', ...extra } });
+  test('a function type with its attributes is accepted', () => {
+    assert.deepEqual(findings((c) => {
+      member(c, 'forms.parse').parameters[0].type = fn({ async_allowed: false, errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' } });
+    }), []);
+  });
+  test('a function type without async_allowed', () =>
+    fails('CK-17', '/units/', (c) => { member(c, 'forms.parse').parameters[0].type = fn({}); }));
+  test('a function type that recognizes a unit that is no error', () =>
+    fails('CK-17', '/units/', (c) => {
+      member(c, 'forms.parse').parameters[0].type = fn({ async_allowed: false, errors: { recognize: [{ unit: 'session' }], reason: 'HY-24' } });
     }));
 });
 

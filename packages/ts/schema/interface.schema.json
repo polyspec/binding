@@ -42,6 +42,21 @@
           "description": "packages/rust, or packages/<component>/rust when the repository has several cores; the binding packages sit beside it (L-1).",
           "type": "string",
           "pattern": "^packages(/[a-z0-9][a-z0-9-]*)?/rust$"
+        },
+        "features": {
+          "description": "The features of the core that each target builds it with (I-1); a target without a row builds the default features. A generated crate builds the core with these features only.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(php|python|node|go|wasm)$": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              }
+            }
+          }
         }
       }
     },
@@ -552,6 +567,13 @@
                 },
                 "returns": {
                   "$ref": "#/$defs/type"
+                },
+                "async_allowed": {
+                  "description": "Whether the function may return a Promise or an awaitable (U-3).",
+                  "type": "boolean"
+                },
+                "errors": {
+                  "$ref": "#/$defs/callbackErrors"
                 }
               }
             }
@@ -1383,6 +1405,10 @@
         },
         "native": {
           "$ref": "#/$defs/native"
+        },
+        "exclusive": {
+          "description": "U-6: the rule by which the core refuses an overlapping call of this member of a &self unit with kind busy.",
+          "$ref": "#/$defs/ruleId"
         }
       },
       "allOf": [

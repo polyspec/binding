@@ -248,7 +248,7 @@ test('scaffold writes the packages of a contract with a todo unit (CK-2), which 
   }
 });
 
-test('a host package has its binding crate in native/ and its manifest checked for the native module (L-2a)', () => {
+test('a host package holds its native module in one form per language (L-2a)', () => {
   const { root, contract } = fixtureCopy((c) => {
     c.packages.python.host = true;
     c.packages.node.host = true;
@@ -257,23 +257,55 @@ test('a host package has its binding crate in native/ and its manifest checked f
   try {
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
     const written = files(root);
-    for (const path of ['packages/python/native/Cargo.toml', 'packages/ts/native/build.rs', 'packages/php-ext/native/src/lib.rs']) assert.ok(written.has(path), path);
-    for (const path of ['packages/python/pyproject.toml', 'packages/ts/package.json', 'packages/php-ext/composer.json', 'packages/python/native/pyproject.toml']) {
+    // The crate is native/ of the host package; the PHP extension is the package <host>-native there.
+    for (const path of ['packages/python/native/Cargo.toml', 'packages/ts/native/build.rs', 'packages/php/native/src/lib.rs', 'packages/php/native/composer.json']) {
+      assert.ok(written.has(path), path);
+    }
+    for (const path of ['packages/python/pyproject.toml', 'packages/ts/package.json', 'packages/python/native/pyproject.toml', 'packages/php-ext/Cargo.toml', 'packages/php/composer.json']) {
       assert.ok(!written.has(path), path);
     }
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/php/native/composer.json'), 'utf8')).name, 'polyspec/sample-native');
+    assert.match(readFileSync(join(root, 'packages/php/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
-    assert.match(missing.stderr, /pyproject\.toml: CK-19 build-system\.build-backend is missing/);
-    assert.match(missing.stderr, /composer\.json: CK-19 php-ext\.extension-name is missing/);
-    writeFileSync(join(root, 'packages/python/pyproject.toml'), '[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmodule-name = "polyspec.sample._native"\nmanifest-path = "native/Cargo.toml"\n');
-    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({ name: '@polyspec/sample', files: ['host/index.js', 'native/generated/*.node'] }));
-    writeFileSync(join(root, 'packages/php-ext/composer.json'), JSON.stringify({ name: 'polyspec/sample', 'php-ext': { 'extension-name': 'polyspec_sample' } }));
+    assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
+    assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 files \(native\/generated\/\*\.node\) is missing/);
+    const pyproject = (module: string): string =>
+      `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
+    writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
+    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
+      name: '@polyspec/sample',
+      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node'],
+    }));
+    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
+    const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
+    writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
     execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out]);
-    assert.ok(files(out).has('packages/python/native/generated/lib.rs'));
+    const generated = files(out);
+    assert.ok(generated.has('packages/python/native/generated/lib.rs'));
+    assert.ok(generated.has('packages/python/src/polyspec/sample/_binding/__init__.py'));
+    assert.ok(generated.has('packages/ts/native/generated/index.cjs'));
+    assert.ok(generated.has('packages/php/native/generated/lib.rs'));
+    assert.match(String(generated.get('packages/python/native/generated/lib.rs')), /polyspec\.sample\._binding\._errors/);
     rmSync(out, { recursive: true, force: true });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a binding crate builds the core with the features of its target only (I-1)', () => {
+  const { root } = fixtureCopy((c) => {
+    c.core.features = { node: ['io', 'redis'] };
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.match(readFileSync(join(root, 'packages/ts/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust", default-features = false, features = \["io", "redis"\] \}/);
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust" \}/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

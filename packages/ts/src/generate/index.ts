@@ -6,7 +6,7 @@ import { buildModel, forLanguage } from './model.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
-import { place, placed } from './packages.ts';
+import { HOST_PYTHON_SUBPACKAGE, place, placed } from './packages.ts';
 import type { Files } from './text.ts';
 
 export interface Inputs {
@@ -23,8 +23,13 @@ export interface Inputs {
 
 // The directories that binding owns and writes whole (L-1); the tracked thin packages around them are written by
 // `binding scaffold` (packages.ts).
-export const generatedDirs = (contract: Contract): string[] =>
-  ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated'].map((dir) => place(contract, dir));
+export const generatedDirs = (contract: Contract): string[] => {
+  const dirs = ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated'].map((dir) => place(contract, dir));
+  // L-2a: the generated Python package of a host package is the subpackage _binding in the host's source root.
+  const python = contract.packages['python'] as { module: string; host?: boolean } | undefined;
+  if (python?.host === true) dirs.push(place(contract, `packages/python/generated/python/${python.module.replaceAll('.', '/')}/${HOST_PYTHON_SUBPACKAGE}`));
+  return dirs;
+};
 
 export function generate(inputs: Inputs): Files {
   const cases = new Map<string, unknown[]>();

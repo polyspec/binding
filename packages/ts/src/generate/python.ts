@@ -4,6 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -15,8 +16,10 @@ export interface PythonLayout {
 }
 
 export function pythonLayout(model: Model): PythonLayout {
-  const python = model.contract.packages['python'] as { module: string };
-  return { module: python.module, modulePath: python.module.replaceAll('.', '/') };
+  const python = model.contract.packages['python'] as { module: string; host?: boolean };
+  // L-2a: in a host package the generated Python package is the subpackage _binding of the host's package.
+  const module = python.host === true ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}` : python.module;
+  return { module, modulePath: module.replaceAll('.', '/') };
 }
 
 const moduleOf = (layout: PythonLayout, module: string): string => (module === '' ? layout.module : `${layout.module}.${module.replaceAll('/', '.')}`);

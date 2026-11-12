@@ -38,19 +38,30 @@ the design ids are those of the binding design.
   `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
   `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
   thin packages depend only on the package and name items; `check` and `generate` report it.
-- **GN-3b** A language whose package is a hand-written host package (L-2a, `packages.<lang>.host: true`) has its
-  binding crate in `native/` of that package (`packages/<component>/<lang>/native/`: `Cargo.toml`, `src/lib.rs`, the
-  Node `build.rs` and `generated/`), whose path dependencies climb one directory more. `scaffold` does not write the
-  host's manifest; `check` reads only what the native module needs from it (CK-19): Python `build-system.build-backend`
-  `maturin`, `tool.maturin.module-name` `<module>._native` and `tool.maturin.manifest-path` `native/Cargo.toml`; Node
-  `name` and `native/generated/*.node` in `files`; PHP `php-ext.extension-name`. `binding scaffold` writes them and `binding check` compares them with what it would write
-  (CK-19), so a change of binding that changes them shows in the repository's diff. They depend only on the library
-  name, the targets and the core version. The core builds and tests without the generator; only the binding crates
-  need `make bindings`.
+- **GN-3b** A language whose package is a hand-written host package (L-2a, `packages.<lang>.host: true`) holds the
+  binding in one form, which `scaffold`, `generate` and `check` (CK-19) share; `scaffold` does not write the host's
+  manifest, and `check` reads from it only the items below.
+  - Python: the binding crate is `packages/<component>/python/native/` (`Cargo.toml`, `src/lib.rs`, `generated/`
+    with the Rust source and the tests; its path dependencies climb one directory more). The generated Python
+    package is the subpackage `<module>._binding` in the host's source root, `src/<module path>/_binding/`, a
+    directory that binding owns and writes whole; its native module is `<module>._binding._native`, and host code
+    imports the API from `<module>._binding`. The host's `pyproject.toml` has `build-system.build-backend`
+    `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source` `src` and
+    `tool.maturin.module-name` `<module>._binding._native`.
+  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry,
+    declarations and addon are `native/generated/`. The host's `package.json` has its `name` and, in `files`,
+    `native/generated/index.cjs`, `native/generated/index.mjs`, `native/generated/index.d.ts` and
+    `native/generated/*.node`; host code imports `native/generated/index.mjs` (or `index.cjs`) by its relative path.
+  - PHP: an extension is a Composer package of its own (type `php-ext`), named `<host package>-native`, at
+    `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
+    is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
+    the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
   code holds only the helper functions it uses, because the lints deny dead code.
+- **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
+  manifest depends on the core with `default-features = false` and the row's features.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test.
 
@@ -135,6 +146,12 @@ the design ids are those of the binding design.
   that takes a callback has no B-4 tests (a case cannot give a callback) and the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
+  No B-4 test is generated for a member that takes a callback: B-4 runs a contract case, and a case is JSON, which
+  cannot give the object that implements the callback, so the case's failure cannot be reached from its keys. K-2 is
+  another requirement and does not stand in for it.
+- **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
+  of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
+  closed set that each language's generated test implements.
 
 ## End-to-end check
 

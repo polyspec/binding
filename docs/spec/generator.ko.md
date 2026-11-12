@@ -32,18 +32,28 @@
   `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다.
   `scaffold`는 `--out`이 있으면 그 아래에 쓰고, 아직 `todo`인 unit(CK-2)이 있어도 멈추지 않는다. 얇은 package는 패키지·이름
   항목에만 기대기 때문이며, `check`와 `generate`가 그것을 지적한다.
-- **GN-3b** 언어 패키지가 손으로 쓴 host 패키지인 언어(L-2a, `packages.<lang>.host: true`)는 바인딩 crate를 그 패키지의
-  `native/`에 둔다(`packages/<component>/<lang>/native/`: `Cargo.toml`, `src/lib.rs`, Node `build.rs`, `generated/`). 그 경로
-  의존은 한 단계 더 올라간다. `scaffold`는 host의 manifest를 쓰지 않고, `check`는 거기서 네이티브 모듈에 필요한 것만 읽는다
-  (CK-19): Python `build-system.build-backend` `maturin`, `tool.maturin.module-name` `<module>._native`,
-  `tool.maturin.manifest-path` `native/Cargo.toml`; Node `name`과 `files`의 `native/generated/*.node`; PHP
-  `php-ext.extension-name`. `binding scaffold`가 이것을
-  쓰고 `binding check`가 쓸 내용과 비교한다(CK-19). 그래서 이것을 바꾸는 binding 변경은 레포의 diff에 드러난다. 이 파일들은
-  라이브러리 이름, target, 코어 버전에만 기댄다. 코어는 생성기 없이 빌드와 시험이 되고, 바인딩 crate만 `make bindings`가
-  필요하다.
+- **GN-3b** 언어 패키지가 손으로 쓴 host 패키지인 언어(L-2a, `packages.<lang>.host: true`)는 바인딩을 한 가지 형태로 담고,
+  `scaffold`, `generate`, `check`(CK-19)가 그 형태를 함께 쓴다. `scaffold`는 host의 manifest를 쓰지 않고 `check`는 거기서 아래
+  항목만 읽는다.
+  - Python: 바인딩 crate는 `packages/<component>/python/native/`다(`Cargo.toml`, `src/lib.rs`, Rust 소스와 시험이 든
+    `generated/`; 경로 의존은 한 단계 더 올라간다). 생성된 Python 패키지는 host 소스 루트의 하위 패키지
+    `<module>._binding`, 곧 `src/<module 경로>/_binding/`이며 binding이 소유하고 통째로 쓴다. 네이티브 모듈은
+    `<module>._binding._native`이고 host 코드는 `<module>._binding`에서 API를 import한다. host의 `pyproject.toml`은
+    `build-system.build-backend` `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source`
+    `src`, `tool.maturin.module-name` `<module>._binding._native`를 갖는다.
+  - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점, 선언, addon은
+    `native/generated/`다. host의 `package.json`은 `name`과 `files`의 `native/generated/index.cjs`,
+    `native/generated/index.mjs`, `native/generated/index.d.ts`, `native/generated/*.node`를 갖고, host 코드는
+    `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import한다.
+  - PHP: 확장은 별도 Composer 패키지(type `php-ext`) `<host 패키지>-native`이고 자리는
+    `packages/<component>/php/native/`다. `scaffold`가 그 crate와 `composer.json`을 거기에 쓰고 `generated/`도 그 옆이다.
+    host 라이브러리 `packages/<component>/php/composer.json`은 `ext-<확장 이름>`(`*`)을 require하며, 확장은 PHP가 로드할 때
+    클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다.
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) R-1의 lint를 스스로 갖는다. `unsafe_code`는 forbid가 아니라
   deny다. ext-php-rs와 napi-rs의 macro가 unsafe 코드로 펼쳐지고 코어의 workspace는 그것을 금할 수 있기 때문이며, 생성
   코드의 unsafe 블록마다 이유를 단 allow가 있다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
+- **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
+  `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다.
 
 ## 코어 경계(T-1, I-2 (1))
@@ -113,6 +123,10 @@
   case의 factory 인자를 쓴다. callback을 받는 member에는 B-4 시험이 없고(case는 callback을 줄 수 없다) K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다.
+  callback을 받는 member에는 B-4 시험이 생성되지 않는다. B-4는 contract case를 실행하는데 case는 JSON이어서 callback을
+  구현한 객체를 줄 수 없고, 그래서 case의 실패에 그 키로 도달할 수 없기 때문이다. K-2는 다른 요구이며 B-4를 대신하지 않는다.
+- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-5c, B-6, B-10, 기본값의 동일성, value unit 행의 왕복, callback을 받는
+  member의 B-4(case가 닫힌 집합의 callback fixture를 가리키고 각 언어의 생성 시험이 그것을 구현한다).
 
 ## 끝에서 끝까지 확인
 
