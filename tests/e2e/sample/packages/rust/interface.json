@@ -263,6 +263,54 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::shout"
+        },
+        {
+          "id": "sample.echo",
+          "name": [
+            "same"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "data"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::echo"
+        },
+        {
+          "id": "sample.size",
+          "name": [
+            "size"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::size"
         }
       ]
     },
@@ -315,6 +363,260 @@
           }
         }
       ]
+    },
+    {
+      "id": "data",
+      "name": [
+        "data"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Data",
+      "core": {
+        "in": "polyspec_sample::data_from_host",
+        "out": "polyspec_sample::data_to_out"
+      },
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "bool",
+            "python": "bool",
+            "node": "bool"
+          }
+        },
+        {
+          "kind": "float",
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "text",
+            "python": "text",
+            "node": "text"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": false
+          },
+          "make": {
+            "php": "map",
+            "python": "map",
+            "node": "map"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": true
+          },
+          "make": {
+            "php": "php_object",
+            "python": "map",
+            "node": "map"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": true
+              },
+              "kind": "list",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": false
+              },
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "dict",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        }
+      ]
     }
   ],
   "changes": [],
@@ -348,6 +650,16 @@
       "member": "tag.name",
       "file": "contracts/cases.json",
       "group": "tag_name"
+    },
+    {
+      "member": "sample.echo",
+      "file": "contracts/cases.json",
+      "group": "echo"
+    },
+    {
+      "member": "sample.size",
+      "file": "contracts/cases.json",
+      "group": "size"
     }
   ]
 }

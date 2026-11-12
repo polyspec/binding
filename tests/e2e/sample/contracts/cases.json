@@ -21,5 +21,36 @@
       "name": "a",
       "result": "a"
     }
+  ],
+  "echo": [
+    {
+      "id": "a_text_comes_back",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": {
+        "kind": "text",
+        "value": "x"
+      }
+    }
+  ],
+  "size": [
+    {
+      "id": "a_list_of_two",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "null"
+          },
+          {
+            "kind": "bool",
+            "value": true
+          }
+        ]
+      },
+      "result": 2
+    }
   ]
 }

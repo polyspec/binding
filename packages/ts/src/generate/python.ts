@@ -642,7 +642,9 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
-  return unit === undefined ? 'object' : langName('python', unit.name, 'class');
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'object';
+  return langName('python', unit.name, 'class');
 }
 
 function errorsPy(model: Model): string {

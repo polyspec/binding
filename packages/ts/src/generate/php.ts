@@ -1,7 +1,8 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -40,7 +41,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback' || (unit !== undefined && objectUnit(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
@@ -62,7 +63,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
-  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -507,7 +508,7 @@ function traitParam(model: Model, type: Type): string {
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
@@ -602,6 +603,8 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.objects.map((object) => objectOut(model, object)),
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
+    ...model.aliases.map((a) => aliasPhp(model, a)),
+    model.aliases.length > 0 ? PHP_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
@@ -689,14 +692,14 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(used) ? 'use ext_php_rs::boxed::ZBox;\nuse std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.
@@ -908,7 +911,9 @@ function stub(model: Model, layout: PhpLayout): string {
     const unit = unitOf(model, type);
     const library = libraryOf(type);
     const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
-    return unit === undefined ? 'mixed' : `\\${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
+    // U-7: a value alias is any value that its core judges.
+    if (unit === undefined || aliasOf(model, type) !== undefined) return 'mixed';
+    return `\\${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
   };
   const docType = (type: Type): string => {
     if (typeof type === 'object' && 'list' in type) return `list<${docType(type.list)}>`;
@@ -1008,7 +1013,6 @@ ${blocks.join('\n\n')}
 }
 
 export function php(model: Model, files: Files): void {
-  if (model.aliases.length > 0) throw new Unsupported(`${model.aliases[0]?.unit.id}: a value alias is not generated for ${'PHP'} yet`);
   const layout = phpLayout(model);
   const php = model.contract.packages['php'] as { package: string };
   files.set(`${ROOT}/lib.rs`, libRust(model, layout));

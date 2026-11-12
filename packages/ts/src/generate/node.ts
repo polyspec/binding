@@ -2,7 +2,8 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { NODE_HOST, aliasNode } from './alias_node.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -30,7 +31,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit?.origin === 'callback' || (unit !== undefined && objectUnit(model, type) !== undefined)) return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
+  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
@@ -52,7 +53,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
-  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
+  if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -457,7 +458,7 @@ function traitParam(model: Model, type: Type): string {
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
@@ -553,6 +554,10 @@ function libRust(model: Model): string {
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
+    // them.
+    ...model.aliases.map((a) => aliasNode(model, a)),
+    model.aliases.length > 0 ? NODE_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
@@ -564,7 +569,7 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -673,7 +678,9 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
   }
-  return unit === undefined ? 'unknown' : langName('node', unit.name, 'class');
+  // U-7: a value alias is any value that its core judges.
+  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
+  return langName('node', unit.name, 'class');
 }
 
 const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
@@ -886,7 +893,6 @@ ${constants}
 }
 
 export function node(model: Model, files: Files): void {
-  if (model.aliases.length > 0) throw new Unsupported(`${model.aliases[0]?.unit.id}: a value alias is not generated for ${'Node'} yet`);
   const npm = model.contract.packages['node'] as { package: string };
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.cjs`, indexCjs(model));

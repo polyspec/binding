@@ -4,25 +4,11 @@
 // (U-7 (d)). What a Python type is as a HostValue is binding's rule, the same for every alias; which kinds an alias
 // takes is its core's.
 
-import type { OutRow } from '../contract.ts';
 import { type Model, type ValueAlias, langName, rustField } from './model.ts';
-import { rustString } from './text.ts';
-
-// The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
-const PREDICATE: Record<string, string> = {
-  utf8: 'Utf8', sequence_keys: 'SequenceKeys', safe_integer: 'SafeInteger', integral_float: 'IntegralFloat',
-};
-
-// The OutValue variant of each kind and how its content is bound in a match arm.
-const VARIANT: Record<string, string> = {
-  null: 'OutValue::Null', bool: 'OutValue::Bool(value)', int: 'OutValue::Int(value)', int64: 'OutValue::Int64(value)',
-  float: 'OutValue::Float(value)', number: 'OutValue::Number(value)', text: 'OutValue::Text(value)', bytes: 'OutValue::Bytes(value)',
-  list: 'OutValue::List { handle, len }', map: 'OutValue::Map(value)', object: 'OutValue::Object { handle, len }',
-  reference: 'OutValue::Reference { handle, value }', safe_text: 'OutValue::SafeText(value)', native: 'OutValue::Native(handle)',
-};
+import { container, outArms } from './alias_shared.ts';
 
 // The Python value of a built-in form, made from the content of the matched OutValue.
-function builtin(form: string, kind: string): string {
+function builtin(alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
       return 'Ok(py.None().into_bound(py))';
@@ -30,53 +16,68 @@ function builtin(form: string, kind: string): string {
       return 'Ok(PyBool::new(py, value).to_owned().into_any())';
     case 'int':
     case 'bigint':
-      if (kind === 'number') return "py.get_type::<PyInt>().call1((value,))";
+      if (kind === 'number') return 'py.get_type::<PyInt>().call1((value,))';
       if (kind === 'int64') return 'Ok(value.into_pyobject(py)?.into_any())';
       return 'Ok(value.value().into_pyobject(py)?.into_any())';
     case 'float':
-      if (kind === 'number') return "py.get_type::<PyFloat>().call1((value,))";
-      return kind === 'float' ? 'Ok(PyFloat::new(py, value.value()).into_any())' : 'Ok(PyFloat::new(py, value).into_any())';
+      if (kind === 'number') return 'py.get_type::<PyFloat>().call1((value,))';
+      if (kind === 'float') return 'Ok(PyFloat::new(py, value.value()).into_any())';
+      // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
+      return `match ${kind === 'int64' ? 'value' : 'value.value()'}.to_string().parse::<f64>() {
+            Ok(float) => Ok(PyFloat::new(py, float).into_any()),
+            Err(_never) => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: an integer that is no number") })),
+        }`;
     case 'text':
+      if (kind === 'bytes') {
+        return `match std::str::from_utf8(value.value()) {
+            Ok(text) => Ok(PyString::new(py, text).into_any()),
+            Err(_bytes) => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
+        }`;
+      }
       return 'Ok(PyString::new(py, &value).into_any())';
     case 'bytes':
-      return 'Ok(PyBytes::new(py, value.value()).into_any())';
-    case 'list':
+      return kind === 'text' ? 'Ok(PyBytes::new(py, value.as_bytes()).into_any())' : 'Ok(PyBytes::new(py, value.value()).into_any())';
+    case 'list': {
+      const parts = container(alias, kind, form);
       return `{
+            ${parts.head}
             if let Some(made) = made.get(&handle.raw()) {
                 return Ok(made.clone());
             }
             let list = PyList::empty(py);
             made.insert(handle.raw(), list.clone().into_any());
             for index in 0..len {
-                let item = source.item(handle, index);
+                let item = ${parts.item};
                 list.append(make(py, item, source, made)?)?;
             }
             Ok(list.into_any())
         }`;
+    }
     case 'map':
-    case 'keyed_map':
+    case 'keyed_map': {
+      const parts = container(alias, kind, form);
       return `{
-            let handle = value.handle();
-            let len = value.len();
+            ${parts.head}
             if let Some(made) = made.get(&handle.raw()) {
                 return Ok(made.clone());
             }
             let map = PyDict::new(py);
             made.insert(handle.raw(), map.clone().into_any());
             for index in 0..len {
-                let (key, item) = source.entry(handle, index);
+                let (key, item) = ${parts.entry};
                 let key = make(py, key, source, made)?;
                 map.set_item(key, make(py, item, source, made)?)?;
             }
             Ok(map.into_any())
         }`;
+    }
     case 'native':
       return `match native_object(handle) {
             Some(object) => Ok(object.into_bound(py)),
             None => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: the native object is gone") })),
         }`;
     default:
-      throw new Error(`no Python form ${form} for the kind ${kind}`);
+      throw new Error(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
   }
 }
 
@@ -84,30 +85,7 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const name = rustField(alias.unit.name);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const rows = (alias.unit.out ?? []).filter((row) => row.make['python'] !== undefined);
-  const kinds = [...new Set(rows.map((row) => row.kind))];
-  const arms = kinds.map((kind) => {
-    const variant = VARIANT[kind];
-    if (variant === undefined) throw new Error(`no OutValue variant of the kind ${kind}`);
-    const ofKind = rows.filter((row) => row.kind === kind);
-    const form = (row: OutRow): string => {
-      const make = row.make['python'];
-      if (typeof make !== 'string') throw new Error(`${alias.unit.id}: a Python make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) throw new Error(`${alias.unit.id}: a Python make by a member (${make}) is not generated yet`);
-      return builtin(make, kind);
-    };
-    const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make['python']))).size === 1;
-    const body = sameForm || ofKind.every((row) => row.when === undefined)
-      ? form(ofKind[0] as OutRow)
-      : ofKind.map((row, index) => {
-        const when = row.when;
-        const test = when === undefined || when === 'else'
-          ? 'true'
-          : `out.predicate(Predicate::${PREDICATE[when.predicate] ?? ''}) == Some(${String(when.is)})`;
-        return `${index === 0 ? '' : 'else '}if ${test} { ${form(row)} }`;
-      }).join(' ') + ' else { Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") })) }';
-    return `        ${variant} => ${body},`;
-  });
+  const arms = outArms(alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
@@ -199,6 +177,10 @@ impl<'py> PyHost<'py> {
             return Ok(HostValue::Map { handle: self.hold(Held::Entries(entries)), len });
         }
         let type_name = value.get_type().name()?.to_string();
+        // B-1: a subclass of int, float, str or bytes is outside the closed set.
+        if value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>() || value.is_instance_of::<PyString>() || value.is_instance_of::<PyBytes>() {
+            return Ok(HostValue::Other { type_name, handle: native_handle(value) });
+        }
         if value.is_callable() {
             return Ok(HostValue::Callable(native_handle(value)));
         }

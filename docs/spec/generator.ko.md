@@ -100,6 +100,16 @@
   바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
   `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+- **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
+  `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
+  던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
+  (`int`, `float`, `str`, `bytes`의 하위 클래스는 `Other`), Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
+  토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
+  키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
+  `array_is_list`와 함께, stdClass와 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
+  행 중 내장 형식으로 만든다(member 형식은 이름을 대고 거부, G-4). Python과 Node에서는 같은 handle이 같은 객체이고, 배열이
+  값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. handle로 들어온 값(`native`, `Other`, callable)은
+  스레드 수명 동안 보관하며, 그 한계는 U-7 (d)가 정할 일로 남는다.
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `binding_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. binding은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.

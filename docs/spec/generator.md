@@ -122,6 +122,18 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
+  at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
+  exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
+  What a language value is as a `HostValue` is binding's rule: Python takes the exact built-in types (a subclass of
+  `int`, `float`, `str` or `bytes` is `Other`); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
+  token outside `i64`), a string as its UTF-16 units, an Array, a Map, a plain object (prototype `Object.prototype` or
+  `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
+  element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
+  Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
+  built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
+  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
+  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
