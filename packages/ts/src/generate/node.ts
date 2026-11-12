@@ -26,7 +26,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
+  if (unit?.origin === 'callback' || (unit !== undefined && objectUnit(model, type) !== undefined)) return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
@@ -294,18 +294,11 @@ function functionRust(model: Model, fn: Fn): string {
   } else {
     lines.push(`        let result = ${call};`);
   }
-  if (fn.kind === 'constructor') {
-    lines.push('        Ok(Self { inner: result })');
-    return `
-    #[napi(constructor)]
-    pub fn new<'env>(env: &'env Env${params}) -> napi::Result<Self> {
-        guard(|| {
-${lines.map((l) => `    ${l}`).join('\n')}
-        })
-        .map_err(|fail| throw(env, fail))
-    }
-`;
-  }
+  // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
+  // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the
+  // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
+  // in a Proxy whose construct calls it.
+  const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
@@ -321,11 +314,11 @@ ${lines.join('\n')}
   // G-7: napi-rs defines a class's methods as not configurable, so a method that takes arguments is the addon's
   // __<name>, not enumerable and not declared, and the JavaScript entry defines <name>, which checks the arguments and
   // calls it.
-  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsName}`)}, enumerable = false)]`;
+  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsMember}`)}, enumerable = false)]`;
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
-    pub fn ${rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+    pub fn ${fn.kind === 'constructor' ? 'construct' : rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
         guard(|| {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
@@ -467,6 +460,15 @@ pub mod class_${rustField(object.unit.name)} {
 fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
     ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: value }, env).map_err(internal)
 }
+
+/// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+    // SAFETY: napi unwraps the native object of an instance of the class and refuses any other value.
+    match unsafe { <&class_${rustField(object.unit.name)}::${struct} as FromNapiValue>::from_napi_value(env.raw(), value.raw()) } {
+        Ok(instance) => Ok(instance.inner.clone()),
+        Err(_other) => Err(type_error(subject, ${rustString(jsClass)})),
+    }
+}
 `;
 }
 
@@ -497,17 +499,17 @@ function libRust(model: Model): string {
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
-  const napiTypes = ['Array', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
+  const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
-  if (/\.(is_array|to_unknown)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
+  if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
+use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
@@ -674,8 +676,14 @@ ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${
   });
 }`;
     });
+    const constructor = o.members.find((fn) => fn.kind === 'constructor');
+    const construct = constructor === undefined ? `addon.${cls}` : `new Proxy(addon.${cls}, {
+  construct(target, args) {
+${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).split('\n').map((l) => `  ${l}`).join('\n')}
+  },
+})`;
     return `
-const ${cls} = addon.${cls};
+const ${cls} = ${construct};
 ${wraps.join('\n')}`;
   }).join('\n');
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');

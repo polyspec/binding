@@ -36,7 +36,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.origin === 'callback' || (unit !== undefined && objectUnit(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
@@ -508,7 +508,16 @@ impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).jo
 
 function objectOut(object: ObjectClass): string {
   const struct = `entry::Php${langName('php', object.unit.name, 'class')}`;
+  const label = langName('php', object.unit.name, 'class');
   return `
+/// T-5: a value of the class ${label} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${object.unit.core_type ?? ''}, Fail> {
+    match <&${struct} as FromZval>::from_zval(value) {
+        Some(object) => Ok(object.inner.clone()),
+        None => Err(type_error(subject, ${rustString(label)})),
+    }
+}
+
 fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
     ZendClassObject::new(${struct} { inner: value })
         .into_zval(false)
@@ -615,7 +624,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
 ${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
-use ext_php_rs::convert::IntoZval;${model.enums.length > 0 ? '\nuse ext_php_rs::convert::FromZval;' : ''}
+use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;

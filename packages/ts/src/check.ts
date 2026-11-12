@@ -522,6 +522,11 @@ class Checker {
 
   valueUnit(unit: Unit, path: string, gathered: ReadonlyMap<string, string>): void {
     const targets = this.contract.targets;
+    // U-7: a value alias is made and judged by the core functions that core names; a class judges its own values.
+    if (unit.kind === 'alias' && (typeof unit.core !== 'object' || unit.core === null)) {
+      this.report('CK-8', path, `the value alias ${unit.id} names the core functions that judge and give its values in core: {in, out} (U-7)`);
+    }
+    if (unit.kind !== 'alias' && typeof unit.core === 'object') this.report('CK-8', `${path}/core`, 'only a value alias has core: {in, out} (U-7)');
     // The unit types this representative may name: itself when it is a class, its gathered classes when it is an alias.
     const ownTypes = new Set(unit.kind === 'alias' ? [...gathered].filter(([, by]) => by === unit.id).map(([id]) => id) : [unit.id]);
     const rows = new Map<string, InRow>();
@@ -1064,6 +1069,7 @@ class Checker {
   callbacks(): void {
     for (const { member, unit, path } of this.members.values()) {
       const callback = unit.origin === 'callback';
+      if (callback && typeof unit.core !== 'string') this.report('CK-17', path, `the callback ${unit.id} names its core trait in core (U-3)`);
       if (!callback && member.async_allowed !== undefined) this.report('CK-17', `${path}/async_allowed`, 'only a callback member has async_allowed (U-3)');
       if (!callback && member.errors !== undefined) this.report('CK-17', `${path}/errors`, 'only a callback member has errors (U-3)');
       if (callback && member.async_allowed === undefined) this.report('CK-17', path, `the callback member ${member.id} does not state async_allowed (U-3)`);

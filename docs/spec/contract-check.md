@@ -35,6 +35,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   such a member; a record field of type `optional<T>` has a `reason`, and only such a field.
 - **CK-6** Cycles (P-4): `implements` and error `parent` form no cycle.
 - **CK-8** Value units (U-1, U-7):
+  - a value alias names in `core: {in, out}` the core functions that judge a language value described as `HostValue`
+    (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`) and give a core value as `OutValue`
+    (`fn(&T) -> (OutValue, impl OutValues)`); a value class has no such `core`, because its `in` rows read its members;
   - the unit that represents a value type holds `out` and `in`: a `value` class that no alias gathers, or an `alias`
     (whose origin is `value`); a class that an alias gathers (an `in` row of the alias names it) holds neither; the
     members of an alias are the language types of its `in` rows (U-7 (a));

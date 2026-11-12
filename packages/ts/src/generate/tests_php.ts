@@ -42,6 +42,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // U-2: a property is a method in PHP.
     return `${receiver}->${member}(${args})`;
   };
+  ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
     invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
   for (const fn of callables(model)) {

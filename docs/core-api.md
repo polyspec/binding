@@ -49,10 +49,10 @@ types of the design rules named below and no rule of any library.
 | `HostValue` | B-1, T-2 `host_value` | `Int` is also a JavaScript `bigint` in `i64`; `Number` is a Python `int` or a JavaScript `bigint` outside `i64` as its decimal token; `Bytes` is a Python `bytes`; `Float` is a float of PHP, Python or Go, which stays a float; every JavaScript number is `UntypedNumber` and the core decides whether it is an integer (U-7 (f)); `PhpReference` names a reference element and its identity. One level of an incoming value: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `UntypedNumber(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `PhpReference { identity, target }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
 | `HostText` | B-1, B-3 | `Bytes(Vec<u8>)` (PHP, Go), `Utf16(Vec<u16>)` (JavaScript), `CodePoints(Vec<u32>)` (Python). |
 | `Prototype` | B-1 | `Object`, `Null`. |
+| `OutValues` | B-1, U-7 (d) | The trait through which generated code asks the core for the children of the handles of an `OutValue`; the core's `out` function of a value alias returns it beside the root. `item(&mut self, list, index) -> OutValue`, `entry(&mut self, map, index) -> (OutValue, OutValue)` (a map or an object, in order). The same handle is the same language object. |
 | `HostValues` | B-1 | The trait through which a core asks the binding for the children of the handles of a `HostValue`; generated code implements it. `item(&mut self, list, index) -> Result<HostValue, Raised>`, `entry(&mut self, map, index) -> Result<(HostValue, HostValue), Raised>` (a map, a PHP array, a plain object, a `stdClass`, in the language's order), `read(&mut self, value) -> Result<HostValue, Raised>` (the `read` member of a value table's class). A question may run language code, so its failure is that code's exception. |
 
 ## Not yet in the crate
 
-The protocol through which the binding asks the core for the children of an `OutValue` handle is not defined: the
-design names the handles but not the calls.
+Every protocol of the design is in the crate.
 

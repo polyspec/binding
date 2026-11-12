@@ -175,7 +175,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined) return `in_${rustField(unit?.name ?? [])}(py, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
@@ -339,6 +339,14 @@ impl ${struct} {${members}}
 
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
     Ok(Bound::new(py, ${struct} { inner: value })?.into_any())
+}
+
+/// T-5: a value of the class ${pyClass} is an instance of it; the core takes a copy of the value it holds.
+fn in_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    match value.cast::<${struct}>() {
+        Ok(object) => Ok(object.get().inner.clone()),
+        Err(_other) => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
+    }
 }
 `;
 }

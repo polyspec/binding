@@ -30,6 +30,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   갖는다. 타입이 `optional<T>`인 record field는 `reason`을 갖고, 그런 field만 갖는다.
 - **CK-6** 순환(P-4): `implements`와 오류 `parent`는 순환하지 않는다.
 - **CK-8** value unit(U-1, U-7):
+  - value alias는 `HostValue`로 설명한 언어 값을 판정하는 코어 함수(`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`)와
+    코어 값을 `OutValue`로 주는 코어 함수(`fn(&T) -> (OutValue, impl OutValues)`)를 `core: {in, out}`에 적는다. value class는 `in`
+    행이 그 member를 읽으므로 그런 `core`를 갖지 않는다.
   - 값 타입을 대표하는 unit이 `out`과 `in`을 갖는다. alias가 모으지 않는 `value` class이거나 `alias`(origin `value`)다.
     alias가 모으는 class(alias의 `in` 행이 그것을 가리킨다)는 둘 다 갖지 않는다. alias의 구성원은 그 `in` 행의 언어
     타입이다(U-7 (a)).

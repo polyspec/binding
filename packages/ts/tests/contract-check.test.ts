@@ -400,9 +400,19 @@ describe('CK-8 native values (VAL-18)', () => {
 });
 
 describe('CK-8 representative units and predicate round trips', () => {
+  test('a value alias without its core functions (U-7)', () =>
+    fails('CK-8', '/units/', (c) => {
+      const value = unit(c, 'value');
+      c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', out: value.out, in: value.in });
+      delete value.out;
+      delete value.in;
+      value.origin = 'value';
+    }));
+  test('a value class with core functions (U-7)', () =>
+    fails('CK-8', `${at('value')}/core`, (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
   const gather = (c: any): void => {
     const value = unit(c, 'value');
-    c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', out: value.out, in: value.in });
+    c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, out: value.out, in: value.in });
     for (const row of value.in) if (Object.values(row).includes('value')) for (const lang of ['php', 'python', 'node', 'go', 'wasm']) if (row[lang] === 'value') row[lang] = 'value';
     delete value.out;
     delete value.in;
@@ -415,7 +425,7 @@ describe('CK-8 representative units and predicate round trips', () => {
   test('a value class that represents its type without tables', () =>
     fails('CK-8', at('value'), (c) => { delete unit(c, 'value').out; }));
   test('an alias whose origin is not value', () =>
-    fails('CK-8', '/units/', (c) => { gather(c); unit(c, 'values').origin = 'generated'; delete unit(c, 'values').out; delete unit(c, 'values').in; }));
+    fails('CK-8', '/units/', (c) => { gather(c); unit(c, 'values').origin = 'generated'; delete unit(c, 'values').out; delete unit(c, 'values').in; delete unit(c, 'values').core; }));
   const numberCases = [{ when: { predicate: 'integral_float', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }];
   const splitNumbers = (c: any): void => {
     for (const row of unit(c, 'value').in) for (const lang of ['node', 'wasm']) if (row[lang] === 'number') row.cases = structuredClone(numberCases);

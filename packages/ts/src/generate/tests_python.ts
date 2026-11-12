@@ -27,6 +27,7 @@ export function pythonTests(model: Model, module: string): string {
   const out: string[] = [];
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
+  ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const member = langName('python', fn.member.name, 'callable');

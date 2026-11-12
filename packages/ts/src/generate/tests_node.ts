@@ -34,6 +34,7 @@ export function nodeTests(model: Model): string {
     if (fn.kind === 'property') return `${receiver}.${member}`;
     return `${receiver}.${member}(${args})`;
   };
+  ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
     invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
   for (const fn of callables(model)) {

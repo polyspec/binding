@@ -276,7 +276,9 @@ run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml
 
 const [cases] = main.caseFiles;
 const e2e = join(binding, 'tests/e2e', library);
-const caseRunners = existsSync(e2e) && cases !== undefined;
+// The case runners of a library are its cases.test.mjs, test_cases.py and CasesTest.php (tests/e2e/sample is a
+// repository, not runners).
+const caseRunners = existsSync(join(e2e, 'cases.test.mjs')) && cases !== undefined;
 if (!caseRunners) process.stdout.write(`note: tests/e2e/${library} holds no case runners; the generated tests run alone\n`);
 
 step('Python: build the wheels, install them, run the generated tests and the cases');

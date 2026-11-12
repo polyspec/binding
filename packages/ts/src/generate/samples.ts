@@ -19,6 +19,8 @@ export interface Context {
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
+  // How the generated test calls a factory of a class (a static member or the constructor) with its arguments (T-5).
+  objectNew?: (factory: Fn, args: string) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -40,6 +42,12 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
   if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
+  // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
+  const object = model.objects.find((o) => o.unit === unit);
+  const factory = object?.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === unit));
+  if (factory !== undefined && ctx.objectNew !== undefined) {
+    return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
+  }
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 

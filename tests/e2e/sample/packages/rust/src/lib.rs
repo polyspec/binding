@@ -104,3 +104,35 @@ mod tests {
         assert!(matches!(count(&mut Fixed, &[String::from("a"), String::from("b")]), Ok(1)));
     }
 }
+
+/// A tag of a name, which the language makes and gives back to the core (T-5: a class as a parameter).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tag {
+    name: String,
+}
+
+impl Tag {
+    /// A tag of the name.
+    #[must_use]
+    pub fn new(name: &str) -> Self {
+        Self { name: name.to_owned() }
+    }
+
+    /// The name of the tag.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// The names of the tags, joined by commas.
+#[must_use]
+pub fn join(tags: &[Tag]) -> String {
+    tags.iter().map(Tag::name).collect::<Vec<_>>().join(",")
+}
+
+/// The tag with the name in upper case.
+#[must_use]
+pub fn shout(tag: &Tag) -> Tag {
+    Tag { name: tag.name.to_uppercase() }
+}

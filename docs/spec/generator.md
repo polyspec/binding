@@ -88,7 +88,13 @@ the design ids are those of the binding design.
   the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
-  declarations, and the entry defines `<name>` over it with the checks of G-7.
+  declarations, and the entry defines `<name>` over it with the checks of G-7. napi-rs keeps the classes it parsed in
+  the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
+  Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
+  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
+  instance of it (another value is kind `invalid_argument_type`) and the core gets a copy of the value it holds, so a
+  class that a member takes is `Clone`. A class of origin `value` whose `in` rows name only the class itself (U-1) is
+  generated as such a class, and a value type named in `types` is that unit.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends

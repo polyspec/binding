@@ -48,10 +48,11 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `HostValue` | B-1, T-2 `host_value` | `Int`는 `i64`에 드는 JavaScript `bigint`도 포함한다. `Number`는 `i64` 밖의 Python `int`나 JavaScript `bigint`의 10진 토큰, `Bytes`는 Python `bytes`. `Float`는 PHP, Python, Go의 실수이며 실수로 남는다. JavaScript number는 모두 `UntypedNumber`이고 정수인지는 코어가 정한다(U-7 (f)). `PhpReference`는 참조 원소와 그 정체성을 알린다. 들어오는 값의 한 단계: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `UntypedNumber(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `PhpReference { identity, target }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
 | `HostText` | B-1, B-3 | `Bytes(Vec<u8>)`(PHP, Go), `Utf16(Vec<u16>)`(JavaScript), `CodePoints(Vec<u32>)`(Python). |
 | `Prototype` | B-1 | `Object`, `Null`. |
+| `OutValues` | B-1, U-7 (d) | 생성 코드가 `OutValue` handle의 자식을 코어에 묻는 trait. value alias의 코어 `out` 함수가 루트와 함께 돌려준다. `item(&mut self, list, index) -> OutValue`, `entry(&mut self, map, index) -> (OutValue, OutValue)`(맵이나 객체, 순서대로). 같은 handle은 같은 언어 객체다. |
 | `HostValues` | B-1 | 코어가 `HostValue` handle의 자식을 바인딩에 묻는 trait. 생성 코드가 구현한다. `item(&mut self, list, index) -> Result<HostValue, Raised>`, `entry(&mut self, map, index) -> Result<(HostValue, HostValue), Raised>`(맵, PHP 배열, plain object, `stdClass`, 언어의 순서), `read(&mut self, value) -> Result<HostValue, Raised>`(값 표 class의 `read` member). 물음은 언어 코드를 부를 수 있으므로 실패는 그 코드의 예외다. |
 
 ## 아직 crate에 없는 것
 
-바인딩이 `OutValue` handle의 자식을 코어에 묻는 호출 규약은 정하지 않았다.
+설계의 호출 규약은 모두 crate에 있다.
 설계는 handle을 정하지만 호출은 정하지 않는다.
 

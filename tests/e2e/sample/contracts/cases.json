@@ -1,0 +1,9 @@
+{
+  "join": [
+    {
+      "id": "no_tag_is_the_empty_text",
+      "tags": [],
+      "text": ""
+    }
+  ]
+}

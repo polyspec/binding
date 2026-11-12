@@ -209,10 +209,116 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::count"
+        },
+        {
+          "id": "sample.join",
+          "name": [
+            "join"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tags"
+              ],
+              "type": {
+                "list": {
+                  "unit": "tag"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::join"
+        },
+        {
+          "id": "sample.shout",
+          "name": [
+            "shout"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tag"
+              ],
+              "type": {
+                "unit": "tag"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tag"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::shout"
+        }
+      ]
+    },
+    {
+      "id": "tag",
+      "name": [
+        "tag"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Tag",
+      "final": true,
+      "members": [
+        {
+          "id": "tag.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Tag::new"
+        },
+        {
+          "id": "tag.name",
+          "name": [
+            "name"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::name",
+            "receiver": "&self"
+          }
         }
       ]
     }
   ],
   "changes": [],
-  "cases": []
+  "cases": [
+    {
+      "member": "sample.join",
+      "file": "contracts/cases.json",
+      "group": "join"
+    }
+  ]
 }
