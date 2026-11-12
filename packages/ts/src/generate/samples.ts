@@ -16,9 +16,15 @@ export interface Context {
   enumRef: (enumName: string, value: string) => string;
   // How the generated test makes the result form of a record (T-4) from its fields in contract order.
   recordNew: (unit: Unit, fields: string[]) => string;
+  // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
+  // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
+  callbackNew: (unit: Unit, how: CallbackHow) => string;
 }
 
-export function placeholder(model: Model, ctx: Context, type: Type): string {
+export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
+
+// rich: a list has one item rather than none, so that a member that calls a callback per item calls it (K-2).
+export function placeholder(model: Model, ctx: Context, type: Type, rich = false): string {
   if (typeof type === 'string') {
     const table: Record<Lang3, Record<string, string>> = {
       python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""' },
@@ -27,12 +33,13 @@ export function placeholder(model: Model, ctx: Context, type: Type): string {
     };
     return table[ctx.lang][type] ?? 'null';
   }
-  if ('list' in type) return '[]';
+  if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
+  if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 
@@ -149,6 +156,8 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
   const out: RaisingCase[] = [];
+  // U-3: a case cannot give a callback object; K-2 tests a member that takes one.
+  if (callbackArg(model, fn) !== undefined) return out;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     const raises = record['raises'] as RaisingCase['raises'] | undefined;
@@ -183,4 +192,9 @@ export function wrapText(type: Type, text: string): string {
   if (typeof type === 'object' && 'list' in type) return `[${wrapText(type.list, text)}]`;
   if (typeof type === 'object' && 'optional' in type) return wrapText(type.optional, text);
   return text;
+}
+
+// U-3: the first parameter of a member that is a callback, for the tests of K-2.
+export function callbackArg(model: Model, fn: Fn): Arg | undefined {
+  return fn.args.find((a) => unitOf(model, a.type)?.origin === 'callback');
 }

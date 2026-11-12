@@ -1,0 +1,218 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "sample",
+  "core": {
+    "crate": "polyspec-sample",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/sample",
+      "namespace": "Polyspec\\Sample"
+    },
+    "python": {
+      "package": "polyspec-sample",
+      "module": "polyspec.sample"
+    },
+    "node": {
+      "package": "@polyspec/sample",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Sample\\SampleValueError",
+        "python": "SampleValueError",
+        "node": "SampleValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Sample\\SampleTypeError",
+        "python": "SampleTypeError",
+        "node": "SampleTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Sample\\SampleIoError",
+        "python": "SampleIoError",
+        "node": "SampleIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Sample\\SampleStoreError",
+        "python": "SampleStoreError",
+        "node": "SampleStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Sample\\SampleBusyError",
+        "python": "SampleBusyError",
+        "node": "SampleBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Sample\\SampleInternalError",
+        "python": "SampleInternalError",
+        "node": "SampleInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_sample::Error::Missing",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "lookup",
+      "name": [
+        "lookup"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_sample::Lookup",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "lookup.find",
+          "name": [
+            "find"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_sample::Lookup::find",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sample",
+      "name": [
+        "sample"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "sample.resolve",
+          "name": [
+            "resolve"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::resolve"
+        },
+        {
+          "id": "sample.count",
+          "name": [
+            "count"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "keys"
+              ],
+              "type": {
+                "list": "text"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::count"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": []
+}

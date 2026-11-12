@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -26,6 +26,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
@@ -289,7 +290,7 @@ function functionRust(model: Model, fn: Fn): string {
   }
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
     lines.push(`        let result = ${call};`);
   }
@@ -330,6 +331,115 @@ ${lines.map((l) => `    ${l}`).join('\n')}
         })
         .map_err(|fail| throw(env, fail))
     }
+`;
+}
+
+// U-3: a callback is a struct that holds the JavaScript object for the call that received it and implements the core
+// trait; an exception of the JavaScript code, or a failure of the binding in the callback, goes to the core as a Raised
+// that the generated caller throws again unchanged.
+function callbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const jsName = langName('node', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const method = langName('node', m.member.name, 'callable');
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name)).replace(/^(out_[a-z0-9_]+)\(env, /, '$1(self.env, ')}?`);
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    const returned = m.returns === 'none' ? 'Ok(())' : convertIn(model, m.returns, 'returned', rustString(`${jsName}.${method}() returns`));
+    const argsType = `FnArgs<(${m.params.map(() => "Unknown<'env>").join(', ')}${m.params.length === 1 ? ',' : ''})>`;
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {${cb.owner ? `
+        if std::thread::current().id() != self.owner {
+            return Err(thrown(Thrown::Binding(binding_error(BindingError::WrongThread { subject: String::from(${rustString(`${jsName}.${method}()`)}) }))));
+        }` : ''}
+        let call = || -> Result<${result}, Thrown> {
+            let function: Function<'env, ${argsType}, Unknown<'env>> =
+                self.object.get_named_property(${rustString(method)}).map_err(|error| Thrown::Binding(internal(error)))?;
+            let args: ${argsType} = FnArgs::from((${outs.map((o) => `${o.replace(/\?$/, '')}.map_err(Thrown::Binding)?`).join(', ')}${outs.length === 1 ? ',' : ''}));
+            let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
+            ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
+        };
+        call().map_err(thrown)
+    }`;
+  }).join('\n');
+  const checks = cb.members.map((m) => {
+    const method = langName('node', m.member.name, 'callable');
+    return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
+    if found.get_type().map_err(internal)? != ValueType::Function {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+    }`;
+  }).join('\n');
+  return `
+/// U-3: ${jsName}, a callback that JavaScript code implements; the core calls it through ${cb.unit.core ?? ''}.
+pub struct ${struct}<'env> {
+    object: Object<'env>,
+    env: &'env Env,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+}
+
+/// U-3: a callback object is checked when it enters: each member is a function (kind invalid_callback).
+fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${struct}<'env>, Fail> {
+    if value.get_type().map_err(internal)? != ValueType::Object {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    let object: Object<'env> = unsafe { value.cast() }.map_err(internal)?;
+${checks}
+    Ok(${struct} { object, env${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+}
+
+impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
+}
+`;
+}
+
+// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
+function traitParam(model: Model, type: Type): string {
+  if (typeof type === 'string') {
+    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
+    return borrowed[type] ?? rustType(model, type);
+  }
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('list' in type) return `&[${rustType(model, type.list)}]`;
+  if (byValue(model, type)) return rustType(model, type);
+  return `&${rustType(model, type)}`;
+}
+
+// E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
+// caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
+function failureRust(model: Model): string {
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return `
+/// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
+enum Thrown {
+    Js(napi::Error),
+    Binding(Fail),
+}
+
+thread_local! {
+    static THROWN: RefCell<BTreeMap<u64, Thrown>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
+
+fn thrown(error: Thrown) -> ${failure} {
+    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    THROWN.with_borrow_mut(|map| map.insert(handle, error));
+    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+}
+
+fn failure_error(failure: ${failure}) -> Fail {
+    match failure {
+        binding_core::Failure::Kind(error) => core_error(error),
+        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
+            Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
+            Some(Thrown::Binding(fail)) => fail,
+            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+        },
+        binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+    }
+}
 `;
 }
 
@@ -379,7 +489,8 @@ ${arms}
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('');
+  const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -388,8 +499,8 @@ function libRust(model: Model): string {
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const napiTypes = ['Array', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
-  if (/\.(is_array|to_unknown)\(/.test(used)) napiTypes.push('JsValue');
-  if (/\.(get|set)_named_property/.test(used)) napiTypes.push('JsObjectValue');
+  if (/\.(is_array|to_unknown)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
+  if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
@@ -399,7 +510,7 @@ use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t ===
 use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::OnceLock;
+${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -412,6 +523,8 @@ struct Fail {
     kind: &'static str,
     status: Option<u16>,
     errno: Option<i32>,
+    // U-3: the exception that a callback threw, which the call throws again unchanged.
+    thrown: Option<napi::Error>,
 }
 
 /// The arguments of the constructor of a library class: message, kind, status, errno.
@@ -432,6 +545,9 @@ pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
 
 /// The instance of the library class of a failure, as the error that the call throws (B-4).
 fn throw(env: &Env, fail: Fail) -> napi::Error {
+    if let Some(thrown) = fail.thrown {
+        return thrown;
+    }
     let Some(class) = CLASSES.get().and_then(|classes| classes.get(fail.class)) else {
         return napi::Error::from_reason(format!("B-4: the library classes are not registered: {}", fail.message));
     };
@@ -443,7 +559,7 @@ fn throw(env: &Env, fail: Fail) -> napi::Error {
 }
 
 fn library_error(class: usize, message: String, kind: &'static str, status: Option<u16>, errno: Option<i32>) -> Fail {
-    Fail { class, message, kind, status, errno }
+    Fail { class, message, kind, status, errno, thrown: None }
 }
 
 /// E-1a: an error that the binding raises itself, in the class of its fixed category.
@@ -660,11 +776,17 @@ export declare class ${langName('node', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
+  const callbacks = model.callbacks.map((cb) => `
+/** U-3: a callback that JavaScript code implements. */
+export interface ${langName('node', cb.unit.name, 'class')} {
+${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
+}`).join('\n');
   return `${header('//')}
 ${classes}
 ${enums}
 ${records}
 ${objects}
+${callbacks}
 
 ${fns}
 

@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -172,7 +172,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.origin === 'callback') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
@@ -278,7 +278,7 @@ function functionRust(model: Model, fn: Fn): string {
   }
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(py, error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
   } else {
     lines.push(`        let result = ${call};`);
   }
@@ -340,6 +340,102 @@ fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResul
 `;
 }
 
+// U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
+// arguments out and the return in, and an exception of the language code, or a failure of the binding in the callback,
+// goes to the core as a Raised that the generated caller throws again unchanged.
+function callbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const pyName = langName('python', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const method = langName('python', m.member.name, 'callable');
+    const params = m.params.map((p) => `${rustField(p.name)}: ${traitParam(model, p.type)}`);
+    const outs = m.params.map((p) => `${convertOut(model, p.type, rustField(p.name))}?`);
+    const returned = m.returns === 'none' ? 'Ok(())' : `${convertIn(model, m.returns, '&returned', rustString(`${pyName}.${method}() returns`))}`;
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params.map((p) => `, ${p}`).join('')}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, ${failure}> {
+        Python::attach(|py| {${cb.owner ? `
+            if std::thread::current().id() != self.owner {
+                return Err(thrown(py, binding_error(py, BindingError::WrongThread { subject: String::from(${rustString(`${pyName}.${method}()`)}) })));
+            }` : ''}
+            let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {
+                let returned = self.object.bind(py).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
+                ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
+            };
+            call().map_err(|error| thrown(py, error))
+        })
+    }`;
+  }).join('\n');
+  const checks = cb.members.map((m) => {
+    const method = langName('python', m.member.name, 'callable');
+    return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
+        return Err(binding_error(py, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::from(${rustString(method)}) }));
+    }`;
+  }).join('\n');
+  return `
+/// U-3: ${pyName}, a callback that Python code implements; the core calls it through ${cb.unit.core ?? ''}.
+pub struct ${struct} {
+    object: Py<PyAny>,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+}
+
+/// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback).
+fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${struct}> {
+${checks}
+    Ok(${struct} { object: value.clone().unbind()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+}
+
+impl ${cb.unit.core ?? ''} for ${struct} {${methods}
+}
+`;
+}
+
+// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
+function traitParam(model: Model, type: Type): string {
+  if (typeof type === 'string') {
+    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
+    return borrowed[type] ?? rustType(model, type);
+  }
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('list' in type) return `&[${rustType(model, type.list)}]`;
+  if (byValue(model, type)) return rustType(model, type);
+  return `&${rustType(model, type)}`;
+}
+
+// E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
+// throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
+function failureRust(model: Model): string {
+  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure))) return '';
+  return `
+static THROWN: Mutex<BTreeMap<u64, Py<PyAny>>> = Mutex::new(BTreeMap::new());
+static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
+
+fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
+    match THROWN.lock() {
+        Ok(map) => map,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
+    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    thrown_map().insert(handle, error.into_value(py).into_any());
+    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+}
+
+fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
+    match failure {
+        binding_core::Failure::Kind(error) => core_error(py, error),
+        binding_core::Failure::Raised(raised) => match thrown_map().remove(&raised.handle().raw()) {
+            Some(object) => PyErr::from_value(object.into_bound(py)),
+            None => binding_error(py, BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+        },
+        binding_core::Failure::Callback(error) => binding_error(py, BindingError::Internal { detail: error.to_string() }),
+    }
+}
+`;
+}
+
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.className)},`).join('\n');
@@ -367,7 +463,7 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
   ].join('\n');
-  const objects = model.objects.map((o) => objectRust(model, layout, o)).join('');
+  const objects = model.objects.map((o) => objectRust(model, layout, o)).join('') + model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
     static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
@@ -393,7 +489,7 @@ use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bTHROWN\b/.test(objects) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -525,7 +621,14 @@ class ${langName('python', u.name, 'class')}:
     \"\"\"T-4: the result form of the record; the constructor holds the values, which the binding judges when they enter.\"\"\"
 
 ${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}`).join('\n')}`).join('');
-  const names = [...model.enums, ...model.resultRecords].map((u) => pyString(langName('python', u.name, 'class')));
+  const callbacks = model.callbacks.map((cb) => `
+
+
+class ${langName('python', cb.unit.name, 'class')}(Protocol):
+    \"\"\"U-3: a callback that Python code implements; the binding checks the members of the object it receives.\"\"\"
+
+${cb.members.map((m) => `    def ${langName('python', m.member.name, 'callable')}(self${m.params.map((p) => `, ${langName('python', p.name, 'variable')}: ${pyType(model, p.type, false)}`).join('')}) -> ${pyType(model, m.returns, true)}: ...`).join('\n\n')}`).join('');
+  const names = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].map((u) => pyString(langName('python', u.name, 'class')));
   return `${pyHeader()}
 \"\"\"The enums and records of ${model.contract.library} (T-6, T-4).\"\"\"
 
@@ -533,8 +636,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-${foreignImports(model).map((line) => `${line}\n`).join('')}
-__all__ = [${names.join(', ')}]${enums}${records}
+${model.callbacks.length > 0 ? 'from typing import Protocol\n' : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
+__all__ = [${names.join(', ')}]${enums}${records}${callbacks}
 `;
 }
 
@@ -543,7 +646,7 @@ function modulePy(model: Model, module: string): string {
     ...model.functions.filter((f) => f.module === module).map((f) => langName('python', f.member.name, 'callable')),
     ...model.objects.filter((o) => o.unit.module === module).map((o) => langName('python', o.unit.name, 'class')),
   ];
-  const enums = [...model.enums, ...model.resultRecords].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
+  const enums = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
   const constants = model.constants.filter((c) => c.module === module);
   const names = [...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
   const imports = [
@@ -562,7 +665,7 @@ ${values.length > 0 ? `\n${values.join('\n')}\n` : ''}`;
 }
 
 function nativePyi(model: Model): string {
-  const enumImports = [...model.enums, ...model.resultRecords].map((u) => langName('python', u.name, 'class'));
+  const enumImports = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].map((u) => langName('python', u.name, 'class'));
   const fns = model.functions.map((fn) => {
     const positional = fn.args.filter((a) => !a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
     const keyword = fn.args.filter((a) => a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
@@ -593,7 +696,7 @@ ${classes.join('')}`;
 }
 
 function initPy(model: Model): string {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])].sort();
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module)])].sort();
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
@@ -601,6 +704,7 @@ function initPy(model: Model): string {
     ...model.objects.map((o) => langName('python', o.unit.name, 'class')),
     ...model.enums.map((u) => langName('python', u.name, 'class')),
     ...model.resultRecords.map((u) => langName('python', u.name, 'class')),
+    ...model.callbacks.map((c) => langName('python', c.unit.name, 'class')),
     ...model.constants.map((c) => langName('python', c.member.name, 'constant')),
   ];
   return `${pyHeader()}
@@ -622,7 +726,7 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));
   files.set(`${pkg}/py.typed`, '');
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])];
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module)])];
   for (const module of modules) {
     files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
   }

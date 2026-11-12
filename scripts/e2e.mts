@@ -88,7 +88,9 @@ function prepare(checkout: string): Prepared {
   step(`${library}: copy the committed tree`);
   rmSync(copy, { recursive: true, force: true });
   mkdirSync(copy, { recursive: true });
-  execFileSync('sh', ['-c', `git -C '${resolve(checkout)}' archive HEAD | tar -x -C '${copy}'`]);
+  // A checkout of its own is copied as committed; a directory inside this repository (tests/e2e/sample) as it is.
+  if (existsSync(join(resolve(checkout), '.git'))) execFileSync('sh', ['-c', `git -C '${resolve(checkout)}' archive HEAD | tar -x -C '${copy}'`]);
+  else execFileSync('cp', ['-r', `${resolve(checkout)}/.`, copy]);
 
   step(`${library}: changes the repository needs (each printed)`);
   const coreManifest = join(copy, 'packages/rust/Cargo.toml');

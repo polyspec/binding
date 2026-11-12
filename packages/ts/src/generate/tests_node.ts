@@ -1,9 +1,9 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, langName } from './model.ts';
+import { type Model, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -16,6 +16,11 @@ const BAD_NUMBERS: Record<string, string[]> = {
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+    callbackNew: (unit, how) => {
+      if ('missing' in how) return '{}';
+      const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
+      return `{ ${(unit.members ?? []).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
+    },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
@@ -73,6 +78,25 @@ test('B-4: ${name} ${kase.id}', () => {
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    const callback = callbackArg(model, fn);
+    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
+    if (callback !== undefined && cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
+      out.push(`
+test('K-2: ${name} refuses a callback without its members', () => {
+  assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
+});
+
+test('K-2: ${name} lets the exception of a callback through', () => {
+  const raised = new Error('raised by the callback');
+  assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
+});
+
+test('K-2: ${name} refuses a callback result of another type', () => {
+  assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
+});`);
+    }
     if (fn.kind === 'property' || !reachable) continue;
     const record = fn.record;
     const recordTests = record === undefined ? '' : `

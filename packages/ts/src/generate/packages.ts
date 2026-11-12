@@ -8,7 +8,8 @@ import type { Contract } from '../contract.ts';
 import { type Files, GENERATED_LINTS, header } from './text.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
-const BINDING_CORE = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }';
+// The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
+const BINDING_CORE = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = ["construct"] }';
 
 function entry(what: string, allows: [string, string][]): string {
   return `${header('//')}

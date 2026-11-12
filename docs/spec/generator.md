@@ -12,7 +12,8 @@ the design ids are those of the binding design.
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
   functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
-  Any other item (a callback, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
+  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
+  recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
   `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
   `source`) is refused by name
   before anything is written (G-4, P-4); Go and WASM are not generated yet.
@@ -71,6 +72,14 @@ the design ids are those of the binding design.
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
   on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
+- **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
+  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
+  When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
+  (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
+  (a result of another type, a call from another thread with `thread: owner`, kind `wrong_thread`), goes to the core
+  as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
+  The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
+  that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
@@ -114,12 +123,16 @@ the design ids are those of the binding design.
   value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
-  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise.
+  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
+  that takes a callback has no B-4 tests (a case cannot give a callback) and the tests of K-2: an object without the
+  members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
+  and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
 
 ## End-to-end check
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
-  (`--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
+  (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet;
+  `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
