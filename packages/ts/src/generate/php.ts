@@ -49,7 +49,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('list' in type) return `out_list(${value}, |item| ${convertOut(model, type.list, 'item')})`;
   if ('optional' in type) return `out_optional(${value}, |value| ${convertOut(model, type.optional, 'value')})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `${value}.${i}`)}?`);
+    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_array(vec![${parts.join(', ')}])`;
   }
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
@@ -126,42 +126,43 @@ fn in_optional<T>(value: &Zval, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> 
     item(value).map(Some)
 }
 
-fn out_text(value: String) -> Result<Zval, Fail> {
+fn out_text(value: impl AsRef<str>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_zend_string(ZendStr::new(value.as_bytes(), false));
+    zval.set_zend_string(ZendStr::new(value.as_ref().as_bytes(), false));
     Ok(zval)
 }
 
 /// T-1 latin1 and bytes: a string of the bytes.
-fn out_bytes(value: Vec<u8>) -> Result<Zval, Fail> {
+fn out_bytes(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_zend_string(ZendStr::new(&value, false));
+    zval.set_zend_string(ZendStr::new(value.as_ref(), false));
     Ok(zval)
 }
 
-fn out_bool(value: bool) -> Result<Zval, Fail> {
+fn out_bool(value: impl Borrow<bool>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_bool(value);
+    zval.set_bool(*value.borrow());
     Ok(zval)
 }
 
-fn out_int(value: i64) -> Result<Zval, Fail> {
+fn out_int(value: impl Borrow<i64>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_long(value);
+    zval.set_long(*value.borrow());
     Ok(zval)
 }
 
 /// B-2: a uint leaves as an int; one above PHP_INT_MAX is kind internal.
-fn out_uint(value: u64) -> Result<Zval, Fail> {
+fn out_uint(value: impl Borrow<u64>) -> Result<Zval, Fail> {
+    let value = *value.borrow();
     match i64::try_from(value) {
         Ok(value) => out_int(value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is above PHP_INT_MAX") })),
     }
 }
 
-fn out_float(value: f64) -> Result<Zval, Fail> {
+fn out_float(value: impl Borrow<f64>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_double(value);
+    zval.set_double(*value.borrow());
     Ok(zval)
 }
 
@@ -175,7 +176,7 @@ fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
     Ok(zval)
 }
 
-fn out_list<T>(value: Vec<T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn out_list<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     out_array(value.into_iter().map(item).collect::<Result<Vec<_>, Fail>>()?)
 }
 
@@ -234,11 +235,10 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
     }
   }
   const call = `${fn.corePath}(${callArgs.join(', ')})`;
-  const resultType = rustType(model, fn.returns);
   if (fn.fallible) {
-    lines.push(`        let result: ${resultType} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else {
-    lines.push(`        let result: ${resultType} = ${call};`);
+    lines.push(`        let result = ${call};`);
   }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   return `
@@ -309,7 +309,7 @@ use ext_php_rs::flags::{DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.

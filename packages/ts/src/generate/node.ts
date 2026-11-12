@@ -38,7 +38,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('list' in type) return `out_list(env, ${value}, |env, item| ${convertOut(model, type.list, 'item')})`;
   if ('optional' in type) return `out_optional(env, ${value}, |env, value| ${convertOut(model, type.optional, 'value')})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `${value}.${i}`)}?`);
+    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_tuple(env, vec![${parts.join(', ')}])`;
   }
   const unit = unitOf(model, type);
@@ -152,37 +152,39 @@ fn member<'env>(record: Unknown<'env>, name: &str, subject: &str) -> Result<Unkn
     object.get_named_property::<Unknown<'env>>(name).map_err(internal)
 }
 
-fn out_text<'env>(env: &'env Env, value: String) -> Result<Unknown<'env>, Fail> {
-    Ok(env.create_string(&value).map_err(internal)?.to_unknown())
+fn out_text<'env>(env: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
+    Ok(env.create_string(value.as_ref()).map_err(internal)?.to_unknown())
 }
 
 /// T-1 latin1: each byte is one character.
-fn out_latin1<'env>(env: &'env Env, value: Vec<u8>) -> Result<Unknown<'env>, Fail> {
-    let text: String = value.iter().map(|byte| char::from(*byte)).collect();
+fn out_latin1<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+    let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
     out_text(env, text)
 }
 
-fn out_bool<'env>(env: &'env Env, value: bool) -> Result<Unknown<'env>, Fail> {
-    Ok(env.get_boolean(value).map_err(internal)?.to_unknown())
+fn out_bool<'env>(env: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
+    Ok(env.get_boolean(*value.borrow()).map_err(internal)?.to_unknown())
 }
 
 /// B-2: a number leaves only as a safe integer; a larger one is kind internal.
-fn out_int<'env>(env: &'env Env, value: i64) -> Result<Unknown<'env>, Fail> {
+fn out_int<'env>(env: &'env Env, value: impl Borrow<i64>) -> Result<Unknown<'env>, Fail> {
+    let value = *value.borrow();
     if value.abs() > 9_007_199_254_740_991 {
         return Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") }));
     }
     Ok(env.create_int64(value).map_err(internal)?.to_unknown())
 }
 
-fn out_uint<'env>(env: &'env Env, value: u64) -> Result<Unknown<'env>, Fail> {
+fn out_uint<'env>(env: &'env Env, value: impl Borrow<u64>) -> Result<Unknown<'env>, Fail> {
+    let value = *value.borrow();
     match i64::try_from(value) {
         Ok(value) => out_int(env, value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") })),
     }
 }
 
-fn out_float<'env>(env: &'env Env, value: f64) -> Result<Unknown<'env>, Fail> {
-    Ok(env.create_double(value).map_err(internal)?.to_unknown())
+fn out_float<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'env>, Fail> {
+    Ok(env.create_double(*value.borrow()).map_err(internal)?.to_unknown())
 }
 
 fn out_none(env: &Env) -> Result<Unknown<'_>, Fail> {
@@ -193,7 +195,7 @@ fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
     Ok(env.get_null().map_err(internal)?.to_unknown())
 }
 
-fn out_list<'env, T>(env: &'env Env, value: Vec<T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
+fn out_list<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
     let items = value.into_iter().map(|value| item(env, value)).collect::<Result<Vec<_>, Fail>>()?;
     out_tuple(env, items)
 }
@@ -226,8 +228,8 @@ ${arms}
     }
 }
 
-fn out_${name}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    let text = match value {
+fn out_${name}(env: &Env, value: impl Borrow<${core}>) -> Result<Unknown<'_>, Fail> {
+    let text = match value.borrow() {
 ${outArms}
     };
     out_text(env, String::from(text))
@@ -258,11 +260,10 @@ function functionRust(model: Model, fn: Fn): string {
   }
   const callArgs = fn.params.map((p) => (fn.record !== undefined && p === fn.record.param ? `&${rustField(p.name)}` : coreArg(model, p.type, rustField(p.name))));
   const call = `${fn.corePath}(${callArgs.join(', ')})`;
-  const resultType = rustType(model, fn.returns);
   if (fn.fallible) {
-    lines.push(`        let result: ${resultType} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else {
-    lines.push(`        let result: ${resultType} = ${call};`);
+    lines.push(`        let result = ${call};`);
   }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   return `
@@ -310,7 +311,7 @@ use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Object' && t !== 'JsObjectValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.

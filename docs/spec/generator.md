@@ -44,7 +44,9 @@ the design ids are those of the bindgen design.
 - **GN-6** Each argument is converted into a `let` of the Rust type of T-1. A parameter of a type with two forms (text,
   latin1, bytes, source, path) is passed borrowed (`&String` and `&Vec<u8>` coerce to `&str` and `&[u8]`), an
   `optional<T>` of one with `as_deref()`, a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
-  record) by reference. A record is built from its expanded fields, which are owned.
+  record) by reference. A record is built from its expanded fields, which are owned. A return has the form that is usual for its Rust function
+  (an accessor borrows, a computed value is owned), so the generated code binds it without a type and reads either
+  form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field).
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `bindgen_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because bindgen reads no Rust source; the lint against it is

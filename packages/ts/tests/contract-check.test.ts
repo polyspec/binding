@@ -338,7 +338,7 @@ describe('CK-8 nested values', () => {
     d.units.push({
       id: 'dep_value', name: ['value'], module: 'value', kind: 'class', visibility: 'public', origin: 'value', members: [],
       out: [{ kind: 'null', make: { php: 'null', python: 'null', node: 'null' } }],
-      in: [{ php: 'null', cases: [{ kind: 'null', read: 'builtin' }] }, { python: 'None', cases: [{ kind: 'null', read: 'builtin' }] }, { node: 'null', cases: [{ kind: 'null', read: 'builtin' }] }],
+      in: [{ php: 'null', cases: [{ kind: 'null' }] }, { python: 'None', cases: [{ kind: 'null' }] }, { node: 'null', cases: [{ kind: 'null' }] }],
     });
   };
   test('a nested make with its kind is accepted', () => {
@@ -446,3 +446,11 @@ test('CK-8: an else row takes the other value of its sibling predicate', () => {
   assert.deepEqual(result.map((f) => f.path).sort(), [`${at('value')}/out/5/make/node`, `${at('value')}/out/5/make/wasm`], JSON.stringify(result));
   assert.ok(result.every((f) => f.check === 'CK-8' && /comes back as int/.test(f.message)), JSON.stringify(result));
 });
+
+test('CK-8: a case of kind null reads nothing', () =>
+  fails('CK-8', `${at('value')}/in/17/cases/0/read`, (c) => {
+    unit(c, 'value').out.push({ kind: 'null', make: { php: 'null', python: 'null', node: 'null', wasm: 'null', go: 'null' } });
+    for (const [lang, type] of [['php', 'null'], ['python', 'None'], ['node', 'null'], ['wasm', 'null'], ['go', 'nil']] as [string, string][]) {
+      unit(c, 'value').in.push({ [lang]: type, cases: [{ kind: 'null', read: 'builtin' }] });
+    }
+  }));

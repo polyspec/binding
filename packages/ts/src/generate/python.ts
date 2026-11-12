@@ -113,41 +113,41 @@ fn in_optional<'py, T>(value: &Bound<'py, PyAny>, item: impl FnOnce(&Bound<'py, 
     item(value).map(Some)
 }
 
-fn out_text<'py>(py: Python<'py>, value: String) -> PyResult<Bound<'py, PyAny>> {
-    Ok(PyString::new(py, &value).into_any())
+fn out_text<'py>(py: Python<'py>, value: impl AsRef<str>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyString::new(py, value.as_ref()).into_any())
 }
 
 /// T-1 latin1: each byte is one character.
-fn out_latin1<'py>(py: Python<'py>, value: Vec<u8>) -> PyResult<Bound<'py, PyAny>> {
-    let text: String = value.iter().map(|byte| char::from(*byte)).collect();
+fn out_latin1<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
+    let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
     Ok(PyString::new(py, &text).into_any())
 }
 
-fn out_bytes<'py>(py: Python<'py>, value: Vec<u8>) -> PyResult<Bound<'py, PyAny>> {
-    Ok(PyBytes::new(py, &value).into_any())
+fn out_bytes<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyBytes::new(py, value.as_ref()).into_any())
 }
 
-fn out_bool<'py>(py: Python<'py>, value: bool) -> PyResult<Bound<'py, PyAny>> {
-    Ok(PyBool::new(py, value).to_owned().into_any())
+fn out_bool<'py>(py: Python<'py>, value: impl Borrow<bool>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyBool::new(py, *value.borrow()).to_owned().into_any())
 }
 
-fn out_uint<'py>(py: Python<'py>, value: u64) -> PyResult<Bound<'py, PyAny>> {
-    Ok(value.into_pyobject(py)?.into_any())
+fn out_uint<'py>(py: Python<'py>, value: impl Borrow<u64>) -> PyResult<Bound<'py, PyAny>> {
+    Ok((*value.borrow()).into_pyobject(py)?.into_any())
 }
 
-fn out_int<'py>(py: Python<'py>, value: i64) -> PyResult<Bound<'py, PyAny>> {
-    Ok(value.into_pyobject(py)?.into_any())
+fn out_int<'py>(py: Python<'py>, value: impl Borrow<i64>) -> PyResult<Bound<'py, PyAny>> {
+    Ok((*value.borrow()).into_pyobject(py)?.into_any())
 }
 
-fn out_float<'py>(py: Python<'py>, value: f64) -> PyResult<Bound<'py, PyAny>> {
-    Ok(PyFloat::new(py, value).into_any())
+fn out_float<'py>(py: Python<'py>, value: impl Borrow<f64>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyFloat::new(py, *value.borrow()).into_any())
 }
 
 fn out_none(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     Ok(py.None().into_bound(py))
 }
 
-fn out_list<'py, T>(py: Python<'py>, value: Vec<T>, item: impl Fn(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+fn out_list<'py, T>(py: Python<'py>, value: impl IntoIterator<Item = T>, item: impl Fn(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
     let items = value.into_iter().map(|value| item(py, value)).collect::<PyResult<Vec<_>>>()?;
     Ok(PyList::new(py, items)?.into_any())
 }
@@ -184,7 +184,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('list' in type) return `out_list(py, ${value}, |py, item| ${convertOut(model, type.list, 'item')})`;
   if ('optional' in type) return `out_optional(py, ${value}, |py, value| ${convertOut(model, type.optional, 'value')})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => convertOut(model, t, `${value}.${i}`));
+    const parts = type.tuple.map((t, i) => convertOut(model, t, `&${value}.${i}`));
     return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
   }
   const unit = unitOf(model, type);
@@ -213,8 +213,8 @@ ${arms}
     }
 }
 
-fn out_${name}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
-    let member = match value {
+fn out_${name}(py: Python<'_>, value: impl Borrow<${core}>) -> PyResult<Bound<'_, PyAny>> {
+    let member = match value.borrow() {
 ${outArms}
     };
     types(py)?.getattr(${rustString(pyClass)})?.getattr(member)
@@ -248,12 +248,11 @@ function functionRust(model: Model, fn: Fn): string {
       callArgs.push(coreArg(model, parameter.type, variable));
     }
   }
-  const resultType = rustType(model, fn.returns);
   const call = `${fn.corePath}(${callArgs.join(', ')})`;
   if (fn.fallible) {
-    lines.push(`        let result: ${resultType} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(py, error)),\n        };`);
+    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(py, error)),\n        };`);
   } else {
-    lines.push(`        let result: ${resultType} = ${call};`);
+    lines.push(`        let result = ${call};`);
   }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   return `
@@ -307,7 +306,7 @@ use bindgen_core::{BindingError, Category, Kinds, NumberType, TextCause};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}

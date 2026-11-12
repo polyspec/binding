@@ -574,6 +574,11 @@ class Checker {
         }
       }
       for (const [c, kase] of row.cases.entries()) {
+        // U-1: a kind without content (null) has nothing to read.
+        if (kase.kind === 'null') {
+          if (kase.read !== undefined) this.report('CK-8', `${rowPath}/cases/${c}/read`, 'a case of kind null has nothing to read (U-1)');
+          continue;
+        }
         if (isBuiltin && kase.read !== 'builtin') {
           this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a built-in language type has read: builtin (U-7 (e))');
         }

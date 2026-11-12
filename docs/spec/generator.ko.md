@@ -38,7 +38,8 @@
 - **GN-6** 인자마다 T-1의 Rust 타입을 적은 `let`으로 바꾼다. 두 형태를 가진 타입(text, latin1, bytes, source, path)의
   parameter는 빌려서 넘기고(`&String`과 `&Vec<u8>`는 `&str`과 `&[u8]`로 바뀐다), 그런 타입의 `optional<T>`는
   `as_deref()`로, Copy 타입(bool, 수, enum)은 값으로, 그 밖의 타입(list, record)은 참조로 넘긴다. record는 소유 형태인
-  펼친 field로 만든다.
+  펼친 field로 만든다. 반환은 그 Rust 함수에 보통인 형태이므로(접근자는 빌린 형태, 계산한 값은 소유) 생성 코드는 타입을
+  적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다.
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `bindgen_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. bindgen은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.

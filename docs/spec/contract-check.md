@@ -44,7 +44,7 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
     and every value of the enum is the `is` of exactly one case; without `by`, a row of a class has one case and no
     `is`, and a row of a built-in type may split its cases by `when` as the rows of one kind are split (below), the
     predicate being the core's judgement (U-7 (f));
-  - a case of a class names `read`, a public member; a case of a built-in type has `read: builtin` (U-7 (e));
+  - a case of a class names `read`, a public member; a case of a built-in type has `read: builtin` (U-7 (e)); a case of kind `null` has no `read`, because it has no content (U-1);
   - an `out` row makes a value in every target; `make` is a built-in form that the language has (`keyed_map` written
     `{keyed_map: {key: [...]}}`), a public `constructor` or `static` member of the representing class or of a class the
     alias gathers, or `{value: X}` for the kind `nested:X`;

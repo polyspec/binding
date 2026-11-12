@@ -38,7 +38,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   - `by`가 있으면 `by`는 계약의 `enum` unit을 돌려주는 공개 member이고, 모든 case가 `is`를 갖고 `when`이 없으며, enum의
     모든 값이 정확히 한 case의 `is`다. `by`가 없으면 class의 행은 case 하나이고 `is`가 없으며, 내장 타입의 행은 한 kind의
     행처럼(아래) `when`으로 case를 나눌 수 있고 술어는 코어가 판정한다(U-7 (f)).
-  - class의 case는 공개 member인 `read`를 적고, 내장 타입의 case는 `read: builtin`이다(U-7 (e)).
+  - class의 case는 공개 member인 `read`를 적고, 내장 타입의 case는 `read: builtin`이다(U-7 (e)). kind `null`인 case는 내용이 없으므로 `read`가 없다(U-1).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태(`keyed_map`은 `{keyed_map: {key: [...]}}`),
     대표 class나 alias가 모으는 class의 공개 `constructor`·`static` member, 또는 kind `nested:X`의 `{value: X}`다.
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
