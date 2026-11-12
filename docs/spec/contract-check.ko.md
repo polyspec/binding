@@ -82,6 +82,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 - **CK-19** 추적하는 바인딩 package(L-2): `bindgen check`는 바인딩 package의 추적 파일(docs/spec/generator.md
   GN-3a)을 `bindgen scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다.
+- **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-bindgen-core` 하나를 실행 중인 bindgen의 버전으로 고정한다. 한
+  릴리스가 CLI(npm 패키지 `@polyspec/bindgen`, bin `bindgen`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
+  `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다.
 
 ## bindgen의 표
 

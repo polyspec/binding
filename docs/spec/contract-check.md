@@ -97,6 +97,9 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
 
 - **CK-19** Tracked binding packages (L-2): `bindgen check` compares each tracked file of the binding packages
   (docs/spec/generator.md GN-3a) with what `bindgen scaffold` writes; a missing or different file is a finding.
+- **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-bindgen-core`, of the version
+  of the running bindgen, because one release gives the CLI (npm package `@polyspec/bindgen`, bin `bindgen`) and the
+  crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.
 
 ## Tables of bindgen
 

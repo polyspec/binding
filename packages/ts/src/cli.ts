@@ -104,6 +104,17 @@ const tracked = trackedPackages(checked, version);
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what bindgen scaffold writes.
   let differs = false;
+  // CK-20: the polyspec-bindgen-core that the repository's Cargo.lock pins is of the version of this bindgen, because
+  // one release gives both and the generated code is written for that crate (L-2).
+  const own = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+  const lockPath = join(root, 'Cargo.lock');
+  const lock = existsSync(lockPath) ? (parse(readFileSync(lockPath, 'utf8')) as { package?: { name: string; version: string }[] }) : undefined;
+  const pinned = (lock?.package ?? []).filter((p) => p.name === 'polyspec-bindgen-core').map((p) => p.version);
+  if (pinned.length !== 1 || pinned[0] !== own) {
+    differs = true;
+    const found = lock === undefined ? 'there is no Cargo.lock' : pinned.length === 0 ? 'Cargo.lock pins no polyspec-bindgen-core' : `Cargo.lock pins polyspec-bindgen-core ${pinned.join(', ')}`;
+    process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this bindgen (L-2)\n`);
+  }
   for (const [path, text] of tracked) {
     const full = join(root, path);
     const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;

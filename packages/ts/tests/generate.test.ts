@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
@@ -11,6 +11,8 @@ import { generate } from '../src/generate/index.ts';
 import { closure } from '../src/generate/text.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+const lock = (core: string): string => `version = 4\n\n[[package]]\nname = "polyspec-bindgen-core"\nversion = "${core}"\n`;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
 
 function files(dir: string): Map<string, Buffer> {
@@ -91,6 +93,7 @@ test('check compares the tracked binding packages with what scaffold writes (L-2
     const contract = join(root, 'packages/rust/interface.json');
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-19 is missing/);
     execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const entry = join(root, 'packages/python/src/lib.rs');
     execFileSync('sh', ['-c', `echo '// edited' >> ${entry}`]);
@@ -140,4 +143,18 @@ test('a case whose keys are not the parameter names in snake_case is refused by 
 test('a closure that only calls a function is the function (clippy redundant_closure)', () => {
   assert.equal(closure(['env', 'item'], 'out_text(env, item)'), 'out_text');
   assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
+});
+
+test('check refuses a bindgen_core of another version than the CLI (CK-20)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bindgen-g-'));
+  try {
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    const contract = join(root, 'packages/rust/interface.json');
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
+    writeFileSync(join(root, 'Cargo.lock'), lock('0.0.0-other'));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-bindgen-core 0\.0\.0-other/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

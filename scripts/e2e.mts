@@ -117,10 +117,11 @@ impl bindgen_core::Kinds for Error {
 }
 run(process.execPath, [join(bindgen, 'packages/ts/src/cli.ts'), 'scaffold', '--root', copy]);
 process.stdout.write('change: the tracked binding packages that bindgen scaffold writes (L-2)\n');
-run(process.execPath, [join(bindgen, 'packages/ts/src/cli.ts'), 'check', join(copy, 'packages/rust/interface.json')]);
 
 step('the core builds without the generator');
 run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
+// The check follows the core's build, which pins bindgen_core in Cargo.lock (CK-20).
+run(process.execPath, [join(bindgen, 'packages/ts/src/cli.ts'), 'check', join(copy, 'packages/rust/interface.json')]);
 
 step('the cases in the convention of G-5 (each change printed; the core reads the committed form)');
 const units = new Map(contract.units.map((u) => [u.id, u]));
