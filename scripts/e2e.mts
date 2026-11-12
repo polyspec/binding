@@ -392,6 +392,14 @@ if (caseRunners) run('php', [...extensions, phpunit, join(e2e, 'CasesTest.php')]
 if (contract.targets.includes('go')) {
   step('Go: build the static library, run the generated tests and the cases with go test');
   run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test', '--', '-D', 'warnings']);
+  // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
+  const release = join(work, 'target-release-check');
+  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
+  process.stdout.write('$ nm --defined-only (test entry points)\n');
+  const symbols = execFileSync('nm', ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  const leaked = symbols.split('\n').filter((line) => / [A-Z] polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
+  if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points:\n${leaked.join('\n')}`);
+  rmSync(release, { recursive: true, force: true });
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
   const goModule = join(copy, 'packages/go');
   if (process.env['BINDING_E2E_LOCAL_GO'] === '1') {

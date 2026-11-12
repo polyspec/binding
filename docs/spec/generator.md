@@ -130,7 +130,9 @@ the design ids are those of the binding design.
   contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
   is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
   `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
-  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4).
+  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4). The
+  int key as text is the inverse of PHP's own conversion of a decimal string key, so a text key `"1"` that leaves as
+  the int key 1 comes back as the text `"1"` and keeps its value (P-3).
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
@@ -251,7 +253,10 @@ the design ids are those of the binding design.
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
-  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. With the build tag
+  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
+  `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
+  default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
+  without features and fails if it holds a test entry point (`__panic_test`, `__echo_`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
