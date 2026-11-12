@@ -2,7 +2,7 @@
 // the run; and an item that the generator cannot generate is refused by name (G-4).
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -179,6 +179,33 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
     assert.ok(files(root).has('packages/server/python/Cargo.toml'));
     execFileSync(process.execPath, [cli, 'generate', '--contract', path]);
     assert.ok(files(root).has('packages/server/php-ext/generated/lib.rs'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('check reads cargo metadata of any size for the contracts it depends on (T-3)', async () => {
+  const { contract: sample, dependency } = await import('./fixture.ts');
+  const root = mkdtempSync(join(tmpdir(), 'bindgen-i-'));
+  try {
+    const contract = sample();
+    contract.units.find((u: any) => u.id === 'forms').members.find((m: any) => m.id === 'forms.parse').parameters[0].type = { unit: 'dep_reader', library: 'forms-dep' };
+    execFileSync('mkdir', ['-p', join(root, 'packages/rust'), join(root, 'dep'), join(root, 'bin')]);
+    writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
+    writeFileSync(join(root, 'dep/interface.json'), JSON.stringify(dependency()));
+    writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n');
+    // A cargo that answers metadata with 4 MB of packages before the one the check needs.
+    const filler = Array.from({ length: 20000 }, (_, i) => ({ name: `filler-${i}`, manifest_path: `/nowhere/${'x'.repeat(160)}/${i}/Cargo.toml` }));
+    const metadata = { packages: [...filler, { name: 'polyspec-forms-dep', manifest_path: join(root, 'dep/Cargo.toml') }] };
+    writeFileSync(join(root, 'metadata.json'), JSON.stringify(metadata));
+    assert.ok(readFileSync(join(root, 'metadata.json')).length > 2 ** 22);
+    writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat '${join(root, 'metadata.json')}'\n`, { mode: 0o755 });
+    const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json')], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` },
+    });
+    assert.doesNotMatch(run.stderr, /ENOBUFS|interface\.json#/, run.stderr);
+    assert.match(run.stderr, /CK-19 is missing/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
