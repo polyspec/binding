@@ -381,6 +381,49 @@
               "unit": "tag"
             }
           }
+        },
+        {
+          "id": "tag.to_string",
+          "name": [
+            "to",
+            "string"
+          ],
+          "kind": "stringify",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::label",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.to_json",
+          "name": [
+            "to",
+            "json"
+          ],
+          "kind": "to_json",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "never",
+          "raises": [
+            "polyspec_sample::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Tag::host_json",
+            "receiver": "&self"
+          },
+          "only": {
+            "targets": [
+              "php",
+              "node"
+            ],
+            "reason": "N-4"
+          }
         }
       ]
     },
@@ -685,6 +728,16 @@
       "member": "tag.entries",
       "file": "contracts/cases.json",
       "group": "tag_entries"
+    },
+    {
+      "member": "tag.to_string",
+      "file": "contracts/cases.json",
+      "group": "tag_to_string"
+    },
+    {
+      "member": "tag.to_json",
+      "file": "contracts/cases.json",
+      "group": "tag_to_json"
     }
   ]
 }

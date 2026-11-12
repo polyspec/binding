@@ -48,6 +48,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(Zval::new())';
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(${value})`;
@@ -402,6 +404,16 @@ ${body}
 `;
 }
 
+// N-4: the interfaces of the language that the special members of a class implement.
+function phpImplements(object: ObjectClass): string {
+  const names = [
+    ...(object.members.some((fn) => fn.kind === 'iterate') ? ['\\IteratorAggregate'] : []),
+    ...(object.members.some((fn) => fn.special === 'stringify') ? ['\\Stringable'] : []),
+    ...(object.members.some((fn) => fn.special === 'to_json') ? ['\\JsonSerializable'] : []),
+  ];
+  return names.length === 0 ? '' : ` implements ${names.join(', ')}`;
+}
+
 // N-4 iterate: the iterator of the extension over converted pairs, which getIterator gives.
 const PAIRS = (layout: PhpLayout): string => `
 /// N-4: an iterator over the pairs that a getIterator converted.
@@ -446,7 +458,16 @@ impl PhpPairs {
 
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
-  const callable = langName('php', fn.member.name, 'callable');
+  if (fn.special === 'stringify') {
+    // N-4: __toString returns a string, which Stringable declares.
+    return `
+    #[php(name = "__toString")]
+    pub fn to_string_form(&self) -> Result<String, PhpException> {
+        guard(|| Ok(${fn.corePath}(&self.inner)))
+    }
+`;
+  }
+  const callable = fn.special === 'to_json' ? 'jsonSerialize' : langName('php', fn.member.name, 'callable');
   const phpName = `${phpNamespace(layout, fn.module)}\\${callable}`;
   const variables = fn.args.map((a) => langName('php', a.name, 'variable'));
   const lines: string[] = [];
@@ -631,7 +652,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}
+#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'stringify') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::stringable, stub = "\\\\Stringable"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${object.unit.core_type ?? ''},
 }
@@ -832,7 +853,12 @@ fn builtin_class(name: &str) -> &'static ClassEntry {
     }
 }
 
-${baseFns}
+${baseFns}${model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json')) ? `
+/// N-4: the interface of a class with a JSON hook.
+fn json_serializable() -> &'static ClassEntry {
+    builtin_class("JsonSerializable")
+}
+` : ''}
 fn private_property(name: &str) -> ClassProperty {
     ClassProperty {
         name: name.into(),
@@ -982,7 +1008,7 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
-      return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void' } as Record<string, string>)[type] ?? 'mixed';
+      return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
@@ -1029,7 +1055,7 @@ ${indent} */
 ${indent}public function getIterator(): \\Iterator {}
 `;
     }
-    const name = fn.kind === 'constructor' ? '__construct' : langName('php', fn.member.name, 'callable');
+    const name = fn.kind === 'constructor' ? '__construct' : fn.special === 'stringify' ? '__toString' : fn.special === 'to_json' ? 'jsonSerialize' : langName('php', fn.member.name, 'callable');
     const prefix = fn.kind === 'function' ? 'function' : fn.kind === 'static' ? 'public static function' : 'public function';
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
     return `${indent}/**
@@ -1072,7 +1098,7 @@ ${lines.join('\n')}    }
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
       items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}${object.members.some((fn) => fn.kind === 'iterate') ? ' implements \\IteratorAggregate' : ''}
+    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
     {
 ${members.join('\n')}    }
 `);

@@ -125,6 +125,21 @@ impl Tag {
         Self { name: name.to_owned() }
     }
 
+    /// The string form of the tag (N-4: stringify).
+    #[must_use]
+    pub fn label(&self) -> String {
+        format!("#{}", self.name)
+    }
+
+    /// The JSON hook of the tag, which refuses (N-4: to_json; T-2: never).
+    ///
+    /// # Errors
+    ///
+    /// Always kind `unsupported`: a tag has no JSON form.
+    pub fn host_json(&self) -> Result<std::convert::Infallible, Error> {
+        Err(Error::Unsupported { what: format!("the JSON form of the tag {}", self.name) })
+    }
+
     /// The entries of the tag, its name with the tag itself (N-4: iterate with a key and a value).
     pub fn entries(&self) -> impl Iterator<Item = (&String, &Self)> {
         std::iter::once((&self.name, self))

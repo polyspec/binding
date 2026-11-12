@@ -3,7 +3,7 @@
 
 import type { Contract, Type } from '../contract.ts';
 import { go } from './go.ts';
-import { buildModel, forLanguage, Unsupported } from './model.ts';
+import { buildModel, forLanguage, membersFor, Unsupported } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -83,7 +83,7 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('python')) python(forLanguage(model, 'python'), files);
   if (targets.includes('node')) node(forLanguage(model, 'node'), files);
   if (targets.includes('php')) php(forLanguage(model, 'php'), files);
-  if (targets.includes('go')) go(model, files);
+  if (targets.includes('go')) go(membersFor(model, 'go'), files);
   if (targets.includes('wasm')) wasm(forLanguage(model, 'wasm'), files);
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

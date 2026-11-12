@@ -39,6 +39,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(env, ${value})`;
@@ -383,9 +385,16 @@ ${body}
 `;
 }
 
+// N-4: the JavaScript name of a member; the string form is toString and the JSON hook toJSON.
+function jsMemberName(fn: Fn): string {
+  if (fn.special === 'stringify') return 'toString';
+  if (fn.special === 'to_json') return 'toJSON';
+  return langName('node', fn.member.name, 'callable');
+}
+
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
-  const jsName = langName('node', fn.member.name, 'callable');
+  const jsName = jsMemberName(fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
   for (const parameter of fn.params) {
@@ -724,7 +733,7 @@ pub fn panic_test(env: &Env) -> napi::Result<()> {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
@@ -792,7 +801,7 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
   const objects = model.objects.map((o) => {
     const cls = langName('node', o.unit.name, 'class');
     const wraps = o.members.filter((fn) => fn.kind === 'static' || fn.kind === 'method').map((fn) => {
-      const name = langName('node', fn.member.name, 'callable');
+      const name = jsMemberName(fn);
       const target = fn.kind === 'static' ? cls : `${cls}.prototype`;
       return `{
   const original = ${target}.__${name};
@@ -933,7 +942,7 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')
   const params = (fn: Fn): string => fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
-      const name = langName('node', fn.member.name, 'callable');
+      const name = jsMemberName(fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
       if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;

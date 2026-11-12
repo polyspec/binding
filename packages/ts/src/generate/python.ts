@@ -277,6 +277,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    if (type === 'never') return `match ${value} {}`;
     return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
   }
   if ('list' in type) return `out_list(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
@@ -392,7 +394,9 @@ ${body}
 
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
-  const name = langName('python', fn.member.name, 'callable');
+  // N-4: Python has no JSON hook; the string form is __str__.
+  if (fn.special === 'to_json') return '';
+  const name = fn.special === 'stringify' ? '__str__' : langName('python', fn.member.name, 'callable');
   const positional = fn.args.filter((a) => !a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
@@ -438,7 +442,7 @@ ${lines.join('\n')}
 }
 `;
   }
-  const attributes = { static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind] ?? [];
+  const attributes = fn.special === 'stringify' ? [] : ({ static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind] ?? []);
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
 ${attributes.map((a) => `    ${a}`).join('\n')}
@@ -703,7 +707,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -824,11 +828,13 @@ function nativePyi(model: Model): string {
     return keyword.length === 0 ? positional : [...positional, '*', ...keyword];
   };
   const classes = model.objects.map((o) => {
-    const lines = o.members.map((fn) => {
+    const lines = o.members.filter((fn) => fn.special !== 'to_json').map((fn) => {
       const name = langName('python', fn.member.name, 'callable');
       if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
       if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
       if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
+      if (fn.special === 'to_json') return '';
+      if (fn.special === 'stringify') return '    def __str__(self) -> str: ...';
       if (fn.kind === 'iterate') {
         const yields = fn.yields ?? { value: 'none' };
         if (yields.key === undefined) return `    def __iter__(self) -> Iterator[${pyType(model, yields.value, false)}]: ...`;
@@ -841,7 +847,7 @@ function nativePyi(model: Model): string {
   });
   return `${pyHeader()}
 from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
-from typing import final
+from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
 ${classes.join('')}`;

@@ -53,5 +53,24 @@
       "result": 2
     }
   ],
-  "tag_entries": []
+  "tag_entries": [],
+  "tag_to_string": [
+    {
+      "id": "a_tag_is_its_name_after_a_hash",
+      "name": "a",
+      "result": "#a"
+    }
+  ],
+  "tag_to_json": [
+    {
+      "id": "a_tag_has_no_json_form",
+      "name": "a",
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value",
+        "message": "not data: the JSON form of the tag a"
+      }
+    }
+  ]
 }
