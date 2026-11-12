@@ -138,6 +138,7 @@ class Checker {
     this.awaitableNames();
     this.callbacks();
     this.packageNames();
+    this.coreBuild();
     return this.findings;
   }
 
@@ -303,7 +304,7 @@ class Checker {
     }
     for (const [i, change] of this.contract.changes.entries()) {
       for (const lang of Object.keys(change.from)) langOk(lang, `/changes/${i}/from/${lang}`, 'a change');
-      if (change.to !== null && !this.members.has(change.to) && !this.units.has(change.to)) {
+      if (typeof change.to === 'string' && !this.members.has(change.to) && !this.units.has(change.to)) {
         this.report('CK-3', `/changes/${i}/to`, `${change.to} is neither a unit nor a member`);
       }
     }
@@ -1046,6 +1047,21 @@ class Checker {
     }
   }
 
+  // ---- CK-21: the build of the core and exclusive members (I-1, U-6) ----
+
+  coreBuild(): void {
+    for (const lang of Object.keys(this.contract.core.features ?? {}) as Lang[]) {
+      if (!this.contract.targets.includes(lang)) this.report('CK-21', `/core/features/${lang}`, `${lang} is not a target (I-1)`);
+    }
+    for (const { member, unit, path } of this.members.values()) {
+      if (member.exclusive === undefined) continue;
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (unit.kind !== 'class' || unit.origin !== 'generated' || receiver !== '&self') {
+        this.report('CK-21', `${path}/exclusive`, `only a member with the receiver &self of a generated class is exclusive (U-6)`);
+      }
+    }
+  }
+
   // ---- CK-17: callbacks (U-3, T-3) ----
 
   callbacks(): void {
@@ -1054,6 +1070,11 @@ class Checker {
       if (!callback && member.async_allowed !== undefined) this.report('CK-17', `${path}/async_allowed`, 'only a callback member has async_allowed (U-3)');
       if (!callback && member.errors !== undefined) this.report('CK-17', `${path}/errors`, 'only a callback member has errors (U-3)');
       if (callback && member.async_allowed === undefined) this.report('CK-17', path, `the callback member ${member.id} does not state async_allowed (U-3)`);
+      // U-3: the generated struct implements the core trait, whose receiver binding cannot read from Rust source.
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (callback && receiver !== '&self' && receiver !== '&mut self') {
+        this.report('CK-17', path, `the callback member ${member.id} does not name its trait method and receiver in core: {path, receiver: "&self" | "&mut self"} (U-3)`);
+      }
       for (const [i, ref] of (member.errors?.recognize ?? []).entries()) {
         const refPath = `${path}/errors/recognize/${i}`;
         if (ref.library === undefined || ref.library === this.contract.library) {
@@ -1062,6 +1083,23 @@ class Checker {
           const dependency = this.dependency(ref.library, refPath, 'CK-17');
           if (dependency !== null && dependency.units.find((u) => u.id === ref.unit)?.kind !== 'error') {
             this.report('CK-17', refPath, `${ref.library} has no error unit ${ref.unit}`);
+          }
+        }
+      }
+    }
+    // T-2: a function type has the attributes of a callback member (U-3).
+    for (const { value, path } of this.allTypes()) {
+      for (const type of Checker.walk(value)) {
+        if (typeof type !== 'object' || !('function' in type)) continue;
+        if (type.function.async_allowed === undefined) this.report('CK-17', path, 'a function type does not state async_allowed (T-2, U-3)');
+        for (const ref of type.function.errors?.recognize ?? []) {
+          if (ref.library === undefined || ref.library === this.contract.library) {
+            if (this.unit(ref.unit)?.kind !== 'error') this.report('CK-17', path, `${ref.unit} is not an error unit`);
+          } else {
+            const dependency = this.dependency(ref.library, path, 'CK-17');
+            if (dependency !== null && dependency.units.find((u) => u.id === ref.unit)?.kind !== 'error') {
+              this.report('CK-17', path, `${ref.library} has no error unit ${ref.unit}`);
+            }
           }
         }
       }

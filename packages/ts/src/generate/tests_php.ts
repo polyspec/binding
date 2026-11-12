@@ -2,9 +2,9 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, langName } from './model.ts';
+import { type Model, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -24,7 +24,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   const recordNew = (unit: Unit, fields: string[]): string =>
     `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('php', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')})`;
-  const ctx: Context = { lang: 'php', enumRef, recordNew };
+  const callbackNew = (unit: Unit, how: CallbackHow): string => {
+    if ('missing' in how) return 'new class {}';
+    const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';
+    return `new class { ${(unit.members ?? []).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
+  };
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   const methods: string[] = [];
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -110,6 +115,43 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    const callback = callbackArg(model, fn);
+    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
+    if (callback !== undefined && cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string =>
+        qualified(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
+      methods.push(`
+    public function testK2${name}RefusesACallbackWithoutItsMembers(): void
+    {
+        try {
+            ${with_({ missing: true })};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_callback', $error->kind());
+        }
+    }
+
+    public function testK2${name}LetsTheExceptionOfACallbackThrough(): void
+    {
+        $raised = new \\LogicException('raised by the callback');
+        try {
+            ${with_({ raise: '$raised' }).replace('new class {', 'new class($raised) { public function __construct(private \\Throwable $raised) {} ').replaceAll('throw $raised;', 'throw $this->raised;')};
+            self::fail('no error');
+        } catch (\\LogicException $error) {
+            self::assertSame($raised, $error);
+        }
+    }
+
+    public function testK2${name}RefusesACallbackResultOfAnotherType(): void
+    {
+        try {
+            ${with_({ returns: 'wrong' })};
+            self::fail('no error');
+        } catch (\\Throwable $error) {
+            self::assertContains($error->kind(), ['invalid_argument_type', 'invalid_number', 'invalid_text']);
+        }
+    }`);
+    }
     if (fn.kind === 'property' || !reachable) continue;
     methods.push(`
     public function testG7${name}CountsAndNamesItsArguments(): void

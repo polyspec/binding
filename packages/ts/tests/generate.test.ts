@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
+import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
@@ -315,4 +316,150 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /in_keyed_map\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
+});
+
+// A temporary copy of the fixture repository whose contract `change` edits.
+function fixtureCopy(change: (contract: any) => void): { root: string; contract: string } {
+  const root = mkdtempSync(join(tmpdir(), 'binding-j-'));
+  execFileSync('cp', ['-r', `${fixture}.`, root]);
+  const contract = join(root, 'packages/rust/interface.json');
+  const parsed = JSON.parse(readFileSync(contract, 'utf8'));
+  change(parsed);
+  writeFileSync(contract, JSON.stringify(parsed));
+  return { root, contract };
+}
+
+test('scaffold writes under --out and not into the repository', () => {
+  const { root } = fixtureCopy(() => {});
+  const out = mkdtempSync(join(tmpdir(), 'binding-k-'));
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root, '--out', out]);
+    assert.ok(files(out).has('packages/python/Cargo.toml'));
+    assert.ok(!files(root).has('packages/python/Cargo.toml'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('scaffold writes the packages of a contract with a todo unit (CK-2), which check still reports', () => {
+  const { root, contract } = fixtureCopy((c) => {
+    c.units[0].members[0].wait = 'todo';
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.ok(files(root).has('packages/python/Cargo.toml'));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-2 /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a host package holds its native module in one form per language (L-2a)', () => {
+  const { root, contract } = fixtureCopy((c) => {
+    c.packages.python.host = true;
+    c.packages.node.host = true;
+    c.packages.php.host = true;
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    const written = files(root);
+    // The crate is native/ of the host package; the PHP extension is the package <host>-native there.
+    for (const path of ['packages/python/native/Cargo.toml', 'packages/ts/native/build.rs', 'packages/php/native/src/lib.rs', 'packages/php/native/composer.json']) {
+      assert.ok(written.has(path), path);
+    }
+    for (const path of ['packages/python/pyproject.toml', 'packages/ts/package.json', 'packages/python/native/pyproject.toml', 'packages/php-ext/Cargo.toml', 'packages/php/composer.json']) {
+      assert.ok(!written.has(path), path);
+    }
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/php/native/composer.json'), 'utf8')).name, 'polyspec/sample-native');
+    assert.match(readFileSync(join(root, 'packages/php/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
+    assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 files \(native\/generated\/\*\.node\) is missing/);
+    const pyproject = (module: string): string =>
+      `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
+    writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
+    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
+      name: '@polyspec/sample',
+      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node'],
+    }));
+    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
+    const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
+    writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
+    execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
+    const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
+    execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out]);
+    const generated = files(out);
+    assert.ok(generated.has('packages/python/native/generated/lib.rs'));
+    assert.ok(generated.has('packages/python/src/polyspec/sample/_binding/__init__.py'));
+    assert.ok(generated.has('packages/ts/native/generated/index.cjs'));
+    assert.ok(generated.has('packages/php/native/generated/lib.rs'));
+    assert.match(String(generated.get('packages/python/native/generated/lib.rs')), /polyspec\.sample\._binding\._errors/);
+    rmSync(out, { recursive: true, force: true });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a binding crate builds the core with the features of its target only (I-1)', () => {
+  const { root } = fixtureCopy((c) => {
+    c.core.features = { node: ['io', 'redis'] };
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.match(readFileSync(join(root, 'packages/ts/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust", default-features = false, features = \["io", "redis"\] \}/);
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/rust" \}/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('scaffold rewrites its packages after the core crate was renamed, without asking Cargo', () => {
+  const { root } = fixtureCopy((c) => {
+    // A type of another repository, for which check and generate ask Cargo for that repository's contract.
+    c.units[0].members[0].parameters[0].type = { unit: 'dep_part', library: 'forms-dep' };
+  });
+  try {
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n`);
+    execFileSync('mkdir', ['-p', join(root, 'bin')]);
+    // A cargo that fails as it does when a binding manifest names a crate that no longer exists.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` };
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    // The core is renamed; the binding manifests of the first scaffold still name the old crate.
+    const contractPath = join(root, 'packages/rust/interface.json');
+    const renamed = JSON.parse(readFileSync(contractPath, 'utf8'));
+    renamed.library = 'sample-next';
+    renamed.core.crate = 'polyspec-sample-next';
+    renamed.packages.php = { package: 'polyspec/sample-next', namespace: 'Polyspec\\SampleNext' };
+    renamed.packages.python = { package: 'polyspec-sample-next', module: 'polyspec.sample_next' };
+    renamed.packages.node = { ...renamed.packages.node, package: '@polyspec/sample-next' };
+    for (const row of Object.values(renamed.errors.classes) as Record<string, string>[]) {
+      for (const lang of Object.keys(row)) row[lang] = (row[lang] ?? '').replace('Polyspec\\Sample\\Sample', 'Polyspec\\SampleNext\\SampleNext').replace(/^Sample/, 'SampleNext');
+    }
+    writeFileSync(contractPath, JSON.stringify(renamed));
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('name = "polyspec-sample"', 'name = "polyspec-sample-next"'));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample-next = \{ path = "\.\.\/rust" \}/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a case writes bytes as hex and a float that JSON cannot write by its name (G-5)', () => {
+  const ctx = (lang: 'python' | 'node' | 'php'): any => ({ lang, enumRef: () => '', recordNew: () => '', callbackNew: () => '' });
+  const model = {} as any;
+  assert.equal(fromJson(model, ctx('python'), 'bytes', { hex: '00ff' }), 'bytes.fromhex("00ff")');
+  assert.equal(fromJson(model, ctx('node'), 'bytes', { hex: '00ff' }), "new Uint8Array(Buffer.from('00ff', 'hex'))");
+  assert.equal(fromJson(model, ctx('php'), 'bytes', { hex: '00ff' }), 'hex2bin("00ff")');
+  assert.equal(fromJson(model, ctx('python'), 'float', { float: '-inf' }), 'float("-inf")');
+  assert.equal(fromJson(model, ctx('node'), 'float', { float: 'nan' }), 'NaN');
+  assert.equal(fromJson(model, ctx('php'), 'float', 1.5), '1.5');
+  assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);
+  assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
 });

@@ -14,6 +14,22 @@ export interface Arg {
   field: boolean;
 }
 
+// U-3: a callback interface that language code implements and the core calls through its trait.
+export interface CallbackUnit {
+  unit: Unit;
+  members: CallbackMember[];
+  // thread owner: a call from another thread is kind wrong_thread.
+  owner: boolean;
+}
+
+export interface CallbackMember {
+  member: Member;
+  params: Parameter[];
+  returns: Type;
+  // The receiver of the trait method (U-2 core.receiver of the callback member).
+  receiver: '&self' | '&mut self';
+}
+
 export interface Fn {
   unit: Unit;
   member: Member;
@@ -27,6 +43,8 @@ export interface Fn {
   args: Arg[];
   returns: Type;
   fallible: boolean;
+  // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
+  failure: boolean;
   corePath: string;
 }
 
@@ -92,6 +110,7 @@ export interface Model {
   // The contracts of the libraries that the contract names (T-3).
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
+  callbacks: CallbackUnit[];
   classes: ErrorClass[];
   coreError: string | undefined;
   kinds: CoreKind[];
@@ -122,6 +141,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     const unit = units.get(type.unit);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'class' && unit.origin === 'generated') return;
+    if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
   }
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
@@ -145,6 +165,7 @@ export function buildModel(
   const enums: Unit[] = [];
   const records: Unit[] = [];
   const objects: ObjectClass[] = [];
+  const callbacks: CallbackUnit[] = [];
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.only !== undefined || member.native !== undefined) throw new Unsupported(`${member.id}: only and native are not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -169,12 +190,14 @@ export function buildModel(
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true });
         continue;
       }
-      supportedType(type, units, `${member.id}.${parameter.name.join('_')}`, foreign);
+      const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
+      supportedType(type, units, `${member.id}.${parameter.name.join('_')}${direct ? '#parameter' : ''}`, foreign);
       if (JSON.stringify(type).includes('"unit"') && [...JSON.stringify(type).matchAll(/"unit":"([^"]+)"/g)].some((m) => units.get(m[1] ?? '')?.kind === 'class')) {
         throw new Unsupported(`${member.id}.${parameter.name.join('_')}: a parameter of a class is not generated yet`);
       }
       args.push({ name: parameter.name, type, field: false });
     }
+    const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     supportedType(returns, units, `${member.id} returns`, foreign);
     return {
@@ -186,7 +209,8 @@ export function buildModel(
       params,
       args,
       returns,
-      fallible: (member.raises ?? []).length > 0,
+      fallible: (member.raises ?? []).length > 0 || takesCallback,
+      failure: takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
     };
@@ -221,6 +245,26 @@ export function buildModel(
         throw new Unsupported(`${unit.id}: a constructible class has one constructor and another none (U-1 constructible)`);
       }
       objects.push({ unit, members, constructible });
+      continue;
+    }
+    if (unit.kind === 'interface' && unit.origin === 'callback') {
+      const members: CallbackMember[] = [];
+      for (const member of unit.members ?? []) {
+        if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
+        if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
+        if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
+        const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+        if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
+        const params = member.parameters ?? [];
+        for (const parameter of params) {
+          if (parameter.required !== true) throw new Unsupported(`${member.id}: a default or rest parameter is not generated yet`);
+          supportedType(parameter.type, units, `${member.id}.${parameter.name.join('_')}`, foreign);
+        }
+        const returns = member.returns ?? 'none';
+        supportedType(returns, units, `${member.id} returns`, foreign);
+        members.push({ member, params, returns, receiver });
+      }
+      callbacks.push({ unit, members, owner: unit.thread === 'owner' });
       continue;
     }
     if (unit.kind !== 'functions' || unit.origin !== 'generated') {
@@ -289,7 +333,7 @@ export function buildModel(
   const resultRecords = records.filter((r) => result.has(r.id));
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, classes, coreError, kinds, cases,
+    objects, callbacks, classes, coreError, kinds, cases,
   };
 }
 
@@ -310,6 +354,8 @@ export function rustType(model: Model, type: Type): string {
   if ('tuple' in type) return `(${type.tuple.map((t) => rustType(model, t)).join(', ')})`;
   if ('unit' in type) {
     const unit = unitOf(model, type);
+    // U-3: a callback is the generated struct that implements the core trait over the language object.
+    if (unit?.origin === 'callback') return `Cb${convert(unit.name, 'rust', 'class')}`;
     if (unit?.core_type === undefined) throw new Unsupported(`${type.unit} has no core_type`);
     return unit.core_type;
   }
@@ -321,6 +367,8 @@ export function rustType(model: Model, type: Type): string {
 // generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
 export function coreArg(model: Model, type: Type, variable: string): string {
   if (byValue(model, type)) return variable;
+  // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
+  if (unitOf(model, type)?.origin === 'callback') return `&mut { ${variable} }`;
   if (typeof type === 'object' && 'optional' in type) {
     const inner = type.optional;
     if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;

@@ -1,8 +1,8 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { langName } from './model.ts';
-import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { langName, unitOf } from './model.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -15,6 +15,11 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 export function pythonTests(model: Model, module: string): string {
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
+    callbackNew: (unit, how) => {
+      const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
+      const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
+      return `type(${pyString(langName('python', unit.name, 'class'))}, (), {${members}})()`;
+    },
     recordNew: (unit, fields) =>
       `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
   };
@@ -85,6 +90,28 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIsNone(error.errno)`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    const callback = callbackArg(model, fn);
+    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
+    if (callback !== undefined && cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
+      out.push(`
+    def test_k2_${name}_refuses_a_callback_without_its_members(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${with_({ missing: true })}
+        self.assertEqual(caught.exception.kind, "invalid_callback")
+
+    def test_k2_${name}_lets_the_exception_of_a_callback_through(self) -> None:
+        raised = LookupError("raised by the callback")
+        with self.assertRaises(LookupError) as caught:
+            ${with_({ raise: 'raised' })}
+        self.assertIs(caught.exception, raised)
+
+    def test_k2_${name}_refuses_a_callback_result_of_another_type(self) -> None:
+        with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
+            ${with_({ returns: 'wrong' })}
+        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
+    }
     if (fn.kind === 'property' || !reachable) continue;
     out.push(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.length === 0 ? '' : `

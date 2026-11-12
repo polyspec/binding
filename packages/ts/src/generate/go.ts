@@ -1448,6 +1448,8 @@ export function go(model: Model, files: Files): void {
   if (object !== undefined) throw new Unsupported(`${object.unit.id}: a class unit is not generated for Go yet`);
   const [foreign] = model.foreignRecords;
   if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
+  const [callback] = model.callbacks;
+  if (callback !== undefined) throw new Unsupported(`${callback.unit.id}: a callback unit is not generated for Go yet`);
   const modules = [...new Set([...model.functions.map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module)])];
   for (const module of modules) {
     files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module));

@@ -52,6 +52,7 @@ export function dependency(): any {
         members: [{
           id: 'dep_reader.read', name: ['read'], kind: 'method', visibility: 'public', returns: 'bytes',
           parameters: [{ name: ['part'], type: { unit: 'dep_part' }, required: true }], async_allowed: false,
+          core: { path: 'forms_dep::Reader::read', receiver: '&self' },
         }],
       },
       { id: 'dep_part', name: ['part'], module: 'reader', kind: 'record', visibility: 'public', origin: 'generated', fields: [{ name: ['size'], type: 'uint', required: true }] },
@@ -157,6 +158,7 @@ export function contract(): any {
           parameters: [{ name: ['key'], type: 'text', required: true }],
           returns: { optional: 'bytes' }, optional_reason: 'HY-104',
           async_allowed: true, errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' },
+          core: { path: 'sample::Store::read', receiver: '&mut self' },
         }],
       },
       {

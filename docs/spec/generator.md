@@ -13,11 +13,12 @@ the design ids are those of the binding design.
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
   functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
-  Any other item (a callback, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
+  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
+  recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
   `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
   `source`) is refused by name
-  before anything is written (G-4, P-4). Go and WASM refuse a class unit and a record of another repository (T-3,
-  T-5); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
+  repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -40,14 +41,35 @@ the design ids are those of the binding design.
   needs beside the crate, and a file of the crate that does not depend on the contract (the Node `build.rs`, which the
   manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
-  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`. `binding scaffold` writes them and `binding check` compares them with what it would write
-  (CK-19), so a change of binding that changes them shows in the repository's diff. They depend only on the library
-  name, the targets and the core version. The core builds and tests without the generator; only the binding crates
-  need `make bindings`.
+  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
+  `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
+  thin packages depend only on the package and name items; `check` and `generate` report it. `scaffold` stops only
+  for a finding of the schema (CK-1) or of the names (CK-18), and it does not ask Cargo for the workspace, so a binding
+  manifest of an earlier scaffold that no longer resolves (a renamed core crate) does not stop the rewrite.
+- **GN-3b** A language whose package is a hand-written host package (L-2a, `packages.<lang>.host: true`) holds the
+  binding in one form, which `scaffold`, `generate` and `check` (CK-19) share; `scaffold` does not write the host's
+  manifest, and `check` reads from it only the items below.
+  - Python: the binding crate is `packages/<component>/python/native/` (`Cargo.toml`, `src/lib.rs`, `generated/`
+    with the Rust source and the tests; its path dependencies climb one directory more). The generated Python
+    package is the subpackage `<module>._binding` in the host's source root, `src/<module path>/_binding/`, a
+    directory that binding owns and writes whole; its native module is `<module>._binding._native`, and host code
+    imports the API from `<module>._binding`. The host's `pyproject.toml` has `build-system.build-backend`
+    `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source` `src` and
+    `tool.maturin.module-name` `<module>._binding._native`.
+  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry,
+    declarations and addon are `native/generated/`. The host's `package.json` has its `name` and, in `files`,
+    `native/generated/index.cjs`, `native/generated/index.mjs`, `native/generated/index.d.ts` and
+    `native/generated/*.node`; host code imports `native/generated/index.mjs` (or `index.cjs`) by its relative path.
+  - PHP: an extension is a Composer package of its own (type `php-ext`), named `<host package>-native`, at
+    `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
+    is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
+    the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
   code holds only the helper functions it uses, because the lints deny dead code.
+- **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
+  manifest depends on the core with `default-features = false` and the row's features.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test.
 
@@ -77,6 +99,14 @@ the design ids are those of the binding design.
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
   on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
+- **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
+  member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
+  When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
+  (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
+  (a result of another type, a call from another thread with `thread: owner`, kind `wrong_thread`), goes to the core
+  as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
+  The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
+  that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
@@ -191,14 +221,31 @@ the design ids are those of the binding design.
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. A `keyed_map`
-  parameter whose contract does not list every key kind is tested with a key of a missing kind as kind
-  `invalid_argument_type`; a case gives a keyed map as an array of `[key, value]`, a number key an integer and a string
-  key a text. The members of a
+  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. Values that JSON
+  cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
+  `{"hex": ...}` for bytes that are no text; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
+  value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
+  the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
+  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values;
+  `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
+  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
+  every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
+  that array of `[key, value]`. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
-  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise.
-- **GN-13a** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
+  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
+  that takes a callback has no B-4 tests (a case cannot give a callback) and the tests of K-2: an object without the
+  members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
+  and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
+  No B-4 test is generated for a member that takes a callback: B-4 runs a contract case, and a case is JSON, which
+  cannot give the object that implements the callback, so the case's failure cannot be reached from its keys. K-2 is
+  another requirement and does not stand in for it.
+- **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
+  of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
+  closed set that each language's generated test implements.
+
+- **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
   contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
@@ -211,9 +258,8 @@ the design ids are those of the binding design.
   U+00FF, the order of a map and the order and kinds of the keys of a keyed map come back the same and that U+0100 is
   refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
-  an object of its entries in order and a `keyed_map` as an array of `[key, value]`, a number key an integer and a
-  string key a text.
-- **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
+  an object of its entries in order and a `keyed_map` as GN-13 does.
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
   `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
@@ -221,7 +267,8 @@ the design ids are those of the binding design.
 ## End-to-end check
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
-  [--add-targets go,wasm]` (`--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
+  [--add-targets go,wasm]` (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet;
+  `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow

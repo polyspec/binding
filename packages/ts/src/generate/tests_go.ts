@@ -6,8 +6,8 @@
 
 import type { Type } from '../contract.ts';
 import { type Model, langName, unitOf } from './model.ts';
-import { goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
-import { raisingCases } from './samples.ts';
+import { goBytes, goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
+import { caseKey, raisingCases } from './samples.ts';
 
 
 interface Values {
@@ -57,10 +57,14 @@ function fromJson(v: Values, type: Type, value: unknown): string {
   }
   if ('list' in type) return `${goTypeName(v, type)}{${(value as unknown[]).map((item) => fromJson(v, type.list, item)).join(', ')}}`;
   if ('keyed_map' in type) {
-    // T-2: a case gives a keyed map as its entries in order, [key, value] with a number key an integer and a string key
-    // a text; a byte string key has no JSON form.
+    // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const sets = (value as [unknown, unknown][]).map(([key, item]) => {
-      const goKey = typeof key === 'number' ? `${v.pkg}.IntKey(${key})` : `${v.pkg}.TextKey(${goString(String(key))})`;
+      const goKey = caseKey(key, (kind, raw) => {
+        if (kind === 'int') return `${v.pkg}.IntKey(${String(raw)})`;
+        if (kind === 'text') return `${v.pkg}.TextKey(${goString(String(raw))})`;
+        const hex = String((raw as { hex: unknown }).hex);
+        return `${v.pkg}.BytesKey([]byte(${goBytes((hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)))}))`;
+      });
       return `m.Set(${goKey}, ${fromJson(v, type.keyed_map, item)}); `;
     }).join('');
     return `func() ${goTypeName(v, type)} { m := &${v.pkg}.KeyedMap[${goTypeName(v, type.keyed_map)}]{}; ${sets}return m }()`;

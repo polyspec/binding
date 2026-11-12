@@ -19,6 +19,10 @@ export function wasmTests(model: Model): string {
   const entry = `${npm}/wasm`;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-18: WASM generates no callback unit (refused by name), so no test makes one.
+    callbackNew: (unit) => {
+      throw new Error(`${unit.id}: no callback for WASM`);
+    },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];

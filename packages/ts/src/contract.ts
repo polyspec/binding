@@ -17,7 +17,7 @@ export type Type =
   | { optional: Type }
   | { keyed_map: Type; key: string[] }
   | { tuple: Type[] }
-  | { function: { parameters: Type[]; returns: Type } }
+  | { function: { parameters: Type[]; returns: Type; async_allowed?: boolean; errors?: { recognize: UnitRef[]; reason: string } } }
   | { passthrough: string }
   | { unit: string; library?: string };
 
@@ -71,6 +71,7 @@ export interface Member {
   writable?: boolean;
   async_allowed?: boolean;
   errors?: { recognize: UnitRef[]; reason: string };
+  exclusive?: string;
   only?: Only;
   native?: Native;
 }
@@ -142,13 +143,13 @@ export interface Errors {
 export interface Contract {
   schema: string;
   library: string;
-  core: { crate: string; path: string };
+  core: { crate: string; path: string; features?: Partial<Record<Lang, string[]>> };
   targets: Lang[];
   packages: Record<string, unknown>;
   naming: { exceptions: NamingException[] };
   types: Partial<Record<'json_value' | 'template_value' | 'php_value', { library: string; unit: string }>>;
   errors: Errors;
   units: Unit[];
-  changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | null }[];
+  changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | Partial<Record<Lang, string>> | null }[];
   cases: { member: string; file: string; group: string }[];
 }

@@ -16,9 +16,15 @@ export interface Context {
   enumRef: (enumName: string, value: string) => string;
   // How the generated test makes the result form of a record (T-4) from its fields in contract order.
   recordNew: (unit: Unit, fields: string[]) => string;
+  // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
+  // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
+  callbackNew: (unit: Unit, how: CallbackHow) => string;
 }
 
-export function placeholder(model: Model, ctx: Context, type: Type): string {
+export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
+
+// rich: a list has one item rather than none, so that a member that calls a callback per item calls it (K-2).
+export function placeholder(model: Model, ctx: Context, type: Type, rich = false): string {
   if (typeof type === 'string') {
     const table: Record<Lang3, Record<string, string>> = {
       python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""' },
@@ -27,13 +33,14 @@ export function placeholder(model: Model, ctx: Context, type: Type): string {
     };
     return table[ctx.lang][type] ?? 'null';
   }
-  if ('list' in type) return '[]';
+  if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('keyed_map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
+  if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 
@@ -48,7 +55,28 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
       return type === 'latin1' ? phpLatin1(text) : phpText(text);
     }
     if (type === 'bool') return ctx.lang === 'python' ? (value === true ? 'True' : 'False') : String(value === true);
+    // G-5: a float that JSON cannot write is {"float": "nan" | "inf" | "-inf"}.
+    if (type === 'float' && typeof value === 'object') {
+      const name = (value as { float?: unknown }).float;
+      const forms: Record<string, Record<Lang3, string>> = {
+        nan: { python: 'float("nan")', node: 'NaN', php: 'NAN' },
+        inf: { python: 'float("inf")', node: 'Infinity', php: 'INF' },
+        '-inf': { python: 'float("-inf")', node: '-Infinity', php: '-INF' },
+      };
+      const form = typeof name === 'string' ? forms[name] : undefined;
+      if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+      return form[ctx.lang];
+    }
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
+    // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
+    if (type === 'bytes' || type === 'source') {
+      if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
+      const hex = typeof value === 'object' ? (value as { hex?: unknown }).hex : undefined;
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+      if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
+      if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
+      return `hex2bin(${phpText(hex)})`;
+    }
     throw new Error(`no case value of the type ${type}`);
   }
   if ('optional' in type) return fromJson(model, ctx, type.optional, value);
@@ -57,9 +85,9 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
     return `[${items.join(', ')}]`;
   }
   if ('keyed_map' in type) {
-    // T-2: a case gives a keyed map as its entries in order, [key, value]: a number key an integer, a string key a text.
+    // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const entries = (value as [unknown, unknown][]).map(([key, item]) => {
-      const k = typeof key === 'number' ? String(key) : fromJson(model, ctx, 'text', key);
+      const k = caseKey(key, (kind, raw) => (kind === 'int' ? String(raw) : fromJson(model, ctx, kind, raw)));
       const v = fromJson(model, ctx, type.keyed_map, item);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
@@ -159,6 +187,8 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
   const out: RaisingCase[] = [];
+  // U-3: a case cannot give a callback object; K-2 tests a member that takes one.
+  if (callbackArg(model, fn) !== undefined) return out;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
     const raises = record['raises'] as RaisingCase['raises'] | undefined;
@@ -209,4 +239,17 @@ export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: s
   };
   const kind = ['int', 'bytes', 'text'].find((k) => !base.key.includes(k) && literals[ctx.lang][k] !== undefined);
   return kind === undefined ? undefined : { kind, value: literals[ctx.lang][kind] ?? '' };
+}
+
+// U-3: the first parameter of a member that is a callback, for the tests of K-2.
+export function callbackArg(model: Model, fn: Fn): Arg | undefined {
+  return fn.args.find((a) => unitOf(model, a.type)?.origin === 'callback');
+}
+
+// G-5: the key of a keyed map in a case: a text, {"int": n} or {"hex": "<lower-case hex>"} for a byte string.
+export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', value: unknown) => T): T {
+  if (typeof key === 'string') return make('text', key);
+  if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
+  if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
+  throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${JSON.stringify(key)}`);
 }
