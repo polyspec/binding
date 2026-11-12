@@ -18,7 +18,7 @@ mod raised;
 mod value;
 mod wait;
 
-pub use cancel::{cancel_pair, Cancel, CancelTrigger};
+pub use cancel::{cancel_pair, Cancel, CancelGuard, CancelTrigger};
 pub use cleanup::Cleanup;
 pub use error::{BindingError, Category, Kinds, NumberType, TextCause};
 pub use failure::Failure;

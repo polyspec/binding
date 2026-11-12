@@ -26,7 +26,9 @@ types of the design rules named below and no rule of any library.
 | `ProcessWait` | I-2 (4), B-5 (b) | Token of `wait: process_wait`, first argument of a core function that waits on another process. Not convertible to or from `Io`. `ProcessWait::for_generated_call()` with `construct`. |
 | `cancel_pair() -> (CancelTrigger, Cancel)` | T-1 `cancel` | Generated code keeps the trigger; the core gets the `Cancel`. |
 | `Cancel` | T-1 `cancel` | `is_cancelled(&self) -> bool`, `async cancelled(&self)`; `Clone`. A dropped trigger never cancels. |
-| `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, idempotent. |
+| `Cancel::on_cancel(&self, wake: impl FnOnce() + Send + 'static) -> CancelGuard` | B-5 (b) | Calls `wake` once on the trigger's thread when the caller cancels, or at once if it already did, so a blocking wait (a `Condvar`, a parked thread) wakes without polling; `wake` must not block. |
+| `CancelGuard` | B-5 (b) | Dropping it removes the function if it has not run. |
+| `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, idempotent; runs the registered functions after the state is cancelled. |
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | Insertion-ordered map whose keys are `Key::Int(i64)`, `Key::Bytes(Vec<u8>)` or `Key::Text(String)`; the same API and rules as `OrderedMap`. |

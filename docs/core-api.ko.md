@@ -25,7 +25,9 @@ crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `ProcessWait` | I-2 (4), B-5 (b) | `wait: process_wait`의 토큰. 다른 프로세스를 기다리는 코어 함수의 첫 인자. `Io`와 서로 바뀌지 않는다. `construct`에서 `ProcessWait::for_generated_call()`. |
 | `cancel_pair() -> (CancelTrigger, Cancel)` | T-1 `cancel` | 생성 코드가 trigger를 갖고 코어가 `Cancel`을 받는다. |
 | `Cancel` | T-1 `cancel` | `is_cancelled(&self) -> bool`, `async cancelled(&self)`, `Clone`. 버려진 trigger는 취소하지 않는다. |
-| `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. |
+| `Cancel::on_cancel(&self, wake: impl FnOnce() + Send + 'static) -> CancelGuard` | B-5 (b) | 호출자가 취소하면 trigger의 스레드에서 `wake`를 한 번 부르고, 이미 취소했으면 바로 부른다. 그래서 블로킹 대기(`Condvar`, park한 스레드)가 폴링 없이 깨어난다. `wake`는 막히면 안 된다. |
+| `CancelGuard` | B-5 (b) | 버리면 아직 불리지 않은 함수를 뺀다. |
+| `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. 상태를 취소한 뒤 등록된 함수를 부른다. |
 | `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | key가 `Key::Int(i64)`, `Key::Bytes(Vec<u8>)`, `Key::Text(String)`인 삽입 순서 보존 맵. API와 규칙은 `OrderedMap`과 같다. |
