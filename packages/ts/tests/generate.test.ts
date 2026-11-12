@@ -463,3 +463,20 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);
   assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
 });
+
+test('WASM: map<T> is a Map of string keys, through the entries of the ES module (T-2, GN-18)', () => {
+  const { contract, caseFiles } = load();
+  contract.targets = ['node', 'wasm'];
+  contract.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
+  for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) {
+    row['wasm'] = row['node'] ?? '';
+    delete row['php'];
+    delete row['python'];
+  }
+  contract.errors.fixed = contract.errors.fixed.filter((f: { lang: string }) => f.lang === 'node');
+  contract.units[0].members[0].returns = { map: 'text' };
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /fn out_map<T>\(value: impl Borrow<binding_core::OrderedMap<T>>/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
+});

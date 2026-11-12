@@ -39,7 +39,7 @@ export const generatedDirs = (contract: Contract): string[] => {
 export const goModuleDir = (contract: Contract): string => place(contract, 'packages/go');
 export const isGoGenerated = (path: string): boolean => /(^|\/)zz_generated_[^/]*\.go$/.test(path);
 
-const MAP_TARGETS: ReadonlySet<string> = new Set(['go', 'python', 'node']);
+const MAP_TARGETS: ReadonlySet<string> = new Set(['go', 'python', 'node', 'wasm']);
 
 export function generate(inputs: Inputs): Files {
   const cases = new Map<string, unknown[]>();

@@ -183,7 +183,7 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go, Python and Node (GN-11, GN-12) so far, so a contract with
+  `invalid_argument_type`. `map<T>` is generated for Go, Python, Node and WASM (GN-11, GN-12, GN-18) so far, so a contract with
   a map and another target is refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
@@ -201,7 +201,7 @@ the design ids are those of the binding design.
   (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
   `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
   `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
-  `<library>_wasm.js` there. A `keyed_map<T>` is a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
+  `<library>_wasm.js` there. A `map<T>` and a `keyed_map<T>` are a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
   whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
   loads the WebAssembly module when it is imported, with a top-level await (GW-5), so no export can run before the
   module is ready and there is no `init()`: a `file:` URL is read with `node:fs/promises` (Node), any other URL is
