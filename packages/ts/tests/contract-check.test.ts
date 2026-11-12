@@ -532,13 +532,15 @@ describe('CK-22 every member names its cases (K-1)', () => {
   test('a kind that no case raises', () => {
     assert.deepEqual(withFiles(contract(), false).map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
   });
-  test('a kind of the category io or internal needs no case', () => {
+  test('a kind of the category io or internal waits for the case form of a fault injection point (G-5)', () => {
     const c = contract();
-    c.errors.kinds[1].category = 'io';
     member(c, 'forms.parse').raises = ['sample::Error::Store'];
-    assert.deepEqual(withFiles(c, false), []);
-    c.errors.kinds[1].category = 'internal';
-    assert.deepEqual(withFiles(c, false), []);
+    for (const category of ['io', 'internal']) {
+      c.errors.kinds[1].category = category;
+      const found = withFiles(c, false);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
+      assert.match(found[0]?.message ?? '', /the case form of a fault injection point is not decided/);
+    }
   });
   test('a raising member that takes a callback waits for the case form of a callback (G-5, GN-13a)', () => {
     const c = contract();

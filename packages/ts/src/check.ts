@@ -1072,9 +1072,9 @@ class Checker {
     if (this.caseFiles !== undefined) this.caseKinds(this.caseFiles);
   }
 
-  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that it raises, other
-  // than a kind of the category internal or io, which no input reaches (one is a defect, the other comes from the
-  // environment). A case cannot give a callback or a function yet, so a member that takes one and raises is reported
+  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that it raises. A kind
+  // of the category internal or io, which no input reaches, is reported as waiting for the case form of a fault
+  // injection point of the core's test feature (G-5); it is not left out. A case cannot give a callback or a function yet, so a member that takes one and raises is reported
   // as such until G-5 has the case form of a callback fixture (GN-13a); it is not left out, which would drop its tests
   // without a word.
   caseKinds(files: ReadonlyMap<string, unknown>): void {
@@ -1102,10 +1102,12 @@ class Checker {
       const code = (member.parameters ?? []).some((p) => this.takesCode(p.type));
       for (const [r, variant] of (member.raises ?? []).entries()) {
         const category = categories.get(variant);
-        if (category === undefined || category === 'internal' || category === 'io') continue;
+        if (category === undefined) continue;
         const kind = snake(variant.slice(variant.lastIndexOf('::') + 2));
         if (code) {
           this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but the case form of a callback is not decided: a case cannot give the callback that ${member.id} takes (G-5, GN-13a)`);
+        } else if (!kinds.has(kind) && (category === 'io' || category === 'internal')) {
+          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}, which no input reaches, and the case form of a fault injection point is not decided (K-1, G-5)`);
         } else if (!kinds.has(kind)) {
           this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind} (K-1, B-4)`);
         }

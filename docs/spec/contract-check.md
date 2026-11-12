@@ -115,8 +115,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
   reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
-  in its `raises`, other than a kind of the category `internal` (a defect) or `io` (the environment), which no input
-  reaches. A member that raises and takes a callback interface or a function type is reported as waiting for the case
+  in its `raises`. A kind of the category `internal` or `io`, which no input reaches, is reported as waiting for the
+  case form of a fault injection point that a test feature of the core gives (G-5), not left out. A member that raises and takes a callback interface or a function type is reported as waiting for the case
   form of a callback fixture (G-5, GN-13a), because a JSON case cannot give the callback; it is not left out.
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
