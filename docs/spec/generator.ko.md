@@ -110,7 +110,9 @@
   적혔으면 텍스트, 아니면 바이트 문자열이 적혔을 때 바이트 문자열이다. 그 밖의 key는 kind `invalid_argument_type`이다. 나가는
   map도 같은 규칙이다: 십진 텍스트나 바이트 문자열 key는 int key가 되고, PHP가 하나로 만드는 두 key(`Int(1)`과 `Text("1")`)를
   가진 map은 항목을 잃지 않고 kind `internal`이다(P-4). int key를 텍스트로 받는 것은 PHP가 십진 문자열 key를 int로 바꾸는
-  규칙의 역변환이므로, int key 1로 나간 텍스트 key `"1"`은 텍스트 `"1"`로 다시 들어와 값이 바뀌지 않는다(P-3).
+  규칙의 역변환이므로, int key 1로 나간 텍스트 key `"1"`은 텍스트 `"1"`로 다시 들어와 값이 바뀌지 않는다(P-3). `map<T>`는
+  텍스트 key에 같은 규칙을 쓰는 순서대로의 array다: 문자열 key는 그 UTF-8 텍스트(다른 바이트는 kind `invalid_text`), int key는
+  그 십진 텍스트이고, 십진 텍스트 key는 int key로 나간다.
 - **GN-11** Python: native module `<root>._native`는 원시 값을 받고(T-8) record field는 keyword-only다. 런타임이 인자를 세고
   이름을 확인한다(G-7). category 클래스는 `<root>._errors`, enum은 `<root>._types`에 있고 native module이 로드될 때 그것을
   import한다(B-4). 계약의 module은 `<root>.<module>`이고 `<root>`가 모든 공개 이름을 다시 내보낸다(P-3). enum은
@@ -152,8 +154,7 @@
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
-  `map<T>`는 아직 Go, Python, Node, WASM(GN-11, GN-12, GN-18)에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
-  생성한다(GN-10, GN-11, GN-12, GN-18).
+  `map<T>`와 `keyed_map<T>`는 모든 target에 생성한다(GN-10, GN-11, GN-12, GN-18).
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약

@@ -39,8 +39,6 @@ export const generatedDirs = (contract: Contract): string[] => {
 export const goModuleDir = (contract: Contract): string => place(contract, 'packages/go');
 export const isGoGenerated = (path: string): boolean => /(^|\/)zz_generated_[^/]*\.go$/.test(path);
 
-const MAP_TARGETS: ReadonlySet<string> = new Set(['go', 'python', 'node', 'wasm']);
-
 export function generate(inputs: Inputs): Files {
   const cases = new Map<string, unknown[]>();
   for (const kase of inputs.contract.cases) {
@@ -50,15 +48,6 @@ export function generate(inputs: Inputs): Files {
     cases.set(kase.member, [...(cases.get(kase.member) ?? []), ...group]);
   }
   const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
-  // T-2: map<T> is generated for the targets of MAP_TARGETS so far; a contract with a map and another target is refused
-  // by name (G-4).
-  const hasMap = (type: unknown): boolean => JSON.stringify(type).includes('"map"');
-  const withMap = [
-    ...model.functions.flatMap((fn) => [...fn.params.map((p) => [fn.member.id, p.type] as const), [fn.member.id, fn.returns] as const]),
-    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => [unit.id, f.type] as const)),
-  ].find(([, type]) => hasMap(type));
-  const others = inputs.contract.targets.filter((target) => !MAP_TARGETS.has(target));
-  if (withMap !== undefined && others.length > 0) throw new Unsupported(`${withMap[0]}: map<T> is not generated for ${others.join(', ')} yet`);
   // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
   // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and
   // text keys (a Map compares a Uint8Array key by identity, GN-12).

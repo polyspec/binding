@@ -132,7 +132,9 @@ the design ids are those of the binding design.
   `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
   a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4). The
   int key as text is the inverse of PHP's own conversion of a decimal string key, so a text key `"1"` that leaves as
-  the int key 1 comes back as the text `"1"` and keeps its value (P-3).
+  the int key 1 comes back as the text `"1"` and keeps its value (P-3). `map<T>` is an array in its order by the same
+  rule for its text keys: a string key is its UTF-8 text (other bytes are kind `invalid_text`), an int key its decimal
+  text, and a decimal text key leaves as an int key.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
@@ -183,8 +185,7 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go, Python, Node and WASM (GN-11, GN-12, GN-18) so far, so a contract with
-  a map and another target is refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
+  `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight

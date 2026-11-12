@@ -263,10 +263,11 @@ test('WASM: the module, its ES entry and tests are generated, and the npm packag
   assert.deepEqual(Object.keys(manifest.exports['.']), ['browser', 'types', 'import', 'require']);
 });
 
-test('Go: map<T> is an ordered Map, and a contract with a map and another target is refused by name (T-2, G-4)', () => {
+test('Go: map<T> is an ordered Map, and every target generates map<T> (T-2, G-4)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { map: { list: 'text' } };
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is not generated for php yet/);
+  // Every target generates map<T>; the Go form is checked below.
+  assert.match(text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), 'packages/php-ext/generated/lib.rs'), /fn out_map<T>/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
