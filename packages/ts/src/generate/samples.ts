@@ -28,6 +28,7 @@ export function placeholder(model: Model, ctx: Context, type: Type): string {
     return table[ctx.lang][type] ?? 'null';
   }
   if ('list' in type) return '[]';
+  if ('keyed_map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
@@ -54,6 +55,15 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
   if ('list' in type) {
     const items = (value as unknown[]).map((item) => fromJson(model, ctx, type.list, item));
     return `[${items.join(', ')}]`;
+  }
+  if ('keyed_map' in type) {
+    // T-2: a case gives a keyed map as its entries in order, [key, value]: a number key an integer, a string key a text.
+    const entries = (value as [unknown, unknown][]).map(([key, item]) => {
+      const k = typeof key === 'number' ? String(key) : fromJson(model, ctx, 'text', key);
+      const v = fromJson(model, ctx, type.keyed_map, item);
+      return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+    });
+    return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
@@ -183,4 +193,20 @@ export function wrapText(type: Type, text: string): string {
   if (typeof type === 'object' && 'list' in type) return `[${wrapText(type.list, text)}]`;
   if (typeof type === 'object' && 'optional' in type) return wrapText(type.optional, text);
   return text;
+}
+
+// T-2: a keyed map with one key of a kind that the contract type does not list, in the language's form, or undefined
+// when the language has no such key: a PHP string key is a text when it is UTF-8 and text is listed, else a byte
+// string, so PHP has a refused string key only when bytes are not listed.
+export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: string; value: string } | undefined {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  if (typeof base !== 'object' || !('keyed_map' in base)) return undefined;
+  const value = placeholder(model, ctx, base.keyed_map);
+  const literals: Record<Lang3, Record<string, string>> = {
+    python: { int: `{1: ${value}}`, bytes: `{b"k": ${value}}`, text: `{"k": ${value}}` },
+    node: { int: `new Map([[1, ${value}]])`, bytes: `new Map([[new Uint8Array([107]), ${value}]])`, text: `new Map([['k', ${value}]])` },
+    php: { int: `[1 => ${value}]`, bytes: base.key.includes('text') ? `["\\xff" => ${value}]` : `["k" => ${value}]` },
+  };
+  const kind = ['int', 'bytes', 'text'].find((k) => !base.key.includes(k) && literals[ctx.lang][k] !== undefined);
+  return kind === undefined ? undefined : { kind, value: literals[ctx.lang][kind] ?? '' };
 }

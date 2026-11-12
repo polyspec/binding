@@ -100,8 +100,9 @@ the design ids are those of the binding design.
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
   and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
-  (abi3-py314). A list parameter takes a list or a tuple. `polyspec` has no
-  `__init__.py` (P-1).
+  (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
+  `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
+  map leaves as such a `dict` (T-2). `polyspec` has no `__init__.py` (P-1).
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
@@ -138,8 +139,8 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for Go only so far: a contract with one of them
-  and another target is refused by name.
+  `invalid_argument_type`. `map<T>` is generated for Go only so far and `keyed_map<T>` for Go and Python: a contract
+  with one of them and another target is refused by name.
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
@@ -180,7 +181,10 @@ the design ids are those of the binding design.
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. The members of a
+  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. A `keyed_map`
+  parameter whose contract does not list every key kind is tested with a key of a missing kind as kind
+  `invalid_argument_type`; a case gives a keyed map as an array of `[key, value]`, a number key an integer and a string
+  key a text. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise.

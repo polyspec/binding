@@ -293,10 +293,10 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /range \[\]string\{"\\u0100", "\\xff"\}/);
 });
 
-test('Go: keyed_map<T> is an ordered KeyedMap of mixed key kinds, refused for the other targets (T-2, GW-8)', () => {
+test('Go: keyed_map<T> is an ordered KeyedMap of mixed key kinds, refused for a target that does not generate it (T-2, GW-8)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /keyed_map<T> is generated for Go only/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /keyed_map<T> is generated for Go and Python only, not for php, node yet/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
