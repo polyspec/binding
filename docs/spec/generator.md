@@ -35,7 +35,15 @@ the design ids are those of the binding design.
   needs beside the crate, and a file of the crate that does not depend on the contract (the Node `build.rs`, which the
   manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
-  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`. `binding scaffold` writes them and `binding check` compares them with what it would write
+  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
+  `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
+  thin packages depend only on the package and name items; `check` and `generate` report it.
+- **GN-3b** A language whose package is a hand-written host package (L-2a, `packages.<lang>.host: true`) has its
+  binding crate in `native/` of that package (`packages/<component>/<lang>/native/`: `Cargo.toml`, `src/lib.rs`, the
+  Node `build.rs` and `generated/`), whose path dependencies climb one directory more. `scaffold` does not write the
+  host's manifest; `check` reads only what the native module needs from it (CK-19): Python `build-system.build-backend`
+  `maturin`, `tool.maturin.module-name` `<module>._native` and `tool.maturin.manifest-path` `native/Cargo.toml`; Node
+  `name` and `native/generated/*.node` in `files`; PHP `php-ext.extension-name`. `binding scaffold` writes them and `binding check` compares them with what it would write
   (CK-19), so a change of binding that changes them shows in the repository's diff. They depend only on the library
   name, the targets and the core version. The core builds and tests without the generator; only the binding crates
   need `make bindings`.

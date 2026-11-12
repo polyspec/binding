@@ -475,6 +475,15 @@ describe('CK-18 package names', () => {
     }));
 });
 
+describe('CK-1 changes', () => {
+  const renamed = { id: 'class-names', rule: 'E-2', reason: 'E-2', symbol: 'SampleValueError', from: { python: 'OldValueError' } };
+  test('a rename gives the new name in each language (RN-4)', () => {
+    assert.deepEqual(findings((c) => { c.changes.push({ ...renamed, to: { python: 'SampleValueError' } }); }), []);
+  });
+  test('a new name that is empty', () =>
+    fails('CK-1', '/changes/', (c) => { c.changes.push({ ...renamed, to: { python: '' } }); }));
+});
+
 describe('CK-10 class names in the form of each language (E-2, N-2)', () => {
   // The repository json: an acronym, JSON in Python and Go, Json in PHP and Node.
   const json = (c: any): void => {

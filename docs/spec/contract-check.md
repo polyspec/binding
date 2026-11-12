@@ -100,7 +100,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   repository's: `Polyspec\CrudUi\Validator`, `polyspec.crud_ui.validator`.
 
 - **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
-  (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding.
+  (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding. For
+  a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module needs.
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.

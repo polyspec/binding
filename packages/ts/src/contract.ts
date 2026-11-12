@@ -149,6 +149,6 @@ export interface Contract {
   types: Partial<Record<'json_value' | 'template_value' | 'php_value', { library: string; unit: string }>>;
   errors: Errors;
   units: Unit[];
-  changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | null }[];
+  changes: { id: string; rule: string; reason: string; symbol: string; from: Record<string, string>; to: string | Partial<Record<Lang, string>> | null }[];
   cases: { member: string; file: string; group: string }[];
 }

@@ -29,7 +29,15 @@
   (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
   가리키는 Node `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). 코어가
   `packages/<component>/rust`이면(L-1) 바인딩 package와 생성 디렉터리는 `packages/<component>/<python|ts|php-ext>`이고,
-  `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다. `binding scaffold`가 이것을
+  `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다.
+  `scaffold`는 `--out`이 있으면 그 아래에 쓰고, 아직 `todo`인 unit(CK-2)이 있어도 멈추지 않는다. 얇은 package는 패키지·이름
+  항목에만 기대기 때문이며, `check`와 `generate`가 그것을 지적한다.
+- **GN-3b** 언어 패키지가 손으로 쓴 host 패키지인 언어(L-2a, `packages.<lang>.host: true`)는 바인딩 crate를 그 패키지의
+  `native/`에 둔다(`packages/<component>/<lang>/native/`: `Cargo.toml`, `src/lib.rs`, Node `build.rs`, `generated/`). 그 경로
+  의존은 한 단계 더 올라간다. `scaffold`는 host의 manifest를 쓰지 않고, `check`는 거기서 네이티브 모듈에 필요한 것만 읽는다
+  (CK-19): Python `build-system.build-backend` `maturin`, `tool.maturin.module-name` `<module>._native`,
+  `tool.maturin.manifest-path` `native/Cargo.toml`; Node `name`과 `files`의 `native/generated/*.node`; PHP
+  `php-ext.extension-name`. `binding scaffold`가 이것을
   쓰고 `binding check`가 쓸 내용과 비교한다(CK-19). 그래서 이것을 바꾸는 binding 변경은 레포의 diff에 드러난다. 이 파일들은
   라이브러리 이름, target, 코어 버전에만 기댄다. 코어는 생성기 없이 빌드와 시험이 되고, 바인딩 crate만 `make bindings`가
   필요하다.

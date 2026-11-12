@@ -303,7 +303,7 @@ class Checker {
     }
     for (const [i, change] of this.contract.changes.entries()) {
       for (const lang of Object.keys(change.from)) langOk(lang, `/changes/${i}/from/${lang}`, 'a change');
-      if (change.to !== null && !this.members.has(change.to) && !this.units.has(change.to)) {
+      if (typeof change.to === 'string' && !this.members.has(change.to) && !this.units.has(change.to)) {
         this.report('CK-3', `/changes/${i}/to`, `${change.to} is neither a unit nor a member`);
       }
     }

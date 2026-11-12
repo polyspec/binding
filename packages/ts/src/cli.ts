@@ -17,7 +17,7 @@ import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
 import { generate, generatedDirs } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { trackedPackages } from './generate/packages.ts';
+import { hostRequirements, trackedPackages } from './generate/packages.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -99,7 +99,9 @@ if (command === 'check') {
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 const foreign = dependencies(contract, dirname(contractPath));
-const findings = checkContract(contract, { dependencies: foreign });
+// scaffold writes the thin packages from the package and name items alone, so a unit that is still todo (CK-2) does not
+// stop it; check and generate report it.
+const findings = checkContract(contract, { dependencies: foreign }).filter((f) => command !== 'scaffold' || f.check !== 'CK-2');
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
@@ -146,13 +148,29 @@ if (command === 'check') {
       process.stderr.write(`${full}: CK-19 ${found === undefined ? 'is missing' : 'differs from what binding scaffold writes'} (L-2)\n`);
     }
   }
+  // L-2a: a host package's manifest holds what its native module needs.
+  for (const requirement of hostRequirements(checked, parse)) {
+    const full = join(root, requirement.path);
+    let found: unknown;
+    try {
+      found = existsSync(full) ? requirement.found(readFileSync(full, 'utf8')) : undefined;
+    } catch {
+      found = undefined;
+    }
+    if (found !== requirement.want) {
+      differs = true;
+      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module needs (L-2a)\n`);
+    }
+  }
   process.exit(differs ? 1 : 0);
 }
 
 if (command === 'scaffold') {
+  // --out writes the same files under another directory, as for generate.
+  const target = resolve(options.get('--out') ?? root);
   for (const [path, text] of tracked) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), text);
+    mkdirSync(dirname(join(target, path)), { recursive: true });
+    writeFileSync(join(target, path), text);
   }
   process.exit(0);
 }

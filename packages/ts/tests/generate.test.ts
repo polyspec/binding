@@ -210,3 +210,71 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A temporary copy of the fixture repository whose contract `change` edits.
+function fixtureCopy(change: (contract: any) => void): { root: string; contract: string } {
+  const root = mkdtempSync(join(tmpdir(), 'binding-j-'));
+  execFileSync('cp', ['-r', `${fixture}.`, root]);
+  const contract = join(root, 'packages/rust/interface.json');
+  const parsed = JSON.parse(readFileSync(contract, 'utf8'));
+  change(parsed);
+  writeFileSync(contract, JSON.stringify(parsed));
+  return { root, contract };
+}
+
+test('scaffold writes under --out and not into the repository', () => {
+  const { root } = fixtureCopy(() => {});
+  const out = mkdtempSync(join(tmpdir(), 'binding-k-'));
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root, '--out', out]);
+    assert.ok(files(out).has('packages/python/Cargo.toml'));
+    assert.ok(!files(root).has('packages/python/Cargo.toml'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('scaffold writes the packages of a contract with a todo unit (CK-2), which check still reports', () => {
+  const { root, contract } = fixtureCopy((c) => {
+    c.units[0].members[0].wait = 'todo';
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.ok(files(root).has('packages/python/Cargo.toml'));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-2 /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a host package has its binding crate in native/ and its manifest checked for the native module (L-2a)', () => {
+  const { root, contract } = fixtureCopy((c) => {
+    c.packages.python.host = true;
+    c.packages.node.host = true;
+    c.packages.php.host = true;
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    const written = files(root);
+    for (const path of ['packages/python/native/Cargo.toml', 'packages/ts/native/build.rs', 'packages/php-ext/native/src/lib.rs']) assert.ok(written.has(path), path);
+    for (const path of ['packages/python/pyproject.toml', 'packages/ts/package.json', 'packages/php-ext/composer.json', 'packages/python/native/pyproject.toml']) {
+      assert.ok(!written.has(path), path);
+    }
+    assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(missing.stderr, /pyproject\.toml: CK-19 build-system\.build-backend is missing/);
+    assert.match(missing.stderr, /composer\.json: CK-19 php-ext\.extension-name is missing/);
+    writeFileSync(join(root, 'packages/python/pyproject.toml'), '[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmodule-name = "polyspec.sample._native"\nmanifest-path = "native/Cargo.toml"\n');
+    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({ name: '@polyspec/sample', files: ['host/index.js', 'native/generated/*.node'] }));
+    writeFileSync(join(root, 'packages/php-ext/composer.json'), JSON.stringify({ name: 'polyspec/sample', 'php-ext': { 'extension-name': 'polyspec_sample' } }));
+    execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
+    const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
+    execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out]);
+    assert.ok(files(out).has('packages/python/native/generated/lib.rs'));
+    rmSync(out, { recursive: true, force: true });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

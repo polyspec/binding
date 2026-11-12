@@ -5,17 +5,39 @@
   "description": "The public API of one repository in every target language (binding design I-1). Rule ids in descriptions are those of docs/spec/contract.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "library", "core", "targets", "packages", "naming", "types", "errors", "units", "changes", "cases"],
+  "required": [
+    "schema",
+    "library",
+    "core",
+    "targets",
+    "packages",
+    "naming",
+    "types",
+    "errors",
+    "units",
+    "changes",
+    "cases"
+  ],
   "properties": {
-    "schema": { "const": "polyspec/interface@1" },
-    "library": { "$ref": "#/$defs/library" },
+    "schema": {
+      "const": "polyspec/interface@1"
+    },
+    "library": {
+      "$ref": "#/$defs/library"
+    },
     "core": {
       "description": "The core crate (I-1).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["crate", "path"],
+      "required": [
+        "crate",
+        "path"
+      ],
       "properties": {
-        "crate": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "crate": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
         "path": {
           "description": "packages/rust, or packages/<component>/rust when the repository has several cores; the binding packages sit beside it (L-1).",
           "type": "string",
@@ -28,16 +50,27 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "$ref": "#/$defs/lang" }
+      "items": {
+        "$ref": "#/$defs/lang"
+      }
     },
-    "packages": { "$ref": "#/$defs/packages" },
+    "packages": {
+      "$ref": "#/$defs/packages"
+    },
     "naming": {
       "description": "Names that differ from the conversion of N-2 (N-3).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["exceptions"],
+      "required": [
+        "exceptions"
+      ],
       "properties": {
-        "exceptions": { "type": "array", "items": { "$ref": "#/$defs/namingException" } }
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namingException"
+          }
+        }
       }
     },
     "types": {
@@ -45,35 +78,91 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "json_value": { "$ref": "#/$defs/valueTypeOwner" },
-        "template_value": { "$ref": "#/$defs/valueTypeOwner" },
-        "php_value": { "$ref": "#/$defs/valueTypeOwner" }
+        "json_value": {
+          "$ref": "#/$defs/valueTypeOwner"
+        },
+        "template_value": {
+          "$ref": "#/$defs/valueTypeOwner"
+        },
+        "php_value": {
+          "$ref": "#/$defs/valueTypeOwner"
+        }
       }
     },
-    "errors": { "$ref": "#/$defs/errors" },
-    "units": { "type": "array", "items": { "$ref": "#/$defs/unit" } },
-    "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
-    "cases": { "type": "array", "items": { "$ref": "#/$defs/case" } }
+    "errors": {
+      "$ref": "#/$defs/errors"
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unit"
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/change"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
   },
   "$defs": {
-    "library": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
-    "lang": { "enum": ["php", "python", "node", "go", "wasm"] },
+    "library": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "lang": {
+      "enum": [
+        "php",
+        "python",
+        "node",
+        "go",
+        "wasm"
+      ]
+    },
     "ruleId": {
       "description": "A rule id, the only accepted form of a reason (N-3, T-5, I-3, E-1b, U-3, Q-4, C-1).",
       "type": "string",
       "pattern": "^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\\.[0-9]+)*$"
     },
-    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
-    "relativePath": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$", "not": { "pattern": "(^|/)\\.\\.(/|$)" } },
-    "rustPath": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$",
+      "not": {
+        "pattern": "(^|/)\\.\\.(/|$)"
+      }
+    },
+    "rustPath": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
     "word": {
       "oneOf": [
-        { "type": "string", "pattern": "^[a-z][a-z0-9]*$" },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*$"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["acronym"],
-          "properties": { "acronym": { "type": "string", "pattern": "^[a-z][a-z0-9]*$" } }
+          "required": [
+            "acronym"
+          ],
+          "properties": {
+            "acronym": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*$"
+            }
+          }
         }
       ]
     },
@@ -81,7 +170,9 @@
       "description": "A name as a list of words (N-1).",
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/word" }
+      "items": {
+        "$ref": "#/$defs/word"
+      }
     },
     "module": {
       "description": "A neutral module path (P-2), or the empty string for the root of the package; its first segment is not host or tests (L-1).",
@@ -92,10 +183,22 @@
       "description": "The targets where the item exists, with the rule that removes it from the others (Q-4).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["targets", "reason"],
+      "required": [
+        "targets",
+        "reason"
+      ],
       "properties": {
-        "targets": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/lang" } },
-        "reason": { "$ref": "#/$defs/ruleId" }
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/lang"
+          }
+        },
+        "reason": {
+          "$ref": "#/$defs/ruleId"
+        }
       }
     },
     "native": {
@@ -107,10 +210,18 @@
         "^(php|python|node|go|wasm)$": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["signature", "reason"],
+          "required": [
+            "signature",
+            "reason"
+          ],
           "properties": {
-            "signature": { "type": "string", "minLength": 1 },
-            "reason": { "$ref": "#/$defs/ruleId" }
+            "signature": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "$ref": "#/$defs/ruleId"
+            }
           }
         }
       }
@@ -123,66 +234,138 @@
         "php": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["package", "namespace"],
+          "required": [
+            "package",
+            "namespace"
+          ],
           "properties": {
-            "package": { "type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+$" },
-            "namespace": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*(\\\\[A-Z][A-Za-z0-9]*)*$" }
+            "package": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+            },
+            "namespace": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Za-z0-9]*(\\\\[A-Z][A-Za-z0-9]*)*$"
+            },
+            "host": {
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "type": "boolean"
+            }
           }
         },
         "python": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["package", "module"],
+          "required": [
+            "package",
+            "module"
+          ],
           "properties": {
-            "package": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
-            "module": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$" }
+            "package": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "module": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$"
+            },
+            "host": {
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "type": "boolean"
+            }
           }
         },
         "node": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["package", "entries"],
+          "required": [
+            "package",
+            "entries"
+          ],
           "properties": {
-            "package": { "type": "string", "pattern": "^(@[a-z0-9-]+/)?[a-z0-9-]+$" },
+            "package": {
+              "type": "string",
+              "pattern": "^(@[a-z0-9-]+/)?[a-z0-9-]+$"
+            },
             "entries": {
               "type": "object",
               "minProperties": 1,
-              "propertyNames": { "pattern": "^\\.(/[a-z0-9_-]+)*$" },
+              "propertyNames": {
+                "pattern": "^\\.(/[a-z0-9_-]+)*$"
+              },
               "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["formats"],
+                "required": [
+                  "formats"
+                ],
                 "properties": {
                   "conditions": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["node", "browser"],
-                    "properties": { "node": { "const": "napi" }, "browser": { "const": "wasm" } }
+                    "required": [
+                      "node",
+                      "browser"
+                    ],
+                    "properties": {
+                      "node": {
+                        "const": "napi"
+                      },
+                      "browser": {
+                        "const": "wasm"
+                      }
+                    }
                   },
                   "formats": {
                     "type": "array",
                     "minItems": 1,
                     "uniqueItems": true,
-                    "items": { "enum": ["import", "require"] }
+                    "items": {
+                      "enum": [
+                        "import",
+                        "require"
+                      ]
+                    }
                   }
                 }
               }
+            },
+            "host": {
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "type": "boolean"
             }
           }
         },
         "go": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["module"],
-          "properties": { "module": { "type": "string", "pattern": "^[a-z0-9.-]+(/[A-Za-z0-9._-]+)+$" } }
+          "required": [
+            "module"
+          ],
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^[a-z0-9.-]+(/[A-Za-z0-9._-]+)+$"
+            }
+          }
         },
         "reexport": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["from", "unit"],
-            "properties": { "from": { "$ref": "#/$defs/library" }, "unit": { "$ref": "#/$defs/id" } }
+            "required": [
+              "from",
+              "unit"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/library"
+              },
+              "unit": {
+                "$ref": "#/$defs/id"
+              }
+            }
           }
         }
       }
@@ -190,64 +373,142 @@
     "namingException": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lang", "unit", "name", "reason"],
+      "required": [
+        "lang",
+        "unit",
+        "name",
+        "reason"
+      ],
       "properties": {
-        "lang": { "$ref": "#/$defs/lang" },
-        "unit": { "$ref": "#/$defs/id" },
-        "member": { "$ref": "#/$defs/id" },
-        "parameter": { "$ref": "#/$defs/name" },
-        "field": { "$ref": "#/$defs/name" },
-        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-        "reason": { "$ref": "#/$defs/ruleId" }
+        "lang": {
+          "$ref": "#/$defs/lang"
+        },
+        "unit": {
+          "$ref": "#/$defs/id"
+        },
+        "member": {
+          "$ref": "#/$defs/id"
+        },
+        "parameter": {
+          "$ref": "#/$defs/name"
+        },
+        "field": {
+          "$ref": "#/$defs/name"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "reason": {
+          "$ref": "#/$defs/ruleId"
+        }
       },
-      "not": { "required": ["parameter", "field"] }
+      "not": {
+        "required": [
+          "parameter",
+          "field"
+        ]
+      }
     },
     "valueTypeOwner": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["library", "unit"],
-      "properties": { "library": { "$ref": "#/$defs/library" }, "unit": { "$ref": "#/$defs/id" } }
+      "required": [
+        "library",
+        "unit"
+      ],
+      "properties": {
+        "library": {
+          "$ref": "#/$defs/library"
+        },
+        "unit": {
+          "$ref": "#/$defs/id"
+        }
+      }
     },
     "type": {
       "description": "A contract type (T-1, T-2, T-3).",
       "oneOf": [
         {
           "enum": [
-            "bool", "int", "int64", "uint", "float", "text", "latin1", "bytes", "source", "path", "none", "never",
-            "self", "cancel", "host_value", "json_value", "template_value", "php_value"
+            "bool",
+            "int",
+            "int64",
+            "uint",
+            "float",
+            "text",
+            "latin1",
+            "bytes",
+            "source",
+            "path",
+            "none",
+            "never",
+            "self",
+            "cancel",
+            "host_value",
+            "json_value",
+            "template_value",
+            "php_value"
           ]
         },
-        { "type": "object", "additionalProperties": false, "required": ["list"], "properties": { "list": { "$ref": "#/$defs/type" } } },
-        { "type": "object", "additionalProperties": false, "required": ["map"], "properties": { "map": { "$ref": "#/$defs/type" } } },
-        { "type": "object", "additionalProperties": false, "required": ["optional"], "properties": { "optional": { "$ref": "#/$defs/type" } } },
         {
-          "description": "A map whose keys mix the kinds listed (T-2, U-7 (c)).",
           "type": "object",
           "additionalProperties": false,
-          "required": ["keyed_map", "key"],
+          "required": [
+            "list"
+          ],
           "properties": {
-            "keyed_map": { "$ref": "#/$defs/type" },
-            "key": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["int", "bytes", "text"] } }
+            "list": {
+              "$ref": "#/$defs/type"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["tuple"],
-          "properties": { "tuple": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/type" } } }
+          "required": [
+            "map"
+          ],
+          "properties": {
+            "map": {
+              "$ref": "#/$defs/type"
+            }
+          }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["function"],
+          "required": [
+            "optional"
+          ],
           "properties": {
-            "function": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["parameters", "returns"],
-              "properties": {
-                "parameters": { "type": "array", "items": { "$ref": "#/$defs/type" } },
-                "returns": { "$ref": "#/$defs/type" }
+            "optional": {
+              "$ref": "#/$defs/type"
+            }
+          }
+        },
+        {
+          "description": "A map whose keys mix the kinds listed (T-2, U-7 (c)).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "keyed_map",
+            "key"
+          ],
+          "properties": {
+            "keyed_map": {
+              "$ref": "#/$defs/type"
+            },
+            "key": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "int",
+                  "bytes",
+                  "text"
+                ]
               }
             }
           }
@@ -255,41 +516,136 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["passthrough"],
-          "properties": { "passthrough": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" } }
+          "required": [
+            "tuple"
+          ],
+          "properties": {
+            "tuple": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/type"
+              }
+            }
+          }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["unit"],
-          "properties": { "unit": { "$ref": "#/$defs/id" }, "library": { "$ref": "#/$defs/library" } }
+          "required": [
+            "function"
+          ],
+          "properties": {
+            "function": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "parameters",
+                "returns"
+              ],
+              "properties": {
+                "parameters": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/type"
+                  }
+                },
+                "returns": {
+                  "$ref": "#/$defs/type"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "passthrough"
+          ],
+          "properties": {
+            "passthrough": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Za-z0-9]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unit"
+          ],
+          "properties": {
+            "unit": {
+              "$ref": "#/$defs/id"
+            },
+            "library": {
+              "$ref": "#/$defs/library"
+            }
+          }
         }
       ]
     },
-    "category": { "enum": ["value", "type", "io", "store", "busy", "internal"] },
+    "category": {
+      "enum": [
+        "value",
+        "type",
+        "io",
+        "store",
+        "busy",
+        "internal"
+      ]
+    },
     "bindingKind": {
       "enum": [
-        "invalid_number", "invalid_text", "invalid_path", "direct_construction", "invalid_callback", "consumed",
-        "invalid_argument_type", "busy", "wrong_thread", "internal"
+        "invalid_number",
+        "invalid_text",
+        "invalid_path",
+        "direct_construction",
+        "invalid_callback",
+        "consumed",
+        "invalid_argument_type",
+        "busy",
+        "wrong_thread",
+        "internal"
       ]
     },
     "errors": {
       "description": "Error kinds, categories and classes (E-1 to E-2, E-1a, E-1b).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["classes", "fixed", "kinds", "binding", "wrapped"],
+      "required": [
+        "classes",
+        "fixed",
+        "kinds",
+        "binding",
+        "wrapped"
+      ],
       "properties": {
         "classes": {
           "description": "The base class of every category in every language but Go, whose category types E-7 fixes (E-2).",
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "value": { "$ref": "#/$defs/classRow" },
-            "type": { "$ref": "#/$defs/classRow" },
-            "io": { "$ref": "#/$defs/classRow" },
-            "store": { "$ref": "#/$defs/classRow" },
-            "busy": { "$ref": "#/$defs/classRow" },
-            "internal": { "$ref": "#/$defs/classRow" }
+            "value": {
+              "$ref": "#/$defs/classRow"
+            },
+            "type": {
+              "$ref": "#/$defs/classRow"
+            },
+            "io": {
+              "$ref": "#/$defs/classRow"
+            },
+            "store": {
+              "$ref": "#/$defs/classRow"
+            },
+            "busy": {
+              "$ref": "#/$defs/classRow"
+            },
+            "internal": {
+              "$ref": "#/$defs/classRow"
+            }
           }
         },
         "fixed": {
@@ -298,8 +654,18 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["lang", "class"],
-            "properties": { "lang": { "$ref": "#/$defs/lang" }, "class": { "$ref": "#/$defs/className" } }
+            "required": [
+              "lang",
+              "class"
+            ],
+            "properties": {
+              "lang": {
+                "$ref": "#/$defs/lang"
+              },
+              "class": {
+                "$ref": "#/$defs/className"
+              }
+            }
           }
         },
         "kinds": {
@@ -308,17 +674,58 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["variant"],
+            "required": [
+              "variant"
+            ],
             "properties": {
-              "variant": { "$ref": "#/$defs/rustPath" },
-              "category": { "$ref": "#/$defs/category" },
-              "library": { "description": "(a) the kind of a dependency, passed on as it is (E-1b).", "$ref": "#/$defs/library" },
-              "source": { "description": "(b) the library whose error this kind of the repository holds as its source (E-1b).", "$ref": "#/$defs/library" },
-              "class": { "$ref": "#/$defs/id" }
+              "variant": {
+                "$ref": "#/$defs/rustPath"
+              },
+              "category": {
+                "$ref": "#/$defs/category"
+              },
+              "library": {
+                "description": "(a) the kind of a dependency, passed on as it is (E-1b).",
+                "$ref": "#/$defs/library"
+              },
+              "source": {
+                "description": "(b) the library whose error this kind of the repository holds as its source (E-1b).",
+                "$ref": "#/$defs/library"
+              },
+              "class": {
+                "$ref": "#/$defs/id"
+              }
             },
             "oneOf": [
-              { "required": ["category"], "not": { "required": ["library"] } },
-              { "required": ["library"], "not": { "anyOf": [{ "required": ["category"] }, { "required": ["source"] }] } }
+              {
+                "required": [
+                  "category"
+                ],
+                "not": {
+                  "required": [
+                    "library"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "library"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "category"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "source"
+                      ]
+                    }
+                  ]
+                }
+              }
             ]
           }
         },
@@ -328,8 +735,18 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind", "class"],
-            "properties": { "kind": { "$ref": "#/$defs/bindingKind" }, "class": { "$ref": "#/$defs/id" } }
+            "required": [
+              "kind",
+              "class"
+            ],
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/bindingKind"
+              },
+              "class": {
+                "$ref": "#/$defs/id"
+              }
+            }
           }
         },
         "wrapped": {
@@ -338,40 +755,103 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["library", "unit", "property"],
+            "required": [
+              "library",
+              "unit",
+              "property"
+            ],
             "properties": {
-              "library": { "$ref": "#/$defs/library" },
-              "unit": { "$ref": "#/$defs/id" },
-              "property": { "$ref": "#/$defs/name" },
-              "forward": { "$ref": "#/$defs/id" },
+              "library": {
+                "$ref": "#/$defs/library"
+              },
+              "unit": {
+                "$ref": "#/$defs/id"
+              },
+              "property": {
+                "$ref": "#/$defs/name"
+              },
+              "forward": {
+                "$ref": "#/$defs/id"
+              },
               "drop": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["reason"],
-                "properties": { "reason": { "$ref": "#/$defs/ruleId" } }
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "$ref": "#/$defs/ruleId"
+                  }
+                }
               }
             },
-            "oneOf": [{ "required": ["forward"] }, { "required": ["drop"] }]
+            "oneOf": [
+              {
+                "required": [
+                  "forward"
+                ]
+              },
+              {
+                "required": [
+                  "drop"
+                ]
+              }
+            ]
           }
         }
       }
     },
-    "className": { "type": "string", "pattern": "^[A-Za-z_\\\\][A-Za-z0-9_.\\\\]*$" },
+    "className": {
+      "type": "string",
+      "pattern": "^[A-Za-z_\\\\][A-Za-z0-9_.\\\\]*$"
+    },
     "classRow": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "php": { "$ref": "#/$defs/className" },
-        "python": { "$ref": "#/$defs/className" },
-        "node": { "$ref": "#/$defs/className" },
-        "wasm": { "$ref": "#/$defs/className" }
+        "php": {
+          "$ref": "#/$defs/className"
+        },
+        "python": {
+          "$ref": "#/$defs/className"
+        },
+        "node": {
+          "$ref": "#/$defs/className"
+        },
+        "wasm": {
+          "$ref": "#/$defs/className"
+        }
       }
     },
     "valueKind": {
       "description": "binding_core::ValueKind.",
       "oneOf": [
-        { "enum": ["null", "bool", "int", "int64", "float", "number", "text", "bytes", "list", "map", "object", "reference", "safe_text", "native"] },
-        { "enum": ["nested:json_value", "nested:template_value", "nested:php_value"] }
+        {
+          "enum": [
+            "null",
+            "bool",
+            "int",
+            "int64",
+            "float",
+            "number",
+            "text",
+            "bytes",
+            "list",
+            "map",
+            "object",
+            "reference",
+            "safe_text",
+            "native"
+          ]
+        },
+        {
+          "enum": [
+            "nested:json_value",
+            "nested:template_value",
+            "nested:php_value"
+          ]
+        }
       ]
     },
     "when": {
@@ -380,22 +860,43 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["predicate", "is"],
+          "required": [
+            "predicate",
+            "is"
+          ],
           "properties": {
-            "predicate": { "enum": ["utf8", "sequence_keys", "safe_integer", "integral_float"] },
-            "is": { "type": "boolean" }
+            "predicate": {
+              "enum": [
+                "utf8",
+                "sequence_keys",
+                "safe_integer",
+                "integral_float"
+              ]
+            },
+            "is": {
+              "type": "boolean"
+            }
           }
         },
-        { "const": "else" }
+        {
+          "const": "else"
+        }
       ]
     },
     "outRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "make"],
+      "required": [
+        "kind",
+        "make"
+      ],
       "properties": {
-        "kind": { "$ref": "#/$defs/valueKind" },
-        "when": { "$ref": "#/$defs/when" },
+        "kind": {
+          "$ref": "#/$defs/valueKind"
+        },
+        "when": {
+          "$ref": "#/$defs/when"
+        },
         "make": {
           "description": "Per language: a built-in form or the id of a public constructor or static factory of a value unit.",
           "type": "object",
@@ -404,25 +905,53 @@
           "patternProperties": {
             "^(php|python|node|go|wasm)$": {
               "oneOf": [
-                { "type": "string", "minLength": 1 },
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["value"],
-                  "properties": { "value": { "enum": ["json_value", "template_value", "php_value"] } }
+                  "required": [
+                    "value"
+                  ],
+                  "properties": {
+                    "value": {
+                      "enum": [
+                        "json_value",
+                        "template_value",
+                        "php_value"
+                      ]
+                    }
+                  }
                 },
                 {
                   "description": "A map whose keys may mix the kinds listed (U-7 (c)).",
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["keyed_map"],
+                  "required": [
+                    "keyed_map"
+                  ],
                   "properties": {
                     "keyed_map": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": ["key"],
+                      "required": [
+                        "key"
+                      ],
                       "properties": {
-                        "key": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["int", "bytes", "text"] } }
+                        "key": {
+                          "type": "array",
+                          "minItems": 1,
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": [
+                              "int",
+                              "bytes",
+                              "text"
+                            ]
+                          }
+                        }
                       }
                     }
                   }
@@ -436,228 +965,802 @@
     "inRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cases"],
+      "required": [
+        "cases"
+      ],
       "properties": {
-        "php": { "type": "string", "minLength": 1 },
-        "python": { "type": "string", "minLength": 1 },
-        "node": { "type": "string", "minLength": 1 },
-        "go": { "type": "string", "minLength": 1 },
-        "wasm": { "type": "string", "minLength": 1 },
-        "by": { "$ref": "#/$defs/id" },
+        "php": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "go": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wasm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "$ref": "#/$defs/id"
+        },
         "cases": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind"],
+            "required": [
+              "kind"
+            ],
             "properties": {
-              "is": { "type": "string" },
-              "when": { "$ref": "#/$defs/when" },
-              "kind": { "$ref": "#/$defs/valueKind" },
-              "read": { "description": "A public member, or builtin for a built-in language type (U-7 (e)).", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "builtin" }] }
+              "is": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/$defs/when"
+              },
+              "kind": {
+                "$ref": "#/$defs/valueKind"
+              },
+              "read": {
+                "description": "A public member, or builtin for a built-in language type (U-7 (e)).",
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "const": "builtin"
+                  }
+                ]
+              }
             }
           }
         }
       },
       "oneOf": [
-        { "required": ["php"] }, { "required": ["python"] }, { "required": ["node"] }, { "required": ["go"] }, { "required": ["wasm"] }
+        {
+          "required": [
+            "php"
+          ]
+        },
+        {
+          "required": [
+            "python"
+          ]
+        },
+        {
+          "required": [
+            "node"
+          ]
+        },
+        {
+          "required": [
+            "go"
+          ]
+        },
+        {
+          "required": [
+            "wasm"
+          ]
+        }
       ]
     },
     "default": {
       "description": "A declared default (U-2).",
       "oneOf": [
-        { "type": "object", "additionalProperties": false, "required": ["literal"], "properties": { "literal": { "type": ["string", "number", "boolean", "null"] } } },
-        { "type": "object", "additionalProperties": false, "required": ["const"], "properties": { "const": { "$ref": "#/$defs/id" } } },
-        { "type": "object", "additionalProperties": false, "required": ["empty"], "properties": { "empty": { "enum": ["map", "list", "object"] } } },
-        { "type": "object", "additionalProperties": false, "required": ["computed"], "properties": { "computed": { "$ref": "#/$defs/ruleId" } } }
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "const"
+          ],
+          "properties": {
+            "const": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "empty"
+          ],
+          "properties": {
+            "empty": {
+              "enum": [
+                "map",
+                "list",
+                "object"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "computed"
+          ],
+          "properties": {
+            "computed": {
+              "$ref": "#/$defs/ruleId"
+            }
+          }
+        }
       ]
     },
     "parameter": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "properties": {
-        "name": { "$ref": "#/$defs/name" },
-        "type": { "$ref": "#/$defs/type" },
-        "required": { "const": true },
-        "default": { "$ref": "#/$defs/default" },
-        "default_core": { "$ref": "#/$defs/rustPath" },
-        "rest": { "const": true },
-        "only": { "$ref": "#/$defs/only" }
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "required": {
+          "const": true
+        },
+        "default": {
+          "$ref": "#/$defs/default"
+        },
+        "default_core": {
+          "$ref": "#/$defs/rustPath"
+        },
+        "rest": {
+          "const": true
+        },
+        "only": {
+          "$ref": "#/$defs/only"
+        }
       },
-      "oneOf": [{ "required": ["required"] }, { "required": ["default"] }, { "required": ["rest"] }]
+      "oneOf": [
+        {
+          "required": [
+            "required"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        },
+        {
+          "required": [
+            "rest"
+          ]
+        }
+      ]
     },
     "field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "properties": {
-        "name": { "$ref": "#/$defs/name" },
-        "type": { "$ref": "#/$defs/type" },
-        "required": { "const": true },
-        "default": { "$ref": "#/$defs/default" },
-        "default_core": { "$ref": "#/$defs/rustPath" },
-        "reason": { "description": "The rule that makes a field of type optional<T> optional (T-4, T-5).", "$ref": "#/$defs/ruleId" },
-        "only": { "$ref": "#/$defs/only" }
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "required": {
+          "const": true
+        },
+        "default": {
+          "$ref": "#/$defs/default"
+        },
+        "default_core": {
+          "$ref": "#/$defs/rustPath"
+        },
+        "reason": {
+          "description": "The rule that makes a field of type optional<T> optional (T-4, T-5).",
+          "$ref": "#/$defs/ruleId"
+        },
+        "only": {
+          "$ref": "#/$defs/only"
+        }
       },
-      "oneOf": [{ "required": ["required"] }, { "required": ["default"] }]
+      "oneOf": [
+        {
+          "required": [
+            "required"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        }
+      ]
     },
     "callbackErrors": {
       "description": "The classes whose instances a callback's language code may raise to give the core a known result (U-3); every other exception goes back to the caller unchanged.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["recognize", "reason"],
+      "required": [
+        "recognize",
+        "reason"
+      ],
       "properties": {
-        "recognize": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/unitRef" } },
-        "reason": { "$ref": "#/$defs/ruleId" }
+        "recognize": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/unitRef"
+          }
+        },
+        "reason": {
+          "$ref": "#/$defs/ruleId"
+        }
       }
     },
     "unitRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unit"],
-      "properties": { "unit": { "$ref": "#/$defs/id" }, "library": { "$ref": "#/$defs/library" } }
+      "required": [
+        "unit"
+      ],
+      "properties": {
+        "unit": {
+          "$ref": "#/$defs/id"
+        },
+        "library": {
+          "$ref": "#/$defs/library"
+        }
+      }
     },
     "member": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "kind", "visibility"],
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "visibility"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "name": { "$ref": "#/$defs/name" },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
         "kind": {
           "enum": [
-            "constructor", "method", "static", "function", "property", "constant", "invoke", "iterate", "stringify",
-            "to_json", "primitive", "no_clone", "no_serialize"
+            "constructor",
+            "method",
+            "static",
+            "function",
+            "property",
+            "constant",
+            "invoke",
+            "iterate",
+            "stringify",
+            "to_json",
+            "primitive",
+            "no_clone",
+            "no_serialize"
           ]
         },
-        "visibility": { "enum": ["public", "internal"] },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/parameter" } },
-        "returns": { "$ref": "#/$defs/type" },
-        "optional_reason": { "$ref": "#/$defs/ruleId" },
+        "visibility": {
+          "enum": [
+            "public",
+            "internal"
+          ]
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "returns": {
+          "$ref": "#/$defs/type"
+        },
+        "optional_reason": {
+          "$ref": "#/$defs/ruleId"
+        },
         "yields": {
           "oneOf": [
-            { "$ref": "#/$defs/type" },
+            {
+              "$ref": "#/$defs/type"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["key", "value"],
-              "properties": { "key": { "$ref": "#/$defs/type" }, "value": { "$ref": "#/$defs/type" } }
+              "required": [
+                "key",
+                "value"
+              ],
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/type"
+                },
+                "value": {
+                  "$ref": "#/$defs/type"
+                }
+              }
             }
           ]
         },
-        "raises": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/rustPath" } },
-        "wait": { "enum": ["none", "blocking_io", "process_wait", "async_driver"] },
+        "raises": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/rustPath"
+          }
+        },
+        "wait": {
+          "enum": [
+            "none",
+            "blocking_io",
+            "process_wait",
+            "async_driver"
+          ]
+        },
         "core": {
           "oneOf": [
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["path"],
+              "required": [
+                "path"
+              ],
               "properties": {
-                "path": { "$ref": "#/$defs/rustPath" },
-                "receiver": { "enum": ["self", "&self", "&mut self"] }
+                "path": {
+                  "$ref": "#/$defs/rustPath"
+                },
+                "receiver": {
+                  "enum": [
+                    "self",
+                    "&self",
+                    "&mut self"
+                  ]
+                }
               }
             },
-            { "$ref": "#/$defs/rustPath" }
+            {
+              "$ref": "#/$defs/rustPath"
+            }
           ]
         },
-        "type": { "$ref": "#/$defs/type" },
-        "value": { "type": ["string", "number", "boolean"] },
-        "writable": { "type": "boolean" },
-        "async_allowed": { "type": "boolean" },
-        "errors": { "$ref": "#/$defs/callbackErrors" },
-        "only": { "$ref": "#/$defs/only" },
-        "native": { "$ref": "#/$defs/native" }
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "writable": {
+          "type": "boolean"
+        },
+        "async_allowed": {
+          "type": "boolean"
+        },
+        "errors": {
+          "$ref": "#/$defs/callbackErrors"
+        },
+        "only": {
+          "$ref": "#/$defs/only"
+        },
+        "native": {
+          "$ref": "#/$defs/native"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "kind": { "const": "constant" } } },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "constant"
+              }
+            }
+          },
           "then": {
-            "required": ["type", "value", "core"],
-            "properties": { "core": { "$ref": "#/$defs/rustPath" } },
-            "not": { "anyOf": [{ "required": ["parameters"] }, { "required": ["returns"] }, { "required": ["wait"] }] }
+            "required": [
+              "type",
+              "value",
+              "core"
+            ],
+            "properties": {
+              "core": {
+                "$ref": "#/$defs/rustPath"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "parameters"
+                  ]
+                },
+                {
+                  "required": [
+                    "returns"
+                  ]
+                },
+                {
+                  "required": [
+                    "wait"
+                  ]
+                }
+              ]
+            }
           },
           "else": {
-            "not": { "anyOf": [{ "required": ["type"] }, { "required": ["value"] }] }
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "required": [
+                    "value"
+                  ]
+                }
+              ]
+            }
           }
         },
         {
-          "if": { "properties": { "kind": { "const": "iterate" } } },
-          "then": { "required": ["yields"] },
-          "else": { "not": { "required": ["yields"] } }
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "iterate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "yields"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "yields"
+              ]
+            }
+          }
         }
       ]
     },
     "unit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "module", "kind", "visibility", "origin"],
+      "required": [
+        "id",
+        "name",
+        "module",
+        "kind",
+        "visibility",
+        "origin"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "name": { "$ref": "#/$defs/name" },
-        "module": { "$ref": "#/$defs/module" },
-        "kind": { "enum": ["class", "variant", "functions", "interface", "record", "enum", "error", "alias"] },
-        "visibility": { "enum": ["public", "internal"] },
-        "origin": { "enum": ["generated", "host", "callback", "value"] },
-        "category": { "$ref": "#/$defs/category" },
-        "parent": { "$ref": "#/$defs/id" },
-        "core_type": { "$ref": "#/$defs/rustPath" },
-        "core": { "$ref": "#/$defs/rustPath" },
-        "thread": { "enum": ["any", "owner"] },
-        "cleanup": { "$ref": "#/$defs/id" },
-        "constructible": { "type": "boolean" },
-        "implements": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/unitRef" } },
-        "final": { "type": "boolean" },
-        "abstract": { "type": "boolean" },
-        "only": { "$ref": "#/$defs/only" },
-        "native": { "$ref": "#/$defs/native" },
-        "members": { "type": "array", "items": { "$ref": "#/$defs/member" } },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "module": {
+          "$ref": "#/$defs/module"
+        },
+        "kind": {
+          "enum": [
+            "class",
+            "variant",
+            "functions",
+            "interface",
+            "record",
+            "enum",
+            "error",
+            "alias"
+          ]
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "internal"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "generated",
+            "host",
+            "callback",
+            "value"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/category"
+        },
+        "parent": {
+          "$ref": "#/$defs/id"
+        },
+        "core_type": {
+          "$ref": "#/$defs/rustPath"
+        },
+        "core": {
+          "$ref": "#/$defs/rustPath"
+        },
+        "thread": {
+          "enum": [
+            "any",
+            "owner"
+          ]
+        },
+        "cleanup": {
+          "$ref": "#/$defs/id"
+        },
+        "constructible": {
+          "type": "boolean"
+        },
+        "implements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/unitRef"
+          }
+        },
+        "final": {
+          "type": "boolean"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "only": {
+          "$ref": "#/$defs/only"
+        },
+        "native": {
+          "$ref": "#/$defs/native"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        },
         "variants": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "value"],
-            "properties": { "name": { "$ref": "#/$defs/name" }, "value": { "type": "string", "minLength": 1 } }
+            "required": [
+              "name",
+              "value"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         },
-        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
-        "tag": { "$ref": "#/$defs/name" },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "tag": {
+          "$ref": "#/$defs/name"
+        },
         "cases": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["value", "fields"],
+            "required": [
+              "value",
+              "fields"
+            ],
             "properties": {
-              "value": { "type": "string", "minLength": 1 },
-              "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } }
+              "value": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/field"
+                }
+              }
             }
           }
         },
-        "out": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/outRow" } },
-        "in": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/inRow" } }
+        "out": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/outRow"
+          }
+        },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/inRow"
+          }
+        }
       },
       "allOf": [
-        { "if": { "properties": { "kind": { "const": "enum" } } }, "then": { "required": ["variants"] }, "else": { "not": { "required": ["variants"] } } },
-        { "if": { "properties": { "kind": { "const": "record" } } }, "then": { "required": ["fields"] }, "else": { "not": { "required": ["fields"] } } },
         {
-          "if": { "properties": { "kind": { "const": "variant" } } },
-          "then": { "required": ["tag", "cases"] },
-          "else": { "not": { "anyOf": [{ "required": ["tag"] }, { "required": ["cases"] }] } }
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "variants"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "variants"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "origin": { "const": "callback" } } },
-          "then": { "required": ["core", "thread"] },
-          "else": { "not": { "anyOf": [{ "required": ["core"] }, { "required": ["thread"] }] } }
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "record"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fields"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "fields"
+              ]
+            }
+          }
         },
         {
-          "if": { "not": { "properties": { "origin": { "const": "value" } } } },
-          "then": { "not": { "anyOf": [{ "required": ["out"] }, { "required": ["in"] }] } }
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "variant"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "tag",
+              "cases"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "tag"
+                  ]
+                },
+                {
+                  "required": [
+                    "cases"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "origin": {
+                "const": "callback"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "core",
+              "thread"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "core"
+                  ]
+                },
+                {
+                  "required": [
+                    "thread"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "origin": {
+                  "const": "value"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "out"
+                  ]
+                },
+                {
+                  "required": [
+                    "in"
+                  ]
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -665,29 +1768,83 @@
       "description": "A difference from the API of the base commit (C-1).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "rule", "reason", "symbol", "from", "to"],
+      "required": [
+        "id",
+        "rule",
+        "reason",
+        "symbol",
+        "from",
+        "to"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
-        "rule": { "$ref": "#/$defs/ruleId" },
-        "reason": { "type": "string", "minLength": 1 },
-        "symbol": { "type": "string", "minLength": 1 },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+$"
+        },
+        "rule": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
         "from": {
           "type": "object",
           "additionalProperties": false,
-          "patternProperties": { "^(php|python|node|go|wasm)$": { "type": "string" } }
+          "patternProperties": {
+            "^(php|python|node|go|wasm)$": {
+              "type": "string"
+            }
+          }
         },
-        "to": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] }
+        "to": {
+          "description": "The unit or member that replaces the symbol, the new name in each language for a renamed symbol that is no unit or member (such as an error class), or null for a symbol that is removed (RN-4).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "patternProperties": {
+                "^(php|python|node|go|wasm)$": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "case": {
       "description": "The contract case file and group that run a member (K-1).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["member", "file", "group"],
+      "required": [
+        "member",
+        "file",
+        "group"
+      ],
       "properties": {
-        "member": { "$ref": "#/$defs/id" },
-        "file": { "$ref": "#/$defs/relativePath" },
-        "group": { "type": "string", "minLength": 1 }
+        "member": {
+          "$ref": "#/$defs/id"
+        },
+        "file": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   }
