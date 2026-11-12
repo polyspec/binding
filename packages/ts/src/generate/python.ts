@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { GENERATED_LINTS, type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
-import { type Fn, type Model, byValue, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -244,7 +244,7 @@ function functionRust(model: Model, fn: Fn): string {
       callArgs.push(`&${rustField(parameter.name)}`);
     } else {
       const variable = langName('python', parameter.name, 'variable');
-      callArgs.push(byValue(model, parameter.type) ? variable : `&${variable}`);
+      callArgs.push(coreArg(model, parameter.type, variable));
     }
   }
   const resultType = rustType(model, fn.returns);

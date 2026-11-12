@@ -1,0 +1,36 @@
+{
+  "split": [
+    {
+      "id": "too_long",
+      "text": "a b",
+      "options": {
+        "max_words": 1,
+        "mode": "plain"
+      },
+      "raises": {
+        "kind": "too_long",
+        "status": null,
+        "category": "value",
+        "message": null
+      }
+    },
+    {
+      "id": "two",
+      "text": "a b",
+      "options": {
+        "max_words": null,
+        "mode": "latin"
+      },
+      "words": [
+        [
+          "a",
+          0
+        ],
+        [
+          "b",
+          2
+        ]
+      ]
+    }
+  ]
+}

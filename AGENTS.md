@@ -20,3 +20,5 @@ rules of this repository.
   Enforced by: `cargo clippy --all-targets -- -D warnings` in `packages/core/rust`
 - Own: Every check of the contract check has a test that fails for its own reason (PRINCIPLES P19).
   Enforced by: `npm test` in `packages/ts`
+- Own: A change of the generator runs the end-to-end check of `docs/spec/generator.md` (GN-14) before its commit.
+  Enforced by: none, the end-to-end check needs PHP, Python and Node with their runners, which no unit test owns.

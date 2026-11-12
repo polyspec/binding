@@ -18,3 +18,5 @@
   Enforced by: `packages/core/rust`의 `cargo clippy --all-targets -- -D warnings`
 - Own: 계약 검사의 모든 검사는 자기 이유로 실패하는 시험을 가진다(PRINCIPLES P19).
   Enforced by: `packages/ts`의 `npm test`
+- Own: 생성기를 바꾸는 변경은 커밋 전에 `docs/spec/generator.md`의 끝에서 끝까지 확인(GN-14)을 실행한다.
+  Enforced by: none, 그 확인은 PHP, Python, Node와 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다.

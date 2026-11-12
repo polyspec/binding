@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, byValue, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { GENERATED_LINTS, type Files, header, jsString, rustString, usedHelpers } from './text.ts';
 
@@ -256,7 +256,7 @@ function functionRust(model: Model, fn: Fn): string {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`);
     }
   }
-  const callArgs = fn.params.map((p) => (byValue(model, p.type) ? rustField(p.name) : `&${rustField(p.name)}`));
+  const callArgs = fn.params.map((p) => (fn.record !== undefined && p === fn.record.param ? `&${rustField(p.name)}` : coreArg(model, p.type, rustField(p.name))));
   const call = `${fn.corePath}(${callArgs.join(', ')})`;
   const resultType = rustType(model, fn.returns);
   if (fn.fallible) {
@@ -378,7 +378,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
     const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void' };
     return map[type] ?? 'unknown';
   }
-  if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly ${tsType(model, type.list, input)}[]`;
+  if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);

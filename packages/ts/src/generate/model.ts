@@ -201,7 +201,20 @@ export function rustType(model: Model, type: Type): string {
   throw new Unsupported(JSON.stringify(type));
 }
 
-// Whether the core takes the value itself (a Copy type) rather than a reference (G-8 of docs/spec/generator.md).
+// T-1: how the core takes an argument of a parameter. A type written with two forms (text String/&str, latin1, bytes,
+// source Vec<u8>/&[u8], path PathBuf/&Path) is taken borrowed, and optional<T> of one as Option<borrowed>, which the
+// generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
+export function coreArg(model: Model, type: Type, variable: string): string {
+  if (byValue(model, type)) return variable;
+  if (typeof type === 'object' && 'optional' in type) {
+    const inner = type.optional;
+    if (typeof inner === 'string' && ['text', 'latin1', 'bytes', 'source', 'path'].includes(inner)) return `${variable}.as_deref()`;
+    throw new Unsupported(`an optional parameter of ${JSON.stringify(inner)} is not generated yet`);
+  }
+  return `&${variable}`;
+}
+
+// Whether the core takes the value itself (a Copy type) rather than a reference (T-1).
 export function byValue(model: Model, type: Type): boolean {
   if (typeof type === 'string') return ['bool', 'int', 'int64', 'uint', 'float'].includes(type);
   if ('optional' in type) return byValue(model, type.optional);

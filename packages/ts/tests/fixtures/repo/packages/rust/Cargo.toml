@@ -1,0 +1,9 @@
+[package]
+name = "polyspec-sample"
+version = "0.0.3"
+edition = "2021"
+publish = false
+
+[lib]
+name = "polyspec_sample"
+path = "src/lib.rs"

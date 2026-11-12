@@ -1,0 +1,87 @@
+<!-- doc-id: generator -->
+# Generator
+
+[한국어](generator.ko.md)
+
+`bindgen generate [--root <repository>] [--out <directory>]` checks `packages/rust/interface.json` (docs/spec/contract-check.md)
+and writes the bindings of its targets. This document states the rules of the generator that the design leaves to it;
+the design ids are those of the bindgen design.
+
+## Scope
+
+- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py310) and Node (napi 3.16.2) for
+  functions units, record parameters, enums, constants and error classes. Any other item (a class, a callback, a value
+  unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a dependency kind) is refused by name
+  before anything is written (G-4, P-4); Go and WASM are not generated yet.
+- **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
+  the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
+  contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
+  in two directories and compare the bytes.
+
+## Layout (L-1)
+
+- **GN-3** bindgen owns four directories and writes each whole through a staging directory, so no file of an earlier
+  generation stays and a reader never sees a part: `packages/rust/generated/bindgen-core` (a copy of the crate
+  `bindgen_core` of this bindgen, so that the runtime support has the version of the generator that the lock pins),
+  `packages/php-ext/generated`, `packages/python/generated`, `packages/ts/generated`.
+- **GN-4** Each generated crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
+  with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
+  workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
+  code holds only the helper functions it uses, because the lints deny dead code.
+- **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
+  B-7 test.
+
+## The core boundary (T-1, I-2 (1))
+
+- **GN-6** Each argument is converted into a `let` of the Rust type of T-1. A parameter of a type with two forms (text,
+  latin1, bytes, source, path) is passed borrowed (`&String` and `&Vec<u8>` coerce to `&str` and `&[u8]`), an
+  `optional<T>` of one with `as_deref()`, a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
+  record) by reference. A record is built from its expanded fields, which are owned.
+- **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
+  library class of its kind's category (I-2 (3)), with the kind, status and errno of `bindgen_core::Kinds`. The pattern
+  `Variant { .. }` matches a variant with or without data, because bindgen reads no Rust source; the lint against it is
+  allowed with the reason I-2.
+- **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
+  internal category class (B-7), not as the framework's own panic error.
+
+## Languages
+
+- **GN-9** Names follow N-2; a constant is UPPER_SNAKE_CASE in PHP, Python and JavaScript (PSR-1, PEP 8) and PascalCase
+  in Go, in both name conversions (TypeScript and `bindgen_core::naming`), which share their test vectors.
+- **GN-10** PHP: one function per member in the namespace of its module (P-2), whose parameters take any value (`&Zval`)
+  that the extension judges (T-8); the engine counts the arguments and checks their names by the arginfo (G-7). Because
+  the arginfo declares no type, the stub declares `mixed` and states the contract type in `@param`. The record fields
+  follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
+  extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
+  the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
+  enum (T-6). The `php_module` expansion of ext-php-rs uses `Option::map_or`, so its module holds that one allow.
+- **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
+  the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
+  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
+  and `<root>` re-exports every public name (P-3). An enum is `class X(str, Enum)`, because `enum.StrEnum` is Python
+  3.11 and the package supports 3.10 (abi3-py310). A list parameter takes a list or a tuple. `polyspec` has no
+  `__init__.py` (P-1).
+- **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
+  the names and the presence of the options record's members (G-7, T-4), turns any iterable but a string into an array
+  for a list parameter (T-7), and throws the library class of a failure. The addon carries the class, kind, status and
+  errno of a failure in the error's code (`polyspec\0<class>\0<kind>\0<status>\0<errno>`), because napi-rs cannot throw
+  an instance of a class that JavaScript defines; the entry throws an instance of that class with the same message. The
+  ESM entry re-exports the CommonJS one, so both share their classes.
+
+## Generated tests (G-5)
+
+- **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
+  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 in Node) as kind `invalid_number` of the value class;
+  B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
+  `invalid_text`; B-4, every contract case that raises, with the exact class, the base class of E-2, the kind, the status
+  and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
+  name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
+  of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
+  value a text of U+0000 to U+00FF.
+
+## End-to-end check
+
+- **GN-14** `node scripts/e2e.mts --repo <http-cookies> --work <directory> --phpunit <phpunit>` copies the committed tree
+  of http-cookies, gives the copy the layout that GN-4 and F-2 need and prints each such change, generates, lints the
+  workspace, builds and installs each package, and runs the generated tests and the contract cases
+  (`tests/e2e/http-cookies`) on unittest, `node --test` and PHPUnit.

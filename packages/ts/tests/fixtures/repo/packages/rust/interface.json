@@ -1,0 +1,227 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "sample",
+  "core": {
+    "crate": "polyspec-sample",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/sample",
+      "namespace": "Polyspec\\Sample"
+    },
+    "python": {
+      "package": "polyspec-sample",
+      "module": "polyspec.sample"
+    },
+    "node": {
+      "package": "@polyspec/sample",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Sample\\SampleValueError",
+        "python": "SampleValueError",
+        "node": "SampleValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Sample\\SampleTypeError",
+        "python": "SampleTypeError",
+        "node": "SampleTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Sample\\SampleIoError",
+        "python": "SampleIoError",
+        "node": "SampleIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Sample\\SampleStoreError",
+        "python": "SampleStoreError",
+        "node": "SampleStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Sample\\SampleBusyError",
+        "python": "SampleBusyError",
+        "node": "SampleBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Sample\\SampleInternalError",
+        "python": "SampleInternalError",
+        "node": "SampleInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_sample::Error::TooLong",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "words",
+      "name": [
+        "words"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "split",
+          "name": [
+            "split",
+            "words"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "options"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "tuple": [
+                "text",
+                "uint"
+              ]
+            }
+          },
+          "raises": [
+            "polyspec_sample::Error::TooLong"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::split"
+          }
+        },
+        {
+          "id": "limit",
+          "name": [
+            "limit"
+          ],
+          "kind": "constant",
+          "visibility": "public",
+          "type": "uint",
+          "value": 64,
+          "core": "polyspec_sample::LIMIT"
+        }
+      ]
+    },
+    {
+      "id": "options",
+      "name": [
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Options",
+      "fields": [
+        {
+          "name": [
+            "max",
+            "words"
+          ],
+          "type": {
+            "optional": "uint"
+          },
+          "required": true,
+          "reason": "S-1"
+        },
+        {
+          "name": [
+            "mode"
+          ],
+          "type": {
+            "unit": "mode"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "mode",
+      "name": [
+        "mode"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Mode",
+      "variants": [
+        {
+          "name": [
+            "plain"
+          ],
+          "value": "plain"
+        },
+        {
+          "name": [
+            "latin"
+          ],
+          "value": "latin"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "split",
+      "file": "contracts/cases.json",
+      "group": "split"
+    }
+  ]
+}

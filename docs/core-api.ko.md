@@ -32,7 +32,7 @@ crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 handle로 담는다. `Raised::from_generated(Handle)`와 `handle()`은 `construct`에서만. `Display`, `std::error::Error`. kind 없음. |
 | `Failure<E>` | E-1c | `Kind(E)` 또는 `Raised(Raised)`. callback을 부르는 코어 함수의 오류 타입. `From<Raised>`, `Display`, `std::error::Error`. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`. `ALL`, `as_str()`. |
-| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. bindgen 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`. 시험 벡터를 bindgen의 TypeScript 변환과 함께 쓴다. |
+| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. bindgen 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 시험 벡터를 bindgen의 TypeScript 변환과 함께 쓴다. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
