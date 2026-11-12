@@ -10,8 +10,9 @@ types of the design rules named below and no rule of any library.
 
 - Path: `packages/core/rust` of this repository; package `polyspec-bindgen-core`, library name `bindgen_core`, version
   0.0.1, edition 2021, toolchain 1.97.0 (`rust-toolchain.toml`).
-- Dependency: `tokio-util` 0.7.20 without default features (the state of `Cancel`).
-- Feature `construct`: makes the wait tokens constructible. A generated binding crate enables it; a core crate enables it
+- Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
+  (the entries of `OrderedMap`).
+- Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Use from another repository during development: a path dependency on this folder,
   `bindgen_core = { package = "polyspec-bindgen-core", path = "<checkout>/packages/core/rust" }`, named by a local link
@@ -27,9 +28,11 @@ types of the design rules named below and no rule of any library.
 | `Cancel` | T-1 `cancel` | `is_cancelled(&self) -> bool`, `async cancelled(&self)`; `Clone`. A dropped trigger never cancels. |
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, idempotent. |
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
+| `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
+| `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, all required; implemented by every core error enum and by `BindingError`. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`; `ALL`, `as_str()`. |
-| `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`; `category()`, `KINDS` (kind and category table), `Kinds`, `Display` (the whole message, E-4), `std::error::Error`. |
+| `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`; `category()`, `KINDS` (kind and category table), `Kinds`, `Display` (the whole message, E-4), `std::error::Error`. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
 | `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
 | `Handle` | B-1, T-3 | Opaque `u64` of the side that made it: `new(u64)`, `raw()`. |
@@ -45,3 +48,6 @@ types of the design rules named below and no rule of any library.
 
 The protocol through which a core asks the binding for the children of a `HostValue` handle, and the binding asks the
 core for the children of an `OutValue` handle, is not defined: the design names the handles but not the calls.
+
+How a core returns a `Raised` through its error enum is not decided either: the generated `match` of I-2 (3) needs to know
+which variant carries it, and `Kinds` has no kind for it.

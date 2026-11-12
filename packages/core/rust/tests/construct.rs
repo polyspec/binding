@@ -37,6 +37,9 @@ fn check(root: &Path) -> Result<(bool, String), String> {
 const MAKES_TOKENS: &str = "pub fn make() -> (bindgen_core::Io, bindgen_core::ProcessWait) {\n    \
     (bindgen_core::Io::for_generated_call(), bindgen_core::ProcessWait::for_generated_call())\n}\n";
 
+const OPENS_RAISED: &str = "pub fn open(raised: &bindgen_core::Raised) -> bindgen_core::Handle {\n    \
+    let _made = bindgen_core::Raised::from_generated(bindgen_core::Handle::new(1));\n    raised.handle()\n}\n";
+
 #[test]
 fn a_crate_without_the_feature_cannot_make_a_token() -> Result<(), String> {
     let root = write_crate("core_library", "", MAKES_TOKENS)?;
@@ -47,6 +50,26 @@ fn a_crate_without_the_feature_cannot_make_a_token() -> Result<(), String> {
         stderr.contains("error[E0599]") && stderr.contains("`for_generated_call`"),
         "the build failed for another reason:\n{stderr}"
     );
+    Ok(())
+}
+
+#[test]
+fn a_crate_without_the_feature_cannot_make_or_open_a_raised_exception() -> Result<(), String> {
+    let root = write_crate("core_library_raised", "", OPENS_RAISED)?;
+    let (success, stderr) = check(&root)?;
+    assert!(!success, "the crate compiled without the feature construct");
+    assert!(
+        stderr.contains("`from_generated`") && stderr.contains("`handle`"),
+        "the build failed for another reason:\n{stderr}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_crate_with_the_feature_makes_and_opens_a_raised_exception() -> Result<(), String> {
+    let root = write_crate("generated_binding_raised", ", features = [\"construct\"]", OPENS_RAISED)?;
+    let (success, stderr) = check(&root)?;
+    assert!(success, "the generated crate did not compile:\n{stderr}");
     Ok(())
 }
 

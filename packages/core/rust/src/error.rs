@@ -154,6 +154,14 @@ pub enum BindingError {
         /// The missing or uncallable member, or the function itself.
         member: String,
     },
+    /// An argument of a unit-typed parameter is not an object of that unit (E-1a). Kind `invalid_argument_type`,
+    /// category `type`.
+    InvalidArgumentType {
+        /// The parameter or field.
+        subject: String,
+        /// The language class that the parameter takes.
+        expected: String,
+    },
     /// A call reached an object that a `self` member already consumed (E-1a). Kind `consumed`, category `type`.
     Consumed {
         /// The class of the consumed object.
@@ -182,13 +190,14 @@ pub enum BindingError {
 impl BindingError {
     /// Every kind of this enum with its fixed category (E-1a), the table from which the kind to category table of
     /// contract cases is generated (F-3).
-    pub const KINDS: [(&'static str, Category); 9] = [
+    pub const KINDS: [(&'static str, Category); 10] = [
         ("invalid_number", Category::Value),
         ("invalid_text", Category::Value),
         ("invalid_path", Category::Value),
         ("direct_construction", Category::Type),
         ("invalid_callback", Category::Type),
         ("consumed", Category::Type),
+        ("invalid_argument_type", Category::Type),
         ("busy", Category::Busy),
         ("wrong_thread", Category::Busy),
         ("internal", Category::Internal),
@@ -199,7 +208,10 @@ impl BindingError {
     pub const fn category(&self) -> Category {
         match self {
             Self::InvalidNumber { .. } | Self::InvalidText { .. } | Self::InvalidPath { .. } => Category::Value,
-            Self::DirectConstruction { .. } | Self::InvalidCallback { .. } | Self::Consumed { .. } => Category::Type,
+            Self::DirectConstruction { .. }
+            | Self::InvalidCallback { .. }
+            | Self::Consumed { .. }
+            | Self::InvalidArgumentType { .. } => Category::Type,
             Self::Busy { .. } | Self::WrongThread { .. } => Category::Busy,
             Self::Internal { .. } => Category::Internal,
         }
@@ -215,6 +227,7 @@ impl Kinds for BindingError {
             Self::DirectConstruction { .. } => "direct_construction",
             Self::InvalidCallback { .. } => "invalid_callback",
             Self::Consumed { .. } => "consumed",
+            Self::InvalidArgumentType { .. } => "invalid_argument_type",
             Self::Busy { .. } => "busy",
             Self::WrongThread { .. } => "wrong_thread",
             Self::Internal { .. } => "internal",
@@ -245,6 +258,7 @@ impl fmt::Display for BindingError {
                 write!(f, "{subject} does not provide a callable {member}")
             }
             Self::Consumed { class } => write!(f, "{class} was consumed by an earlier call"),
+            Self::InvalidArgumentType { subject, expected } => write!(f, "{subject} is not an instance of {expected}"),
             Self::Busy { class } => write!(f, "{class} has a call in progress"),
             Self::WrongThread { subject } => write!(f, "{subject} was called from a thread other than its owner"),
             Self::Internal { detail } => write!(f, "internal error: {detail}"),
@@ -276,6 +290,10 @@ mod tests {
                 member: s(),
             },
             BindingError::Consumed { class: s() },
+            BindingError::InvalidArgumentType {
+                subject: s(),
+                expected: s(),
+            },
             BindingError::Busy { class: s() },
             BindingError::WrongThread { subject: s() },
             BindingError::Internal { detail: s() },
