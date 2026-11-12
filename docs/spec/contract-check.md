@@ -111,7 +111,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 These closed sets are binding's own; the Rust names are those of `binding_core` (`docs/core-api.md`).
 
 - Acronym words of a repository name (P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`,
-  `json`, `orm`, `php`, `sql`, `ui`, `uri`, `url`, `xml`.
+  `json`, `orm`, `php`, `sql`, `ui`, `uri`, `url`, `xml`. A new acronym of a repository name is added to this table
+  (`LIBRARY_ACRONYMS` in `packages/ts/src/names.ts`), the one place that holds it.
 - Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
   `reference`, `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
   `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).

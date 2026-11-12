@@ -71,8 +71,8 @@ the design ids are those of the binding design.
   property calls the core path with the held value as its receiver; a static member or the constructor that returns
   the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
-  Node method or static member that takes arguments is the addon's `__<name>`, and the entry defines `<name>` over it
-  with the checks of G-7.
+  Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
+  declarations, and the entry defines `<name>` over it with the checks of G-7.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends

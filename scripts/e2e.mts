@@ -31,7 +31,9 @@
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
+import { libraryParts } from '../packages/ts/src/check.ts';
+import { CATEGORIES, type Contract, type Lang, type Type, type Unit } from '../packages/ts/src/contract.ts';
+import { convert, libraryName } from '../packages/ts/src/names.ts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -147,6 +149,24 @@ function prepare(checkout: string, added: Lang[] = []): Prepared {
     rmSync(join(copy, 'packages/rust/Cargo.lock'));
     process.stdout.write('change: one Cargo workspace at the root with the core and the binding packages (L-2)\n');
   }
+  // The crate of this repository is polyspec-binding-core with the library binding_core (formerly bindgen).
+  const manifests = [coreManifest, ...(existsSync(rootManifest) ? [rootManifest] : [])];
+  const sourceFiles = readdirSync(join(copy, 'packages'), { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith('.rs') && !f.includes('generated') && !f.includes('target'))
+    .map((f) => join(copy, 'packages', f));
+  let renamedCore = false;
+  for (const file of [...manifests, ...sourceFiles]) {
+    const text = file === coreManifest ? manifest : readFileSync(file, 'utf8');
+    const next = text
+      .replace(/^polyspec-bindgen-core = .*$/m, 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }')
+      .replaceAll('bindgen_core', 'binding_core');
+    if (next === text) continue;
+    renamedCore = true;
+    if (file === coreManifest) manifest = next;
+    else writeFileSync(file, next);
+  }
+  if (renamedCore) process.stdout.write('change: the core depends on polyspec-binding-core (binding_core), the renamed crate of binding\n');
   if (!manifest.includes('polyspec-binding-core')) {
     const dependency = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }\n';
     manifest = manifest.includes('\n[dependencies]\n')
@@ -175,6 +195,25 @@ impl binding_core::Kinds for Error {
 }
 `);
     process.stdout.write('change: the core error implements binding_core::Kinds (F-2, E-3)\n');
+  }
+  // E-2: the class of a category is <Library><Category>Error in the class form of each language (N-2).
+  const contractPath = join(copy, 'packages/rust/interface.json');
+  const written = JSON.parse(readFileSync(contractPath, 'utf8')) as Contract;
+  let renamed = false;
+  for (const category of CATEGORIES) {
+    const row = written.errors.classes[category] ?? {};
+    for (const [lang, name] of Object.entries(row) as [Lang, string][]) {
+      const want = `${convert(libraryName(libraryParts(written).repository), lang === 'wasm' ? 'node' : lang, 'class')}${convert([category], 'go', 'class')}Error`;
+      const prefix = name.slice(0, name.lastIndexOf('\\') + 1);
+      if (name !== `${prefix}${want}`) {
+        row[lang] = `${prefix}${want}`;
+        renamed = true;
+      }
+    }
+  }
+  if (renamed) {
+    writeFileSync(contractPath, `${JSON.stringify(written, null, 2)}\n`);
+    process.stdout.write('change: the error classes are <Library><Category>Error in the class form of each language (E-2, N-2)\n');
   }
   run(process.execPath, [cli, 'scaffold', '--root', copy]);
   process.stdout.write('change: the tracked binding packages that binding scaffold writes (L-2)\n');
