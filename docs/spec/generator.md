@@ -157,24 +157,28 @@ the design ids are those of the binding design.
   contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
   is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
   `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
-  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4).
+  a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4). The
+  int key as text is the inverse of PHP's own conversion of a decimal string key, so a text key `"1"` that leaves as
+  the int key 1 comes back as the text `"1"` and keeps its value (P-3).
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
   and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
   (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
-  map leaves as such a `dict` (T-2). `polyspec` has no `__init__.py` (P-1).
+  map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind
+  `invalid_argument_type`. `polyspec` has no `__init__.py` (P-1).
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
-  `keyed_map<T>{key}` is a `Map` whose keys are safe integers or strings of the listed kinds (T-2): the entry passes
-  the entries of a `Map` to the addon, which judges each key (any other key or value is kind `invalid_argument_type`),
-  and makes a `Map` of the entries that the addon gives back. Because the entry does it, a keyed map is a whole
-  parameter or return, or an optional one; one inside another type, and byte string keys, which a `Map` compares by
-  identity, are refused by name (G-4).
+  `map<T>` is a `Map` whose keys are strings, and `keyed_map<T>{key}` a `Map` whose keys are safe integers or strings
+  of the listed kinds (T-2): the entry passes the entries of a `Map` to the addon, which judges each key (any other key
+  or value is kind `invalid_argument_type`), and makes a `Map` of the entries that the addon gives back. Because the
+  entry does it, such a map is a whole parameter or return, or an optional one; one inside another type, and byte
+  string keys, which a `Map` compares by identity, are refused by name (G-4), so nothing is left out silently; the
+  generator takes them when a contract needs them.
 
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
@@ -206,8 +210,8 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go only so far, so a contract with a map and another target is
-  refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
+  `invalid_argument_type`. `map<T>` is generated for Go, Python, Node and WASM (GN-11, GN-12, GN-18) so far, so a contract with
+  a map and another target is refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
@@ -224,7 +228,7 @@ the design ids are those of the binding design.
   (crate-type `cdylib`, wasm-bindgen 0.2.130 and js-sys 0.3.107) in the npm package of Node, and
   `packages/ts/wasm/generated` holds its source, the ES module `index.mjs`, its declarations and its tests;
   `wasm-bindgen --target web` of the same release writes the module `<library>_wasm_bg.wasm` and its glue
-  `<library>_wasm.js` there. A `keyed_map<T>` is a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
+  `<library>_wasm.js` there. A `map<T>` and a `keyed_map<T>` are a `Map`, with the rules of GN-12 for Node. The npm manifest exports the WASM entry at the subpath `./wasm` always and, for an entry
   whose conditions are `{node: napi, browser: wasm}`, under the condition `browser` of that entry. The ES module
   loads the WebAssembly module when it is imported, with a top-level await (GW-5), so no export can run before the
   module is ready and there is no `init()`: a `file:` URL is read with `node:fs/promises` (Node), any other URL is
@@ -278,7 +282,10 @@ the design ids are those of the binding design.
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
-  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. With the build tag
+  Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
+  `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
+  default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
+  without features and fails if it holds a test entry point (`__panic_test`, `__echo_`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to

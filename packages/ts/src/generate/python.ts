@@ -156,6 +156,41 @@ fn out_list<'py, T>(py: Python<'py>, value: impl IntoIterator<Item = T>, item: i
     Ok(PyList::new(py, items)?.into_any())
 }
 
+/// T-2: a dict in its order whose keys are str; any other key is kind invalid_argument_type.
+fn in_map<'py, T>(
+    py: Python<'py>,
+    value: &Bound<'py, PyAny>,
+    subject: &str,
+    item: impl Fn(Python<'py>, &Bound<'py, PyAny>) -> PyResult<T>,
+) -> PyResult<binding_core::OrderedMap<T>> {
+    let Ok(dict) = value.cast::<PyDict>() else { return Err(binding_error(py, type_error(subject, "dict"))) };
+    let mut map = binding_core::OrderedMap::new();
+    for (key, value) in dict.iter() {
+        if !key.is_exact_instance_of::<PyString>() {
+            return Err(binding_error(py, type_error(subject, "a dict whose keys are str")));
+        }
+        let key = in_text(py, &key, subject)?;
+        let value = item(py, &value)?;
+        if map.insert(key, value).is_some() {
+            return Err(binding_error(py, BindingError::Internal { detail: String::from("a dict gave a key twice") }));
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: a map, owned or borrowed, as a dict in its order.
+fn out_map<'py, T>(
+    py: Python<'py>,
+    value: impl Borrow<binding_core::OrderedMap<T>>,
+    item: impl Fn(Python<'py>, &T) -> PyResult<Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let dict = PyDict::new(py);
+    for (key, value) in value.borrow().iter() {
+        dict.set_item(PyString::new(py, key), item(py, value)?)?;
+    }
+    Ok(dict.into_any())
+}
+
 /// T-2, U-7 (c): a dict in its order, each key an int (not a bool), bytes or a str of a kind that the contract lists;
 /// any other key is kind invalid_argument_type.
 fn in_keyed_map<'py, T>(
@@ -225,6 +260,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('map' in type) return `in_map(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -246,6 +282,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('list' in type) return `out_list(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('keyed_map' in type) return `out_keyed_map(py, ${value}, |py, item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('map' in type) return `out_map(py, ${value}, |py, item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => convertOut(model, t, `&${value}.${i}`));
@@ -638,6 +675,7 @@ function pyType(model: Model, type: Type, input: boolean): string {
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
+  if ('map' in type) return `dict[str, ${pyType(model, type.map, input)}]`;
   if ('keyed_map' in type) return `dict[${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? 'object').join(' | ')}, ${pyType(model, type.keyed_map, input)}]`;
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;

@@ -36,7 +36,7 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     return table[ctx.lang][type] ?? 'null';
   }
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
-  if ('keyed_map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
+  if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
@@ -104,6 +104,15 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
   if ('list' in type) {
     const items = (value as unknown[]).map((item) => fromJson(model, ctx, type.list, item));
     return `[${items.join(', ')}]`;
+  }
+  if ('map' in type) {
+    // G-5: a case gives a map as an object of its entries in order.
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+      const k = fromJson(model, ctx, 'text', key);
+      const v = fromJson(model, ctx, type.map, item);
+      return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+    });
+    return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
   }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
@@ -251,6 +260,12 @@ export function wrapText(type: Type, text: string): string {
 // string, so PHP has a refused string key only when bytes are not listed.
 export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: string; value: string } | undefined {
   const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  // T-2: map<T> has text keys only; a PHP int key is its decimal text, so PHP has no refused key of a map.
+  if (typeof base === 'object' && 'map' in base) {
+    const value = placeholder(model, ctx, base.map);
+    const literal = { python: `{1: ${value}}`, node: `new Map([[1, ${value}]])`, php: undefined }[ctx.lang];
+    return literal === undefined ? undefined : { kind: 'int', value: literal };
+  }
   if (typeof base !== 'object' || !('keyed_map' in base)) return undefined;
   const value = placeholder(model, ctx, base.keyed_map);
   const literals: Record<Lang3, Record<string, string>> = {
