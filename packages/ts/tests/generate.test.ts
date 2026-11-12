@@ -266,7 +266,7 @@ test('WASM: the module, its ES entry and tests are generated, and the npm packag
 test('Go: map<T> is an ordered Map, and a contract with a map and another target is refused by name (T-2, G-4)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { map: { list: 'text' } };
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is not generated for php, node yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is not generated for php yet/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
@@ -298,7 +298,7 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
   // GN-12: the JavaScript entry turns a Map into its entries, so Node takes a keyed map only as a whole.
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a keyed_map<T> inside another type is not generated for node yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a map<T> or keyed_map<T> inside another type is not generated for node yet/);
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
   const all = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn out_keyed_map<T>/);

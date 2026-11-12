@@ -122,10 +122,11 @@
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
   만든 그 클래스의 인스턴스이며 addon이 던진다(B-4). ESM 진입점은 CommonJS 진입점을 다시 내보내므로 둘은 클래스를 함께 쓴다.
-  `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2): 진입점이 `Map`의 항목을 addon에 넘기고
-  addon이 key마다 판정하며(그 밖의 key나 값은 kind `invalid_argument_type`), addon이 돌려준 항목으로 진입점이 `Map`을 만든다.
-  진입점이 하는 일이므로 keyed map은 parameter나 반환 전체(또는 그 optional)여야 하고, 다른 타입 안의 것과 `Map`이 정체성으로
-  비교하는 바이트 문자열 key는 이름으로 거부한다(G-4).
+  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2):
+  진입점이 `Map`의 항목을 addon에 넘기고 addon이 key마다 판정하며(그 밖의 key나 값은 kind `invalid_argument_type`), addon이
+  돌려준 항목으로 진입점이 `Map`을 만든다. 진입점이 하는 일이므로 그런 map은 parameter나 반환 전체(또는 그 optional)여야 하고,
+  다른 타입 안의 것과 `Map`이 정체성으로 비교하는 바이트 문자열 key는 이름으로 거부하므로(G-4) 조용히 빠지는 것이 없다. 계약이
+  그것을 요구하면 그때 생성기가 받는다.
 
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
@@ -151,7 +152,7 @@
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
-  `map<T>`는 아직 Go와 Python(GN-11)에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
+  `map<T>`는 아직 Go, Python, Node(GN-11, GN-12)에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
   생성한다(GN-10, GN-11, GN-12, GN-18).
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는

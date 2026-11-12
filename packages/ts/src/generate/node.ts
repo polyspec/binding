@@ -23,6 +23,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -43,6 +44,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   }
   if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
+  if ('map' in type) return `out_map(env, ${value}, |env, item| ${convertOut(model, type.map, 'item')})`;
   if ('keyed_map' in type) return `out_keyed_map(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
@@ -208,6 +210,37 @@ fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
 fn out_list<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
     let items = value.into_iter().map(|value| item(env, value)).collect::<Result<Vec<_>, Fail>>()?;
     out_tuple(env, items)
+}
+
+/// T-2: the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a map is a whole
+/// parameter, GN-12): each key a string; any other key is kind invalid_argument_type.
+fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+    let entries = in_list(value, subject, |entry| in_list(entry, subject, Ok))
+        .map_err(|_not_entries| type_error(subject, "a Map whose keys are strings"))?;
+    let mut map = binding_core::OrderedMap::new();
+    for entry in entries {
+        let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, "a Map whose keys are strings"))?;
+        if key.get_type().map_err(internal)? != ValueType::String {
+            return Err(type_error(subject, "a Map whose keys are strings"));
+        }
+        if map.insert(in_text(key, subject)?, item(value)?).is_some() {
+            return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: a map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map.
+fn out_map<'env, T>(
+    env: &'env Env,
+    value: impl Borrow<binding_core::OrderedMap<T>>,
+    item: impl Fn(&'env Env, &T) -> Result<Unknown<'env>, Fail>,
+) -> Result<Unknown<'env>, Fail> {
+    let mut entries = Vec::new();
+    for (key, value) in value.borrow().iter() {
+        entries.push(out_tuple(env, vec![out_text(env, key)?, item(env, value)?])?);
+    }
+    out_tuple(env, entries)
 }
 
 /// T-2, U-7 (c): the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a keyed map is
@@ -663,6 +696,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
+  if ('map' in type) return `ReadonlyMap<string, ${tsType(model, type.map, input)}>`;
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
@@ -676,7 +710,10 @@ function tsType(model: Model, type: Type, input: boolean): string {
 
 const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
 // T-2: a keyed map, whole or optional, which the JavaScript entry passes as the entries of a Map (GN-12).
-const keyedType = (type: Type): boolean => typeof type === 'object' && ('keyed_map' in type || ('optional' in type && typeof type.optional === 'object' && 'keyed_map' in type.optional));
+const keyedType = (type: Type): boolean => {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  return typeof base === 'object' && ('keyed_map' in base || 'map' in base);
+};
 
 function indexCjs(model: Model): string {
   const base = addonBase(model);
