@@ -4,7 +4,7 @@
 import type { Contract } from '../contract.ts';
 import { go } from './go.ts';
 import { wasm } from './wasm.ts';
-import { buildModel } from './model.ts';
+import { buildModel, Unsupported } from './model.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
@@ -43,6 +43,14 @@ export function generate(inputs: Inputs): Files {
     cases.set(kase.member, [...(cases.get(kase.member) ?? []), ...group]);
   }
   const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
+  // T-2: map<T> is generated for Go only so far; a contract with a map and another target is refused by name (G-4).
+  const hasMap = (type: unknown): boolean => JSON.stringify(type).includes('"map"');
+  const withMap = [
+    ...model.functions.flatMap((fn) => [...fn.params.map((p) => [fn.member.id, p.type] as const), [fn.member.id, fn.returns] as const]),
+    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => [unit.id, f.type] as const)),
+  ].find(([, type]) => hasMap(type));
+  const others = inputs.contract.targets.filter((target) => target !== 'go');
+  if (withMap !== undefined && others.length > 0) throw new Unsupported(`${withMap[0]}: map<T> is generated for Go only, not for ${others.join(', ')} yet`);
   const files: Files = new Map();
   const targets = inputs.contract.targets;
   if (targets.includes('python')) python(model, files);

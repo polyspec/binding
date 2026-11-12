@@ -108,12 +108,17 @@ the design ids are those of the bindgen design.
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
   is a Go keyword or a name of the generated body takes a trailing `_`.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
-  `string`, bytes `[]byte`, `list<T>` `[]T`, `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
+  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
   type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
   that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a string whose bytes are the characters, one each, so it
   has no value to refuse; a string of the core leaves as its UTF-8 bytes. An enum value that is not one of the
   constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
-  hold by the Go types and the compiler.
+  hold by the Go types and the compiler. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
+  package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
+  others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
+  crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
+  `invalid_text`). `map<T>` is generated for Go only so far: a contract with a map and another target is refused by
+  name. `keyed_map<T>` is not generated for any target yet.
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
@@ -155,7 +160,8 @@ the design ids are those of the bindgen design.
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
   contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
-  ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag. A case's latin1
+  ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
+  `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways. A case's latin1
   value is a Go string of one byte per character.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
   `node --test` against the subpath `./wasm` of the installed package after `init()`, the B-7 test last.

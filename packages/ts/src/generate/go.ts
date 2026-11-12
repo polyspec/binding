@@ -9,7 +9,7 @@
 import type { Contract, Name, Type, Unit } from '../contract.ts';
 import { type Constant, type Fn, type Model, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { extensionName } from './packages.ts';
-import { goTests, goPanicTest } from './tests_go.ts';
+import { goMapTest, goTests, goPanicTest } from './tests_go.ts';
 import { type Files, header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
 
 const GO = 'packages/go';
@@ -68,6 +68,8 @@ interface GoScope {
   model: Model;
   module: string;
   imports: Set<string>;
+  // Whether the package names the ordered map of T-2, which it declares as an alias of binding.Map.
+  usesMap?: boolean;
 }
 
 function goUnitName(scope: GoScope, unit: Unit): string {
@@ -84,6 +86,11 @@ export function goType(scope: GoScope, type: Type): string {
     return found;
   }
   if ('list' in type) return `[]${goType(scope, type.list)}`;
+  if ('map' in type) {
+    // T-2: an ordered map, not a Go map, whose iteration order is random.
+    scope.usesMap = true;
+    return `*Map[${goType(scope, type.map)}]`;
+  }
   if ('optional' in type) return `*${goType(scope, type.optional)}`;
   if ('tuple' in type) {
     const [first, ...rest] = type.tuple.map((t) => goType(scope, t));
@@ -110,6 +117,18 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
     const item = `item${depth}`;
     return [`${t}enc.Len(len(${expr}))`, `${t}for _, ${item} := range ${expr} {`, ...goEncode(scope, type.list, item, indent + 1, depth + 1), `${t}}`];
   }
+  if ('map' in type) {
+    const key = `key${depth}`;
+    const entry = `entry${depth}`;
+    return [
+      `${t}enc.Len(${expr}.Len())`,
+      `${t}for _, ${key} := range ${expr}.Keys() {`,
+      `${t}	${entry}, _ := ${expr}.Get(${key})`,
+      `${t}	enc.Text(${key})`,
+      ...goEncode(scope, type.map, entry, indent + 1, depth + 1),
+      `${t}}`,
+    ];
+  }
   if ('optional' in type) {
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
   }
@@ -132,6 +151,20 @@ function goDecode(scope: GoScope, type: Type, target: string, indent: number, de
       `${t}${target} = make(${goType(scope, type)}, dec.Len())`,
       `${t}for ${index} := range ${target} {`,
       ...goDecode(scope, type.list, `${target}[${index}]`, indent + 1, depth + 1),
+      `${t}}`,
+    ];
+  }
+  if ('map' in type) {
+    const index = `i${depth}`;
+    const count = `n${depth}`;
+    const entry = `entry${depth}`;
+    return [
+      `${t}${target} = &Map[${goType(scope, type.map)}]{}`,
+      `${t}for ${index}, ${count} := 0, dec.Len(); ${index} < ${count}; ${index}++ {`,
+      `${t}	key${depth} := dec.Text()`,
+      `${t}	var ${entry} ${goType(scope, type.map)}`,
+      ...goDecode(scope, type.map, entry, indent + 1, depth + 1),
+      `${t}	${target}.Set(key${depth}, ${entry})`,
       `${t}}`,
     ];
   }
@@ -261,13 +294,20 @@ function goPackageFile(model: Model, module: string): string {
     ...model.constants.filter((c) => c.module === module).map(goConstant),
     ...model.functions.filter((f) => f.module === module).map((f) => goFunction(scope, f)),
   ].join('');
-  const usesBinding = model.functions.some((f) => f.module === module);
+  const usesBinding = model.functions.some((f) => f.module === module) || scope.usesMap === true;
+  const alias = scope.usesMap === true
+    ? `
+// Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each with its value. Its
+// zero value is an empty map; a nil *Map is an empty map too.
+type Map[T any] = binding.Map[T]
+`
+    : '';
   const imports = usesBinding || scope.imports.size > 0 ? `\n${goImports(scope, usesBinding ? [goImport(model.contract, 'internal/binding')] : [])}` : '';
   return `${goHeader()}
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
 package ${goPackage(model.contract, module)}
-${imports}${body}`;
+${imports}${alias}${body}`;
 }
 
 // ---- package binding: cgo, the encoding and the error types of E-7 ----
@@ -491,6 +531,50 @@ func (r *Reader) Finish() error {
 	return nil
 }
 
+// Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each once with its
+// value, because the core keeps the order of a map and a Go map iterates in a random order.
+type Map[T any] struct {
+	keys   []string
+	values map[string]T
+}
+
+// Set sets the value of a key: a new key goes after the others, a key that the map has keeps its place.
+func (m *Map[T]) Set(key string, value T) {
+	if m.values == nil {
+		m.values = map[string]T{}
+	}
+	if _, ok := m.values[key]; !ok {
+		m.keys = append(m.keys, key)
+	}
+	m.values[key] = value
+}
+
+// Get is the value of a key and whether the map has the key.
+func (m *Map[T]) Get(key string) (T, bool) {
+	if m == nil {
+		var zero T
+		return zero, false
+	}
+	value, ok := m.values[key]
+	return value, ok
+}
+
+// Keys is the keys in their order.
+func (m *Map[T]) Keys() []string {
+	if m == nil {
+		return nil
+	}
+	return append([]string(nil), m.keys...)
+}
+
+// Len is the count of the keys.
+func (m *Map[T]) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.keys)
+}
+
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -577,6 +661,7 @@ function convertIn(model: Model, type: Type, input: string, subject: string): st
     return `${name}(${input})`;
   }
   if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
+  if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('optional' in type) return `in_optional(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
@@ -590,6 +675,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `${fn[type] ?? ''}(output, ${value})`;
   }
   if ('list' in type) return `out_list(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
+  // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
+  if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(output, ${value}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
   const unit = unitOf(model, type);
@@ -683,6 +770,30 @@ fn in_optional<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> 
         item(input).map(Some)
     } else {
         Ok(None)
+    }
+}
+
+/// T-2: an ordered map, its text keys each once; a key twice is a fault of the generated Go code (kind internal).
+fn in_map<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<bindgen_core::OrderedMap<T>, Fail> {
+    let count = read_length(input)?;
+    let mut map = bindgen_core::OrderedMap::new();
+    for _ in 0..count {
+        let key = in_text(input, subject)?;
+        let value = item(input)?;
+        if map.insert(key, value).is_some() {
+            return Err(malformed());
+        }
+    }
+    Ok(map)
+}
+
+/// T-2: an ordered map, owned or borrowed, in its order.
+fn out_map<T>(output: &mut Vec<u8>, value: impl Borrow<bindgen_core::OrderedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
+    let map = value.borrow();
+    write_length(output, map.len());
+    for (key, value) in map.iter() {
+        out_text(output, key);
+        item(output, value);
     }
 }
 
@@ -1012,5 +1123,6 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_binding.go`, goBinding(model));
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest());
+  files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
 }

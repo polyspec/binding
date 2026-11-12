@@ -90,10 +90,14 @@
   준다. Go 모듈은 소스로 받아지며 소비자가 플랫폼의 정적 라이브러리를 받는 방법은 아직 정하지 않았기 때문이다(계획 T-2).
   parameter는 lower camel case이고 Go 예약어나 생성 본문의 이름과 같으면 끝에 `_`를 붙인다.
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
-  bytes `[]byte`, `list<T>` `[]T`, `optional<T>` `*T`, 다른 타입 안의 tuple `[N]T`(원소 타입 하나), tuple 반환은 여러 결과.
+  bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안의 tuple `[N]T`(원소 타입 하나), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은
   바이트 하나가 문자 하나인 문자열이므로 거부할 값이 없다. 코어의 문자열은 UTF-8 바이트로 나간다. 상수가 아닌 enum 값은 kind
-  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지킨다.
+  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지킨다. `Map[T]`는 T-2의 순서 있는 map이며,
+  쓰는 패키지가 선언하는 `internal/binding.Map`의 별칭이다. 반복 순서가 무작위인 Go map이 아니다: `Set`은 새 key를 끝에
+  두고 있는 key의 자리는 지키며, `Keys`는 순서대로 주고, 0값이나 nil `*Map`은 비어 있다. C ABI는 길이와 순서대로의 항목으로
+  넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `map<T>`는 아직 Go에만 생성한다: map과 다른
+  target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 아직 어느 target에도 생성하지 않는다.
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
@@ -128,7 +132,8 @@
 - **GN-13a** Go: 패키지의 시험은 외부 시험 패키지 `zz_generated_test.go`이며 `go test`로 실행한다: text parameter·field마다
   B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, raise하는 contract case마다 B-4(E-7의 정확한 타입, kind, status,
   errno). B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
-  panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다. case의 latin1 값은 문자마다 한
+  panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
+  `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다. case의 latin1 값은 문자마다 한
   바이트인 Go 문자열이다.
 - **GN-13b** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
   `./wasm`에 대해 `init()` 뒤에 `node --test`로 실행하며, B-7 시험이 마지막이다.

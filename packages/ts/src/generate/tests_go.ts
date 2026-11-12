@@ -25,6 +25,7 @@ function goTypeName(v: Values, type: Type): string {
     return ({ bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte' } as Record<string, string>)[type] ?? '';
   }
   if ('list' in type) return `[]${goTypeName(v, type.list)}`;
+  if ('map' in type) return `*${v.pkg}.Map[${goTypeName(v, type.map)}]`;
   if ('optional' in type) return `*${goTypeName(v, type.optional)}`;
   if ('tuple' in type) return `[${type.tuple.length}]${goTypeName(v, type.tuple[0] ?? 'none')}`;
   const unit = unitOf(v.model, type);
@@ -33,7 +34,7 @@ function goTypeName(v: Values, type: Type): string {
 
 function placeholder(v: Values, type: Type): string {
   if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil' } as Record<string, string>)[type] ?? '0';
-  if ('list' in type || 'optional' in type) return 'nil';
+  if ('list' in type || 'optional' in type || 'map' in type) return 'nil';
   const unit = unitOf(v.model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return `${v.pkg}.${goName(unit.name)}${goName(first.name)}`;
@@ -58,6 +59,11 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     return `ptr(${typed})`;
   }
   if ('list' in type) return `${goTypeName(v, type)}{${(value as unknown[]).map((item) => fromJson(v, type.list, item)).join(', ')}}`;
+  if ('map' in type) {
+    // T-2: the entries of the case in their order.
+    const sets = Object.entries(value as Record<string, unknown>).map(([key, item]) => `m.Set(${goString(key)}, ${fromJson(v, type.map, item)}); `).join('');
+    return `func() ${goTypeName(v, type)} { m := &${v.pkg}.Map[${goTypeName(v, type.map)}]{}; ${sets}return m }()`;
+  }
   const unit = unitOf(v.model, type);
   if (unit?.kind === 'enum') {
     const variant = (unit.variants ?? []).find((x) => x.value === value);
@@ -204,6 +210,59 @@ func TestB7APanicIsKindInternal(t *testing.T) {
 	failure, ok := err.(*InternalError)
 	if !ok || failure.Kind() != "internal" {
 		t.Fatalf("B-7: %#v", err)
+	}
+}
+`;
+}
+
+// T-2: the ordered map keeps the order in which its keys were first set, and the encoding keeps it both ways.
+export function goMapTest(): string {
+  return `${goHeader()}
+
+package binding
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestT2AMapKeepsTheOrderOfItsKeys(t *testing.T) {
+	m := &Map[int64]{}
+	m.Set("b", 1)
+	m.Set("a", 2)
+	m.Set("b", 3)
+	if keys := m.Keys(); !reflect.DeepEqual(keys, []string{"b", "a"}) {
+		t.Fatalf("T-2: %q", keys)
+	}
+	if value, ok := m.Get("b"); !ok || value != 3 {
+		t.Fatalf("T-2: b is %d, %v", value, ok)
+	}
+	var none *Map[int64]
+	if none.Len() != 0 || none.Keys() != nil {
+		t.Fatal("T-2: a nil map is not empty")
+	}
+}
+
+func TestT2TheEncodingKeepsTheOrderOfAMap(t *testing.T) {
+	m := &Map[string]{}
+	for _, key := range []string{"z", "a", "m"} {
+		m.Set(key, key+key)
+	}
+	enc := NewWriter()
+	enc.Len(m.Len())
+	for _, key := range m.Keys() {
+		value, _ := m.Get(key)
+		enc.Text(key)
+		enc.Text(value)
+	}
+	dec := NewReader(enc.Done())
+	back := &Map[string]{}
+	for i, n := 0, dec.Len(); i < n; i++ {
+		key := dec.Text()
+		back.Set(key, dec.Text())
+	}
+	if err := dec.Finish(); err != nil || !reflect.DeepEqual(back, m) {
+		t.Fatalf("T-2: %v %#v", err, back)
 	}
 }
 `;

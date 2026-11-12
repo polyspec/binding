@@ -257,3 +257,17 @@ test('WASM: the module, its ES entry and tests are generated, and the npm packag
   assert.deepEqual(manifest.exports['./wasm'], { types: './wasm/generated/index.d.ts', default: './wasm/generated/index.mjs' });
   assert.deepEqual(Object.keys(manifest.exports['.']), ['browser', 'types', 'import', 'require']);
 });
+
+test('Go: map<T> is an ordered Map, and a contract with a map and another target is refused by name (T-2, G-4)', () => {
+  const { contract, caseFiles } = load();
+  contract.units[0].members[0].returns = { map: { list: 'text' } };
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is generated for Go only, not for php, python, node yet/);
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^type Map\[T any\] = binding\.Map\[T\]$/m);
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /\(\*Map\[\[\]string\], error\)/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /out_map\(output, result, \|output, item\| out_list\(/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_map_test.go'), /func TestT2TheEncodingKeepsTheOrderOfAMap/);
+});
