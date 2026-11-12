@@ -37,7 +37,9 @@ the design ids are those of the binding design.
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
   `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
   `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
-  thin packages depend only on the package and name items; `check` and `generate` report it.
+  thin packages depend only on the package and name items; `check` and `generate` report it. `scaffold` stops only
+  for a finding of the schema (CK-1) or of the names (CK-18), and it does not ask Cargo for the workspace, so a binding
+  manifest of an earlier scaffold that no longer resolves (a renamed core crate) does not stop the rewrite.
 - **GN-3b** A language whose package is a hand-written host package (L-2a, `packages.<lang>.host: true`) holds the
   binding in one form, which `scaffold`, `generate` and `check` (CK-19) share; `scaffold` does not write the host's
   manifest, and `check` reads from it only the items below.

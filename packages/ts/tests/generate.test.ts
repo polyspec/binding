@@ -310,3 +310,36 @@ test('a binding crate builds the core with the features of its target only (I-1)
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('scaffold rewrites its packages after the core crate was renamed, without asking Cargo', () => {
+  const { root } = fixtureCopy((c) => {
+    // A type of another repository, for which check and generate ask Cargo for that repository's contract.
+    c.units[0].members[0].parameters[0].type = { unit: 'dep_part', library: 'forms-dep' };
+  });
+  try {
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n`);
+    execFileSync('mkdir', ['-p', join(root, 'bin')]);
+    // A cargo that fails as it does when a binding manifest names a crate that no longer exists.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` };
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    // The core is renamed; the binding manifests of the first scaffold still name the old crate.
+    const contractPath = join(root, 'packages/rust/interface.json');
+    const renamed = JSON.parse(readFileSync(contractPath, 'utf8'));
+    renamed.library = 'sample-next';
+    renamed.core.crate = 'polyspec-sample-next';
+    renamed.packages.php = { package: 'polyspec/sample-next', namespace: 'Polyspec\\SampleNext' };
+    renamed.packages.python = { package: 'polyspec-sample-next', module: 'polyspec.sample_next' };
+    renamed.packages.node = { ...renamed.packages.node, package: '@polyspec/sample-next' };
+    for (const row of Object.values(renamed.errors.classes) as Record<string, string>[]) {
+      for (const lang of Object.keys(row)) row[lang] = (row[lang] ?? '').replace('Polyspec\\Sample\\Sample', 'Polyspec\\SampleNext\\SampleNext').replace(/^Sample/, 'SampleNext');
+    }
+    writeFileSync(contractPath, JSON.stringify(renamed));
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('name = "polyspec-sample"', 'name = "polyspec-sample-next"'));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root], { env });
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /polyspec-sample-next = \{ path = "\.\.\/rust" \}/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

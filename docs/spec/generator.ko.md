@@ -31,7 +31,9 @@
   `packages/<component>/rust`이면(L-1) 바인딩 package와 생성 디렉터리는 `packages/<component>/<python|ts|php-ext>`이고,
   `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다.
   `scaffold`는 `--out`이 있으면 그 아래에 쓰고, 아직 `todo`인 unit(CK-2)이 있어도 멈추지 않는다. 얇은 package는 패키지·이름
-  항목에만 기대기 때문이며, `check`와 `generate`가 그것을 지적한다.
+  항목에만 기대기 때문이며, `check`와 `generate`가 그것을 지적한다. `scaffold`는 스키마(CK-1)와 이름(CK-18)의 finding에만
+  멈추고 Cargo에 workspace를 묻지 않는다. 그래서 더는 풀리지 않는 이전 scaffold의 바인딩 manifest(코어 crate 이름 변경)가
+  다시 쓰기를 막지 않는다.
 - **GN-3b** 언어 패키지가 손으로 쓴 host 패키지인 언어(L-2a, `packages.<lang>.host: true`)는 바인딩을 한 가지 형태로 담고,
   `scaffold`, `generate`, `check`(CK-19)가 그 형태를 함께 쓴다. `scaffold`는 host의 manifest를 쓰지 않고 `check`는 거기서 아래
   항목만 읽는다.

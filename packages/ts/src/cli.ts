@@ -98,10 +98,12 @@ if (command === 'check') {
   contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
-const foreign = dependencies(contract, dirname(contractPath));
-// scaffold writes the thin packages from the package and name items alone, so a unit that is still todo (CK-2) does not
-// stop it; check and generate report it.
-const findings = checkContract(contract, { dependencies: foreign }).filter((f) => command !== 'scaffold' || f.check !== 'CK-2');
+// scaffold writes the thin packages from the package and name items alone (the schema, CK-1, and the names, CK-18), so
+// no other finding stops it, such as a unit that is still todo (CK-2); check and generate report those. It does not ask
+// Cargo for the workspace either: a binding manifest that an earlier scaffold wrote, which this one rewrites, may no
+// longer resolve (the core crate was renamed), and that must not stop the rewrite.
+const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath));
+const findings = checkContract(contract, { dependencies: foreign }).filter((f) => command !== 'scaffold' || f.check === 'CK-1' || f.check === 'CK-18');
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
