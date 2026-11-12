@@ -148,7 +148,9 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
     files.set('packages/python/Cargo.toml', manifest(contract, version, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
-    files.set('packages/python/src/lib.rs', entry(`The native module ${python.module}._native.`, [MANY]));
+    // L-2a: the native module of a host package is in the generated subpackage of its module.
+    const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
+    files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
     languageManifest('python', 'packages/python/pyproject.toml', `${header('#')}
 [build-system]
 requires = ["maturin>=1.16,<2"]

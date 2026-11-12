@@ -382,6 +382,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.equal(JSON.parse(readFileSync(join(root, 'packages/php/native/composer.json'), 'utf8')).name, 'polyspec/sample-native');
     assert.match(readFileSync(join(root, 'packages/php/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    assert.match(readFileSync(join(root, 'packages/python/native/src/lib.rs'), 'utf8'), /The native module polyspec\.sample\._binding\._native\./);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
