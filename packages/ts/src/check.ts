@@ -962,6 +962,9 @@ class Checker {
       if (first === 'host' || first === 'tests') {
         this.report('CK-14', `${path}/module`, `the module ${unit.module} starts with ${first}, a folder of hand-written Go code (L-1)`);
       }
+      if (first === 'internal') {
+        this.report('CK-14', `${path}/module`, `the module ${unit.module} starts with internal, the folder of the C ABI layer of the Go binding (L-1)`);
+      }
     }
   }
 

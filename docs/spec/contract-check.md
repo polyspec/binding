@@ -79,8 +79,9 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
   `functions` units and the `New<Unit>` constructors are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
-- **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`. The empty module is the root of the
-  package (P-2).
+- **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`, the folders of hand-written Go code,
+  nor `internal`, the folder of the C ABI layer of the Go binding (GN-15). The empty module is the root of the package
+  (P-2).
 - **CK-15** WASM (Q-4): when `wasm` is a target, a member whose parameters, return or yields contain `path` (through
   records and variants too) or whose wait is `blocking_io` or `process_wait` has an `only` without `wasm`, on itself or
   on its unit, with its rule id.

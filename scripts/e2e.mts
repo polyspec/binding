@@ -3,6 +3,11 @@
 // language's standard runner.
 //
 //   node scripts/e2e.mts --repo <http-cookies checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
+//     [--add-targets go,wasm]
+//
+// --add-targets adds targets that the repository's contract does not have yet to the copy, with the package entry that
+// P-1 names (the Go module github.com/polyspec/<repository>/packages/go; WASM in the npm package of Node, chosen by the
+// browser condition of each entry, P-5), so a generator can be checked before a repository takes it; the run says so.
 //
 // The checkout is only read: its committed tree is copied into the work directory, and the copy gets the changes that
 // the repository has not made yet (L-2: one workspace with the binding packages, which bindgen scaffold writes; F-2,
@@ -11,12 +16,13 @@
 // parameter names in snake_case, a record is an object of its fields) is rewritten to it, also printed.
 //
 // BINDGEN_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
-// for a machine that cannot install the pinned one; the run says so.
+// for a machine that cannot install the pinned one; the run says so. BINDGEN_E2E_LOCAL_GO=1 writes the release of the
+// installed Go into the go directive of the copy's go.mod, for a machine without the pinned Go; the run says so too.
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Contract, Type, Unit } from '../packages/ts/src/contract.ts';
+import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 
 const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i] ?? '', process.argv[i + 1] ?? '');
@@ -24,6 +30,7 @@ const repo = args.get('--repo');
 const workArg = args.get('--work');
 const phpunit = args.get('--phpunit');
 const python = args.get('--python') ?? 'python3';
+const addTargets = (args.get('--add-targets') ?? '').split(',').filter((t) => t !== '') as Lang[];
 if (repo === undefined || workArg === undefined || phpunit === undefined) {
   process.stderr.write('usage: node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit>\n');
   process.exit(2);
@@ -33,6 +40,10 @@ const bindgen = new URL('..', import.meta.url).pathname;
 const copy = join(work, 'repo');
 const target = join(work, 'target');
 const contract = JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract;
+for (const added of addTargets) {
+  if (!['go', 'wasm'].includes(added)) throw new Error(`--add-targets takes go and wasm, not ${added}`);
+  if (!contract.targets.includes(added)) contract.targets.push(added);
+}
 const library = contract.library;
 const crate = contract.core.crate;
 const lib = (suffix: string): string => `${crate}-${suffix}`.replaceAll('-', '_');
@@ -63,15 +74,38 @@ rmSync(copy, { recursive: true, force: true });
 mkdirSync(copy, { recursive: true });
 execFileSync('sh', ['-c', `git -C '${resolve(repo)}' archive HEAD | tar -x -C '${copy}'`]);
 
+if (addTargets.length > 0) {
+  step('targets added for this run (the repository has not taken them)');
+  const contractPath = join(copy, 'packages/rust/interface.json');
+  const own = JSON.parse(readFileSync(contractPath, 'utf8')) as Contract;
+  for (const added of addTargets) {
+    if (own.targets.includes(added)) continue;
+    own.targets.push(added);
+    if (added === 'go') own.packages['go'] = { module: `github.com/polyspec/${library}/packages/go` };
+    if (added === 'wasm') {
+      const node = own.packages['node'] as { entries: Record<string, { conditions?: unknown }> };
+      for (const entry of Object.values(node.entries)) entry.conditions = { node: 'napi', browser: 'wasm' };
+    }
+    process.stdout.write(`added: the target ${added} (P-1, P-5)\n`);
+  }
+  writeFileSync(contractPath, `${JSON.stringify(own, null, 2)}\n`);
+}
+
 step('changes the repository needs (each printed)');
 const coreManifest = join(copy, 'packages/rust/Cargo.toml');
 let manifest = readFileSync(coreManifest, 'utf8');
-const members = '["packages/rust", "packages/python", "packages/ts", "packages/php-ext"]';
+const members = `[${[
+  'packages/rust',
+  'packages/python',
+  'packages/ts',
+  'packages/php-ext',
+  ...(contract.targets.includes('go') ? ['packages/go/internal/ffi'] : []),
+].map((m) => JSON.stringify(m)).join(', ')}]`;
 const rootManifest = join(copy, 'Cargo.toml');
 const workspaceAt = manifest.indexOf('\n[workspace]');
 if (existsSync(rootManifest)) {
   const root = readFileSync(rootManifest, 'utf8');
-  if (!root.includes('"packages/php-ext"')) {
+  if (!root.includes(`members = ${members}`)) {
     writeFileSync(rootManifest, root.replace(/^members = \[[^\]]*\]$/m, `members = ${members}`));
     process.stdout.write('change: the root workspace has the binding packages as members (L-2)\n');
   }
@@ -206,6 +240,29 @@ const extension = join(target, `debug/lib${extensionName}.so`);
 run('php', ['-l', join(copy, `packages/php-ext/generated/${extensionName}.stub.php`)]);
 run('php', ['-d', `extension=${extension}`, phpunit, join(copy, 'packages/php-ext/generated/tests')]);
 if (caseRunners) run('php', ['-d', `extension=${extension}`, phpunit, join(e2e, 'CasesTest.php')], { env: { CASES: cases } });
+
+if (contract.targets.includes('go')) {
+  step('Go: build the static library, run the generated tests and the cases with go test');
+  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test']);
+  const goModule = join(copy, 'packages/go');
+  if (process.env['BINDGEN_E2E_LOCAL_GO'] === '1') {
+    const local = /go(\d+\.\d+(\.\d+)?)/.exec(execFileSync('go', ['env', 'GOVERSION'], { encoding: 'utf8' }))?.[1];
+    if (local === undefined) throw new Error('go env GOVERSION names no release');
+    const mod = join(goModule, 'go.mod');
+    writeFileSync(mod, readFileSync(mod, 'utf8').replace(/^go [0-9.]+$/m, `go ${local}`));
+    process.stdout.write(`note: the copy's go.mod names the installed Go ${local} (BINDGEN_E2E_LOCAL_GO=1)\n`);
+  }
+  if (caseRunners && existsSync(join(e2e, 'cases_test.go'))) {
+    mkdirSync(join(goModule, 'tests'), { recursive: true });
+    copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
+  }
+  const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test', CASES: cases ?? '' };
+  process.stdout.write('$ gofmt -l .\n');
+  const unformatted = execFileSync('gofmt', ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
+  if (unformatted !== '') throw new Error(`gofmt would change:\n${unformatted}`);
+  run('go', ['vet', './...'], { cwd: goModule, env: goEnv });
+  run('go', ['test', '-count=1', './...'], { cwd: goModule, env: goEnv });
+}
 
 step('declarations');
 run(join(bindgen, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);

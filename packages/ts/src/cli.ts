@@ -9,12 +9,12 @@
 //   directory, for the comparison of I-5.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
-import { generate, generatedDirs } from './generate/index.ts';
+import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { trackedPackages } from './generate/packages.ts';
 
@@ -152,8 +152,10 @@ try {
 }
 const out = resolve(options.get('--out') ?? root);
 const owned = generatedDirs(checked);
+const goDir = goModuleDir(checked);
+const ownedFile = (path: string): boolean => path.startsWith(`${goDir}/`) && isGoGenerated(path);
 for (const path of files.keys()) {
-  if (!owned.some((dir) => path.startsWith(`${dir}/`))) usage(`internal: ${path} is outside the generated directories`);
+  if (!owned.some((dir) => path.startsWith(`${dir}/`)) && !ownedFile(path)) usage(`internal: ${path} is outside the generated directories`);
 }
 // Each owned directory of a target is written whole into a staging directory and then renamed into place, so a reader
 // never sees a part of it and no file of an earlier generation stays.
@@ -170,4 +172,22 @@ for (const dir of owned) {
   }
   rmSync(join(out, dir), { recursive: true, force: true });
   renameSync(staging, join(out, dir));
+}
+// L-1: the tracked Go files zz_generated_*.go. Every one under the Go module is removed, so none of an earlier generation
+// stays, and the new ones are written; the other files of the module (go.mod, host, tests) are not touched.
+if (checked.targets.includes('go')) {
+  const remove = (dir: string): void => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) remove(path);
+      else if (isGoGenerated(entry.name)) rmSync(path);
+    }
+  };
+  remove(join(out, goDir));
+  for (const [path, text] of files) {
+    if (!ownedFile(path)) continue;
+    mkdirSync(dirname(join(out, path)), { recursive: true });
+    writeFileSync(join(out, path), text);
+  }
 }

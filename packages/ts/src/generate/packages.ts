@@ -22,7 +22,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/lib.rs"));
 `;
 }
 
-function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = ''): string {
+function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', crate = { type: 'cdylib', core: '../rust' }): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -34,13 +34,13 @@ publish = false${extra}
 [lib]
 name = ${JSON.stringify(lib)}
 path = "src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["${crate.type}"]
 
 [features]
 panic-test = []
 
 [dependencies]
-${contract.core.crate} = { path = "../rust" }
+${contract.core.crate} = { path = "${crate.core}" }
 ${BINDGEN_CORE}
 ${dependencies.join('\n')}
 
@@ -123,5 +123,18 @@ python-source = "generated/python"
       'php-ext': { 'extension-name': extensionName(contract) },
     }, null, 2)}\n`);
   }
+  if (contract.targets.includes('go')) {
+    const module = (contract.packages['go'] as { module: string }).module;
+    // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
+    // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
+    files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, [], '', { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
+      ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
+    ]));
+  }
   return placed(contract, files);
 }
+
+// The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
+export const GO_VERSION = '1.27.3';

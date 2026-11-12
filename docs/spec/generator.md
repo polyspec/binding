@@ -9,11 +9,13 @@ the design ids are those of the bindgen design.
 
 ## Scope
 
-- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
+- **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2) and Go
+  (cgo over a C ABI static library, GN-15) for
   functions units, records (as parameters and in their result form), enums, constants and error classes. Any other
   item (a class, a callback, a value unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a
   dependency kind, the type `source`, a record of another repository) is refused by name
-  before anything is written (G-4, P-4); Go and WASM are not generated yet.
+  before anything is written (G-4, P-4); WASM is not generated yet. Go also refuses a tuple of different types inside
+  another type (a Go array has one element type) and a tuple parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -23,7 +25,9 @@ the design ids are those of the bindgen design.
 
 - **GN-3** bindgen owns three directories and writes each whole through a staging directory, so no file of an earlier
   generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
-  `packages/ts/generated`. No source of bindgen is copied into the repository: the core and the binding crates depend on
+  `packages/ts/generated`, `packages/go/internal/ffi/generated`. In the Go module, which holds hand-written folders
+  beside the generated packages (L-1), bindgen owns the files `zz_generated_*.go` rather than a directory: a generation
+  removes every one of them under `packages/go` and writes its own; they are tracked (G-6). No source of bindgen is copied into the repository: the core and the binding crates depend on
   `polyspec-bindgen-core`, a Git dependency of the bindgen repository before its first release, whose commit the
   repository's `Cargo.lock` pins.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
@@ -89,6 +93,37 @@ the design ids are those of the bindgen design.
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
 
+- **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
+  `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
+  separators; the empty module is the module root, named by the library so (`httpcookies`), because the last element of
+  its import path, `go`, is a keyword. Its file `zz_generated_<package>.go` holds the functions, records (structs of
+  exported fields), enums (a typed string and a constant `<Enum><Variant>` per value) and constants (typed `const`) of
+  the module. Package `errors` names the six category types of E-7 (`ValueError` to `InternalError`), each with
+  `Error()`, `Kind() string`, `Status() (int, bool)`, `Errno() (int, bool)` and `Unwrap() error`; they are aliases of
+  the types of `internal/binding`, which also holds the cgo calls and the encoding, so their constructor is not public
+  API (L-3). The C ABI crate `polyspec-<repository>-go` is the tracked thin package `packages/go/internal/ffi`
+  (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
+  directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
+  consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
+  is a Go keyword or a name of the generated body takes a trailing `_`.
+- **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
+  `string`, bytes `[]byte`, `list<T>` `[]T`, `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
+  type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
+  that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a string whose bytes are the characters, one each, so it
+  has no value to refuse; a string of the core leaves as its UTF-8 bytes. An enum value that is not one of the
+  constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
+  hold by the Go types and the compiler.
+- **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
+  Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
+  bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
+  bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
+  ABI decodes and judges them (T-8), and the arguments must end where the last parameter ends; the core's result, or
+  the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
+  allocates, writes into `result` and Go frees with `polyspec_<repository>_free`; the return is 0 for a result and 1
+  for a failure. A buffer that does not follow the encoding is kind `internal`. Every function runs under
+  `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
+  returns.
+
 ## Generated tests (G-5)
 
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
@@ -99,6 +134,12 @@ the design ids are those of the bindgen design.
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
   value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id.
+- **GN-13a** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
+  every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
+  contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
+  `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
+  ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag. A case's latin1
+  value is a Go string of one byte per character.
 
 ## End-to-end check
 
