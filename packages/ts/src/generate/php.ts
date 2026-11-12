@@ -1,9 +1,9 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, coreArg, langName, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { phpTests } from './tests_php.ts';
-import { type Files, header, rustString, usedHelpers } from './text.ts';
+import { type Files, header, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -33,10 +33,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     if (name === undefined) throw new Error(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, |item| ${convertIn(model, type.list, 'item', subject)})`;
-  if ('optional' in type) return `in_optional(${value}, |value| ${convertIn(model, type.optional, 'value', subject)})`;
+  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -46,14 +46,25 @@ function convertOut(model: Model, type: Type, value: string): string {
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(${value})`;
   }
-  if ('list' in type) return `out_list(${value}, |item| ${convertOut(model, type.list, 'item')})`;
-  if ('optional' in type) return `out_optional(${value}, |value| ${convertOut(model, type.optional, 'value')})`;
+  if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
+  if ('optional' in type) return `out_optional(${value}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_array(vec![${parts.join(', ')}])`;
   }
+  const unit = unitOf(model, type);
+  if (unit?.kind === 'record' || unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
+
+const PANIC_TEST = (layout: PhpLayout): string => `/// B-7: the entry point of the generated panic test.
+#[cfg(feature = "panic-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\panicTest`)})]
+pub fn panic_test() -> Result<Zval, PhpException> {
+    guard(|| panic!("panic-test"))
+}
+`;
 
 const HELPERS = `
 fn type_error(subject: &str, expected: &str) -> Fail {
@@ -145,15 +156,15 @@ fn out_bool(value: impl Borrow<bool>) -> Result<Zval, Fail> {
     Ok(zval)
 }
 
-fn out_int(value: impl Borrow<i64>) -> Result<Zval, Fail> {
+fn out_int(value: impl WideInt) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
-    zval.set_long(*value.borrow());
+    zval.set_long(value.widen_int());
     Ok(zval)
 }
 
 /// B-2: a uint leaves as an int; one above PHP_INT_MAX is kind internal.
-fn out_uint(value: impl Borrow<u64>) -> Result<Zval, Fail> {
-    let value = *value.borrow();
+fn out_uint(value: impl WideUint) -> Result<Zval, Fail> {
+    let value = value.widen_uint();
     match i64::try_from(value) {
         Ok(value) => out_int(value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is above PHP_INT_MAX") })),
@@ -195,6 +206,7 @@ function enumRust(layout: PhpLayout, unit: Unit): string {
   const phpName = `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
   const cases = (unit.variants ?? []).map((v) => `    #[php(name = ${rustString(langName('php', v.name, 'class'))}, value = ${rustString(v.value)})]\n    ${rustVariant(v.name)},`).join('\n');
   const arms = (unit.variants ?? []).map((v) => `        Some(${php}::${rustVariant(v.name)}) => Ok(${core}::${rustVariant(v.name)}),`).join('\n');
+  const outArms = (unit.variants ?? []).map((v) => `        ${core}::${rustVariant(v.name)} => ${php}::${rustVariant(v.name)},`).join('\n');
   return `
 /// T-6: the backed enum ${phpName}.
 #[php_enum]
@@ -210,6 +222,77 @@ ${arms}
         None => Err(type_error(subject, ${rustString(phpName)})),
     }
 }
+
+/// T-6: a value of the enum leaves as its case.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+    let case = match value.borrow() {
+${outArms}
+    };
+    case.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+}
+`;
+}
+
+// T-4: the result form of a record, a final class of public readonly properties whose constructor takes every field by
+// name and only holds the values; they are judged when the record enters the core (T-8).
+function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number): string {
+  const name = rustField(unit.name);
+  const core = unit.core_type ?? '';
+  const fields = unit.fields ?? [];
+  const phpName = `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
+  const props = fields.map((f) => langName('php', f.name, 'variable'));
+  const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
+        let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        ${convertIn(model, f.type, 'field', 'subject')}?
+    };`);
+  const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?)?;`);
+  const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
+  return `
+/// T-4: a value of the record ${phpName} is an instance of the class itself.
+fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+    let Some(Class(entry)) = RECORDS[${index}].get().copied() else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the record class is not registered") }));
+    };
+    let Some(object) = value.object().filter(|object| object.instance_of(entry)) else {
+        return Err(type_error(subject, ${rustString(phpName)}));
+    };
+${reads.join('\n')}
+    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
+}
+
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+    let value = value.borrow();
+    let Some(Class(entry)) = RECORDS[${index}].get().copied() else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the record class is not registered") }));
+    };
+    let mut object = ZendObject::new(entry);
+    let written = in_scope(entry, || -> Result<(), Fail> {
+${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;')).join('\n')}
+        Ok(())
+    });
+    written?;
+    object.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+}
+
+ext_php_rs::zend_fastcall! {
+    extern fn ${name}_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| {
+${args.join('\n')}
+            if ex.parser()${fields.map((_f, i) => `.arg(&mut arg${i})`).join('')}.parse().is_err() {
+                return;
+            }
+            let values = [${fields.map((_f, i) => `arg${i}.zval().map(|zval| zval.shallow_clone())`).join(', ')}];
+            let Some(this) = ex.get_self() else { return };
+            let class = this.get_class_entry();
+            for (name, value) in [${props.map((p) => rustString(p)).join(', ')}].into_iter().zip(values) {
+                let Some(value) = value else { return };
+                if in_scope(class, || this.set_property(name, value)).is_err() {
+                    return;
+                }
+            }
+        }));
+    }
+}
 `;
 }
 
@@ -221,7 +304,7 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   const lines: string[] = [];
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
-    lines.push(`        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(variable))}?;`);
+    lines.push(`        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, rustIdent(variable), rustString(variable))}?;`);
   }
   const callArgs: string[] = [];
   for (const parameter of fn.params) {
@@ -245,7 +328,7 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
 /// ${phpName} (G-7: PHP counts the arguments and checks their names by the arginfo of these parameters).
 #[php_function]
 #[php(name = ${rustString(phpName)})]
-pub fn ${rustField(fn.member.name)}(${variables.map((v) => `${v}: &Zval`).join(', ')}) -> Result<Zval, PhpException> {
+pub fn ${rustField(fn.member.name)}(${variables.map((v) => `${rustIdent(v)}: &Zval`).join(', ')}) -> Result<Zval, PhpException> {
     guard(|| {
 ${lines.join('\n')}
     })
@@ -256,8 +339,8 @@ ${lines.join('\n')}
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('');
-  const enums = model.enums.map((u) => enumRust(layout, u)).join('');
-  const used = usedHelpers(`${HELPERS}\n${enums}`, functions);
+  const enums = [...model.enums.map((u) => enumRust(layout, u)), ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i))].join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   const coreError = model.coreError === undefined ? '' : `
 /// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
@@ -287,6 +370,26 @@ ${model.kinds.map((k) => `        ${k.variant} { .. } => ${classOf(k.category)},
     if registered.is_err() {
         return 1;
     }`).join('');
+  const registerRecords = model.resultRecords.map((u, i) => {
+    const phpName = `${phpNamespace(layout, u.module)}\\${langName('php', u.name, 'class')}`;
+    const fields = u.fields ?? [];
+    return `
+    let registered = ClassBuilder::new(${rustString(phpName)})
+        .flags(ClassFlags::Final)
+${fields.map((f) => `        .property(record_property(${rustString(langName('php', f.name, 'variable'))}))`).join('\n')}
+        .method(
+            FunctionBuilder::new("__construct", ${rustField(u.name)}_construct)${fields.map((f) => `\n                .arg(Arg::new(${rustString(langName('php', f.name, 'variable'))}, DataType::Mixed))`).join('')},
+            MethodFlags::Public,
+        )
+        .registration(|class, tables| {
+            let _first: Result<(), Class> = RECORDS[${i}].set(Class(class));
+            std::mem::forget(tables);
+        })
+        .register();
+    if registered.is_err() {
+        return 1;
+    }`;
+  }).join('');
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
@@ -302,10 +405,10 @@ ${model.kinds.map((k) => `        ${k.variant} { .. } => ${classOf(k.category)},
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
@@ -325,6 +428,23 @@ unsafe impl Sync for Class {}
 
 /// The library classes of the categories (E-2), in the order of the contract.
 static CLASSES: [OnceLock<Class>; ${model.classes.length}] = [${model.classes.map(() => 'const { OnceLock::new() }').join(', ')}];
+${model.resultRecords.length > 0 ? `
+/// The classes of the result form of the records (T-4), in the order of the contract.
+static RECORDS: [OnceLock<Class>; ${model.resultRecords.length}] = [${model.resultRecords.map(() => 'const { OnceLock::new() }').join(', ')}];
+
+fn record_property(name: &str) -> ClassProperty {
+    ClassProperty {
+        name: name.into(),
+        flags: PropertyFlags::Public,
+        default: None,
+        docs: &[],
+        ty: Some(DataType::Mixed),
+        nullable: true,
+        readonly: true,
+        default_stub: None,
+    }
+}
+` : ''}
 
 fn remember(index: usize, class: &'static ClassEntry) {
     if let Some(slot) = CLASSES.get(index) {
@@ -463,26 +583,20 @@ fn guard(body: impl FnOnce() -> Result<Zval, Fail>) -> Result<Zval, Fail> {
         }
     }
 }
-${used}${functions}
-/// B-7: the entry point of the generated panic test.
-#[cfg(feature = "panic-test")]
-#[php_function]
-#[php(name = ${rustString(`${layout.namespace}\\Internal\\panicTest`)})]
-pub fn panic_test() -> Result<Zval, PhpException> {
-    guard(|| panic!("panic-test"))
-}
-
+${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
-extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}
+extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerRecords}
     0
 }
 
-/// The module entry. The expansion of ext-php-rs's php_module macro uses \`Option::map_or\`, which R-1 disallows in this
-/// crate's own code; the allow is limited to this module, which holds nothing else.
+/// The module entry and the functions. The expansions of ext-php-rs's php_function and php_module macros call methods
+/// that R-1 disallows (\`Option::map_or\`, \`Result::unwrap_or\`) in this crate's own code; the allow is limited to this
+/// module, whose functions only convert their arguments and call the core.
 mod entry {
-    #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_module macro of ext-php-rs")]
+    #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_function and php_module macros of ext-php-rs")]
     use super::*;
-
+${functions}
+${PANIC_TEST(layout)}
     #[php_module]
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {

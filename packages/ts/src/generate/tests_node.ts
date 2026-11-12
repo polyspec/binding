@@ -14,7 +14,9 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
-  const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value) };
+  const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+    recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+  };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
   for (const fn of model.functions) {

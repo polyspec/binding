@@ -58,7 +58,7 @@ export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) =>
 // helper, because its lints deny dead code.
 export function usedHelpers(block: string, code: string): string {
   const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
-  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*fn ([a-z_0-9]+)/.exec(item)?.[1] ?? '' }));
+  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
   const used = new Set<string>();
   // A helper is used where its name is a word of the code, called or passed; comments do not count.
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
@@ -90,3 +90,47 @@ let_underscore_untyped = "deny"
 map_err_ignore = "deny"
 as_conversions = "deny"
 `;
+
+// T-1: an integer return (uint, int, int64) may be a narrower Rust integer, which the generated code widens with From;
+// a parameter is the type of the table. Each trait takes the integer and a reference to it, as a return is read in
+// either form. The two methods have their own names because u8, u16 and u32 implement both traits.
+export const WIDEN = `
+/// T-1: a uint return is u64 or a narrower unsigned integer, which widens with From.
+trait WideUint {
+    fn widen_uint(self) -> u64;
+}
+macro_rules! wide_uint {
+    ($($t:ty),*) => {$(
+        impl WideUint for $t {
+            fn widen_uint(self) -> u64 { u64::from(self) }
+        }
+        impl WideUint for &$t {
+            fn widen_uint(self) -> u64 { u64::from(*self) }
+        }
+    )*};
+}
+wide_uint!(u8, u16, u32, u64);
+
+/// T-1: an int or int64 return is i64 or a narrower integer, which widens with From.
+trait WideInt {
+    fn widen_int(self) -> i64;
+}
+macro_rules! wide_int {
+    ($($t:ty),*) => {$(
+        impl WideInt for $t {
+            fn widen_int(self) -> i64 { i64::from(self) }
+        }
+        impl WideInt for &$t {
+            fn widen_int(self) -> i64 { i64::from(*self) }
+        }
+    )*};
+}
+wide_int!(i8, i16, i32, i64, u8, u16, u32);
+`;
+
+// A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure).
+export function closure(params: string[], body: string): string {
+  const call = /^([a-z_][a-z_0-9]*)\((.*)\)$/.exec(body);
+  if (call !== null && call[2] === params.join(', ')) return call[1] ?? '';
+  return `|${params.join(', ')}| ${body}`;
+}

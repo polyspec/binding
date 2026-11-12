@@ -13,7 +13,10 @@ const BAD_NUMBERS: Record<string, string[]> = {
 };
 
 export function pythonTests(model: Model, module: string): string {
-  const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})` };
+  const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
+    recordNew: (unit, fields) =>
+      `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
+  };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
   for (const fn of model.functions) {

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
+import { closure } from '../src/generate/text.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -97,4 +98,46 @@ test('check compares the tracked binding packages with what scaffold writes (L-2
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
+  contract: JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')),
+  caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]),
+});
+const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
+
+test('a record that a function returns has its result form in every language (T-4)', () => {
+  const { contract, caseFiles } = load();
+  contract.units[0].members[0].returns = { unit: 'options' };
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /fn out_options<'py>/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_types.py'), /@dataclass\(frozen=True, kw_only=True\)\nclass Options:/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /fn out_options<'env>/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn out_options\(value: impl Borrow<polyspec_sample::Options>\)/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /ClassBuilder::new\("Polyspec\\\\Sample\\\\Options"\)\n\s+\.flags\(ClassFlags::Final\)/);
+});
+
+test('an integer return widens a narrower Rust integer with From (T-1)', () => {
+  const { contract, caseFiles } = load();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    assert.match(text(out, path), /fn out_uint[^\n]*value: impl WideUint\)/, path);
+    assert.match(text(out, path), /wide_uint!\(u8, u16, u32, u64\);/, path);
+  }
+});
+
+test('a case whose keys are not the parameter names in snake_case is refused by its id (G-5)', () => {
+  const { contract, caseFiles } = load();
+  const cases = caseFiles.get('contracts/cases.json') as { split: Record<string, unknown>[] };
+  const [first] = cases.split;
+  if (first !== undefined) {
+    first['Text'] = first['text'];
+    delete first['text'];
+  }
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /the case too_long of split has no text/);
+});
+
+test('a closure that only calls a function is the function (clippy redundant_closure)', () => {
+  assert.equal(closure(['env', 'item'], 'out_text(env, item)'), 'out_text');
+  assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
 });

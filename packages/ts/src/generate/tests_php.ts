@@ -1,6 +1,7 @@
 // The generated PHPUnit test of the PHP binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run with the
 // extension loaded.
 
+import type { Unit } from '../contract.ts';
 import { type Model, langName } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type Context, callArgs, fromJson, isNumber, placeholder, raisingCases, textKind, wrapText } from './samples.ts';
@@ -20,7 +21,9 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
     return `\\${ns}\\${langName('php', unit?.name ?? [name], 'class')}::from(${phpText(value)})`;
   };
-  const ctx: Context = { lang: 'php', enumRef };
+  const recordNew = (unit: Unit, fields: string[]): string =>
+    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('php', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')})`;
+  const ctx: Context = { lang: 'php', enumRef, recordNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   const methods: string[] = [];
   for (const fn of model.functions) {

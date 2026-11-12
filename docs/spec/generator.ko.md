@@ -9,9 +9,9 @@
 
 ## 범위
 
-- **GN-1** 생성기는 functions unit, record parameter, enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3
-  0.30.1, abi3-py314), Node(napi 3.16.2)를 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait, 기본값,
-  `only`, `native`, 이름 예외, 의존 kind)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 아직 생성하지 않는다.
+- **GN-1** 생성기는 functions unit, record(parameter와 결과 형태), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4),
+  Python(PyO3 0.30.1, abi3-py314), Node(napi 3.16.2)를 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait,
+  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 아직 생성하지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   bindgen 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -39,7 +39,13 @@
   parameter는 빌려서 넘기고(`&String`과 `&Vec<u8>`는 `&str`과 `&[u8]`로 바뀐다), 그런 타입의 `optional<T>`는
   `as_deref()`로, Copy 타입(bool, 수, enum)은 값으로, 그 밖의 타입(list, record)은 참조로 넘긴다. record는 소유 형태인
   펼친 field로 만든다. 반환은 그 Rust 함수에 보통인 형태이므로(접근자는 빌린 형태, 계산한 값은 소유) 생성 코드는 타입을
-  적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다.
+  적지 않고 묶어 두 형태를 같은 식(`AsRef`, `Borrow`, `IntoIterator`, tuple field의 참조)으로 읽는다. 정수 반환(uint, int,
+  int64)은 더 좁은 Rust 정수여도 되며 생성 코드가 `From`으로 넓힌다(정수와 그 참조에 대한 trait `WideUint`, `WideInt`).
+  parameter는 표의 타입 그대로다. Rust 키워드인 계약 이름은 raw identifier(`r#type`)다.
+- **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
+  keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
+  final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
+  `invalid_argument_type`이다.
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `bindgen_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. bindgen은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
@@ -55,7 +61,8 @@
   타입은 `@param`에 적는다. record field는 parameter 뒤의 이름 있는 parameter다. category 클래스는 module 시작 때
   `ClassBuilder`로 등록하고, 엔진의 class table에서 찾은 E-2 클래스를 상속하며, 클래스 자신의 객체 handler를 유지하므로 오류는
   호출의 file, line, trace를 갖는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. enum은 backed enum이다(T-6).
-  ext-php-rs의 `php_module` 펼침이 `Option::map_or`를 쓰므로 그 module만 그 allow를 갖는다.
+  ext-php-rs의 `php_function`과 `php_module` 펼침이 `Option::map_or`와 `Result::unwrap_or`를 부르므로 함수와 module 진입은
+  그 allow 하나를 가진 한 module에 있다.
 - **GN-11** Python: native module `<root>._native`는 원시 값을 받고(T-8) record field는 keyword-only다. 런타임이 인자를 세고
   이름을 확인한다(G-7). category 클래스는 `<root>._errors`, enum은 `<root>._types`에 있고 native module이 로드될 때 그것을
   import한다(B-4). 계약의 module은 `<root>.<module>`이고 `<root>`가 모든 공개 이름을 다시 내보낸다(P-3). enum은
@@ -73,13 +80,15 @@
   아닌 바이트)와 U+0100이 든 latin1 text가 kind `invalid_text`다. B-4: 실패하는 모든 contract case가 정확한 클래스, E-2의 기반
   클래스, kind, status, errno를 낸다. B-7: panic 진입점이 kind `internal`이다. G-7: 빠진 인자, 하나 많은 인자, 없는 이름(PHP
   이름 있는 인자, Python keyword, Node options record의 member와 빠진 member). case의 인자는 snake_case 키이고, record
-  parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다.
+  parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. parameter의 키가 없는 case는 id로
+  거부한다.
 
 ## 끝에서 끝까지 확인
 
-- **GN-14** `node scripts/e2e.mts --repo <http-cookies> --work <directory> --phpunit <phpunit> [--python <python3.14>]`는
-  http-cookies의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace, bindgen_core 의존과 `Kinds`,
-  `bindgen scaffold`의 추적 package)을 하며 하나씩 출력하고, `bindgen check`를 실행하고, 코어를 생성기 없이 시험하고, 생성하고,
-  workspace를 lint하고, 각 패키지를 빌드해 설치한 뒤, 생성 시험과 contract case(`tests/e2e/http-cookies`)를 unittest,
-  `node --test`, PHPUnit으로 실행한다. bindgen의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
+- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`는
+  레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, bindgen_core 의존과 `Kinds`,
+  `bindgen scaffold`의 추적 package)을 하며 하나씩 출력하고, `bindgen check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
+  따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
+  패키지를 빌드해 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
+  실행한다. bindgen의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
   (`url.<base>.insteadOf`).

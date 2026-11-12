@@ -63,6 +63,9 @@ export interface Model {
   constants: Constant[];
   enums: Unit[];
   records: Unit[];
+  // T-4: the records that have the result form (a class with a public constructor), in contract order: those in a
+  // return, in a parameter other than the expanded record parameter, and in a field of such a record.
+  resultRecords: Unit[];
   classes: ErrorClass[];
   coreError: string | undefined;
   kinds: CoreKind[];
@@ -87,7 +90,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string): voi
   }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
-    if (unit?.kind === 'enum') return;
+    if (unit?.kind === 'enum' || unit?.kind === 'record') return;
   }
   throw new Unsupported(`${where}: the type ${JSON.stringify(type)} is not generated yet`);
 }
@@ -129,7 +132,9 @@ export function buildModel(contract: Contract, version: string, coreLib: string,
       if (member.kind !== 'function') throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
       if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
       const core = member.core;
-      if (typeof core !== 'object') throw new Unsupported(`${member.id}: a function names its core path`);
+      if (core === undefined) throw new Unsupported(`${member.id}: a function without a core path is not generated`);
+      const corePath = typeof core === 'string' ? core : core.path;
+      if (typeof core === 'object' && core.receiver !== undefined) throw new Unsupported(`${member.id}: a receiver is not generated yet`);
       const params = member.parameters ?? [];
       const args: Arg[] = [];
       let record: Fn['record'];
@@ -155,7 +160,7 @@ export function buildModel(contract: Contract, version: string, coreLib: string,
         args,
         returns,
         fallible: (member.raises ?? []).length > 0,
-        corePath: core.path,
+        corePath,
         ...(record === undefined ? {} : { record }),
       });
     }
@@ -177,7 +182,27 @@ export function buildModel(contract: Contract, version: string, coreLib: string,
   const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
   if (enumPaths.size > 1) throw new Unsupported(`the kinds name ${enumPaths.size} error enums; one is generated`);
   const [coreError] = [...enumPaths];
-  return { contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, classes, coreError, kinds, cases };
+  const result = new Set<string>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return visit(type.list);
+    if ('optional' in type) return visit(type.optional);
+    if ('tuple' in type) return type.tuple.forEach(visit);
+    if ('unit' in type && type.library === undefined) {
+      const unit = units.get(type.unit);
+      if (unit?.kind === 'record' && !result.has(unit.id)) {
+        result.add(unit.id);
+        for (const field of unit.fields ?? []) visit(field.type);
+      }
+    }
+  };
+  for (const fn of functions) {
+    visit(fn.returns);
+    for (const parameter of fn.params) if (parameter !== fn.record?.param) visit(parameter.type);
+    for (const field of fn.record?.unit.fields ?? []) visit(field.type);
+  }
+  const resultRecords = records.filter((r) => result.has(r.id));
+  return { contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, classes, coreError, kinds, cases };
 }
 
 // The Rust type of a contract type at the core boundary (T-1, T-2).
@@ -225,7 +250,17 @@ export function byValue(model: Model, type: Type): boolean {
 export const unitOf = (model: Model, type: Type): Unit | undefined =>
   typeof type === 'object' && 'unit' in type ? model.contract.units.find((u) => u.id === type.unit) : undefined;
 
-export const rustField = (name: Name): string => convert(name, 'rust', 'variable');
+const RUST_KEYWORDS = new Set([
+  'as', 'break', 'const', 'continue', 'crate', 'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
+  'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'static', 'struct', 'super', 'trait', 'true', 'type',
+  'unsafe', 'use', 'where', 'while', 'async', 'await', 'dyn', 'abstract', 'become', 'box', 'do', 'final', 'macro',
+  'override', 'priv', 'typeof', 'unsized', 'virtual', 'yield', 'try', 'gen',
+]);
+
+// A Rust identifier: a keyword is written raw (r#type).
+export const rustIdent = (text: string): string => (RUST_KEYWORDS.has(text) ? `r#${text}` : text);
+
+export const rustField = (name: Name): string => rustIdent(convert(name, 'rust', 'variable'));
 export const rustVariant = (name: Name): string => convert(name, 'rust', 'class');
 
 // The language name of a symbol; naming exceptions are not generated yet, which buildModel refuses below.

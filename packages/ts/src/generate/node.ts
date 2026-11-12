@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
-import { type Files, header, jsString, rustString, usedHelpers } from './text.ts';
+import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -22,10 +22,10 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     if (name === undefined) throw new Error(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, |item| ${convertIn(model, type.list, 'item', subject)})`;
-  if ('optional' in type) return `in_optional(${value}, |value| ${convertIn(model, type.optional, 'value', subject)})`;
+  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -35,14 +35,14 @@ function convertOut(model: Model, type: Type, value: string): string {
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(env, ${value})`;
   }
-  if ('list' in type) return `out_list(env, ${value}, |env, item| ${convertOut(model, type.list, 'item')})`;
-  if ('optional' in type) return `out_optional(env, ${value}, |env, value| ${convertOut(model, type.optional, 'value')})`;
+  if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
+  if ('optional' in type) return `out_optional(env, ${value}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_tuple(env, vec![${parts.join(', ')}])`;
   }
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -163,20 +163,20 @@ fn out_latin1<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'
 }
 
 fn out_bool<'env>(env: &'env Env, value: impl Borrow<bool>) -> Result<Unknown<'env>, Fail> {
-    Ok(env.get_boolean(*value.borrow()).map_err(internal)?.to_unknown())
+    ToNapiValue::into_unknown(*value.borrow(), env).map_err(internal)
 }
 
 /// B-2: a number leaves only as a safe integer; a larger one is kind internal.
-fn out_int<'env>(env: &'env Env, value: impl Borrow<i64>) -> Result<Unknown<'env>, Fail> {
-    let value = *value.borrow();
+fn out_int<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+    let value = value.widen_int();
     if value.abs() > 9_007_199_254_740_991 {
         return Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") }));
     }
     Ok(env.create_int64(value).map_err(internal)?.to_unknown())
 }
 
-fn out_uint<'env>(env: &'env Env, value: impl Borrow<u64>) -> Result<Unknown<'env>, Fail> {
-    let value = *value.borrow();
+fn out_uint<'env>(env: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
+    let value = value.widen_uint();
     match i64::try_from(value) {
         Ok(value) => out_int(env, value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") })),
@@ -233,6 +233,32 @@ fn out_${name}(env: &Env, value: impl Borrow<${core}>) -> Result<Unknown<'_>, Fa
 ${outArms}
     };
     out_text(env, String::from(text))
+}
+`;
+}
+
+// T-4: the result form of a record, a plain object with a member per field.
+function recordRust(model: Model, unit: Unit): string {
+  const name = rustField(unit.name);
+  const core = unit.core_type ?? '';
+  const fields = unit.fields ?? [];
+  const reads = fields.map((f) => {
+    const member = langName('node', f.name, 'variable');
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;`;
+  });
+  const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?).map_err(internal)?;`);
+  return `
+/// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
+fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+${reads.join('\n')}
+    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
+}
+
+fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+    let value = value.borrow();
+    let mut object = Object::new(env).map_err(internal)?;
+${writes.join('\n')}
+    Ok(object.to_unknown())
 }
 `;
 }
@@ -297,19 +323,19 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const enums = model.enums.map(enumRust).join('');
-  const used = usedHelpers(`${HELPERS}\n${enums}`, functions);
-  const napiTypes = ['Array', 'JsString', 'Object', 'ValueType']
+  const enums = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u))].join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
+  const napiTypes = ['Array', 'JsString', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`));
   if (/\.(is_array|to_unknown)\(/.test(used)) napiTypes.push('JsValue');
-  if (/\.get_named_property/.test(used)) napiTypes.push('JsObjectValue');
+  if (/\.(get|set)_named_property/.test(used)) napiTypes.push('JsObjectValue');
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Object' && t !== 'JsObjectValue').map((t) => `, ${t}`).join('')}};
+use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;

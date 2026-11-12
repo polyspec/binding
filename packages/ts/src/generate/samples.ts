@@ -4,6 +4,7 @@
 // U+00FF).
 
 import type { Type } from '../contract.ts';
+import type { Unit } from '../contract.ts';
 import { type Arg, type Fn, type Model, langName, unitOf } from './model.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -13,6 +14,8 @@ export interface Context {
   lang: Lang3;
   // How the generated test names an enum value: python `pkg.Enum("value")`, php `\Ns\Enum::from("value")`.
   enumRef: (enumName: string, value: string) => string;
+  // How the generated test makes the result form of a record (T-4) from its fields in contract order.
+  recordNew: (unit: Unit, fields: string[]) => string;
 }
 
 export function placeholder(model: Model, ctx: Context, type: Type): string {
@@ -29,6 +32,7 @@ export function placeholder(model: Model, ctx: Context, type: Type): string {
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
+  if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 
@@ -53,6 +57,18 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
+  if (unit?.kind === 'record') {
+    if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`a case value of the record ${unit.id} is not an object of its fields`);
+    const fields = value as Record<string, unknown>;
+    return ctx.recordNew(
+      unit,
+      (unit.fields ?? []).map((f) => {
+        const key = langName('python', f.name, 'variable');
+        if (!(key in fields)) throw new Error(`a case value of the record ${unit.id} has no field ${key}`);
+        return fromJson(model, ctx, f.type, fields[key]);
+      }),
+    );
+  }
   throw new Error(`no case value of the type ${JSON.stringify(type)}`);
 }
 
@@ -87,8 +103,12 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const args = new Map<Arg, unknown>();
     for (const arg of fn.args) {
       const snake = langName('python', arg.name, 'variable');
-      const holder = arg.field && fn.record !== undefined ? (record[langName('python', fn.record.param.name, 'variable')] as Record<string, unknown>) : record;
-      args.set(arg, holder[snake]);
+      const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
+      const holder = holderKey === undefined ? record : record[holderKey];
+      if (typeof holder !== 'object' || holder === null || !(snake in holder)) {
+        throw new Error(`the case ${String(record['id'])} of ${fn.member.id} has no ${holderKey === undefined ? '' : `${holderKey}.`}${snake} (G-5: case keys are the parameter names in snake_case)`);
+      }
+      args.set(arg, (holder as Record<string, unknown>)[snake]);
     }
     out.push({ id: String(record['id']), args, raises });
   }

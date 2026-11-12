@@ -10,8 +10,9 @@ the design ids are those of the bindgen design.
 ## Scope
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
-  functions units, record parameters, enums, constants and error classes. Any other item (a class, a callback, a value
-  unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a dependency kind) is refused by name
+  functions units, records (as parameters and in their result form), enums, constants and error classes. Any other
+  item (a class, a callback, a value unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a
+  dependency kind, the type `source`, a record of another repository) is refused by name
   before anything is written (G-4, P-4); Go and WASM are not generated yet.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
@@ -46,7 +47,14 @@ the design ids are those of the bindgen design.
   `optional<T>` of one with `as_deref()`, a Copy type (bool, the numbers, an enum) by value, any other type (a list, a
   record) by reference. A record is built from its expanded fields, which are owned. A return has the form that is usual for its Rust function
   (an accessor borrows, a computed value is owned), so the generated code binds it without a type and reads either
-  form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field).
+  form the same way (`AsRef`, `Borrow`, `IntoIterator`, a reference to a tuple field). An integer return (uint, int,
+  int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
+  for the integer and a reference to it); a parameter is the type of the table. A contract name that is a Rust keyword
+  is a raw identifier (`r#type`).
+- **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
+  language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
+  final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
+  ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `bindgen_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because bindgen reads no Rust source; the lint against it is
@@ -64,7 +72,8 @@ the design ids are those of the bindgen design.
   follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
   extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
   the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
-  enum (T-6). The `php_module` expansion of ext-php-rs uses `Option::map_or`, so its module holds that one allow.
+  enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
+  `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
@@ -86,14 +95,15 @@ the design ids are those of the bindgen design.
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF.
+  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id.
 
 ## End-to-end check
 
-- **GN-14** `node scripts/e2e.mts --repo <http-cookies> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
-  copies the committed tree of http-cookies, makes the changes that the repository has not made yet and prints each
-  (the root workspace, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen scaffold`), runs
-  `bindgen check`, tests the core without the generator, generates, lints the workspace, builds and installs each
-  package, and runs the generated tests and the contract cases (`tests/e2e/http-cookies`) on unittest, `node --test`
-  and PHPUnit. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
+  copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
+  (the root workspace and its members, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen
+  scaffold`), runs `bindgen check`, tests the core without the generator, rewrites a case file that does not follow
+  GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
+  builds and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
+  contract cases on unittest, `node --test` and PHPUnit. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands).
