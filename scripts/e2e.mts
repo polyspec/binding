@@ -14,7 +14,8 @@
 // E-3: the core depends on binding_core and its error implements Kinds). Each is printed, because the repository has to
 // make it itself. A case file whose keys or record values do not follow the case convention of G-5 (keys are the
 // parameter names in snake_case, a record is an object of its fields) is rewritten to it, and a raising case that
-// still lacks the arguments of its member is left out; both are printed.
+// still lacks the arguments of its member is left out; both are printed, and a run that left a case out fails at its
+// end, after every step ran.
 //
 // BINDING_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
 // for a machine that cannot install the pinned one; the run says so.
@@ -194,6 +195,10 @@ impl binding_core::Kinds for Error {
   return { contract, copy, caseFiles };
 }
 
+// The cases that were left out because they do not follow G-5; a run that left one out fails at its end, because a
+// case that does not run is a test that was dropped without a word.
+let leftOut = 0;
+
 function conformCases(contract: Contract, copy: string): string[] {
   const units = new Map(contract.units.map((u) => [u.id, u]));
   const snake = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -213,7 +218,8 @@ function conformCases(contract: Contract, copy: string): string[] {
   // Whether a value has the shape of its type, as far as the generated tests write it.
   const fits = (type: Type, value: unknown): boolean => {
     if (value === null) return true;
-    if (typeof type === 'string') return typeof value !== 'object';
+    // G-5: bytes and a source are {"hex": ...}, a float that JSON cannot write is {"float": ...}.
+    if (typeof type === 'string') return typeof value !== 'object' || ['bytes', 'source', 'float'].includes(type);
     if ('optional' in type) return fits(type.optional, value);
     if ('list' in type) return Array.isArray(value) && value.every((item) => fits(type.list, item));
     const unit = 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
@@ -245,6 +251,7 @@ function conformCases(contract: Contract, copy: string): string[] {
         const receiver = typeof found?.member.core === 'object' && found.member.core.receiver !== undefined;
         const noFactory = receiver && found !== undefined && !factories(found.unit).some((names) => names.every((n) => n in kase));
         if (lacks.length === 0 && !noFactory) return true;
+        leftOut += 1;
         process.stdout.write(`change: the case ${row.file}#${row.group}/${String(kase['id'])} of ${row.member} gives ${lacks.length > 0 ? `no ${lacks.join(', ')} in the form of its type` : 'no arguments of a factory'} (G-5); left out here\n`);
         return false;
       });
@@ -318,4 +325,8 @@ if (caseRunners) run('php', [...extensions, phpunit, join(e2e, 'CasesTest.php')]
 
 step('declarations');
 run(join(binding, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
+if (leftOut > 0) {
+  process.stdout.write(`\nall steps passed, but ${leftOut} case${leftOut === 1 ? ' was' : 's were'} left out (each printed as a change above): the run fails (G-5)\n`);
+  process.exit(1);
+}
 process.stdout.write('\nall steps passed\n');

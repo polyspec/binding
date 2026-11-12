@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
+import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
@@ -342,4 +343,17 @@ test('scaffold rewrites its packages after the core crate was renamed, without a
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a case writes bytes as hex and a float that JSON cannot write by its name (G-5)', () => {
+  const ctx = (lang: 'python' | 'node' | 'php'): any => ({ lang, enumRef: () => '', recordNew: () => '', callbackNew: () => '' });
+  const model = {} as any;
+  assert.equal(fromJson(model, ctx('python'), 'bytes', { hex: '00ff' }), 'bytes.fromhex("00ff")');
+  assert.equal(fromJson(model, ctx('node'), 'bytes', { hex: '00ff' }), "new Uint8Array(Buffer.from('00ff', 'hex'))");
+  assert.equal(fromJson(model, ctx('php'), 'bytes', { hex: '00ff' }), 'hex2bin("00ff")');
+  assert.equal(fromJson(model, ctx('python'), 'float', { float: '-inf' }), 'float("-inf")');
+  assert.equal(fromJson(model, ctx('node'), 'float', { float: 'nan' }), 'NaN');
+  assert.equal(fromJson(model, ctx('php'), 'float', 1.5), '1.5');
+  assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);
+  assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
 });

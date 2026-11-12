@@ -54,7 +54,28 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
       return type === 'latin1' ? phpLatin1(text) : phpText(text);
     }
     if (type === 'bool') return ctx.lang === 'python' ? (value === true ? 'True' : 'False') : String(value === true);
+    // G-5: a float that JSON cannot write is {"float": "nan" | "inf" | "-inf"}.
+    if (type === 'float' && typeof value === 'object') {
+      const name = (value as { float?: unknown }).float;
+      const forms: Record<string, Record<Lang3, string>> = {
+        nan: { python: 'float("nan")', node: 'NaN', php: 'NAN' },
+        inf: { python: 'float("inf")', node: 'Infinity', php: 'INF' },
+        '-inf': { python: 'float("-inf")', node: '-Infinity', php: '-INF' },
+      };
+      const form = typeof name === 'string' ? forms[name] : undefined;
+      if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+      return form[ctx.lang];
+    }
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
+    // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
+    if (type === 'bytes' || type === 'source') {
+      if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
+      const hex = typeof value === 'object' ? (value as { hex?: unknown }).hex : undefined;
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+      if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
+      if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
+      return `hex2bin(${phpText(hex)})`;
+    }
     throw new Error(`no case value of the type ${type}`);
   }
   if ('optional' in type) return fromJson(model, ctx, type.optional, value);

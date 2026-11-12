@@ -141,7 +141,15 @@ the design ids are those of the binding design.
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. The members of a
+  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. Values that JSON
+  cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
+  `{"hex": ...}` for bytes that are no text; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
+  value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
+  the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
+  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values;
+  `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
+  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  The end-to-end check fails a run in which a case was left out. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
