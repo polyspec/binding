@@ -561,6 +561,29 @@ describe('CK-22 every member names its cases (K-1)', () => {
   });
 });
 
+describe('CK-23 reserved words of the target languages (N-2)', () => {
+  test('a PHP function named echo', () =>
+    fails('CK-23', `${at('forms')}/members/0`, (c) => { member(c, 'forms.parse').name = ['echo']; }));
+  test('a PHP class named List, case-insensitively', () =>
+    fails('CK-23', at('session'), (c) => { unit(c, 'session').name = ['list']; }));
+  test('a Python parameter named from', () =>
+    fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['from']; }));
+  test('a JavaScript parameter named function', () =>
+    fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['function']; }));
+  test('a reserved word where the language allows it is accepted: a PHP or Node method named list', () => {
+    const c = contract();
+    c.targets = ['php', 'node'];
+    member(c, 'session.load').name = ['list'];
+    assert.deepEqual(checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]) }).filter((f) => f.check === 'CK-23'), []);
+  });
+  test('a naming exception gives the language another name (N-3)', () => {
+    assert.deepEqual(findings((c) => {
+      member(c, 'forms.parse').name = ['echo'];
+      c.naming.exceptions.push({ lang: 'php', unit: 'forms', member: 'forms.parse', name: 'echoText', reason: 'N-2: echo is a PHP keyword' });
+    }).filter((f) => f.check === 'CK-23'), []);
+  });
+});
+
 describe('CK-17 function types (T-2, U-3)', () => {
   const fn = (extra: object): object => ({ function: { parameters: ['text'], returns: 'none', ...extra } });
   test('a function type with its attributes is accepted', () => {

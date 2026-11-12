@@ -89,6 +89,40 @@ function schemaFindings(errors: readonly ErrorObject[], todos: readonly string[]
     }));
 }
 
+// CK-23: where each language reserves words for the names that a binding writes (N-2). PHP reserves its keywords and
+// the names of its built-in types for a class and a function, case-insensitively, and allows them for a method, a
+// property and a variable ($name); Python reserves its keywords everywhere; JavaScript reserves its reserved words, and
+// in strict code eval and arguments, for a function, a class and a parameter, and allows them as a property name. Go
+// writes every name with a capital, which no keyword has. The Rust names of the generated code escape a keyword (r#).
+type Position = 'class' | 'function' | 'method' | 'field' | 'parameter' | 'constant';
+const PHP_RESERVED = [
+  '__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const',
+  'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enddeclare', 'endfor', 'endforeach',
+  'endif', 'endswitch', 'endwhile', 'enum', 'eval', 'exit', 'extends', 'final', 'finally', 'fn', 'for', 'foreach',
+  'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof', 'insteadof', 'interface',
+  'isset', 'list', 'match', 'namespace', 'new', 'or', 'print', 'private', 'protected', 'public', 'readonly', 'require',
+  'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
+  'bool', 'false', 'float', 'int', 'iterable', 'mixed', 'never', 'null', 'object', 'parent', 'resource', 'self',
+  'string', 'true', 'void', 'numeric',
+];
+const PYTHON_RESERVED = [
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif',
+  'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or',
+  'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
+];
+const JS_RESERVED = [
+  'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum',
+  'export', 'extends', 'false', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof',
+  'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+  'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'eval', 'arguments',
+];
+const RESERVED: Partial<Record<Lang, { words: ReadonlySet<string>; caseless: boolean; positions: readonly Position[] }>> = {
+  php: { words: new Set(PHP_RESERVED), caseless: true, positions: ['class', 'function'] },
+  python: { words: new Set(PYTHON_RESERVED), caseless: false, positions: ['class', 'function', 'method', 'field', 'parameter', 'constant'] },
+  node: { words: new Set(JS_RESERVED), caseless: false, positions: ['class', 'function', 'parameter'] },
+  wasm: { words: new Set(JS_RESERVED), caseless: false, positions: ['class', 'function', 'parameter'] },
+};
+
 export function checkContract(raw: unknown, options: CheckOptions = {}): Finding[] {
   const todos: string[] = [];
   findTodos(raw, '', todos);
@@ -141,6 +175,7 @@ class Checker {
     this.modules();
     this.wasmOnly();
     this.awaitableNames();
+    this.reservedNames();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
@@ -1023,6 +1058,43 @@ class Checker {
         const other = names.get(name);
         if (other !== undefined) {
           this.report('CK-16', `${path}${pointer('members', m)}`, `the Python awaitable ${name} of ${member.id} is the name of ${other} (N-5)`);
+        }
+      }
+    }
+  }
+
+  // ---- CK-23: reserved words of the target languages (N-2) ----
+
+  // N-2: a name that a language reserves where the binding writes it fails the generated code only when it is
+  // compiled or linted, so the check names it first; a naming exception (N-3) gives the language another name.
+  reservedNames(): void {
+    const report = (lang: Lang, path: string, name: string, what: string): void => {
+      this.report('CK-23', path, `${name}, the ${lang} name of ${what}, is a reserved word of ${lang}; give it a naming exception (N-2, N-3)`);
+    };
+    for (const lang of this.contract.targets) {
+      const reserved = RESERVED[lang];
+      if (reserved === undefined) continue;
+      const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
+      for (const { value: unit, path } of this.units.values()) {
+        if (unit.origin === 'host' || unit.visibility !== 'public') continue;
+        const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
+        const className = this.langName(lang, unit, unit.name, 'class');
+        if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
+        for (const [f, field] of (unit.fields ?? []).entries()) {
+          const name = this.langName(lang, unit, field.name, 'variable', undefined, { field: field.name });
+          if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
+        }
+        for (const [m, member] of (unit.members ?? []).entries()) {
+          if (member.visibility !== 'public') continue;
+          const memberPath = `${path}${pointer('members', m)}`;
+          const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
+          const name = this.langName(lang, unit, member.name, role, member);
+          const position: Position = member.kind === 'constant' ? 'constant' : unit.kind === 'functions' ? 'function' : unit.kind === 'record' ? 'field' : 'method';
+          if (taken(name, position)) report(lang, memberPath, name, member.id);
+          for (const [p, parameter] of (member.parameters ?? []).entries()) {
+            const param = this.langName(lang, unit, parameter.name, 'variable', member, { parameter: parameter.name });
+            if (taken(param, 'parameter')) report(lang, `${memberPath}${pointer('parameters', p)}`, param, `a parameter of ${member.id}`);
+          }
         }
       }
     }

@@ -118,6 +118,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   in its `raises`. A kind of the category `internal` or `io`, which no input reaches, is reported as waiting for the
   case form of a fault injection point that a test feature of the core gives (G-5), not left out. A member that raises and takes a callback interface or a function type is reported as waiting for the case
   form of a callback fixture (G-5, GN-13a), because a JSON case cannot give the callback; it is not left out.
+- **CK-23** Reserved words (N-2): the name that a target language gives a public unit, member, parameter or field is
+  not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
+  case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its
+  keywords everywhere; JavaScript (Node, WASM) its reserved words and `eval` and `arguments` for a class, a function
+  and a parameter (a property may take them). Go capitalizes every name, which no keyword is, and the generated Rust
+  escapes a keyword. A naming exception (N-3) gives the language another name.
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.

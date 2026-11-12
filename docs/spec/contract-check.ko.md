@@ -100,6 +100,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   시험 feature가 두는 실패 주입점의 case 형식(G-5)을 기다린다고 지적된다.
   callback interface나 함수 타입을 받으면서 raises가 있는 member는 JSON case가 callback을 줄 수 없으므로 callback
   fixture의 case 형식(G-5, GN-13a)을 기다린다고 지적되며, 빠지지 않는다.
+- **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
+  그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
+  변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
+  parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는
+  키워드를 escape한다. naming exception(N-3)이 그 언어에 다른 이름을 준다.
 - **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
   릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
   `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다. git 의존이면 실행 중인 binding의 커밋으로도 고정한다.
