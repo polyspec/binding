@@ -2,7 +2,7 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
+import { GENERATED_LINTS, type Files, header, pyHeader, pyString, rustString, usedHelpers } from './text.ts';
 import { type Fn, type Model, byValue, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
@@ -508,9 +508,7 @@ ${model.coreCrate} = { path = "../../rust" }
 polyspec-bindgen-core = { path = "../../rust/generated/bindgen-core" }
 pyo3 = { version = "=0.30.1", features = ["abi3-py310", "extension-module"] }
 
-[lints]
-workspace = true
-`);
+${GENERATED_LINTS}`);
   const python = model.contract.packages['python'] as { package: string };
   files.set(`${ROOT}/pyproject.toml`, `${header('#')}
 [build-system]

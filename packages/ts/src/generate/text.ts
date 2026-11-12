@@ -60,12 +60,33 @@ export function usedHelpers(block: string, code: string): string {
   const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
   const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*fn ([a-z_0-9]+)/.exec(item)?.[1] ?? '' }));
   const used = new Set<string>();
-  let frontier = code;
+  // A helper is used where its name is a word of the code, called or passed; comments do not count.
+  const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
+  let frontier = strip(code);
   for (;;) {
-    const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\(`).test(frontier));
+    const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\b`).test(frontier));
     if (added.length === 0) break;
     for (const { name } of added) used.add(name);
-    frontier = added.map(({ item }) => item).join('\n');
+    frontier = strip(added.map(({ item }) => item).join('\n'));
   }
   return named.filter(({ name }) => used.has(name)).map(({ item }) => `\n${item}\n`).join('');
 }
+
+// R-1 and K-2: the lints of every generated crate. They are the generated crate's own, not the workspace's, because a
+// binding framework's macros expand to unsafe code, which a repository's workspace may forbid for its core; the
+// generated code's own unsafe blocks carry an allow with its reason.
+export const GENERATED_LINTS = `[lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes_without_reason = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+map_err_ignore = "deny"
+as_conversions = "deny"
+`;
