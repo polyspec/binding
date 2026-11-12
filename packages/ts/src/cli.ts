@@ -12,6 +12,7 @@ import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import type { Contract } from './contract.ts';
 import { GENERATED_DIRS, generate } from './generate/index.ts';
+import { Unsupported } from './generate/model.ts';
 
 // The libraries that a contract names: in its types, its implements and recognize references, its value type owners
 // and its error kinds.
@@ -88,17 +89,30 @@ const checked = contract as Contract;
 // The version and the library name of the core crate from its manifest (T-3). The manifest is read as TOML rather than
 // through cargo metadata, because the workspace names the generated members, which do not exist before generation.
 const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'), 'utf8')) as {
-  package?: { name?: string; version?: string };
+  package?: { name?: string; version?: string | { workspace?: boolean } };
   lib?: { name?: string };
 };
 const core = manifest.package;
-if (core?.name !== checked.core.crate || typeof core.version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate}`);
+let version = core?.version;
+// A version inherited from the workspace (version.workspace = true) is the repository root's workspace.package.version.
+if (typeof version === 'object' && version.workspace === true) {
+  const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string } } };
+  version = workspace.workspace?.package?.version;
+}
+if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
 const caseFiles = new Map<string, unknown>();
 for (const kase of checked.cases) {
   if (!caseFiles.has(kase.file)) caseFiles.set(kase.file, JSON.parse(readFileSync(join(root, kase.file), 'utf8')));
 }
-const files = generate({ contract: checked, version: core.version, coreLib: lib.name, caseFiles });
+let files: ReturnType<typeof generate>;
+try {
+  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles });
+} catch (error) {
+  // G-4: an item that the generator cannot generate yet is named, and nothing is written.
+  if (error instanceof Unsupported) usage(`not generated (G-4): ${error.message}`);
+  throw error;
+}
 
 const out = resolve(options.get('--out') ?? root);
 // Each owned directory is written whole into a staging directory and then renamed into place, so a reader never sees a
