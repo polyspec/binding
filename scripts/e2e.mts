@@ -360,16 +360,26 @@ if (contract.targets.includes('wasm')) {
 step('Node: build the addon, pack and install the package, run the generated tests and the cases');
 run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', 'panic-test']);
 const npm = (contract.packages['node'] as { package: string }).package;
-const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}.node`;
-copyFileSync(join(target, `debug/lib${`${crate}-node`.replaceAll('-', '_')}.so`), join(copy, 'packages/ts/generated', addonName));
 const nodeDir = join(work, 'node');
 rmSync(nodeDir, { recursive: true, force: true });
 mkdirSync(nodeDir, { recursive: true });
+// T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies; the
+// run packs it as a release does and installs it from the tarball.
+const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+const platformDir = join(work, 'node-platform');
+rmSync(platformDir, { recursive: true, force: true });
+mkdirSync(platformDir, { recursive: true });
+const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
+copyFileSync(join(target, `debug/lib${`${crate}-node`.replaceAll('-', '_')}.so`), join(platformDir, addonName));
+const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
+writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
+run('npm', ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
 run('npm', ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
 writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
-const tarball = readdirSync(nodeDir).find((name) => name.endsWith('.tgz'));
-if (tarball === undefined) throw new Error('npm pack wrote no package');
-run('npm', ['install', '--no-audit', '--no-fund', join(nodeDir, tarball)], { cwd: nodeDir });
+const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
+if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
+// The other platforms' packages are optional and absent, as on a machine of this platform.
+run('npm', ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
 copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
 if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
 run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });

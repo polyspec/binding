@@ -56,14 +56,23 @@ the design ids are those of the binding design.
     imports the API from `<module>._binding`. The host's `pyproject.toml` has `build-system.build-backend`
     `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source` `src` and
     `tool.maturin.module-name` `<module>._binding._native`.
-  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry,
-    declarations and addon are `native/generated/`. The host's `package.json` has its `name` and, in `files`,
-    `native/generated/index.cjs`, `native/generated/index.mjs`, `native/generated/index.d.ts` and
-    `native/generated/*.node`; host code imports `native/generated/index.mjs` (or `index.cjs`) by its relative path.
+  - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry and
+    declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
+    `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
+    packages of GN-3c in `optionalDependencies` at its own `version`; host code imports `native/generated/index.mjs`
+    (or `index.cjs`) by its relative path.
   - PHP: an extension is a Composer package of its own (type `php-ext`), named `<host package>-native`, at
     `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
     is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
     the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
+- **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
+  napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
+  <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
+  (L-2a), holds no addon and names every platform package in `optionalDependencies` at its own version, so npm
+  installs the one of the machine; release tooling builds and publishes the platform packages (K-3). The generated
+  entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
+  entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
+  release does and installs both tarballs.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated

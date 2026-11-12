@@ -131,9 +131,14 @@ import * as pkg from ${jsString(npm)};
 const require = createRequire(import.meta.url);
 
 test('B-7: a panic is kind internal', () => {
-  const entry = require.resolve(${jsString(npm)});
-  const suffix = process.platform === 'linux' ? '-gnu' : '';
-  const addon = require(join(dirname(entry), \`${addonBase(model)}.\${process.platform}-\${process.arch}\${suffix}.node\`));
+  // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
+  const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+  let addon;
+  try {
+    addon = require(\`${npm}-\${platform}\`);
+  } catch {
+    addon = require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
+  }
   assert.throws(() => addon.__panicTest(), (error) => error.constructor === pkg.${cls('internal')} && error.kind === 'internal');
 });
 

@@ -386,13 +386,20 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
-    assert.match(missing.stderr, /ts\/package\.json: CK-19 files \(native\/generated\/\*\.node\) is missing/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 optionalDependencies\.@polyspec\/sample-linux-x64-gnu is missing/);
     const pyproject = (module: string): string =>
       `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
+    // T-2: the addon is in the package of each platform, which the host names at its own version.
     writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
       name: '@polyspec/sample',
-      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/generated/*.node'],
+      version: '1.2.3',
+      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts'],
+      optionalDependencies: {
+        '@polyspec/sample-linux-x64-gnu': '1.2.3',
+        '@polyspec/sample-linux-arm64-gnu': '1.2.3',
+        '@polyspec/sample-darwin-arm64': '1.2.3',
+      },
     }));
     writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });

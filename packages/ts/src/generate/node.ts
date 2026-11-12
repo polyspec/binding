@@ -756,7 +756,18 @@ ${wraps.join('\n')}`;
   return `${header('//')}
 'use strict';
 
-const addon = require(\`./${base}.\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}.node\`);
+// T-2: the addon is in the npm package of the machine's platform, which the package names in optionalDependencies; a
+// build in a checkout puts the file beside this entry instead.
+const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
+function loadAddon() {
+  try {
+    return require(\`${(model.contract.packages['node'] as { package: string }).package}-\${platform}\`);
+  } catch (error) {
+    if (error === null || typeof error !== 'object' || error.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+  return require(\`./${base}.\${platform}.node\`);
+}
+const addon = loadAddon();
 ${classes}
 
 

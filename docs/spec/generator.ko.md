@@ -47,14 +47,20 @@
     `<module>._binding._native`이고 host 코드는 `<module>._binding`에서 API를 import한다. host의 `pyproject.toml`은
     `build-system.build-backend` `maturin`, `tool.maturin.manifest-path` `native/Cargo.toml`, `tool.maturin.python-source`
     `src`, `tool.maturin.module-name` `<module>._binding._native`를 갖는다.
-  - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점, 선언, addon은
-    `native/generated/`다. host의 `package.json`은 `name`과 `files`의 `native/generated/index.cjs`,
-    `native/generated/index.mjs`, `native/generated/index.d.ts`, `native/generated/*.node`를 갖고, host 코드는
-    `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import한다.
+  - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
+    `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
+    `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 `optionalDependencies`에 자기 `version`으로 적은
+    GN-3c의 플랫폼 패키지를 갖는다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import한다.
   - PHP: 확장은 별도 Composer 패키지(type `php-ext`) `<host 패키지>-native`이고 자리는
     `packages/<component>/php/native/`다. `scaffold`가 그 crate와 `composer.json`을 거기에 쓰고 `generated/`도 그 옆이다.
     host 라이브러리 `packages/<component>/php/composer.json`은 `ext-<확장 이름>`(`*`)을 require하며, 확장은 PHP가 로드할 때
     클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다.
+- **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
+  `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
+  `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는 addon을 갖지 않고 모든 플랫폼 패키지를 자기
+  버전으로 `optionalDependencies`에 적어 npm이 그 기계의 것을 설치하게 한다. 플랫폼 패키지는 배포 도구가 빌드해 낸다(K-3).
+  생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
+  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치한다.
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) R-1의 lint를 스스로 갖는다. `unsafe_code`는 forbid가 아니라
   deny다. ext-php-rs와 napi-rs의 macro가 unsafe 코드로 펼쳐지고 코어의 workspace는 그것을 금할 수 있기 때문이며, 생성
   코드의 unsafe 블록마다 이유를 단 allow가 있다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
