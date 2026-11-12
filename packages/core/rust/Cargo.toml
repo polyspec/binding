@@ -1,0 +1,44 @@
+[package]
+name = "polyspec-bindgen-core"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.97.0"
+description = "Runtime support shared by bindgen's generated binding crates and the core crates they wrap"
+repository = "https://github.com/polyspec/bindgen.git"
+license = "MIT"
+publish = false
+
+[lib]
+name = "bindgen_core"
+path = "src/lib.rs"
+
+[features]
+# Makes the wait tokens Io and ProcessWait constructible (design I-2 (4)). Generated binding crates enable it, and a
+# core crate enables it only through its dev-dependency, so the library of a core crate, built alone, cannot make a
+# token: tests/construct.rs proves both sides.
+construct = []
+
+[dependencies]
+tokio-util = { version = "=0.7.20", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "=1.54.1", default-features = false, features = ["macros", "rt", "test-util", "time"] }
+
+# R-1: every warning fails, no unsafe code, no hidden error (P8), every allow attribute names its rule id; clippy.toml
+# disallows the unwrap_or and map_or families of Option and Result::ok.
+[lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unused_must_use = "deny"
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes_without_reason = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+map_err_ignore = "deny"
+
+[workspace]

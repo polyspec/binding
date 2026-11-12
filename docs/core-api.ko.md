@@ -1,0 +1,47 @@
+<!-- doc-id: core-api -->
+# bindgen_core 공개 API
+
+[English](core-api.md)
+
+crate `bindgen_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 런타임 지원이다. 아래에 적은 설계 규칙의 타입만 두며
+어느 라이브러리의 규칙도 두지 않는다.
+
+## Crate
+
+- 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-bindgen-core`, 라이브러리 이름 `bindgen_core`, 버전 0.0.1, edition
+  2021, toolchain 1.97.0(`rust-toolchain.toml`).
+- 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태).
+- feature `construct`: wait 토큰을 만들 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
+  코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
+- 개발 중 다른 레포에서 쓰는 법: 이 폴더에 대한 경로 의존
+  `bindgen_core = { package = "polyspec-bindgen-core", path = "<checkout>/packages/core/rust" }`. 추적하는 매니페스트가 아니라
+  로컬 link로 정한다(PRINCIPLES P30).
+
+## 항목
+
+| 항목 | 설계 규칙 | 요약 |
+|---|---|---|
+| `Io` | I-2 (4), B-5 (a) | `wait: blocking_io`의 토큰. 짧은 블로킹 I/O를 하는 코어 함수의 첫 인자. `construct`에서 `Io::for_generated_call()`. |
+| `ProcessWait` | I-2 (4), B-5 (b) | `wait: process_wait`의 토큰. 다른 프로세스를 기다리는 코어 함수의 첫 인자. `Io`와 서로 바뀌지 않는다. `construct`에서 `ProcessWait::for_generated_call()`. |
+| `cancel_pair() -> (CancelTrigger, Cancel)` | T-1 `cancel` | 생성 코드가 trigger를 갖고 코어가 `Cancel`을 받는다. |
+| `Cancel` | T-1 `cancel` | `is_cancelled(&self) -> bool`, `async cancelled(&self)`, `Clone`. 버려진 trigger는 취소하지 않는다. |
+| `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. |
+| `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
+| `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
+| `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
+| `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
+| `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
+| `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
+| `Handle` | B-1, T-3 | 만든 쪽만 해석하는 `u64`. `new(u64)`, `raw()`. |
+| `ValueKind` | U-1 `value`, T-3 | `null`, `bool`, `int`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`, `native`. `ALL`, `as_str()`. `out`·`in` 행의 `kind`. |
+| `Predicate` | U-1 `when` | `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float). `ALL`, `as_str()`, `kind()`. |
+| `OutValue` | T-3 | 나가는 값의 한 단계: `Null`, `Bool`, `Int(IntOut)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `SafeText(String)`, `Native(Handle)`. `kind()`, `predicate(Predicate) -> Option<bool>`(술어가 그 종류에 해당하지 않으면 `None`). |
+| `IntOut`, `FloatOut`, `BytesOut`, `MapOut` | U-1 `when` | 술어를 여기서 계산하는 래퍼(`MapOut::new`의 `sequence_keys`는 키를 보는 코어가 준다). |
+| `HostValue` | B-1, T-2 `host_value` | 들어오는 값의 한 단계: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Float(f64)`, `Text(HostText)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
+| `HostText` | B-1, B-3 | `Bytes(Vec<u8>)`(PHP, Go), `Utf16(Vec<u16>)`(JavaScript), `CodePoints(Vec<u32>)`(Python). |
+| `Prototype` | B-1 | `Object`, `Null`. |
+
+## 아직 crate에 없는 것
+
+코어가 `HostValue` handle의 자식을 바인딩에 묻고, 바인딩이 `OutValue` handle의 자식을 코어에 묻는 호출 규약은 정하지 않았다.
+설계는 handle을 정하지만 호출은 정하지 않는다.
