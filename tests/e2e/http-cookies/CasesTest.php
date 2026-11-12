@@ -13,7 +13,7 @@ final class CasesTest extends TestCase
     /** @return array<string, list<array<string, mixed>>> */
     private static function cases(): array
     {
-        $path = getenv('HTTP_COOKIES_CASES');
+        $path = getenv('CASES');
         self::assertIsString($path);
         $cases = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
         self::assertIsArray($cases);

@@ -6,7 +6,7 @@ import unittest
 
 import polyspec.http_cookies as cookies
 
-CASES = os.environ["HTTP_COOKIES_CASES"]
+CASES = os.environ["CASES"]
 
 
 def load() -> dict:

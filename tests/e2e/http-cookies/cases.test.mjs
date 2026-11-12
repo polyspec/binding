@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as cookies from '@polyspec/http-cookies';
 
-const cases = JSON.parse(readFileSync(process.env.HTTP_COOKIES_CASES, 'utf8'));
+const cases = JSON.parse(readFileSync(process.env.CASES, 'utf8'));
 
 test('parse', () => {
   assert.ok(cases.parse.length > 0);
