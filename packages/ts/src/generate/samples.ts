@@ -43,6 +43,19 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
   if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
+  // U-7: a value of a value alias is the value that its first out row of a built-in form makes for this language.
+  if (unit?.kind === 'alias') {
+    const forms: Record<Lang3, Record<string, string>> = {
+      python: { null: 'None', bool: 'False', int: '0', bigint: '0', float: '0.0', text: '"a"', bytes: 'b""', list: '[]', map: '{}' },
+      node: { null: 'null', bool: 'false', int: '0', bigint: '0n', float: '0', text: "'a'", bytes: 'new Uint8Array()', list: '[]', map: 'new Map()' },
+      php: { null: 'null', bool: 'false', int: '0', float: '0.0', text: '"a"', bytes: '""', list: '[]', map: '[]' },
+    };
+    for (const row of unit.out ?? []) {
+      const make = row.make[ctx.lang];
+      const value = typeof make === 'string' ? forms[ctx.lang][make] : undefined;
+      if (value !== undefined) return value;
+    }
+  }
   // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
   const object = model.objects.find((o) => o.unit === unit);
   const factory = object?.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === unit));

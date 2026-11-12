@@ -479,6 +479,28 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.throws(() => fromJson(model, ctx('php'), 'float', { float: 'huge' }), /"nan" \| "inf" \| "-inf"/);
 });
 
+test('a value alias converts through its core functions in Python and is refused elsewhere for now (U-7)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.units.push({
+    id: 'data', name: ['data'], module: '', kind: 'alias', visibility: 'public', origin: 'value', core_type: 'polyspec_sample::Data',
+    core: { in: 'polyspec_sample::data_from_host', out: 'polyspec_sample::data_to_out' },
+    out: [{ kind: 'null', make: { php: 'null', python: 'null', node: 'null' } }, { kind: 'text', make: { php: 'text', python: 'text', node: 'text' } }],
+    in: [],
+  });
+  sample.units.find((u: any) => u.id === 'sample').members.push({
+    id: 'sample.echo', name: ['echo'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, required: true }],
+    returns: { unit: 'data' }, raises: [], wait: 'none', core: 'polyspec_sample::echo',
+  });
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /a value alias is not generated for Node yet/);
+  const python = structuredClone(sample);
+  python.targets = ['python'];
+  const out = generate({ contract: python, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const lib = text(out, 'packages/python/generated/lib.rs');
+  assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)/);
+  assert.match(lib, /let \(root, mut source\) = polyspec_sample::data_to_out\(value\.borrow\(\)\);/);
+  assert.match(lib, /impl HostValues for PyHost/);
+});
+
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const caseFiles = sampleCases();

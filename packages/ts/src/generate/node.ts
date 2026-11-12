@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -886,6 +886,7 @@ ${constants}
 }
 
 export function node(model: Model, files: Files): void {
+  if (model.aliases.length > 0) throw new Unsupported(`${model.aliases[0]?.unit.id}: a value alias is not generated for ${'Node'} yet`);
   const npm = model.contract.packages['node'] as { package: string };
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.cjs`, indexCjs(model));

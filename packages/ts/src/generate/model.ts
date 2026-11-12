@@ -30,6 +30,13 @@ export interface CallbackMember {
   receiver: '&self' | '&mut self';
 }
 
+// U-7: a value alias that the core judges and gives through core: {in, out}, with its value table.
+export interface ValueAlias {
+  unit: Unit;
+  coreIn: string;
+  coreOut: string;
+}
+
 export interface Fn {
   unit: Unit;
   member: Member;
@@ -111,6 +118,7 @@ export interface Model {
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
   callbacks: CallbackUnit[];
+  aliases: ValueAlias[];
   classes: ErrorClass[];
   coreError: string | undefined;
   kinds: CoreKind[];
@@ -141,6 +149,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     const unit = units.get(type.unit);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
+    if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
     if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
   }
   if ('unit' in type && type.library !== undefined) {
@@ -167,6 +176,7 @@ export function buildModel(
   const records: Unit[] = [];
   const objects: ObjectClass[] = [];
   const callbacks: CallbackUnit[] = [];
+  const aliases: ValueAlias[] = [];
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.only !== undefined || member.native !== undefined) throw new Unsupported(`${member.id}: only and native are not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -245,6 +255,12 @@ export function buildModel(
         throw new Unsupported(`${unit.id}: a constructible class has one constructor and another none (U-1 constructible)`);
       }
       objects.push({ unit, members, constructible });
+      continue;
+    }
+    if (unit.kind === 'alias' && unit.origin === 'value') {
+      if (typeof unit.core !== 'object') throw new Unsupported(`${unit.id}: a value alias without core: {in, out} is not generated`);
+      if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a value alias names its core type in core_type`);
+      aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out });
       continue;
     }
     if (unit.kind === 'interface' && unit.origin === 'callback') {
@@ -333,7 +349,7 @@ export function buildModel(
   const resultRecords = records.filter((r) => result.has(r.id));
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, classes, coreError, kinds, cases,
+    objects, callbacks, aliases, classes, coreError, kinds, cases,
   };
 }
 
@@ -498,3 +514,9 @@ export function resolveNamedTypes(contract: Contract): Contract {
     })),
   };
 }
+
+// U-7: the value alias of a type, when the type is one.
+export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
+  const unit = unitOf(model, type);
+  return libraryOf(type) === undefined ? model.aliases.find((a) => a.unit === unit) : undefined;
+};
