@@ -162,8 +162,9 @@ export function contract(): any {
       {
         id: 'session_options', name: ['session', 'options'], module: 'session', kind: 'record', visibility: 'public', origin: 'generated',
         fields: [
-          { name: [{ acronym: 'csrf' }, 'token'], type: 'bool', default: { literal: true }, default_core: 'sample::CSRF_TOKEN', reason: 'HY-24' },
-          { name: ['ttl'], type: 'uint', default: { const: 'session.limit' }, default_core: 'sample::LIMIT', reason: 'HY-104' },
+          { name: [{ acronym: 'csrf' }, 'token'], type: 'bool', default: { literal: true }, default_core: 'sample::CSRF_TOKEN' },
+          { name: ['ttl'], type: 'uint', default: { const: 'session.limit' }, default_core: 'sample::LIMIT' },
+          { name: ['domain'], type: { optional: 'text' }, required: true, reason: 'HY-24' },
         ],
       },
       {

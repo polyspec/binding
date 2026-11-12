@@ -119,9 +119,9 @@ describe('CK-4 naming exceptions', () => {
 describe('CK-5 optional returns', () => {
   test('optional without a reason', () => fails('CK-5', '/units/', (c) => { delete member(c, 'store.read').optional_reason; }));
   test('a reason without optional', () => fails('CK-5', '/units/', (c) => { member(c, 'forms.parse').optional_reason = 'P-2'; }));
-  test('an optional field without a reason', () => fails('CK-5', `${at('session_options')}/fields/0`, (c) => { delete unit(c, 'session_options').fields[0].reason; }));
-  test('a required field with a reason', () =>
-    fails('CK-5', `${at('session_options')}/fields/2/reason`, (c) => { unit(c, 'session_options').fields.push({ name: ['dir'], type: 'text', required: true, reason: 'T-4' }); }));
+  test('an optional field without a reason', () => fails('CK-5', `${at('session_options')}/fields/2`, (c) => { delete unit(c, 'session_options').fields[2].reason; }));
+  test('a field that is not optional with a reason', () =>
+    fails('CK-5', `${at('session_options')}/fields/0/reason`, (c) => { unit(c, 'session_options').fields[0].reason = 'T-4'; }));
 });
 
 describe('CK-6 cycles', () => {

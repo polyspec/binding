@@ -31,7 +31,7 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   that member or field of that record; one exception per symbol and language; and the exception differs from the
   converted name (N-2), since an exception that changes nothing has no ground.
 - **CK-5** Optional returns and fields (T-5, T-4): a member that returns `optional<T>` has `optional_reason`, and only
-  such a member; a record field with a `default` has a `reason`, and only such a field.
+  such a member; a record field of type `optional<T>` has a `reason`, and only such a field.
 - **CK-6** Cycles (P-4): `implements` and error `parent` form no cycle.
 - **CK-8** Value units (U-1):
   - an `in` row names a target and a language type that is either a built-in type of the table below or a `value` unit;

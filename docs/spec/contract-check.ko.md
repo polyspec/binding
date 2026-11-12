@@ -27,7 +27,7 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
 - **CK-4** 이름 예외(N-3): 예외는 target과, 있는 unit, 그 unit의 member, 그 member의 parameter, 그 record의 field를 가리킨다.
   기호와 언어마다 예외는 하나다. 예외는 변환한 이름(N-2)과 달라야 한다. 아무것도 바꾸지 않는 예외에는 근거가 없기 때문이다.
 - **CK-5** optional 반환과 field(T-5, T-4): `optional<T>`를 돌려주는 member는 `optional_reason`을 갖고, 그런 member만
-  갖는다. `default`가 있는 record field는 `reason`을 갖고, 그런 field만 갖는다.
+  갖는다. 타입이 `optional<T>`인 record field는 `reason`을 갖고, 그런 field만 갖는다.
 - **CK-6** 순환(P-4): `implements`와 오류 `parent`는 순환하지 않는다.
 - **CK-8** value unit(U-1):
   - `in` 행은 target과, 아래 표의 내장 타입이나 `value` unit인 언어 타입을 가리킨다. 언어와 타입마다 행은 하나다.

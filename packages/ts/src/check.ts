@@ -373,18 +373,19 @@ class Checker {
   // ---- CK-5: optional returns (T-5) ----
 
   optionalReturns(): void {
-    // T-4: an optional record field states the rule that makes it optional, as an optional return does (T-5).
+    // T-4: a record field of type optional<T> states the rule that makes it optional, as an optional return does (T-5).
     for (const { value: unit, path } of this.units.values()) {
       const fields: Located<Field>[] = [
         ...(unit.fields ?? []).map((f, i) => ({ value: f, path: `${path}${pointer('fields', i)}` })),
         ...(unit.cases ?? []).flatMap((c, ci) => c.fields.map((f, i) => ({ value: f, path: `${path}${pointer('cases', ci, 'fields', i)}` }))),
       ];
       for (const { value: field, path: fieldPath } of fields) {
-        if (field.default !== undefined && field.reason === undefined) {
-          this.report('CK-5', fieldPath, 'an optional field states the rule that makes it optional (T-4)');
+        const optional = typeof field.type === 'object' && 'optional' in field.type;
+        if (optional && field.reason === undefined) {
+          this.report('CK-5', fieldPath, 'a field of type optional<T> states the rule that makes it optional (T-4)');
         }
-        if (field.default === undefined && field.reason !== undefined) {
-          this.report('CK-5', `${fieldPath}/reason`, 'a required field has no reason (T-4)');
+        if (!optional && field.reason !== undefined) {
+          this.report('CK-5', `${fieldPath}/reason`, 'only a field of type optional<T> has a reason (T-4)');
         }
       }
     }
