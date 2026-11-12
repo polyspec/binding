@@ -29,9 +29,10 @@ export const goDir = (module: string): string => (module === '' ? GO : `${GO}/${
 export const goImport = (contract: Contract, module: string): string => (module === '' ? goModule(contract) : `${goModule(contract)}/${module}`);
 
 // The package name: the last segment of the module in lower case without separators, and for the empty module the
-// library name so (the last element of the import path is go, a keyword).
+// repository name without - (P-1; the last element of the import path, go, cannot be an identifier, and Go allows a
+// package name that differs from it).
 export function goPackage(contract: Contract, module: string): string {
-  const base = module === '' ? contract.library : (module.split('/').at(-1) ?? module);
+  const base = module === '' ? libraryParts(contract).repository : (module.split('/').at(-1) ?? module);
   return base.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 

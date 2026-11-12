@@ -90,7 +90,8 @@
 
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
-  이름은 라이브러리 이름을 같은 식으로 쓴 것이다(`httpcookie`). import 경로의 마지막 마디 `go`가 예약어이기 때문이다. 그
+  패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
+  패키지 이름이 그것과 다르며, Go가 허용하는 형태이고 import alias는 필요 없다. 그
   `zz_generated_<package>.go`는 module의 함수, record(공개 field의 struct), enum(typed string과 값마다 상수
   `<Enum><Variant>`), 상수(typed `const`)를 담는다. 패키지 `errors`는 E-7의 category 타입 여섯을 E-2의 클래스 이름에 N-2의 Go 대문자를 적용해
   (`HTTPCookieValueError`~`HTTPCookieInternalError`) 이름 짓고, 각각 `Error()`, `Kind() string`, `Status() (int, bool)`, `Errno() (int, bool)`, `Unwrap() error`를 가진다. 이 타입은

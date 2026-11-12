@@ -110,8 +110,9 @@ the design ids are those of the binding design.
 
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
-  separators; the empty module is the module root, named by the library so (`httpcookie`), because the last element of
-  its import path, `go`, is a keyword. Its file `zz_generated_<package>.go` holds the functions, records (structs of
+  separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
+  `httpcookie`): the last element of its import path, `go`, cannot be an identifier, so the package name differs from
+  it, which Go allows without an import alias. Its file `zz_generated_<package>.go` holds the functions, records (structs of
   exported fields), enums (a typed string and a constant `<Enum><Variant>` per value) and constants (typed `const`) of
   the module. Package `errors` names the six category types of E-7, named as the classes of E-2 with the Go capitals of
   N-2 (`HTTPCookieValueError` to `HTTPCookieInternalError`), each with
