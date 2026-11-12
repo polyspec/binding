@@ -5,7 +5,8 @@
 import type { Lang } from './contract.ts';
 
 export const VALUE_KINDS = [
-  'null', 'bool', 'int', 'int64', 'float', 'number', 'text', 'bytes', 'list', 'map', 'object', 'safe_text', 'native',
+  'null', 'bool', 'int', 'int64', 'float', 'number', 'text', 'bytes', 'list', 'map', 'object', 'reference', 'safe_text',
+  'native',
   'nested:json_value', 'nested:template_value', 'nested:php_value',
 ] as const;
 
@@ -16,20 +17,25 @@ export const PREDICATE_KIND: Readonly<Record<string, string>> = {
   integral_float: 'float',
 };
 
-export const BUILTIN_FORMS = ['null', 'bool', 'int', 'bigint', 'float', 'text', 'bytes', 'list', 'map'] as const;
+export const BUILTIN_FORMS = [
+  'null', 'bool', 'int', 'bigint', 'float', 'text', 'bytes', 'list', 'map', 'keyed_map', 'php_object', 'php_reference',
+] as const;
 
 const JS: Readonly<Record<string, string>> = {
   null: 'null', bool: 'boolean', int: 'number', bigint: 'bigint', float: 'number', text: 'string',
-  bytes: 'Uint8Array', list: 'Array', map: 'Map',
+  bytes: 'Uint8Array', list: 'Array', map: 'Map', keyed_map: 'Map',
 };
 
 // The language type that a built-in form makes, per language; a form missing from a language has no built-in value
 // there (PHP and Go have no big integer type).
 export const MADE_TYPE: Readonly<Record<Lang, Readonly<Record<string, string>>>> = {
-  php: { null: 'null', bool: 'bool', int: 'int', float: 'float', text: 'string', bytes: 'string', list: 'array', map: 'array' },
+  php: {
+    null: 'null', bool: 'bool', int: 'int', float: 'float', text: 'string', bytes: 'string', list: 'array', map: 'array',
+    keyed_map: 'array', php_object: 'stdClass', php_reference: 'reference',
+  },
   python: {
     null: 'None', bool: 'bool', int: 'int', bigint: 'int', float: 'float', text: 'str', bytes: 'bytes', list: 'list',
-    map: 'dict',
+    map: 'dict', keyed_map: 'dict',
   },
   node: JS,
   wasm: JS,

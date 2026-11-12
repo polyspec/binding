@@ -145,7 +145,9 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/in/5/cases`, (c) => { inRows(c)[5].cases.push({ kind: 'bytes' }); }));
   test('by does not return an enum', () => fails('CK-8', `${at('value')}/in/0/by`, (c) => { inRows(c)[0].by = 'value.items'; }));
   test('a value unit type without read', () => fails('CK-8', `${at('value')}/in/0/cases/0`, (c) => { delete inRows(c)[0].cases[0].read; }));
-  test('a built-in type with read', () => fails('CK-8', `${at('value')}/in/5/cases/0/read`, (c) => { inRows(c)[5].cases[0].read = 'value.text'; }));
+  test('a built-in type with a read member', () => fails('CK-8', `${at('value')}/in/5/cases/0`, (c) => { inRows(c)[5].cases[0].read = 'value.text'; }));
+  test('a built-in type without read: builtin', () => fails('CK-8', `${at('value')}/in/5/cases/0`, (c) => { delete inRows(c)[5].cases[0].read; }));
+  test('a value unit type with read: builtin', () => fails('CK-8', `${at('value')}/in/0/cases/0`, (c) => { inRows(c)[0].cases[0].read = 'builtin'; }));
   test('read is not public', () => fails('CK-8', `${at('value')}/in/0/cases/0/read`, (c) => { member(c, 'value.items').visibility = 'internal'; }));
   test('an in row naming an unknown language type', () => fails('CK-8', `${at('value')}/in/5/php`, (c) => { inRows(c)[5].php = 'Stringable'; }));
   test('an out row that makes no value in one target', () =>
@@ -158,7 +160,7 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => {
       // PHP makes text and bytes both as string, which the in table classifies as text.
       unit(c, 'value').out.push({ kind: 'bytes', make: { php: 'bytes', python: 'bytes', node: 'bytes', wasm: 'bytes', go: 'bytes' } });
-      inRows(c).push({ python: 'bytes', cases: [{ kind: 'bytes' }] }, { node: 'Uint8Array', cases: [{ kind: 'bytes' }] }, { wasm: 'Uint8Array', cases: [{ kind: 'bytes' }] }, { go: '[]byte', cases: [{ kind: 'bytes' }] });
+      inRows(c).push({ python: 'bytes', cases: [{ kind: 'bytes', read: 'builtin' }] }, { node: 'Uint8Array', cases: [{ kind: 'bytes', read: 'builtin' }] }, { wasm: 'Uint8Array', cases: [{ kind: 'bytes', read: 'builtin' }] }, { go: '[]byte', cases: [{ kind: 'bytes', read: 'builtin' }] });
       const row = unit(c, 'value').out.pop();
       unit(c, 'value').out.unshift(row);
     }));
@@ -327,7 +329,7 @@ describe('CK-8 nested values', () => {
     d.units.push({
       id: 'dep_value', name: ['value'], module: 'value', kind: 'class', visibility: 'public', origin: 'value', members: [],
       out: [{ kind: 'null', make: { php: 'null', python: 'null', node: 'null' } }],
-      in: [{ php: 'null', cases: [{ kind: 'null' }] }, { python: 'None', cases: [{ kind: 'null' }] }, { node: 'null', cases: [{ kind: 'null' }] }],
+      in: [{ php: 'null', cases: [{ kind: 'null', read: 'builtin' }] }, { python: 'None', cases: [{ kind: 'null', read: 'builtin' }] }, { node: 'null', cases: [{ kind: 'null', read: 'builtin' }] }],
     });
   };
   test('a nested make with its kind is accepted', () => {
@@ -337,4 +339,25 @@ describe('CK-8 nested values', () => {
     fails('CK-8', `${at('value')}/out/4/make/php`, (c, d) => { withDepValue(d); nested(c, 'nested:php_value', 'json_value'); }));
   test('a nested kind made by a built-in form', () =>
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'nested:json_value'; }));
+});
+
+describe('CK-8 else rows and keyed maps', () => {
+  const textRows = (c: any): any[] => unit(c, 'value').out.filter((r: any) => r.kind === 'text');
+  test('predicate rows with one else row are accepted', () => {
+    assert.deepEqual(findings((c) => {
+      unit(c, 'value').out[2].when = 'else';
+    }), []);
+  });
+  test('two else rows', () =>
+    fails('CK-8', `${at('value')}/out/2`, (c) => { unit(c, 'value').out[2].when = 'else'; unit(c, 'value').out[3].when = 'else'; }));
+  test('a row without when beside an else row', () =>
+    fails('CK-8', `${at('value')}/out/0`, (c) => { const row = structuredClone(textRows(c)[0]); row.when = 'else'; unit(c, 'value').out.push(row); }));
+  test('a keyed map is made where the language has one', () =>
+    fails('CK-8', `${at('value')}/out/4/make/go`, (c) => {
+      const keyed = { keyed_map: { key: ['int', 'text'] } };
+      unit(c, 'value').out.push({ kind: 'map', make: { php: keyed, python: keyed, node: keyed, wasm: keyed, go: keyed } });
+      for (const [lang, type] of [['php', 'array'], ['python', 'dict'], ['node', 'Map'], ['wasm', 'Map']]) {
+        unit(c, 'value').in.push({ [lang as string]: type, cases: [{ kind: 'map', read: 'builtin' }] });
+      }
+    }));
 });

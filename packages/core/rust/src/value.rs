@@ -53,6 +53,8 @@ pub enum ValueKind {
     Map,
     /// An object with named properties, such as PHP `stdClass` (F-1 (c)).
     Object,
+    /// A PHP reference (`&`) that several places share (F-1 (c), U-7 (c)).
+    Reference,
     /// A text that is already escaped (F-1 (b), VAL-6).
     SafeText,
     /// A language object that passes through the core unopened (F-1 (b), VAL-18).
@@ -89,7 +91,7 @@ impl ValueType {
 
 impl ValueKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Null,
         Self::Bool,
         Self::Int,
@@ -101,6 +103,7 @@ impl ValueKind {
         Self::List,
         Self::Map,
         Self::Object,
+        Self::Reference,
         Self::SafeText,
         Self::Native,
         Self::Nested(ValueType::Json),
@@ -123,6 +126,7 @@ impl ValueKind {
             Self::List => "list",
             Self::Map => "map",
             Self::Object => "object",
+            Self::Reference => "reference",
             Self::SafeText => "safe_text",
             Self::Native => "native",
             Self::Nested(ValueType::Json) => "nested:json_value",
@@ -306,6 +310,10 @@ impl MapOut {
 
 /// One level of a value that leaves a core (T-3). The generated code makes the language value from the `out` table of
 /// the value unit, selecting a row by [`OutValue::kind`] and [`OutValue::predicate`].
+///
+/// One handle is one language object: the generated code makes a container once, before its children, and gives
+/// every later occurrence of the same handle that object, so shared and cyclic values leave the core as they are
+/// (U-7 (d)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutValue {
     /// Kind `null`.
@@ -340,6 +348,13 @@ pub enum OutValue {
         /// The number of properties.
         len: u64,
     },
+    /// Kind `reference`: a reference that every place holding this handle shares.
+    Reference {
+        /// The handle of the reference.
+        handle: Handle,
+        /// The value it holds.
+        value: Box<OutValue>,
+    },
     /// Kind `safe_text`.
     SafeText(String),
     /// Kind `native`: the language object that entered as this handle goes back unchanged.
@@ -370,6 +385,7 @@ impl OutValue {
             Self::List { .. } => ValueKind::List,
             Self::Map(_) => ValueKind::Map,
             Self::Object { .. } => ValueKind::Object,
+            Self::Reference { .. } => ValueKind::Reference,
             Self::SafeText(_) => ValueKind::SafeText,
             Self::Native(_) => ValueKind::Native,
             Self::Nested { value_type, .. } => ValueKind::Nested(*value_type),
@@ -422,13 +438,13 @@ pub enum HostValue {
     Undefined,
     /// A boolean of any language; a Python `bool` is this and never an integer.
     Bool(bool),
-    /// PHP `IS_LONG`, a JavaScript number that is a safe integer, a Python `int` (exactly, not a subclass) in the
-    /// range of `i64`, a Go integer.
+    /// PHP `IS_LONG`, a Python `int` (exactly, not a subclass) in the range of `i64`, a Go integer.
     Int(i64),
     /// A Python `int` (exactly) outside the range of `i64`, as its decimal token, without loss. Whether it is accepted
     /// is the core's rule (B-1).
     Number(String),
-    /// PHP `IS_DOUBLE`, any other JavaScript number, a Python `float` (exactly), a Go float.
+    /// PHP `IS_DOUBLE`, every JavaScript number, a Python `float` (exactly), a Go float. Whether a JavaScript number is
+    /// an integer is the core's rule (U-7 (f)).
     Float(f64),
     /// A string of any language, in its own units.
     Text(HostText),
@@ -465,6 +481,14 @@ pub enum HostValue {
         len: u64,
         /// The prototype.
         prototype: Prototype,
+    },
+    /// An element of a PHP array that is a reference (`&`), with the identity of the reference, so that elements that
+    /// share one reference share one identity (U-7 (g)).
+    PhpReference {
+        /// The identity of the reference.
+        identity: Handle,
+        /// The value the reference holds.
+        target: Box<HostValue>,
     },
     /// A PHP `stdClass`.
     StdClass {

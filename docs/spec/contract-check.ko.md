@@ -19,6 +19,7 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   거부된다(I-3). callback member의 `errors`는 `{recognize, reason}`뿐이다(U-3).
 - **CK-2** todo: `bindgen import`가 남긴 `"todo"` 문자열이나 `todo` 키를 가진 객체가 있으면 실패한다(M-2). todo 자리와 그
   둘레의 스키마 오류는 따로 보고하지 않는다.
+- `alias` unit(U-7 (a))은 둘 이상의 타입의 union을 `of`로 적고 member가 없다.
 - **CK-3** 참조: unit·member id는 유일하다. `parent`, `implements`(`interface` unit), `cleanup`(같은 unit의 member), unit
   타입, `{const}` 기본값(constant), `cases[].member`, `changes[].to`가 해석된다. `only`, `native`, `changes[].from`은 target을
   가리킨다. 모든 target에 `packages` 항목이 있다(P-1, `wasm`은 `node`를 쓴다). 타입에 쓴 값 타입(`json_value`,
@@ -31,12 +32,12 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   - `in` 행은 target과, 아래 표의 내장 타입이나 `value` unit인 언어 타입을 가리킨다. 언어와 타입마다 행은 하나다.
   - `by`가 있으면 `by`는 계약의 `enum` unit을 돌려주는 공개 member이고, 모든 case가 `is`를 가지며, enum의 모든 값이 정확히
     한 case의 `is`다. `by`가 없으면 행의 case는 하나이고 `is`가 없다.
-  - `value` unit 타입의 case는 공개 member인 `read`를 적는다. 내장 타입의 case에는 `read`가 없다. 내장 값은 bindgen이 직접
-    읽기 때문이다.
+  - `value` unit 타입의 case는 공개 member인 `read`를 적는다. 내장 타입의 case는 `read: builtin`이다. 내장 값은 bindgen이
+    직접 읽기 때문이다(U-7 (e)).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태이거나 `value` unit의 공개 `constructor`·`static`
     member다.
-  - `when`은 행의 kind에 해당하는 술어다. 한 kind의 행은 `when` 없는 행 하나이거나, 같은 술어의 `is: true` 행과 `is: false`
-    행 둘이다.
+  - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행은 `when` 없는 행 하나이거나, 같은 술어의 `is: true` 행과
+    `is: false` 행 둘이거나, 서로 다른 술어 값의 행들과 나머지를 받는 `else` 행 하나다(U-7 (b)).
   - 왕복(P-3): `make`가 만드는 언어 타입은 그 언어의 `in` 행을 갖고, 그 행은 그것을 행의 kind로 분류한다. `by` 없는 행은
     정확히 그 kind여야 하고, `by` 있는 행은 case 중 하나여야 한다. `is`는 실행 때만 알 수 있으므로 G-5의 생성 왕복 시험이
     증명으로 남는다.
@@ -71,8 +72,8 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
 
 이 닫힌 집합은 bindgen의 것이다. Rust 이름은 `bindgen_core`의 것이다(`docs/core-api.md`).
 
-- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `safe_text`,
-  `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
+- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
+  `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
   계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
@@ -89,6 +90,11 @@ I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding
   | `bytes` | `string` | `bytes` | `Uint8Array` | `[]byte` |
   | `list` | `array` | `list` | `Array` | `[]any` |
   | `map` | `array` | `dict` | `Map` | `map[string]any` |
+  | `keyed_map` | `array` | `dict` | `Map` | 없음 |
+  | `php_object` | `stdClass` | 없음 | 없음 | 없음 |
+  | `php_reference` | `reference` | 없음 | 없음 | 없음 |
+
+  `keyed_map`은 섞을 수 있는 key 종류(`int`, `bytes`, `text`)와 함께 `{keyed_map: {key: [...]}}`로 적는다(U-7 (c)).
 
   `in` 행이 가리킬 수 있는 내장 타입은 이 표의 타입이다.
 - `types`는 계약이 쓰는 값 타입의 소유자를 적는다: `json_value`, `template_value`, `php_value`마다 `{library, unit}`.

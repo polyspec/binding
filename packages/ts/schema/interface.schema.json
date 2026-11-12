@@ -352,11 +352,10 @@
     "valueKind": {
       "description": "bindgen_core::ValueKind.",
       "oneOf": [
-        { "enum": ["null", "bool", "int", "int64", "float", "number", "text", "bytes", "list", "map", "object", "safe_text", "native"] },
+        { "enum": ["null", "bool", "int", "int64", "float", "number", "text", "bytes", "list", "map", "object", "reference", "safe_text", "native"] },
         { "enum": ["nested:json_value", "nested:template_value", "nested:php_value"] }
       ]
     },
-    "builtinForm": { "enum": ["null", "bool", "int", "bigint", "float", "text", "bytes", "list", "map"] },
     "outRow": {
       "type": "object",
       "additionalProperties": false,
@@ -364,13 +363,19 @@
       "properties": {
         "kind": { "$ref": "#/$defs/valueKind" },
         "when": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["predicate", "is"],
-          "properties": {
-            "predicate": { "enum": ["utf8", "sequence_keys", "safe_integer", "integral_float"] },
-            "is": { "type": "boolean" }
-          }
+          "description": "A predicate and its value, or else: the rows of the same kind that no other row selects (U-1, U-7 (b)).",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["predicate", "is"],
+              "properties": {
+                "predicate": { "enum": ["utf8", "sequence_keys", "safe_integer", "integral_float"] },
+                "is": { "type": "boolean" }
+              }
+            },
+            { "const": "else" }
+          ]
         },
         "make": {
           "description": "Per language: a built-in form or the id of a public constructor or static factory of a value unit.",
@@ -386,6 +391,22 @@
                   "additionalProperties": false,
                   "required": ["value"],
                   "properties": { "value": { "enum": ["json_value", "template_value", "php_value"] } }
+                },
+                {
+                  "description": "A map whose keys may mix the kinds listed (U-7 (c)).",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["keyed_map"],
+                  "properties": {
+                    "keyed_map": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["key"],
+                      "properties": {
+                        "key": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["int", "bytes", "text"] } }
+                      }
+                    }
+                  }
                 }
               ]
             }
@@ -414,7 +435,7 @@
             "properties": {
               "is": { "type": "string" },
               "kind": { "$ref": "#/$defs/valueKind" },
-              "read": { "$ref": "#/$defs/id" }
+              "read": { "description": "A public member, or builtin for a built-in language type (U-7 (e)).", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "builtin" }] }
             }
           }
         }
@@ -556,7 +577,13 @@
         "id": { "$ref": "#/$defs/id" },
         "name": { "$ref": "#/$defs/name" },
         "module": { "$ref": "#/$defs/module" },
-        "kind": { "enum": ["class", "variant", "functions", "interface", "record", "enum", "error"] },
+        "kind": { "enum": ["class", "variant", "functions", "interface", "record", "enum", "error", "alias"] },
+        "of": {
+          "description": "The types whose union an alias names (U-7 (a)).",
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/type" }
+        },
         "visibility": { "enum": ["public", "internal"] },
         "origin": { "enum": ["generated", "host", "callback", "value"] },
         "category": { "$ref": "#/$defs/category" },
@@ -603,6 +630,7 @@
       "allOf": [
         { "if": { "properties": { "kind": { "const": "enum" } } }, "then": { "required": ["variants"] }, "else": { "not": { "required": ["variants"] } } },
         { "if": { "properties": { "kind": { "const": "record" } } }, "then": { "required": ["fields"] }, "else": { "not": { "required": ["fields"] } } },
+        { "if": { "properties": { "kind": { "const": "alias" } } }, "then": { "required": ["of"] }, "else": { "not": { "required": ["of"] } } },
         {
           "if": { "properties": { "kind": { "const": "variant" } } },
           "then": { "required": ["tag", "cases"] },

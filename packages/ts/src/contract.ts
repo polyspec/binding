@@ -80,8 +80,8 @@ export interface UnitRef {
 
 export interface OutRow {
   kind: string;
-  when?: { predicate: string; is: boolean };
-  make: Partial<Record<Lang, string | { value: string }>>;
+  when?: { predicate: string; is: boolean } | 'else';
+  make: Partial<Record<Lang, string | { value: string } | { keyed_map: { key: string[] } }>>;
 }
 
 export interface InRow extends Partial<Record<Lang, string>> {
@@ -93,7 +93,8 @@ export interface Unit {
   id: string;
   name: Name;
   module: string;
-  kind: 'class' | 'variant' | 'functions' | 'interface' | 'record' | 'enum' | 'error';
+  kind: 'class' | 'variant' | 'functions' | 'interface' | 'record' | 'enum' | 'error' | 'alias';
+  of?: Type[];
   visibility: 'public' | 'internal';
   origin: 'generated' | 'host' | 'callback' | 'value';
   category?: Category;

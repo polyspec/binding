@@ -22,6 +22,7 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
   `{recognize, reason}` (U-3).
 - **CK-2** Todo: a `"todo"` string or an object with a `todo` key, which `bindgen import` leaves, fails the contract
   (M-2). A schema error at or around a todo is not reported separately.
+- An `alias` unit (U-7 (a)) names the union `of` two or more types; it has no members.
 - **CK-3** References: unit and member ids are unique; `parent`, `implements` (an `interface` unit), `cleanup` (a member
   of the same unit), unit types, `{const}` defaults (a constant), `cases[].member`, `changes[].to` resolve; `only`,
   `native` and `changes[].from` name targets; every target has its `packages` entry (P-1; `wasm` uses `node`); a value
@@ -36,12 +37,13 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
     one row per language and type;
   - with `by`, `by` is a public member that returns an `enum` unit of the contract, every case has `is`, and every value
     of the enum is the `is` of exactly one case; without `by`, the row has one case and no `is`;
-  - a case of a `value` unit type names `read`, a public member; a case of a built-in type has no `read`, because
-    bindgen reads built-in values itself;
+  - a case of a `value` unit type names `read`, a public member; a case of a built-in type has `read: builtin`, because
+    bindgen reads built-in values itself (U-7 (e));
   - an `out` row makes a value in every target; `make` is a built-in form that the language has, or a public
     `constructor` or `static` member of a `value` unit;
-  - `when` names a predicate of the row's kind; the rows of one kind are one row without `when`, or two rows with the
-    same predicate, one `is: true` and one `is: false`;
+  - `when` names a predicate of the row's kind, or is `else`; the rows of one kind are one row without `when`, or two
+    rows with the same predicate, one `is: true` and one `is: false`, or rows with distinct predicate values and one
+    `else` row for the rest (U-7 (b));
   - round trip (P-3): the language type that a `make` produces has an `in` row in that language, and that row
     classifies it as the row's kind: exactly, for a row without `by`; as one of its cases, for a row with `by`, whose
     `is` is known only at run time, which is why the generated round-trip test of G-5 remains the proof;
@@ -81,7 +83,7 @@ The schema is part of the npm package `@polyspec/bindgen` and is exported as `./
 These closed sets are bindgen's own; the Rust names are those of `bindgen_core` (`docs/core-api.md`).
 
 - Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
-  `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
+  `reference`, `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
   `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).
 - Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float)
   (`Predicate`). A row writes `when: {predicate, is}`.
@@ -98,6 +100,11 @@ These closed sets are bindgen's own; the Rust names are those of `bindgen_core` 
   | `bytes` | `string` | `bytes` | `Uint8Array` | `[]byte` |
   | `list` | `array` | `list` | `Array` | `[]any` |
   | `map` | `array` | `dict` | `Map` | `map[string]any` |
+  | `keyed_map` | `array` | `dict` | `Map` | none |
+  | `php_object` | `stdClass` | none | none | none |
+  | `php_reference` | `reference` | none | none | none |
+
+  `keyed_map` is written `{keyed_map: {key: [...]}}` with the key kinds it mixes (`int`, `bytes`, `text`, U-7 (c)).
 
   The built-in types an `in` row may name are the types of this table.
 - `types` names the owner of each value type the contract uses: `{library, unit}` for `json_value`, `template_value`

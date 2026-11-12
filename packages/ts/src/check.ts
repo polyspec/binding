@@ -11,6 +11,7 @@ import {
   type Field,
   type Lang,
   type Member,
+  type OutRow,
   type Name,
   type Parameter,
   type Type,
@@ -488,13 +489,13 @@ class Checker {
         }
       }
       for (const [c, kase] of row.cases.entries()) {
-        if (isBuiltin && kase.read !== undefined) {
-          this.report('CK-8', `${rowPath}/cases/${c}/read`, 'a built-in language type is read by bindgen, not by a member');
+        if (isBuiltin && kase.read !== 'builtin') {
+          this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a built-in language type has read: builtin (U-7 (e))');
         }
-        if (!isBuiltin && kase.read === undefined) {
+        if (!isBuiltin && (kase.read === undefined || kase.read === 'builtin')) {
           this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a value unit type names its read member');
         }
-        if (kase.read !== undefined) this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read');
+        if (kase.read !== undefined && kase.read !== 'builtin') this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read');
       }
       classified.set(key, { kinds: new Set(row.cases.map((c) => c.kind)), exact: row.by === undefined });
     }
@@ -503,13 +504,13 @@ class Checker {
     for (const [r, row] of (unit.out ?? []).entries()) {
       const rowPath = `${path}${pointer('out', r)}`;
       byKind.set(row.kind, [...(byKind.get(row.kind) ?? []), { value: row, path: rowPath }]);
-      if (row.when !== undefined && PREDICATE_KIND[row.when.predicate] !== row.kind) {
+      if (row.when !== undefined && row.when !== 'else' && PREDICATE_KIND[row.when.predicate] !== row.kind) {
         this.report('CK-8', `${rowPath}/when`, `${row.when.predicate} applies to ${PREDICATE_KIND[row.when.predicate]}, not to ${row.kind}`);
       }
       for (const lang of targets) {
         if (row.make[lang] === undefined) this.report('CK-8', `${rowPath}/make`, `the row makes no ${lang} value`);
       }
-      for (const [lang, make] of Object.entries(row.make) as [Lang, string | { value: string }][]) {
+      for (const [lang, given] of Object.entries(row.make) as [Lang, NonNullable<OutRow['make'][Lang]>][]) {
         const makePath = `${rowPath}/make/${lang}`;
         if (!targets.includes(lang)) {
           this.report('CK-8', makePath, `${lang} is not a target`);
@@ -517,12 +518,14 @@ class Checker {
         }
         // U-1: a value of another repository's value type is made by that repository's binding; the row's kind is
         // nested:<value type>, and the owning contract proves its own round trip.
-        if (typeof make === 'object') {
-          if (row.kind !== `nested:${make.value}`) {
-            this.report('CK-8', makePath, `make {value: ${make.value}} belongs to the kind nested:${make.value}, not to ${row.kind}`);
+        if (typeof given === 'object' && 'value' in given) {
+          if (row.kind !== `nested:${given.value}`) {
+            this.report('CK-8', makePath, `make {value: ${given.value}} belongs to the kind nested:${given.value}, not to ${row.kind}`);
           }
           continue;
         }
+        // U-7 (c): keyed_map is a built-in form with the key kinds it mixes.
+        const make = typeof given === 'object' ? 'keyed_map' : given;
         if (row.kind.startsWith('nested:')) {
           this.report('CK-8', makePath, `the kind ${row.kind} is made by {value: ${row.kind.slice('nested:'.length)}}`);
           continue;
@@ -546,17 +549,38 @@ class Checker {
         }
       }
     }
-    for (const [kind, rows] of byKind) {
-      const first = rows[0];
-      if (first === undefined) continue;
-      if (rows.length === 1) {
-        if (first.value.when !== undefined) this.report('CK-8', `${first.path}/when`, `the rows of ${kind} do not cover the case where ${first.value.when.predicate} is ${!first.value.when.is}`);
-        continue;
+    for (const [kind, rows] of byKind) this.partition(kind, rows);
+  }
+
+  // The rows of one kind select every value exactly once (U-1, U-7 (b)): one row without when; or a predicate's true
+  // and false rows; or rows of distinct predicate values and one else row for the rest.
+  partition(kind: string, rows: Located<OutRow>[]): void {
+    const first = rows[0];
+    if (first === undefined) return;
+    if (rows.length === 1) {
+      const when = first.value.when;
+      if (when !== undefined && when !== 'else') {
+        this.report('CK-8', `${first.path}/when`, `the rows of ${kind} do not cover the case where ${when.predicate} is ${!when.is}`);
       }
-      const predicates = new Set(rows.map((r) => r.value.when?.predicate));
-      const values = rows.map((r) => r.value.when?.is);
-      if (predicates.size !== 1 || predicates.has(undefined) || rows.length !== 2 || values[0] === values[1]) {
-        this.report('CK-8', first.path, `the ${rows.length} rows of ${kind} are not split by one predicate into its true and its false case`);
+      return;
+    }
+    const elses = rows.filter((r) => r.value.when === 'else');
+    const selective = rows.flatMap((r) => (r.value.when === undefined || r.value.when === 'else' ? [] : [r.value.when]));
+    if (selective.length + elses.length !== rows.length) {
+      this.report('CK-8', first.path, `a row of ${kind} without when beside other rows of ${kind} selects some values twice`);
+      return;
+    }
+    const keys = selective.map((w) => `${w.predicate}=${w.is}`);
+    if (new Set(keys).size !== keys.length) {
+      this.report('CK-8', first.path, `two rows of ${kind} select the same predicate value`);
+      return;
+    }
+    if (elses.length > 1) {
+      this.report('CK-8', first.path, `${kind} has ${elses.length} else rows`);
+    } else if (elses.length === 0) {
+      const predicates = new Set(selective.map((w) => w.predicate));
+      if (predicates.size !== 1 || selective.length !== 2) {
+        this.report('CK-8', first.path, `the ${rows.length} rows of ${kind} are neither a predicate's true and false rows nor rows with an else`);
       }
     }
   }
