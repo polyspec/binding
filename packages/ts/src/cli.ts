@@ -113,6 +113,7 @@ const root = resolve(dirname(contractPath), ...checked.core.path.split('/').map(
 const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'), 'utf8')) as {
   package?: { name?: string; version?: string | { workspace?: boolean } };
   lib?: { name?: string };
+  dependencies?: Record<string, unknown>;
 };
 const core = manifest.package;
 let version = core?.version;
@@ -121,7 +122,7 @@ if (typeof version === 'object' && version.workspace === true) {
   version = workspace.workspace?.package?.version;
 }
 if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
-const tracked = trackedPackages(checked, version);
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})));
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what bindgen scaffold writes.

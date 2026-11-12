@@ -9,9 +9,10 @@
 
 ## 범위
 
-- **GN-1** 생성기는 functions unit, record(parameter와 결과 형태), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4),
-  Python(PyO3 0.30.1, abi3-py314), Node(napi 3.16.2)를 쓴다. 그 밖의 항목(class, callback, value unit, `none`이 아닌 wait,
-  기본값, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`, 다른 레포의 record)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 아직 생성하지 않는다.
+- **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`인 메서드와 property), record(parameter와
+  결과 형태, 다른 레포의 것 포함), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
+  Node(napi 3.16.2)를 쓴다. 그 밖의 항목(callback, value unit, error unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
+  `&mut self`·`self`, class 타입 parameter, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 아직 생성하지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   bindgen 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -49,6 +50,14 @@
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
   `invalid_argument_type`이다.
+- **GN-6b** class unit(T-5)은 코어 값을 가진 final 언어 클래스다: Python은 native module의 frozen `pyclass`, Node는 JavaScript
+  이름으로 내보내는 napi 클래스, PHP는 final 플래그를 단 `php_class`. 메서드와 property는 가진 값을 receiver로 코어 경로를 부르고,
+  클래스를 돌려주는 static member나 생성자는 값을 감싼다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
+  property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
+  인자를 받는 Node 메서드와 static member는 addon의 `__<name>`이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
+- **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
+  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node는 plain object를 주고받으며 선언은 field로 적는다. 바인딩
+  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `bindgen scaffold`가 그 줄을 옮겨 적는다.
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `bindgen_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. bindgen은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
@@ -84,12 +93,14 @@
   클래스, kind, status, errno를 낸다. B-7: panic 진입점이 kind `internal`이다. G-7: 빠진 인자, 하나 많은 인자, 없는 이름(PHP
   이름 있는 인자, Python keyword, Node options record의 member와 빠진 member). case의 인자는 snake_case 키이고, record
   parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. parameter의 키가 없는 case는 id로
-  거부한다.
+  거부한다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
+  생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
+  case의 factory 인자를 쓴다.
 
 ## 끝에서 끝까지 확인
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`는
-  레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, bindgen_core 의존과 `Kinds`,
+  (contract가 타입을 가리키는 레포마다 `--dep <checkout>`; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, bindgen_core 의존과 `Kinds`,
   `bindgen scaffold`의 추적 package)을 하며 하나씩 출력하고, `bindgen check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
   따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
   패키지를 빌드해 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로

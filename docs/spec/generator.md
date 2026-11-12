@@ -10,9 +10,11 @@ the design ids are those of the bindgen design.
 ## Scope
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314) and Node (napi 3.16.2) for
-  functions units, records (as parameters and in their result form), enums, constants and error classes. Any other
-  item (a class, a callback, a value unit, a wait other than `none`, a default, `only`, `native`, a naming exception, a
-  dependency kind, the type `source`, a record of another repository) is refused by name
+  functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
+  records (as parameters and in their result form, also of another repository), enums, constants and error classes.
+  Any other item (a callback, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
+  `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
+  `source`) is refused by name
   before anything is written (G-4, P-4); Go and WASM are not generated yet.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
@@ -58,6 +60,17 @@ the design ids are those of the bindgen design.
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+- **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
+  native module, Node a napi class exported by its JavaScript name, PHP a `php_class` with the flag final. A method or
+  property calls the core path with the held value as its receiver; a static member or the constructor that returns
+  the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
+  getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
+  Node method or static member that takes arguments is the addon's `__<name>`, and the entry defines `<name>` over it
+  with the checks of G-7.
+- **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
+  (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
+  loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
+  on that repository's crate with the core's own dependency line, which `bindgen scaffold` copies.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `bindgen_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because bindgen reads no Rust source; the lint against it is
@@ -98,11 +111,15 @@ the design ids are those of the bindgen design.
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id.
+  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. The members of a
+  class have the same tests; a method or property is called on an instance that a factory of the class (a static
+  member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
+  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise.
 
 ## End-to-end check
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
+  (`--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen
   scaffold`), runs `bindgen check`, tests the core without the generator, rewrites a case file that does not follow

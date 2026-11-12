@@ -1,9 +1,9 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, Unsupported, coreArg, langName, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { phpTests } from './tests_php.ts';
-import { type Files, header, rustString, closure, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -36,7 +36,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -47,13 +48,15 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `${fn[type]}(${value})`;
   }
   if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
-  if ('optional' in type) return `out_optional(${value}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
+  if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_array(vec![${parts.join(', ')}])`;
   }
   const unit = unitOf(model, type);
-  if (unit?.kind === 'record' || unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
+  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
+  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(${value})`;
   throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -235,23 +238,28 @@ ${outArms}
 
 // T-4: the result form of a record, a final class of public readonly properties whose constructor takes every field by
 // name and only holds the values; they are judged when the record enters the core (T-8).
-function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number): string {
-  const name = rustField(unit.name);
+function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, library?: string): string {
+  const name = recordFn(unit, library);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
-  const phpName = `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
+  const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
+  const phpName = `${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
+  // T-3: the class of another repository's record is registered by that repository's extension, found by its name.
+  const entry = library === undefined ? `RECORDS[${index}].get().copied()` : `ClassEntry::try_find(${rustString(phpName)}).map(Class)`;
+  const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
   const props = fields.map((f) => langName('php', f.name, 'variable'));
   const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
         let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
     };`);
-  const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?)?;`);
+  const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
+  const constructor = recordConstructor(name, fields, props, args);
   return `
 /// T-4: a value of the record ${phpName} is an instance of the class itself.
 fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
-    let Some(Class(entry)) = RECORDS[${index}].get().copied() else {
-        return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the record class is not registered") }));
+    let Some(Class(entry)) = ${entry} else {
+        return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
     let Some(object) = value.object().filter(|object| object.instance_of(entry)) else {
         return Err(type_error(subject, ${rustString(phpName)}));
@@ -262,8 +270,8 @@ ${reads.join('\n')}
 
 fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let value = value.borrow();
-    let Some(Class(entry)) = RECORDS[${index}].get().copied() else {
-        return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the record class is not registered") }));
+    let Some(Class(entry)) = ${entry} else {
+        return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
     let mut object = ZendObject::new(entry);
     let written = in_scope(entry, || -> Result<(), Fail> {
@@ -273,7 +281,11 @@ ${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(Bindin
     written?;
     object.into_zval(false).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
 }
+${library === undefined ? constructor : ''}`;
+}
 
+function recordConstructor(name: string, fields: Unit['fields'] & object, props: string[], args: string[]): string {
+  return `
 ext_php_rs::zend_fastcall! {
     extern fn ${name}_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
         ext_php_rs::zend::run_handler(AssertUnwindSafe(|| {
@@ -299,47 +311,100 @@ ${args.join('\n')}
 const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
 
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
-  const phpName = `${phpNamespace(layout, fn.module)}\\${langName('php', fn.member.name, 'callable')}`;
+  const callable = langName('php', fn.member.name, 'callable');
+  const phpName = `${phpNamespace(layout, fn.module)}\\${callable}`;
   const variables = fn.args.map((a) => langName('php', a.name, 'variable'));
   const lines: string[] = [];
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
     lines.push(`        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, rustIdent(variable), rustString(variable))}?;`);
   }
-  const callArgs: string[] = [];
-  for (const parameter of fn.params) {
-    if (fn.record !== undefined && parameter === fn.record.param) {
-      const recordType = fn.record.unit.core_type ?? '';
-      const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-      lines.push(`        let ${rustField(parameter.name)}: ${recordType} = ${recordType} { ${fields} };`);
-      callArgs.push(`&${rustField(parameter.name)}`);
-    } else {
-      callArgs.push(coreArg(model, parameter.type, rustField(parameter.name)));
-    }
+  if (fn.record !== undefined) {
+    const recordType = fn.record.unit.core_type ?? '';
+    const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
+    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
-  const call = `${fn.corePath}(${callArgs.join(', ')})`;
+  const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else {
     lines.push(`        let result = ${call};`);
   }
+  const params = variables.map((v) => `${rustIdent(v)}: &Zval`);
+  if (fn.kind === 'constructor') {
+    lines.push('        Ok(Self { inner: result })');
+    return `
+    pub fn __construct(${params.join(', ')}) -> Result<Self, PhpException> {
+        guard(|| {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+    }
+`;
+  }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
-  return `
+  if (fn.kind === 'function') {
+    return `
 /// ${phpName} (G-7: PHP counts the arguments and checks their names by the arginfo of these parameters).
 #[php_function]
 #[php(name = ${rustString(phpName)})]
-pub fn ${rustField(fn.member.name)}(${variables.map((v) => `${rustIdent(v)}: &Zval`).join(', ')}) -> Result<Zval, PhpException> {
+pub fn ${rustField(fn.member.name)}(${params.join(', ')}) -> Result<Zval, PhpException> {
     guard(|| {
 ${lines.join('\n')}
     })
+}
+`;
+  }
+  // U-2: a property is a method in PHP (I-3).
+  const self = fn.receiver === undefined ? [] : ['&self'];
+  return `
+    #[php(name = ${rustString(callable)})]
+    pub fn ${rustField(fn.member.name)}(${[...self, ...params].join(', ')}) -> Result<Zval, PhpException> {
+        guard(|| {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+    }
+`;
+}
+
+// T-5: a class unit is a final class of the extension that holds the core value (U-1). Its declaration is in the module
+// entry, whose allow covers the expansion of php_class and php_impl.
+function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): string {
+  const phpName = `${phpNamespace(layout, object.unit.module)}\\${langName('php', object.unit.name, 'class')}`;
+  const struct = `Php${langName('php', object.unit.name, 'class')}`;
+  return `
+/// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
+#[php_class]
+#[php(name = ${rustString(phpName)})]
+#[php(flags = ClassFlags::Final)]
+pub struct ${struct} {
+    pub(crate) inner: ${object.unit.core_type ?? ''},
+}
+
+#[php_impl]
+impl ${struct} {${object.members.map((fn) => functionRust(model, layout, fn)).join('')}}
+`;
+}
+
+function objectOut(object: ObjectClass): string {
+  const struct = `entry::Php${langName('php', object.unit.name, 'class')}`;
+  return `
+fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
+    ZendClassObject::new(${struct} { inner: value })
+        .into_zval(false)
+        .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
 }
 `;
 }
 
 function libRust(model: Model, layout: PhpLayout): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('');
-  const enums = [...model.enums.map((u) => enumRust(layout, u)), ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i))].join('\n');
+  const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('');
+  const enums = [
+    ...model.enums.map((u) => enumRust(layout, u)),
+    ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
+    ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
+    ...model.objects.map(objectOut),
+  ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   const coreError = model.coreError === undefined ? '' : `
@@ -393,6 +458,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
+    ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
@@ -408,9 +474,9 @@ use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 ${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{${model.resultRecords.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
-use ext_php_rs::types::{${['ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
+use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
@@ -570,7 +636,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard(body: impl FnOnce() -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -622,7 +688,9 @@ function stub(model: Model, layout: PhpLayout): string {
     if ('list' in type || 'tuple' in type || 'map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
     const unit = unitOf(model, type);
-    return unit === undefined ? 'mixed' : `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
+    const library = libraryOf(type);
+    const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
+    return unit === undefined ? 'mixed' : `\\${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
   };
   const docType = (type: Type): string => {
     if (typeof type === 'object' && 'list' in type) return `list<${docType(type.list)}>`;
@@ -642,9 +710,44 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
         public function errno(): ?int {}
     }
 `).join('\n')}}`);
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module)])].sort();
+  const modules = [...new Set([
+    ...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module),
+    ...model.resultRecords.map((u) => u.module), ...model.objects.map((o) => o.unit.module),
+  ])].sort();
+  const method = (fn: Fn, indent: string): string => {
+    const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}`);
+    const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}`);
+    const name = fn.kind === 'constructor' ? '__construct' : langName('php', fn.member.name, 'callable');
+    const prefix = fn.kind === 'function' ? 'function' : fn.kind === 'static' ? 'public static function' : 'public function';
+    const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
+    return `${indent}/**
+${indent} * T-8: the parameters take any value, which the extension judges.
+${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'constructor' ? '' : `${indent} * @return ${docType(fn.returns)}\n`}${indent} */
+${indent}${prefix} ${name}(${params.join(', ')})${returns} {}
+`;
+  };
   for (const module of modules) {
     const items: string[] = [];
+    for (const unit of model.resultRecords.filter((u) => u.module === module)) {
+      const props = (unit.fields ?? []).map((f) => `            public readonly mixed $${langName('php', f.name, 'variable')},`);
+      items.push(`    /** T-4: the result form of the record; the constructor holds the values, which the extension judges when they enter. */
+    final class ${langName('php', unit.name, 'class')}
+    {
+        public function __construct(
+${props.join('\n')}
+        ) {}
+    }
+`);
+    }
+    for (const object of model.objects.filter((o) => o.unit.module === module)) {
+      const members = object.members.map((fn) => method(fn, '        '));
+      if (!object.constructible) members.unshift('        private function __construct() {}\n');
+      items.push(`    /** T-5. */
+    final class ${langName('php', object.unit.name, 'class')}
+    {
+${members.join('\n')}    }
+`);
+    }
     for (const unit of model.enums.filter((u) => u.module === module)) {
       items.push(`    enum ${langName('php', unit.name, 'class')}: string
     {
@@ -655,18 +758,7 @@ ${(unit.variants ?? []).map((v) => `        case ${langName('php', v.name, 'clas
     for (const constant of model.constants.filter((c) => c.module === module)) {
       items.push(`    const ${langName('php', constant.member.name, 'constant')} = ${JSON.stringify(constant.member.value)};\n`);
     }
-    for (const fn of model.functions.filter((f) => f.module === module)) {
-      const docs = fn.args.map((a) => `     * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}`);
-      const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}`);
-      items.push(`    /**
-     * T-8: the parameters take any value, which the extension judges.
-     *
-${docs.join('\n')}
-     * @return ${docType(fn.returns)}
-     */
-    function ${langName('php', fn.member.name, 'callable')}(${params.join(', ')}): ${phpType(fn.returns).startsWith('?') || phpType(fn.returns) === 'void' ? phpType(fn.returns) : phpType(fn.returns)} {}
-`);
-    }
+    for (const fn of model.functions.filter((f) => f.module === module)) items.push(method(fn, '    '));
     blocks.push(`namespace ${phpNamespace(layout, module)} {
 ${items.join('\n')}}`);
   }
@@ -680,8 +772,6 @@ ${blocks.join('\n\n')}
 }
 
 export function php(model: Model, files: Files): void {
-  if (model.objects.length > 0) throw new Unsupported(`${model.objects[0]?.unit.id}: a class unit is not generated for PHP yet`);
-  if (model.foreignRecords.length > 0) throw new Unsupported(`${model.foreignRecords[0]?.unit.id}: a record of another repository is not generated for PHP yet`);
   const layout = phpLayout(model);
   const php = model.contract.packages['php'] as { package: string };
   files.set(`${ROOT}/lib.rs`, libRust(model, layout));

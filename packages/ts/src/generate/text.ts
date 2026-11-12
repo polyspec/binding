@@ -134,3 +134,7 @@ export function closure(params: string[], body: string): string {
   if (call !== null && call[2] === params.join(', ')) return call[1] ?? '';
   return `|${params.join(', ')}| ${body}`;
 }
+
+// An optional value as Option<&T>, whether the Rust code holds the Option or a reference to it (T-1: a return is read
+// in either form).
+export const optionRef = (value: string): string => (value.startsWith('&') ? `${value.slice(1)}.as_ref()` : `${value}.as_ref()`);

@@ -193,7 +193,7 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     execFileSync('mkdir', ['-p', join(root, 'packages/rust'), join(root, 'dep'), join(root, 'bin')]);
     writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
     writeFileSync(join(root, 'dep/interface.json'), JSON.stringify(dependency()));
-    writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n');
+    writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n');
     // A cargo that answers metadata with 4 MB of packages before the one the check needs.
     const filler = Array.from({ length: 20000 }, (_, i) => ({ name: `filler-${i}`, manifest_path: `/nowhere/${'x'.repeat(160)}/${i}/Cargo.toml` }));
     const metadata = { packages: [...filler, { name: 'polyspec-forms-dep', manifest_path: join(root, 'dep/Cargo.toml') }] };

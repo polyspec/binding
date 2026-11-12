@@ -2,9 +2,9 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -37,7 +37,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `${fn[type]}(env, ${value})`;
   }
   if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
-  if ('optional' in type) return `out_optional(env, ${value}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('optional' in type) return `out_optional(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
     return `out_tuple(env, vec![${parts.join(', ')}])`;
@@ -195,7 +195,7 @@ fn out_none(env: &Env) -> Result<Unknown<'_>, Fail> {
 }
 
 fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
-    Ok(env.get_null().map_err(internal)?.to_unknown())
+    ToNapiValue::into_unknown(Null, env).map_err(internal)
 }
 
 fn out_list<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: impl Fn(&'env Env, T) -> Result<Unknown<'env>, Fail>) -> Result<Unknown<'env>, Fail> {
@@ -249,7 +249,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     const member = langName('node', f.name, 'variable');
     return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;`;
   });
-  const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?).map_err(internal)?;`);
+  const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
 /// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
 fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
@@ -317,7 +317,9 @@ ${lines.join('\n')}
 }
 `;
   }
-  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(jsName)})]`;
+  // G-7: napi-rs defines a class's methods as not configurable, so a method that takes arguments is the addon's
+  // __<name>, and the JavaScript entry defines <name>, which checks the arguments and calls it.
+  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsName}`)})]`;
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
@@ -334,20 +336,25 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 // members (G-7).
 function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('node', object.unit.name, 'class');
-  const struct = `Js${jsClass}`;
+  const struct = jsClass;
   const core = object.unit.core_type ?? '';
+  // napi-rs exports a class by the name of its struct, so the struct has the JavaScript name, in a module of its own.
   return `
 /// T-5: ${jsClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
-#[napi(js_name = ${rustString(jsClass)})]
-pub struct ${struct} {
-    inner: ${core},
+pub mod class_${rustField(object.unit.name)} {
+    use super::*;
+
+    #[napi]
+    pub struct ${struct} {
+        pub(crate) inner: ${core},
+    }
+
+    #[napi]
+    impl ${struct} {${object.members.map((fn) => functionRust(model, fn).replaceAll('\n', '\n    ')).join('')}}
 }
 
-#[napi]
-impl ${struct} {${object.members.map((fn) => functionRust(model, fn)).join('')}}
-
 fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(${struct} { inner: value }, env).map_err(internal)
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: value }, env).map_err(internal)
 }
 `;
 }
@@ -378,8 +385,8 @@ function libRust(model: Model): string {
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
-  const napiTypes = ['Array', 'JsString', 'Object', 'ToNapiValue', 'ValueType']
-    .filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`));
+  const napiTypes = ['Array', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
+    .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
   if (/\.(is_array|to_unknown)\(/.test(used)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(used)) napiTypes.push('JsObjectValue');
   return `${header('//')}
@@ -387,8 +394,8 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use bindgen_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
+use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
@@ -532,15 +539,15 @@ function ${name}(...args) {
 ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
 }`;
   }).join('\n');
-  // T-5: the classes of the addon keep their identity; the entry replaces each member that takes arguments with one
-  // that checks them first (G-7), so an instance that the addon makes has the checked members too.
+  // T-5: the classes of the addon keep their identity; the entry defines each method and static member over the
+  // addon's __<name>, checking the arguments first (G-7), so an instance that the addon makes has them too.
   const objects = model.objects.map((o) => {
     const cls = langName('node', o.unit.name, 'class');
     const wraps = o.members.filter((fn) => fn.kind === 'static' || fn.kind === 'method').map((fn) => {
       const name = langName('node', fn.member.name, 'callable');
       const target = fn.kind === 'static' ? cls : `${cls}.prototype`;
       return `{
-  const original = ${target}.${name};
+  const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
     value: function ${name}(...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}

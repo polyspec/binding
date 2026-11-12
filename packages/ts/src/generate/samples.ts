@@ -92,6 +92,59 @@ export interface RaisingCase {
   id: string;
   args: Map<Arg, unknown>;
   raises: { kind: string; status: number | null; category: string };
+  // The instance that a method or property is called on, made by a static member or the constructor (T-5).
+  receiver?: Receiver;
+}
+
+// The callables whose tests are generated: the functions, then the members of each class unit.
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members)];
+
+export interface Receiver {
+  factory: Fn;
+  args: Map<Arg, unknown>;
+}
+
+// The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
+function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
+  const args = new Map<Arg, unknown>();
+  for (const arg of fn.args) {
+    const snake = langName('python', arg.name, 'variable');
+    const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
+    const holder = holderKey === undefined ? record : record[holderKey];
+    if (typeof holder !== 'object' || holder === null || !(snake in holder)) return undefined;
+    args.set(arg, (holder as Record<string, unknown>)[snake]);
+  }
+  return args;
+}
+
+// T-5: the factory of a class unit whose parameters a case gives: a static member or the constructor that returns the
+// class, the first in contract order.
+export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>): Receiver | undefined {
+  if (fn.receiver === undefined) return undefined;
+  const object = model.objects.find((o) => o.unit === fn.unit);
+  for (const factory of object?.members ?? []) {
+    const returns = factory.returns;
+    const makes = typeof returns === 'object' && 'unit' in returns && returns.unit === fn.unit.id && returns.library === undefined;
+    if (factory.receiver !== undefined || !makes) continue;
+    const args = argsOf(factory, record);
+    if (args !== undefined) return { factory, args };
+  }
+  return undefined;
+}
+
+// An instance for the tests of a method that need any valid receiver: the factory arguments of the first case of the
+// class's members that does not raise.
+export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
+  const object = model.objects.find((o) => o.unit === fn.unit);
+  for (const member of object?.members ?? []) {
+    for (const kase of model.cases.get(member.member.id) ?? []) {
+      const record = kase as Record<string, unknown>;
+      if (record['raises'] !== undefined) continue;
+      const found = receiverOf(model, fn, record);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
@@ -100,17 +153,16 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const record = kase as Record<string, unknown>;
     const raises = record['raises'] as RaisingCase['raises'] | undefined;
     if (raises === undefined) continue;
-    const args = new Map<Arg, unknown>();
-    for (const arg of fn.args) {
-      const snake = langName('python', arg.name, 'variable');
-      const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
-      const holder = holderKey === undefined ? record : record[holderKey];
-      if (typeof holder !== 'object' || holder === null || !(snake in holder)) {
-        throw new Error(`the case ${String(record['id'])} of ${fn.member.id} has no ${holderKey === undefined ? '' : `${holderKey}.`}${snake} (G-5: case keys are the parameter names in snake_case)`);
-      }
-      args.set(arg, (holder as Record<string, unknown>)[snake]);
+    const args = argsOf(fn, record);
+    if (args === undefined) {
+      const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
+      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)`);
     }
-    out.push({ id: String(record['id']), args, raises });
+    const receiver = receiverOf(model, fn, record);
+    if (fn.receiver !== undefined && receiver === undefined) {
+      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)`);
+    }
+    out.push({ id: String(record['id']), args, raises, ...(receiver === undefined ? {} : { receiver }) });
   }
   return out;
 }

@@ -2,8 +2,8 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
-import { type Fn, type Model, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -183,7 +183,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
   }
   if ('list' in type) return `out_list(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
-  if ('optional' in type) return `out_optional(py, ${value}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('optional' in type) return `out_optional(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
     const parts = type.tuple.map((t, i) => convertOut(model, t, `&${value}.${i}`));
     return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
@@ -236,7 +236,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     const attr = langName('python', f.name, 'variable');
     return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;`;
   });
-  const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?)?;`);
+  const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   return `
 /// T-4: a value of the record ${pyClass} is an instance of the class itself; its fields are judged as they enter (T-8).
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
