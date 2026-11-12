@@ -117,7 +117,7 @@
   `enum.StrEnum`이다(T-6). 패키지는 Python 3.14가 필요하다(abi3-py314). list parameter는
   list나 tuple을 받는다. `keyed_map<T>{key}`는 순서대로의 `dict`이며 key는 계약이 적은 종류의 `int`(`bool`이 아닌 것),
   `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `polyspec`에는
-  `__init__.py`가 없다(P-1).
+  `__init__.py`가 없다(P-1). `map<T>`는 key가 `str`인 순서대로의 `dict`이며, 그 밖의 key는 kind `invalid_argument_type`이다.
 - **GN-12** Node: addon은 원시 값을 받는다(T-8). 생성된 CommonJS 진입점은 인자의 개수, 이름, options record member의 존재를
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
@@ -151,7 +151,7 @@
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
-  `map<T>`는 아직 Go에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
+  `map<T>`는 아직 Go와 Python(GN-11)에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
   생성한다(GN-10, GN-11, GN-12, GN-18).
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는

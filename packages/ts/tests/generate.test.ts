@@ -266,7 +266,7 @@ test('WASM: the module, its ES entry and tests are generated, and the npm packag
 test('Go: map<T> is an ordered Map, and a contract with a map and another target is refused by name (T-2, G-4)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { map: { list: 'text' } };
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is generated for Go only, not for php, python, node yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /map<T> is not generated for php, node yet/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};

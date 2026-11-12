@@ -139,7 +139,8 @@ the design ids are those of the binding design.
   and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
   (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
-  map leaves as such a `dict` (T-2). `polyspec` has no `__init__.py` (P-1).
+  map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind
+  `invalid_argument_type`. `polyspec` has no `__init__.py` (P-1).
 - **GN-12** Node: the addon takes the raw values (T-8); the generated CommonJS entry checks the count of the arguments,
   the names and the presence of the options record's members (G-7, T-4) and turns any iterable but a string into an
   array for a list parameter (T-7). When it loads, the entry hands the library classes to the addon, which keeps a
@@ -181,8 +182,8 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go only so far, so a contract with a map and another target is
-  refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
+  `invalid_argument_type`. `map<T>` is generated for Go and Python (GN-11) so far, so a contract with a map and
+  another target is refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
