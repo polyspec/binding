@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { generate } from '../src/generate/index.ts';
 import { fromJson } from '../src/generate/samples.ts';
@@ -150,7 +150,7 @@ test('a closure that only calls a function is the function (clippy redundant_clo
   assert.equal(closure(['item'], 'in_text(item, "x")'), '|item| in_text(item, "x")');
 });
 
-test('check refuses a binding_core of another version than the CLI (CK-20)', () => {
+test('check refuses a binding_core of another version or commit than the CLI (CK-20)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-g-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
@@ -159,6 +159,14 @@ test('check refuses a binding_core of another version than the CLI (CK-20)', () 
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 there is no Cargo\.lock/);
     writeFileSync(join(root, 'Cargo.lock'), lock('0.0.0-other'));
     assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), /CK-20 Cargo\.lock pins polyspec-binding-core 0\.0\.0-other/);
+    // A git dependency is compared by its commit with the checkout of this binding.
+    const head = execFileSync('git', ['-C', dirname(cli), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const git = (commit: string): string => `${lock(version).trimEnd()}\nsource = "git+https://github.com/polyspec/binding.git?branch=main#${commit}"\n`;
+    writeFileSync(join(root, 'Cargo.lock'), git('0'.repeat(40)));
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' }), new RegExp(`CK-20 Cargo\\.lock pins polyspec-binding-core at the commit ${'0'.repeat(40)}, not ${head}`));
+    writeFileSync(join(root, 'Cargo.lock'), git(head));
+    const run = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.doesNotMatch(run.stderr, /CK-20/, run.stderr);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

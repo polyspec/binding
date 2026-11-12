@@ -121,6 +121,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.
+  A git dependency is also pinned at the commit of the running binding: the HEAD of its checkout, or the commit that
+  the npm lock of the project that installed it from git resolved; another or an unknown commit is a finding.
 
 ## Tables of binding
 

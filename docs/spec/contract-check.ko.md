@@ -102,7 +102,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   fixture의 case 형식(G-5, GN-13a)을 기다린다고 지적되며, 빠지지 않는다.
 - **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
   릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
-  `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다.
+  `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다. git 의존이면 실행 중인 binding의 커밋으로도 고정한다.
+  그 커밋은 binding checkout의 HEAD이거나, binding을 git에서 설치한 프로젝트의 npm lock이 정한 커밋이다. 다른 커밋이거나
+  커밋을 알 수 없으면 finding이다.
 
 ## binding의 표
 

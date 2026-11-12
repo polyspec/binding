@@ -81,6 +81,25 @@ const [command, ...rest] = process.argv.slice(2);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
+// CK-20: the commit that this binding was checked out at: the HEAD of its git checkout, or the commit that the npm
+// lock of the project that installed it from git resolved.
+function ownCommit(): string | undefined {
+  const here = dirname(new URL(import.meta.url).pathname);
+  // The checkout of binding itself (packages/ts/src is three levels below its root), not a project that holds it in
+  // node_modules.
+  const top = spawnSync('git', ['-C', here, 'rev-parse', '--show-toplevel', 'HEAD'], { encoding: 'utf8' });
+  const [toplevel, head] = top.status === 0 ? top.stdout.trim().split('\n') : [];
+  if (toplevel !== undefined && resolve(toplevel) === resolve(here, '..', '..', '..')) return head;
+  for (let dir = here; dir !== dirname(dir); dir = dirname(dir)) {
+    const npmLock = join(dir, 'package-lock.json');
+    if (!existsSync(npmLock)) continue;
+    const packages = (JSON.parse(readFileSync(npmLock, 'utf8')) as { packages?: Record<string, { resolved?: string }> }).packages ?? {};
+    const resolved = packages['node_modules/@polyspec/binding']?.resolved;
+    if (resolved?.startsWith('git+') === true) return resolved.slice(resolved.lastIndexOf('#') + 1);
+  }
+  return undefined;
+}
+
 if (command === 'check') {
   const [path, ...extra] = rest;
   if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
@@ -149,16 +168,25 @@ const tracked = trackedPackages(checked, version, new Map(Object.entries(manifes
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.
   let differs = false;
-  // CK-20: the polyspec-binding-core that the repository's Cargo.lock pins is of the version of this binding, because
-  // one release gives both and the generated code is written for that crate (L-2).
+  // CK-20: the polyspec-binding-core that the repository's Cargo.lock pins is the one of this binding, because one
+  // release gives both and the generated code is written for that crate (L-2): of its version for a release, and of
+  // the commit that this binding was checked out at for a git dependency.
   const own = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
   const lockPath = join(root, 'Cargo.lock');
-  const lock = existsSync(lockPath) ? (parse(readFileSync(lockPath, 'utf8')) as { package?: { name: string; version: string }[] }) : undefined;
-  const pinned = (lock?.package ?? []).filter((p) => p.name === 'polyspec-binding-core').map((p) => p.version);
+  const lock = existsSync(lockPath) ? (parse(readFileSync(lockPath, 'utf8')) as { package?: { name: string; version: string; source?: string }[] }) : undefined;
+  const pins = (lock?.package ?? []).filter((p) => p.name === 'polyspec-binding-core');
+  const pinned = pins.map((p) => p.version);
   if (pinned.length !== 1 || pinned[0] !== own) {
     differs = true;
     const found = lock === undefined ? 'there is no Cargo.lock' : pinned.length === 0 ? 'Cargo.lock pins no polyspec-binding-core' : `Cargo.lock pins polyspec-binding-core ${pinned.join(', ')}`;
     process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this binding (L-2)\n`);
+  } else if (pins[0]?.source?.startsWith('git+') === true) {
+    const commit = pins[0].source.slice(pins[0].source.lastIndexOf('#') + 1);
+    const mine = ownCommit();
+    if (mine === undefined || mine !== commit) {
+      differs = true;
+      process.stderr.write(`${lockPath}: CK-20 Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine ?? 'the commit of this binding, which is unknown'} (L-2)\n`);
+    }
   }
   for (const [path, text] of tracked) {
     const full = join(root, path);

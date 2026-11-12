@@ -223,7 +223,13 @@ impl binding_core::Kinds for Error {
 
   step(`${library}: the core builds without the generator`);
   run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
-  // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20).
+  // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20). A git dependency moves to the
+  // commit of this binding, as the repository does when it takes this binding.
+  const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
+  if (/name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+/.test(lockText)) {
+    run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--quiet']);
+    if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
+  }
   run(process.execPath, [cli, 'check', join(copy, 'packages/rust/interface.json')]);
 
   step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
