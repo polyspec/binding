@@ -438,14 +438,18 @@ pub enum HostValue {
     Undefined,
     /// A boolean of any language; a Python `bool` is this and never an integer.
     Bool(bool),
-    /// PHP `IS_LONG`, a Python `int` (exactly, not a subclass) in the range of `i64`, a Go integer.
+    /// PHP `IS_LONG`, a Python `int` (exactly, not a subclass) in the range of `i64`, a JavaScript `bigint` in the range
+    /// of `i64`, a Go integer.
     Int(i64),
-    /// A Python `int` (exactly) outside the range of `i64`, as its decimal token, without loss. Whether it is accepted
-    /// is the core's rule (B-1).
+    /// A Python `int` (exactly) or a JavaScript `bigint` outside the range of `i64`, as its decimal token, without loss.
+    /// Whether it is accepted is the core's rule (B-1).
     Number(String),
-    /// PHP `IS_DOUBLE`, every JavaScript number, a Python `float` (exactly), a Go float. Whether a JavaScript number is
-    /// an integer is the core's rule (U-7 (f)).
+    /// PHP `IS_DOUBLE`, a Python `float` (exactly), a Go float: a float of a language that has integers apart, which
+    /// stays a float whatever its value; the core does not make it an integer (U-7 (f)).
     Float(f64),
+    /// A JavaScript number: a number of a language with one number type for integers and floats. Whether it is an
+    /// integer is the core's rule (U-7 (f)).
+    UntypedNumber(f64),
     /// A string of any language, in its own units.
     Text(HostText),
     /// A Python `bytes` (exactly).
