@@ -2,7 +2,7 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
@@ -25,7 +25,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -42,7 +43,9 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `out_tuple(env, vec![${parts.join(', ')}])`;
   }
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(env, ${value})`;
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
+  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
+  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -238,8 +241,8 @@ ${outArms}
 }
 
 // T-4: the result form of a record, a plain object with a member per field.
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
+function recordRust(model: Model, unit: Unit, library?: string): string {
+  const name = recordFn(unit, library);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
@@ -267,7 +270,7 @@ const fieldInit = (field: string, variable: string): string => (field === variab
 
 function functionRust(model: Model, fn: Fn): string {
   const jsName = langName('node', fn.member.name, 'callable');
-  const params = fn.params.map((p) => `${rustField(p.name)}: Unknown<'env>`).join(', ');
+  const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
@@ -284,21 +287,67 @@ function functionRust(model: Model, fn: Fn): string {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`);
     }
   }
-  const callArgs = fn.params.map((p) => (fn.record !== undefined && p === fn.record.param ? `&${rustField(p.name)}` : coreArg(model, p.type, rustField(p.name))));
-  const call = `${fn.corePath}(${callArgs.join(', ')})`;
+  const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else {
     lines.push(`        let result = ${call};`);
   }
+  if (fn.kind === 'constructor') {
+    lines.push('        Ok(Self { inner: result })');
+    return `
+    #[napi(constructor)]
+    pub fn new<'env>(env: &'env Env${params}) -> napi::Result<Self> {
+        guard(|| {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+`;
+  }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
-  return `
+  if (fn.kind === 'function') {
+    return `
 #[napi(js_name = ${rustString(jsName)})]
-pub fn ${rustField(fn.member.name)}<'env>(env: &'env Env, ${params}) -> napi::Result<Unknown<'env>> {
+pub fn ${rustField(fn.member.name)}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
     guard(|| {
 ${lines.join('\n')}
     })
     .map_err(|fail| throw(env, fail))
+}
+`;
+  }
+  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(jsName)})]`;
+  const self = fn.receiver === undefined ? '' : '&self, ';
+  return `
+    ${attribute}
+    pub fn ${rustField(fn.member.name)}<'env>(${self}env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+`;
+}
+
+// T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
+// members (G-7).
+function objectRust(model: Model, object: ObjectClass): string {
+  const jsClass = langName('node', object.unit.name, 'class');
+  const struct = `Js${jsClass}`;
+  const core = object.unit.core_type ?? '';
+  return `
+/// T-5: ${jsClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
+#[napi(js_name = ${rustString(jsClass)})]
+pub struct ${struct} {
+    inner: ${core},
+}
+
+#[napi]
+impl ${struct} {${object.members.map((fn) => functionRust(model, fn)).join('')}}
+
+fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(${struct} { inner: value }, env).map_err(internal)
 }
 `;
 }
@@ -322,8 +371,12 @@ ${arms}
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const enums = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u))].join('\n');
+  const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('');
+  const enums = [
+    ...model.enums.map(enumRust),
+    ...model.resultRecords.map((u) => recordRust(model, u)),
+    ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+  ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
   const napiTypes = ['Array', 'JsString', 'Object', 'ToNapiValue', 'ValueType']
     .filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`));
@@ -433,6 +486,10 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
+  // T-3: a record of another repository is a plain object, declared here by its fields.
+  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
+    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
+  }
   return unit === undefined ? 'unknown' : langName('node', unit.name, 'class');
 }
 
@@ -452,29 +509,56 @@ class ${c.name} extends globalThis.${nodeBase(c.category)} {
     });
   }
 }`).join('\n');
-  const fns = model.functions.map((fn) => {
-    const name = langName('node', fn.member.name, 'callable');
+  // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
+  const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
     const count = fn.params.length;
-    const lines = [`  if (args.length !== ${count}) {`, `    throw new TypeError(\`${name}() takes ${count} argument${count === 1 ? '' : 's'}, \${args.length} given\`);`, '  }'];
+    const lines = [`  if (args.length !== ${count}) {`, `    throw new TypeError(\`${label} takes ${count} argument${count === 1 ? '' : 's'}, \${args.length} given\`);`, '  }'];
     const passed = fn.params.map((p, i) => {
       if (fn.record !== undefined && p === fn.record.param) {
         const record = langName('node', p.name, 'variable');
         const names = (fn.record.unit.fields ?? []).map((f) => langName('node', f.name, 'variable'));
-        lines.push(`  checkRecord(${jsString(`${name}()`)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}]);`);
+        lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(`  return addon.${name}(${passed.join(', ')});`);
+    lines.push(`  return ${call(passed.join(', '))};`);
+    return lines.join('\n');
+  };
+  const fns = model.functions.map((fn) => {
+    const name = langName('node', fn.member.name, 'callable');
     return `
 function ${name}(...args) {
-${lines.join('\n')}
+${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
 }`;
+  }).join('\n');
+  // T-5: the classes of the addon keep their identity; the entry replaces each member that takes arguments with one
+  // that checks them first (G-7), so an instance that the addon makes has the checked members too.
+  const objects = model.objects.map((o) => {
+    const cls = langName('node', o.unit.name, 'class');
+    const wraps = o.members.filter((fn) => fn.kind === 'static' || fn.kind === 'method').map((fn) => {
+      const name = langName('node', fn.member.name, 'callable');
+      const target = fn.kind === 'static' ? cls : `${cls}.prototype`;
+      return `{
+  const original = ${target}.${name};
+  Object.defineProperty(${target}, ${jsString(name)}, {
+    value: function ${name}(...args) {
+${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
+    },
+    writable: true,
+    configurable: true,
+  });
+}`;
+    });
+    return `
+const ${cls} = addon.${cls};
+${wraps.join('\n')}`;
   }).join('\n');
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   const exports = [
     ...model.classes.map((c) => c.name),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
+    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
@@ -507,6 +591,7 @@ function checkRecord(fn, name, record, fields) {
   }
 }
 ${fns}
+${objects}
 
 ${constants}
 
@@ -520,6 +605,7 @@ function indexMjs(model: Model): string {
   const exports = [
     ...model.classes.map((c) => c.name),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
+    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
@@ -550,10 +636,27 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')
     return `export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${tsType(model, fn.returns, false)};`;
   }).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
+  const params = (fn: Fn): string => fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
+  const objects = model.objects.map((o) => {
+    const lines = o.members.map((fn) => {
+      const name = langName('node', fn.member.name, 'callable');
+      if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
+      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+      if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
+      return `  ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+    });
+    if (!o.constructible) lines.unshift('  private constructor();');
+    return `
+/** T-5. */
+export declare class ${langName('node', o.unit.name, 'class')} {
+${lines.join('\n')}
+}`;
+  }).join('\n');
   return `${header('//')}
 ${classes}
 ${enums}
 ${records}
+${objects}
 
 ${fns}
 

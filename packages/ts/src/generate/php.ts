@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, coreArg, langName, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, Unsupported, coreArg, langName, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
@@ -680,6 +680,8 @@ ${blocks.join('\n\n')}
 }
 
 export function php(model: Model, files: Files): void {
+  if (model.objects.length > 0) throw new Unsupported(`${model.objects[0]?.unit.id}: a class unit is not generated for PHP yet`);
+  if (model.foreignRecords.length > 0) throw new Unsupported(`${model.foreignRecords[0]?.unit.id}: a record of another repository is not generated for PHP yet`);
   const layout = phpLayout(model);
   const php = model.contract.packages['php'] as { package: string };
   files.set(`${ROOT}/lib.rs`, libRust(model, layout));

@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
-import { type Fn, type Model, coreArg, langName, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Fn, type Model, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -172,7 +172,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -188,7 +189,9 @@ function convertOut(model: Model, type: Type, value: string): string {
     return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
   }
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(py, ${value})`;
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
+  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(py, ${value})`;
+  if (objectUnit(model, type) !== undefined && unit !== undefined) return `out_${rustField(unit.name)}(py, ${value})`;
   throw new Error(`no Python output conversion for ${JSON.stringify(type)}`);
 }
 
@@ -223,8 +226,9 @@ ${outArms}
 }
 
 // T-4: the result form of a record, a frozen dataclass of _types that takes every field by name.
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
+function recordRust(model: Model, unit: Unit, library?: string): string {
+  const name = recordFn(unit, library);
+  const typesOf = library === undefined ? 'types(py)?' : `foreign_types(py, ${rustString(`${(model.foreign.get(library)?.packages['python'] as { module: string }).module}._types`)})?`;
   const core = unit.core_type ?? '';
   const pyClass = langName('python', unit.name, 'class');
   const fields = unit.fields ?? [];
@@ -236,7 +240,7 @@ function recordRust(model: Model, unit: Unit): string {
   return `
 /// T-4: a value of the record ${pyClass} is an instance of the class itself; its fields are judged as they enter (T-8).
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
-    let class = types(py)?.getattr(${rustString(pyClass)})?;
+    let class = ${typesOf}.getattr(${rustString(pyClass)})?;
     if !value.is_instance(&class)? {
         return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
     }
@@ -248,7 +252,7 @@ fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bo
     let value = value.borrow();
     let fields = PyDict::new(py);
 ${writes.join('\n')}
-    types(py)?.getattr(${rustString(pyClass)})?.call((), Some(&fields))
+    ${typesOf}.getattr(${rustString(pyClass)})?.call((), Some(&fields))
 }
 `;
 }
@@ -261,38 +265,77 @@ function functionRust(model: Model, fn: Fn): string {
   const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
   const all = [...positional, ...keyword];
-  const params = all.map((p) => `${p}: &Bound<'py, PyAny>`).join(', ');
+  const params = all.map((p) => `, ${p}: &Bound<'py, PyAny>`).join('');
   const lines: string[] = [];
   for (const arg of fn.args) {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     lines.push(`        let ${variable}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(langName('python', arg.name, 'variable')))}?;`);
   }
-  const callArgs: string[] = [];
-  for (const parameter of fn.params) {
-    if (fn.record !== undefined && parameter === fn.record.param) {
-      const recordType = fn.record.unit.core_type ?? '';
-      const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustIdent(langName('python', f.name, 'variable')))).join(', ');
-      lines.push(`        let ${rustField(parameter.name)}: ${recordType} = ${recordType} { ${fields} };`);
-      callArgs.push(`&${rustField(parameter.name)}`);
-    } else {
-      const variable = rustIdent(langName('python', parameter.name, 'variable'));
-      callArgs.push(coreArg(model, parameter.type, variable));
-    }
+  if (fn.record !== undefined) {
+    const recordType = fn.record.unit.core_type ?? '';
+    const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustIdent(langName('python', f.name, 'variable')))).join(', ');
+    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
-  const call = `${fn.corePath}(${callArgs.join(', ')})`;
+  const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`;
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(py, error)),\n        };`);
   } else {
     lines.push(`        let result = ${call};`);
   }
+  if (fn.kind === 'constructor') {
+    lines.push('        Ok(Self { inner: result })');
+    return `
+    #[new]
+    #[pyo3(signature = (${signature}))]
+    fn new<'py>(py: Python<'py>${params}) -> PyResult<Self> {
+        guard(py, || {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+    }
+`;
+  }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
-  return `
+  if (fn.kind === 'function') {
+    return `
 #[pyfunction]
 #[pyo3(signature = (${signature}))]
-fn ${name}<'py>(py: Python<'py>, ${params}) -> PyResult<Bound<'py, PyAny>> {
+fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
     guard(py, || {
 ${lines.join('\n')}
     })
+}
+`;
+  }
+  const attributes = { static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind];
+  const self = fn.receiver === undefined ? '' : '&self, ';
+  return `
+${attributes.map((a) => `    ${a}`).join('\n')}
+    fn ${name}<'py>(${self}py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
+        guard(py, || {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+    }
+`;
+}
+
+// T-5: a class unit is a class of the native module that holds the core value; its members call the core (U-2).
+function objectRust(model: Model, layout: PythonLayout, object: ObjectClass): string {
+  const pyClass = langName('python', object.unit.name, 'class');
+  const struct = `Py${pyClass}`;
+  const core = object.unit.core_type ?? '';
+  const members = object.members.map((fn) => functionRust(model, fn)).join('');
+  return `
+/// T-5: ${pyClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
+#[pyclass(name = ${rustString(pyClass)}, module = ${rustString(moduleOf(layout, object.unit.module))}, frozen)]
+pub struct ${struct} {
+    inner: ${core},
+}
+
+#[pymethods]
+impl ${struct} {${members}}
+
+fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
+    Ok(Bound::new(py, ${struct} { inner: value })?.into_any())
 }
 `;
 }
@@ -319,16 +362,29 @@ function libRust(model: Model, layout: PythonLayout): string {
     .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
     .join('\n');
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const enums = [...model.enums.map((u) => enumRust(model, u)), ...model.resultRecords.map((u) => recordRust(model, u))].join('\n');
+  const enums = [
+    ...model.enums.map((u) => enumRust(model, u)),
+    ...model.resultRecords.map((u) => recordRust(model, u)),
+    ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+  ].join('\n');
+  const objects = model.objects.map((o) => objectRust(model, layout, o)).join('');
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
     static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
     TYPES.get_or_try_init(py, || py.import(${rustString(`${layout.module}._types`)}).map(Bound::unbind)).map(|module| module.bind(py))
 }
+
+/// T-3: the types module of another repository's package, whose classes that package owns.
+fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyModule>> {
+    py.import(module)
+}
 `;
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${typesFn}\n${enums}`, `${functions}${coreErrorRust(model)}`);
-  const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`) || t === 'PyModule');
-  const register = model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`).join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreErrorRust(model)}`);
+  const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
+  const register = [
+    ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
+    ...model.objects.map((o) => `    module.add_class::<Py${langName('python', o.unit.name, 'class')}>()?;`),
+  ].join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
   return `${header('//')}
 // The native module ${layout.module}._native of ${model.contract.library}.
@@ -385,7 +441,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${used}${functions}
+${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]
@@ -442,6 +498,16 @@ __all__ = [${model.classes.map((c) => pyString(c.name)).join(', ')}]${classes}
 const pythonBase = (category: string): string =>
   ({ value: 'ValueError', type: 'TypeError', io: 'OSError', store: 'RuntimeError', busy: 'RuntimeError', internal: 'RuntimeError' })[category] ?? 'Exception';
 
+// T-3: the records of other repositories are the classes of their packages.
+function foreignImports(model: Model): string[] {
+  const byModule = new Map<string, string[]>();
+  for (const r of model.foreignRecords) {
+    const module = (r.contract.packages['python'] as { module: string }).module;
+    byModule.set(module, [...(byModule.get(module) ?? []), langName('python', r.unit.name, 'class')]);
+  }
+  return [...byModule].map(([module, names]) => `from ${module} import ${names.map((n) => `${n} as ${n}`).join(', ')}`);
+}
+
 function typesPy(model: Model): string {
   const enums = model.enums.map((u) => {
     const members = (u.variants ?? []).map((v) => `    ${langName('python', v.name, 'constant')} = ${pyString(v.value)}`).join('\n');
@@ -467,13 +533,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-
+${foreignImports(model).map((line) => `${line}\n`).join('')}
 __all__ = [${names.join(', ')}]${enums}${records}
 `;
 }
 
 function modulePy(model: Model, module: string): string {
-  const fns = model.functions.filter((f) => f.module === module).map((f) => langName('python', f.member.name, 'callable'));
+  const fns = [
+    ...model.functions.filter((f) => f.module === module).map((f) => langName('python', f.member.name, 'callable')),
+    ...model.objects.filter((o) => o.unit.module === module).map((o) => langName('python', o.unit.name, 'class')),
+  ];
   const enums = [...model.enums, ...model.resultRecords].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
   const constants = model.constants.filter((c) => c.module === module);
   const names = [...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
@@ -500,19 +569,36 @@ function nativePyi(model: Model): string {
     const params = keyword.length === 0 ? positional : [...positional, '*', ...keyword];
     return `def ${langName('python', fn.member.name, 'callable')}(${params.join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
   });
+  const params = (fn: Fn): string[] => {
+    const positional = fn.args.filter((a) => !a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    const keyword = fn.args.filter((a) => a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    return keyword.length === 0 ? positional : [...positional, '*', ...keyword];
+  };
+  const classes = model.objects.map((o) => {
+    const lines = o.members.map((fn) => {
+      const name = langName('python', fn.member.name, 'callable');
+      if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
+      if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+      if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
+      return `    def ${name}(${['self', ...params(fn)].join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
+    });
+    return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
+  });
   return `${pyHeader()}
 from collections.abc import Sequence
-${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}
+from typing import final
+${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
-`;
+${classes.join('')}`;
 }
 
 function initPy(model: Model): string {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])].sort();
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])].sort();
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
     ...model.functions.map((f) => langName('python', f.member.name, 'callable')),
+    ...model.objects.map((o) => langName('python', o.unit.name, 'class')),
     ...model.enums.map((u) => langName('python', u.name, 'class')),
     ...model.resultRecords.map((u) => langName('python', u.name, 'class')),
     ...model.constants.map((c) => langName('python', c.member.name, 'constant')),
@@ -536,7 +622,7 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));
   files.set(`${pkg}/py.typed`, '');
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])];
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.constants.map((c) => c.module)])];
   for (const module of modules) {
     files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
   }

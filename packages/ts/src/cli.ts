@@ -80,7 +80,8 @@ if (command === 'check') {
   contractPath = given !== undefined ? resolve(given) : join(resolve(options.get('--root') ?? '.'), 'packages/rust/interface.json');
 }
 const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
-const findings = checkContract(contract, { dependencies: dependencies(contract, dirname(contractPath)) });
+const foreign = dependencies(contract, dirname(contractPath));
+const findings = checkContract(contract, { dependencies: foreign });
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
@@ -144,7 +145,7 @@ for (const kase of checked.cases) {
 }
 let files: ReturnType<typeof generate>;
 try {
-  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles });
+  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> });
 } catch (error) {
   // G-4: an item that the generator cannot generate yet is named, and nothing is written.
   if (error instanceof Unsupported) usage(`not generated (G-4): ${error.message}`);
