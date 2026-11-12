@@ -110,6 +110,9 @@ const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
   caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]),
 });
 const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
+// The case files of the sample of the end-to-end check (tests/e2e/sample).
+const sampleCases = (): Map<string, unknown> =>
+  new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
   const { contract, caseFiles } = load();
@@ -226,6 +229,11 @@ test('check reads cargo metadata of any size for the contracts it depends on (T-
     execFileSync('mkdir', ['-p', join(root, 'packages/rust'), join(root, 'dep'), join(root, 'bin')]);
     writeFileSync(join(root, 'packages/rust/interface.json'), JSON.stringify(contract));
     writeFileSync(join(root, 'dep/interface.json'), JSON.stringify(dependency()));
+    // K-1: the case files, with a case of the kind that forms.parse raises (CK-22).
+    const groups = new Map<string, Record<string, unknown[]>>();
+    for (const row of contract.cases) groups.set(row.file, { ...groups.get(row.file), [row.group]: row.member === 'forms.parse' ? [{ id: 'large', raises: { kind: 'too_large' } }] : [] });
+    execFileSync('mkdir', ['-p', join(root, 'contracts')]);
+    for (const [file, document] of groups) writeFileSync(join(root, file), JSON.stringify(document));
     writeFileSync(join(root, 'packages/rust/Cargo.toml'), '[package]\nname = "polyspec-sample"\nversion = "0.0.1"\n\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n');
     // A cargo that answers metadata with 4 MB of packages before the one the check needs.
     const filler = Array.from({ length: 20000 }, (_, i) => ({ name: `filler-${i}`, manifest_path: `/nowhere/${'x'.repeat(160)}/${i}/Cargo.toml` }));
@@ -466,7 +474,7 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
 
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  const caseFiles = new Map([['contracts/cases.json', { join: [] }]]);
+  const caseFiles = sampleCases();
   const paths = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs'];
   const taken = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   for (const path of paths) assert.match(text(taken, path), /\nfn in_tag[(<]/, path);

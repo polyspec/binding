@@ -93,6 +93,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-21** 코어의 빌드와 exclusive member(I-1, U-6): `core.features`는 target만 가리킨다. `exclusive`는 generated class의
   receiver `&self` member에만 둔다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).
+- **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
+  constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
+  e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
+  kind마다 그 kind를 내는 case를 가진다. 어떤 입력도 닿지 않는 category `internal`(결함)과 `io`(환경)의 kind는 뺀다.
+  callback interface나 함수 타입을 받으면서 raises가 있는 member는 JSON case가 callback을 줄 수 없으므로 callback
+  fixture의 case 형식(G-5, GN-13a)을 기다린다고 지적되며, 빠지지 않는다.
 - **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
   릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
   `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다.

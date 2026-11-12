@@ -5,5 +5,21 @@
       "tags": [],
       "text": ""
     }
+  ],
+  "resolve": [],
+  "count": [],
+  "shout": [],
+  "tag_new": [
+    {
+      "id": "a_tag_holds_its_name",
+      "name": "a"
+    }
+  ],
+  "tag_name": [
+    {
+      "id": "the_name_of_a_tag",
+      "name": "a",
+      "result": "a"
+    }
   ]
 }

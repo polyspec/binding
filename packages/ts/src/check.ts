@@ -34,6 +34,9 @@ export interface CheckOptions {
   // The contracts of the libraries that this contract names, by library name (T-3, E-1b). binding reads them from the
   // packages that Cargo resolved; the check takes them as values.
   dependencies?: ReadonlyMap<string, unknown>;
+  // The case files that `cases` names, parsed, by their path from the repository root (K-1). Given, CK-22 also reads
+  // the groups; binding check reads them from the repository.
+  caseFiles?: ReadonlyMap<string, unknown>;
 }
 
 const schema: unknown = JSON.parse(
@@ -111,10 +114,12 @@ class Checker {
   readonly units = new Map<string, Located<Unit>>();
   readonly members = new Map<string, { member: Member; unit: Unit; path: string }>();
   readonly dependencyContracts = new Map<string, Contract | null>();
+  readonly caseFiles: ReadonlyMap<string, unknown> | undefined;
 
   constructor(contract: Contract, options: CheckOptions) {
     this.contract = contract;
     this.dependencies = options.dependencies ?? new Map();
+    this.caseFiles = options.caseFiles;
   }
 
   report(check: string, path: string, message: string): void {
@@ -139,6 +144,7 @@ class Checker {
     this.callbacks();
     this.packageNames();
     this.coreBuild();
+    this.caseLinks();
     return this.findings;
   }
 
@@ -1050,6 +1056,71 @@ class Checker {
     for (const [path, found, want] of expected) {
       if (found !== want) this.report('CK-18', path, `${String(found)} is not ${want}, the name that P-1 gives the library ${library}`);
     }
+  }
+
+  // ---- CK-22: every member runs contract cases (K-1) ----
+
+  // K-1: a member that a binding generates names the case file and group that run it, because the tests of G-5 that
+  // run cases (B-3 on a case's values, B-4) would otherwise be left out without a word. A constant has no cases.
+  caseLinks(): void {
+    const linked = new Set(this.contract.cases.map((kase) => kase.member));
+    for (const { member, unit, path } of this.members.values()) {
+      if (member.kind === 'constant' || unit.kind === 'error' || unit.origin === 'callback' || unit.origin === 'host') continue;
+      if (member.visibility !== 'public' || unit.visibility !== 'public') continue;
+      if (!linked.has(member.id)) this.report('CK-22', path, `${member.id} names no case file and group in cases (K-1)`);
+    }
+    if (this.caseFiles !== undefined) this.caseKinds(this.caseFiles);
+  }
+
+  // K-1, B-4: every group that cases names is in its file, and a member has a case for each kind that it raises, other
+  // than a kind of the category internal or io, which no input reaches (one is a defect, the other comes from the
+  // environment). A case cannot give a callback or a function yet, so a member that takes one and raises is reported
+  // as such until G-5 has the case form of a callback fixture (GN-13a); it is not left out, which would drop its tests
+  // without a word.
+  caseKinds(files: ReadonlyMap<string, unknown>): void {
+    const raised = new Map<string, Set<string>>();
+    for (const [i, row] of this.contract.cases.entries()) {
+      const document = files.get(row.file);
+      const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
+      if (!Array.isArray(group)) {
+        this.report('CK-22', `/cases/${i}`, document === undefined ? `the file ${row.file} is not found` : `the file ${row.file} has no group ${row.group}`);
+        continue;
+      }
+      const kinds = raised.get(row.member) ?? new Set<string>();
+      for (const kase of group) {
+        const raises = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['raises'] : undefined;
+        const kind = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>)['kind'] : undefined;
+        if (typeof kind === 'string') kinds.add(kind);
+      }
+      raised.set(row.member, kinds);
+    }
+    const categories = new Map(this.contract.errors.kinds.map((row) => [row.variant, row.category]));
+    const snake = (name: string): string => name.replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+    for (const { member, unit, path } of this.members.values()) {
+      const kinds = raised.get(member.id);
+      if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
+      const code = (member.parameters ?? []).some((p) => this.takesCode(p.type));
+      for (const [r, variant] of (member.raises ?? []).entries()) {
+        const category = categories.get(variant);
+        if (category === undefined || category === 'internal' || category === 'io') continue;
+        const kind = snake(variant.slice(variant.lastIndexOf('::') + 2));
+        if (code) {
+          this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but the case form of a callback is not decided: a case cannot give the callback that ${member.id} takes (G-5, GN-13a)`);
+        } else if (!kinds.has(kind)) {
+          this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind} (K-1, B-4)`);
+        }
+      }
+    }
+  }
+
+  // Whether a type holds a callback interface or a function, which a JSON case cannot give (U-3, T-2).
+  takesCode(type: Type): boolean {
+    if (typeof type === 'string') return false;
+    if ('function' in type) return true;
+    if ('optional' in type) return this.takesCode(type.optional);
+    if ('list' in type) return this.takesCode(type.list);
+    if ('unit' in type && type.library === undefined) return this.units.get(type.unit)?.value.origin === 'callback';
+    return false;
   }
 
   // ---- CK-21: the build of the core and exclusive members (I-1, U-6) ----

@@ -103,7 +103,25 @@ const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 // Cargo for the workspace either: a binding manifest that an earlier scaffold wrote, which this one rewrites, may no
 // longer resolve (the core crate was renamed), and that must not stop the rewrite.
 const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath));
-const findings = checkContract(contract, { dependencies: foreign }).filter((f) => command !== 'scaffold' || f.check === 'CK-1' || f.check === 'CK-18');
+// K-1: the case files that cases names, from the repository root, for CK-22; a file that does not parse is left out
+// and reported as not found.
+const caseFiles = new Map<string, unknown>();
+{
+  const raw = contract as { core?: { path?: unknown }; cases?: { file?: unknown }[] };
+  const corePath = typeof raw.core?.path === 'string' ? raw.core.path : undefined;
+  if (corePath !== undefined && Array.isArray(raw.cases)) {
+    const top = resolve(dirname(contractPath), ...corePath.split('/').map(() => '..'));
+    for (const row of raw.cases) {
+      if (typeof row.file !== 'string' || caseFiles.has(row.file)) continue;
+      try {
+        caseFiles.set(row.file, JSON.parse(readFileSync(join(top, row.file), 'utf8')));
+      } catch {
+        // not found or not JSON: CK-22 reports the file
+      }
+    }
+  }
+}
+const findings = checkContract(contract, { dependencies: foreign, caseFiles }).filter((f) => command !== 'scaffold' || f.check === 'CK-1' || f.check === 'CK-18');
 if (findings.length > 0) {
   for (const f of findings) process.stderr.write(`${contractPath}#${f.path}: ${f.check} ${f.message}\n`);
   process.exit(1);
@@ -178,10 +196,6 @@ if (command === 'scaffold') {
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
-const caseFiles = new Map<string, unknown>();
-for (const kase of checked.cases) {
-  if (!caseFiles.has(kase.file)) caseFiles.set(kase.file, JSON.parse(readFileSync(join(root, kase.file), 'utf8')));
-}
 let files: ReturnType<typeof generate>;
 try {
   files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> });

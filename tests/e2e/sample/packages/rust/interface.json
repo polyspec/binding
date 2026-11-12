@@ -90,6 +90,10 @@
       {
         "variant": "polyspec_sample::Error::Missing",
         "category": "value"
+      },
+      {
+        "variant": "polyspec_sample::Error::Unsupported",
+        "category": "value"
       }
     ],
     "binding": [],
@@ -319,6 +323,31 @@
       "member": "sample.join",
       "file": "contracts/cases.json",
       "group": "join"
+    },
+    {
+      "member": "sample.resolve",
+      "file": "contracts/cases.json",
+      "group": "resolve"
+    },
+    {
+      "member": "sample.count",
+      "file": "contracts/cases.json",
+      "group": "count"
+    },
+    {
+      "member": "sample.shout",
+      "file": "contracts/cases.json",
+      "group": "shout"
+    },
+    {
+      "member": "tag.new",
+      "file": "contracts/cases.json",
+      "group": "tag_new"
+    },
+    {
+      "member": "tag.name",
+      "file": "contracts/cases.json",
+      "group": "tag_name"
     }
   ]
 }

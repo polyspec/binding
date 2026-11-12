@@ -90,7 +90,10 @@ describe('CK-3 references', () => {
   test('an unknown unit in a type', () => fails('CK-3', '/units/', (c) => { member(c, 'forms.parse').returns = { unit: 'nothing' }; }));
   test('implements names a class', () => fails('CK-3', '/units/', (c) => { unit(c, 'memory_store').implements = [{ unit: 'session' }]; }));
   test('a cleanup member of another unit', () => fails('CK-3', '/units/', (c) => { unit(c, 'session').cleanup = 'forms.parse'; }));
-  test('a case of an unknown member', () => fails('CK-3', '/cases/0/member', (c) => { c.cases[0].member = 'forms.nothing'; }));
+  test('a case of an unknown member', () => fails('CK-3', '/cases/0/member', (c) => {
+    c.cases.push({ ...c.cases[0] });
+    c.cases[0].member = 'forms.nothing';
+  }));
   test('a change to an unknown id', () => fails('CK-3', '/changes/0/to', (c) => { c.changes[0].to = 'nothing'; }));
   test('only names a language that is not a target', () =>
     fails('CK-3', '/units/', (c) => { c.targets = ['php', 'python', 'node', 'go']; member(c, 'session.load').only.targets = ['php', 'wasm']; for (const r of unit(c, 'value').out) delete r.make.wasm; unit(c, 'value').in = unit(c, 'value').in.filter((r: any) => r.wasm === undefined); for (const k of Object.keys(c.errors.classes)) delete c.errors.classes[k].wasm; c.errors.fixed = c.errors.fixed.filter((r: any) => r.lang !== 'wasm'); }));
@@ -316,6 +319,7 @@ describe('CK-16 Python awaitable names', () => {
   test('an awaitable name taken by another member', () =>
     fails('CK-16', `${at('memory_store')}/members/0`, (c) => {
       unit(c, 'memory_store').members.push({ id: 'memory_store.aread', name: ['aread'], kind: 'method', visibility: 'public', wait: 'none' });
+      c.cases.push({ member: 'memory_store.aread', file: 'contracts/cases.json', group: 'memory_store.aread' });
     }));
   test('an awaitable callback name taken by another member', () =>
     fails('CK-16', `${at('store')}/members/0`, (c) => {
@@ -505,6 +509,54 @@ describe('CK-21 the build of the core and exclusive members', () => {
   });
   test('an exclusive member with the receiver &mut self', () =>
     fails('CK-21', `${at('session')}/members/`, (c) => { member(c, 'session.load').exclusive = 'HY-104'; }));
+});
+
+describe('CK-22 every member names its cases (K-1)', () => {
+  test('a member without a case', () =>
+    fails('CK-22', `${at('forms')}/members/`, (c) => {
+      c.cases = c.cases.filter((kase: any) => kase.member !== 'forms.parse');
+    }));
+  // The case files of the fixture: every group that cases names, with a case of each kind that forms.parse raises.
+  const withFiles = (c: any, raising: boolean, leave?: string): Finding[] => {
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const row of c.cases) {
+      const document = files.get(row.file) ?? {};
+      if (row.group !== leave) document[row.group] = row.member === 'forms.parse' && raising ? [{ id: 'too_large', body: { hex: '00' }, raises: { kind: 'too_large' } }] : [];
+      files.set(row.file, document);
+    }
+    return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
+  };
+  test('case files with a case of every kind are accepted (B-4)', () => {
+    assert.deepEqual(withFiles(contract(), true), []);
+  });
+  test('a kind that no case raises', () => {
+    assert.deepEqual(withFiles(contract(), false).map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
+  });
+  test('a kind of the category io or internal needs no case', () => {
+    const c = contract();
+    c.errors.kinds[1].category = 'io';
+    member(c, 'forms.parse').raises = ['sample::Error::Store'];
+    assert.deepEqual(withFiles(c, false), []);
+    c.errors.kinds[1].category = 'internal';
+    assert.deepEqual(withFiles(c, false), []);
+  });
+  test('a raising member that takes a callback waits for the case form of a callback (G-5, GN-13a)', () => {
+    const c = contract();
+    member(c, 'forms.parse').parameters.push({ name: ['store'], type: { unit: 'store' }, required: true });
+    const found = withFiles(c, true);
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
+    assert.match(found[0]?.message ?? '', /the case form of a callback is not decided/);
+  });
+  test('a group that is not in its file', () => {
+    const c = contract();
+    const index = c.cases.findIndex((row: any) => row.group === 'parse');
+    assert.deepEqual(withFiles(c, true, 'parse').map((f) => [f.check, f.path]), [['CK-22', `/cases/${index}`]]);
+  });
+  test('constants, error units, callbacks and host units need no case', () => {
+    assert.deepEqual(findings((c) => {
+      c.cases = c.cases.filter((kase: any) => !kase.member.startsWith('form_error.'));
+    }), []);
+  });
 });
 
 describe('CK-17 function types (T-2, U-3)', () => {

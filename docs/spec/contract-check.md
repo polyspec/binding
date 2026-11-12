@@ -111,6 +111,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-21** The build of the core and exclusive members (I-1, U-6): `core.features` names targets only; `exclusive` is
   on a member with the receiver `&self` of a generated class only. A function type (T-2) states `async_allowed` and
   its `recognize` names error units, as a callback member does (CK-17).
+- **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
+  not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
+  `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
+  reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
+  in its `raises`, other than a kind of the category `internal` (a defect) or `io` (the environment), which no input
+  reaches. A member that raises and takes a callback interface or a function type is reported as waiting for the case
+  form of a callback fixture (G-5, GN-13a), because a JSON case cannot give the callback; it is not left out.
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.
