@@ -54,7 +54,7 @@
   이름으로 내보내는 napi 클래스, PHP는 final 플래그를 단 `php_class`. 메서드와 property는 가진 값을 receiver로 코어 경로를 부르고,
   클래스를 돌려주는 static member나 생성자는 값을 감싼다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
   property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
-  인자를 받는 Node 메서드와 static member는 addon의 `__<name>`이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
+  인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
 - **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
   PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node는 plain object를 주고받으며 선언은 field로 적는다. 바인딩
   crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.

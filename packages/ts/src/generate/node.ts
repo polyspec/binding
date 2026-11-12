@@ -318,8 +318,9 @@ ${lines.join('\n')}
 `;
   }
   // G-7: napi-rs defines a class's methods as not configurable, so a method that takes arguments is the addon's
-  // __<name>, and the JavaScript entry defines <name>, which checks the arguments and calls it.
-  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsName}`)})]`;
+  // __<name>, not enumerable and not declared, and the JavaScript entry defines <name>, which checks the arguments and
+  // calls it.
+  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsName}`)}, enumerable = false)]`;
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}

@@ -94,7 +94,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 이 닫힌 집합은 binding의 것이다. Rust 이름은 `binding_core`의 것이다(`docs/core-api.md`).
 
 - 레포 이름의 약어 낱말(P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`, `json`, `orm`,
-  `php`, `sql`, `ui`, `uri`, `url`, `xml`.
+  `php`, `sql`, `ui`, `uri`, `url`, `xml`. 레포 이름의 새 약어는 이 표(`packages/ts/src/names.ts`의 `LIBRARY_ACRONYMS`, 그것을 갖는
+  유일한 곳)에 더한다.
 - 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
   `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
   계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
