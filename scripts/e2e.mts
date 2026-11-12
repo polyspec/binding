@@ -227,7 +227,10 @@ impl binding_core::Kinds for Error {
   // commit of this binding, as the repository does when it takes this binding.
   const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
   if (/name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+/.test(lockText)) {
-    run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--quiet']);
+    // --precise: Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed
+    // commit, not the one of this checkout.
+    const head = execFileSync('git', ['-C', binding, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--precise', head, '--quiet']);
     if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
   }
   run(process.execPath, [cli, 'check', join(copy, 'packages/rust/interface.json')]);
