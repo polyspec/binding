@@ -1,6 +1,6 @@
 //! The name conversion of design N-2, public so that code which generates names at run time or in another generator
-//! (such as entity code) writes the same names as bindgen. The vectors of `packages/core/rust/tests/vectors/naming.json`
-//! are shared with bindgen's TypeScript conversion, so the two cannot differ unnoticed.
+//! (such as entity code) writes the same names as binding. The vectors of `packages/core/rust/tests/vectors/naming.json`
+//! are shared with binding's TypeScript conversion, so the two cannot differ unnoticed.
 
 /// One word of a name (N-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

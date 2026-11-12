@@ -3,9 +3,9 @@
 
 [한국어](generator.ko.md)
 
-`bindgen generate [--root <repository>] [--out <directory>]` checks `packages/rust/interface.json` (docs/spec/contract-check.md)
+`binding generate [--root <repository>] [--out <directory>]` checks `packages/rust/interface.json` (docs/spec/contract-check.md)
 and writes the bindings of its targets. This document states the rules of the generator that the design leaves to it;
-the design ids are those of the bindgen design.
+the design ids are those of the binding design.
 
 ## Scope
 
@@ -17,16 +17,16 @@ the design ids are those of the bindgen design.
   `source`) is refused by name
   before anything is written (G-4, P-4); Go and WASM are not generated yet.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
-  the core crate (read from its manifest as TOML) and bindgen itself; it holds no time, path or host, and lists are in
+  the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
   in two directories and compare the bytes.
 
 ## Layout (L-1, L-2)
 
-- **GN-3** bindgen owns three directories and writes each whole through a staging directory, so no file of an earlier
+- **GN-3** binding owns three directories and writes each whole through a staging directory, so no file of an earlier
   generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
-  `packages/ts/generated`. No source of bindgen is copied into the repository: the core and the binding crates depend on
-  `polyspec-bindgen-core`, a Git dependency of the bindgen repository before its first release, whose commit the
+  `packages/ts/generated`. No source of binding is copied into the repository: the core and the binding crates depend on
+  `polyspec-binding-core`, a Git dependency of the binding repository before its first release, whose commit the
   repository's `Cargo.lock` pins.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
   entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
@@ -34,8 +34,8 @@ the design ids are those of the bindgen design.
   needs beside the crate, and a file of the crate that does not depend on the contract (the Node `build.rs`, which the
   manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
-  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`. `bindgen scaffold` writes them and `bindgen check` compares them with what it would write
-  (CK-19), so a change of bindgen that changes them shows in the repository's diff. They depend only on the library
+  `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`. `binding scaffold` writes them and `binding check` compares them with what it would write
+  (CK-19), so a change of binding that changes them shows in the repository's diff. They depend only on the library
   name, the targets and the core version. The core builds and tests without the generator; only the binding crates
   need `make bindings`.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
@@ -70,10 +70,10 @@ the design ids are those of the bindgen design.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
-  on that repository's crate with the core's own dependency line, which `bindgen scaffold` copies.
+  on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
-  library class of its kind's category (I-2 (3)), with the kind, status and errno of `bindgen_core::Kinds`. The pattern
-  `Variant { .. }` matches a variant with or without data, because bindgen reads no Rust source; the lint against it is
+  library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
+  `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
@@ -81,7 +81,7 @@ the design ids are those of the bindgen design.
 ## Languages
 
 - **GN-9** Names follow N-2; a constant is UPPER_SNAKE_CASE in PHP, Python and JavaScript (PSR-1, PEP 8) and PascalCase
-  in Go, in both name conversions (TypeScript and `bindgen_core::naming`), which share their test vectors.
+  in Go, in both name conversions (TypeScript and `binding_core::naming`), which share their test vectors.
 - **GN-10** PHP: one function per member in the namespace of its module (P-2), whose parameters take any value (`&Zval`)
   that the extension judges (T-8); the engine counts the arguments and checks their names by the arginfo (G-7). Because
   the arginfo declares no type, the stub declares `mixed` and states the contract type in `@param`. The record fields
@@ -121,9 +121,9 @@ the design ids are those of the bindgen design.
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]`
   (`--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
-  (the root workspace and its members, the dependency on bindgen_core and `Kinds`, the tracked packages of `bindgen
-  scaffold`), runs `bindgen check`, tests the core without the generator, rewrites a case file that does not follow
+  (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
+  scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
   builds and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
-  contract cases on unittest, `node --test` and PHPUnit. The Git dependency on bindgen resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+  contract cases on unittest, `node --test` and PHPUnit. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands).

@@ -1,4 +1,4 @@
-// N-2 conversion against the vectors that bindgen_core's Rust conversion also reads (packages/core/rust/src/naming.rs).
+// N-2 conversion against the vectors that binding_core's Rust conversion also reads (packages/core/rust/src/naming.rs).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

@@ -1,14 +1,14 @@
 // L-2: the tracked package of each binding. It is thin: a Cargo manifest, an entry file that includes the generated
-// source of `generated/`, and the language's own package manifest. bindgen writes these files (`bindgen scaffold`) and
-// `bindgen check` compares them with what bindgen would write, so a repository builds its core without the generator
+// source of `generated/`, and the language's own package manifest. binding writes these files (`binding scaffold`) and
+// `binding check` compares them with what binding would write, so a repository builds its core without the generator
 // and only the binding crates need `make bindings`. They depend on nothing but the library name, the targets and the
 // core version, so a contract that the generator cannot generate yet still has them.
 
 import type { Contract } from '../contract.ts';
 import { type Files, GENERATED_LINTS, header } from './text.ts';
 
-// Before its first release, bindgen is a Git dependency; the repository's Cargo.lock pins the commit.
-const BINDGEN_CORE = 'polyspec-bindgen-core = { git = "https://github.com/polyspec/bindgen.git", branch = "v1/rust-core" }';
+// Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
+const BINDING_CORE = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }';
 
 function entry(what: string, allows: [string, string][]): string {
   return `${header('//')}
@@ -73,7 +73,7 @@ panic-test = []
 
 [dependencies]
 ${contract.core.crate} = { path = "../rust" }
-${BINDGEN_CORE}
+${BINDING_CORE}
 ${dependencies.join('\n')}
 
 ${GENERATED_LINTS}`;

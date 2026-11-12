@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/polyspec/bindgen/schema/interface.schema.json",
+  "$id": "https://github.com/polyspec/binding/schema/interface.schema.json",
   "title": "polyspec interface contract",
-  "description": "The public API of one repository in every target language (bindgen design I-1). Rule ids in descriptions are those of docs/spec/contract.md.",
+  "description": "The public API of one repository in every target language (binding design I-1). Rule ids in descriptions are those of docs/spec/contract.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "library", "core", "targets", "packages", "naming", "types", "errors", "units", "changes", "cases"],
@@ -368,7 +368,7 @@
       }
     },
     "valueKind": {
-      "description": "bindgen_core::ValueKind.",
+      "description": "binding_core::ValueKind.",
       "oneOf": [
         { "enum": ["null", "bool", "int", "int64", "float", "number", "text", "bytes", "list", "map", "object", "reference", "safe_text", "native"] },
         { "enum": ["nested:json_value", "nested:template_value", "nested:php_value"] }

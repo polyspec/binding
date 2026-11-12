@@ -63,8 +63,10 @@ export const BASE: Readonly<Record<Category, Readonly<Record<'php' | 'python' | 
 
 export interface ErrorClass {
   category: Category;
-  // The simple name, the same in every language (E-2).
+  // The simple name in the language of the emitter (E-2: <Library><Category>Error in the class form of the language).
   name: string;
+  // The simple name in each language, as the contract gives it.
+  names: Partial<Record<Lang, string>>;
 }
 
 export interface CoreKind {
@@ -237,7 +239,8 @@ export function buildModel(
     const row = contract.errors.classes[category] ?? {};
     const name = Object.values(row)[0];
     if (name === undefined) throw new Unsupported(`errors.classes.${category} names no class`);
-    return { category, name: simple(name) };
+    const names = Object.fromEntries(Object.entries(row).map(([lang, value]) => [lang, simple(value)]));
+    return { category, name: simple(name), names };
   });
   const className = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
   const kinds: CoreKind[] = contract.errors.kinds.map((row) => {
@@ -377,3 +380,10 @@ export const objectUnit = (model: Model, type: Type): ObjectClass | undefined =>
   const unit = unitOf(model, type);
   return libraryOf(type) === undefined ? model.objects.find((o) => o.unit === unit) : undefined;
 };
+
+// The model as one language's emitter reads it: each error class and kind has the class name of that language (E-2).
+export function forLanguage(model: Model, lang: Lang): Model {
+  const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
+  const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
+  return { ...model, classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
+}

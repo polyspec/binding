@@ -3,7 +3,7 @@
 
 [English](contract-check.md)
 
-`bindgen check <interface.json>`과 `packages/ts`의 `checkContract(contract, { dependencies })`는 Rust 컴파일러가 판정하지 못하는 인터페이스 계약의 모든 규칙(설계
+`binding check <interface.json>`과 `packages/ts`의 `checkContract(contract, { dependencies })`는 Rust 컴파일러가 판정하지 못하는 인터페이스 계약의 모든 규칙(설계
 I-2)과 설계가 계약 검사에 맡긴 모든 규칙을 판정한다. finding이 하나라도 있으면 계약을 거부한다. finding은 아래 검사 id 하나,
 항목의 JSON pointer, 규칙을 적는다. `dependencies`는 계약이 가리키는 라이브러리의 계약이다(T-3, E-1b). 명령은 계약 옆
 crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 라이브러리의 crate는 `polyspec-<library>`(P-1)이고 그
@@ -13,12 +13,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 ## 검사
 
-스키마는 npm 패키지 `@polyspec/bindgen`에 들어 있고 `./schema/interface.schema.json`으로 내보낸다(S15).
+스키마는 npm 패키지 `@polyspec/binding`에 들어 있고 `./schema/interface.schema.json`으로 내보낸다(S15).
 
 - **CK-1** 스키마: 계약이 `packages/ts/schema/interface.schema.json`(JSON Schema 2020-12, Ajv)을 통과한다. 모든 reason은 규칙 id이므로
   (`^[A-Z][A-Za-z]*-?[0-9]+[a-z]?(\.[0-9]+)*$`) "지금 이름" 같은 산문 reason은 거부된다(N-3, P-10). `reason` 없는 `native`는
   거부된다(I-3). callback member의 `errors`는 `{recognize, reason}`뿐이다(U-3).
-- **CK-2** todo: `bindgen import`가 남긴 `"todo"` 문자열이나 `todo` 키를 가진 객체가 있으면 실패한다(M-2). todo 자리와 그
+- **CK-2** todo: `binding import`가 남긴 `"todo"` 문자열이나 `todo` 키를 가진 객체가 있으면 실패한다(M-2). todo 자리와 그
   둘레의 스키마 오류는 따로 보고하지 않는다.
 - **CK-3** 참조: unit·member id는 유일하다. `parent`, `implements`(`interface` unit), `cleanup`(같은 unit의 member), unit
   타입, `{const}` 기본값(constant), `cases[].member`, `changes[].to`가 해석된다. `only`, `native`, `changes[].from`은 target을
@@ -44,7 +44,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
     술어의 `is: true`와 `is: false`, 또는 서로 다른 술어 값들과 나머지를 받는 `else` 하나다(U-7 (b)).
   - 왕복(P-3): `make`가 만드는 언어 타입은 그 언어의 `in` 행을 갖고, 그 행은 값을 행의 kind로 분류한다. 내장 형태는
-    bindgen의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
+    binding의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
     `text`는 UTF-8, `int`는 정수인 안전 정수, `list`는 키 0~n-1). `when`이 맞는 첫 case가 그 case이며, 표가 정하지 않는
     술어를 묻는 case는 finding이다. `by`가 있는 class는 `is`를 실행 때만 알 수 있으므로 행의 kind가 case 하나를 정확히
     가리켜야 한다. case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
@@ -55,8 +55,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `types`의 값 타입은 소유자의 `value` unit을 가리킨다.
 - **CK-10** 오류(E-1, E-1a, E-2, U-1): 오류 unit은 category를 갖고, category와 parent는 오류 unit만 갖는다. parent는 같은
   category의 오류 unit이고 `final`이 아니다. `errors.classes`는 Go를 뺀 모든 target에서 모든 category의 클래스를 갖는다(Go의
-  category 타입은 E-7이 정한다). category 클래스 이름은 `<Library><Category>Error`이며(category의 `<Category>Error`로
-  끝나고 그보다 길다) 모든 언어에서 같고, PHP 클래스는 `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
+  category 타입은 E-7이 정한다). category 클래스 이름은 `<Library><Category>Error`이며 `<Library>`는 각 언어의 클래스
+  형태로 쓴 레포 이름이다(N-2: 약어 낱말은 PHP·Node에서 첫 글자만 대문자, Python·Go에서 모두 대문자이므로 `HttpCookieValueError`와
+  `HTTPCookieValueError`. 레포 이름의 약어 낱말은 아래 binding의 표다). PHP 클래스는 `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
   덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). 변형과 binding kind는 한 번만
   선언한다.
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
@@ -77,19 +78,23 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   member가 있으면 같은 이름의 callback member는 `async_allowed: true`다.
 
 - **CK-18** 패키지 이름(P-1): 코어 crate는 `polyspec-<library>`, Composer `polyspec/<library>`, PHP namespace
-  `Polyspec\<Library의 PascalCase>`, PyPI `polyspec-<library>`, Python 루트 `polyspec.<library의 - 를 _로>`, npm
-  `@polyspec/<library>`.
+  `Polyspec\<Repository>`, PyPI `polyspec-<library>`, Python 루트 `polyspec.<repository의 - 를 _로>`, npm
+  `@polyspec/<library>`이고, `<Repository>`는 PHP 클래스 형태의 레포 이름이다. 코어가 `packages/<component>/rust`이면(L-1)
+  library는 `<repository>-<component>`이고 namespace와 module은 레포의 것 아래다: `Polyspec\CrudUi\Validator`,
+  `polyspec.crud_ui.validator`.
 
-- **CK-19** 추적하는 바인딩 package(L-2): `bindgen check`는 바인딩 package의 추적 파일(docs/spec/generator.md
-  GN-3a)을 `bindgen scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다.
-- **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-bindgen-core` 하나를 실행 중인 bindgen의 버전으로 고정한다. 한
-  릴리스가 CLI(npm 패키지 `@polyspec/bindgen`, bin `bindgen`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
+- **CK-19** 추적하는 바인딩 package(L-2): `binding check`는 바인딩 package의 추적 파일(docs/spec/generator.md
+  GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다.
+- **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
+  릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
   `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다.
 
-## bindgen의 표
+## binding의 표
 
-이 닫힌 집합은 bindgen의 것이다. Rust 이름은 `bindgen_core`의 것이다(`docs/core-api.md`).
+이 닫힌 집합은 binding의 것이다. Rust 이름은 `binding_core`의 것이다(`docs/core-api.md`).
 
+- 레포 이름의 약어 낱말(P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`, `json`, `orm`,
+  `php`, `sql`, `ui`, `uri`, `url`, `xml`.
 - 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
   `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
   계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
@@ -118,4 +123,4 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `in` 행이 가리킬 수 있는 내장 타입은 이 표의 타입이다. 계약 타입 `keyed_map<T>`는 `{keyed_map: T, key: [...]}`로
   적는다(T-2).
 - `types`는 계약이 쓰는 값 타입의 소유자를 적는다: `json_value`, `template_value`, `php_value`마다 `{library, unit}`.
-  `host_value`는 bindgen의 것이다(T-2).
+  `host_value`는 binding의 것이다(T-2).

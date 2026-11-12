@@ -449,6 +449,52 @@ describe('CK-18 package names', () => {
   test('an npm package of another name', () =>
     fails('CK-18', '/packages/node/package', (c) => { c.packages.node.package = '@polyspec/other'; }));
   test('a core crate of another name', () => fails('CK-18', '/core/crate', (c) => { c.core.crate = 'sample-core'; }));
+  // L-1: the component validator of the repository sample.
+  const component = (c: any): void => {
+    c.library = 'sample-validator';
+    c.core = { crate: 'polyspec-sample-validator', path: 'packages/validator/rust' };
+    c.packages.php = { package: 'polyspec/sample-validator', namespace: 'Polyspec\\Sample\\Validator' };
+    c.packages.python = { package: 'polyspec-sample-validator', module: 'polyspec.sample.validator' };
+    c.packages.node = { ...c.packages.node, package: '@polyspec/sample-validator' };
+    for (const row of Object.values(c.errors.classes) as Record<string, string>[]) {
+      row['php'] = (row['php'] ?? '').replace('Polyspec\\Sample\\', 'Polyspec\\Sample\\Validator\\');
+    }
+  };
+  test('the names of a component are below the repository (P-1, L-1)', () => {
+    assert.deepEqual(findings(component).filter((f) => f.check === 'CK-18' || f.check === 'CK-10'), []);
+  });
+  test('a component module at the root of the repository', () =>
+    fails('CK-18', '/packages/python/module', (c) => { component(c); c.packages.python.module = 'polyspec.sample_validator'; }));
+  test('a component namespace at the root of the repository', () =>
+    fails('CK-18', '/packages/php/namespace', (c) => {
+      component(c);
+      c.packages.php.namespace = 'Polyspec\\SampleValidator';
+      for (const row of Object.values(c.errors.classes) as Record<string, string>[]) {
+        row['php'] = (row['php'] ?? '').replace('Polyspec\\Sample\\Validator\\', 'Polyspec\\SampleValidator\\');
+      }
+    }));
+});
+
+describe('CK-10 class names in the form of each language (E-2, N-2)', () => {
+  // The repository json: an acronym, JSON in Python and Go, Json in PHP and Node.
+  const json = (c: any): void => {
+    c.library = 'json';
+    c.core.crate = 'polyspec-json';
+    c.packages.php = { package: 'polyspec/json', namespace: 'Polyspec\\Json' };
+    c.packages.python = { package: 'polyspec-json', module: 'polyspec.json' };
+    c.packages.node = { ...c.packages.node, package: '@polyspec/json' };
+    for (const [category, row] of Object.entries(c.errors.classes) as [string, Record<string, string>][]) {
+      const word = `${category.charAt(0).toUpperCase()}${category.slice(1)}Error`;
+      for (const lang of Object.keys(row)) row[lang] = lang === 'php' ? `Polyspec\\Json\\Json${word}` : lang === 'python' || lang === 'go' ? `JSON${word}` : `Json${word}`;
+    }
+  };
+  test('a repository name with an acronym has each language\'s form', () => {
+    assert.deepEqual(findings(json).filter((f) => f.check === 'CK-18' || f.check === 'CK-10'), []);
+  });
+  test('a Python class in the PHP form', () =>
+    fails('CK-10', '/errors/classes/value/python', (c) => { json(c); c.errors.classes.value.python = 'JsonValueError'; }));
+  test('a Node class in the Python form', () =>
+    fails('CK-10', '/errors/classes/value/node', (c) => { json(c); c.errors.classes.value.node = 'JSONValueError'; }));
 });
 
 describe('CK-11 errors held as a source', () => {

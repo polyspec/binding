@@ -1,5 +1,5 @@
 {
-  "name": "@polyspec/bindgen",
+  "name": "@polyspec/binding",
   "version": "0.0.1",
   "description": "Generates the bindings of a polyspec repository from its interface contract, and checks the contract",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "node": ">=22.18"
   },
   "bin": {
-    "bindgen": "dist/cli.js"
+    "binding": "dist/cli.js"
   },
   "files": [
     "dist",

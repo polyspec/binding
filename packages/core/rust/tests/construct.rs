@@ -1,4 +1,4 @@
-//! Design I-2 (4): only generated code makes a wait token. A crate that depends on bindgen_core without the feature
+//! Design I-2 (4): only generated code makes a wait token. A crate that depends on binding_core without the feature
 //! `construct`, as the library of a core crate does, must not compile when it makes a token, and a crate with the
 //! feature, as a generated binding crate does, must compile. Each case builds a crate of its own in the temporary
 //! directory of the test.
@@ -13,7 +13,7 @@ fn write_crate(name: &str, features: &str, body: &str) -> Result<PathBuf, String
     let core = Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest = format!(
         "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
-         [dependencies]\nbindgen_core = {{ package = \"polyspec-bindgen-core\", path = {core:?}{features} }}\n\n\
+         [dependencies]\nbinding_core = {{ package = \"polyspec-binding-core\", path = {core:?}{features} }}\n\n\
          [workspace]\n"
     );
     std::fs::write(root.join("Cargo.toml"), manifest).map_err(|error| format!("write manifest: {error}"))?;
@@ -42,11 +42,11 @@ fn check(root: &Path) -> Result<(bool, String), String> {
     ))
 }
 
-const MAKES_TOKENS: &str = "pub fn make() -> (bindgen_core::Io, bindgen_core::ProcessWait) {\n    \
-    (bindgen_core::Io::for_generated_call(), bindgen_core::ProcessWait::for_generated_call())\n}\n";
+const MAKES_TOKENS: &str = "pub fn make() -> (binding_core::Io, binding_core::ProcessWait) {\n    \
+    (binding_core::Io::for_generated_call(), binding_core::ProcessWait::for_generated_call())\n}\n";
 
-const OPENS_RAISED: &str = "pub fn open(raised: &bindgen_core::Raised) -> bindgen_core::Handle {\n    \
-    let _made = bindgen_core::Raised::from_generated(bindgen_core::Handle::new(1));\n    raised.handle()\n}\n";
+const OPENS_RAISED: &str = "pub fn open(raised: &binding_core::Raised) -> binding_core::Handle {\n    \
+    let _made = binding_core::Raised::from_generated(binding_core::Handle::new(1));\n    raised.handle()\n}\n";
 
 #[test]
 fn a_crate_without_the_feature_cannot_make_a_token() -> Result<(), String> {

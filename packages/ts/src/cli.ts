@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// bindgen check <interface.json>
+// binding check <interface.json>
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
-//   tracked binding packages with what `bindgen scaffold` writes (L-2).
-// bindgen scaffold [--root <repository> | --contract <interface.json>]
+//   tracked binding packages with what `binding scaffold` writes (L-2).
+// binding scaffold [--root <repository> | --contract <interface.json>]
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
-// bindgen generate [--root <repository> | --contract <interface.json>] [--out <directory>]
-//   Writes the generated sources into the directories that bindgen owns (L-1). --out writes the same files under another
+// binding generate [--root <repository> | --contract <interface.json>] [--out <directory>]
+//   Writes the generated sources into the directories that binding owns (L-1). --out writes the same files under another
 //   directory, for the comparison of I-5.
 
 import { spawnSync } from 'node:child_process';
@@ -45,7 +45,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
   if (wanted.size === 0) return found;
   // Cargo writes the metadata into a file rather than a pipe, so its size (megabytes for a workspace with the binding
   // crates) meets no buffer limit of the child process.
-  const scratch = mkdtempSync(join(tmpdir(), 'bindgen-metadata-'));
+  const scratch = mkdtempSync(join(tmpdir(), 'binding-metadata-'));
   let metadata: { packages: { name: string; manifest_path: string }[] };
   try {
     const out = join(scratch, 'metadata.json');
@@ -72,7 +72,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
 }
 
 function usage(message: string): never {
-  process.stderr.write(`bindgen: ${message}\nusage: bindgen check <interface.json> | bindgen scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -125,25 +125,25 @@ if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${c
 const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})));
 
 if (command === 'check') {
-  // L-2: each tracked file of the binding packages is what bindgen scaffold writes.
+  // L-2: each tracked file of the binding packages is what binding scaffold writes.
   let differs = false;
-  // CK-20: the polyspec-bindgen-core that the repository's Cargo.lock pins is of the version of this bindgen, because
+  // CK-20: the polyspec-binding-core that the repository's Cargo.lock pins is of the version of this binding, because
   // one release gives both and the generated code is written for that crate (L-2).
   const own = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
   const lockPath = join(root, 'Cargo.lock');
   const lock = existsSync(lockPath) ? (parse(readFileSync(lockPath, 'utf8')) as { package?: { name: string; version: string }[] }) : undefined;
-  const pinned = (lock?.package ?? []).filter((p) => p.name === 'polyspec-bindgen-core').map((p) => p.version);
+  const pinned = (lock?.package ?? []).filter((p) => p.name === 'polyspec-binding-core').map((p) => p.version);
   if (pinned.length !== 1 || pinned[0] !== own) {
     differs = true;
-    const found = lock === undefined ? 'there is no Cargo.lock' : pinned.length === 0 ? 'Cargo.lock pins no polyspec-bindgen-core' : `Cargo.lock pins polyspec-bindgen-core ${pinned.join(', ')}`;
-    process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this bindgen (L-2)\n`);
+    const found = lock === undefined ? 'there is no Cargo.lock' : pinned.length === 0 ? 'Cargo.lock pins no polyspec-binding-core' : `Cargo.lock pins polyspec-binding-core ${pinned.join(', ')}`;
+    process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this binding (L-2)\n`);
   }
   for (const [path, text] of tracked) {
     const full = join(root, path);
     const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;
     if (found !== text) {
       differs = true;
-      process.stderr.write(`${full}: CK-19 ${found === undefined ? 'is missing' : 'differs from what bindgen scaffold writes'} (L-2)\n`);
+      process.stderr.write(`${full}: CK-19 ${found === undefined ? 'is missing' : 'differs from what binding scaffold writes'} (L-2)\n`);
     }
   }
   process.exit(differs ? 1 : 0);

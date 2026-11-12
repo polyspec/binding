@@ -10,13 +10,13 @@
 // PHP extension loaded before. Each checkout is copied to <work>/<library>, so the relative paths between them hold.
 //
 // A checkout is only read: its committed tree is copied into the work directory, and the copy gets the changes that
-// the repository has not made yet (L-2: one workspace with the binding packages, which bindgen scaffold writes; F-2,
-// E-3: the core depends on bindgen_core and its error implements Kinds). Each is printed, because the repository has to
+// the repository has not made yet (L-2: one workspace with the binding packages, which binding scaffold writes; F-2,
+// E-3: the core depends on binding_core and its error implements Kinds). Each is printed, because the repository has to
 // make it itself. A case file whose keys or record values do not follow the case convention of G-5 (keys are the
 // parameter names in snake_case, a record is an object of its fields) is rewritten to it, and a raising case that
 // still lacks the arguments of its member is left out; both are printed.
 //
-// BINDGEN_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
+// BINDING_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
 // for a machine that cannot install the pinned one; the run says so.
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
@@ -41,20 +41,24 @@ if (repo === undefined || workArg === undefined || phpunit === undefined) {
   process.exit(2);
 }
 const work = resolve(workArg);
-const bindgen = new URL('..', import.meta.url).pathname;
-const cli = join(bindgen, 'packages/ts/src/cli.ts');
+const binding = new URL('..', import.meta.url).pathname;
+const cli = join(binding, 'packages/ts/src/cli.ts');
 const target = join(work, 'target');
-const ignoreRustVersion = process.env['BINDGEN_E2E_IGNORE_RUST_VERSION'] === '1';
+const ignoreRustVersion = process.env['BINDING_E2E_IGNORE_RUST_VERSION'] === '1';
 const cargoFlags = ignoreRustVersion ? ['--ignore-rust-version'] : [];
-if (ignoreRustVersion) process.stdout.write('note: cargo ignores rust-version (BINDGEN_E2E_IGNORE_RUST_VERSION=1)\n');
+if (ignoreRustVersion) process.stdout.write('note: cargo ignores rust-version (BINDING_E2E_IGNORE_RUST_VERSION=1)\n');
 
-// The Git dependency on bindgen resolves to the commits of this checkout: Git, which Cargo runs for the fetch, reads the
-// URL of the dependency as this directory (url.<base>.insteadOf, set for these commands only).
+// The Git dependencies on polyspec repositories resolve to the checkouts beside this one: Git, which Cargo runs for the
+// fetch, reads https://github.com/polyspec/<name> as <parent of this checkout>/<name> (url.<base>.insteadOf, set for
+// these commands only), so the Git dependency on binding is the commits of this checkout.
 const gitDependency = {
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true',
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: `url.${bindgen}.insteadOf`,
-  GIT_CONFIG_VALUE_0: 'https://github.com/polyspec/bindgen.git',
+  GIT_CONFIG_COUNT: '2',
+  GIT_CONFIG_KEY_0: `url.${resolve(binding, '..')}/.insteadOf`,
+  GIT_CONFIG_VALUE_0: 'https://github.com/polyspec/',
+  // A URL that names <name>.git is this checkout itself for binding (the longest match wins).
+  GIT_CONFIG_KEY_1: `url.${binding}.insteadOf`,
+  GIT_CONFIG_VALUE_1: 'https://github.com/polyspec/binding.git',
 };
 
 function run(command: string, argv: string[], options: ExecFileSyncOptions = {}): void {
@@ -104,20 +108,20 @@ function prepare(checkout: string): Prepared {
     rmSync(join(copy, 'packages/rust/Cargo.lock'));
     process.stdout.write('change: one Cargo workspace at the root with the core and the binding packages (L-2)\n');
   }
-  if (!manifest.includes('polyspec-bindgen-core')) {
-    const dependency = 'polyspec-bindgen-core = { git = "https://github.com/polyspec/bindgen.git", branch = "v1/rust-core" }\n';
+  if (!manifest.includes('polyspec-binding-core')) {
+    const dependency = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }\n';
     manifest = manifest.includes('\n[dependencies]\n')
       ? manifest.replace('\n[dependencies]\n', `\n[dependencies]\n${dependency}`)
       : manifest.replace('\n[lib]', `\n[dependencies]\n${dependency}\n[lib]`);
-    process.stdout.write('change: the core depends on bindgen_core, a Git dependency before the first release (L-2, F-2)\n');
+    process.stdout.write('change: the core depends on binding_core, a Git dependency before the first release (L-2, F-2)\n');
   }
   writeFileSync(coreManifest, manifest);
   const sources = readdirSync(join(copy, 'packages/rust/src'), { recursive: true }).map(String).filter((f) => f.endsWith('.rs'));
   if (!sources.some((f) => readFileSync(join(copy, 'packages/rust/src', f), 'utf8').includes('Kinds for'))) {
     const errorSource = join(copy, 'packages/rust/src/error.rs');
     writeFileSync(errorSource, `${readFileSync(errorSource, 'utf8')}
-/// The kind interface of the bindings (bindgen design F-2, E-3).
-impl bindgen_core::Kinds for Error {
+/// The kind interface of the bindings (binding design F-2, E-3).
+impl binding_core::Kinds for Error {
     fn kind(&self) -> &'static str {
         Error::kind(self)
     }
@@ -131,14 +135,14 @@ impl bindgen_core::Kinds for Error {
     }
 }
 `);
-    process.stdout.write('change: the core error implements bindgen_core::Kinds (F-2, E-3)\n');
+    process.stdout.write('change: the core error implements binding_core::Kinds (F-2, E-3)\n');
   }
   run(process.execPath, [cli, 'scaffold', '--root', copy]);
-  process.stdout.write('change: the tracked binding packages that bindgen scaffold writes (L-2)\n');
+  process.stdout.write('change: the tracked binding packages that binding scaffold writes (L-2)\n');
 
   step(`${library}: the core builds without the generator`);
   run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
-  // The check follows the core's build, which pins bindgen_core in Cargo.lock (CK-20).
+  // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20).
   run(process.execPath, [cli, 'check', join(copy, 'packages/rust/interface.json')]);
 
   step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
@@ -223,7 +227,7 @@ step('lint the generated crates');
 run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', 'panic-test', '--', '-D', 'warnings']);
 
 const [cases] = main.caseFiles;
-const e2e = join(bindgen, 'tests/e2e', library);
+const e2e = join(binding, 'tests/e2e', library);
 const caseRunners = existsSync(e2e) && cases !== undefined;
 if (!caseRunners) process.stdout.write(`note: tests/e2e/${library} holds no case runners; the generated tests run alone\n`);
 
@@ -272,5 +276,5 @@ run('php', [...extensions, phpunit, join(copy, 'packages/php-ext/generated/tests
 if (caseRunners) run('php', [...extensions, phpunit, join(e2e, 'CasesTest.php')], { env: { CASES: cases } });
 
 step('declarations');
-run(join(bindgen, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
+run(join(binding, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
 process.stdout.write('\nall steps passed\n');

@@ -1,8 +1,8 @@
 // generate(): every generated file of a repository from its checked contract, as relative paths and texts. The result
-// depends only on its inputs: the contract, the case files, the core version and bindgen itself (I-5).
+// depends only on its inputs: the contract, the case files, the core version and binding itself (I-5).
 
 import type { Contract } from '../contract.ts';
-import { buildModel } from './model.ts';
+import { buildModel, forLanguage } from './model.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
@@ -21,8 +21,8 @@ export interface Inputs {
   foreign?: ReadonlyMap<string, Contract>;
 }
 
-// The directories that bindgen owns and writes whole (L-1); the tracked thin packages around them are written by
-// `bindgen scaffold` (packages.ts).
+// The directories that binding owns and writes whole (L-1); the tracked thin packages around them are written by
+// `binding scaffold` (packages.ts).
 export const generatedDirs = (contract: Contract): string[] =>
   ['packages/php-ext/generated', 'packages/python/generated', 'packages/ts/generated'].map((dir) => place(contract, dir));
 
@@ -37,8 +37,8 @@ export function generate(inputs: Inputs): Files {
   const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
   const files: Files = new Map();
   const targets = inputs.contract.targets;
-  if (targets.includes('python')) python(model, files);
-  if (targets.includes('node')) node(model, files);
-  if (targets.includes('php')) php(model, files);
+  if (targets.includes('python')) python(forLanguage(model, 'python'), files);
+  if (targets.includes('node')) node(forLanguage(model, 'node'), files);
+  if (targets.includes('php')) php(forLanguage(model, 'php'), files);
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

@@ -32,7 +32,7 @@ export function dependency(): any {
       classes: Object.fromEntries(
         ['value', 'type', 'io', 'store', 'busy', 'internal'].map((c) => [
           c,
-          { php: `Polyspec\\FormsDep\\Forms${c[0]!.toUpperCase()}${c.slice(1)}Error`, python: `Forms${c[0]!.toUpperCase()}${c.slice(1)}Error`, node: `Forms${c[0]!.toUpperCase()}${c.slice(1)}Error` },
+          { php: `Polyspec\\FormsDep\\FormsDep${c[0]!.toUpperCase()}${c.slice(1)}Error`, python: `FormsDep${c[0]!.toUpperCase()}${c.slice(1)}Error`, node: `FormsDep${c[0]!.toUpperCase()}${c.slice(1)}Error` },
         ]),
       ),
       fixed: [],
