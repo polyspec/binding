@@ -627,6 +627,9 @@ function functionRust(model: Model, fn: Fn): string {
   }
   if (fn.returns === 'none') {
     lines.push('        Ok(Vec::new())');
+  } else if (fn.returns === 'never') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    lines.push('        match result {}');
   } else {
     lines.push('        let mut buffer = Vec::new();', '        let output = &mut buffer;', `        ${convertOut(model, fn.returns, 'result')};`, '        Ok(buffer)');
   }

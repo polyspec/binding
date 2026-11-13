@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 생성기는 member `to_json`이 있는 class의 Go 바인딩을 거부해서, `tests/e2e/sample`과 `tests/e2e/classes`의
+  `tag.to_json`은 PHP와 Node만 이름하고 Go 바인딩에는 JSON 꼴이 없었다. 이제 Go는 to_json을 내보내지 않은 `toJSON`
+  위의 `json.Marshaler`의 `MarshalJSON`으로 준다. 이것은 코어의 값을 `encoding/json`으로 marshal하고 코어의 오류를
+  돌려준다. `never`를 돌려주는 to_json은 오류만 돌려주고, B-4 시험은 `toJSON`을 부른다(GN-15a). 두 계약은
+  `tag.to_json`에 Go를 이름한다. `packages/ts`의 `npm test`와 생성된 패키지의 `gofmt`, `go vet`으로 확인했다.
 - 생성기는 다른 타입 안에 부분 타입이 서로 다른 tuple이 있거나 tuple parameter가 있는 계약의 Go 바인딩을 거부해서,
   `words.split`이 text와 uint의 tuple list를 돌려주는 fixture에 Go 바인딩이 없었다. 이제 Go는 그런 tuple을
   `Tuple<N>[T0, ...]`로 준다. 이것은 field `P0`~`P<N-1>`을 가진 `internal/binding`의 generic struct이며 패키지가 별칭으로

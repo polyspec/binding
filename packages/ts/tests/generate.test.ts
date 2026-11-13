@@ -967,7 +967,7 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   const go = text(out, 'packages/go/zz_generated_sample.go');
   assert.match(go, /\nfunc \(this \*Tag\) toJSON\(\) error \{\n/);
   assert.match(go, /\nfunc \(this \*Tag\) MarshalJSON\(\) \(\[\]byte, error\) \{\n\treturn nil, this\.toJSON\(\)\n\}\n/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /host_json\([^]*?\n {8}match result \{\}\n/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /host_json\([^]*?\n +match result \{\}\n/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /\.toJSON\(\)/);
   // G-4: what N-4 does not allow is refused by name.
   const refused = (change: (members: any[]) => void, message: RegExp): void => {

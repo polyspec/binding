@@ -239,9 +239,9 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
 }
 
 // The call of a member as a Go expression: a function, a constructor or a static member by its name, any other member
-// on its receiver. A stringify is called by its unexported form, which returns its error.
+// on its receiver. A stringify or a to_json is called by its unexported form, which returns its error.
 function invoke(fn: Fn, args: string[], receiver: string): string {
-  const name = fn.special === 'stringify' ? 'stringify' : goMemberName(fn);
+  const name = fn.special === 'stringify' ? 'stringify' : fn.special === 'to_json' ? 'toJSON' : goMemberName(fn);
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') return `${name}(${args.join(', ')})`;
   return `${receiver}.${name}(${args.join(', ')})`;
 }
