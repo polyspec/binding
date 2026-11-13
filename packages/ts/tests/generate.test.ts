@@ -575,3 +575,23 @@ test('WASM: map<T> is a Map of string keys, through the entries of the ES module
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
 });
+
+test('Go, WASM: each variant that a member raises is asserted against the core error (E-5, I-2)', () => {
+  const { contract, caseFiles } = load();
+  contract.targets.push('go', 'wasm');
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  contract.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
+  for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
+  contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
+  const assertion = '#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&polyspec_sample::Error) -> bool = |error| matches!(error, polyspec_sample::Error::TooLong { .. });\n';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.equal(text(out, crate).split(assertion).length, 2, `${crate} asserts the variant once`);
+  }
+  // A crate whose members raise nothing asserts nothing.
+  contract.units[0].members[0].raises = [];
+  const none = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.doesNotMatch(text(none, crate), /matches!\(error,/, crate);
+  }
+});

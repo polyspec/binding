@@ -161,6 +161,12 @@ the design ids are those of the binding design.
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
+- **GN-7a** The Go and WASM crates hold, for each variant that a member names in `raises`, the assertion
+  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
+  core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
+  returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
+  the same assertion in the Python, Node and PHP crates, the path of a variant that holds the error of a dependency
+  (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
 

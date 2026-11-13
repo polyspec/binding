@@ -6,6 +6,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { type Fn, type Model, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { wasmTests } from './tests_wasm.ts';
+import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
@@ -438,7 +439,7 @@ fn binding_error(error: BindingError) -> Fail {
     };
     Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno() }
 }
-${coreErrorRust(model)}
+${coreErrorRust(model)}${raisesAssertions(model)}
 /// B-7: a panic of the call reaches the caller as kind internal where the module unwinds; a module built with
 /// panic=abort, the default of wasm32-unknown-unknown, traps instead (GN-18).
 fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
