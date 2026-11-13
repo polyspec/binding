@@ -126,6 +126,7 @@ describe('CK-4 naming exceptions', () => {
       c.targets = ['php', 'node', 'go', 'wasm'];
       delete c.packages.python;
       for (const r of unit(c, 'value').out) delete r.make.python;
+      unit(c, 'value').only.targets = ['node', 'wasm'];
       unit(c, 'value').in = unit(c, 'value').in.filter((r: any) => r.python === undefined);
       for (const k of Object.keys(c.errors.classes)) delete c.errors.classes[k].python;
       c.errors.fixed = c.errors.fixed.filter((r: any) => r.lang !== 'python');
@@ -637,7 +638,7 @@ describe('CK-68 the state machine of a member that reaches language code', () =>
   });
 });
 
-describe('CK-69 members that do not wait', () => {
+describe('CK-73 members that do not wait', () => {
   const only = { targets: ['php', 'python', 'node', 'go'], reason: 'Q-4' };
   // The one finding of the change: its check, its path and its message.
   const one = (change: (c: any) => void): Finding => {
@@ -657,42 +658,42 @@ describe('CK-69 members that do not wait', () => {
   };
   test('a constructor that waits with blocking_io', () => {
     assert.deepEqual(one((c) => { const m = member(c, 'session.new'); m.wait = 'blocking_io'; m.only = only; }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('session')}/members/0/wait`,
       message: 'session.new: a constructor does not wait (wait blocking_io); make the instance by a static member, which can wait (GN-6m)',
     });
   });
   test('a constructor that waits with process_wait', () => {
     assert.deepEqual(one((c) => { const m = member(c, 'session.new'); m.wait = 'process_wait'; m.only = only; }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('session')}/members/0/wait`,
       message: 'session.new: a constructor does not wait (wait process_wait); make the instance by a static member, which can wait (GN-6m)',
     });
   });
   test('a constructor that waits with async_driver', () => {
     assert.deepEqual(one((c) => { member(c, 'value.new').wait = 'async_driver'; }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('value')}/members/0/wait`,
       message: 'value.new: a constructor does not wait (wait async_driver); make the instance by a static member, which can wait (GN-6n)',
     });
   });
   test('a property that waits', () => {
     assert.deepEqual(one((c) => { member(c, 'value.text').wait = 'async_driver'; }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('value')}/members/3/wait`,
       message: 'value.text: a property does not wait (wait async_driver); give the value by a method, which can wait (GN-6n)',
     });
   });
   test('a property of an error unit that waits', () => {
     assert.deepEqual(one((c) => { member(c, 'too_large.limit').wait = 'async_driver'; }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('too_large')}/members/0/wait`,
       message: 'too_large.limit: a property does not wait (wait async_driver); give the value by a method, which can wait (GN-6n)',
     });
   });
   test('an iterate that waits', () => {
     assert.deepEqual(one((c) => { add(c, 'iterate', { yields: { key: 'text', value: 'text' } }); }), {
-      check: 'CK-69',
+      check: 'CK-73',
       path: `${at('session')}/members/4/wait`,
       message: 'session.iterate: an iterate does not wait (wait async_driver); give the items by a method, which can wait (GN-6n)',
     });
@@ -700,7 +701,7 @@ describe('CK-69 members that do not wait', () => {
   for (const [kind, returns] of [['stringify', 'text'], ['to_json', 'text'], ['primitive', 'int']] as const) {
     test(`a ${kind} that waits`, () => {
       assert.deepEqual(one((c) => { add(c, kind, { parameters: [], returns }); }), {
-        check: 'CK-69',
+        check: 'CK-73',
         path: `${at('session')}/members/4/wait`,
         message: `session.${kind}: a ${kind} does not wait (wait async_driver); the language calls this hook in its own protocol, so give the value by a method, which can wait (N-4, GN-6n)`,
       });
@@ -715,15 +716,30 @@ describe('CK-69 members that do not wait', () => {
       delete made.core.receiver;
     }), []);
   });
-  test('a constructor of a host unit that waits is not judged', () => {
+  test('a constructor of a host unit that waits', () => {
+    // L-2a: the code of a host unit is written by hand, and no language has an awaited constructor there either.
     assert.deepEqual(findings((c) => {
-      unit(c, 'value').origin = 'host';
-      member(c, 'value.new').wait = 'async_driver';
-    }).filter((f) => f.check === 'CK-69'), []);
+      c.units.push({
+        id: 'helper', name: ['helper'], module: 'session', kind: 'class', visibility: 'public', origin: 'host',
+        members: [{ id: 'helper.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], wait: 'async_driver' }],
+      });
+    }), [{
+      check: 'CK-73',
+      path: `/units/${contract().units.length}/members/0/wait`,
+      message: 'helper.new: a constructor does not wait (wait async_driver); make the instance by a static member, which can wait (GN-6n)',
+    }]);
+  });
+  test('a method of a host unit that waits is accepted', () => {
+    assert.deepEqual(findings((c) => {
+      c.units.push({
+        id: 'helper', name: ['helper'], module: 'session', kind: 'class', visibility: 'public', origin: 'host',
+        members: [{ id: 'helper.load', name: ['load'], kind: 'method', visibility: 'public', parameters: [], wait: 'async_driver' }],
+      });
+    }), []);
   });
 });
 
-describe('CK-70 constructible classes', () => {
+describe('CK-74 constructible classes', () => {
   const closed = (c: any): void => {
     const session = unit(c, 'session');
     const made = session.members[0];
@@ -733,7 +749,7 @@ describe('CK-70 constructible classes', () => {
   test('a class without a constructor that does not declare constructible: false', () => {
     const result = findings(closed);
     assert.deepEqual(result, [{
-      check: 'CK-70',
+      check: 'CK-74',
       path: at('session'),
       message: 'session: a class without a constructor declares constructible: false, or one constructor (U-1)',
     }]);
@@ -741,7 +757,7 @@ describe('CK-70 constructible classes', () => {
   test('a class with constructible: false and a constructor', () => {
     const result = findings((c) => { unit(c, 'session').constructible = false; });
     assert.deepEqual(result, [{
-      check: 'CK-70',
+      check: 'CK-74',
       path: `${at('session')}/constructible`,
       message: 'session: a class with constructible: false has no constructor, so the constructor session.new is a static member, or the class is constructible (U-1)',
     }]);
@@ -750,12 +766,37 @@ describe('CK-70 constructible classes', () => {
     assert.deepEqual(findings((c) => { closed(c); unit(c, 'session').constructible = false; }), []);
   });
   test('an abstract class and a class without core_type are not judged', () => {
-    assert.deepEqual(findings((c) => { closed(c); unit(c, 'session').abstract = true; }).filter((f) => f.check === 'CK-70'), []);
-    assert.deepEqual(findings((c) => { closed(c); delete unit(c, 'session').core_type; }).filter((f) => f.check === 'CK-70'), []);
+    assert.deepEqual(findings((c) => { closed(c); unit(c, 'session').abstract = true; }).filter((f) => f.check === 'CK-74'), []);
+    assert.deepEqual(findings((c) => { closed(c); delete unit(c, 'session').core_type; }).filter((f) => f.check === 'CK-74'), []);
   });
 });
 
-describe('CK-71 the core enum of a variant', () => {
+describe('CK-77 a class without core_type on a target that does not generate it (GN-6af)', () => {
+  const judged = (change: (c: any) => void): Finding[] => findings((c) => { delete unit(c, 'session').core_type; change(c); }).filter((f) => f.check === 'CK-77');
+  test('a class without core_type that names php and go', () => {
+    assert.deepEqual(judged(() => undefined), [{
+      check: 'CK-77',
+      path: at('session'),
+      message: 'session: a class without core_type is not generated for php, go, so the unit names only without php, go and a reason (GN-6af, Q-4)',
+    }]);
+  });
+  test('a class without core_type whose only names go', () => {
+    assert.deepEqual(judged((c) => { unit(c, 'session').only = { targets: ['python', 'go'], reason: 'Q-4' }; }), [{
+      check: 'CK-77',
+      path: `${at('session')}/only`,
+      message: 'session: a class without core_type is not generated for go, so the unit names only without go and a reason (GN-6af, Q-4)',
+    }]);
+  });
+  test('a class without core_type whose only names python, node and wasm is accepted', () => {
+    assert.deepEqual(judged((c) => { unit(c, 'session').only = { targets: ['python', 'node', 'wasm'], reason: 'Q-4' }; }), []);
+  });
+  test('a class with core_type and a host class are not judged', () => {
+    assert.deepEqual(findings(() => undefined).filter((f) => f.check === 'CK-77'), []);
+    assert.deepEqual(judged((c) => { unit(c, 'session').origin = 'host'; }), []);
+  });
+});
+
+describe('CK-75 the core enum of a variant', () => {
   const figure = (): any => ({
     id: 'figure', name: ['figure'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'sample::Figure',
     tag: ['type'], cases: [{ value: 'dot', fields: [] }],
@@ -766,14 +807,14 @@ describe('CK-71 the core enum of a variant', () => {
   test('a variant without core_type', () => {
     const result = findings((c) => { const v = figure(); delete v.core_type; c.units.push(v); });
     assert.deepEqual(result, [{
-      check: 'CK-71',
+      check: 'CK-75',
       path: `/units/${contract().units.length}`,
       message: 'figure: a variant names its core enum in core_type (T-9)',
     }]);
   });
 });
 
-describe('CK-72 a cleanup that leaves its object (GN-6p)', () => {
+describe('CK-76 a cleanup that leaves its object (GN-6p)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const run = (change: (cases: any, contract: any) => void): Finding[] => {
     const cases = read('contracts/cases.json');
@@ -783,9 +824,9 @@ describe('CK-72 a cleanup that leaves its object (GN-6p)', () => {
   };
   const stall = read('packages/rust/interface.json').units.findIndex((u: any) => u.id === 'stall');
   const finding = {
-    check: 'CK-72',
+    check: 'CK-76',
     path: `/units/${stall}/cleanup`,
-    message: 'stall: the cleanup stall.shut leaves its object (receiver &mut self), so a case of stall.shut calls it a second time in the then of its receiver and names no raises (GN-6p)',
+    message: 'stall: the cleanup stall.shut leaves its object (receiver &mut self), so a case of stall.shut calls it a second time in the then of its receiver and names no raises; binding check reads no Rust source, so that the Drop of the core type releases the resource of an object whose cleanup was not called is the duty of the core (GN-6p)',
   };
   test('a case that calls the cleanup a second time is accepted', () => {
     assert.deepEqual(run(() => undefined), []);

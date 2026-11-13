@@ -845,14 +845,16 @@ the design ids are those of the binding design.
   `&mut self`; another member is refused by name. A cleanup with `self` consumes the object, and every later use of it
   is kind `consumed` (GN-6o). A cleanup with `&mut self` leaves the object: the core keeps that the cleanup was made
   and decides what each later member gives, by a kind of its own, and a caller may call the cleanup again, so the
-  contract holds a case in which a second call of the cleanup does nothing (CK-72). The generated call of such a
+  contract holds a case in which a second call of the cleanup does nothing (CK-76). The generated call of such a
   cleanup marks the lock of the object (`clean` of `binding_core::Exclusive` or `Shared`) when it holds the write
   guard of the receiver, before the core call and whatever the core then gives. The destructor of no target calls the
   cleanup member: a cleanup may wait (`blocking_io`), and a destructor has no place to wait, because PHP frees an
   object inside any statement, Python and Node finalize where the interpreter must not block, the Go runtime runs
   every cleanup function on one goroutine, and the callback of a `FinalizationRegistry` is a task of the event loop.
   The release at destruction is the `Drop` of the core type, which takes no token, and a cleanup that waits is called
-  as any member that waits (GN-6m). The binding crate asserts at compile time that the core type of such a unit implements
+  as any member that waits (GN-6m). So the core type of a class with `cleanup` releases in its `Drop` every resource
+  that the cleanup member would release, when the cleanup was not called; this is the duty of the core, which the
+  contract check does not verify, because it reads no Rust source (CK-76). The binding crate asserts at compile time that the core type of such a unit implements
   `binding_core::Cleanup` and that the core type of every other class unit does not (an ambiguous trait implementation,
   which fails to compile when the type implements it), so that a resource that needs a cleanup call is not missing
   from the contract. When an object whose value was not consumed and whose lock is not marked is destroyed, its destructor drops the core value,
@@ -936,7 +938,8 @@ the design ids are those of the binding design.
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
-  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e). PHP makes the form
+  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e), so the contract
+  check requires that such a class names `only` without PHP and Go (CK-77). PHP makes the form
   `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
   byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
   string key of those bytes. An object and a reference are made before their content and are the same object or

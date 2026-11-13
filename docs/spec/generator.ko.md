@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 71cbf8eef55db598bfb213356ddab566e6c259a77b00f482045b9b1c2cc6657a -->
+<!-- source-sha256: 636adea3ed585dac2cac86bd188b6b299c9aee2f430f0e09d5b66f4e5995a077 -->
 # 생성기
 
 [English](generator.md)
@@ -694,13 +694,15 @@
   가리킨다. 다른 member는 이름을 대고 거부한다. `self`인 cleanup은 객체를 소비하고, 그 뒤 그 객체의 모든 사용은 kind
   `consumed`다(GN-6o). `&mut self`인 cleanup은 객체를 남긴다. 코어가 cleanup이 있었다는 것을 간직하고 그 뒤 각 member가
   무엇을 주는지를 자기 kind로 정하며, 호출자는 cleanup을 다시 부를 수 있다. 그래서 계약은 cleanup의 두 번째 호출이
-  아무것도 하지 않는 case를 갖는다(CK-72). 그런 cleanup의 생성된 호출은 receiver의 쓰기 guard를 쥐었을 때, 코어를 부르기
+  아무것도 하지 않는 case를 갖는다(CK-76). 그런 cleanup의 생성된 호출은 receiver의 쓰기 guard를 쥐었을 때, 코어를 부르기
   전에, 그 뒤 코어가 무엇을 주든 객체의 lock에 표시한다(`binding_core::Exclusive`나 `Shared`의 `clean`). 어느 target의
   소멸자도 cleanup member를 부르지 않는다. cleanup은 기다릴 수 있고(`blocking_io`) 소멸자에는 기다릴 자리가 없기
   때문이다. PHP는 어느 문장 안에서든 객체를 해제하고, Python과 Node는 interpreter가 막히면 안 되는 곳에서 finalize하며,
   Go runtime은 모든 cleanup 함수를 goroutine 하나에서 돌리고, `FinalizationRegistry`의 callback은 event loop의 task다.
   소멸 때의 해제는 token을 받지 않는 코어 타입의 `Drop`이고, 기다리는 cleanup은 기다리는 여느 member처럼
-  불린다(GN-6m). binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
+  불린다(GN-6m). 그래서 `cleanup`이 있는 class의 코어 타입은 cleanup이 불리지 않았을 때 cleanup member가 놓았을 모든
+  자원을 자기 `Drop`에서 놓는다. 이것은 코어의 의무이며, 계약 검사는 Rust 소스를 읽지 않으므로 그것을 검증하지
+  않는다(CK-76). binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
   unit의 코어 타입은 구현하지 않는다는 것을 컴파일 때 단언한다(모호한 trait 구현이며, 타입이 그것을 구현하면 컴파일이
   실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않았고 lock에 표시도 없는 객체가 사라지면 그
   소멸자가 코어 값을 drop하고, 그 `Drop`이 자원을 놓으며, 정리 호출이 없었다는 경고를
@@ -772,7 +774,8 @@
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
-  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). 그래서 계약 검사는 그런 class가 PHP와 Go가 없는 `only`를
+  적기를 요구한다(CK-77). PHP는 형식 `php_object`를 entry들을 property로 가진 새
   `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
   가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
   그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는

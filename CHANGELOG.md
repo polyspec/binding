@@ -5,12 +5,26 @@
 
 ## Unreleased
 
+- The contract check reported less than the generator refused, and the checks of the waiting constructor, of a
+  constructible class, of the core enum of a variant and of a cleanup that leaves its object have the ids CK-73,
+  CK-74, CK-75 and CK-76. CK-73 now judges a host unit too: a `constructor`, a `property`, an `iterate` or a hook of
+  a host unit with a `wait` other than `none` is a finding, because the language has no awaited form of them in
+  code written by hand either; the test that held the exemption read a contract that failed the schema, so it
+  judged nothing. CK-77 is new: a class without `core_type` whose targets, those of its `only` or of the contract,
+  hold PHP or Go is a finding that names the unit and those targets, because only Python, Node and WASM generate
+  such a class (GN-6af). The specification states that the core type of a class with `cleanup` releases its
+  resources in its `Drop`, and that the contract check, which reads no Rust source, does not verify it (GN-6p,
+  CK-76); the finding of CK-76 says so. The classes without `core_type` of the fixture of the contract check name
+  `only` or their `core_type`. Verified by `make test-ts`: the five changed or new tests of a finding failed before
+  the change, and 419 of 419 pass.
 - Three defects that the end-to-end check of `tests/e2e/classes` named once that contract had a callback unit. The Go
   package of a contract with a callback unit and no value alias read a list of func handles before every buffer, which
   the C ABI writes only for a contract with a value alias, so every call failed with "the encoded result does not
   follow the encoding of the binding"; the Go package now reads that list only where the C ABI writes it (GN-6u). The
   helper `thrown_thread` of the PHP and Node crates failed the lint `clippy::manual_unwrap_or_default` and now carries
-  an `allow` with its reason (R-1), and the helper `caught` of the WASM crate failed `clippy::manual_async_fn` and is
+  an `allow` with its reason (R-1): the form that the lint asks for, `Result::unwrap_or_default`, gives the same
+  number, and the `clippy.toml` of a repository may disallow it (R-1), so the failure stays matched, as in the helpers
+  that allow `clippy::manual_unwrap_or`; and the helper `caught` of the WASM crate failed `clippy::manual_async_fn` and is
   an `async fn` (GN-6n). Verified by `make test-ts`; the test of the Go reader failed before the change.
 - A class unit whose `cleanup` names a method with the core receiver `&mut self` was refused by every target as "no
   method with the receiver self". The generator now takes both forms (GN-6p): a cleanup with `self` consumes its
@@ -19,9 +33,9 @@
   `binding_core::Exclusive` and `Shared`, with `cleaned`), and the destructor of each of the five targets warns only
   for an object that is neither consumed nor marked. No destructor calls the cleanup member, so a cleanup that waits
   is never called where nothing can wait; the `Drop` of the core type releases the resource. The contract check
-  requires a case that calls such a cleanup a second time without a failure (CK-72). The class `stall` of
+  requires a case that calls such a cleanup a second time without a failure (CK-76). The class `stall` of
   `tests/e2e/classes` has such a cleanup, a case of its second call and a case of a member that fails with kind
-  `shut` after it. Verified by `make test-ts`: the two tests of the finding of CK-72 failed before the check was
+  `shut` after it. Verified by `make test-ts`: the two tests of the finding of CK-76 failed before the check was
   written, and 414 of 414 pass.
 - Go and WASM refused a method with the receiver `self` and a class unit with `cleanup` by name. Both now generate
   them as PHP, Python and Node do: the place of the receiver takes the value out of the lock that the table of the
@@ -50,11 +64,11 @@
   `make test-ts`: the tests of GN-6m and GN-6q failed with the refusal before the change. The end-to-end check of
   `tests/e2e/classes` is the evidence of the five targets.
 - A contract error that `binding check` passed was first reported by `binding generate` as a refusal. The contract
-  check now reports three of them. CK-69: a `constructor`, a `property`, an `iterate` or a hook (`stringify`,
+  check now reports three of them. CK-73: a `constructor`, a `property`, an `iterate` or a hook (`stringify`,
   `to_json`, `primitive`) of a unit that is no host unit with a `wait` other than `none` is a finding that names the
   member, its wait and the member that can wait in its place, a static member that makes the instance or a method
-  that gives the value or the items (GN-6m, GN-6n, N-4). CK-70: a class with `core_type` that has no constructor and
-  no `constructible: false`, or `constructible: false` and a constructor, is a finding (U-1). CK-71: a `variant` unit
+  that gives the value or the items (GN-6m, GN-6n, N-4). CK-74: a class with `core_type` that has no constructor and
+  no `constructible: false`, or `constructible: false` and a constructor, is a finding (U-1). CK-75: a `variant` unit
   of the origin `generated` without `core_type` is a finding (T-9). The refusals of the generator stay. Verified by
   `npm test` in `packages/ts`: the 12 new tests of a finding failed before the change, each for its missing finding,
   and `tests/contract-check.test.ts` passes 246 of 246 with it.

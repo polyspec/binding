@@ -1,16 +1,28 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0600979716d45c3a50eb3d344586ead855af9a0f2eced5ccc63a2e5b470be884 -->
+<!-- source-sha256: 64b7045484b72d9185b0a570c3341d7b5725339cf3d85d048da2914538d5211c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약 검사가 생성기가 거부하는 것보다 적게 보고했다. 그리고 기다리는 constructor, 생성할 수 있는 class, variant의 코어
+  enum, 객체를 남기는 cleanup의 검사는 id CK-73, CK-74, CK-75, CK-76을 갖는다. CK-73은 이제 host unit도 판정한다. host
+  unit의 `constructor`, `property`, `iterate`, hook이 `none`이 아닌 `wait`를 가지면 finding이다. 손으로 쓰는 코드에도
+  언어에는 그것들을 await하는 형태가 없기 때문이다. 그 예외를 지키던 시험은 schema에 실패하는 계약을 읽었으므로 아무것도
+  판정하지 않았다. CK-77은 새 검사다. `core_type`이 없는 class의 target, 곧 그 `only`의 target이나 계약의 target에 PHP나
+  Go가 있으면 그 unit과 그 target들을 적는 finding이다. Python, Node, WASM만 그런 class를 생성하기 때문이다(GN-6af).
+  명세는 `cleanup`이 있는 class의 코어 타입이 자기 `Drop`에서 자원을 놓는다는 것과, Rust 소스를 읽지 않는 계약 검사가
+  그것을 검증하지 않는다는 것을 적는다(GN-6p, CK-76). CK-76의 finding이 그렇게 적는다. 계약 검사 fixture의 `core_type`
+  없는 class들은 `only`나 `core_type`을 적는다. `make test-ts`로 검증했다. finding을 요구하는 바뀌었거나 새로운 시험
+  다섯은 변경 전에 실패했고, 419개 중 419개가 통과한다.
 - `tests/e2e/classes`의 계약이 callback unit을 갖게 되자 그 end-to-end 검사가 짚은 결함 셋. callback unit이 있고 값
   alias가 없는 계약의 Go package는 모든 buffer 앞에서 func handle의 목록을 읽었는데, C ABI는 값 alias가 있는 계약에서만
   그것을 쓴다. 그래서 모든 호출이 "the encoded result does not follow the encoding of the binding"으로 실패했다. 이제 Go
   package는 C ABI가 그 목록을 쓰는 곳에서만 읽는다(GN-6u). PHP와 Node crate의 helper `thrown_thread`는 lint
-  `clippy::manual_unwrap_or_default`에 걸렸고 이제 이유를 적은 `allow`를 갖는다(R-1). WASM crate의 helper `caught`는
+  `clippy::manual_unwrap_or_default`에 걸렸고 이제 이유를 적은 `allow`를 갖는다(R-1). lint가 요구하는 꼴인
+  `Result::unwrap_or_default`는 같은 번호를 주지만 저장소의 `clippy.toml`이 그것을 금지할 수 있으므로(R-1),
+  `clippy::manual_unwrap_or`를 allow한 helper들처럼 실패를 match로 둔다. WASM crate의 helper `caught`는
   `clippy::manual_async_fn`에 걸렸고 이제 `async fn`이다(GN-6n). `make test-ts`로 검증했다. Go reader의 시험은 변경 전에
   실패했다.
 - `cleanup`이 코어 receiver가 `&mut self`인 method를 가리키는 class unit을 모든 target이 "no method with the receiver
@@ -19,8 +31,8 @@
   객체의 lock에 표시하고(`binding_core::Exclusive`와 `Shared`의 `clean`, 그리고 `cleaned`), 다섯 target 각각의 소멸자는
   소비되지도 표시되지도 않은 객체에만 경고한다. 어느 소멸자도 cleanup member를 부르지 않으므로, 기다리는 cleanup이
   기다릴 수 없는 곳에서 불리는 일이 없다. 자원은 코어 타입의 `Drop`이 놓는다. 계약 검사는 그런 cleanup을 실패 없이 두
-  번째로 부르는 case를 요구한다(CK-72). `tests/e2e/classes`의 class `stall`이 그런 cleanup과, 그 두 번째 호출의 case와,
-  그 뒤 kind `shut`으로 실패하는 member의 case를 갖는다. `make test-ts`로 검증했다. CK-72의 finding을 요구하는 시험 둘은
+  번째로 부르는 case를 요구한다(CK-76). `tests/e2e/classes`의 class `stall`이 그런 cleanup과, 그 두 번째 호출의 case와,
+  그 뒤 kind `shut`으로 실패하는 member의 case를 갖는다. `make test-ts`로 검증했다. CK-76의 finding을 요구하는 시험 둘은
   검사를 쓰기 전에 실패했고, 414개 중 414개가 통과한다.
 - Go와 WASM은 receiver가 `self`인 method와 `cleanup`이 있는 class unit을 이름을 대고 거부했다. 이제 둘 다 PHP, Python,
   Node처럼 생성한다. receiver의 자리가 class의 table이 handle 아래에 둔 lock에서 값을 꺼내고, 그 객체의 뒤 자리는 kind
@@ -46,11 +58,11 @@
   `make test-ts`로 검증했다. GN-6m과 GN-6q의 시험은 변경 전에 그 거부로 실패했다. 다섯 target의 증거는
   `tests/e2e/classes`의 end-to-end 검사다.
 - `binding check`가 통과시킨 계약 오류를 `binding generate`가 거부로 처음 보고했다. 이제 계약 검사가 그 가운데 셋을
-  보고한다. CK-69: host unit이 아닌 unit의 `constructor`, `property`, `iterate`, hook(`stringify`, `to_json`,
+  보고한다. CK-73: host unit이 아닌 unit의 `constructor`, `property`, `iterate`, hook(`stringify`, `to_json`,
   `primitive`)이 `none`이 아닌 `wait`를 적으면 finding이고, 그 member와 wait, 그 자리에서 기다릴 수 있는 member를
-  적는다. 인스턴스를 만드는 static member, 또는 값이나 항목을 주는 method다(GN-6m, GN-6n, N-4). CK-70: `core_type`이
+  적는다. 인스턴스를 만드는 static member, 또는 값이나 항목을 주는 method다(GN-6m, GN-6n, N-4). CK-74: `core_type`이
   있는 class에 constructor도 `constructible: false`도 없거나, `constructible: false`와 constructor가 함께 있으면
-  finding이다(U-1). CK-71: `core_type`이 없는 origin `generated`의 `variant` unit은 finding이다(T-9). 생성기의 거부는
+  finding이다(U-1). CK-75: `core_type`이 없는 origin `generated`의 `variant` unit은 finding이다(T-9). 생성기의 거부는
   그대로 둔다. `packages/ts`의 `npm test`로 검증했다. finding을 요구하는 새 시험 12개가 변경 전에는 각각 그 finding이
   없어서 실패했고, 변경 후 `tests/contract-check.test.ts`는 246개 중 246개가 통과한다.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
