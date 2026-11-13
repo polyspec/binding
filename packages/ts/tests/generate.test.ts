@@ -1457,6 +1457,10 @@ test('a default of an optional type is one Option, None when it is left out or n
   // G-4: another default of an optional type is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.pad', 'fill').default = { literal: '.' }; }), /shapes\.pad\.fill: a default of an optional type is \{literal: null\} or \{computed\} \(U-2\)/);
+  // T-4: a field of an optional type with a default has the result form of its type, so a record that a member also
+  // returns is generated, and a None of the core is the null of the language.
+  const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
+  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None\n/);
 });
 
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
