@@ -159,6 +159,18 @@
       ],
       "reason": "X-1",
       "place": "polyspec_sample::Counter::draw"
+    },
+    {
+      "id": "tally",
+      "core": "polyspec_sample::fault::TALLY",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "unreadable"
+      ],
+      "reason": "G-5",
+      "place": "polyspec_sample::Counter::tally"
     }
   ],
   "units": [
@@ -357,7 +369,8 @@
               "type": {
                 "unit": "tag"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": {
@@ -414,6 +427,31 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::size"
+        },
+        {
+          "id": "sample.describe",
+          "name": [
+            "describe"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "default": {
+                "literal": null
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::describe"
         },
         {
           "id": "sample.measure",
@@ -483,6 +521,129 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::touch"
+        },
+        {
+          "id": "sample.first",
+          "name": [
+            "first"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookups"
+              ],
+              "type": {
+                "list": {
+                  "unit": "lookup"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::first"
+        },
+        {
+          "id": "sample.maybe",
+          "name": [
+            "maybe"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "lookup"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::maybe",
+          "optional_reason": "U-3"
+        },
+        {
+          "id": "sample.seek",
+          "name": [
+            "seek"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "search"
+              ],
+              "type": {
+                "unit": "search"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::seek"
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "name": [
+        "search"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Search",
+      "fields": [
+        {
+          "name": [
+            "lookup"
+          ],
+          "type": {
+            "unit": "lookup"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "key"
+          ],
+          "type": "text",
+          "required": true
         }
       ]
     },
@@ -695,6 +856,16 @@
             "go": "map",
             "wasm": "map"
           }
+        },
+        {
+          "kind": "native",
+          "make": {
+            "php": "native",
+            "python": "native",
+            "node": "native",
+            "go": "native",
+            "wasm": "native"
+          }
         }
       ],
       "in": [
@@ -808,6 +979,14 @@
           ]
         },
         {
+          "python": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "node": "null",
           "cases": [
             {
@@ -861,11 +1040,27 @@
           ]
         },
         {
+          "node": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "php": "stdClass",
           "cases": [
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         },
@@ -923,6 +1118,14 @@
           ]
         },
         {
+          "go": "any",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "wasm": "null",
           "cases": [
             {
@@ -972,6 +1175,14 @@
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         }
@@ -1064,7 +1275,8 @@
               "type": {
                 "unit": "counter"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": "none",
@@ -1090,7 +1302,8 @@
               "type": {
                 "unit": "counter"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": "uint",
@@ -1101,6 +1314,42 @@
           "core": {
             "path": "polyspec_sample::Counter::draw",
             "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "counter.tally",
+          "name": [
+            "tally"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Unreadable"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::tally",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "counter.settle",
+          "name": [
+            "settle"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Unreadable"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::settle",
+            "receiver": "&self"
           }
         }
       ]
@@ -1204,6 +1453,107 @@
           }
         }
       ]
+    },
+    {
+      "id": "shelf",
+      "name": [
+        "shelf"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Shelf",
+      "final": true,
+      "members": [
+        {
+          "id": "shelf.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Shelf::new"
+        },
+        {
+          "id": "shelf.slip",
+          "name": [
+            "slip"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "slip"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Shelf::slip",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "shelf.clear",
+          "name": [
+            "clear"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Shelf::clear",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "slip",
+      "name": [
+        "slip"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Slip",
+      "final": true,
+      "constructible": false,
+      "members": [
+        {
+          "id": "slip.read",
+          "name": [
+            "read"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Slip::read",
+            "receiver": "&self"
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -1253,6 +1603,11 @@
       "member": "sample.size",
       "file": "contracts/cases.json",
       "group": "size"
+    },
+    {
+      "member": "sample.describe",
+      "file": "contracts/cases.json",
+      "group": "describe"
     },
     {
       "member": "tag.entries",
@@ -1315,6 +1670,36 @@
       "group": "ledger_known"
     },
     {
+      "member": "counter.tally",
+      "file": "contracts/cases.json",
+      "group": "counter_tally"
+    },
+    {
+      "member": "counter.settle",
+      "file": "contracts/cases.json",
+      "group": "counter_settle"
+    },
+    {
+      "member": "shelf.new",
+      "file": "contracts/cases.json",
+      "group": "shelf_new"
+    },
+    {
+      "member": "shelf.slip",
+      "file": "contracts/cases.json",
+      "group": "shelf_slip"
+    },
+    {
+      "member": "shelf.clear",
+      "file": "contracts/cases.json",
+      "group": "shelf_clear"
+    },
+    {
+      "member": "slip.read",
+      "file": "contracts/cases.json",
+      "group": "slip_read"
+    },
+    {
       "member": "sample.measure",
       "file": "contracts/cases.json",
       "group": "measure"
@@ -1333,6 +1718,21 @@
       "alias": "data",
       "file": "contracts/cases.json",
       "group": "data_in"
+    },
+    {
+      "member": "sample.first",
+      "file": "contracts/cases.json",
+      "group": "first"
+    },
+    {
+      "member": "sample.maybe",
+      "file": "contracts/cases.json",
+      "group": "maybe"
+    },
+    {
+      "member": "sample.seek",
+      "file": "contracts/cases.json",
+      "group": "seek"
     }
   ]
 }

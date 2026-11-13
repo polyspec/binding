@@ -1,0 +1,203 @@
+{
+  "tally": [
+    {
+      "id": "a_dot_and_a_group_of_three",
+      "figures": [
+        {
+          "type": "dot"
+        },
+        {
+          "type": "group",
+          "items": [
+            {
+              "type": "circle",
+              "radius": 1.5
+            }
+          ],
+          "frame": {
+            "type": "label",
+            "text": "a",
+            "at": null
+          },
+          "back": {
+            "type": "dot"
+          }
+        }
+      ],
+      "result": 5
+    },
+    {
+      "id": "no_figure",
+      "figures": [],
+      "result": 0
+    }
+  ],
+  "grown": [
+    {
+      "id": "a_group_grows_its_parts",
+      "figure": {
+        "type": "group",
+        "items": [
+          {
+            "type": "circle",
+            "radius": 1.25
+          },
+          {
+            "type": "label",
+            "text": "ab",
+            "at": 2
+          }
+        ],
+        "frame": {
+          "type": "dot"
+        },
+        "back": null
+      },
+      "result": {
+        "type": "group",
+        "items": [
+          {
+            "type": "circle",
+            "radius": 2.5
+          },
+          {
+            "type": "label",
+            "text": "AB",
+            "at": 2
+          }
+        ],
+        "frame": {
+          "type": "dot"
+        },
+        "back": null
+      }
+    },
+    {
+      "id": "a_dot_stays",
+      "figure": {
+        "type": "dot"
+      },
+      "result": {
+        "type": "dot"
+      }
+    },
+    {
+      "id": "a_group_behind_a_group",
+      "figure": {
+        "type": "group",
+        "items": [],
+        "frame": {
+          "type": "circle",
+          "radius": 0.75
+        },
+        "back": {
+          "type": "group",
+          "items": [
+            {
+              "type": "dot"
+            }
+          ],
+          "frame": {
+            "type": "label",
+            "text": "x",
+            "at": null
+          },
+          "back": null
+        }
+      },
+      "result": {
+        "type": "group",
+        "items": [],
+        "frame": {
+          "type": "circle",
+          "radius": 1.5
+        },
+        "back": {
+          "type": "group",
+          "items": [
+            {
+              "type": "dot"
+            }
+          ],
+          "frame": {
+            "type": "label",
+            "text": "X",
+            "at": null
+          },
+          "back": null
+        }
+      }
+    },
+    {
+      "id": "a_label_without_a_position",
+      "figure": {
+        "type": "label",
+        "text": "ok"
+      },
+      "result": {
+        "type": "label",
+        "text": "OK",
+        "at": null
+      }
+    }
+  ],
+  "tail_of": [
+    {
+      "id": "a_callback_gives_its_last_bytes",
+      "tail": {
+        "callback": {
+          "tail.last": [
+            {
+              "args": {
+                "count": 1
+              },
+              "result": {
+                "hex": "63"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "tail.last",
+            "args": {
+              "count": 1
+            }
+          }
+        ]
+      },
+      "count": 1,
+      "result": {
+        "hex": "63"
+      }
+    },
+    {
+      "id": "a_ribbon_is_a_tail",
+      "tail": {
+        "new": "ribbon.new",
+        "args": {
+          "start": "abc"
+        }
+      },
+      "count": 2,
+      "result": {
+        "hex": "6263"
+      }
+    }
+  ],
+  "ribbon_new": [
+    {
+      "id": "a_ribbon_starts_with_a_source",
+      "start": "ab"
+    }
+  ],
+  "ribbon_size": [
+    {
+      "id": "the_size_of_a_bytes_source",
+      "start": {
+        "hex": "61ff62"
+      },
+      "result": 3
+    }
+  ]
+}

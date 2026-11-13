@@ -2,12 +2,13 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
-import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
+import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -26,6 +27,10 @@ export function pythonLayout(model: Model): PythonLayout {
 }
 
 const moduleOf = (layout: PythonLayout, module: string): string => (module === '' ? layout.module : `${layout.module}.${module.replaceAll('/', '.')}`);
+// GN-6r: the module of the internal names of a contract module: _root for the root module, _<module> for another.
+export const internalModule = (module: string): string => (module === '' ? '_root' : `_${module.replaceAll('/', '.')}`);
+// The Python module that holds a unit of the module: internal units are in internalModule (GN-6r).
+const unitModule = (layout: PythonLayout, unit: Unit): string => (isInternal(unit) ? `${layout.module}.${internalModule(unit.module)}` : moduleOf(layout, unit.module));
 
 // ---- Rust: conversion of one contract type ----
 
@@ -71,6 +76,24 @@ fn in_source(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResul
         Ok(bytes) => Ok(bytes),
         Err(_not_bytes) => Err(binding_error(py, type_error(subject, "str or bytes"))),
     }
+}
+
+/// T-1 path, B-3, GN-6y: a str, bytes or os.PathLike, as the bytes of os.fsencode. A value that os.fsencode refuses
+/// by its type is kind invalid_argument_type, a str that it cannot encode kind invalid_path, and binding_core judges
+/// the bytes.
+fn in_path(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<std::path::PathBuf> {
+    let encoded = match py.import("os").and_then(|os| os.getattr("fsencode")).and_then(|fsencode| fsencode.call1((value,))) {
+        Ok(encoded) => encoded,
+        Err(error) if error.is_instance_of::<pyo3::exceptions::PyUnicodeError>(py) => {
+            return Err(binding_error(py, BindingError::InvalidPath { subject: subject.to_owned() }));
+        }
+        Err(error) if error.is_instance_of::<pyo3::exceptions::PyTypeError>(py) => {
+            return Err(binding_error(py, type_error(subject, "str, bytes or os.PathLike")));
+        }
+        Err(error) => return Err(error),
+    };
+    let bytes: Vec<u8> = encoded.extract()?;
+    binding_core::path_from_bytes(bytes, subject).map_err(|error| binding_error(py, error))
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides; any other value is converted.
@@ -147,6 +170,12 @@ fn in_list<'py, T>(
 }
 
 /// T-2: None is the absence; any other value is converted.
+/// GN-6t: a tuple is a tuple of exactly its parts.
+fn in_tuple<'py, const N: usize>(py: Python<'py>, value: &Bound<'py, PyAny>, subject: &str) -> PyResult<[Bound<'py, PyAny>; N]> {
+    let Ok(tuple) = value.cast::<PyTuple>() else { return Err(binding_error(py, type_error(subject, "tuple"))) };
+    <[Bound<'py, PyAny>; N]>::try_from(tuple.iter().collect::<Vec<_>>()).map_err(|_other| binding_error(py, type_error(subject, &format!("a tuple of {N} items"))))
+}
+
 fn in_optional<'py, T>(value: &Bound<'py, PyAny>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
     if value.is_none() {
         return Ok(None);
@@ -166,6 +195,12 @@ fn out_latin1<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'
 
 fn out_bytes<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyBytes::new(py, value.as_ref()).into_any())
+}
+
+/// T-1 path, GN-6y: the str of os.fsdecode of the bytes of the path.
+fn out_path<'py>(py: Python<'py>, value: impl AsRef<std::path::Path>) -> PyResult<Bound<'py, PyAny>> {
+    let bytes = PyBytes::new(py, binding_core::path_bytes(value.as_ref()));
+    py.import("os")?.getattr("fsdecode")?.call1((bytes,))
 }
 
 fn out_bool<'py>(py: Python<'py>, value: impl Borrow<bool>) -> PyResult<Bound<'py, PyAny>> {
@@ -312,27 +347,60 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float', path: 'in_path' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
   if ('map' in type) return `in_map(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
+  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(py, ${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) {
     return `in_${recordFn(unit ?? { name: [] }, aliasOf(model, type)?.library)}(py, ${value}, ${subject})`;
   }
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Unsupported(`no Python input conversion for ${JSON.stringify(type)}`);
 }
 
+// GN-6z: a function holds the callable that entered; a call converts the arguments out and the result in, and an
+// exception of the Python code, or a failure of the binding in the call, goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
+  const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"');
+  return `in_function(py, ${value}, ${subject}).map(|object| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                Python::attach(|py| {
+                    let call = || -> PyResult<${result}> {
+                        let returned = object.bind(py).call1((${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
+                        ${type.returns === 'none' ? "let _returned: Bound<'_, PyAny> = returned;\n                        " : ''}${returned}
+                    };
+                    call().map_err(|error| thrown(py, error))
+                })
+            })
+        })`;
+}
+
+const FUNCTION_IN = `
+/// GN-6z: a value of a function type is callable (kind invalid_argument_type); the function holds it.
+fn in_function(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
+    if !value.is_callable() {
+        return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a callable") }));
+    }
+    Ok(value.clone().unbind())
+}
+`;
+
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', path: 'out_path', none: 'out_none' };
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
@@ -343,12 +411,11 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('map' in type) return `out_map(py, ${value}, |py, item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => convertOut(model, t, `&${value}.${i}`));
-    return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(py, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
-  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(py, ${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(py, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(py, ${value})`;
   throw new Unsupported(`no Python output conversion for ${JSON.stringify(type)}`);
 }
@@ -392,7 +459,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const attr = langName('python', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(attr), '|error| binding_error(py, error)')}` : ''}`;
   });
   const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   return `
@@ -411,6 +478,44 @@ fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bo
     let fields = PyDict::new(py);
 ${writes.join('\n')}
     ${typesOf}.getattr(${rustString(pyClass)})?.call((), Some(&fields))
+}
+`;
+}
+
+// T-9, GN-6v: a value of a variant is an instance of the dataclass of one of its cases, whose fields are judged as they
+// enter (T-8); a value leaves as the instance of the class of its case, by a match without a wildcard.
+function variantRust(model: Model, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const pyName = langName('python', variant.unit.name, 'class');
+  const ins = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => `        let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `&value.getattr(${rustString(langName('python', f.field.name, 'variable'))})?`, 'subject')}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n        ${narrowed(f.variable, rustString(langName('python', f.field.name, 'variable')), '|error| binding_error(py, error)')}` : ''}`);
+    return `    if value.is_instance(&types.getattr(${rustString(langName('python', kase.unit.name, 'class'))})?)? {
+${reads.map((r) => `${r}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
+    }`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const writes = fields.map((f) => `            fields.set_item(${rustString(langName('python', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?)?;`);
+    const pyClass = rustString(langName('python', kase.unit.name, 'class'));
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => ${writes.length === 0 ? `${pyClass},` : `{\n${writes.join('\n')}\n            ${pyClass}\n        }`}`;
+  });
+  return `
+/// T-9: a value of the variant ${pyName} is an instance of the class of one of its cases; its fields are judged as they enter (T-8).
+fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    let types = types(py)?;
+${ins.join('\n')}
+    Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyName)}) }))
+}
+
+/// T-9: a value of the variant ${pyName} leaves as the instance of the class of its case.
+fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
+    let fields = PyDict::new(py);
+    let class = match value.borrow() {
+${arms.join('\n')}
+    };
+    types(py)?.getattr(class)?.call((), Some(&fields))
 }
 `;
 }
@@ -472,15 +577,17 @@ function entryRust(model: Model, fn: Fn): string {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     const subject = rustString(langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
+    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : leftOut(arg, `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);
+    if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrows(arg.type))) lines.push(`        ${narrowed(variable, subject, '|error| binding_error(py, error)')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
+    const recordLet = rustType(model, { unit: fn.record.unit.id });
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustIdent(langName('python', f.name, 'variable')))).join(', ');
-    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
+    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordLet} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustIdent(langName('python', p.name, 'variable')), 'self.inner').join(', ')})`;
@@ -585,7 +692,7 @@ function objectRust(model: Model, layout: PythonLayout, object: ObjectClass, giv
   const members = object.members.map((fn) => functionRust(model, fn)).join('');
   return `
 /// T-5: ${pyClass}${object.constructible ? '' : ', which only its static members make (U-1 constructible)'}.
-#[pyclass(name = ${rustString(pyClass)}, module = ${rustString(moduleOf(layout, object.unit.module))}, frozen)]
+#[pyclass(name = ${rustString(pyClass)}, module = ${rustString(unitModule(layout, object.unit))}, frozen)]
 pub struct ${struct} {
     inner: ${heldType(object)},
 }
@@ -650,9 +757,9 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 // thread on which the core calls it, so a callback with thread owner has no check of the thread.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const pyName = langName('python', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     const params = m.params.map((p) => `${rustField(p.name)}: ${traitParam(model, p.type)}`);
@@ -665,10 +772,21 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
                 let returned = self.object.bind(py).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                 ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
             };
-            call().map_err(|error| thrown(py, error))
+            call().map_err(|error| ${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)}(py, error))
         })
     }`;
   }).join('\n');
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+fn ${recognizedFn(cb, m)}(py: Python<'_>, error: PyErr) -> ${failure} {
+    let core = recognized_kind(py, &error, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(py, error),
+    }
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
@@ -689,20 +807,27 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the error classes (GN-6d).
+fn recognized_kind(py: Python<'_>, error: &PyErr, classes: &[&str]) -> Option<(String, String)> {
+    let value = error.value(py);
+    let module = errors(py).ok()?;
+    for name in classes {
+        let class = module.getattr(*name).ok()?;
+        if value.is_instance(&class).ok()? {
+            let kind = value.getattr("kind").ok()?.extract::<String>().ok()?;
+            let message = value.str().ok()?.to_string();
+            return Some((kind, message));
+        }
+    }
+    None
 }
+`;
 
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
@@ -719,16 +844,37 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
-fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+/// U-3, GN-6u: what a Raised holds: the key of the exception in THROWN, whose last drop removes it, so an exception
+/// that the core drops is not kept.
+#[derive(Debug)]
+struct ThrownKey {
+    key: u64,
 }
 
+impl binding_core::NativeObject for ThrownKey {}
+
+impl Drop for ThrownKey {
+    fn drop(&mut self) {
+        let taken = thrown_map().remove(&self.key);
+        drop(taken);
+    }
+}
+
+/// U-3: keeps the exception and gives the Raised that names it.
+fn keep_thrown(object: Py<PyAny>) -> binding_core::Raised {
+    let key = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    thrown_map().insert(key, object);
+    binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { key }))
+}
+${!keepsThrown(model) ? '' : `
+fn thrown<E>(py: Python<'_>, error: PyErr) -> binding_core::Failure<E> {
+    binding_core::Failure::Raised(keep_thrown(error.into_value(py).into_any()))
+}
+`}
 fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(py, error),
-        binding_core::Failure::Raised(raised) => match thrown_map().remove(&raised.handle().raw()) {
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(py, BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(py, error)'},
+        binding_core::Failure::Raised(raised) => match raised.native().downcast::<ThrownKey>().and_then(|thrown| thrown_map().remove(&thrown.key)) {
             Some(object) => PyErr::from_value(object.into_bound(py)),
             None => binding_error(py, BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
         },
@@ -750,6 +896,7 @@ function poisonRust(model: Model): string {
         }`;
   }).join('\n');
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[pyfunction]
 fn ${POISON_ENTRY.python}(py: Python<'_>, object: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -765,7 +912,7 @@ ${arms}
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -773,7 +920,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -785,20 +932,20 @@ ${arms}
 /// I-3: the properties of ${unitClass(u)}, read from the core error.
 fn ${rustField(u.unit.name)}_properties(py: Python<'_>, raised: &PyErr, error: &${model.coreError}) -> PyResult<()> {
     let object = raised.value(py);
-${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}(error);
+${errorProperties(u).map(({ property }) => `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(py, ${failure}))`)};
     object.setattr(${rustString(`_${langName('python', property.member.name, 'variable')}`)}, ${convertOut(model, property.returns, 'value')}?)?;`).join('\n')}
     Ok(())
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     let raised = library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error));
-    let written = match error {
+    let written = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     match written {
@@ -819,15 +966,18 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.enums.map((u) => enumRust(model, u)),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    ...model.variants.map((v) => variantRust(model, v)),
     ...model.aliases.map((a) => aliasPython(model, a)),
-    model.aliases.length > 0 ? PYTHON_HOST : '',
+    model.aliases.length > 0 ? pythonHost(model) : '',
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
-  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
+  const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+  const recognizes = model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
+  const rest = [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
-  const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
+  const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + model.kept.map((k) => keptPython(moduleOf(layout, k.unit.module), k)).join('') + rest;
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
     static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
@@ -842,19 +992,20 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
     ...model.functions.filter(awaits).map((fn) => `    module.add_function(wrap_pyfunction!(${awaitedName(fn)}, module)?)?;`),
     ...model.objects.map((o) => `    module.add_class::<Py${langName('python', o.unit.name, 'class')}>()?;`),
+    ...model.kept.map((k) => `    module.add_class::<Py${langName('python', k.unit.name, 'class')}>()?;`),
   ].join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
   return `${header('//')}
 // The native module ${layout.module}._native of ${model.contract.library}.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
 ${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
@@ -907,6 +1058,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
 
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[pyfunction]
 fn _panic_test(py: Python<'_>) -> PyResult<()> {
@@ -937,6 +1089,16 @@ fn _alias_in_${rustField(alias.unit.name)}(py: Python<'_>, value: &Bound<'_, PyA
         Ok(())
     })
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[pyfunction]
+fn _alias_round_${rustField(alias.unit.name)}<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    guard(py, || {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(py, value, "value")?;
+        out_${rustField(alias.unit.name)}(py, &value)
+    })
+}
 `).join('')}
 ${poisonRust(model)}#[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -948,7 +1110,9 @@ ${register}
     #[cfg(feature = "panic-test")]
     module.add_function(wrap_pyfunction!(${POISON_ENTRY.python}, module)?)?;` : ''}${aliasesWithKinds(model).map((alias) => `
     #[cfg(feature = "codec-test")]
-    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
+    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;
+    #[cfg(feature = "codec-test")]
+    module.add_function(wrap_pyfunction!(_alias_round_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
     #[cfg(feature = "fault-test")]
     module.add_function(wrap_pyfunction!(_arm_faults, module)?)?;
     #[cfg(feature = "fault-test")]
@@ -962,7 +1126,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', none: 'None', never: 'NoReturn' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', path: input ? 'str | bytes | PathLike[str] | PathLike[bytes]' : 'str', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -970,6 +1134,8 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `dict[${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? 'object').join(' | ')}, ${pyType(model, type.keyed_map, input)}]`;
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
+  // GN-6z: the callable takes the arguments as the binding gives them and returns a value that the binding takes.
+  if ('function' in type) return `Callable[[${type.function.parameters.map((t) => pyType(model, t, false)).join(', ')}], ${pyType(model, type.function.returns, true)}]`;
   const unit = unitOf(model, type);
   // U-7: a value alias is any value that its core judges.
   if (unit === undefined || aliasOf(model, type) !== undefined) return 'object';
@@ -1029,8 +1195,17 @@ function foreignImports(model: Model): string[] {
     const module = (r.contract.packages['python'] as { module: string }).module;
     byModule.set(module, [...(byModule.get(module) ?? []), langName('python', r.unit.name, 'class')]);
   }
+  // GN-6s: a callback unit of another repository is the Protocol that its package declares.
+  for (const c of model.foreignCallbacks) {
+    const module = (model.foreign.get(c.library ?? '')?.packages['python'] as { module: string }).module;
+    byModule.set(module, [...(byModule.get(module) ?? []), langName('python', c.unit.name, 'class')]);
+  }
   return [...byModule].map(([module, names]) => `from ${module} import ${names.map((n) => `${n} as ${n}`).join(', ')}`);
 }
+
+// The units of <root>._types: the enums, the records of the result form, the variants after the classes of their cases
+// (GN-6v) and the callbacks.
+const typeUnits = (model: Model): Unit[] => [...model.enums, ...model.resultRecords, ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit)];
 
 function typesPy(model: Model): string {
   const enums = model.enums.map((u) => {
@@ -1049,6 +1224,16 @@ class ${langName('python', u.name, 'class')}:
     \"\"\"T-4: the result form of the record; the constructor holds the values, which the binding judges when they enter.\"\"\"
 
 ${(u.fields ?? []).map((f) => `    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}`).join('\n')}`).join('');
+  // T-9, GN-6v: a frozen dataclass per case and the alias of their union.
+  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
+
+@dataclass(frozen=True, kw_only=True)
+class ${langName('python', kase.unit.name, 'class')}:
+    \"\"\"T-9: the case ${kase.value} of the variant ${langName('python', v.unit.name, 'class')}; the constructor holds the values, which the binding judges when they enter.\"\"\"
+${(kase.unit.fields ?? []).map((f) => `\n    ${langName('python', f.name, 'variable')}: ${pyType(model, f.type, false)}${caseLeftOut(f) ? ' = None' : ''}`).join('')}`).join('')}
+
+
+type ${langName('python', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('python', kase.unit.name, 'class')).join(' | ')}`).join('');
   const callbacks = model.callbacks.map((cb) => `
 
 
@@ -1056,39 +1241,44 @@ class ${langName('python', cb.unit.name, 'class')}(Protocol):
     \"\"\"U-3: a callback that Python code implements; the binding checks the members of the object it receives.\"\"\"
 
 ${cb.members.map((m) => `    def ${langName('python', m.member.name, 'callable')}(self${m.params.map((p) => `, ${langName('python', p.name, 'variable')}: ${pyType(model, p.type, false)}`).join('')}) -> ${pyType(model, m.returns, true)}: ...`).join('\n\n')}`).join('');
-  const names = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].map((u) => pyString(langName('python', u.name, 'class')));
+  const names = typeUnits(model).map((u) => pyString(langName('python', u.name, 'class')));
   return `${pyHeader()}
-\"\"\"The enums and records of ${model.contract.library} (T-6, T-4).\"\"\"
+\"\"\"The enums, records and variants of ${model.contract.library} (T-6, T-4, T-9).\"\"\"
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
 ${model.callbacks.length > 0 ? 'from typing import Protocol\n' : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
-__all__ = [${names.join(', ')}]${enums}${records}${callbacks}
+__all__ = [${names.join(', ')}]${enums}${records}${variants}${callbacks}
 `;
 }
 
-function modulePy(model: Model, module: string): string {
+// The names of a Python module file: the public names of the module, or with internal its internal names (GN-6r); the
+// file of the root module holds both, and its __all__ only the public ones.
+function modulePy(model: Model, module: string, internal: boolean): string {
+  const held = (unit: Unit): boolean => unit.module === module && (module === '' && !internal ? true : isInternal(unit) === internal);
   const fns = [
-    ...model.functions.filter((f) => f.module === module).flatMap((f) => [langName('python', f.member.name, 'callable'), ...(awaits(f) ? [awaitedName(f)] : [])]),
-    ...model.objects.filter((o) => o.unit.module === module).map((o) => langName('python', o.unit.name, 'class')),
+    ...model.functions.filter((f) => held(f.unit)).flatMap((f) => [{ unit: f.unit, name: langName('python', f.member.name, 'callable') }, ...(awaits(f) ? [{ unit: f.unit, name: awaitedName(f) }] : [])]),
+    ...model.objects.filter((o) => held(o.unit)).map((o) => ({ unit: o.unit, name: langName('python', o.unit.name, 'class') })),
+    ...model.kept.filter((k) => held(k.unit)).map((k) => ({ unit: k.unit, name: langName('python', k.unit.name, 'class') })),
   ];
-  const enums = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
-  const constants = model.constants.filter((c) => c.module === module);
+  const enums = typeUnits(model).filter(held).map((u) => ({ unit: u, name: langName('python', u.name, 'class') }));
+  const constants = model.constants.filter((c) => held(c.unit));
   // GN-11: an error unit is a class of <root>._errors, which the module of its unit imports; the root module needs no
   // import, because <root> imports every name of <root>._errors.
-  const errors = module === '' ? [] : model.errorUnits.filter((u) => u.unit.module === module).map((u) => langName('python', u.unit.name, 'class'));
-  const names = [...errors, ...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
+  const errors = module === '' || internal ? [] : model.errorUnits.filter((u) => u.unit.module === module).map((u) => ({ unit: u.unit, name: langName('python', u.unit.name, 'class') }));
+  const all = [...errors, ...fns, ...enums, ...constants.map((c) => ({ unit: c.unit, name: langName('python', c.member.name, 'constant') }))];
+  const names = all.filter((n) => !isInternal(n.unit)).map((n) => n.name);
   const imports = [
-    errors.length > 0 ? `from ._errors import ${errors.map((e) => `${e} as ${e}`).join(', ')}` : '',
-    fns.length > 0 ? `from ._native import ${fns.map((f) => `${f} as ${f}`).join(', ')}` : '',
-    enums.length > 0 ? `from ._types import ${enums.map((e) => `${e} as ${e}`).join(', ')}` : '',
+    errors.length > 0 ? `from ._errors import ${errors.map(({ name: e }) => `${e} as ${e}`).join(', ')}` : '',
+    fns.length > 0 ? `from ._native import ${fns.map(({ name: f }) => `${f} as ${f}`).join(', ')}` : '',
+    enums.length > 0 ? `from ._types import ${enums.map(({ name: e }) => `${e} as ${e}`).join(', ')}` : '',
     constants.length > 0 ? 'from typing import Final' : '',
   ].filter((l) => l !== '');
   const values = constants.map((c) => `${langName('python', c.member.name, 'constant')}: Final = ${JSON.stringify(c.member.value)}`);
   return `${pyHeader()}
-"""The module ${module === '' ? '(root)' : module} of ${model.contract.library} (P-2)."""
+"""The ${internal ? 'internal names of the ' : ''}module ${module === '' ? '(root)' : module} of ${model.contract.library} (P-2${internal ? ', GN-6r' : ''})."""
 
 ${imports.join('\n')}
 
@@ -1097,13 +1287,22 @@ ${values.length > 0 ? `\n${values.join('\n')}\n` : ''}`;
 }
 
 function nativePyi(model: Model): string {
-  const enumImports = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].map((u) => langName('python', u.name, 'class'));
+  const enumImports = typeUnits(model).map((u) => langName('python', u.name, 'class'));
   // U-2: the declaration shows a {literal} or {const} default; the value of any other default is the core's.
   const declared = (a: Arg): string => {
     const base = `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`;
     if (a.default === undefined) return base;
     const value = declaredValue(model, a)?.value;
-    const shown = value === undefined ? '...' : typeof value === 'boolean' ? (value ? 'True' : 'False') : typeof value === 'string' ? pyString(value) : String(value);
+    // GN-6i: an enum default is its member, and a {literal: null} default is None.
+    const unit = unitOf(model, a.type);
+    const variant = unit?.kind === 'enum' ? (unit.variants ?? []).find((v) => v.value === value) : undefined;
+    const shown =
+      value === undefined ? '...'
+      : value === null ? 'None'
+      : variant !== undefined && unit !== undefined ? `${langName('python', unit.name, 'class')}.${langName('python', variant.name, 'constant')}`
+      : typeof value === 'boolean' ? (value ? 'True' : 'False')
+      : typeof value === 'string' ? pyString(value)
+      : String(value);
     return `${base} = ${shown}`;
   };
   const fns = model.functions.map((fn) => {
@@ -1138,26 +1337,47 @@ function nativePyi(model: Model): string {
     });
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
+  // GN-6af: a value class without core_type: the constructor, which keeps its arguments, and a property for each, which
+  // a writable property also sets.
+  for (const k of model.kept) {
+    const init = k.fields.map((f) => `${langName('python', f.name, 'variable')}: ${pyType(model, f.type, true)}${f.default === undefined ? '' : f.default === 'null' ? ' = None' : ' = ...'}`);
+    const lines = [`    def __init__(${['self', ...init].join(', ')}) -> None: ...`];
+    for (const f of k.fields.filter((field) => field.property !== undefined)) {
+      const name = langName('python', f.name, 'variable');
+      lines.push(`    @property\n    def ${name}(self) -> ${pyType(model, f.type, false)}: ...`);
+      if (f.writable) lines.push(`    @${name}.setter\n    def ${name}(self, value: ${pyType(model, f.type, true)}) -> None: ...`);
+    }
+    classes.push(`\n@final\nclass ${langName('python', k.unit.name, 'class')}:\n${lines.join('\n')}\n`);
+  }
   return `${pyHeader()}
-from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
-from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
+from collections.abc import ${/\bCallable\[/.test([...fns, ...classes].join('\n')) ? 'Callable, ' : ''}${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
+${/\bPathLike\b/.test([...fns, ...classes].join('\n')) ? 'from os import PathLike\n' : ''}from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
 ${classes.join('')}`;
 }
 
+// The units of the module files of the package, each with its module; an internal unit is in no __all__ (GN-6r).
+const moduleUnits = (model: Model): Unit[] => [
+  ...model.functions.map((f) => f.unit), ...model.objects.map((o) => o.unit), ...model.kept.map((k) => k.unit), ...model.enums, ...model.resultRecords,
+  ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit), ...model.constants.map((c) => c.unit), ...model.errorUnits.map((u) => u.unit),
+];
+
 function initPy(model: Model): string {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])].sort();
+  const modules = [...new Set(moduleUnits(model).filter((u) => u.module === '' || !isInternal(u)).map((u) => u.module))].sort();
+  const open = <T>(items: T[], unit: (item: T) => Unit): T[] => items.filter((item) => !isInternal(unit(item)));
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
     ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class')),
-    ...model.functions.map((f) => langName('python', f.member.name, 'callable')),
-    ...model.objects.map((o) => langName('python', o.unit.name, 'class')),
-    ...model.enums.map((u) => langName('python', u.name, 'class')),
-    ...model.resultRecords.map((u) => langName('python', u.name, 'class')),
-    ...model.callbacks.map((c) => langName('python', c.unit.name, 'class')),
-    ...model.constants.map((c) => langName('python', c.member.name, 'constant')),
+    ...open(model.functions, (f) => f.unit).map((f) => langName('python', f.member.name, 'callable')),
+    ...open(model.objects, (o) => o.unit).map((o) => langName('python', o.unit.name, 'class')),
+    ...open(model.kept, (k) => k.unit).map((k) => langName('python', k.unit.name, 'class')),
+    ...open(model.enums, (u) => u).map((u) => langName('python', u.name, 'class')),
+    ...open(model.resultRecords, (u) => u).map((u) => langName('python', u.name, 'class')),
+    ...open(model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), (u) => u).map((u) => langName('python', u.name, 'class')),
+    ...open(model.callbacks, (c) => c.unit).map((c) => langName('python', c.unit.name, 'class')),
+    ...open(model.constants, (c) => c.unit).map((c) => langName('python', c.member.name, 'constant')),
   ];
   return `${pyHeader()}
 """${model.contract.library}: the public API (P-3)."""
@@ -1178,9 +1398,14 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));
   files.set(`${pkg}/py.typed`, '');
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])];
-  for (const module of modules) {
-    files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
+  const units = moduleUnits(model);
+  for (const module of [...new Set(units.map((u) => u.module))]) {
+    if (module === '') {
+      files.set(`${pkg}/_root.py`, modulePy(model, module, false));
+      continue;
+    }
+    if (units.some((u) => u.module === module && !isInternal(u))) files.set(`${pkg}/${module}.py`, modulePy(model, module, false));
+    if (units.some((u) => u.module === module && isInternal(u))) files.set(`${pkg}/_${module}.py`, modulePy(model, module, true));
   }
   files.set(`${pkg}/__init__.py`, initPy(model));
   files.set(`${ROOT}/tests/test_generated.py`, pythonTests(model, layout.module));

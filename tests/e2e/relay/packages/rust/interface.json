@@ -1,0 +1,155 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "relay",
+  "core": {
+    "crate": "polyspec-relay",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/relay",
+      "namespace": "Polyspec\\Relay"
+    },
+    "python": {
+      "package": "polyspec-relay",
+      "module": "polyspec.relay"
+    },
+    "node": {
+      "package": "@polyspec/relay",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/relay/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "json_value": {
+      "library": "json",
+      "unit": "value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Relay\\RelayValueError",
+        "python": "RelayValueError",
+        "node": "RelayValueError",
+        "wasm": "RelayValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Relay\\RelayTypeError",
+        "python": "RelayTypeError",
+        "node": "RelayTypeError",
+        "wasm": "RelayTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Relay\\RelayIoError",
+        "python": "RelayIoError",
+        "node": "RelayIoError",
+        "wasm": "RelayIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Relay\\RelayStoreError",
+        "python": "RelayStoreError",
+        "node": "RelayStoreError",
+        "wasm": "RelayStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Relay\\RelayBusyError",
+        "python": "RelayBusyError",
+        "node": "RelayBusyError",
+        "wasm": "RelayBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Relay\\RelayInternalError",
+        "python": "RelayInternalError",
+        "node": "RelayInternalError",
+        "wasm": "RelayInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "relay",
+      "name": [
+        "relay"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "relay.carry",
+          "name": [
+            "carry"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "json_value",
+              "required": true
+            }
+          ],
+          "returns": "json_value",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_relay::carry"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "relay.carry",
+      "file": "contracts/cases.json",
+      "group": "carry"
+    }
+  ]
+}

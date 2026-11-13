@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 1be69eb37f0afa161db0a2efd669555912f314888d31956d9f68b1f11d2a6700 -->
+<!-- source-sha256: 0c552eb56419395b04dedb5fe3c00a4988cc3af99876ee5e27e5575334cb70ba -->
 # 개발
 
 [English](AGENTS.md)
@@ -58,7 +58,7 @@
   commit을 적는다.
 - Own: `.github/workflows/ci.yml`은 `main`의 push와 수동 실행에서 돈다. matrix 항목마다 job 하나다. `ts`는 `typecheck-ts`,
   `unit-ts`, `release-coverage`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
-  `clippy-rust`, `fmt-rust`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
+  `clippy-rust`, `fmt-rust`, `fmt-e2e`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
   `make ci-targets`로 실행한다. `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
   `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고, 모든 action을 commit으로
   고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은

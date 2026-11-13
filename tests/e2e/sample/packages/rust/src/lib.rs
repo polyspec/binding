@@ -1,10 +1,16 @@
 //! A sample library for the end-to-end check of binding: a callback interface that language code implements (U-3).
 
-use binding_core::{FloatOut, Handle, HostText, HostValue, HostValues, Failure, Kinds, MapOut, OutValue, OutValues};
+use binding_core::{
+    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, Native, OutValue,
+    OutValues,
+};
 use std::fmt;
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
-#[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
+#[allow(
+    clippy::as_conversions,
+    reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless"
+)]
 const fn widen(length: usize) -> u64 {
     length as u64
 }
@@ -45,6 +51,9 @@ pub mod fault {
     /// The invariant of `Counter::draw`.
     #[doc(hidden)]
     pub const DRAW: &str = "sample.draw";
+    /// The read of the total of `Counter::tally`.
+    #[doc(hidden)]
+    pub const TALLY: &str = "sample.tally";
 }
 
 impl Error {
@@ -108,7 +117,9 @@ pub trait Lookup {
 pub fn resolve(lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Error>> {
     match lookup.find(key)? {
         Some(value) => Ok(value),
-        None => Err(Failure::Kind(Error::Missing { key: key.to_owned() })),
+        None => Err(Failure::Kind(Error::Missing {
+            key: key.to_owned(),
+        })),
     }
 }
 
@@ -118,7 +129,11 @@ pub fn resolve(lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Err
 /// # Errors
 ///
 /// Kind `missing` when the lookup holds no value, and the failure of the lookup.
-pub fn resolve_slowly(_io: binding_core::Io, lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Error>> {
+pub fn resolve_slowly(
+    _io: binding_core::Io,
+    lookup: &mut dyn Lookup,
+    key: &str,
+) -> Result<String, Failure<Error>> {
     resolve(lookup, key)
 }
 
@@ -137,6 +152,54 @@ pub fn count(lookup: &mut dyn Lookup, keys: &[String]) -> Result<u64, Failure<Er
     Ok(found)
 }
 
+/// The value of a key in the first lookup that holds it (GN-6aa: callbacks in a list, which the core takes by value).
+///
+/// # Errors
+///
+/// Kind `missing` when no lookup holds a value, and the failure of a lookup.
+pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Failure<Error>> {
+    for mut lookup in lookups {
+        if let Some(value) = lookup.find(key)? {
+            return Ok(value);
+        }
+    }
+    Err(Failure::Kind(Error::Missing {
+        key: key.to_owned(),
+    }))
+}
+
+/// The value of a key in the lookup, and `None` without a lookup (GN-6aa: an optional callback).
+///
+/// # Errors
+///
+/// The failure of the lookup.
+pub fn maybe(
+    lookup: Option<Box<dyn Lookup + '_>>,
+    key: &str,
+) -> Result<Option<String>, Failure<Error>> {
+    match lookup {
+        Some(mut lookup) => lookup.find(key),
+        None => Ok(None),
+    }
+}
+
+/// A search for the value of a key (GN-6aa: a record with a callback field, whose type has one lifetime).
+pub struct Search<'a> {
+    /// The lookup that holds the value.
+    pub lookup: Box<dyn Lookup + 'a>,
+    /// The key.
+    pub key: String,
+}
+
+/// The value of the key of the search, which its lookup must hold.
+///
+/// # Errors
+///
+/// Kind `missing` when the lookup holds no value, and the failure of the lookup.
+pub fn seek(mut search: Search<'_>) -> Result<String, Failure<Error>> {
+    resolve(&mut *search.lookup, &search.key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{count, resolve, Error, Lookup};
@@ -153,8 +216,14 @@ mod tests {
     #[test]
     fn resolve_finds_and_misses() {
         assert!(matches!(resolve(&mut Fixed, "a"), Ok(value) if value == "1"));
-        assert!(matches!(resolve(&mut Fixed, "b"), Err(Failure::Kind(Error::Missing { .. }))));
-        assert!(matches!(count(&mut Fixed, &[String::from("a"), String::from("b")]), Ok(1)));
+        assert!(matches!(
+            resolve(&mut Fixed, "b"),
+            Err(Failure::Kind(Error::Missing { .. }))
+        ));
+        assert!(matches!(
+            count(&mut Fixed, &[String::from("a"), String::from("b")]),
+            Ok(1)
+        ));
     }
 }
 
@@ -168,7 +237,9 @@ impl Tag {
     /// A tag of the name.
     #[must_use]
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_owned() }
+        Self {
+            name: name.to_owned(),
+        }
     }
 
     /// The string form of the tag (N-4: stringify).
@@ -183,7 +254,9 @@ impl Tag {
     ///
     /// Always kind `unsupported`: a tag has no JSON form.
     pub fn host_json(&self) -> Result<std::convert::Infallible, Error> {
-        Err(Error::Unsupported { what: format!("the JSON form of the tag {}", self.name) })
+        Err(Error::Unsupported {
+            what: format!("the JSON form of the tag {}", self.name),
+        })
     }
 
     /// The entries of the tag, its name with the tag itself (N-4: iterate with a key and a value).
@@ -207,11 +280,13 @@ pub fn join(tags: &[Tag]) -> String {
 /// The tag with the name in upper case.
 #[must_use]
 pub fn shout(tag: &Tag) -> Tag {
-    Tag { name: tag.name.to_uppercase() }
+    Tag {
+        name: tag.name.to_uppercase(),
+    }
 }
 
-/// A value of data: the null, a boolean, a number, a text, a list or a map with text keys (U-7: a value alias whose
-/// core judges the language values and gives its own).
+/// A value of data: the null, a boolean, a number, a text, a list, a map with text keys or an object of the language
+/// (U-7: a value alias whose core judges the language values and gives its own).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
     /// No value.
@@ -226,6 +301,8 @@ pub enum Data {
     List(Vec<Data>),
     /// A map with text keys, in order.
     Map(Vec<(String, Data)>),
+    /// An object or a function of the language, which data keeps and gives back as the same object (GN-6u).
+    Native(Native),
 }
 
 /// The deepest nesting of data that the sample takes.
@@ -240,32 +317,59 @@ pub fn data_from_host(host: &mut dyn HostValues, value: HostValue) -> Result<Dat
     data_at(host, value, 0)
 }
 
-fn data_at(host: &mut dyn HostValues, value: HostValue, depth: usize) -> Result<Data, Failure<Error>> {
+fn data_at(
+    host: &mut dyn HostValues,
+    value: HostValue,
+    depth: usize,
+) -> Result<Data, Failure<Error>> {
     if depth > MAX_DEPTH {
-        return Err(Failure::Kind(Error::Unsupported { what: String::from("a value nested too deep") }));
+        return Err(Failure::Kind(Error::Unsupported {
+            what: String::from("a value nested too deep"),
+        }));
     }
     match value {
         HostValue::Null => Ok(Data::Null),
         HostValue::Bool(value) => Ok(Data::Bool(value)),
         // U-7: an integer of the language is the float nearest to it, as JSON reads a number.
-        #[allow(clippy::as_conversions, clippy::cast_precision_loss, reason = "U-7: data holds every number as a float, the nearest one to an integer")]
+        #[allow(
+            clippy::as_conversions,
+            clippy::cast_precision_loss,
+            reason = "U-7: data holds every number as a float, the nearest one to an integer"
+        )]
         HostValue::Int(value) => Ok(Data::Float(value as f64)),
         HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Data::Float(value)),
         HostValue::Text(text) => match text {
-            HostText::Bytes(bytes) => String::from_utf8(bytes)
-                .map(Data::Text)
-                .map_err(|_bytes| Failure::Kind(Error::Unsupported { what: String::from("bytes that are no text") })),
-            HostText::Utf16(units) => String::from_utf16(&units)
-                .map(Data::Text)
-                .map_err(|_units| Failure::Kind(Error::Unsupported { what: String::from("an unpaired surrogate") })),
+            HostText::Bytes(bytes) => String::from_utf8(bytes).map(Data::Text).map_err(|_bytes| {
+                Failure::Kind(Error::Unsupported {
+                    what: String::from("bytes that are no text"),
+                })
+            }),
+            HostText::Utf16(units) => {
+                String::from_utf16(&units)
+                    .map(Data::Text)
+                    .map_err(|_units| {
+                        Failure::Kind(Error::Unsupported {
+                            what: String::from("an unpaired surrogate"),
+                        })
+                    })
+            }
             HostText::CodePoints(points) => points
                 .into_iter()
                 .map(char::from_u32)
                 .collect::<Option<String>>()
                 .map(Data::Text)
-                .ok_or_else(|| Failure::Kind(Error::Unsupported { what: String::from("an unpaired surrogate") })),
+                .ok_or_else(|| {
+                    Failure::Kind(Error::Unsupported {
+                        what: String::from("an unpaired surrogate"),
+                    })
+                }),
         },
-        HostValue::List { handle, len } | HostValue::PhpArray { handle, len, is_list: true } => {
+        HostValue::List { handle, len }
+        | HostValue::PhpArray {
+            handle,
+            len,
+            is_list: true,
+        } => {
             let mut items = Vec::new();
             for index in 0..len {
                 let item = host.item(handle, index).map_err(Failure::Raised)?;
@@ -273,18 +377,30 @@ fn data_at(host: &mut dyn HostValues, value: HostValue, depth: usize) -> Result<
             }
             Ok(Data::List(items))
         }
-        HostValue::Map { handle, len } | HostValue::PhpArray { handle, len, is_list: false } | HostValue::PlainObject { handle, len, .. } | HostValue::StdClass { handle, len } => {
+        HostValue::Map { handle, len }
+        | HostValue::PhpArray {
+            handle,
+            len,
+            is_list: false,
+        }
+        | HostValue::PlainObject { handle, len, .. }
+        | HostValue::StdClass { handle, len } => {
             let mut entries = Vec::new();
             for index in 0..len {
                 let (key, value) = host.entry(handle, index).map_err(Failure::Raised)?;
                 let Data::Text(key) = data_at(host, key, depth + 1)? else {
-                    return Err(Failure::Kind(Error::Unsupported { what: String::from("a key that is no text") }));
+                    return Err(Failure::Kind(Error::Unsupported {
+                        what: String::from("a key that is no text"),
+                    }));
                 };
                 entries.push((key, data_at(host, value, depth + 1)?));
             }
             Ok(Data::Map(entries))
         }
-        other => Err(Failure::Kind(Error::Unsupported { what: format!("{other:?}") })),
+        HostValue::Callable(native) | HostValue::Object { native, .. } => Ok(Data::Native(native)),
+        other => Err(Failure::Kind(Error::Unsupported {
+            what: format!("{other:?}"),
+        })),
     }
 }
 
@@ -302,36 +418,57 @@ impl<'a> DataOut<'a> {
             Data::Text(value) => OutValue::Text(value.clone()),
             Data::List(items) => {
                 self.held.push(value);
-                OutValue::List { handle: Handle::new(widen(self.held.len() - 1)), len: widen(items.len()) }
+                OutValue::List {
+                    handle: Handle::new(widen(self.held.len() - 1)),
+                    len: widen(items.len()),
+                }
             }
             Data::Map(entries) => {
                 self.held.push(value);
-                let sequence = entries.iter().enumerate().all(|(index, (key, _value))| *key == index.to_string());
-                OutValue::Map(MapOut::new(Handle::new(widen(self.held.len() - 1)), widen(entries.len()), sequence))
+                let sequence = entries
+                    .iter()
+                    .enumerate()
+                    .all(|(index, (key, _value))| *key == index.to_string());
+                OutValue::Map(MapOut::new(
+                    Handle::new(widen(self.held.len() - 1)),
+                    widen(entries.len()),
+                    sequence,
+                ))
             }
+            Data::Native(native) => OutValue::Native(native.clone()),
         }
     }
 }
 
 impl OutValues for DataOut<'_> {
     fn item(&mut self, list: Handle, index: u64) -> OutValue {
-        let held = usize::try_from(list.raw()).ok().and_then(|at| self.held.get(at)).copied();
+        let held = usize::try_from(list.raw())
+            .ok()
+            .and_then(|at| self.held.get(at))
+            .copied();
         match held {
-            Some(Data::List(items)) => match usize::try_from(index).ok().and_then(|at| items.get(at)) {
-                Some(item) => self.describe(item),
-                None => OutValue::Null,
-            },
+            Some(Data::List(items)) => {
+                match usize::try_from(index).ok().and_then(|at| items.get(at)) {
+                    Some(item) => self.describe(item),
+                    None => OutValue::Null,
+                }
+            }
             _ => OutValue::Null,
         }
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> (OutValue, OutValue) {
-        let held = usize::try_from(map.raw()).ok().and_then(|at| self.held.get(at)).copied();
+        let held = usize::try_from(map.raw())
+            .ok()
+            .and_then(|at| self.held.get(at))
+            .copied();
         match held {
-            Some(Data::Map(entries)) => match usize::try_from(index).ok().and_then(|at| entries.get(at)) {
-                Some((key, value)) => (OutValue::Text(key.clone()), self.describe(value)),
-                None => (OutValue::Null, OutValue::Null),
-            },
+            Some(Data::Map(entries)) => {
+                match usize::try_from(index).ok().and_then(|at| entries.get(at)) {
+                    Some((key, value)) => (OutValue::Text(key.clone()), self.describe(value)),
+                    None => (OutValue::Null, OutValue::Null),
+                }
+            }
             _ => (OutValue::Null, OutValue::Null),
         }
     }
@@ -361,17 +498,39 @@ pub fn size(value: &Data) -> u64 {
     }
 }
 
+/// The kind of the data, and `null` for no data (U-2: a `{literal: null}` default of a value type, so `None` is
+/// what the core decides it is).
+#[must_use]
+pub fn describe(value: Option<&Data>) -> String {
+    let kind = match value {
+        None | Some(Data::Null) => "null",
+        Some(Data::Bool(_)) => "bool",
+        Some(Data::Float(_)) => "float",
+        Some(Data::Text(_)) => "text",
+        Some(Data::List(_)) => "list",
+        Some(Data::Map(_)) => "map",
+        Some(Data::Native(_)) => "native",
+    };
+    String::from(kind)
+}
+
 /// A counter, which its members change (U-2: a receiver `&mut self`, held in the mutex of B-5c).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Counter {
     total: u64,
+    /// The failure of a tally, which every later settle gives again (GN-13f: a kind that a failure of an earlier call
+    /// leaves for a later call to give).
+    failure: Option<Error>,
 }
 
 impl Counter {
     /// A counter that starts at a total.
     #[must_use]
     pub fn new(start: u64) -> Self {
-        Self { total: start }
+        Self {
+            total: start,
+            failure: None,
+        }
     }
 
     /// The total.
@@ -399,10 +558,97 @@ impl Counter {
     /// Kind `internal` when the invariant of the sample is broken.
     pub fn draw(&mut self, other: &Self) -> Result<u64, Error> {
         if binding_core::fault::point!(fault::DRAW).is_some() {
-            return Err(Error::Internal { detail: String::from("the total of a counter is unknown") });
+            return Err(Error::Internal {
+                detail: String::from("the total of a counter is unknown"),
+            });
         }
         self.total = self.total.saturating_add(other.total);
         Ok(self.total)
+    }
+
+    /// Reads the total and gives it (G-5: the read is a fault injection point).
+    ///
+    /// # Errors
+    ///
+    /// Kind `unreadable` when the read fails; the counter keeps that failure for `settle`.
+    pub fn tally(&mut self) -> Result<u64, Error> {
+        if let Some(binding_core::fault::Injected::Io { errno }) =
+            binding_core::fault::point!(fault::TALLY)
+        {
+            let failure = Error::Unreadable { errno };
+            self.failure = Some(failure.clone());
+            return Err(failure);
+        }
+        Ok(self.total)
+    }
+
+    /// The total of a counter whose tallies did not fail.
+    ///
+    /// # Errors
+    ///
+    /// The failure of an earlier tally, kind `unreadable` with its errno.
+    pub fn settle(&self) -> Result<u64, Error> {
+        match &self.failure {
+            Some(failure) => Err(failure.clone()),
+            None => Ok(self.total),
+        }
+    }
+}
+
+/// A shelf of a count, whose slips read the count until the shelf is cleared (GN-13f: a kind that an instance reaches
+/// only after a call of the instance that it was made from).
+#[derive(Debug, Clone, Default)]
+pub struct Shelf {
+    count: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+}
+
+impl Shelf {
+    /// A shelf that holds a count.
+    #[must_use]
+    pub fn new(count: u64) -> Self {
+        Self {
+            count: std::sync::Arc::new(std::sync::Mutex::new(Some(count))),
+        }
+    }
+
+    /// A slip that reads the count of this shelf.
+    #[must_use]
+    pub fn slip(&self) -> Slip {
+        Slip {
+            count: std::sync::Arc::clone(&self.count),
+        }
+    }
+
+    /// Removes the count, which every slip of the shelf then misses.
+    pub fn clear(&mut self) {
+        let mut count = self
+            .count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *count = None;
+    }
+}
+
+/// A slip of a shelf, which reads the count of that shelf.
+#[derive(Debug, Clone)]
+pub struct Slip {
+    count: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+}
+
+impl Slip {
+    /// The count of the shelf.
+    ///
+    /// # Errors
+    ///
+    /// Kind `missing` when the shelf was cleared.
+    pub fn read(&self) -> Result<u64, Error> {
+        let count = self
+            .count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        count.ok_or_else(|| Error::Missing {
+            key: String::from("slip"),
+        })
     }
 }
 
@@ -417,7 +663,9 @@ impl Ledger {
     /// A ledger that starts with a key.
     #[must_use]
     pub fn new(key: &str) -> Self {
-        Self { keys: vec![key.to_owned()] }
+        Self {
+            keys: vec![key.to_owned()],
+        }
     }
 
     /// Notes a key.
@@ -448,7 +696,9 @@ impl Ledger {
 /// Kind `unreadable` when the read fails, and kind `internal` when the invariant of the sample is broken.
 pub fn measure(text: &str) -> Result<u64, Error> {
     if binding_core::fault::point!(fault::INTERNAL).is_some() {
-        return Err(Error::Internal { detail: String::from("the length of a text is unknown") });
+        return Err(Error::Internal {
+            detail: String::from("the length of a text is unknown"),
+        });
     }
     let length = widen(text.len());
     match binding_core::fault::point!(fault::READ) {

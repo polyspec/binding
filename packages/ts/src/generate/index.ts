@@ -3,7 +3,8 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, refuseConsumers, Refusals, unitOf, waitsAsync, holdsFunction } from './model.ts';
+import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -41,16 +42,9 @@ export const generatedDirs = (contract: Contract): string[] => {
 export const goModuleDir = (contract: Contract): string => place(contract, 'packages/go');
 export const isGoGenerated = (path: string): boolean => /(^|\/)zz_generated_[^/]*\.go$/.test(path);
 
-// G-4: generate() reads the whole contract and fails with every refusal (Unsupported.refusals) before anything is
-// written: an item of the contract that is not supported, then an item that a target of the generation does not take,
-// each by name; an item is named with the first reason that its checks find. Only a model without a refusal is
-// emitted, and a refusal that a target finds while it writes its files fails that target, after every other target
-// wrote its own. `targets` generates the files of those targets of the contract alone (GN-1b), the same files that
-// the whole generation writes for them; the refusals of the other targets are not checked.
-export function generate(inputs: Inputs): Files {
-  const targets = inputs.targets ?? inputs.contract.targets;
-  const notDeclared = targets.filter((target) => !inputs.contract.targets.includes(target));
-  if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
+// The model of a generation: the contract with its cases, by member and by alias (G-5), and the key of each case that
+// holds the result of its member.
+function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<string, Map<unknown, string>> } {
   const cases = new Map<string, unknown[]>();
   const aliasCases = new Map<string, unknown[]>();
   // GN-13e: the key of each case that holds the result of its member, by the row that names the group.
@@ -69,8 +63,29 @@ export function generate(inputs: Inputs): Files {
       resultKeys.set(kase.member, keys);
     }
   }
-  const refusals = new Refusals();
   const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys };
+  return model;
+}
+
+// GN-13: the targets whose binding crate has the feature case-test: those with a case whose value has no form in the
+// language, which binding scaffold names in the manifest of the crate.
+export function caseTestTargets(inputs: Omit<Inputs, 'version' | 'coreLib'>): Lang[] {
+  const model = modelOf({ ...inputs, version: '0.0.0', coreLib: '' }, new Refusals());
+  return inputs.contract.targets.includes('php') && phpCaseTests(forLanguage(model, 'php')).length > 0 ? ['php'] : [];
+}
+
+// G-4: generate() reads the whole contract and fails with every refusal (Unsupported.refusals) before anything is
+// written: an item of the contract that is not supported, then an item that a target of the generation does not take,
+// each by name; an item is named with the first reason that its checks find. Only a model without a refusal is
+// emitted, and a refusal that a target finds while it writes its files fails that target, after every other target
+// wrote its own. `targets` generates the files of those targets of the contract alone (GN-1b), the same files that
+// the whole generation writes for them; the refusals of the other targets are not checked.
+export function generate(inputs: Inputs): Files {
+  const targets = inputs.targets ?? inputs.contract.targets;
+  const notDeclared = targets.filter((target) => !inputs.contract.targets.includes(target));
+  if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
+  const refusals = new Refusals();
+  const model = modelOf(inputs, refusals);
   // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
   // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and
   // text keys (a Map compares a Uint8Array key by identity, GN-12).
@@ -89,16 +104,38 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
+  // GN-6z: Go does not generate a function type.
+  for (const target of targets.filter((t) => t === 'go')) {
+    for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
+      for (const arg of fn.args.filter((a) => holdsFunction(a.type))) {
+        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} (GN-6z)`);
+      }
+    }
+  }
+  // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
+  for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
+    const forTarget = membersFor(model, target);
+    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
+      for (const arg of fn.args) {
+        const library = libraryOf(arg.type);
+        if (library !== undefined && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === (arg.type as { unit: string }).unit)) {
+          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6s)`);
+        }
+      }
+    }
+  }
   if (targets.includes('go')) {
     refuseForGo(membersFor(model, 'go'), refusals);
     refuseConsumers(membersFor(model, 'go'), 'Go', refusals);
   }
-  // GN-6n: WASM has no Promise form of a member with wait async_driver yet.
   if (targets.includes('wasm')) {
     const forWasm = membersFor(model, 'wasm');
-    for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)].filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for WASM yet (GN-6n)`);
-    // GN-6o, GN-6p: nor a method with the receiver self, nor the finalizer of a class unit with cleanup.
+    // GN-6o, GN-6p: WASM has no method with the receiver self and no finalizer of a class unit with cleanup yet.
     refuseConsumers(forWasm, 'WASM', refusals);
+    // GN-6y: WASM has no OS path; the contract leaves such a member out by only (Q-4, CK-15).
+    for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)]) {
+      if ([...fn.args.map((a) => a.type), fn.returns].some((type) => holdsPath(model, type, new Set()))) refusals.refuse(`${fn.member.id}: a path is not generated for WASM, which has no OS path (Q-4, CK-15, GN-6y)`);
+    }
   }
   refusals.fail();
   const files: Files = new Map();
@@ -109,4 +146,18 @@ export function generate(inputs: Inputs): Files {
   if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
   refusals.fail();
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+// GN-6y: whether a type holds a path, also through the fields of a record of this contract.
+function holdsPath(model: Model, type: Type, seen: Set<string>): boolean {
+  if (typeof type === 'string') return type === 'path';
+  if ('list' in type) return holdsPath(model, type.list, seen);
+  if ('map' in type) return holdsPath(model, type.map, seen);
+  if ('keyed_map' in type) return holdsPath(model, type.keyed_map, seen);
+  if ('optional' in type) return holdsPath(model, type.optional, seen);
+  if ('tuple' in type) return type.tuple.some((part) => holdsPath(model, part, seen));
+  const unit = unitOf(model, type);
+  if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+  seen.add(unit.id);
+  return (unit.fields ?? []).some((field) => holdsPath(model, field.type, seen));
 }

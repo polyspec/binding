@@ -41,7 +41,7 @@ jobs:
             targets: typecheck-ts unit-ts release-coverage
           - name: rust
             tools: rust
-            targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust
+            targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust fmt-e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         id: checkout
@@ -79,14 +79,23 @@ jobs:
           - name: consumer
             repo: tests/e2e/consumer
             deps: tests/e2e/sample
+          - name: functions
+            repo: tests/e2e/functions
+            deps: ""
           - name: plot
             repo: tests/e2e/plot
             deps: tests/e2e/points
+          - name: relay
+            repo: tests/e2e/relay
+            deps: tests/e2e/json
           - name: sample
             repo: tests/e2e/sample
             deps: ""
           - name: shapes
             repo: tests/e2e/shapes
+            deps: ""
+          - name: variants
+            repo: tests/e2e/variants
             deps: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

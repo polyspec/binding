@@ -2,12 +2,14 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
+import { variantPattern } from '../contract.ts';
+import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
+import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -20,23 +22,53 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source', path: 'in_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
   if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
+  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
+}
+
+// GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
+// binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+  const argsType = `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
+  const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
+  return `in_function(env, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                let env = match native_env(&native, ${subject}) {
+                    Ok(env) => env,
+                    Err(error) => return Err(thrown_elsewhere(error)),
+                };
+                let call = || -> Result<${result}, Thrown> {
+                    let env = &env;
+                    let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
+                    let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
+                    let returned = function.call(args).map_err(Thrown::Js)?;
+                    ${returned}
+                };
+                call().map_err(thrown)
+            })
+        })`;
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -44,7 +76,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes', path: 'out_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
@@ -55,12 +87,11 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('keyed_map' in type) return `out_keyed_map(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
-    return `out_tuple(env, vec![${parts.join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(env, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
-  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value})`;
   throw new Unsupported(`no Node output conversion for ${JSON.stringify(type)}`);
 }
@@ -121,6 +152,11 @@ fn in_source(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
     in_bytes(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
 }
 
+/// T-1 path, GN-6y: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array, which binding_core judges.
+fn in_path(value: Unknown<'_>, subject: &str) -> Result<std::path::PathBuf, Fail> {
+    binding_core::path_from_bytes(in_source(value, subject)?, subject).map_err(binding_error)
+}
+
 /// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
 fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.get_type().map_err(internal)? == ValueType::Undefined {
@@ -132,6 +168,16 @@ fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) ->
 /// T-7: bytes leave as a Uint8Array of their copy.
 fn out_bytes<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
     ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env).map_err(internal)
+}
+
+/// T-1 path, GN-6y: a string when the bytes of the path are UTF-8, and a Uint8Array of them when they are not, so that
+/// no byte is replaced.
+fn out_path<'env>(env: &'env Env, value: impl AsRef<std::path::Path>) -> Result<Unknown<'env>, Fail> {
+    let bytes = binding_core::path_bytes(value.as_ref());
+    match std::str::from_utf8(bytes) {
+        Ok(text) => out_text(env, text),
+        Err(_not_utf8) => out_bytes(env, bytes),
+    }
 }
 
 fn in_bool(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
@@ -196,6 +242,12 @@ fn in_list<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'
         items.push(item(value)?);
     }
     Ok(items)
+}
+
+/// GN-6t: a tuple is an array of exactly its parts.
+fn in_tuple<'env, const N: usize>(value: Unknown<'env>, subject: &str) -> Result<[Unknown<'env>; N], Fail> {
+    let parts = in_list(value, subject, Ok)?;
+    <[Unknown<'env>; N]>::try_from(parts).map_err(|_other| type_error(subject, &format!("an array of {N} items")))
 }
 
 /// T-7: null is the absence; any other value is converted.
@@ -327,6 +379,8 @@ fn in_keyed_map<'env, T>(
             // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
             ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
+            // GN-6af: a byte string key is a Uint8Array, which a contract lists where the entry keeps the Map itself.
+            ValueType::Object => (1, binding_core::Key::Bytes(in_bytes(key, subject).map_err(|_not_bytes| type_error(subject, expected))?)),
             _ => return Err(type_error(subject, expected)),
         };
         if !kinds.contains(&tag) {
@@ -403,7 +457,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const member = langName('node', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(member), 'binding_error')}` : ''}`;
   });
   const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
@@ -417,6 +471,53 @@ fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unkn
     let value = value.borrow();
     let mut object = Object::new(env).map_err(internal)?;
 ${writes.join('\n')}
+    Ok(object.to_unknown())
+}
+`;
+}
+
+// T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
+// per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
+function variantRust(model: Model, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const jsName = langName('node', variant.unit.name, 'class');
+  const tag = langName('node', variant.unit.tag ?? [], 'variable');
+  const ins = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => {
+      const memberName = langName('node', f.field.name, 'variable');
+      // GN-6v: a field that may be left out is null when its member is missing or undefined.
+      const read = caseLeftOut(f.field) ? `in_default(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(memberName), 'binding_error')}` : ''}`;
+    });
+    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const writes = [
+      `            object.set_named_property(${rustString(tag)}, out_text(env, ${rustString(kase.value)})?).map_err(internal)?;`,
+      ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
+    ];
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
+  });
+  return `
+/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
+fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+    let tag = in_text(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
+    match tag.as_str() {
+${ins.join('\n')}
+        _ => Err(type_error(subject, ${rustString(jsName)})),
+    }
+}
+
+/// T-9: a value of the variant ${jsName} leaves as the object of its case.
+fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+    let mut object = Object::new(env).map_err(internal)?;
+    match value.borrow() {
+${arms.join('\n')}
+    }
     Ok(object.to_unknown())
 }
 `;
@@ -467,7 +568,7 @@ function entryRust(model: Model, fn: Fn): string {
   const lines: string[] = [];
   // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
   const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string): string =>
-    arg?.default === undefined ? convertIn(model, type, raw, subject) : `in_default(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`;
+    arg?.default === undefined ? convertIn(model, type, raw, subject) : leftOut(arg, `in_default(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`);
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
@@ -475,11 +576,13 @@ function entryRust(model: Model, fn: Fn): string {
         const name = langName('node', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${boxed(model, field.type, converted(arg, field.type, raw, rustString(name)))}?;`);
+        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
       const recordType = fn.record.unit.core_type ?? '';
+      const recordLet = rustType(model, { unit: fn.record.unit.id });
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-      lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${fields} };`);
+      lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${fields} };`);
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       const held = heldParam(model, parameter.type);
@@ -487,15 +590,41 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(held === undefined
         ? `        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, variable, subject)}?;`
         : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${subject})?;`);
+      if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
   // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
-  const moved = waitsAsync(fn) || pooled(fn);
+  // GN-6ab: the core of a member with machine is called at once on this thread, so the entry binds the borrows.
+  const moved = (waitsAsync(fn) && fn.machine !== true) || pooled(fn);
   lines.push(...locks(model, fn, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
-  if (waitsAsync(fn)) {
+  if (fn.machine === true) {
+    // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
+    // calls on the JavaScript thread and gives the promise of its next wait, whose future runs on the tokio runtime of
+    // napi, or its converted result.
+    const done = fn.fallible ? `let result = result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));
+        Driven::new(env, advancing(move |env| {
+            let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
+            if let Some(output) = output {
+                machine.give(output);
+            }
+            match machine.advance() {
+                binding_core::machine::Next::Wait(io) => {
+                    let given = std::sync::Arc::clone(&given);
+                    let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
+                    Ok((false, promise))
+                }
+                binding_core::machine::Next::Done(result) => {
+                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                }
+            }
+        }))`);
+  } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
     const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
@@ -521,7 +650,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!waitsAsync(fn) && !pooled(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn) && fn.machine !== true) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -589,6 +718,46 @@ where
 }
 `;
 
+// GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
+// advances.
+const MACHINE = `
+/// GN-6ab: one advance of the state machine of a call: whether it ended, and its result or the promise of its wait.
+type Advance = Box<dyn for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail>>;
+
+/// GN-6ab: gives a closure the type of an advance, so that its result borrows the environment of its call.
+fn advancing<F>(advance: F) -> F
+where
+    F: for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail> + 'static,
+{
+    advance
+}
+
+/// GN-6ab: the state machine of a call, which the JavaScript entry advances until it ends. Each advance makes the calls
+/// of the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+#[napi]
+pub struct Driven {
+    advance: Advance,
+}
+
+impl Driven {
+    fn new<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+    }
+}
+
+#[napi]
+impl Driven {
+    #[napi]
+    pub fn advance<'env>(&mut self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let (ended, value) = (self.advance)(env)?;
+            out_tuple(env, vec![out_bool(env, ended)?, value])
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+}
+`;
+
 // GN-6n: the future of a member with wait async_driver, on the tokio runtime of napi. A panic of a poll is a failure of
 // kind internal (B-7), and the result or the failure is converted on the JavaScript thread.
 const DRIVING = `
@@ -651,9 +820,9 @@ impl Unarmed {
 // that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -673,9 +842,37 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+/// is.
+fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
+    let Thrown::Js(js) = &error else {
+        return thrown(error);
+    };
+    if js.status != napi::Status::PendingException {
+        return thrown(error);
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return thrown(error);
+    }
+    let core = recognized_kind(env, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    if let Some(core) = core {
+        return binding_core::Failure::Kind(core);
+    }
+    // SAFETY: the exception that this took is thrown again on the same thread, so the caller throws the same object.
+    if unsafe { napi::sys::napi_throw(env.raw(), exception) } != napi::sys::Status::napi_ok {
+        return thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback could not be thrown again") })));
+    }
+    thrown(error)
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
@@ -702,20 +899,29 @@ ${checks}
 
 impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
-`;
+${recognizing}`;
 }
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-export function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+    // SAFETY: the value is the exception that a callback threw, a value of env.
+    let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
+    let registered = CLASSES.get()?;
+    for index in classes {
+        let class = registered.get(*index)?.borrow_back(env).ok()?;
+        if value.instanceof(class).ok()? {
+            let object: Object<'_> = value.coerce_to_object().ok()?;
+            let kind: String = object.get_named_property("kind").ok()?;
+            let message: String = object.get_named_property("message").ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
 }
+`;
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
@@ -735,24 +941,23 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-fn thrown(error: Thrown) -> ${failure} {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+${THREAD_THROWN}
+${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
+    binding_core::Failure::Raised(keep_thrown(error))
 }
-
+`}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(error),
-        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
-            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-`;
+${takesFunction(model) ? elsewhereRust(model) : ''}`;
 }
 
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
@@ -840,6 +1045,7 @@ function poisonRust(model: Model): string {
   }).join('\n');
   return `
 /// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = ${rustString(POISON_ENTRY.node)})]
 pub fn panic_test_held(env: &Env, object: Unknown<'_>) -> napi::Result<()> {
@@ -856,7 +1062,7 @@ function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const classIndex = (k: Model['kinds'][number]): number =>
     k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${classIndex(k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${classIndex(k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -864,7 +1070,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -876,15 +1082,16 @@ ${arms}
   // The closure outlives the core error, so a text or bytes that the error lends is copied.
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    if (typeof type === 'object' && 'list' in type) return `${call}.into_iter().map(|item| String::from(AsRef::<str>::as_ref(&item))).collect::<Vec<String>>()`;
     const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
     if (from === undefined) return call;
     return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;
   };
   const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
 /// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
-fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Properties {
-${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, `${property.corePath}(error)`)};`).join('\n')}
-    Box::new(move |env, object| {
+fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Result<Properties, Fail> {
+${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`))};`).join('\n')}
+    Ok(Box::new(move |env, object| {
 ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         let property = match ${convertOut(model, property.returns, 'value')} {
             Ok(property) => property,
@@ -892,17 +1099,20 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         };
         read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
         Ok(())
-    })
+    }))
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `match ${rustField(k.unit.unit.name)}_properties(&error) {
+            Ok(properties) => Some(Box::new(properties)),
+            Err(fail) => return fail,
+        }`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
-    let properties = match error {
+    let properties = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     Fail { properties, ..library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) }
@@ -917,25 +1127,35 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    ...model.variants.map((v) => variantRust(model, v)),
     // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
-    model.aliases.length > 0 ? NODE_HOST : '',
+    model.aliases.length > 0 ? nodeHost(model) : '',
+    usesNative(model) ? NODE_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
+  // GN-5: a name that only the poison entry point uses is imported under its feature, because a build without the
+  // feature does not compile the entry point and would hold the import unused.
+  const plain = `${used}${functions.replace(poisonRust(model), '')}`;
+  const poisonOnly = napiTypes.filter((t) => !new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(plain));
+  for (const name of poisonOnly) napiTypes.splice(napiTypes.indexOf(name), 1);
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   // I-3: the properties of an error unit are defined on its instance.
+  // GN-6af: the value classes define their kept values on their instances.
+  if (model.kept.length > 0 && model.aliases.length > 0) for (const name of ['Object', 'JsObjectValue', 'JsValue', 'Property', 'PropertyAttributes', 'FromNapiValue']) if (!napiTypes.includes(name)) napiTypes.push(name);
   if (model.errorUnits.length > 0) {
     // A unit without a property defines none, so that the helper and its types are left out (dead code fails the build).
     const defined = model.errorUnits.some((u) => errorProperties(u).length > 0) ? ['Property', 'PropertyAttributes'] : [];
@@ -946,11 +1166,11 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
+${poisonOnly.length > 0 ? `#[cfg(feature = "panic-test")]\nuse napi::bindgen_prelude::${poisonOnly.length === 1 ? poisonOnly.join('') : `{${poisonOnly.join(', ')}}`};\n` : ''}${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
+${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::{BTreeMap, BTreeSet};\n' : ''}use std::sync::${usesNative(model) || /\bTHROWN\b/.test(functions) ? '{Mutex, OnceLock}' : 'OnceLock'};${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1038,7 +1258,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -1053,12 +1273,36 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
 pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
-${aliasesWithKinds(model).map((alias) => `
+${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
+/// GN-6u: the entry point of the generated release test: the count of the references that the table of this thread
+/// holds.
+#[cfg(feature = "native-count-test")]
+#[napi(js_name = "__nativeCount")]
+pub fn native_count() -> u32 {
+    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+`}${takesFunction(model) ? `
+/// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+/// gives on another thread, whose drop of the Native the owner releases at its next entry point.
+#[cfg(feature = "thread-test")]
+#[napi(js_name = "__threadTest")]
+pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
+    let native = guard(|| in_function(env, value, "value")).map_err(|fail| throw(env, fail))?;
+    let kind = std::thread::spawn(move || match native_env(&native, "value") {
+        Ok(_env) => String::from("none"),
+        Err(error) => error.kind().to_owned(),
+    })
+    .join();
+    kind.map_err(|_panic| napi::Error::from_reason("U-3: the thread of the test panicked"))
+}
+` : ''}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[napi(js_name = ${rustString(`__aliasIn${langName('node', alias.unit.name, 'class')}`)})]
@@ -1066,6 +1310,17 @@ pub fn alias_in_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unkno
     guard(|| {
         let _value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
         Ok(())
+    })
+    .map_err(|fail| throw(env, fail))
+}
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[napi(js_name = ${rustString(`__aliasRound${langName('node', alias.unit.name, 'class')}`)})]
+pub fn alias_round_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+    guard(|| {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
+        out_${rustField(alias.unit.name)}(env, &value)
     })
     .map_err(|fail| throw(env, fail))
 }
@@ -1098,7 +1353,7 @@ pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', path: 'string | Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
@@ -1106,7 +1361,14 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
+  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
+  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
+  // GN-6s: a callback unit of another repository is the interface that its package declares.
+  const library = libraryOf(type);
+  if (unit?.origin === 'callback' && library !== undefined) {
+    return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
+  }
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
@@ -1169,7 +1431,9 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
+    const called = fn.machine === true ? `drive(${call(passed.join(', '))})` : call(passed.join(', '));
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${called});` : `  return ${called};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
@@ -1217,18 +1481,23 @@ ${checked(constructor, `new ${cls}()`, (passed) => `target.__new(${passed})`).sp
 const ${cls} = ${construct};
 ${wraps.join('\n')}`;
   }).join('\n');
+  // GN-6af: a value class without core_type is a class of the entry that keeps its arguments, which the addon judges, as
+  // own enumerable data properties; the addon knows its instances by the prototype that the entry registers.
+  const kept = model.kept.map((k) => keptClassJs(k)).join('\n') + (model.kept.length === 0 || model.aliases.length === 0 ? '' : `
+addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name, 'class')}.prototype`).join(', ')}]);`);
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   const exports = [
     ...model.classes.map((c) => c.name),
     ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
 'use strict';
 
-// T-2: the addon is in the npm package of the machine's platform, which the package names in optionalDependencies; a
+// T-2: the addon is in the npm package of the machine's platform, which the release names in optionalDependencies; a
 // build in a checkout puts the file beside this entry instead.
 const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;
 function loadAddon() {
@@ -1245,8 +1514,18 @@ ${classes}${units === '' ? '' : `\n${units}`}
 
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
+${foreignRegistration(model)}
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
+// promise of each of its waits, which this function awaits.
+async function drive(driven) {
+  for (;;) {
+    const [ended, value] = driven.advance();
+    if (ended) return value;
+    await value;
+  }
+}
 
-// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
+` : ''}// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
     return Array.from(value);
@@ -1279,11 +1558,41 @@ function checkRecord(fn, name, record, fields, required) {
 }
 ${fns}
 ${objects}
+${kept}
 
 ${constants}
 
 module.exports = { ${exports.join(', ')} };
 `;
+}
+
+// GN-6af: the class of the entry of a value class without core_type: the count of the arguments (G-7), the check of the
+// addon, and the kept values as own enumerable data properties. A keyed map crosses as its entries; a value that is no
+// Map crosses as null, which the addon refuses.
+export function keptClassJs(kept: KeptClass): string {
+  const cls = langName('node', kept.unit.name, 'class');
+  const count = kept.fields.length;
+  const least = kept.fields.filter((f) => f.default === undefined).length;
+  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+  const crossed = kept.fields.map((f, i) => {
+    const keyed = typeof f.type === 'object' && 'keyed_map' in f.type;
+    return keyed ? `args[${i}] === undefined ? undefined : toEntries(args[${i}]) ?? null` : typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
+  });
+  const empty = { null: 'null', map: 'new Map()', list: '[]' };
+  const defined = kept.fields.map((f, i) => {
+    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
+    return `    Object.defineProperty(this, ${jsString(langName('node', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
+  });
+  return `
+class ${cls} {
+  constructor(...args) {
+    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
+      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
+    }
+    addon.__check${cls}(${crossed.join(', ')});
+${defined.join('\n')}
+  }
+}`;
 }
 
 const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
@@ -1294,6 +1603,7 @@ function indexMjs(model: Model): string {
     ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
   ];
   return `${header('//')}
@@ -1304,6 +1614,8 @@ export const { ${exports.join(', ')} } = entry;
 }
 
 function indexDts(model: Model): string {
+  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
+  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
   // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
   const shown = (a: Arg | undefined): string => {
     if (a?.default === undefined) return '';
@@ -1315,6 +1627,8 @@ function indexDts(model: Model): string {
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
+    if (isInternal(fn.unit)) lines.push(`${indent} * @internal`);
+    if (lines.length === 1 && isInternal(fn.unit)) return `${indent}/** @internal */\n`;
     return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;
   };
   const classes = model.classes.map((c) => `
@@ -1329,10 +1643,19 @@ export declare class ${c.name} extends ${nodeBase(c.category)} {
 export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
 }`).join('\n');
   const enums = model.enums.map((u) => `
-/** T-6. */
+/** T-6.${tag(u)} */
 export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
+  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
+  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
+/** T-9: the case ${kase.value} of the variant ${langName('node', v.unit.name, 'class')}. */
+export interface ${langName('node', kase.unit.name, 'class')} {
+  readonly ${langName('node', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
+${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}${caseLeftOut(f) ? '?' : ''}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
+
+/** T-9. */
+export type ${langName('node', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('node', kase.unit.name, 'class')).join(' | ')};`).join('\n');
   const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent. */
+/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
 export interface ${langName('node', u.name, 'class')} {
 ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
@@ -1340,7 +1663,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     const params = fn.params.map((p) => param(fn, p));
     return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
-  const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
+  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
@@ -1357,21 +1680,28 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
-/** T-5. */
-export declare class ${langName('node', o.unit.name, 'class')} {
+/** T-5.${tag(o.unit)} */
+export declare class ${langName('node', o.unit.name, 'class')}${implementsClause(model, o)} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
+  // GN-6af: the constructor keeps its arguments, each an own property, which a writable property also sets.
+  const kept = model.kept.map((k) => `
+/** GN-6af: keeps the values that its constructor takes. */
+export declare class ${langName('node', k.unit.name, 'class')} {
+  constructor(${k.fields.map((f) => `${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
+${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
+}`).join('\n');
   const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements. */
+/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
 export interface ${langName('node', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}
-${objects}
+${records}${variants === '' ? '' : `\n${variants}`}
+${objects}${kept}
 ${callbacks}
 
 ${fns}

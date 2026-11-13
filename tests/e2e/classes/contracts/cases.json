@@ -331,6 +331,23 @@
       }
     }
   ],
+  "settle": [
+    {
+      "id": "a_name_is_settled",
+      "name": "a",
+      "result": "the settled text of a"
+    },
+    {
+      "id": "an_empty_name_is_missing_when_settled",
+      "name": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for name"
+      }
+    }
+  ],
   "gate_enter_slowly": [
     {
       "id": "an_open_gate_lets_its_tag_pass_after_a_wait",

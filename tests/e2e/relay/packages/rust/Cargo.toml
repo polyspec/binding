@@ -1,0 +1,18 @@
+[package]
+name = "polyspec-relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "polyspec_relay"
+path = "src/lib.rs"
+
+[dependencies]
+# The owner of the value class that the function takes and gives, a repository of its own (T-3): the end-to-end run
+# copies the checkout of json, given as DEPS, to the directory beside this one, where this path names its core.
+polyspec-json = { path = "../../../json/packages/rust" }
+
+[lints]
+workspace = true

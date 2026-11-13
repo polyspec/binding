@@ -23,7 +23,7 @@ lock = ["dep:tokio"]
 # Compiles the arming of fault injection points (design G-5). A point (fault::point!) is judged by the feature
 # fault-test of the crate that writes it, which Cargo does not unify (GN-5).
 # A core turns it on only through its own feature fault-test, and a binding through that of its core, for tests only.
-fault-test = ["dep:serde_json", "dep:libc"]
+fault-test = ["dep:serde_json"]
 # Runs the future of a member with wait async_driver on the tokio runtime of the process (design I-2 (4), GN-6n). The
 # binding crates of PHP, Python and Node of a contract with such a member enable it; a core crate does not.
 driver = ["dep:tokio", "tokio/rt-multi-thread"]
@@ -38,15 +38,20 @@ required-features = ["lock"]
 name = "driver"
 required-features = ["driver"]
 
+[[test]]
+name = "native"
+required-features = ["construct"]
+
 [dependencies]
 indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 tokio-util = { version = "=0.7.20", default-features = false }
 tokio = { version = "=1.54.1", default-features = false, features = ["sync"], optional = true }
-# fault-test only: the list of faults of a case is JSON, and an errno symbol has the value of the target.
+# fault-test only: the list of faults of a case is JSON.
 serde_json = { version = "=1.0.154", optional = true }
 
+# An errno symbol has the value of the target (errno::value), which every PHP test reads (GN-8a).
 [target.'cfg(unix)'.dependencies]
-libc = { version = "=0.2.191", optional = true, default-features = false }
+libc = { version = "=0.2.191", default-features = false }
 
 [dev-dependencies]
 serde_json = "=1.0.154"

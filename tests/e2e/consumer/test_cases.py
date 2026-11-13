@@ -79,17 +79,21 @@ class ContractCaseTest(unittest.TestCase):
 
     def test_refused_by_the_owner(self) -> None:
         """A value that the owner of the alias refuses is its kind in the class of this library."""
-        calls = [
-            lambda: consumer.measure(len),
-            lambda: consumer.pair([len]),
-            lambda: consumer.fetch(Holder({"a": len}), "a"),
-        ]
-        for call in calls:
-            with self.assertRaises(consumer.ConsumerValueError) as caught:
-                call()
-            self.assertIs(type(caught.exception), consumer.ConsumerValueError)
-            self.assertEqual(caught.exception.kind, "unsupported")
-            self.assertIsNone(caught.exception.status)
+        # The owner refuses a map with a key that is no text and a text with an unpaired surrogate; a callable is data of
+        # the owner, which keeps it as a Native (GN-6u).
+        for name, refused in (("a key that is no text", {5: "x"}), ("an unpaired surrogate", "\ud800")):
+            calls = [
+                lambda: consumer.measure(refused),
+                lambda: consumer.pair([refused]),
+                lambda: consumer.fetch(Holder({"a": refused}), "a"),
+            ]
+            for index, call in enumerate(calls):
+                with self.subTest(refused=name, call=index):
+                    with self.assertRaises(consumer.ConsumerValueError) as caught:
+                        call()
+                    self.assertIs(type(caught.exception), consumer.ConsumerValueError)
+                    self.assertEqual(caught.exception.kind, "unsupported")
+                    self.assertIsNone(caught.exception.status)
 
 
 if __name__ == "__main__":

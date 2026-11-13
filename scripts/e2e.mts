@@ -2,10 +2,11 @@
 // and run the generated tests (G-5) and, where tests/e2e/<library> holds them, the contract cases (V-1) on each
 // language's standard runner, for every target of the contract (GN-14).
 //
-//   make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]
+//   make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]
 //
-// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> --work <directory> [--dep <checkout>]... with the
-// Node.js of the checkout and the environment of its mise. The run checks the commit BINDING of binding (HEAD by
+// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> [--work <directory>] [--dep <checkout>]... with the
+// Node.js of the checkout and the environment of its mise. Without WORK the run makes a work directory of its own
+// outside the checkout and removes it at its end (scripts/e2e-work.mts). The run checks the commit BINDING of binding (HEAD by
 // default), whose tree it writes into <work>/binding and runs from there (GN-14b). Every tool is the one that the
 // checkout pins and `make install` installs into var/tools (AGENTS.md): before any step the check finds the tool of
 // each target and fails, naming the target, the tool and `make install`, when one is missing. No switch leaves a
@@ -33,6 +34,8 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
+import { bindingLints } from './e2e-lint.mts';
+import { runIn, workOf } from './e2e-work.mts';
 import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
@@ -49,12 +52,10 @@ for (const key of args.keys()) {
   if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work and --dep`);
 }
 const repoArg = args.get('--repo');
-const workArg = args.get('--work');
-if (repoArg === undefined || workArg === undefined) {
-  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]\n');
+if (repoArg === undefined || repoArg === '') {
+  process.stderr.write('usage: make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]\n');
   process.exit(2);
 }
-const work = resolve(workArg);
 // The directory of this script, with a trailing slash.
 const here = new URL('..', import.meta.url).pathname;
 const git = (dir: string, argv: string[]): string => execFileSync('git', ['-C', dir, ...argv], { encoding: 'utf8' }).trim();
@@ -66,29 +67,32 @@ const git = (dir: string, argv: string[]): string => execFileSync('git', ['-C', 
 if (args.get('--checkout') === undefined) {
   const checkout = resolve(here);
   const commit = git(checkout, ['rev-parse', '--verify', `${args.get('--binding') ?? 'HEAD'}^{commit}`]);
-  const source = join(work, 'binding');
-  process.stdout.write(`\n== binding: the tree of the commit ${commit}\n`);
-  rmSync(source, { recursive: true, force: true });
-  mkdirSync(source, { recursive: true });
-  execFileSync('tar', ['-x', '-C', source], { input: execFileSync('git', ['-C', checkout, 'archive', '--format=tar', commit], { maxBuffer: 1 << 30 }) });
   const npm = join(checkout, 'var/tools/bin/npm');
   if (!existsSync(npm)) {
     process.stderr.write('the check installs the packages of the generator with the npm of mise.toml, which is not installed; run make install (AGENTS.md)\n');
     process.exit(1);
   }
-  execFileSync(npm, ['ci', '--prefix', join(source, 'packages/ts'), '--no-audit', '--no-fund'], { stdio: 'inherit' });
+  // GN-14: the directory that WORK names, or one of the run, which the run removes at its end, at its failure and on
+  // SIGINT and SIGTERM.
+  const run = workOf(args.get('--work'));
+  const source = join(run.path, 'binding');
+  process.stdout.write(`\n== binding: the tree of the commit ${commit}\n`);
   // A repository inside this checkout (tests/e2e/<library>) is read from the same commit.
   const inSource = (path: string): string => {
     const at = relative(checkout, resolve(path));
     return at.startsWith('..') || isAbsolute(at) ? resolve(path) : join(source, at);
   };
   const forwarded = [
-    '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', work,
+    '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', run.path,
     ...deps.flatMap((dep) => ['--dep', inSource(dep)]),
   ];
-  const child = spawnSync(process.execPath, [join(source, 'scripts/e2e.mts'), ...forwarded], { stdio: 'inherit' });
-  process.exit(child.status ?? 1);
+  process.exit(await runIn(run, [
+    { command: 'sh', argv: ['-c', 'rm -rf "$1" && mkdir -p "$1" && git -C "$2" archive --format=tar -o "$1.tar" "$3" && tar -x -C "$1" -f "$1.tar" && rm "$1.tar"', 'sh', source, checkout, commit] },
+    { command: npm, argv: ['ci', '--prefix', join(source, 'packages/ts'), '--no-audit', '--no-fund'] },
+    { command: process.execPath, argv: [join(source, 'scripts/e2e.mts'), ...forwarded] },
+  ]));
 }
+const work = resolve(args.get('--work') ?? '');
 
 // The script of the checkout reads no source of the generator (READ_FROM_CHECKOUT, GN-14b): the script of the tree of
 // the commit loads them here.
@@ -368,7 +372,9 @@ const goTool = targets.includes('go') ? need('go', 'go', 'mise.toml', miseWhich(
 const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhich('gofmt')) : '';
 // BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
 const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
-const llvmNm = targets.includes('go') ? need('go', 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))) : '';
+// llvm-nm reads the static library of go and the extension of php built without features (GN-13b, GN-8a).
+const llvmNmFor = targets.filter((t) => t === 'go' || t === 'php');
+const llvmNm = llvmNmFor.length === 0 ? '' : llvmNmFor.map((t) => need(t, 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))))[0] ?? '';
 // GN-15g: llvm-strip removes the debug sections of the static library that the released form carries, and llvm-size
 // names the sections that are left.
 const llvmTool = (name: string): string => (targets.includes('go') ? need('go', `${name} of the component llvm-tools`, 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin', name))) : '');
@@ -496,8 +502,9 @@ stepOf(targets, `lint the core${mains.length === 1 ? '' : 's'}`, () => {
 for (const t of targets) if (!failed(t)) lintOf(t, `cargo clippy of the core${mains.length === 1 ? '' : 's'}`);
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'}`, () => {
-    for (const p of mainsOf(t)) run('cargo', ['clippy', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-${crateSuffix[t]}`, '--all-targets', '--features', testFeatures(p, t), '--', '-D', 'warnings']);
-  })) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} with ${mainsOf(t).length === 1 ? 'its' : 'their'} test features`);
+    // GN-5: with the test features, which the tests build, and without a feature, which a release builds.
+    for (const p of mainsOf(t)) for (const lint of bindingLints(join(p.copy, 'Cargo.toml'), `${p.contract.core.crate}-${crateSuffix[t]}`, testFeatures(p, t))) run('cargo', lint.argv);
+  })) for (const lint of bindingLints('', '', '')) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} ${lint.what}`);
 }
 
 const [cases] = mains[0]?.caseFiles ?? [];
@@ -559,6 +566,7 @@ if (targets.includes('python')) {
     stepOf(['python'], what, () => unittest('python', what, [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython]));
   }
   if (caseRunners) stepOf(['python'], 'the contract cases on unittest', () => unittest('python', 'the contract cases on unittest', [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { CASES: cases }));
+  if (existsSync(join(e2e, 'bench.py'))) stepOf(['python'], 'the measurement of bench.py', () => run(join(venv, 'bin/python'), [join(e2e, 'bench.py')], { env: { BENCH_REPORT: join(checkout, 'var/report/bench', `${library}-python.json`) } }));
 }
 
 const lib = (c: Contract, suffix: string): string => `${c.core.crate}-${suffix}`.replaceAll('-', '_');
@@ -586,8 +594,8 @@ if (targets.includes('node') || targets.includes('wasm')) {
   installed = stepOf(owner, `build the addon${mains.length === 1 ? '' : 's'}, pack and install the npm package${mains.length === 1 ? '' : 's'}`, () => {
     rmSync(nodeDir, { recursive: true, force: true });
     mkdirSync(nodeDir, { recursive: true });
-    // T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies;
-    // the run packs it as a release does and installs it from the tarball.
+    // T-2: the addon is the npm package of this machine's platform, which a release names in optionalDependencies of
+    // the manifest it packs (GN-3c); the run packs it as a release does and installs both tarballs.
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
     const packed = mains.filter((p) => p.contract.targets.includes('node') || p.contract.targets.includes('wasm'));
     for (const p of packed) {
@@ -634,6 +642,15 @@ if (targets.includes('node') && installed) {
     nodeTest('node', `the generated tests${caseRunners ? ' and the contract cases' : ''} on node --test`, [], [...files, ...(caseRunners ? ['cases.test.mjs'] : [])], nodeDir, { CASES: cases ?? '' });
   });
 }
+// B2.87: the measurement of a library whose tests/e2e/<library> holds bench.mjs, bench.py or bench.php, after its cases;
+// it writes the medians with the load average into BENCH_REPORT and warns above its limit, and never fails the run.
+const benchReport = (language: string): string => join(checkout, 'var/report/bench', `${library}-${language}.json`);
+if (targets.includes('node') && installed && existsSync(join(e2e, 'bench.mjs'))) {
+  stepOf(['node'], 'the measurement of bench.mjs', () => {
+    copyFileSync(join(e2e, 'bench.mjs'), join(nodeDir, 'bench.mjs'));
+    run(process.execPath, [join(nodeDir, 'bench.mjs')], { cwd: nodeDir, env: { BENCH_REPORT: benchReport('node') } });
+  });
+}
 if (targets.includes('wasm') && installed) {
   // P-5: the WASM binding passes the same tests and cases through the subpath ./wasm of the same package.
   stepOf(['wasm'], 'the generated tests and the cases through the subpath ./wasm', () => {
@@ -647,12 +664,47 @@ if (targets.includes('wasm') && installed) {
 
 if (targets.includes('php')) {
   const extensions: string[] = [];
+  // GN-13: the entry points of case-test are for tests only. The extension built without features holds none of them,
+  // and the one built with the test features holds each, so the check reads symbols that it can find.
+  for (const p of copiesOf('php').filter((c) => testFeatures(c, 'php').split(',').includes('case-test'))) {
+    const label = `llvm-nm: the extension${copiesOf('php').length === 1 ? '' : ` of ${p.contract.library}`} without features holds no case-test entry point`;
+    if (stepOf(['php'], label, () => {
+      const symbols = (features: string[]): string[] => {
+        run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, ...features]);
+        process.stdout.write('$ llvm-nm --defined-only (case-test entry points)\n');
+        const listed = execFileSync(llvmNm, ['--defined-only', join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+        return listed.split('\n').filter((line) => /case_test_[0-9]+/.test(line));
+      };
+      const leaked = symbols([]);
+      if (leaked.length > 0) throw new Error(`the extension built without features holds case-test entry points: ${leaked.join(', ')}`);
+      if (symbols(['--features', testFeatures(p, 'php')]).length === 0) throw new Error('the extension built with the test features holds no case-test entry point, so the check reads no symbol of one');
+    })) lintOf('php', label);
+  }
   stepOf(['php'], 'build the extensions', () => {
     for (const p of copiesOf('php')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p, 'php')]);
       extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)}`);
     }
   });
+  // GN-8a: the test entry points are of the test features alone. The extension built with them holds errno_of, which
+  // shows that llvm-nm reads the names of the entry points, and the extension built without features holds none.
+  const testEntry = /panic_test|arm_faults|fault_left|errno_of|alias_in_/;
+  for (const p of mainsOf('php')) {
+    const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
+    const what = `llvm-nm: the extension${of} without features holds no test entry point`;
+    if (stepOf(['php'], what, () => {
+      const read = (path: string): string[] => {
+        process.stdout.write(`$ llvm-nm --defined-only ${path}\n`);
+        return execFileSync(llvmNm, ['--defined-only', path], { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n');
+      };
+      if (!read(join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)).some((line) => line.includes('errno_of'))) throw new Error('the extension built with the test features holds no errno_of, so llvm-nm does not show the entry points');
+      const release = join(work, 'target-release-check');
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`], { env: { CARGO_TARGET_DIR: release } });
+      const leaked = read(join(release, `debug/lib${extensionOf(p.contract)}.${dylib}`)).filter((line) => testEntry.test(line));
+      if (leaked.length > 0) throw new Error(`the extension built without features holds test entry points: ${leaked.join(', ')}`);
+      rmSync(release, { recursive: true, force: true });
+    })) lintOf('php', what);
+  }
   if (stepOf(['php'], 'php -l of the stub', () => {
     for (const p of mainsOf('php')) run(phpTool, ['-l', at(p, `packages/php-ext/generated/${extensionOf(p.contract)}.stub.php`)]);
   })) lintOf('php', 'php -l of the stub');
@@ -672,6 +724,7 @@ if (targets.includes('php')) {
     stepOf(['php'], `the ${name} on PHPUnit`, () => phpunitRun(name, at(p, 'packages/php-ext/generated/tests')));
   }
   if (caseRunners) stepOf(['php'], 'the contract cases on PHPUnit', () => phpunitRun('contract cases', join(e2e, 'CasesTest.php'), { CASES: cases ?? '' }));
+  if (existsSync(join(e2e, 'bench.php'))) stepOf(['php'], 'the measurement of bench.php', () => run(phpTool, [...extensions, join(e2e, 'bench.php')], { env: { BENCH_REPORT: benchReport('php') } }));
 }
 
 if (targets.includes('go')) {
@@ -684,13 +737,14 @@ if (targets.includes('go')) {
     const crate = p.contract.core.crate;
     const goEnv = goEnvOf(p);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
-    // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
+    // GN-13b, GN-6u: panic-test, codec-test and native-count-test are for tests only; the library built without features
+    // has no test entry point.
     if (stepOf(['go'], `llvm-nm: the static library${of} without features holds no test entry point`, () => {
       const release = join(work, 'target-release-check');
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_)/.test(line));
+      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|number_in)/.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);

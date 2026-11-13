@@ -101,6 +101,8 @@ export function contract(): any {
     },
     types: {},
     errors: {
+      // U-3: store.read recognizes too_large, whose kind the core makes with this function.
+      recognized: 'sample::Error::recognized',
       classes: {
         value: classes('ValueError'),
         type: classes('TypeError'),

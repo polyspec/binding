@@ -18,8 +18,11 @@ import {
   type Parameter,
   type Type,
   type Unit,
+  innerVariant,
   kindsOf,
+  outerVariant,
 } from './contract.ts';
+import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
@@ -151,6 +154,14 @@ interface Located<T> {
 // the calling thread, waiting for another process and network sockets.
 export const PLATFORM_FEATURES = ['fs', 'blocking-io', 'process', 'net'];
 
+// GN-13f: what the calls of then of the instance values of a case arm: the kinds that their points fill, the libraries
+// whose point internal they arm as broken, and whether any call arms a fault.
+interface ThenFaults {
+  fills: Set<string>;
+  broken: Set<string>;
+  any: boolean;
+}
+
 class Checker {
   readonly contract: Contract;
   readonly dependencies: ReadonlyMap<string, unknown>;
@@ -228,7 +239,7 @@ class Checker {
   kindCategories(): Map<string, Category | undefined> {
     const kinds = new Map<string, Category | undefined>();
     for (const row of this.contract.errors.kinds) {
-      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant);
+      const owner = row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
       for (const kind of kindsOf(owner ?? row)) kinds.set(kind, owner?.category);
     }
     return kinds;
@@ -548,12 +559,33 @@ class Checker {
       if (unit.origin !== 'value') continue;
       const by = gathered.get(unit.id);
       const holds = unit.out !== undefined || unit.in !== undefined;
+      if (by !== undefined && typeof unit.core === 'object' && unit.core !== null) {
+        this.report('CK-8', `${path}/core`, `${unit.id} is gathered by the alias ${by}, which names core: {in, out} (U-1, GN-6x)`);
+      }
       if (by !== undefined && holds) {
         this.report('CK-8', path, `${unit.id} is gathered by the alias ${by}, which holds the out and in tables (U-1)`);
       } else if (by === undefined && (unit.out === undefined || unit.in === undefined)) {
         this.report('CK-8', path, `${unit.id} represents its value type, so it holds out and in (U-1)`);
       }
       if (by === undefined && holds) this.valueUnit(unit, path, gathered);
+    }
+  }
+
+  // GN-6x, B2.89: a case of the kind text of a class with by may name units, a member that gives the UTF-16 code units
+  // of a text as a list of uint; its read then gives an optional text, none for a text with an unpaired surrogate.
+  unitsCase(kase: InRow['cases'][number], read: Member | undefined, by: boolean, path: string): void {
+    if (kase.kind !== 'text' || !by) {
+      this.report('CK-8', `${path}/units`, `only a case of the kind text of a row with by names units, not a case of the kind ${kase.kind} (GN-6x)`);
+      return;
+    }
+    const units = this.publicMember(kase.units ?? '', `${path}/units`, 'units');
+    const returns = units?.returns;
+    if (units !== undefined && !(typeof returns === 'object' && returns !== null && 'list' in returns && returns.list === 'uint')) {
+      this.report('CK-8', `${path}/units`, `units ${kase.units ?? ''} gives no list of uint, the UTF-16 code units of a text (GN-6x)`);
+    }
+    const text = read?.returns;
+    if (read !== undefined && !(typeof text === 'object' && text !== null && 'optional' in text && text.optional === 'text')) {
+      this.report('CK-8', `${path}/read`, `read ${kase.read ?? ''} of a case with units gives no optional text, whose none names a text with an unpaired surrogate (GN-6x)`);
     }
   }
 
@@ -611,7 +643,11 @@ class Checker {
     if (unit.kind === 'alias' && (typeof unit.core !== 'object' || unit.core === null)) {
       this.report('CK-8', path, `the value alias ${unit.id} names the core functions that judge and give its values in core: {in, out} (U-7)`);
     }
-    if (unit.kind !== 'alias' && typeof unit.core === 'object') this.report('CK-8', `${path}/core`, 'only a value alias has core: {in, out} (U-7)');
+    // GN-6x: the class that represents its value type may name the functions through which another repository takes
+    // and gives its values, with the core type that they take and give.
+    if (unit.kind !== 'alias' && typeof unit.core === 'object' && unit.core !== null && unit.core_type === undefined) {
+      this.report('CK-8', path, `the value class ${unit.id} names core: {in, out} and no core_type (GN-6x)`);
+    }
     // The unit types this representative may name: itself when it is a class, its gathered classes when it is an alias.
     const ownTypes = new Set(unit.kind === 'alias' ? [...gathered].filter(([, by]) => by === unit.id).map(([id]) => id) : [unit.id]);
     const rows = new Map<string, InRow>();
@@ -676,7 +712,8 @@ class Checker {
         if (!isBuiltin && (kase.read === undefined || kase.read === 'builtin')) {
           this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a value unit type names its read member');
         }
-        if (kase.read !== undefined && kase.read !== 'builtin') this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read');
+        const read = kase.read !== undefined && kase.read !== 'builtin' ? this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read') : undefined;
+        if (kase.units !== undefined) this.unitsCase(kase, read, row.by !== undefined, `${rowPath}/cases/${c}`);
       }
     }
     const byKind = new Map<string, Located<OutRow>[]>();
@@ -717,6 +754,11 @@ class Checker {
           continue;
         }
         if ((BUILTIN_FORMS as readonly string[]).includes(make)) {
+          // GN-6x: the string of PHP and Go cannot hold an unpaired surrogate, so a member of a class makes text16.
+          if (row.kind === 'text16') {
+            this.report('CK-8', makePath, `the kind text16 is made by a member of a class, not by the built-in form ${make} (GN-6x)`);
+            continue;
+          }
           made = MADE_TYPE[lang][make];
           form = make;
           if (made === undefined) this.report('CK-8', makePath, `${lang} has no built-in ${make} value`);
@@ -749,7 +791,9 @@ class Checker {
   roundTrip(row: OutRow, path: string, into: InRow, lang: Lang, made: string, form: string | undefined, siblings: readonly OutRow[]): void {
     let chosen: string | undefined;
     if (into.by !== undefined) {
-      const matching = into.cases.filter((c) => c.kind === row.kind);
+      // GN-6x, P-3, B2.89: a case of the kind text with units reads a text with an unpaired surrogate as its UTF-16 code
+      // units, so it is also the case of the kind text16.
+      const matching = into.cases.filter((c) => c.kind === row.kind || (row.kind === 'text16' && c.kind === 'text' && c.units !== undefined));
       if (matching.length !== 1) {
         this.report('CK-8', path, `${lang} ${made} has ${matching.length} cases of kind ${row.kind}; its by value cannot name one (P-3)`);
         return;
@@ -909,10 +953,17 @@ class Checker {
       if (variants.has(key)) this.report('CK-10', path, `${row.variant} is declared twice`);
       variants.add(key);
       let category = row.category;
+      // GN-7c: a kind that the core passes on is <outer>/<inner>, and a kind of the core error itself names no inner.
+      if (row.library !== undefined && outerVariant(row.variant) === undefined) {
+        this.report('CK-10', `${path}/variant`, `${row.variant} names no variant of the core error that holds the error of ${row.library}; a kind that the core passes on is <outer>/<inner> (GN-7c, E-1b (a))`);
+      }
+      if (row.library === undefined && outerVariant(row.variant) !== undefined) {
+        this.report('CK-10', `${path}/variant`, `${row.variant} names the inner variant of a dependency, but the row names no library (GN-7c)`);
+      }
       if (row.library !== undefined) {
         const dependency = this.dependency(row.library, `${path}/library`, 'CK-10');
-        const own = dependency?.errors.kinds.find((k) => k.variant === row.variant);
-        if (dependency !== null && own === undefined) this.report('CK-10', `${path}/variant`, `${row.library} declares no kind ${row.variant}`);
+        const own = dependency?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
+        if (dependency !== null && own === undefined) this.report('CK-10', `${path}/variant`, `${row.library} declares no kind ${innerVariant(row.variant)}`);
         category = own?.category;
       }
       if (row.class !== undefined) this.errorUnit(row.class, `${path}/class`, category);
@@ -1132,7 +1183,8 @@ class Checker {
       if (reserved === undefined) continue;
       const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
       for (const { value: unit, path } of this.units.values()) {
-        if (unit.origin === 'host' || unit.visibility !== 'public') continue;
+        // GN-6r: the generated code declares the names of an internal unit as those of a public one.
+        if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');
         if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
@@ -1141,7 +1193,6 @@ class Checker {
           if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
         }
         for (const [m, member] of (unit.members ?? []).entries()) {
-          if (member.visibility !== 'public') continue;
           const memberPath = `${path}${pointer('members', m)}`;
           const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
           const name = this.langName(lang, unit, member.name, role, member);
@@ -1234,7 +1285,7 @@ class Checker {
       this.caseFixtures(row.member, group, `/cases/${i}`);
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
-        this.caseInstances(row.member, record, `/cases/${i}`);
+        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         const raises = record['raises'];
@@ -1244,11 +1295,14 @@ class Checker {
         if (typeof expected['errno'] === 'string' && !ERRNO_SYMBOL.test(expected['errno'])) {
           this.report('CK-22', `/cases/${i}`, `${where}: the errno ${expected['errno']} of raises is not the symbol of an errno, such as ENOSPC (G-5)`);
         }
-        if (record['faults'] === undefined) {
+        if (record['faults'] === undefined && !armedThen.any) {
           if (typeof kind === 'string') kinds.add(kind);
           continue;
         }
-        const armed = this.caseFaults(record['faults'], where, `/cases/${i}`);
+        // GN-13f: the points that the calls of then of its instance values arm are points that the case arms.
+        const armed = record['faults'] === undefined ? { fills: new Set<string>(), broken: new Set<string>() } : this.caseFaults(record['faults'], where, `/cases/${i}`);
+        for (const filled of armedThen.fills) armed.fills.add(filled);
+        for (const library of armedThen.broken) armed.broken.add(library);
         if (typeof kind !== 'string') continue;
         if (!armed.fills.has(kind)) {
           this.report('CK-22', `/cases/${i}`, `${where}: no point that the case arms fills the kind ${kind}, so only a case without faults gives it (G-5)`);
@@ -1279,7 +1333,7 @@ class Checker {
     const reported = new Set<string>();
     for (const [i, row] of this.contract.errors.kinds.entries()) {
       const library = row.library ?? this.contract.library;
-      const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === row.variant)?.category;
+      const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
       if (category !== 'internal' || mapped.has(library) || reported.has(library)) continue;
       reported.add(library);
       this.report('CK-22', `/errors/kinds/${i}`, `no case arms the point ${pointLibrary(library)}.internal as broken and raises a kind of the category internal, the one case that checks the class, kind and status of the error enum of ${library} (X-1, G-5)`);
@@ -1299,9 +1353,12 @@ class Checker {
   // G-5 (GN-13f): the instance values of a case: its receiver, and an argument of a class type that is given as one.
   // The receiver of a method is an instance value or, without the key receiver, the arguments of a factory of its
   // class among the keys of the case.
-  caseInstances(memberId: string, record: Record<string, unknown>, path: string): void {
+  // Gives what the calls of then of the instance values of the case arm (GN-13f).
+  caseInstances(memberId: string, record: Record<string, unknown>, path: string): ThenFaults {
+    const armed: ThenFaults = { fills: new Set<string>(), broken: new Set<string>(), any: false };
     const found = this.members.get(memberId);
-    if (found === undefined) return;
+    if (found === undefined) return armed;
+    this.armedThen = armed;
     const where = `the case ${String(record['id'])} of ${memberId}`;
     const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5, GN-13f)`);
     const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
@@ -1310,7 +1367,12 @@ class Checker {
       else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
     }
     this.instanceArgs(found.member, record, report, 'the case');
+    this.armedThen = undefined;
+    return armed;
   }
+
+  // GN-13f: what the calls of then of the instance values of the case that caseInstances reads arm, or undefined.
+  private armedThen: ThenFaults | undefined;
 
   // CK-64: an integer of a case at a place of the contract type int or uint is a safe integer, the range of T-1 that
   // every target gives (a Node number); a case file gives a larger one as its JSON token, which cli reads as a bigint.
@@ -1439,12 +1501,33 @@ class Checker {
     if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
     for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (key !== 'call' && key !== 'args' && key !== 'raises') report(`then ${i} of ${what} has no key ${key}`);
+      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
       const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
       const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
-      if (step === undefined || step.unit.id !== unitId || !stepMethod) {
+      // A call with on: receiver is a method of the class of the receiver of the value, called on that receiver.
+      if (call['on'] !== undefined) {
+        if (call['on'] !== 'receiver') {
+          report(`then ${i} of ${what} calls on ${String(call['on'])}, but on names only receiver`);
+          continue;
+        }
+        if (record['receiver'] === undefined) {
+          report(`then ${i} of ${what} calls ${String(call['call'])} on its receiver, but ${member.id} gives the value without one`);
+          continue;
+        }
+        if (step === undefined || step.unit.id !== found.unit.id || !stepMethod) {
+          report(`then ${i} of ${what} calls ${String(call['call'])} on its receiver, which is no method of ${found.unit.id}`);
+          continue;
+        }
+      } else if (step === undefined || step.unit.id !== unitId || !stepMethod) {
         report(`then ${i} of ${what} calls ${String(call['call'])}, which is no method of ${unitId}`);
         continue;
+      }
+      // The faults that the call arms for itself alone, in the form of the faults of a case.
+      const faults = call['faults'] === undefined ? undefined : this.faultsOf(call['faults'], (message) => report(`the faults of then ${i} of ${what}: ${message}`));
+      if (faults !== undefined && this.armedThen !== undefined) {
+        this.armedThen.any = true;
+        for (const filled of faults.fills) this.armedThen.fills.add(filled);
+        for (const library of faults.broken) this.armedThen.broken.add(library);
       }
       args(step.member, call['args'], `then ${i} of ${what}`);
       // A call that fails with a kind of the member's raises; the instance stays for the next step.
@@ -1458,6 +1541,7 @@ class Checker {
         const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
         const kinds = (step.member.raises ?? []).flatMap((variant) => { const row = rows.get(variant); return row === undefined ? [] : kindsOf(row); });
         if (!kinds.includes(kind)) report(`then ${i} of ${what} expects ${step.member.id} to fail with ${kind}, which is no kind of its raises`);
+        else if (faults !== undefined && !faults.fills.has(kind)) report(`then ${i} of ${what} expects ${step.member.id} to fail with ${kind}, which no point that it arms fills`);
       }
     }
   }
@@ -1466,9 +1550,13 @@ class Checker {
   // of this contract or of the library that the name gives, and takes the injection of its kind. Gives the kinds that
   // the armed points fill and the libraries whose point internal is armed as broken (X-1).
   caseFaults(given: unknown, where: string, path: string): { fills: Set<string>; broken: Set<string> } {
+    return this.faultsOf(given, (message) => this.report('CK-22', path, `${where}: ${message} (G-5)`));
+  }
+
+  // G-5: the faults of a case or of a call of then (GN-13f), each finding given to report.
+  faultsOf(given: unknown, report: (message: string) => void): { fills: Set<string>; broken: Set<string> } {
     const fills = new Set<string>();
     const broken = new Set<string>();
-    const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
     if (!Array.isArray(given) || given.length === 0) {
       report('faults is not a list of {point, kind}');
       return { fills, broken };
@@ -1719,6 +1807,18 @@ class Checker {
 
   coreBuild(): void {
     // E-1c: a core that returns no Result has no variant to return and no place for the failure of a callback.
+    // E-1c, GN-6h: the error is a Failure only where language code can fail: a parameter that holds a callback or a
+    // function, or a receiver that keeps language code.
+    const keeps = carriers(this.contract.units).classes;
+    for (const { member, unit, path } of this.members.values()) {
+      if (typeof member.core !== 'object') continue;
+      const failure = member.core.failure;
+      const takes = (member.parameters ?? []).some((p) => this.takesCode(p.type));
+      const receiver = member.core.receiver !== undefined && keeps.has(unit.id);
+      if (failure === true && !receiver && !takes) this.report('CK-21', `${path}/core/failure`, `${member.id} reaches no language code, a callback or a function that it takes or that its receiver keeps, so its core error is no Failure (E-1c)`);
+      if (failure === false && takes) this.report('CK-21', `${path}/core/failure`, `${member.id} takes a callback or a function, so its core error is a Failure (E-1c)`);
+      if (failure === true && member.core.result === false) this.report('CK-21', `${path}/core/failure`, `${member.id} has core.failure, so its core returns a Result (E-1c)`);
+    }
     for (const { member, path } of this.members.values()) {
       if (typeof member.core !== 'object' || member.core.result !== false) continue;
       if ((member.raises ?? []).length > 0) this.report('CK-21', `${path}/core/result`, `${member.id} has raises, so its core returns a Result (E-1c)`);
@@ -1740,6 +1840,27 @@ class Checker {
         this.report('CK-21', `${path}/exclusive`, `only a member with the receiver &self of a generated class is exclusive (U-6)`);
       }
     }
+    // CK-67, GN-6h: only an instance of a class is a place whose borrow the core takes, and every such place names it.
+    for (const { member, unit: owner, path } of this.members.values()) {
+      for (const [i, parameter] of (member.parameters ?? []).entries()) {
+        const type = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+        const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.unit(type.unit) : undefined;
+        const place = unit?.kind === 'class' && unit.origin === 'generated' && owner.origin !== 'callback';
+        const at = `${path}/parameters/${i}/core`;
+        if (parameter.core !== undefined && !place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is no class or optional of a class, so the core takes no borrow of it (GN-6h)`);
+        if (parameter.core === undefined && place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is a class parameter, which names the borrow that the core takes in core (GN-6h)`);
+      }
+    }
+    // CK-68, GN-6ab: a member with async_driver that reaches language code drives a state machine of its core, and
+    // binding reads no Rust source to tell a machine from a future.
+    const carrying = carriers(this.contract.units);
+    for (const { member, unit, path } of this.members.values()) {
+      const reaches = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (member.kind === 'method' && carrying.classes.has(unit.id));
+      const needs = member.wait === 'async_driver' && reaches;
+      const machine = typeof member.core === 'object' && member.core.machine === true;
+      if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
+      if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
+    }
   }
 
   // ---- CK-17: callbacks (U-3, T-3) ----
@@ -1760,6 +1881,8 @@ class Checker {
         const refPath = `${path}/errors/recognize/${i}`;
         if (ref.library === undefined || ref.library === this.contract.library) {
           if (this.unit(ref.unit)?.kind !== 'error') this.report('CK-17', refPath, `${ref.unit} is not an error unit`);
+          // GN-6d: the core error of a recognized kind is made by the function that the contract names.
+          else if (this.contract.errors.recognized === undefined) this.report('CK-17', refPath, `${member.id} recognizes ${ref.unit}, but errors.recognized names no function that makes the core error of its kind (GN-6d)`);
         } else {
           const dependency = this.dependency(ref.library, refPath, 'CK-17');
           if (dependency !== null && dependency.units.find((u) => u.id === ref.unit)?.kind !== 'error') {
