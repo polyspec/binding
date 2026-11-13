@@ -165,7 +165,9 @@
   없는 변형이 있으면 컴파일되지 않는다(I-2 (3)). 소유 코어가 값을 도는 동안 언어 코드가 던진 예외는 그대로 다시 던진다.
   바인딩 crate는 소유 레포의 crate에, Python 패키지는 소유 레포의 패키지에 의존한다(GN-6c). 소유 레포가 제3 라이브러리의
   kind를 그대로 전달하거나(E-1b (a)) 오류 enum 둘을 적은 alias, member로 만드는 `out` 행(GN-6e), 대상 Go와 WASM은 이름을
-  대고 거부한다(G-4).
+  대고 거부한다(G-4). 다른 레포 alias의 `in_raises`는 이 레포에 생성할 것을 주지 않는다: 그 alias의 case, kind 단언,
+  feature `codec-test`의 진입점(GN-5, GN-13)은 소유 레포의 바인딩에 속하고 거기서 한 번 실행된다. 이 레포의 crate는 자기
+  alias가 있을 때만 그 feature를 갖는다.
 - **GN-6f** class의 kind `iterate` member(N-4)는 `&self`로 코어를 불러, 빌린 항목이나 `yields: {key, value}`면 빌린 key와
   value의 iterator를 받는다. 바인딩은 순회가 시작될 때 모든 항목을 변환한다(class 값의 snapshot, 값 타입은 값으로, class는
   코어 값의 복사로). Python은 `__iter__`로 항목을 주거나, dict처럼 `__iter__`로 key를, `items()`로 쌍을 준다. Node는 class를

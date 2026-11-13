@@ -199,7 +199,10 @@ the design ids are those of the binding design.
   (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again unchanged.
   The binding crate depends on the owner's crate, and the Python package on the owner's package (GN-6c). An alias
   whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name, as is an
-  `out` row by a member (GN-6e) and the targets Go and WASM (G-4).
+  `out` row by a member (GN-6e) and the targets Go and WASM (G-4). The `in_raises` of an alias of another repository
+  give this repository nothing to generate: the cases of the alias, the assertions of its kinds and the entry point
+  of the feature `codec-test` (GN-5, GN-13) belong to the binding of the owner, which runs them once, and the crate of
+  this repository has that feature only for an alias of its own.
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).

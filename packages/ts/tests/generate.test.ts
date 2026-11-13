@@ -529,6 +529,12 @@ test('a value alias of another repository converts through the core of its owner
     assert.match(lib, /out_sample_data\((py|self\.env), value\)|out_sample_data\(value\)/, path);
   }
   assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_sample::Error::Unsupported \{ \.\. \} => "ConsumerValueError",/);
+  // The in_raises of the owner's alias give the consumer nothing: no entry point of codec-test, no assertion of the
+  // kinds and no case of the alias, which the binding of the owner holds.
+  assert.ok((foreign.get('sample')?.units ?? []).some((u: any) => u.id === 'data' && u.in_raises.length > 0));
+  for (const [path, file] of out) {
+    assert.doesNotMatch(String(file), /alias_in_|aliasIn|the kinds of in_raises|codec-test|def test_u7_|U-7: data/, path);
+  }
 });
 
 test('a value alias of another repository is refused by name where it is not generated (G-4, GN-6k)', () => {
