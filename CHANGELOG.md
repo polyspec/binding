@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A case that arms a fault injection point of another library (`<library>.<id>`) was refused in every target as "the
+  point <point> of another library is not armed yet (G-5)", so a contract whose cases arm the points of the cores that
+  its core calls had no generated test. Such a point is now armed by the arming of the member, in the five targets:
+  the binding crate links the core of that library with one `binding_core`, its feature `fault-test` turns on the
+  points of that core, and the entry `_arm_faults` of the crate arms the point for the member of the case and of a
+  call of `then` (GN-5, row B2.130). A contract without `faults` of its own still refuses such a case by name.
+  Verified by `npm test` in `packages/ts`: the test of G-5 failed before the change with the refusal. Not run: a
+  build or a test of a generated crate, and `make e2e`.
 - The `package.json` and the `composer.json` that `scaffold` writes named no other library, so a released npm
   package whose entries import the npm package of the owner of a value class (`require('@polyspec/<library>')`, GN-6x)
   was installed without it, and a released PHP extension without the extension whose classes it makes and reads.

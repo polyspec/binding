@@ -4058,7 +4058,7 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
   assert.doesNotMatch(text(without, 'packages/php-ext/generated/lib.rs'), /fault::|fault-test/);
 });
 
-test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
+test('fault injection points and the point of another library are armed for the member in the five targets (G-5, GN-5)', () => {
   const drop = (c: any, cases: any): void => {
     c.units = c.units.filter((u: any) => !['lookup', 'search', 'tag', 'data', 'counter', 'ledger'].includes(u.id));
     const kept = ['sample.measure', 'sample.checked', 'sample.touch'];
@@ -4085,7 +4085,17 @@ test('fault injection points, the kinds of an alias and the point of another lib
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
-  assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
+  // GN-5: a point of another library is armed by the arming of the member, through the entry of this crate, in the
+  // five targets: the core of that library is linked into the crate, so its point reads the arming of the member.
+  const other = (targets: string[]): Map<string, string | Buffer> => sampleWith((c, cases) => { drop(c, cases); cases.measure[0].faults[0].point = 'other.read'; }, targets);
+  assert.match(text(other(['python']), pythonTests), /armed = _native\._arm_faults\("sample\.measure", "\[\{\\"point\\":\\"other\.read\\",/);
+  assert.match(text(other(['node']), nodeTests), /const armed = addon\(\)\.__armFaults\('sample\.measure', '\[\{"point":"other\.read",/);
+  assert.match(text(other(['php']), phpTests), /\$armed = \\Polyspec\\Sample\\Internal\\armFaults\("sample\.measure", [^\n]*other\.read/);
+  assert.match(text(other(['go']), 'packages/go/zz_generated_fault_test.go'), /armed, armErr := binding\.ArmFaults\("sample\.measure", [^\n]*other\.read/);
+  assert.match(text(other(['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const armed = glue\.__armFaults\('sample\.measure', [^\n]*other\.read/);
+  // A contract without faults of its own has no items of GN-8a, so its case that arms a point of another library is
+  // refused by name.
+  assert.throws(() => sampleWith((c, cases) => { delete c.faults; cases.measure[0].faults[0].point = 'other.read'; }), /arms faults, but the contract names no fault injection point \(G-5\)/);
 });
 
 test('a case of an alias gives a value of the language that is no value of the alias by its sort, and an integer outside 64 bits runs in PHP as host values (G-5, GN-13)', () => {

@@ -315,7 +315,16 @@ the design ids are those of the binding design.
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
   its name, and `binding check` compares the manifests with them (CK-19). A point (`fault::point!`) is live only in a
   crate whose own feature `fault-test` is on, because Cargo unifies the feature of binding_core across the build;
-  so the feature that this list leaves out keeps the points of that library off, and its cases fail. A core with
+  so the feature that this list leaves out keeps the points of that library off, and its cases fail. Such a point is
+  armed by the arming of the member (GN-8a), in the five targets alike: a binding crate links one `binding_core` with
+  the core of the contract and the core of that library, so the entry of `fault-test` of this crate (`_arm_faults`
+  and the names of the table above) arms the point for a member of this contract, the entry point of the member
+  installs the arming, and the point reads it where the core of this contract calls the core of that library. The
+  binding package of that library is not used for it: its crate links a `binding_core` of its own, whose arming the
+  core inside this crate does not read. A point that the call does not reach stays in `_fault_left`, which fails the
+  test (GN-13), and `binding check` compares its name with the contract of its library (CK-22). Not generated yet,
+  refused by name (G-4): a case that arms a point of another library in a contract without `faults` of its own,
+  because the items of GN-8a are written only for a contract with `faults`. A core with
   points has itself as a dev-dependency, `<core crate> = { path = ".", features = ["fault-test"] }`, so that
   `cargo test` of the core without flags arms them, in every repository in the same form (CK-65). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. The Go tests reach
@@ -1843,7 +1852,7 @@ the design ids are those of the binding design.
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
-  kinds of an alias, each refused by name when a case gives it: a point of another library; and a value of a value type of another kind
+  kinds of an alias, each refused by name when a case gives it: a point of another library in a contract without `faults` (GN-5); and a value of a value type of another kind
   than those of GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
   GN-13e arms no faults yet; the test of a member that takes an alias inside a map, a record field or the
   return of a callback; and the check that no release build has a test feature (the resolved features of

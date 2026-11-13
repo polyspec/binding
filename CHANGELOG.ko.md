@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0029486beae048a5669c3814a82763efba0f3b66bc27bd329f9b9a9dda066f4e -->
+<!-- source-sha256: c15f339009a8c3bfdca492e8622363f21ae70c7c22bfe3cb0890543f1b09f8af -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 라이브러리의 실패 주입 지점(`<library>.<id>`)을 장전하는 case를 모든 target이 "the point <point> of another
+  library is not armed yet (G-5)"로 거부했다. 그래서 자기 코어가 부르는 코어의 지점을 장전하는 case를 가진 계약은 생성된
+  시험이 없었다. 이제 그런 지점은 다섯 target에서 member의 장전으로 장전한다. 바인딩 crate는 그 라이브러리의 코어를 하나의
+  `binding_core`와 함께 링크하고, crate의 feature `fault-test`가 그 코어의 지점을 켜며, crate의 진입점 `_arm_faults`가
+  case의 member와 `then`의 호출에 대해 그 지점을 장전한다(GN-5, 행 B2.130). 자기 `faults`가 없는 계약은 그런 case를 여전히
+  이름을 대고 거부한다. `packages/ts`의 `npm test`로 검증했다. G-5의 시험은 변경 전에 그 거부로 실패했다. 실행하지 않은
+  것: 생성된 crate의 build와 시험, `make e2e`.
 - `scaffold`가 쓰는 `package.json`과 `composer.json`이 다른 라이브러리를 적지 않았다. 그래서 entry가 값 class owner의 npm
   package를 import하는(`require('@polyspec/<library>')`, GN-6x) release된 npm package가 그 package 없이 설치되었고, release된
   PHP 확장은 자기가 만들고 읽는 class의 확장 없이 설치되었다. 이제 `package.json`은 계약이 이름하는 타입들에 값 class가

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 1cbaf2a36521825e61ef6e8881f11eb9f73ddbdc4673c082f54aa448521de732 -->
+<!-- source-sha256: e5c4658a289a7306dec31cd0243fcbad0fcc8bd91a39f72534e6a5d0f24c8972 -->
 # 생성기
 
 [English](generator.md)
@@ -256,7 +256,14 @@
   읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
   비교한다(CK-19). 지점(`fault::point!`)은 자기 feature `fault-test`가 켜진 crate에서만 살아 있다. Cargo가 build 전체에서
   binding_core의 feature를 합치기 때문이다. 그래서 이 목록이 빠뜨린 feature는 그 라이브러리의 지점을 꺼 둔 채로 두고, 그
-  case는 실패한다. 지점을 가진 코어는 자기 자신을 dev-dependency `<core crate> = { path = ".", features = ["fault-test"] }`로
+  case는 실패한다. 그런 지점은 다섯 target 모두에서 member의 장전(GN-8a)으로 장전한다. 바인딩 crate는 계약의 코어와 그
+  라이브러리의 코어를 하나의 `binding_core`와 함께 링크하므로, 이 crate의 `fault-test` 진입점(`_arm_faults`와 위 표의
+  이름)이 이 계약의 member에 대해 그 지점을 장전하고, member의 진입점이 그 장전을 설치하며, 이 계약의 코어가 그
+  라이브러리의 코어를 부르는 곳에서 지점이 그것을 읽는다. 그 라이브러리의 바인딩 package는 여기에 쓰지 않는다. 그 crate는
+  자기 `binding_core`를 링크하고, 이 crate 안의 코어는 그 장전을 읽지 않기 때문이다. 호출이 닿지 않은 지점은
+  `_fault_left`에 남아 시험을 실패시키고(GN-13), `binding check`는 그 이름을 그 라이브러리의 계약과 비교한다(CK-22).
+  아직 생성하지 않고 이름을 대고 거부하는 것(G-4): 자기 `faults`가 없는 계약에서 다른 라이브러리의 지점을 장전하는
+  case. GN-8a의 항목은 `faults`가 있는 계약에만 쓰기 때문이다. 지점을 가진 코어는 자기 자신을 dev-dependency `<core crate> = { path = ".", features = ["fault-test"] }`로
   두어, flag 없는 코어의 `cargo test`가 그 지점을 장전하게 한다. 모든 저장소가 같은 꼴을 쓴다(CK-65). WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go 시험은
   build tag `polyspec_fault_test`와 `polyspec_codec_test`가 붙은 `internal/binding`의 함수로 닿는다(GN-13b).
@@ -1503,7 +1510,7 @@
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
-  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점,
+  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: `faults`가 없는 계약에서 다른 라이브러리의 점(GN-5),
   GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
   시험은 아직 실패를 장전하지 않는다), map·record field·callback 반환 안의 alias를 받는 member의 시험, 릴리스 빌드에 시험
   feature가 없다는 검사(`cargo tree`의 해석된 feature와 설치한 패키지의 export 목록). 이 검사 중 Go 부분은 e2e에

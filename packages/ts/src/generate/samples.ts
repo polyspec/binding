@@ -1259,9 +1259,6 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
     if (fn === undefined || fn.unit.id !== callee || fn.receiver === undefined) return fail(`then ${i} calls ${String(step['call'])}, which is no method of ${callee}`);
     const faults = step['faults'];
     if (faults !== undefined && model.faults.length === 0) return fail(`then ${i} arms faults, but the contract names no fault injection point (G-5)`);
-    const own = `${model.contract.library.replaceAll('-', '_')}.`;
-    const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
-    if (other !== undefined) return fail(`then ${i}: the point ${other} of another library is not armed yet (G-5)`);
     const args = argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`);
     const kind = (step['raises'] as Record<string, unknown> | undefined)?.['kind'];
     if (step['raises'] !== undefined && typeof kind !== 'string') return fail(`then ${i} expects ${fn.member.id} to fail by {"kind": <kind>}`);
@@ -1494,9 +1491,8 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     }
     const faults = record['faults'];
     if (faults !== undefined && model.faults.length === 0) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
-    const own = `${model.contract.library.replaceAll('-', '_')}.`;
-    const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
-    if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
+    // GN-5: a point of another library is armed as a point of the contract is, by the arming of the member: its core
+    // is linked into the binding crate, whose fault-test turns on the points of that core.
     out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }), ...afterOf(model, fn, record) });
   }
   return out;
