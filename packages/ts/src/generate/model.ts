@@ -631,9 +631,10 @@ export function collectModel(
     for (const field of fn.record?.unit.fields ?? []) visit(field.type);
   }
   const resultRecords = records.filter((r) => result.has(r.id));
-  // T-4: what the result form of a field with a default holds when the core gives None is not decided.
+  // T-4: what the result form of a field with a default holds when the core gives None is not decided, except for a
+  // field of an optional type, whose None is the null of its result form (GN-6i).
   for (const unit of resultRecords) {
-    const field = (unit.fields ?? []).find((f) => f.default !== undefined);
+    const field = (unit.fields ?? []).find((f) => f.default !== undefined && !ownOption(f));
     if (field !== undefined) refusals.refuse(`${unit.id}.${field.name.join('_')}: a field default of a record with the result form is not generated yet (T-4)`);
   }
   // T-3, U-7 (a'): the value aliases of other repositories that a type of this contract names, in the order they are
