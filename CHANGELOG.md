@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case could not give a text that is not well formed, because a JSON text holds only well-formed text, so a kind
+  that only such a text raises had no case (CK-22). A case gives it as `{"ill_formed": "<text>"}`: the text and an
+  unpaired surrogate in Python, Node and WASM, or the byte 0xFF in PHP and Go (G-5). Verified by `npm test` in
+  `packages/ts`.
 - The cores of `tests/e2e/shapes` and `tests/e2e/sample` converted lengths and indexes with `as`, which the lints of
   R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
   function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data

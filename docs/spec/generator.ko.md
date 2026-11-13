@@ -411,7 +411,9 @@
   이름 있는 인자, Python keyword, Node options record의 member와 빠진 member). case의 인자는 snake_case 키이고, record
   parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. 기본값이 없는 parameter의 키가 없는 case는 id로
   거부한다. JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
-  아닌 바이트일 때 같은 `{"hex": ...}`, 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
+  아닌 바이트일 때 같은 `{"hex": ...}`, 올바른 꼴이 아닌 텍스트는 `{"ill_formed": "<텍스트>"}`로 그 텍스트 뒤에 올바른
+  텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
+  텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
   `php_value`, `template_value`)의 값은 값 표의 kind로 적은 `{"kind": <값 kind>, "value": ...}`다: `null`은 `value`가 없고,
   `bool`, `int`, `float`(수 또는 위 형태), `number`(리터럴 텍스트), `text`, `bytes`(`{"hex": ...}`)는 그 값을, `list`는 그런
   값의 배열을, `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나

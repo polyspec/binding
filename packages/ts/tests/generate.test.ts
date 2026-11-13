@@ -639,6 +639,11 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.equal(fromJson(model, ctx('node'), 'bytes', { hex: '00ff' }), "new Uint8Array(Buffer.from('00ff', 'hex'))");
   assert.equal(fromJson(model, ctx('php'), 'bytes', { hex: '00ff' }), 'hex2bin("00ff")');
   assert.equal(fromJson(model, ctx('python'), 'float', { float: '-inf' }), 'float("-inf")');
+  // A text that is not well formed: an unpaired surrogate where a text is code points or UTF-16, 0xFF where it is bytes.
+  assert.equal(fromJson(model, ctx('python'), 'text', { ill_formed: 'a' }), '"a" + "\\ud800"');
+  assert.equal(fromJson(model, ctx('node'), 'text', { ill_formed: 'a' }), "'a' + '\\uD800'");
+  assert.equal(fromJson(model, ctx('php'), 'text', { ill_formed: 'a' }), '"a" . "\\xFF"');
+  assert.throws(() => fromJson(model, ctx('php'), 'text', { ill_formed: 1 }), /\{"ill_formed": "<text>"\}/);
   assert.equal(fromJson(model, ctx('node'), 'float', { float: 'nan' }), 'NaN');
   assert.equal(fromJson(model, ctx('php'), 'float', 1.5), '1.5');
   assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);

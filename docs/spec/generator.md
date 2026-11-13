@@ -497,7 +497,9 @@ the design ids are those of the binding design.
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
   value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. Values that JSON
   cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
-  `{"hex": ...}` for bytes that are no text; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
+  `{"hex": ...}` for bytes that are no text; a text that is not well formed is `{"ill_formed": "<text>"}`, the text
+  and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,
+  whose texts are code points or UTF-16, and the byte 0xFF in PHP and Go, whose texts are bytes; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
   the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
   (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values;

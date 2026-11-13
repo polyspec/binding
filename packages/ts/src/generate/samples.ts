@@ -73,6 +73,15 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   const none = ctx.lang === 'python' ? 'None' : 'null';
   if (value === null) return none;
   if (typeof type === 'string') {
+    // G-5: a text that is not well formed is {"ill_formed": "<text>"}: the text and then one code unit that no well-formed
+    // text holds, an unpaired surrogate where a text is code points or UTF-16 and the byte 0xFF where it is bytes.
+    if (type === 'text' && typeof value === 'object') {
+      const text = (value as { ill_formed?: unknown }).ill_formed;
+      if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
+      if (ctx.lang === 'python') return `${pyString(text)} + "\\ud800"`;
+      if (ctx.lang === 'node') return `${jsString(text)} + '\\uD800'`;
+      return `${phpText(text)} . "\\xFF"`;
+    }
     if (type === 'text' || type === 'latin1') {
       const text = String(value);
       if (ctx.lang === 'python') return pyString(text);
