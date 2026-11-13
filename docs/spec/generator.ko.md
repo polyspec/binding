@@ -66,8 +66,7 @@
     `src`, `tool.maturin.module-name` `<module>._binding._native`를 갖는다.
   - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
     `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
-    `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 `optionalDependencies`에 자기 `version`으로 적은
-    GN-3c의 플랫폼 패키지를 갖고, GN-3c의 release 필드 `"type": "module"`, `napi.binaryName`, `napi.targets`를 갖는다. release가
+    `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 GN-3c의 release 필드 `"type": "module"`, `napi.binaryName`, `napi.targets`를 갖는다. release가
     빌드하고 배포하는 패키지가 host 패키지이기 때문이다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
     생성 시험도 `native/generated/tests/`에서 그렇게 한다. WASM crate는 `native/wasm/`이고, 그 module, glue, 선언은
     `native/wasm/generated/`이며 host의 `files`가 그것을 적는다(`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts`,
@@ -79,10 +78,14 @@
     GN-3c의 `php-ext.download-url-method`를 포함해 그 파일 전체를 비교한다.
 - **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
   `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
-  `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는 addon을 갖지 않고 모든 플랫폼 패키지를 자기
-  버전으로 `optionalDependencies`에 적어 npm이 그 기계의 것을 설치하게 한다. 플랫폼 패키지는 배포 도구가 빌드해 낸다(K-3).
+  `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는
+  addon을 갖지 않는다. 플랫폼 패키지는 배포 도구가 빌드해 내고(K-3), 배포 도구는 패키지를 pack할 때 pack하는 manifest의
+  `optionalDependencies`에 모든 플랫폼 패키지를 그 release의 버전으로 적어 npm이 그 기계의 것을 설치하게 한다. source manifest와
+  workspace의 lock은 그것을 적지 않는다. 한 버전의 플랫폼 패키지는 그 버전의 release가 만들므로, 그것을 적은 lock은 그 release
+  전에는 설치할 수 없고, `npm ci`는 lock에 없는 의존을 적은 manifest를 거부한다.
   생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
-  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치한다.
+  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치하므로, 진입점은
+  `optionalDependencies` 없이도 플랫폼 패키지를 찾는다.
   target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
   `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
   플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. 이것이 없으면

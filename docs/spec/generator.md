@@ -87,7 +87,7 @@ the design ids are those of the binding design.
   - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry and
     declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
     `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
-    packages of GN-3c in `optionalDependencies` at its own `version`, and the fields of a release of GN-3c: `"type":
+    fields of a release of GN-3c: `"type":
     "module"`, `napi.binaryName` and `napi.targets`, because the host package is the package that a release builds
     and publishes; host code imports `native/generated/index.mjs`
     (or `index.cjs`) by its relative path, and so do the generated tests, from `native/generated/tests/`. The WASM
@@ -103,11 +103,14 @@ the design ids are those of the binding design.
 - **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
   napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
   <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
-  (L-2a), holds no addon and names every platform package in `optionalDependencies` at its own version, so npm
-  installs the one of the machine; release tooling builds and publishes the platform packages (K-3). The generated
+  (L-2a), holds no addon; release tooling builds and publishes the platform packages (K-3), and when it packs the
+  package it writes every platform package into `optionalDependencies` of the packed manifest at the version of the
+  release, so npm installs the one of the machine. The source manifest and the lock of a workspace do not name them:
+  the platform packages of a version are made by the release of that version, so a lock that named them could not be
+  installed before that release, and `npm ci` refuses a manifest whose dependencies its lock lacks. The generated
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
   entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
-  release does and installs both tarballs. The `package.json` that `scaffold` writes for a library with the target
+  release does and installs both tarballs, so the entry finds the platform package without `optionalDependencies`. The `package.json` that `scaffold` writes for a library with the target
   `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
   which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
   in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). Without them
