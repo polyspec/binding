@@ -264,7 +264,8 @@
   기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
   수·bool·text·latin1·bytes·source·list·map·enum·값 타입·`optional`이 아닌 타입의 기본값, `optional`이나 값 타입의
   `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
-  결과 형태도 가진 record의 field 기본값.
+  결과 형태도 가진 record의 field 기본값. 다만 `optional` 타입의 기본값은 거부하지 않는다. 그런 field의 결과 형태는 그
+  optional 타입의 값이므로 코어의 `None`은 언어의 null이다.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
   판정은 코어가 한다. Python은 `str`을 그 UTF-8로, 또는 PyO3가 바이트로 읽는 값을 받는다. Node는 string을 그 UTF-8로,
   또는 `Uint8Array`를 받는다. PHP는 string을 받고 그 바이트를 그대로 넘긴다. PHP string은 그 바이트이기 때문이다. 짝 없는

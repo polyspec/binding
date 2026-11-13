@@ -359,14 +359,14 @@ export function collectModel(
           if (lacking !== undefined) throw new Unsupported(`${where}: the default {empty: "object"} leaves out the record, but its field ${lacking.name.join('_')} has no default (U-2)`);
         }
         record = { unit: recordUnit, param: parameter };
-        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
+        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true, units) });
         continue;
       }
       const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
       if (!source) supportedType(type, units, `${where}${direct ? '#parameter' : ''}`, foreign);
-      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
+      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
     }
     // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
     // parameters in order, and PHP also the fields of the record that follow them.
@@ -423,7 +423,7 @@ export function collectModel(
       let refused = false;
       for (const field of unit.fields ?? []) {
         refused = refusals.attempt(() => {
-          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true);
+          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true, units);
           supportedType(field.type, units, `${unit.id}.${field.name.join('_')}`, foreign);
           return true;
         }) === undefined || refused;
@@ -965,7 +965,7 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
     const place = held.find((h) => h.param === p);
     if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
-    return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
+    return p.default === undefined || ownOption(p) ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
   if (waitsIo(fn)) args.unshift(IO_TOKEN);
@@ -1152,12 +1152,19 @@ export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
 
 // U-2, T-4: the declared default of a parameter or a field, with the forms that are generated; any other is refused by
 // name (G-4). The core takes Option<T> and decides the value of None; a {literal} or {const} default, which every
-// declaration shows, names the constant of the core that it equals in default_core.
-function declaredDefault(item: Parameter | Field, where: string, field: boolean): { default?: Default; defaultCore?: string } {
+// declaration shows, names the constant of the core that it equals in default_core. A default of an optional type is
+// {literal: null} or {computed}, and the core takes the Option of the optional type itself (GN-6i); a {literal: null}
+// default of a value type names no constant, because the core decides what no value is.
+function declaredDefault(item: Parameter | Field, where: string, field: boolean, units: Map<string, Unit>): { default?: Default; defaultCore?: string } {
   const declared = item.default;
   if (declared === undefined) return {};
   const type = item.type;
-  if (typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: a default of an optional type is not generated yet (U-2)`);
+  if (typeof type === 'object' && 'optional' in type) {
+    if (('literal' in declared && declared.literal === null) || 'computed' in declared) return { default: declared };
+    throw new Unsupported(`${where}: a default of an optional type is {literal: null} or {computed} (U-2)`);
+  }
+  const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
+  if (unit?.kind === 'alias' && unit.origin === 'value' && 'literal' in declared && declared.literal === null) return { default: declared };
   const container = typeof type !== 'object' ? undefined : 'list' in type ? 'list' : 'map' in type || 'keyed_map' in type ? 'map' : undefined;
   if ('empty' in declared) {
     if (declared.empty !== container) throw new Unsupported(`${where}: the default {empty: ${JSON.stringify(declared.empty)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
@@ -1172,6 +1179,10 @@ function declaredDefault(item: Parameter | Field, where: string, field: boolean)
   if (item.default_core === undefined) throw new Unsupported(`${where}: a {literal} or {const} default names the constant of the core in default_core (U-2)`);
   if ('literal' in declared) {
     const value = declared.literal;
+    if (unit?.kind === 'enum') {
+      if (!(unit.variants ?? []).some((v) => v.value === value)) throw new Unsupported(`${where}: the default {literal: ${JSON.stringify(value)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
+      return { default: declared, defaultCore: item.default_core };
+    }
     const fits =
       (type === 'bool' && typeof value === 'boolean') ||
       ((type === 'uint' || type === 'int' || type === 'int64') && typeof value === 'number' && Number.isSafeInteger(value) && (type !== 'uint' || value >= 0)) ||
@@ -1191,8 +1202,17 @@ function defaultArg(model: Model, type: Type, variable: string): string {
   return `${variable}.as_ref()`;
 }
 
-// The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2).
-export const argType = (model: Model, arg: Arg): string => (arg.default === undefined ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
+// GN-6i: whether an argument with a default is of an optional type, whose own Option the core takes: a value that was
+// left out and a null are both None.
+export const ownOption = (arg: { type: Type; default?: Default }): boolean => arg.default !== undefined && typeof arg.type === 'object' && 'optional' in arg.type;
+
+// The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2), and the optional type
+// itself for one of an optional type.
+export const argType = (model: Model, arg: Arg): string => (arg.default === undefined || ownOption(arg) ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
+
+// U-2, GN-6i: the conversion of an argument that may be left out, from the call of in_default; the Option of an
+// optional type is flattened, so that a value left out and a null are both None.
+export const leftOut = (arg: Arg, call: string): string => (ownOption(arg) ? `${call}.map(Option::flatten)` : call);
 
 // G-5: the name that a case gives a fault injection point of this contract, <library>.<id> with the library in
 // snake_case.

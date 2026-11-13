@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -472,7 +472,7 @@ function entryRust(model: Model, fn: Fn): string {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     const subject = rustString(langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
+    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : leftOut(arg, `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);

@@ -3,7 +3,7 @@
 // to equal the constant of the core that default_core names.
 
 import type { Type } from '../contract.ts';
-import { type Arg, type Fn, type Model, type Refusals, Unsupported } from './model.ts';
+import { type Arg, type Fn, type Model, type Refusals, Unsupported, rustType, rustVariant, unitOf } from './model.ts';
 import { rustString } from './text.ts';
 
 // Every argument of the model that has a default, with the member that takes it; a field of a record once per member.
@@ -28,11 +28,18 @@ export function defaultAsserts(model: Model): string {
   let text = false;
   for (const { arg } of defaulted(model)) {
     const declared = declaredValue(model, arg);
-    if (declared === undefined || arg.defaultCore === undefined) continue;
+    // A {literal: null} default names no constant: the core decides what no value is (GN-6i).
+    if (declared === undefined || arg.defaultCore === undefined || declared.value === null) continue;
     const core = arg.defaultCore;
     // A {const} default whose constant is default_core itself is asserted by the constant (U-5).
     if (declared.core === core) continue;
-    if (arg.type === 'text') {
+    const unit = unitOf(model, arg.type);
+    if (unit?.kind === 'enum') {
+      // GN-6i: an enum constant is compared by its variant, which a const context matches.
+      const variant = (unit.variants ?? []).find((v) => v.value === declared.value);
+      if (variant === undefined) throw new Unsupported(`the default {literal: ${JSON.stringify(declared.value)}} names no variant of ${unit.id} (U-2)`);
+      lines.add(`const _: () = assert!(matches!(${core}, ${rustType(model, arg.type)}::${rustVariant(variant.name)}));`);
+    } else if (arg.type === 'text') {
       text = true;
       lines.add(`const _: () = assert!(same_text(${core}, ${declared.core ?? rustString(String(declared.value))}));`);
     } else if (arg.type === 'bool' && declared.core === undefined) {

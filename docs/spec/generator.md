@@ -327,7 +327,8 @@ the design ids are those of the binding design.
   map, enum, value type or `optional`, a `{literal}` or `{const}` default without `default_core` other than
   `{literal: null}` of an `optional` or a value type,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
-  also has the result form.
+  also has the result form, other than a default of an `optional` type: the result form of such a field is the value of
+  its optional type, so a `None` of the core is the null of the language.
 - **GN-6j** A parameter of type `source` (T-1), also inside `optional`, takes a text or bytes and reaches the core as
   `&[u8]`, which the core judges: Python takes a `str` as its UTF-8, or a value that PyO3 reads as bytes; Node takes a
   string as its UTF-8, or a `Uint8Array`; PHP takes a string, whose bytes are passed as they are, because a PHP string
