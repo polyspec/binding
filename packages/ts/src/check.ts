@@ -874,14 +874,13 @@ class Checker {
       for (const parameter of member.parameters ?? []) inner.push(parameter.type);
       if (member.returns !== undefined) inner.push(member.returns);
     }
+    // A named type of the owner (types) is the unit that it names. A unit of a third library is checked by the same
+    // rule against the contract of that library, which the check reads with the others (T-3).
+    const named = dependency.types as Record<string, { library: string; unit: string } | undefined>;
     for (const type of inner) {
       for (const part of Checker.walk(type)) {
-        if (typeof part !== 'object' || !('unit' in part)) continue;
-        if (part.library !== undefined && part.library !== library) {
-          this.report('CK-9', path, `${library} ${id} uses ${part.library} ${part.unit}; it may use only units of ${library} (T-3)`);
-        } else {
-          this.foreignUnit(library, part.unit, path, seen);
-        }
+        const unitOf = typeof part === 'string' ? named[part] : typeof part === 'object' && 'unit' in part ? { library: part.library ?? library, unit: part.unit } : undefined;
+        if (unitOf !== undefined) this.foreignUnit(unitOf.library, unitOf.unit, path, seen);
       }
     }
   }

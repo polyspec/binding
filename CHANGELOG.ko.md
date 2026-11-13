@@ -1,11 +1,27 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: cff891a6adfe67db37e06daca009df88f1716c930851ab1cc2f8c89be99c9e41 -->
+<!-- source-sha256: ea09c42f550aca201ec6c174da23501b7922ff66a3743ad8c388c7aeb4c16c84 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약이 다른 라이브러리의 callback unit을 받고 그 member가 제3 라이브러리의 unit을 그 라이브러리 계약의 이름 있는
+  타입(`types`)으로 이름하면, 제3 라이브러리에 그 unit이 있는데도 모든 target이 "`<library>.<member>` returns: `<third>`
+  has no unit `<unit>` (T-3)"로 거부되었다. `binding`이 계약 자신이 이름하는 라이브러리의 계약만 읽었기 때문이다. member가
+  제3 라이브러리를 타입으로 이름하면 자기 라이브러리의 unit만 쓸 수 있다는 CK-9의 finding이었다. 이제 `binding`은 계약을
+  닫힘까지 읽는다. 곧 읽은 계약이 이름하는 라이브러리의 계약을 Cargo가 코어에 대해 해석한 package에서 읽고, `scaffold`는
+  의존 줄의 `path`를 그것을 이름하는 코어에서 따라간다. CK-9는 제3 라이브러리의 unit을, 이름 있는 타입이 이름하는 것도, 그
+  소유자의 계약에 대해 확인하고 소유자에 없는 unit을 보고한다. 계약이 서로를 순환으로 이름하는 라이브러리는 그 이름과 함께
+  거부한다. manifest는 생성된 코드가 그 타입을 이름하는 라이브러리를 적는다(GN-3e, GN-15f). 그런 callback unit의 member가
+  이름하는 라이브러리도 바인딩 crate의 Cargo manifest에 의존 줄을, `pyproject.toml`에 package를 가지며, 그 타입이 record나 값
+  class이면 `go.mod`가 require한다. 코어는 그 라이브러리를 자기 manifest에 적는다. `scaffold`는 이제 모든 target에서 `path`가
+  없는 의존의 계약을 Cargo에 묻고, Cargo가 실패하면 계약 자신이 이름하는 라이브러리로 package를 쓴 뒤 그 사실을 적은 문장과
+  상태 1로 실패한다. `tests/e2e`의 어느 계약도 다른 라이브러리의 callback unit을 받지 않으므로 이 꼴을 컴파일하는
+  end-to-end 실행은 없다. Go와 WASM은 다른 라이브러리의 callback unit을 이름으로 거부한다(GN-6s). `make test-ts`로
+  확인했다. 새 테스트 둘과 `cargo metadata` 실패의 바뀐 테스트는 변경 전에 실패했고(425개 가운데 3개), 변경 후 425개
+  가운데 425개가 통과한다. 다른 라이브러리의 callback이 제3 라이브러리의 값을 주는 레포의 `binding generate`는 그 거부를 더
+  이름하지 않는다.
 - target go가 있는 계약이, 계약에 Go module(`packages.go`)을 적지 않은 라이브러리의 record나 값 class를 이름하면
   `binding generate`가 stack trace와 함께 멈췄다("Cannot read properties of undefined"). Go 생성기가 그 계약에 module이
   있는지 묻지 않고 읽었기 때문이다. `scaffold`와 `check`는 이미 이 이유로 Go module을 이름했다. 이제 `generate`는 Go

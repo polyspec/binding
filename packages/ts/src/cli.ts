@@ -68,12 +68,33 @@ function cargoContracts(contract: unknown, crateDir: string): { found: Map<strin
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-  for (const library of wanted) {
+  // T-3: the contract of a library names the libraries of its own types, so the contracts are read to the closure: a
+  // library that only a unit of another library names, such as the value that a callback of that library gives, is a
+  // package of the same resolution of Cargo.
+  closure(contract, found, (library) => {
     const crate = metadata.packages.find((p) => p.name === `polyspec-${library}`);
-    if (crate === undefined) continue;
-    found.set(library, JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')));
-  }
+    return crate === undefined ? undefined : JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')) as unknown;
+  });
   return { found };
+}
+
+// T-3: reads into found the contract of each library that the contract names and of each library that one of those
+// contracts names, to the closure; read gives the contract of a library, with the libraries that named it from the
+// contract of the command on, or undefined when it is not found. Libraries that name each other in a cycle are refused
+// by name: Cargo resolves no cycle of crates, so such contracts describe no cores.
+function closure(contract: unknown, found: Map<string, unknown>, read: (library: string, from: string[]) => unknown): void {
+  const own = String((contract as { library?: unknown }).library);
+  const visit = (of: unknown, path: string[]): void => {
+    for (const library of libraries(of)) {
+      if (path.includes(library)) fail(`the contracts of the libraries ${[...path.slice(path.indexOf(library)), library].join(' -> ')} name each other in a cycle, which is not generated (T-3)`);
+      if (found.has(library)) continue;
+      const other = read(library, path);
+      if (other === undefined) continue;
+      found.set(library, other);
+      visit(other, [...path, library]);
+    }
+  };
+  visit(contract, [own]);
 }
 
 // check and generate read the contracts for every target, so a failure of Cargo stops them.
@@ -196,21 +217,31 @@ if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${ch
 let metadataFailure: string | undefined;
 function scaffolded(): Map<string, unknown> {
   const found = new Map<string, unknown>();
-  if (!checked.targets.includes('go')) return found;
+  // The directory of the core of each library that a path names, from the directory of the core that names it.
+  const dirs = new Map<string, string>([[checked.library, join(root, checked.core.path)]]);
   let others = false;
-  for (const library of libraries(contract)) {
-    const spec = manifest.dependencies?.[`polyspec-${library}`];
-    const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
-    if (typeof path === 'string') {
-      // A contract that is not there is not found: the Go module, which alone reads it, is then named as not written
-      // (GN-3e), and the packages of the other targets are written.
-      const file = join(root, checked.core.path, path, 'interface.json');
-      if (existsSync(file)) found.set(library, JSON.parse(readFileSync(file, 'utf8')));
+  closure(contract, found, (library, from) => {
+    const dir = dirs.get(from[from.length - 1] ?? '');
+    if (dir === undefined) return undefined;
+    let spec: unknown;
+    try {
+      spec = (parse(readFileSync(join(dir, 'Cargo.toml'), 'utf8')) as { dependencies?: Record<string, unknown> }).dependencies?.[`polyspec-${library}`];
+    } catch {
+      spec = undefined;
     }
-    else others = true;
-  }
-  // Only go.mod reads these contracts, so a failure of Cargo leaves them not found: the Go module is then named as not
-  // written with the failure, and the packages of the other targets are written.
+    const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
+    // A contract that is not there is not found: the package that reads it is then named as not written (GN-3e), and
+    // the other packages are written.
+    const file = typeof path === 'string' ? join(dir, path, 'interface.json') : undefined;
+    if (file !== undefined && existsSync(file)) {
+      dirs.set(library, join(dir, path as string));
+      return JSON.parse(readFileSync(file, 'utf8')) as unknown;
+    }
+    if (typeof path !== 'string') others = true;
+    return undefined;
+  });
+  // A failure of Cargo leaves the contracts of the other dependencies not found: the Go module is then named as not
+  // written with the failure, and the other packages are written with the libraries that the contract itself names.
   if (others) {
     const cargo = cargoContracts(contract, join(root, checked.core.path));
     metadataFailure = cargo.failure;
@@ -279,7 +310,7 @@ if (command === 'check') {
   }
   // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
   if (options.has('--release')) {
-    for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles))) {
+    for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles), foreign as ReadonlyMap<string, Contract>)) {
       differs = true;
       process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-70 ${message}\n`);
     }
@@ -338,7 +369,10 @@ if (command === 'scaffold') {
   }
   // GN-3e: a package that cannot be written is named with its reason after the others are written.
   for (const { path, message } of tracked.refused) process.stderr.write(`binding: ${path}: not written: ${message}\n`);
-  process.exit(tracked.refused.length > 0 ? 1 : 0);
+  // GN-3e: without the contracts that Cargo finds, the libraries that only a callback unit of another library names are
+  // not known, so the packages are written with the libraries that the contract itself names and the run fails.
+  if (metadataFailure !== undefined) process.stderr.write(`binding: the contracts of the libraries that the contract names are not all found, so the packages are written without the libraries that only a callback unit of another library names (GN-3e): ${metadataFailure}\n`);
+  process.exit(tracked.refused.length > 0 || metadataFailure !== undefined ? 1 : 0);
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };

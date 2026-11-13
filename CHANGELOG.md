@@ -5,6 +5,25 @@
 
 ## Unreleased
 
+- A contract that takes a callback unit of another library whose member names a unit of a third library, by a named
+  type of that library's contract (`types`), was refused for every target as "`<library>.<member>` returns: `<third>`
+  has no unit `<unit>` (T-3)", although the third library has the unit: `binding` read only the contracts of the
+  libraries that the contract itself names. A member that named the third library by a type instead was a finding of
+  CK-9, "it may use only units of" its own library. `binding` now reads the contracts to the closure, the contract
+  of each library that a read contract names, among the packages that Cargo resolved for the core, and `scaffold`
+  follows the `path` of each dependency line from the core that names it. CK-9 checks a unit of a third library, also
+  one that a named type names, against the contract of its owner, and reports a unit that the owner does not have.
+  Libraries whose contracts name each other in a cycle are refused with their names. The manifests name the
+  libraries whose types the generated code names (GN-3e, GN-15f): also a library that the members of such a callback
+  unit name gets its dependency line in the Cargo manifest of each binding crate and its package in `pyproject.toml`,
+  and `go.mod` requires it when the type is a record or a value class; the core names that library in its own
+  manifest. `scaffold` now asks Cargo for the contracts of the dependencies without a `path` for every target, and a
+  failure of Cargo writes the packages with the libraries that the contract itself names and fails with status 1 and
+  a sentence that says so. No contract of `tests/e2e` takes a callback unit of another library, so no end-to-end run
+  compiles this form; Go and WASM refuse a callback unit of another library by name (GN-6s). Verified by
+  `make test-ts`: the two new tests and the changed test of the failing `cargo metadata` failed before the change (3
+  of 425), and 425 of 425 pass with it; `binding generate` of a repository whose callback of another library gives a
+  value of a third one no longer names the refusal.
 - `binding generate` of a contract with the target go that names a record or a value class of a library whose
   contract names no Go module (`packages.go`) stopped with a stack trace ("Cannot read properties of undefined"),
   because the Go generator read the module of that contract without asking whether it has one; `scaffold` and `check`

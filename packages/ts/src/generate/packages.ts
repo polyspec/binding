@@ -7,7 +7,7 @@
 import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction, nativeRoundTrip, Unsupported } from './model.ts';
+import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported } from './model.ts';
 
 // GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
 // (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
@@ -101,16 +101,37 @@ const tomlValue = (value: unknown): string => {
   return `{ ${Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k} = ${tomlValue(v)}`).join(', ')} }`;
 };
 
-export function namedLibraries(contract: Contract): string[] {
-  const found = new Set<string>();
-  const walk = (value: unknown, key: string): void => {
-    if (Array.isArray(value)) value.forEach((item) => walk(item, key));
-    else if (typeof value === 'object' && value !== null) for (const [k, v] of Object.entries(value)) walk(v, k);
-    else if (key === 'library' && typeof value === 'string' && value !== contract.library) found.add(value);
+// T-3: the libraries whose types the binding of the contract converts, each of which its manifests name (GN-3e): the
+// libraries that the contract names, and the libraries that the members of a callback unit of another library name
+// when the contract takes that unit, because the binding wraps the callback and converts the values of its members
+// (GN-6s). foreign: the contracts of the libraries; a library whose contract is not there adds none.
+export function namedLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
+  return [...new Set(namedUnits(contract, foreign).map((named) => named.library))].sort();
+}
+
+// The units of other libraries in the types that the binding converts (namedLibraries), each once.
+function namedUnits(contract: Contract, foreign: ReadonlyMap<string, Contract>): { library: string; unit: string }[] {
+  const found = new Map<string, { library: string; unit: string }>();
+  const libraries = new Set<string>();
+  const walk = (value: unknown, key: string, own: string): void => {
+    if (Array.isArray(value)) value.forEach((item) => walk(item, key, own));
+    else if (typeof value === 'object' && value !== null) {
+      const { unit, library } = value as { unit?: unknown; library?: unknown };
+      if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library && !found.has(`${library}\u0000${unit}`)) {
+        found.set(`${library}\u0000${unit}`, { library, unit });
+        // GN-6s: the members of a callback unit of another library, with the named types of its contract resolved; a
+        // unit of its own library without a library is that library's unit.
+        const owner = foreign.get(library);
+        const callback = owner === undefined ? undefined : resolveNamedTypes(owner).units.find((u) => u.id === unit && u.kind === 'interface' && u.origin === 'callback');
+        for (const member of callback?.members ?? []) walk([member.parameters ?? [], member.returns ?? 'none'], '', library);
+      }
+      for (const [k, v] of Object.entries(value)) walk(v, k, own);
+    } else if (key === 'library' && typeof value === 'string' && value !== contract.library) libraries.add(value);
   };
-  walk(contract.units, '');
-  walk(contract.types, '');
-  return [...found].sort();
+  walk(contract.units, '', contract.library);
+  walk(contract.types, '', contract.library);
+  // A library that the contract names without a unit, such as the owner of a kind, has no unit here.
+  return [...found.values(), ...[...libraries].filter((library) => ![...found.values()].some((n) => n.library === library)).map((library) => ({ library, unit: '' }))];
 }
 
 // T-3: the dependency lines of the cores of the libraries whose types the contract names, as the core names them.
@@ -119,8 +140,8 @@ export function namedLibraries(contract: Contract): string[] {
 // ffi two).
 // G-5: also the cores of the other libraries whose fault injection points a case arms (armed), whose feature fault-test
 // the binding crate turns on.
-function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number, armed: string[]): string[] {
-  return [...new Set([...namedLibraries(contract), ...armed])].sort().map((library) => {
+function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number, armed: string[], foreign: ReadonlyMap<string, Contract>): string[] {
+  return [...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => {
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
     if (spec === undefined) throw new Refused(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names or whose fault injection points a case arms (T-3, G-5)`);
@@ -260,7 +281,7 @@ const developmentFinding = (crate: string, named: string): string =>
 // CK-70: the development forms among the dependency lines of the core on the libraries whose types the contract names
 // or whose points a case arms, each a finding of the check of a release (GN-3e). A library that the core does not
 // depend on is no finding here: no package is written for it, which CK-19 reports.
-export function releaseFindings(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>): string[] {
+export function releaseFindings(contract: Contract, coreDependencies: CoreDependencies, armedPoints: Iterable<string>, foreign: ReadonlyMap<string, Contract> = new Map()): string[] {
   let armed: string[] = [];
   try {
     armed = armedLibraries(contract, coreDependencies, armedPoints);
@@ -269,7 +290,7 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
   }
   // The line on polyspec-binding-core of the core, when it has one; the lines of the binding crates are read from
   // their tracked manifests (bindingCoreFinding).
-  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
+  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract, foreign), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
     if (!coreDependencies.has(crate)) return [];
     const form = dependencyForm(coreDependencies.get(crate));
     return form.version !== undefined ? [] : [developmentFinding(crate, form.named)];
@@ -337,7 +358,7 @@ export function trackedResult(contract: Contract, version: string, coreDependenc
     // Every binding crate names the features of the armed cores, so none is written.
     return { files, refused: [{ path: componentBase(contract), message: error.message }] };
   }
-  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed);
+  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed, foreign);
   // L-2a: the WASM crate is wasm/ of the Node package, native/wasm/ of a host Node package.
   const wasmDepth = isHost(contract, 'node') ? 2 : 1;
   // L-2a: a host package's language manifest is the host's, which check only reads (hostRequirements).
@@ -359,8 +380,8 @@ build-backend = "maturin"
 [project]
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
-requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract).length === 0 ? '' : `
-dependencies = [${namedLibraries(contract).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
+requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract, foreign).length === 0 ? '' : `
+dependencies = [${namedLibraries(contract, foreign).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}
@@ -385,7 +406,7 @@ python-source = "generated/python"
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
     files.set('packages/ts/wasm/Cargo.toml', manifest(contract, core, armed, 'wasm', `${extensionName(contract)}_wasm`, [
-      ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
+      ...foreignCrates(contract, coreDependencies, wasmDepth, armed, foreign),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
       // GN-6n: the promise of a member with wait async_driver; the release of wasm-bindgen and js-sys above.
@@ -421,7 +442,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n${goRequires(contract, coreDependencies, foreign)}`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, core, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, core, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed, foreign), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));
@@ -519,20 +540,13 @@ export const GO_VERSION = '1.27.3';
 // module go.mod requires, because the Go binding imports the package of each (B2.87).
 function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
   const found = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) value.forEach(walk);
-    else if (typeof value === 'object' && value !== null) {
-      const { unit, library } = value as { unit?: unknown; library?: unknown };
-      if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library) {
-        const owner = foreign.get(library);
-        if (owner === undefined) throw new Refused(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-        if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
-      }
-      Object.values(value).forEach(walk);
-    }
-  };
-  walk(contract.units);
-  walk(contract.types);
+  // Also the records and the value classes that the members of a callback unit of another library name (namedUnits).
+  for (const { library, unit } of namedUnits(contract, foreign)) {
+    if (unit === '') continue;
+    const owner = foreign.get(library);
+    if (owner === undefined) throw new Refused(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
+    if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
+  }
   return [...found].sort();
 }
 
