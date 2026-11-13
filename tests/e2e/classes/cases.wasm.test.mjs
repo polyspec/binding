@@ -53,8 +53,10 @@ test('a member called on another receiver is refused (GN-18a)', () => {
 });
 
 // GN-18a: a FinalizationRegistry drops the value of a collected instance, and its handle is used again. The test needs
-// the collector, which node exposes with --expose-gc.
-test('the value of a collected instance is dropped and its handle is used again (GN-18a)', { skip: typeof globalThis.gc !== 'function' }, async () => {
+// the collector, which node exposes with --expose-gc (scripts/e2e.mts passes it); without it the test fails, because a
+// skipped test verifies nothing.
+test('the value of a collected instance is dropped and its handle is used again (GN-18a)', async () => {
+  assert.equal(typeof globalThis.gc, 'function', 'node runs this test with --expose-gc');
   const glue = await import(new URL('./classes_wasm.js', import.meta.resolve('@polyspec/classes/wasm')).href);
   // The handle that the next instance takes, read through the module's export of the constructor.
   const next = () => {

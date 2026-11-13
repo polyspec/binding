@@ -31,5 +31,10 @@ rules of this repository.
   Enforced by: `make install`, whose `mise install --locked` fails a tool that `mise.lock` does not pin.
 - Own: Every check of the contract check has a test that fails for its own reason (PRINCIPLES P19).
   Enforced by: `npm test` in `packages/ts`
+- Own: The end-to-end check runs every target of the contract on the tools of the checkout, and a target whose tool
+  is missing fails the run with the target, the tool and `make install` (GN-14a). No switch leaves a target out, and a
+  report of a run names a lint apart from a test: a lint runs no code, so it verifies no target. Why: a target that did
+  not run is not verified while the run would look passed.
+  Enforced by: `make e2e`, which fails before its first step when a tool is missing and at its end when a target ran no test.
 - Own: A change of the generator runs the end-to-end check of `docs/spec/generator.md` (GN-14) before its commit.
-  Enforced by: none, the end-to-end check needs PHP, Python and Node with their runners, which no unit test owns.
+  Enforced by: none, the end-to-end check needs every target with its runner, which no unit test owns.

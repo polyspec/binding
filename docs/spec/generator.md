@@ -537,22 +537,38 @@ the design ids are those of the binding design.
 
 ## End-to-end check
 
-- **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
-  [--add-targets go,wasm]` (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`, which runs
+  `scripts/e2e.mts` on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses, whose contract has the target wasm (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
-  `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
+  `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
   builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
-  and `go vet`) and on `node --test` through the subpath `./wasm`. `--add-targets` adds those targets to the copy
+  and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. `ADD_TARGETS` adds those targets to the copy
   with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands). Before Cargo first resolves the copy, the check writes the commit of the checkout into the entry of
   `polyspec-binding-core` in `Cargo.lock`, or writes a lock of that entry alone when the copy has none: Cargo asks
   GitHub for the head of the branch first, which is the pushed commit, and a manifest that `binding scaffold` writes may
   need a feature of `binding_core` that only the checkout has.
+- **GN-14a** The end-to-end check runs every target of the contract. Before any step it finds the tool of each target
+  among the tools that the checkout pins and `make install` installs (AGENTS.md): Python 3.14 of `mise.toml` for
+  python, npm of `mise.toml` and the package of the Node addon for node, the wasm-bindgen CLI of `mise.toml` of the release
+  of the crate and the Rust target `wasm32-unknown-unknown` of `rust-toolchain.toml` for wasm, the PHP of `.php-version`
+  (its minor is compared, because the PHP of the machine is wrapped as it is) and the PHPUnit of `config/phpunit` for php,
+  and Go of `mise.toml` with `llvm-nm` of the component `llvm-tools` for go (BD-10 (d)); the check itself runs on the
+  Node.js of `mise.toml`. When a tool is missing, the check fails before it copies anything and names the target, the
+  tool, the file that pins it and `make install`. No switch, option or environment variable leaves a target out or runs
+  it on another tool, and no generated or case test of a target is skipped: a test that needs a setting of its runner,
+  such as the collector of GN-18a, gets it from the check and fails without it. Why: a target that did not run is not
+  verified while the run would look passed, and a result of a tool that the checkout does not pin cannot be repeated.
+  The run ends with what it did for each target, a lint apart from the tests: the lint of the workspace on the host, `php
+  -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
+  counts as a test only when its JUnit log names a test, and a target for which no test ran fails the run. On macOS the PHP extension links only when the linker leaves the PHP symbols to the
+  load (`-undefined dynamic_lookup`); until the PHP binding crate has the `build.rs` of BD-9, that setting is not in a
+  tracked file and a run on macOS gives it by hand, which the report of the run states.

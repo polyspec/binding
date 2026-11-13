@@ -1,9 +1,14 @@
 // The end-to-end check of the generator on one repository: generate its bindings, build them, install each package
 // and run the generated tests (G-5) and, where tests/e2e/<library> holds them, the contract cases (V-1) on each
-// language's standard runner.
+// language's standard runner, for every target of the contract (GN-14).
 //
-//   node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
-//                        [--dep <checkout>]... [--add-targets go,wasm]
+//   make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
+//
+// which runs node scripts/e2e.mts --repo <checkout> --work <directory> [--dep <checkout>]... [--add-targets go,wasm] with
+// the Node.js of the checkout and the environment of its mise. Every tool is the one that the checkout pins and `make
+// install` installs into var/tools (AGENTS.md): before any step the check finds the tool of each target and fails, naming
+// the target, the tool and `make install`, when one is missing. No switch leaves a target out, because a target that did
+// not run is not verified while the run would look passed.
 //
 // --add-targets adds targets that the repository's contract does not have yet to the copy of --repo, with the package
 // entry that P-1 names (the Go module github.com/polyspec/<repository>/packages/go; WASM in the npm package of Node,
@@ -22,14 +27,10 @@
 // still lacks the arguments of its member is left out; both are printed, and a run that left a case out fails at its
 // end, after every step ran.
 //
-// BINDING_E2E_IGNORE_RUST_VERSION=1 lets cargo build crates whose rust-version is newer than the installed toolchain,
-// for a machine that cannot install the pinned one; the run says so. BINDING_E2E_LOCAL_GO=1 writes the release of the
-// installed Go into the go directive of the copy's go.mod, for a machine without the pinned Go; the run says so too.
-// A run with the target wasm needs the Rust target wasm32-unknown-unknown and the wasm-bindgen CLI of the crate's
-// release; BINDING_E2E_SKIP_WASM=1 runs the rest without building it (the WASM crate is still linted on the host) and
-// says that the WASM tests did not run.
+// The run ends with what it did for each target, a lint and the tests apart: a lint reads the code and runs nothing, so
+// only the tests verify a target, and a target without a test that ran fails the run.
 
-import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
+import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { libraryParts } from '../packages/ts/src/check.ts';
@@ -46,23 +47,21 @@ for (let i = 2; i < process.argv.length; i += 2) {
 }
 const repo = args.get('--repo');
 const workArg = args.get('--work');
-const phpunit = args.get('--phpunit');
-const python = args.get('--python') ?? 'python3';
 const addTargets = (args.get('--add-targets') ?? '').split(',').filter((t) => t !== '') as Lang[];
 for (const added of addTargets) {
   if (!['go', 'wasm'].includes(added)) throw new Error(`--add-targets takes go and wasm, not ${added}`);
 }
-if (repo === undefined || workArg === undefined || phpunit === undefined) {
-  process.stderr.write('usage: node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--dep <checkout>]...\n');
+for (const key of args.keys()) {
+  if (!['--repo', '--work', '--add-targets'].includes(key)) throw new Error(`unknown option ${key}; the options are --repo, --work, --dep and --add-targets`);
+}
+if (repo === undefined || workArg === undefined) {
+  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]\n');
   process.exit(2);
 }
 const work = resolve(workArg);
 const binding = new URL('..', import.meta.url).pathname;
 const cli = join(binding, 'packages/ts/src/cli.ts');
 const target = join(work, 'target');
-const ignoreRustVersion = process.env['BINDING_E2E_IGNORE_RUST_VERSION'] === '1';
-const cargoFlags = ignoreRustVersion ? ['--ignore-rust-version'] : [];
-if (ignoreRustVersion) process.stdout.write('note: cargo ignores rust-version (BINDING_E2E_IGNORE_RUST_VERSION=1)\n');
 
 // The Git dependencies on polyspec repositories resolve to the checkouts beside this one: Git, which Cargo runs for the
 // fetch, reads https://github.com/polyspec/<name> as <parent of this checkout>/<name> (url.<base>.insteadOf, set for
@@ -241,7 +240,7 @@ impl binding_core::Kinds for Error {
       process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
     }
   }
-  run('cargo', ['test', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
+  run('cargo', ['test', '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--quiet']);
   // The check follows the core's build, which pins binding_core in Cargo.lock (CK-20). A git dependency moves to the
   // commit of this binding, as the repository does when it takes this binding.
   const lockText = existsSync(join(copy, 'Cargo.lock')) ? readFileSync(join(copy, 'Cargo.lock'), 'utf8') : '';
@@ -339,6 +338,69 @@ const testFeatures = (contract: Contract): string =>
 
 const extensionOf = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
+// The tools of the checkout (AGENTS.md), found before any step: a target whose tool is missing fails the run here, with
+// the target, the tool and the file that pins it, so no target is left out (GN-14). A tool runs by its absolute path.
+const targetsOf = (checkout: string, added: Lang[]): Lang[] => {
+  const declared = (JSON.parse(readFileSync(join(resolve(checkout), 'packages/rust/interface.json'), 'utf8')) as Contract).targets;
+  return [...declared, ...added.filter((t) => !declared.includes(t))];
+};
+const targets = targetsOf(repo, addTargets);
+const missing: string[] = [];
+const need = (forTarget: string, tool: string, pinned: string, found: string | undefined): string => {
+  if (found === undefined) missing.push(`the target ${forTarget} needs ${tool} (${pinned})`);
+  return found ?? '';
+};
+const tools = join(binding, 'var/tools');
+const file = (path: string): string | undefined => (existsSync(path) ? path : undefined);
+// mise answers the absolute path of a command of mise.toml that mise.lock pins and var/tools holds.
+const miseWhich = (command: string): string | undefined => {
+  if (existsSync(join(tools, 'bin/mise')) && process.env['MISE_GLOBAL_CONFIG_FILE'] === join(binding, 'mise.toml')) {
+    const found = spawnSync(join(tools, 'bin/mise'), ['which', command], { encoding: 'utf8' });
+    if (found.status === 0 && found.stdout.trim() !== '') return found.stdout.trim();
+  }
+  return undefined;
+};
+if (!process.execPath.startsWith(`${tools}/`)) {
+  missing.push(`the check runs on the Node.js of mise.toml, not ${process.execPath}: start it with make e2e`);
+}
+if (process.env['MISE_GLOBAL_CONFIG_FILE'] !== join(binding, 'mise.toml')) {
+  missing.push('the check reads the tools of mise.toml with the environment of the mise of the checkout: start it with make e2e');
+}
+const tsc = need('node', 'the TypeScript compiler', 'packages/ts/package-lock.json', file(join(binding, 'packages/ts/node_modules/.bin/tsc')));
+const npmTool = targets.includes('node') || targets.includes('wasm') ? need('node', 'npm', 'mise.toml', file(join(tools, 'bin/npm'))) : '';
+const pythonTool = targets.includes('python') ? need('python', 'python3', 'mise.toml', miseWhich('python3')) : '';
+const phpTool = targets.includes('php') ? need('php', 'php', '.php-version', file(join(tools, 'bin/php'))) : '';
+// The PHP entry of the PHPUnit of config/phpunit, which php runs with the extensions loaded (var/tools/bin/phpunit is a
+// shell wrapper that php would print as text).
+const phpunit = targets.includes('php') ? need('php', 'phpunit', 'config/phpunit', file(join(tools, 'phpunit/vendor/bin/phpunit'))) : '';
+const goTool = targets.includes('go') ? need('go', 'go', 'mise.toml', miseWhich('go')) : '';
+const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhich('gofmt')) : '';
+// BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
+const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
+const llvmNm = targets.includes('go') ? need('go', 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))) : '';
+const wasmBindgen = targets.includes('wasm') ? need('wasm', 'the wasm-bindgen CLI', 'mise.toml', miseWhich('wasm-bindgen')) : '';
+if (targets.includes('wasm')) {
+  const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' });
+  const installed = libdir.status === 0 && existsSync(libdir.stdout.trim()) && readdirSync(libdir.stdout.trim()).some((name) => name.startsWith('libcore-'));
+  need('wasm', 'the Rust target wasm32-unknown-unknown', 'rust-toolchain.toml', installed ? 'installed' : undefined);
+}
+// The PHP of the machine is wrapped as it is (kit), so its minor is compared with .php-version here.
+if (phpTool !== '') {
+  const want = readFileSync(join(binding, '.php-version'), 'utf8').trim();
+  const minor = spawnSync(phpTool, ['-r', 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'], { encoding: 'utf8' }).stdout.trim();
+  if (minor !== want) missing.push(`the target php needs PHP ${want} (.php-version); var/tools/bin/php is PHP ${minor || 'that does not run'}`);
+}
+if (missing.length > 0) {
+  process.stderr.write(`the tools of the targets ${targets.join(', ')} are not all installed; run make install (AGENTS.md):\n${missing.map((m) => `  ${m}\n`).join('')}`);
+  process.exit(1);
+}
+
+// What ran for each target: a lint reads the code, a test runs it; only a test verifies a target.
+const ran = new Map<Lang, { lint: string[]; test: string[] }>(targets.map((t) => [t, { lint: [], test: [] }]));
+const record = (t: Lang, kind: 'lint' | 'test', what: string): void => {
+  ran.get(t)?.[kind].push(what);
+};
+
 const dependencies = deps.map((dep) => prepare(dep));
 const main = prepare(repo, addTargets);
 const { contract, copy } = main;
@@ -346,7 +408,8 @@ const library = contract.library;
 const crate = contract.core.crate;
 
 step('lint the generated crates');
-run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', testFeatures(contract), '--', '-D', 'warnings']);
+run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', testFeatures(contract), '--', '-D', 'warnings']);
+for (const t of targets) record(t, 'lint', 'cargo clippy of the workspace on the host');
 
 const [cases] = main.caseFiles;
 const e2e = join(binding, 'tests/e2e', library);
@@ -355,13 +418,14 @@ const e2e = join(binding, 'tests/e2e', library);
 const caseRunners = existsSync(join(e2e, 'cases.test.mjs')) && cases !== undefined;
 if (!caseRunners) process.stdout.write(`note: tests/e2e/${library} holds no case runners; the generated tests run alone\n`);
 
+if (targets.includes('python')) {
 step('Python: build the wheels, install them, run the generated tests and the cases');
 const venv = join(work, 'venv');
-run(python, ['-m', 'venv', '--clear', venv]);
+run(pythonTool, ['-m', 'venv', '--clear', venv]);
 run(join(venv, 'bin/pip'), ['install', '-q', 'maturin==1.16.0']);
 for (const prepared of [...dependencies, main]) {
   const wheels = join(work, 'wheels');
-  run(join(venv, 'bin/maturin'), ['build', '--features', testFeatures(prepared.contract), '--out', wheels, ...cargoFlags], { cwd: join(prepared.copy, 'packages/python') });
+  run(join(venv, 'bin/maturin'), ['build', '--features', testFeatures(prepared.contract), '--out', wheels], { cwd: join(prepared.copy, 'packages/python') });
   const python = prepared.contract.packages['python'] as { package: string };
   const prefix = `${python.package.replaceAll('-', '_')}-`;
   const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
@@ -370,110 +434,138 @@ for (const prepared of [...dependencies, main]) {
 }
 const generatedPython = join(copy, 'packages/python/generated/tests');
 run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython], { cwd: work });
-if (caseRunners) run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
+record('python', 'test', 'the generated tests on unittest');
+if (caseRunners) {
+  run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
+  record('python', 'test', 'the contract cases on unittest');
+}
+}
 
 const lib = (suffix: string): string => `${crate}-${suffix}`.replaceAll('-', '_');
 // Cargo names a cdylib lib<name>.so on Linux and lib<name>.dylib on macOS.
 const dylib = process.platform === 'darwin' ? 'dylib' : 'so';
-let wasmBuilt = false;
-if (contract.targets.includes('wasm')) {
+if (targets.includes('wasm')) {
   step('WASM: build the module and its glue with wasm-bindgen');
-  const libdir = execFileSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' }).trim();
-  const installed = existsSync(libdir) && readdirSync(libdir).some((name) => name.startsWith('libcore-'));
-  if (!installed || process.env['BINDING_E2E_SKIP_WASM'] === '1') {
-    if (process.env['BINDING_E2E_SKIP_WASM'] !== '1') throw new Error(`the Rust target wasm32-unknown-unknown is not installed (${libdir}); BINDING_E2E_SKIP_WASM=1 runs without it`);
-    process.stdout.write('note: the WASM module is not built and its tests and cases do NOT run (BINDING_E2E_SKIP_WASM=1)\n');
-  } else {
-    const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
-    const tool = execFileSync('wasm-bindgen', ['--version'], { encoding: 'utf8' }).trim();
-    if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} is not the release of the crate, ${wanted ?? 'unknown'}`);
-    run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
-    const glue = `${library.replaceAll('-', '_')}_wasm`;
-    run('wasm-bindgen', ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
-    wasmBuilt = true;
-  }
+  const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
+  const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
+  if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
+  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
+  const glue = `${library.replaceAll('-', '_')}_wasm`;
+  run(wasmBindgen, ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
 }
 
-step('Node: build the addon, pack and install the package, run the generated tests and the cases');
-run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', testFeatures(contract)]);
-const npm = (contract.packages['node'] as { package: string }).package;
+// The npm package holds the addon of Node and the WASM module, so both targets install it.
 const nodeDir = join(work, 'node');
-rmSync(nodeDir, { recursive: true, force: true });
-mkdirSync(nodeDir, { recursive: true });
-// T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies; the
-// run packs it as a release does and installs it from the tarball.
-const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
-const platformDir = join(work, 'node-platform');
-rmSync(platformDir, { recursive: true, force: true });
-mkdirSync(platformDir, { recursive: true });
-const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
-copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
-const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
-writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
-run('npm', ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
-run('npm', ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
-writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
-const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
-if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
-// The other platforms' packages are optional and absent, as on a machine of this platform.
-run('npm', ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
-copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
-if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
-run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
-if (wasmBuilt) {
+if (targets.includes('node') || targets.includes('wasm')) {
+  step('Node: build the addon, pack and install the package');
+  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', testFeatures(contract)]);
+  const npm = (contract.packages['node'] as { package: string }).package;
+  rmSync(nodeDir, { recursive: true, force: true });
+  mkdirSync(nodeDir, { recursive: true });
+  // T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies; the
+  // run packs it as a release does and installs it from the tarball.
+  const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+  const platformDir = join(work, 'node-platform');
+  rmSync(platformDir, { recursive: true, force: true });
+  mkdirSync(platformDir, { recursive: true });
+  const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
+  copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
+  const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
+  writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
+  run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
+  run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
+  writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
+  const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
+  if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
+  // The other platforms' packages are optional and absent, as on a machine of this platform.
+  run(npmTool, ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
+}
+if (targets.includes('node')) {
+  step('Node: run the generated tests and the cases');
+  copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
+  if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
+  run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
+  record('node', 'test', `the generated tests${caseRunners ? ' and the contract cases' : ''} on node --test`);
+}
+if (targets.includes('wasm')) {
+  step('WASM: run the generated tests and the cases through the subpath ./wasm');
   // P-5: the WASM binding passes the same tests and cases through the subpath ./wasm of the same package.
   copyFileSync(join(copy, 'packages/ts/wasm/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.wasm.test.mjs'));
   const wasmCases = caseRunners && existsSync(join(e2e, 'cases.wasm.test.mjs'));
   if (wasmCases) copyFileSync(join(e2e, 'cases.wasm.test.mjs'), join(nodeDir, 'cases.wasm.test.mjs'));
-  run(process.execPath, ['--test', 'generated.wasm.test.mjs', ...(wasmCases ? ['cases.wasm.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
+  // --expose-gc: a case of GN-18a collects instances.
+  run(process.execPath, ['--expose-gc', '--test', 'generated.wasm.test.mjs', ...(wasmCases ? ['cases.wasm.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
+  record('wasm', 'test', `the generated tests${wasmCases ? ' and the contract cases' : ''} on node --test through ./wasm`);
 }
 
-step('PHP: build the extensions, run the generated tests and the cases with them loaded');
-const extensions: string[] = [];
-for (const prepared of [...dependencies, main]) {
-  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', testFeatures(prepared.contract)]);
-  extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
+if (targets.includes('php')) {
+  step('PHP: build the extensions, run the generated tests and the cases with them loaded');
+  const extensions: string[] = [];
+  for (const prepared of [...dependencies, main]) {
+    run('cargo', ['build', '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', testFeatures(prepared.contract)]);
+    extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
+  }
+  run(phpTool, ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);
+  record('php', 'lint', 'php -l of the stub');
+  // A run of PHPUnit counts as a test only when its JUnit log names at least one test that ran.
+  const phpunitRun = (name: string, path: string, env: Record<string, string> = {}): void => {
+    const log = join(work, `phpunit-${name}.xml`);
+    rmSync(log, { force: true });
+    run(phpTool, [...extensions, phpunit, '--log-junit', log, path], { env });
+    const count = Number(/<testsuite [^>]*tests="(\d+)"/.exec(existsSync(log) ? readFileSync(log, 'utf8') : '')?.[1] ?? '0');
+    if (count === 0) throw new Error(`PHPUnit ran no test of ${path} (its JUnit log ${log} names none)`);
+    record('php', 'test', `${count} ${name} on PHPUnit`);
+  };
+  phpunitRun('generated tests', join(copy, 'packages/php-ext/generated/tests'));
+  if (caseRunners) phpunitRun('contract cases', join(e2e, 'CasesTest.php'), { CASES: cases ?? '' });
 }
-run('php', ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);
-run('php', [...extensions, phpunit, join(copy, 'packages/php-ext/generated/tests')]);
-if (caseRunners) run('php', [...extensions, phpunit, join(e2e, 'CasesTest.php')], { env: { CASES: cases } });
 
-if (contract.targets.includes('go')) {
+if (targets.includes('go')) {
   step('Go: build the static library, run the generated tests and the cases with go test');
-  run('cargo', ['clippy', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test', '--', '-D', 'warnings']);
+  run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test', '--', '-D', 'warnings']);
+  record('go', 'lint', 'cargo clippy of the C ABI crate with its test features');
   // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
   const release = join(work, 'target-release-check');
-  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
-  process.stdout.write('$ nm --defined-only (test entry points)\n');
-  const symbols = execFileSync('nm', ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
+  process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
+  const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
   const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
   if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points:\n${leaked.join('\n')}`);
   rmSync(release, { recursive: true, force: true });
-  run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
+  record('go', 'lint', 'llvm-nm: the static library without features holds no test entry point');
+  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
   const goModule = join(copy, 'packages/go');
-  if (process.env['BINDING_E2E_LOCAL_GO'] === '1') {
-    const local = /go(\d+\.\d+(\.\d+)?)/.exec(execFileSync('go', ['env', 'GOVERSION'], { encoding: 'utf8' }))?.[1];
-    if (local === undefined) throw new Error('go env GOVERSION names no release');
-    const mod = join(goModule, 'go.mod');
-    writeFileSync(mod, readFileSync(mod, 'utf8').replace(/^go [0-9.]+$/m, `go ${local}`));
-    process.stdout.write(`note: the copy's go.mod names the installed Go ${local} (BINDING_E2E_LOCAL_GO=1)\n`);
-  }
   if (caseRunners && existsSync(join(e2e, 'cases_test.go'))) {
     mkdirSync(join(goModule, 'tests'), { recursive: true });
     copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
   }
   const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test,polyspec_codec_test', CASES: cases ?? '' };
   process.stdout.write('$ gofmt -l .\n');
-  const unformatted = execFileSync('gofmt', ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
+  const unformatted = execFileSync(gofmt, ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
   if (unformatted !== '') throw new Error(`gofmt would change:\n${unformatted}`);
-  run('go', ['vet', './...'], { cwd: goModule, env: goEnv });
-  run('go', ['test', '-count=1', './...'], { cwd: goModule, env: goEnv });
+  run(goTool, ['vet', './...'], { cwd: goModule, env: goEnv });
+  record('go', 'lint', 'gofmt -l and go vet');
+  run(goTool, ['test', '-count=1', './...'], { cwd: goModule, env: goEnv });
+  record('go', 'test', `the generated tests${caseRunners && existsSync(join(e2e, 'cases_test.go')) ? ' and the contract cases' : ''} on go test`);
 }
 
 step('declarations');
-run(join(binding, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
-if (contract.targets.includes('wasm')) {
-  run(join(binding, 'packages/ts/node_modules/.bin/tsc'), ['--noEmit', '--strict', join(copy, 'packages/ts/wasm/generated/index.d.ts')]);
+run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
+record('node', 'lint', 'tsc --strict of the declarations');
+if (targets.includes('wasm')) {
+  run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/wasm/generated/index.d.ts')]);
+  record('wasm', 'lint', 'tsc --strict of the declarations');
+}
+
+step('what ran for each target (a lint reads the code; only a test verifies the target)');
+const untested: Lang[] = [];
+for (const [t, { lint, test }] of ran) {
+  process.stdout.write(`${t}\n  lint: ${lint.join('; ') || 'none'}\n  test: ${test.join('; ') || 'NONE'}\n`);
+  if (test.length === 0) untested.push(t);
+}
+if (untested.length > 0) {
+  process.stdout.write(`\nno test ran for the target${untested.length === 1 ? '' : 's'} ${untested.join(', ')}: the run fails (GN-14)\n`);
+  process.exit(1);
 }
 if (leftOut > 0) {
   process.stdout.write(`\nall steps passed, but ${leftOut} case${leftOut === 1 ? ' was' : 's were'} left out (each printed as a change above): the run fails (G-5)\n`);

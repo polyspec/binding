@@ -27,5 +27,9 @@
   Enforced by: `make install`, 그 `mise install --locked`가 `mise.lock`이 고정하지 않은 도구를 실패시킨다.
 - Own: 계약 검사의 모든 검사는 자기 이유로 실패하는 시험을 가진다(PRINCIPLES P19).
   Enforced by: `packages/ts`의 `npm test`
+- Own: 끝에서 끝까지 확인은 계약의 모든 target을 checkout의 도구로 실행하고, 도구가 없는 target은 그 target, 도구,
+  `make install`을 적고 실행을 실패시킨다(GN-14a). target을 빼는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를
+  실행하지 않으므로 어느 target도 검증하지 않는다. 이유: 돌지 않은 target은 검증되지 않았는데 결과는 통과로 보인다.
+  Enforced by: `make e2e`, 도구가 없으면 첫 단계 전에, 시험이 돌지 않은 target이 있으면 끝에서 실패한다.
 - Own: 생성기를 바꾸는 변경은 커밋 전에 `docs/spec/generator.md`의 끝에서 끝까지 확인(GN-14)을 실행한다.
-  Enforced by: none, 그 확인은 PHP, Python, Node와 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다.
+  Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다.
