@@ -2,7 +2,7 @@
 // extension loaded.
 
 import type { Member, Unit } from '../contract.ts';
-import { type Model, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
+import { type Model, callsCode, Unsupported, machineFunction, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type After, type CallbackHow, type Context, type MadeForm, type Receiver, FIXTURE_RAISED, callbackCases, isPath, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
@@ -181,6 +181,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     usesRaised ||= 'exception' in fixture.end;
     const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw self::$raised;';
     return `function (mixed ...$args): mixed { ${steps}${end} }`;
+  };
+  // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
+  // was thrown, which the entry point of thrown-count-test counts.
+  const kept = (fn: Fn): string => {
+    if (!callsCode(model, fn)) return '';
+    return `\n        self::assertSame(0, \\${layout.namespace}\\Internal\\thrownCount());`;
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
@@ -436,7 +442,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
             ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
-        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}
+        }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
     }`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
@@ -463,7 +469,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (\\LogicException $error) {
             self::assertSame(self::$raised, $error);
-        }${afterChecks(kase.after, '$receiver')}
+        }${afterChecks(kase.after, '$receiver')}${kept(fn)}
     }`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -525,7 +531,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
-    {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}
+    {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${kept(fn)}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);

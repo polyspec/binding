@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync, holdsFunction, machineFunction } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -107,14 +107,6 @@ export function generate(inputs: Inputs): Files {
   const js = targets.filter((target) => target === 'node' || target === 'wasm');
   for (const place of js.length === 0 ? [] : keyedPlaces) {
     refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
-  }
-  // GN-6z: Go does not generate a function type; the function of a member with machine (GN-6ae) is generated.
-  for (const target of targets.filter((t) => t === 'go')) {
-    for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
-      for (const arg of fn.args.filter((a) => holdsFunction(a.type) && !machineFunction(a.type))) {
-        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} (GN-6z)`);
-      }
-    }
   }
   // GN-6aa: Node writes 'env for a callback inside another type and has no wrapper that outlives the environment of the
   // call, so a parameter whose callback the core keeps is refused by name; the other targets write 'static for it.

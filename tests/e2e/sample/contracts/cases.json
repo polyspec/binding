@@ -1154,5 +1154,224 @@
         "message": "no value for a"
       }
     }
+  ],
+  "tolerant": [
+    {
+      "id": "a_tolerant_key_whose_lookup_raises_what_it_does_not_recognize_gives_no_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "unlisted"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "?a",
+      "result": null
+    },
+    {
+      "id": "a_lookup_that_holds_the_key_gives_its_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_tolerant_key_that_the_lookup_holds_gives_its_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "?a",
+      "result": "1"
+    }
+  ],
+  "store_audited": [
+    {
+      "id": "a_function_that_returns_is_committed_and_audited",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "audited"
+          },
+          "result": "yes"
+        }
+      ]
+    },
+    {
+      "id": "a_function_that_raises_is_audited_before_its_exception_returns",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback",
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "audited"
+          },
+          "result": "yes"
+        }
+      ]
+    }
+  ],
+  "store_attempt": [
+    {
+      "id": "a_function_that_returns_is_an_attempt_that_held",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": true,
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "a_function_that_raises_after_it_wrote_is_an_attempt_that_did_not_hold",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "result": false,
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        }
+      ]
+    }
   ]
 }

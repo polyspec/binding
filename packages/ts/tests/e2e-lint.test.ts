@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bindingLints } from '../../../scripts/e2e-lint.mts';
+import { bindingLints, testEntrySymbol } from '../../../scripts/e2e-lint.mts';
 
 test('each binding crate is linted with its test features and without a feature, both with -D warnings (GN-14, GN-5)', () => {
   const lints = bindingLints('/copy/Cargo.toml', 'polyspec-sample-node', 'panic-test,codec-test');
@@ -23,4 +23,24 @@ test('the script of the end-to-end check runs the lints of bindingLints and name
   assert.match(source, /for \(const lint of bindingLints\(/);
   // No lint of a binding crate is written beside the list, where it could keep one form only.
   assert.doesNotMatch(source, /run\('cargo', \['clippy'[^\n]*crateSuffix/);
+});
+
+test('a test entry point of the Go static library is the prefix of its contract, two underscores and the entry, and no symbol of a member is one (GN-5, GN-17)', () => {
+  const entry = testEntrySymbol('polyspec_sample');
+  for (const name of ['panic_test', 'panic_test_held', 'echo_latin1', 'arm_faults', 'fault_left', 'alias_in_data', 'native_count', 'thrown_count', 'number_in']) {
+    assert.match(`0000000000000000 T _polyspec_sample__${name}`, entry, name);
+    assert.match(`0000000000000000 T polyspec_sample__${name}`, entry, name);
+  }
+  // The member echo_x of the class tag, the member panic_test of the class tag and the function echo_x of the module
+  // tag are symbols of members: a name of the contract follows the one underscore after the prefix.
+  for (const symbol of ['polyspec_sample_tag__echo_x', 'polyspec_sample_tag__panic_test', 'polyspec_sample_tag___echo_x', 'polyspec_sample_tag___gate__native_count', 'polyspec_sample_echo_x']) {
+    assert.doesNotMatch(`0000000000000000 T _${symbol}`, entry, symbol);
+  }
+  // The entries that every build holds are no test entry points.
+  for (const name of ['free', 'alloc', 'release_tag']) assert.doesNotMatch(`0000000000000000 T _polyspec_sample__${name}`, entry, name);
+  // The prefix is that of the contract alone: the library sample_two is not read as the library sample.
+  assert.doesNotMatch('0000000000000000 T _polyspec_sample_two__panic_test', entry);
+  const script = String(readFileSync(new URL('../../../scripts/e2e.mts', import.meta.url)));
+  assert.match(script, /testEntrySymbol\(extensionOf\(p\.contract\)\)/);
+  assert.doesNotMatch(script, /polyspec_\[a-z0-9_\]\*__/);
 });

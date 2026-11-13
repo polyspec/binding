@@ -17,3 +17,11 @@ export function bindingLints(manifest: string, crate: string, features: string):
     { what: 'without features', argv: clippy([]) },
   ];
 }
+
+// GN-5, GN-17: the line of `llvm-nm --defined-only` that defines a test entry point of the Go static library of a
+// contract. A test entry point is the prefix of the contract, two underscores and the name of the entry; the symbol of
+// a member has a name of the contract after one underscore, so the member echo_x of a class, <prefix>_<unit>__echo_x,
+// is no test entry point, and neither is a symbol of another library whose prefix only starts with this one.
+export function testEntrySymbol(prefix: string): RegExp {
+  return new RegExp(` [A-Z] _?${prefix}__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|thrown_count|number_in)`);
+}

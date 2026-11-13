@@ -239,6 +239,22 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   generates no such class: that is the rule of the target and no state of the generator, so a class of either origin
   never names PHP. The finding names the unit and each such target. Why: the generator refuses the
   unit for such a target, and a contract error is reported by the check before the generator runs.
+- **CK-79** The C symbols of two libraries (generator GN-17): for the target `go`, no C symbol of this contract is a
+  C symbol of a library that the contract names. The prefix of a symbol is `polyspec_<library>` and one underscore
+  follows it, so the function `b_c` of the library `a` and the function `c` of the library `a_b` are both
+  `polyspec_a_b_c`, and a Go program links the static libraries of both. The finding names the symbol, the member
+  of this contract and the member of the other library, and the remedy: rename one of the two. The check compares this
+  contract with the contracts that it reads, the libraries that the contract names and those that they name. It does
+  not see two libraries of which neither names the other: a Go program that links both is checked by no contract
+  (not implemented, task B2.125).
+- **CK-80** A function with the name of a C type of the C ABI (generator GN-17): for the target `go`, no function of
+  the root module is named `buffer`, because its symbol `<prefix>_buffer` is the C type of the result of every call of
+  the C ABI. The finding names the function and the symbol.
+- **CK-81** A function with the name of a declaration of package `binding` (generator GN-17): for the target `go`, the
+  function of package `binding` of a function of the root module, its name in CamelCase, is no name that package
+  `binding` declares itself: one of its own types and functions (`Reader`, `Writer`, `NewReader`, `NewWriter`, `Call`,
+  `NewCall`, `Map`, `KeyedMap`, `Key`, `IntKey`, `BytesKey`, `TextKey` and the others of the generator), or
+  `Release<Class>` of a class of the contract. The finding names the function and the declaration.
 - **CK-90** A parameter whose callback the core keeps (generator GN-6aa): a parameter names `keeps: true` only when
   its type holds a callback unit of this contract or of another repository: the unit itself, or a record, a list, an
   `optional` or a map that holds one, also inside one another. `keeps` at any other parameter is reported with the

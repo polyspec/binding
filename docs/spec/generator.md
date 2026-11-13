@@ -21,7 +21,7 @@ the design ids are those of the binding design.
   fields (GN-6i), a method with the receiver `self` (GN-6o) and a class unit with
   `cleanup` (GN-6p), and for Python, Node, PHP and Go a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
-  callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
+  callback, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, an abstract class, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
@@ -261,8 +261,8 @@ the design ids are those of the binding design.
   entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
   where the attribute already gives the name of the language, while a module would change every path from an entry
   to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
-  crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
-  family is `polyspec_`, with which no helper starts. The helper of a
+  crate is the C symbol of GN-17 (B-8), `<prefix>_<member>` with the module and the class before the member, which
+  Go code calls by that name, so its family is `polyspec_`, with which no helper starts. The helper of a
   function parameter of Node and WASM is `callable_in`, as that of PHP and Python is. A function takes any name, also
   `guard`, `pass`, `called`, `throw` or `in`, and an entry of the bare name is a second definition of the helper in
   the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
@@ -274,9 +274,19 @@ the design ids are those of the binding design.
   `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
   prefix inside the module of its class, because a member named as a helper, such as `guard`, would hide the helper
   there; no export of a member is `__free_<Class>`, because the name of a class starts with a capital letter. The
-  five crates apply the rule. Not applied yet (G-4): the C symbol of a member of a class of the Go crate,
-  `polyspec_<library>_<unit>_<member>`, and its function of package `binding` join the class and the member the same
-  way, so the two classes above give one symbol.
+  five crates apply the rule. The C symbol of a member of a class of the Go crate is `<prefix>_<unit>__<member>`,
+  with two underscores between the class and the member, and its function of package `binding` is
+  `<Unit>_<Member>`, with one underscore between the two names in CamelCase; a segment of a module ends with three
+  underscores in the symbol and with two in the function of package `binding` (GN-17). Why: the symbol
+  `<prefix>_<unit>_<member>` and the function `<Unit><Member>` read in two ways, so the two classes above gave one
+  symbol `<prefix>_tag_new_x` and one function `TagNewX`, and the function `x` of the module `tag` gave the symbol
+  of the member `x` of the class `tag`. A snake_case name has no empty word, so it holds no two underscores in a
+  row, and a name in CamelCase holds no underscore, so each separator is read in one way; the separator of a module
+  differs from that of a class, because a function of a module and a member of a class of the root both have two
+  names. The symbol is a `#[no_mangle]` function of the C ABI, which the lint `non_snake_case` does not read. The
+  release of a class is the symbol `<prefix>__release_<class>` and the function `Release<Class>` of package
+  `binding`, which name the class alone: with the words of the module before those of the class, the class `k` of
+  the module `tag` and the class `tag_k` of the root had one function `ReleaseTagK`.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -290,6 +300,7 @@ the design ids are those of the binding design.
   | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
   | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | the count of the language objects that the owner table holds (GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
+  | `thrown-count-test` | the count of the entries of the table that keeps what was thrown (GN-6ae), in a crate of a contract in which a member takes a callback or a function type, or which has a value alias | `_thrown_count` | `__thrownCount` | `<namespace>\Internal\thrownCount` | `<prefix>__thrown_count`; WASM `__thrownCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
@@ -521,7 +532,32 @@ the design ids are those of the binding design.
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
   either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
-  error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
+  error object of the language is made on the owner thread only, where the failure is converted. Go declares the
+  parameter as `func(<parameters>) (<R>, error)`, and as `func(<parameters>) error` for `none`; a nil func is kind
+  `invalid_argument_type`. A Go value is bound to no thread, so Go has no kind `wrong_thread` and no feature
+  `thread-test`. The func enters as a func of the call and its index in it, and the C ABI asks the export
+  `<prefix>__go_keep` for the `cgo.Handle` under which package `binding` holds the dispatch of the func from then
+  on, and holds that handle as a `Native` (GN-6u), which outlives the call and whose last drop deletes the handle on
+  any thread; a func of a call that fails before the C ABI reads it is held by the call alone, which ends. The
+  function calls the func through the export `<prefix>__go_function`, which takes the handle of the `Native` and
+  not the handle of a call, because the core calls a kept function in a later call or on a thread of its own; the
+  export decodes the arguments, calls the func and encodes its result. The `error` that the func returns, and the
+  value of a panic, which the export recovers as a call recovers the panic of a callback (GN-15b), are kept in a
+  table of package `binding` behind a mutex, which is the table of no call, under a key that is a count of the
+  table, and the `Raised` names that key: the member in whose call the function ran takes the entry out and returns
+  the same error value, or panics with the same value after the call of the C ABI returned, and the last drop of a
+  `Raised` that no member returned removes the entry through the export `<prefix>__go_release_raised`, on any
+  thread. The entry point of `thrown-count-test` counts such a `Raised` as any other. A function type whose result
+  holds a value alias, a callback or a function is refused by name for Go (G-4), because the C ABI reads such a
+  result through a call (GN-15c), and a kept function runs in no call. The Go test of a member that takes a function
+  type requires kind `invalid_argument_type` for a nil func; a function value of a case is a func that answers by
+  the rows of the case and records a call that no row answers, which the test requires to be none; with the
+  arguments of a case whose function value has a row, which shows that the core calls the func in that call, the
+  test requires that the error that the func returns is the error of the call, the same value, and that its panic
+  is the panic of the call. For a case whose receiver was given a func with a row in an earlier call and whose
+  member names `core.failure`, the test requires the same of that later call, and that the count of
+  `thrown-count-test` is 0 after the error. No Go test gives a result of another type, because the Go type of the
+  func fixes its result.
 - **GN-6aa** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
@@ -663,8 +699,9 @@ the design ids are those of the binding design.
     generation under that lock; a drop of an older generation discards its key and touches nothing of the language,
     whose environment is gone, neither a reference nor the threadsafe function, and the `out` of such a `Native` is
     kind `internal`.
-  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread. A `Native` that leaves in a result
-    is node 13 of the result, a number that no other node of a result has (11 is GN-6x, 12 is GN-6af).
+  - Go holds the `cgo.Handle` of the func of a value alias, or of the dispatch of the func of a function type
+    (GN-6z), which the drop deletes on any thread. A `Native` that leaves in a result is node 13 of the result, a
+    number that no other node of a result has (11 is GN-6x, 12 is GN-6af).
   - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
     so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.
     Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread
@@ -1297,6 +1334,9 @@ the design ids are those of the binding design.
     advance, such as the promise of the next Io future; `failure_error` throws the held value again, so the caller
     gets the same object. An exception that the callback recognizes as an error unit (U-3) is the core error of its
     kind and is not held.
+    The callback of a member without a machine holds its exception in the same way, where the callback is called:
+    the core may answer the `Raised` and return a value (U-3), and an exception that stayed pending in the environment
+    would end that call with it, although the core returned no failure.
   - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
     goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6
@@ -1350,7 +1390,12 @@ the design ids are those of the binding design.
     key for the thread that keeps it (Node, PHP). So no entry point records the `Raised` values of its call, and a
     machine of Node and WASM, which several entry points advance, keeps no list of them. A function of a machine
     makes its `Raised` by the function that a callback uses (`thrown`), and `failure_error` takes what was thrown
-    out of the table by the key of the `Raised`.
+    out of the table by the key of the `Raised`. The entry point of the feature `thrown-count-test` (GN-5) gives the
+    count of the entries of the table, in Node and PHP after it has removed the queued keys. The generated test of
+    every case of a member that takes a callback or a function type requires, after the call of the case and the
+    calls of its `after`, that the count is 0; the Go test of the count is in `zz_generated_thrown_count_test.go` with
+    the build tag `polyspec_thrown_count_test` and runs the call of each such case again, and a case that arms faults
+    is in `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_fault_test`.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
@@ -1662,7 +1707,14 @@ the design ids are those of the binding design.
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
   `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for every target (GN-10, GN-11, GN-12, GN-18).
-- **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
+- **GN-17** The C ABI (B-8): each function is `<symbol>(args, len, result) -> int32`, where `<prefix>` is
+  `polyspec_<repository>` and `<symbol>` is `<prefix>_`, then each segment of the module of the unit in snake_case
+  followed by `___`, then for a member of a class the name of the class followed by `__`, then the name of the
+  member, `new` for the constructor: `<prefix>_<function>`, `<prefix>_<unit>__<member>`,
+  `<prefix>_<segment>___<function>` and `<prefix>_<segment>___<unit>__<member>`. The function of package `binding`
+  that calls it has the same parts in CamelCase with one underscore less in each separator: `<Function>`,
+  `<Unit>_<Member>`, `<Segment>__<Function>` and `<Segment>__<Unit>_<Member>`. No two names of the contract are
+  joined by one underscore, so no two members of a contract have one symbol or one function (GN-4c).
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
   bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
@@ -1670,7 +1722,7 @@ the design ids are those of the binding design.
   the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
   allocates, writes into `result` and Go frees with `polyspec_<repository>__free`; the return is 0 for a result and 1
   for a failure. A buffer that does not follow the encoding is kind `internal`. The symbols that are not members
-  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no member name has. Every function runs under
+  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no symbol of a member has, because a name of the contract follows the one underscore after its prefix. Every function runs under
   `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
   returns.
 
@@ -1998,10 +2050,10 @@ the design ids are those of the binding design.
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
-  `panic-test`, `codec-test` and `native-count-test` are for tests only: the manifest that `binding scaffold` writes
+  `panic-test`, `codec-test`, `native-count-test` and `thrown-count-test` are for tests only: the manifest that `binding scaffold` writes
   turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`). With the build tag
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to

@@ -76,7 +76,7 @@ test('the value of a collected instance is dropped and its handle is used again 
   // The handle that the next instance takes, read through the module's export of the constructor.
   const next = () => {
     const handle = glue.__Tag_new('probe');
-    glue.__Tag_free(handle);
+    glue.__free_Tag(handle);
     return handle;
   };
   const before = next();
@@ -89,5 +89,5 @@ test('the value of a collected instance is dropped and its handle is used again 
   // Every handle of the collected instances is free: 1000 new values take no handle above the highest one.
   const taken = Array.from({ length: 1000 }, () => glue.__Tag_new('probe'));
   assert.ok(Math.max(...taken) <= before + 1000, `the highest handle is ${Math.max(...taken)}, after ${before}`);
-  for (const handle of taken) glue.__Tag_free(handle);
+  for (const handle of taken) glue.__free_Tag(handle);
 });

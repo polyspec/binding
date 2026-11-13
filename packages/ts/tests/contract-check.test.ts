@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { checkContract, type Finding } from '../src/index.ts';
+import { GO_BINDING_NAMES } from '../src/check.ts';
 import { contract, dependency, member, unit, unitIndex } from './fixture.ts';
 
 const deps = (): Map<string, unknown> => new Map([['forms-dep', dependency()]]);
@@ -842,6 +843,70 @@ describe('CK-78 a class without core_type on a target that does not generate it 
   test('a class with core_type and a host class are not judged', () => {
     assert.deepEqual(findings(() => undefined).filter((f) => f.check === 'CK-78'), []);
     assert.deepEqual(judged((c) => { unit(c, 'session').origin = 'host'; }), []);
+  });
+});
+
+describe('CK-79, CK-80, CK-81 the names of the C ABI of Go (GN-17)', () => {
+  // A function of the root module: a functions unit of the root with the first function of the unit forms under
+  // another name.
+  const added = (c: any, name: string[]): { path: string; id: string } => {
+    const first = c.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.kind === 'function');
+    const id = `root.${name.join('_')}`;
+    c.units.push({ id: 'root', name: ['root'], module: '', kind: 'functions', visibility: 'public', origin: 'generated', members: [{ ...JSON.parse(JSON.stringify(first)), id, name }] });
+    return { path: `/units/${c.units.length - 1}/members/0/name`, id };
+  };
+  const judged = (change: (c: any) => void, more: [string, unknown][] = []): Finding[] => {
+    const c = contract();
+    change(c);
+    return checkContract(c, { dependencies: new Map<string, unknown>([['forms-dep', dependency()], ...more]) }).filter((f) => ['CK-79', 'CK-80', 'CK-81'].includes(f.check));
+  };
+  test('the fixture has no such name', () => {
+    assert.deepEqual(judged(() => undefined), []);
+  });
+  test('a symbol that a library that the contract reads has too (CK-79)', () => {
+    // The library sample-x has the root function y, polyspec_sample_x_y, which is the function x_y of sample.
+    const other = contract();
+    other.library = 'sample-x';
+    const there = added(other, ['y']);
+    let at = { path: '', id: '' };
+    assert.deepEqual(judged((c) => { at = added(c, ['x', 'y']); }, [['sample-x', other]]), [{
+      check: 'CK-79',
+      path: at.path,
+      message: `${at.id} has the C symbol polyspec_sample_x_y, which ${there.id} of the library sample-x has too, so a Go program that links both libraries defines it twice; rename one of the two (GN-17)`,
+    }]);
+    // Without the target go in either contract no static library holds the symbol.
+    assert.deepEqual(judged((c) => { added(c, ['x', 'y']); c.targets = c.targets.filter((t: string) => t !== 'go'); }, [['sample-x', other]]).filter((f) => f.check === 'CK-79'), []);
+  });
+  test('a function buffer of the root module (CK-80)', () => {
+    let at = { path: '', id: '' };
+    assert.deepEqual(judged((c) => { at = added(c, ['buffer']); }), [{
+      check: 'CK-80',
+      path: at.path,
+      message: `${at.id} has the C symbol polyspec_sample_buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`,
+    }]);
+  });
+  test('a function whose function of package binding the package declares itself (CK-81)', () => {
+    let at = { path: '', id: '' };
+    assert.deepEqual(judged((c) => { at = added(c, ['new', 'writer']); }), [{
+      check: 'CK-81',
+      path: at.path,
+      message: `${at.id} is the function NewWriter of package binding, which the package declares itself; rename the function (GN-17)`,
+    }]);
+  });
+  test('a function whose function of package binding is the release of a class (CK-81)', () => {
+    let at = { path: '', id: '' };
+    const found = judged((c) => {
+      at = added(c, ['release', 'session']);
+    });
+    assert.equal(found.length, 1, JSON.stringify(found));
+    assert.equal(found[0]?.check, 'CK-81');
+    assert.equal(found[0]?.path, at.path);
+    assert.match(found[0]?.message ?? '', /^root\.release_session is the function ReleaseSession of package binding, which is the release of the class session; rename the function or the class \(GN-17\)$/);
+  });
+  test('the names of package binding are the declarations of the Go files of the generator (CK-81)', () => {
+    const source = readFileSync(new URL('../src/generate/go.ts', import.meta.url), 'utf8');
+    const declared = [...source.matchAll(/^(?:func|type|var|const) ([A-Z][A-Za-z0-9]*)[ (\[]/gm)].map((found) => found[1] ?? '').filter((name) => /[a-z]/.test(name));
+    assert.deepEqual([...new Set(declared)].sort(), [...GO_BINDING_NAMES].sort());
   });
 });
 

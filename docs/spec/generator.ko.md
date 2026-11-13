@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 439baae98df66cb83ac2ca5e90121200eb760adaeb7872beab88413765aac2d6 -->
+<!-- source-sha256: 6d41ea682c6691c731626c8a7c6ab255bf61e32687c1a5601f19a3b69f8b7fd6 -->
 # 생성기
 
 [English](generator.md)
@@ -14,7 +14,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w), member 없는 generated interface(GN-6ap)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해, receiver가 `self`인 method(GN-6o)와 `cleanup`이 있는 class unit(GN-6p)에 대해, Python·Node·PHP·Go는 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
-  callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  callback, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
   Go는 variant unit과 interface를 구현하는 class를 GN-6v와 GN-6w대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -209,7 +209,7 @@
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
   이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
-  바꾸기 때문이다. Go crate의 함수나 member의 진입은 C symbol `polyspec_<library>_<module>_<member>`(B-8)이고,
+  바꾸기 때문이다. Go crate의 함수나 member의 진입은 GN-17의 C symbol(B-8), 곧 member 앞에 module과 class를 둔 `<prefix>_<member>`이고,
   Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는 PHP와 Python처럼
   `callable_in`이다. 함수는 어떤 이름이든 가질 수 있고 `guard`, `pass`, `called`, `throw`, `in`도 그렇다. 이름 그대로의
   진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
@@ -219,9 +219,17 @@
   `new_x`와 class `a_new`의 member `x`가 한 함수 `class_a_new_x`였고, member `free`는 해제 `class_<unit>_free`와 그 export
   `__<Class>_free`였다. 밑줄 둘의 구분자는 snake_case 이름이 아니어서 lint가 거부한다. member는 자기 class의 module
   안에서도 접두어를 유지한다. `guard`처럼 helper와 같은 이름의 member가 그 안에서 helper를 가리기 때문이다. class의
-  이름은 대문자로 시작하므로 어떤 member의 export도 `__free_<Class>`가 아니다. 다섯 crate가 이 규칙을 적용한다. 아직
-  적용하지 않음(G-4): Go crate의 class의 member의 C 심볼 `polyspec_<library>_<unit>_<member>`와 package `binding`의 그
-  함수는 class와 member를 같은 방식으로 이으므로, 위의 두 class는 한 심볼을 준다.
+  이름은 대문자로 시작하므로 어떤 member의 export도 `__free_<Class>`가 아니다. 다섯 crate가 이 규칙을 적용한다. Go crate의
+  class의 member의 C 심볼은 class와 member 사이에 밑줄이 둘인 `<prefix>_<unit>__<member>`이고, package `binding`의 그
+  함수는 CamelCase의 두 이름 사이에 밑줄이 하나인 `<Unit>_<Member>`다. module의 segment는 심볼에서는 밑줄 셋으로,
+  package `binding`의 함수에서는 밑줄 둘로 끝난다(GN-17). 이유: 심볼 `<prefix>_<unit>_<member>`와 함수
+  `<Unit><Member>`는 두 가지로 읽힌다. 그래서 위의 두 class가 한 심볼 `<prefix>_tag_new_x`와 한 함수 `TagNewX`를
+  주었고, module `tag`의 함수 `x`가 class `tag`의 member `x`의 심볼을 주었다. snake_case 이름에는 빈 단어가 없어서
+  밑줄 둘이 이어지지 않고 CamelCase 이름에는 밑줄이 없으므로, 각 구분자는 한 가지로만 읽힌다. module의 함수와 root의
+  class의 member는 둘 다 이름이 둘이므로, module의 구분자는 class의 구분자와 다르다. 심볼은 C ABI의 `#[no_mangle]`
+  함수이고, lint `non_snake_case`는 그것을 읽지 않는다. class의 해제는 심볼 `<prefix>__release_<class>`와 package
+  `binding`의 함수 `Release<Class>`이고, 둘 다 class만 이름한다. module의 단어를 class의 단어 앞에 두면 module `tag`의
+  class `k`와 root의 class `tag_k`가 한 함수 `ReleaseTagK`를 가졌다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -235,6 +243,7 @@
   | `case-test` | 인자가 그 언어에서 꼴을 갖지 않는 case(GN-13) | 아직 없음 | 아직 없음 | `<namespace>\Internal\caseTest<n>` | 아직 없음. WASM도 아직 없음 |
   | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
+  | `thrown-count-test` | 던져진 것을 보관하는 table의 항목 수(GN-6ae). member가 callback이나 함수 타입을 받거나 값 alias가 있는 계약의 crate에 있다 | `_thrown_count` | `__thrownCount` | `<namespace>\Internal\thrownCount` | `<prefix>__thrown_count`. WASM은 `__thrownCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
@@ -419,7 +428,27 @@
   `Native`(GN-6u)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
   `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
-  만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
+  만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 parameter를 `func(<parameters>) (<R>, error)`로, `none`이면
+  `func(<parameters>) error`로 선언하고, nil func는 kind `invalid_argument_type`이다. Go 값은 어느 스레드에도 묶이지
+  않으므로 Go에는 kind `wrong_thread`도 feature `thread-test`도 없다. func는 호출의 func와 그 안의 index로 들어오고,
+  C ABI는 export `<prefix>__go_keep`에 `cgo.Handle`을 묻는다. package `binding`은 그때부터 그 handle 아래에 func의
+  dispatch를 갖고, C ABI는 그 handle을 `Native`(GN-6u)로 갖는다. 그 `Native`는 호출보다 오래 살고, 마지막 drop이 어느
+  스레드에서든 handle을 지운다. C ABI가 읽기 전에 실패한 호출의 func는 그 호출만 갖고, 호출은 끝난다. 함수는 export
+  `<prefix>__go_function`으로 func를 부른다. 그 export는 호출의 handle이 아니라 `Native`의 handle을 받는다. 코어가
+  보관한 함수를 나중의 호출에서, 또는 자기 스레드에서 부르기 때문이다. export는 인자를 디코드하고 func를 부르고 결과를
+  인코드한다. func가 돌려준 `error`와 panic의 값은 package `binding`의 mutex 뒤의 table에 보관한다. export는 호출이
+  callback의 panic을 recover하듯(GN-15b) 그 panic을 recover한다. 그 table은 어느 호출의 table도 아니며, key는 table의
+  count이고, `Raised`가 그 key를 이름한다. 함수가 실행된 호출의 member는 항목을 꺼내어 같은 error 값을 돌려주거나, C
+  ABI의 호출이 돌아온 뒤 같은 값으로 panic한다. 어떤 member도 돌려주지 않은 `Raised`의 마지막 drop은 어느 스레드에서든
+  export `<prefix>__go_release_raised`로 항목을 지운다. `thrown-count-test`의 진입점은 그런 `Raised`를 다른 것과 같이
+  센다. 결과가 값 alias, callback, 함수를 담은 함수 타입은 Go에서 이름으로 거부한다(G-4). C ABI는 그런 결과를 호출을
+  통해 읽는데(GN-15c), 보관된 함수는 어느 호출 안에서도 실행되지 않기 때문이다. 함수 타입을 받는 member의 Go 시험은 nil
+  func에 kind `invalid_argument_type`을 요구한다. case의 함수 값은 case의 행으로 답하고 어떤 행도 답하지 않는 호출을
+  기록하는 func이며, 시험은 그런 호출이 없기를 요구한다. 함수 값에 행이 있는 case는 코어가 그 호출에서 func를 부름을
+  보이므로, 시험은 그 case의 인자로 func가 돌려준 error가 그 호출의 error와 같은 값이고 func의 panic이 그 호출의
+  panic임을 요구한다. receiver가 앞선 호출에서 행이 있는 func를 받았고 member가 `core.failure`를 이름하는 case에서는,
+  시험이 그 나중 호출에 같은 것을 요구하고, error 뒤에 `thrown-count-test`의 count가 0임을 요구한다. Go 시험은 다른
+  타입의 결과를 주지 않는다. func의 Go 타입이 결과를 정하기 때문이다.
 - **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
@@ -541,8 +570,9 @@
     owner들의 lock 안에서 threadsafe function을 abort로 해제한다. drop은 그 lock 안에서 generation을 비교한다. 이전
     generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤 것도, 참조도 threadsafe function도 건드리지 않으며, 그런
     `Native`의 `out`은 kind `internal`이다.
-  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다. 결과로 나가는 `Native`는 결과의 node 13이며,
-    결과의 다른 어떤 node도 그 번호를 갖지 않는다(11은 GN-6x, 12는 GN-6af).
+  - Go는 값 alias의 func의 `cgo.Handle`, 또는 함수 타입(GN-6z)의 func의 dispatch의 `cgo.Handle`을 갖고, drop이 어느
+    스레드에서든 그것을 지운다. 결과로 나가는 `Native`는 결과의 node 13이며, 결과의 다른 어떤 node도 그 번호를 갖지
+    않는다(11은 GN-6x, 12는 GN-6af).
   - `Raised`(GN-6d)의 `Native`는 던져진 객체 표의 key를 갖고, 마지막 drop이 그 항목을 지운다. 그래서 코어가 돌려주지 않고
     버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
     둔다. 그 스레드의 drop은 항목을 곧바로 지우고, 다른 스레드의 drop은 그 스레드가 살아 있는 동안 key를 그 스레드의
@@ -1072,6 +1102,9 @@
     Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출을 실패시키기 때문이다. `failure_error`가 보관한 값을
     다시 던지므로 호출자는 같은 객체를 받는다. callback이 error unit으로 인식하는 예외(U-3)는 그 kind의 core error이며
     보관하지 않는다.
+    machine이 없는 member의 callback도 callback을 부르는 곳에서 예외를 같은 방식으로 보관한다. 코어는 `Raised`에
+    응답하고 값을 돌려줄 수 있는데(U-3), 환경에 pending으로 남은 예외는 코어가 실패를 돌려주지 않았어도 그 호출을 그
+    예외로 끝내기 때문이다.
   - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
     호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
     각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 그래서 callback은 그것을 넘긴 스레드에서 불린다(GN-6q).
@@ -1115,7 +1148,11 @@
     Python과 Go에서는 table의 mutex 뒤에서 항목을 제거하고, Node와 PHP에서는 그 key를 그것을 보관하는 스레드의 대기열에
     넣는다. 그래서 어느 진입점도 자기 호출의 `Raised`를 기록하지 않고, 여러 진입점이 advance하는 Node와 WASM의 machine도
     그 목록을 보관하지 않는다. machine의 함수는 callback이 쓰는 함수(`thrown`)로 `Raised`를 만들고, `failure_error`는
-    `Raised`의 key로 던져진 것을 table에서 꺼낸다.
+    `Raised`의 key로 던져진 것을 table에서 꺼낸다. feature `thrown-count-test`(GN-5)의 진입점은 table의 항목 수를 준다.
+    Node와 PHP에서는 대기열의 key를 제거한 뒤의 수다. callback이나 함수 타입을 받는 member의 case마다 생성된 시험은
+    그 case의 호출과 `after`의 호출 뒤에 그 수가 0일 것을 요구한다. Go에서 그 수의 시험은 build tag
+    `polyspec_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에 있고, 그런 case마다 호출을 다시 실행한다.
+    실패를 주입하는 case는 `polyspec_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에 있다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
@@ -1360,13 +1397,19 @@
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
   `map<T>`와 `keyed_map<T>`는 모든 target에 생성한다(GN-10, GN-11, GN-12, GN-18).
-- **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
+- **GN-17** C ABI(B-8): 함수마다 `<symbol>(args, len, result) -> int32`다. `<prefix>`는 `polyspec_<repository>`이고,
+  `<symbol>`은 `<prefix>_`, 그 뒤에 unit의 module의 각 segment를 snake_case로 쓰고 `___`를 붙인 것, 그 뒤에 class의
+  member이면 class의 이름과 `__`, 그 뒤에 member의 이름(생성자는 `new`)이다: `<prefix>_<function>`,
+  `<prefix>_<unit>__<member>`, `<prefix>_<segment>___<function>`, `<prefix>_<segment>___<unit>__<member>`. 그것을 부르는
+  package `binding`의 함수는 같은 부분을 CamelCase로 쓰고 각 구분자의 밑줄이 하나 적다: `<Function>`,
+  `<Unit>_<Member>`, `<Segment>__<Function>`, `<Segment>__<Unit>_<Member>`. 계약의 두 이름을 밑줄 하나로 잇지 않으므로,
+  한 계약의 두 member가 한 심볼이나 한 함수를 갖지 않는다(GN-4c). Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
   순서의 field, enum은 값 텍스트. C ABI는 디코딩하며 판정하고(T-8), 인자는 마지막 parameter에서 끝나야 한다. 코어의 결과나
   실패(E-1의 category 번호, 메시지, kind, status, errno)는 같은 방식으로 Rust가 할당한 버퍼에 인코딩해 `result`에 쓰고, Go는
   그것을 `polyspec_<repository>__free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
-  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member 이름도 그렇지 않다.
+  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member의 심볼도 그렇지 않다. 접두어 뒤의 밑줄 하나 다음에 계약의 이름이 오기 때문이다.
   모든 함수는 `catch_unwind` 아래에서 실행하므로 panic이 C ABI를 넘지 않는다(B-7). wait `none` member의 호출은 코어가 돌아올
   때 돌아온다.
 
@@ -1624,9 +1667,9 @@
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
   latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`, `codec-test`,
-  `native-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
+  `native-count-test`, `thrown-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
   끝에서 끝까지 확인은 feature 없이 정적 라이브러리를 빌드해 시험용 진입점(`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
   crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
   `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 이 레포 alias의

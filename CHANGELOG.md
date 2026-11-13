@@ -43,6 +43,104 @@
   call of `then` (GN-5, row B2.130). A contract without `faults` of its own still refuses such a case by name.
   Verified by `npm test` in `packages/ts`: the test of G-5 failed before the change with the refusal. Not run: a
   build or a test of a generated crate, and `make e2e`.
+- The PHP crate of a contract whose only classes are those of a variant or of a generated interface, such as
+  `tests/e2e/plot`, named `ClassFlags::Interface` and `ClassFlags::Final` without the import of `ClassFlags`, so it
+  did not compile: the import was written for a record, a class, a callback or a final error unit alone. It is now
+  written for a variant and a generated interface too. The Go package of the same contract encoded the fields of an
+  optional record as `*case0.End.X`, the pointer of a field, which `go vet` refuses for an int64; it now selects the
+  field through the pointer, `(*case0.End).X`. Verified by `make test-ts`: the two new tests failed before the change.
+  Not run: the compilers, by `make e2e` of `tests/e2e/plot`.
+- The Node conversion in of every record and variant took the env, also of a unit that reads none, so the conversion
+  of a variant that holds itself, such as `figure` of `tests/e2e/variants`, had a parameter that only its own call
+  used, and the generated Node crate failed the lint `clippy::only_used_in_recursion`. The conversion of a record or a
+  variant now takes the env only when a field of it reads the env, directly or through the conversion of another
+  unit, and a call passes it only then (GN-6c, GN-6v). Verified by `make test-ts`: a test requires that no `in_` or
+  `out_` conversion of the five crates of `tests/e2e/variants` has a parameter `env` or `py` that only its own call
+  uses; the generator before the change wrote `fn in_figure(env: &Env, ...)` with five calls `in_figure(env, ...)`.
+  Not run: clippy on the generated crate, by `make e2e` of `tests/e2e/variants`.
+- Three names of a contract gave the Go binding one name twice, which only the Go compiler or the linker reported:
+  the function `b_c` of the library `a` and the function `c` of the library `a_b`, both the C symbol
+  `polyspec_a_b_c` in two static libraries of one program; a function `buffer` of the root module, whose symbol
+  `<prefix>_buffer` is the C type of the result of the C ABI; and a function of the root module whose function of
+  package `binding` the package declares itself (`new_writer` as `NewWriter`, `release_tag` as the release of the
+  class `tag`). `binding check` now reports each for the target `go`, with the names and the remedy: CK-79, CK-80 and
+  CK-81 (GN-17). Verified by `make test-ts`: the tests of the three checks, and a test that compares the names of
+  package `binding` in the check with the declarations of the Go files of the generator.
+- A hand-written WASM case of `tests/e2e` calls the generated module by the names of its exports, and a change of
+  those names by the generator was found by the end-to-end run alone, as `glue.<name> is not a function`. A unit
+  test now generates the WASM crate of each contract of `tests/e2e` whose `cases.wasm.test.mjs` calls a `glue` name
+  and requires each such name to be an export of the generated crate. Verified by `make test-ts`: with the case file
+  of classes that called the former name of the release of a class, the test fails with that name.
+- The contract of `tests/e2e/functions` named four targets and no `go`, while every contract of `tests/e2e` names the
+  five targets (BD-27), because the generator refused a function type for Go: for a parameter of the type
+  `{"function": {"parameters": ["text", {"list": "int"}], "returns": "text"}}` it failed with "a function type is not
+  generated for go (GN-6z)". Go now generates the function type that the core may keep (GN-6z). The parameter is
+  `func(<parameters>) (<R>, error)`, or `func(<parameters>) error` for `none`, and a nil func is kind
+  `invalid_argument_type`. The func enters as a func of its call; the C ABI asks the export `<prefix>__go_keep` for
+  the `cgo.Handle` under which package `binding` holds it from then on and holds that handle as a `Native`, whose
+  last drop deletes it, so the func outlives the call and a func that the C ABI did not read ends with its call. The
+  boxed `Fn` calls the func through the export `<prefix>__go_function` by the handle of the `Native`, in no call. The
+  error that the func returns, and the value of its panic, which the export recovers, are kept in a table of package
+  `binding` behind a mutex under a key that the `Raised` names: the member in whose call the func ran returns the
+  same error value or panics with the same value, and a `Raised` that the core drops removes the entry through
+  `<prefix>__go_release_raised`. A function type whose result holds a value alias, a callback or a function is
+  refused by name for Go. The generated Go test gives a function value of a case as a func that answers by the rows
+  of the case, and tests a nil func, and the error and the panic of the func in the call that runs it and in a later
+  call that runs a kept func. The contract of `tests/e2e/functions` names `go` with its Go module, and its workspace
+  names the crate `packages/go/internal/ffi`. A name in a comment of the Go crate no longer counts as a use of a type
+  of `binding_core` when the crate chooses its imports. Verified by `make test-ts`: the tests generate the Go crate,
+  package and tests of the contract and of the contract of shapes with a function type, require the forms above, no
+  function defined twice, the names of GN-4c and every import of package `binding` used, and the test of the crates
+  of the eight contracts reads 40 crates. The generated crates were not compiled for this change.
+
+- The C symbol of a member of the Go crate joined the module, the class and the member with one underscore, and its
+  function of package `binding` joined them with nothing, so two members had one name: for a contract with the member
+  `new_x` of the class `tag` and the member `x` of the class `tag_new`, the static library defined
+  `polyspec_sample_tag_new_x` twice and package `binding` the function `TagNewX` twice; the function `x` of the
+  module `tag` had the symbol of the member `x` of the class `tag`, the function `x` of the modules `a/b_c` and
+  `a_b/c` one symbol, and the class `k` of the module `tag` and the class `tag_k` of the root one function
+  `ReleaseTagK`. Each member needs a symbol and a function of its own. The symbol is now `<prefix>_`, each segment of
+  the module followed by `___`, the class followed by `__`, and the member (`polyspec_sample_tag__new_x`,
+  `polyspec_sample_tag_new__x`, `polyspec_sample_tag___x`), and the function of package `binding` has the same parts
+  in CamelCase with one underscore less in each separator (`Tag_NewX`, `TagNew_X`, `Tag__X`); the release function of
+  a class names the class alone, `Release<Class>` (GN-4c, GN-17). The end-to-end check found a test entry point in
+  the static library built without features by a pattern that took any text between `polyspec_` and two underscores,
+  which reads the member `echo_x` of a class as the entry `__echo_`; it now reads the prefix of the contract of the
+  run, two underscores and the entry (`testEntrySymbol` of `scripts/e2e-lint.mts`). Verified by `make test-ts`: a
+  test generates the Go crate of the sample with these classes, functions and modules and requires that no C symbol,
+  no C declaration and no function of package `binding` is defined twice, and a test of the pattern requires each
+  test entry point and refuses the symbols of members. The generated crates were not compiled for this change.
+
+- No generated test observed that a `Raised` that the core drops leaves the table of what was thrown: a member such as
+  `sample.tolerant`, whose core answers the exception of its callback and returns a value, passed its cases also when
+  the entry stayed in the table. A crate of a contract in which a member takes a callback or a function type, or which
+  has a value alias, now has the test feature `thrown-count-test`, whose entry point gives the count of the entries of
+  the table (`__thrownCount` in Node and WASM, `<namespace>\Internal\thrownCount` in PHP, `_thrown_count` in Python,
+  `<prefix>__thrown_count` in Go); Node and PHP remove the keys that a drop on another thread queued before they count
+  (GN-5, GN-6ae). The generated test of every case of a member that takes a callback or a function type requires the
+  count 0 after the call of the case and the calls of its `after`; in Go those cases run again in
+  `zz_generated_thrown_count_test.go` with the build tag `polyspec_thrown_count_test`, and a case that arms faults in
+  `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_fault_test`. The end-to-end check names
+  `__thrown_count` among the test entry points that a static library built without features must not hold. Verified
+  by `npm test` in `packages/ts`, whose tests compare the feature line of each manifest with the table and the entry
+  point of its crate, for the sample and for a contract without a callback, a function type and a value alias, and
+  read the count in the generated tests of the five targets. The generated crates and tests were not compiled or run
+  for this change.
+- A Node member without a machine whose core answered the exception of a callback and returned a value still ended
+  with that exception, because the exception stayed pending in the environment: only the callback that a machine owns
+  took it out. Every Node callback now takes its exception out of the environment where it is called
+  (`napi_get_and_clear_last_exception`), holds it under the key of its `Raised` and `failure_error` throws it again
+  (GN-6ab), so a `Raised` that the core drops leaves nothing pending. The sample has three members for it and for the
+  drop of a `Raised` (GN-6u, GN-6ae), each with cases for the five targets: `sample.tolerant` answers what its lookup
+  raised for a key written `?<name>` and gives no value; `store.audited` goes on to a wait that writes the entry
+  `audited` after its function raised, and then returns the exception, which the calls of `after` read; and
+  `store.attempt` drops the `Raised` of a function that raised after it wrote an entry, on another thread where the
+  target has one, and returns `false`. Each answers only what its case marks, because the generated tests of every
+  member that takes a callback or a function require that an exception passes through. Verified by `npm test` in
+  `packages/ts`, whose new test fails before the change at the method of `CbLookup`, which did not call `kept`, and
+  requires `kept`, the variant `Held` and `thrown_again` in a crate with a callback and no machine. The generated
+  crates and the core of the sample were not compiled for this change, so no case of the three members has run.
+- GN-4c: the hand-written WASM cases of the classes contract call the release of a class by its name `__free_<Class>`; they called `__<Class>_free`, which the WASM crate no longer exports, so the case of a collected instance failed with `glue.__Tag_free is not a function`.
 - The `package.json` and the `composer.json` that `scaffold` writes named no other library, so a released npm
   package whose entries import the npm package of the owner of a value class (`require('@polyspec/<library>')`, GN-6x)
   was installed without it, and a released PHP extension without the extension whose classes it makes and reads.
