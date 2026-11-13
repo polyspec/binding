@@ -12,6 +12,24 @@
   the options record as a trailing argument that may be missing or `undefined`; a record with a field without a
   default is refused by name (GN-6i). `tests/e2e/shapes` has the member `shapes.wrap` of this form. Verified by
   `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
+  of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
+  with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
+  runs the three to their end and names each failed one.
+- `binding generate` ended a refused target, after it had written the other targets, with the usage line and status 2,
+  as if the command line were wrong, so a repository could not tell the refusal from a usage error. A refusal, a core
+  manifest that is not the crate of the contract and a failed `cargo metadata` now end with status 1 and no usage
+  line; only an error of the command line prints the usage with status 2 (GN-1c).
+- A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
+  so one core with `fault-test` turned on the points of every core: a binding crate that left
+  `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
+  is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
+  `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
+  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
+- The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
+  9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
+  refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a
+  place (CK-64).
 - The Node and WASM declarations named an `int64` parameter `number | bigint` and an `int64` result `bigint`, but the
   binding took and gave a number of the safe integers only, so the case 9223372036854775807 was refused as an
   argument, and `binding` read that integer of a case file as the nearest double. The binding now takes a `bigint` of

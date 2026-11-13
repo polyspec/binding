@@ -77,7 +77,7 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
+test('the fixture names the five targets, and the generator refuses its go target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
   const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
@@ -85,13 +85,16 @@ test('the fixture names the five targets, and the generator refuses its go targe
   try {
     // The target Go alone writes nothing.
     const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
-    assert.equal(alone.status, 2, alone.stderr);
+    // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
+    assert.equal(alone.status, 1, alone.stderr);
+    assert.doesNotMatch(alone.stderr, /usage:/);
     assert.match(alone.stderr, goRefused);
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
     // Every target: the refused Go is named, and every other target is written as it is alone.
     const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
-    assert.equal(whole.status, 2, whole.stderr);
+    assert.equal(whole.status, 1, whole.stderr);
+    assert.doesNotMatch(whole.stderr, /usage:/);
     assert.match(whole.stderr, goRefused);
     assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
     const written = files(out);
@@ -1635,4 +1638,18 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
+});
+
+test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {
+  const out = shaped((c) => { unitOf(c, 'utf8_error').module = 'errors'; });
+  // PHP: the class is in the namespace of its module, and the extension registers it by that name.
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /namespace Polyspec\\Shapes\\Errors \{\n    \/\*\* The errors of the unit utf8_error \(E-2\)\. \*\/\n    final class Utf8Error extends \\Polyspec\\Shapes\\ParseError/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /ClassBuilder::new\("Polyspec\\\\Shapes\\\\Errors\\\\Utf8Error"\)/);
+  // Python: <root>.errors gives the class of <root>._errors, and <root> re-exports it.
+  const pkg = 'packages/python/generated/python/polyspec/shapes';
+  assert.match(text(out, `${pkg}/errors.py`), /from \._errors import Utf8Error as Utf8Error\n\n__all__ = \["Utf8Error"\]/);
+  assert.match(text(out, `${pkg}/__init__.py`), /from \.errors import \*  # noqa: F403/);
+  // Node and WASM: the entries export the class by its name.
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });

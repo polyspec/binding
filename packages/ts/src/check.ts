@@ -1225,6 +1225,7 @@ class Checker {
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         this.caseInstances(row.member, record, `/cases/${i}`);
+        this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         const raises = record['raises'];
         const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
         const kind = expected['kind'];
@@ -1302,6 +1303,42 @@ class Checker {
       else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
     }
     this.instanceArgs(found.member, record, report, 'the case');
+  }
+
+  // CK-64: an integer of a case at a place of the contract type int or uint is a safe integer, the range of T-1 that
+  // every target gives (a Node number); a case file gives a larger one as its JSON token, which cli reads as a bigint.
+  // Such a value is an int64 in one target and no int in another, so the case would expect two results; a member
+  // that takes or gives the range of i64 declares int64 (GN-12a).
+  caseRange(memberId: string, record: Record<string, unknown>, resultKey: string, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const where = `the case ${String(record['id'])} of ${memberId}`;
+    const walk = (type: Type, value: unknown, what: string): void => {
+      if (typeof type === 'string') {
+        if ((type === 'int' || type === 'uint') && typeof value === 'bigint') {
+          this.report('CK-64', path, `${where}: ${what} ${value} is outside the safe integers, the range of the type ${type} (T-1); a value of the range of i64 is an int64`);
+        }
+        return;
+      }
+      if ('optional' in type) {
+        if (value !== null) walk(type.optional, value, what);
+      } else if ('list' in type) {
+        const repeat = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+        if (Array.isArray(value)) for (const [k, item] of value.entries()) walk(type.list, item, `${what}[${k}]`);
+        else if (repeat?.['kind'] === 'list') walk(type.list, repeat['value'], `${what}[]`);
+      } else if ('tuple' in type) {
+        if (Array.isArray(value)) for (const [k, item] of value.entries()) if (type.tuple[k] !== undefined) walk(type.tuple[k], item, `${what}[${k}]`);
+      } else if ('map' in type || 'keyed_map' in type) {
+        const item = 'map' in type ? type.map : type.keyed_map;
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) for (const [k, entry] of Object.entries(value)) walk(item, entry, `${what}.${k}`);
+      }
+    };
+    for (const parameter of found.member.parameters ?? []) {
+      const key = convert(parameter.name, 'python', 'variable');
+      if (Object.hasOwn(record, key)) walk(parameter.type, record[key], `the argument ${key}`);
+    }
+    const returns = found.member.returns;
+    if (returns !== undefined && returns !== 'self' && Object.hasOwn(record, resultKey)) walk(returns, record[resultKey], `the result ${resultKey}`);
   }
 
   // The arguments of a member in an instance value or a case whose class type is given as an instance value.

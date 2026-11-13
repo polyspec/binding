@@ -132,6 +132,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   its `recognize` names error units, as a callback member does (CK-17).
 - **CK-63** The WASM core (GN-4b): `core.features.wasm` names none of the features of platform I/O, `fs`,
   `blocking-io`, `process` and `net`.
+- **CK-64** An integer of a case at a place of the type `int` or `uint` (an argument, an item of a list, tuple,
+  map or optional of it, and the result) is a safe integer, the range of T-1 that every target gives (a Node
+  `number`). A larger integer is an `int64` in one target and no `int` in another, so the case would expect two
+  results; a member that takes or gives the range of i64 declares `int64` (GN-12a).
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
