@@ -763,7 +763,9 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
       out.push(base);
       continue;
     }
-    const reason = comparableResult(model, fn.returns);
+    // GN-13e: the result null of an optional has a case form whatever the optional holds.
+    const absent = record[key] === null && typeof fn.returns === 'object' && 'optional' in fn.returns;
+    const reason = absent ? undefined : comparableResult(model, fn.returns);
     out.push(reason === undefined ? { ...base, expected: { value: record[key] } } : { ...base, refused: `the case ${id} of ${fn.member.id} gives ${key}, but ${reason} (GN-13e)` });
   }
   return out;

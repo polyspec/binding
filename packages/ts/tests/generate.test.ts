@@ -1623,8 +1623,13 @@ test('the result null of an optional of a class is compared with the null of eac
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find absent', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n[^\n]*pkg\.find\("a"\)[^\n]*None/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n\s+result = pkg\.find\("a"\)\n\s+expected = None\n/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13efindAbsent\(\): void\n\s+\{\n\s+self::assertSame\(self::same\(null\), self::same\([^\n]*find\("a"\)\)\);/);
+  // Go compares with the nil of the type of the result, as its other results. Go writes no case value of a class of
+  // origin value yet, so its contract has the cases of find alone.
+  const goContract = { ...contract, cases: contract.cases.filter((row: any) => row.member === 'classes.find') };
+  const go = generate({ contract: goContract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] });
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
   // A result that is a class still has no case form, so its test fails with the reason.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
 });

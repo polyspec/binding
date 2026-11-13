@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A case whose result is `null` of an optional of a class, such as `get_absent` of `ordered_map.get` of json, failed
+  its test with "a class has no case value form". The result `null` of an optional now has a case form whatever the
+  optional holds, and each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, Go
+  `nil` of the type of the result); a result that is a class still fails with the reason (GN-13e). Verified by `npm
+  test` in `packages/ts`.
 - A Node class member named by a word that JavaScript reserves, such as the static member `null` of `Value` of json,
   gave an entry that did not parse, because the entry defined it as `function null(...args)` (SyntaxError). The entry
   now writes each member over the addon as a method of the computed key `<name>`, which keeps `<name>` as its `name`,
