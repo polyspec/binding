@@ -312,7 +312,8 @@
   값을 fault를 장전하는 표(`binding_core::errno::value`, feature가 필요 없다)에서 읽어 주고, 그 기계에 없는 기호에는
   kind `internal`을 준다. PHP에는 그 기계의 errno 기호 표가 없으므로, Python과 Node가 그 값을 언어에서 읽듯이 PHP 시험은
   fault 주입점이 없는 계약에서도 그 값을 바인딩에서 읽는다. end-to-end 검사는 PHP 확장을 feature 없이 빌드하고,
-  `llvm-nm`이 그 안에서 시험용 진입점(`panic_test`, `arm_faults`, `fault_left`, `errno_of`, `alias_in_`)을 찾으면 실패한다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
+  `llvm-nm`이 그 안에서 시험용 진입점(`panic_test`, `arm_faults`, `fault_left`, `errno_of`, `alias_in_`)을 찾으면 실패한다. 같은 검사가
+  feature 없는 빌드에 `errno_of`도 B-7의 진입점 `panic_test`도 없음을 보인다. 둘 다 feature `panic-test`의 것이기 때문이다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
   동기 작업에만 설치된다.
 - **GN-8** 모든 진입점은 본문을 `catch_unwind`로 실행한다. panic은 프레임워크의 panic 오류가 아니라 internal category
   클래스의 kind `internal`로 호출자에게 도달한다(B-7).

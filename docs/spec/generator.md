@@ -383,7 +383,8 @@ the design ids are those of the binding design.
   symbols of its machine, so its test reads the value from the binding, as Python and Node read it from their
   language, also in a contract without fault injection points. The end-to-end check builds the PHP extension without
   features and fails if `llvm-nm` finds a test entry point in it (`panic_test`, `arm_faults`, `fault_left`,
-  `errno_of`, `alias_in_`). A member that waits is not generated yet (GN-1), so the
+  `errno_of`, `alias_in_`): the same check shows that a build without features holds neither `errno_of` nor
+  `panic_test`, the entry point of B-7, because both are of the feature `panic-test`. A member that waits is not generated yet (GN-1), so the
   arming is installed for synchronous work only.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
