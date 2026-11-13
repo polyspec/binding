@@ -349,9 +349,7 @@ fn raised(error: Thrown) -> binding_core::Raised {
         Thrown::Js(error) if error.status != napi::Status::PendingException => Thrown::Binding(internal(error)),
         other => other,
     };
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    keep_thrown(error)
 }
 
 fn raised_binding(detail: &str) -> binding_core::Raised {

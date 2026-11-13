@@ -848,15 +848,32 @@ static THROWN: Mutex<BTreeMap<u64, Thrown>> = Mutex::new(BTreeMap::new());
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
+/// U-3, GN-6o: what a Raised holds: the key of what went wrong in THROWN, whose last drop removes it, so a failure
+/// that the core drops is not kept.
+#[derive(Debug)]
+struct ThrownKey {
+    key: u64,
+}
+
+impl NativeObject for ThrownKey {}
+
+impl Drop for ThrownKey {
+    fn drop(&mut self) {
+        let taken = lock(&THROWN).remove(&self.key);
+        drop(taken);
+    }
+}
+
 fn thrown(error: Thrown) -> Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    lock(&THROWN).insert(handle, error);
-    Raised::from_generated(Handle::new(handle))
+    let key = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    lock(&THROWN).insert(key, error);
+    Raised::from_generated(Native::new(ThrownKey { key }))
 }
 
 /// U-3: the failure of a Raised: the Go error, which the caller gets back unchanged, or the failure of the binding.
 fn raised_fail(raised: &Raised) -> Fail {
-    match lock(&THROWN).remove(&raised.handle().raw()) {
+    let taken = raised.native().downcast::<ThrownKey>().and_then(|thrown| lock(&THROWN).remove(&thrown.key));
+    match taken {
 ${model.callbacks.length === 0 ? '' : `        Some(Thrown::Go { call, index }) => Fail { raised: Some((call, index)), ..binding_error(BindingError::Internal { detail: String::from("U-3: the error of a callback") }) },
 `}        Some(Thrown::Binding(fail)) => fail,
         None => binding_error(BindingError::Internal { detail: String::from("U-3: the error of the callback is gone") }),

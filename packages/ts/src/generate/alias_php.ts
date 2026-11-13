@@ -288,9 +288,7 @@ fn handle_position(value: u64) -> usize {
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.
 fn raised(error: Thrown) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    keep_thrown(error)
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 

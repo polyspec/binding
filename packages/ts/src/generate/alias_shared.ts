@@ -223,23 +223,137 @@ fn clean_up_native() {
 `;
 }
 
-// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is kept
-// as its BindingError, which any thread may hold, under the handle of its Raised; the owner thread makes it its error.
+// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is held
+// by its Raised as its BindingError, which any thread may hold; the owner thread makes it its error.
 export const elsewhereRust = (model: Model): string => `
-static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new(BTreeMap::new());
+/// U-3, GN-6m: what the Raised of a failure of the binding on another thread holds.
+#[derive(Debug)]
+struct Elsewhere(BindingError);
+
+impl binding_core::NativeObject for Elsewhere {}
 
 fn thrown_elsewhere(error: BindingError) -> binding_core::Failure<${model.coreError ?? '()'}> {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    if let Ok(mut map) = ELSEWHERE.lock() {
-        map.insert(handle, error);
-    }
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Native::new(Elsewhere(error))))
 }
 
 fn elsewhere(raised: &binding_core::Raised) -> Fail {
-    match ELSEWHERE.lock().ok().and_then(|mut map| map.remove(&raised.handle().raw())) {
-        Some(error) => binding_error(error),
+    match raised.native().downcast::<Elsewhere>() {
+        Some(error) => binding_error(error.0.clone()),
         None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
     }
+}
+`;
+
+// U-3, GN-6o: the thrown objects of Node and PHP, which belong to the thread that threw them. A Raised holds the number
+// of that thread and the key of the object in its table THROWN; its last drop removes the entry on that thread, or,
+// on another thread, queues the key for that thread while it lives. The thread removes its queued keys when it next
+// keeps or throws again an exception, and its end discards its queue.
+export const THREAD_THROWN = `
+/// U-3, GN-6o: the threads that keep thrown objects, and the keys of the Raised that were dropped on another thread,
+/// with the thread that keeps each.
+struct Dropped {
+    live: BTreeSet<u64>,
+    keys: Vec<(u64, u64)>,
+}
+
+static DROPPED: Mutex<Dropped> = Mutex::new(Dropped { live: BTreeSet::new(), keys: Vec::new() });
+
+static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
+
+/// U-3, GN-6o: the number of a thread that keeps thrown objects; its end discards the keys queued for it.
+struct ThrownThread(u64);
+
+impl ThrownThread {
+    fn new() -> Self {
+        let number = NEXT_THREAD.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut dropped) = DROPPED.lock() {
+            dropped.live.insert(number);
+        }
+        Self(number)
+    }
+}
+
+impl Drop for ThrownThread {
+    fn drop(&mut self) {
+        if let Ok(mut dropped) = DROPPED.lock() {
+            dropped.live.remove(&self.0);
+            dropped.keys.retain(|&(thread, _key)| thread != self.0);
+        }
+    }
+}
+
+thread_local! {
+    static THROWN_THREAD: ThrownThread = ThrownThread::new();
+}
+
+/// U-3, GN-6o: the number of this thread; 0, which no thread has, when the thread is ending.
+fn thrown_thread() -> u64 {
+    match THROWN_THREAD.try_with(|thread| thread.0) {
+        Ok(thread) => thread,
+        Err(_ending) => 0,
+    }
+}
+
+/// U-3, GN-6o: what a Raised holds: the thread that keeps the thrown object and its key in THROWN.
+#[derive(Debug)]
+struct ThrownKey {
+    thread: u64,
+    key: u64,
+}
+
+impl binding_core::NativeObject for ThrownKey {}
+
+impl Drop for ThrownKey {
+    fn drop(&mut self) {
+        if thrown_thread() == self.thread {
+            let removed = THROWN.try_with(|map| map.try_borrow_mut().ok().map(|mut map| map.remove(&self.key)));
+            if let Ok(Some(taken)) = removed {
+                drop(taken);
+                return;
+            }
+        }
+        if let Ok(mut dropped) = DROPPED.lock() {
+            if dropped.live.contains(&self.thread) {
+                dropped.keys.push((self.thread, self.key));
+            }
+        }
+    }
+}
+
+/// U-3, GN-6o: removes the thrown objects of this thread whose Raised were dropped on another thread.
+fn release_dropped() {
+    let thread = thrown_thread();
+    let mut keys = Vec::new();
+    if let Ok(mut dropped) = DROPPED.lock() {
+        dropped.keys.retain(|&(owner, key)| {
+            if owner == thread {
+                keys.push(key);
+            }
+            owner != thread
+        });
+    }
+    if keys.is_empty() {
+        return;
+    }
+    let taken = THROWN.try_with(|map| map.try_borrow_mut().ok().map(|mut map| keys.iter().filter_map(|key| map.remove(key)).collect::<Vec<Thrown>>()));
+    drop(taken);
+}
+
+/// U-3: keeps what was thrown on this thread and gives the Raised that names it.
+fn keep_thrown(error: Thrown) -> binding_core::Raised {
+    release_dropped();
+    let key = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    THROWN.with_borrow_mut(|map| map.insert(key, error));
+    binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { thread: thrown_thread(), key }))
+}
+
+/// U-3: takes what was thrown under the Raised, when it is of this thread.
+fn take_thrown(raised: &binding_core::Raised) -> Option<Thrown> {
+    release_dropped();
+    let thrown = raised.native().downcast::<ThrownKey>()?;
+    if thrown.thread != thrown_thread() {
+        return None;
+    }
+    THROWN.with_borrow_mut(|map| map.remove(&thrown.key))
 }
 `;

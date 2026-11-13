@@ -794,7 +794,7 @@ test('a Raised holds the key of the thrown object as a Native, whose last drop r
   for (const [lang, path] of libs) {
     const lib = text(out, path);
     assert.match(lib, /Raised::from_generated\((?:binding_core::)?Native::new\(ThrownKey \{/, lang);
-    assert.match(lib, /impl binding_core::NativeObject for ThrownKey \{\}/, lang);
+    assert.match(lib, /impl (?:binding_core::)?NativeObject for ThrownKey \{\}/, lang);
     assert.match(lib, /impl Drop for ThrownKey \{\n    fn drop\(&mut self\) \{/, lang);
     assert.match(lib, /raised\.native\(\)\.downcast::<ThrownKey>\(\)/, lang);
     assert.doesNotMatch(lib, /raised\.handle\(\)|Raised::from_generated\((?:binding_core::)?Handle::new/, lang);
@@ -1236,7 +1236,9 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(lib, /fn native_env\(native: &Native, subject: &str\) -> Result<Env, BindingError> \{/);
   assert.match(lib, /return Err\(BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}\);/);
   // A failure on another thread is kept as its BindingError, which the owner thread makes its error.
-  assert.match(lib, /static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new\(BTreeMap::new\(\)\);/);
+  assert.match(lib, /struct Elsewhere\(BindingError\);/);
+  assert.match(lib, /binding_core::Raised::from_generated\(binding_core::Native::new\(Elsewhere\(error\)\)\)/);
+  assert.doesNotMatch(lib, /static ELSEWHERE/);
   assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
   assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[napi\(js_name = "__threadTest"\)\]/);
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/ts/Cargo.toml')), /\nthread-test = \[\]\n/);

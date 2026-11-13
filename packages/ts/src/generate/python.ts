@@ -661,16 +661,37 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
+/// U-3, GN-6o: what a Raised holds: the key of the exception in THROWN, whose last drop removes it, so an exception
+/// that the core drops is not kept.
+#[derive(Debug)]
+struct ThrownKey {
+    key: u64,
+}
+
+impl binding_core::NativeObject for ThrownKey {}
+
+impl Drop for ThrownKey {
+    fn drop(&mut self) {
+        let taken = thrown_map().remove(&self.key);
+        drop(taken);
+    }
+}
+
+/// U-3: keeps the exception and gives the Raised that names it.
+fn keep_thrown(object: Py<PyAny>) -> binding_core::Raised {
+    let key = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    thrown_map().insert(key, object);
+    binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { key }))
+}
+
 fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+    binding_core::Failure::Raised(keep_thrown(error.into_value(py).into_any()))
 }
 
 fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
     match failure {
         binding_core::Failure::Kind(error) => core_error(py, error),
-        binding_core::Failure::Raised(raised) => match thrown_map().remove(&raised.handle().raw()) {
+        binding_core::Failure::Raised(raised) => match raised.native().downcast::<ThrownKey>().and_then(|thrown| thrown_map().remove(&thrown.key)) {
             Some(object) => PyErr::from_value(object.into_bound(py)),
             None => binding_error(py, BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
         },

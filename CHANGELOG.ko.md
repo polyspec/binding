@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- `Raised`는 handle만 가져서, 코어가 `Raised`를 돌려주지 않고 버리면 그 아래의 예외가 바인딩의 표에 남았고, 다른 스레드에서
+  난 바인딩의 실패도 그 표에 남았다. 이제 `Raised`는 `Native`를 갖고(`Raised::from_generated(Native)`, `native()`), 그 마지막
+  drop이 항목을 지운다(GN-6o). Python, Go, WASM은 drop에서 지우고, Node와 PHP는 던진 스레드에서 곧바로 지우거나, 다른
+  스레드의 drop 뒤에는 그 스레드가 다음에 예외를 보관하거나 다시 던질 때 지우며, 스레드가 끝나면 그 대기열을 버린다. 다른
+  스레드에서 난 바인딩의 실패는 그 `Raised`가 `BindingError`로 갖는다.
 - 언어 객체를 `native` 행으로 보냈다가 돌려받는 생성 시험이 없어서, 객체를 붙잡거나 잃는 바인딩도 통과했다. `native` out
   행이 있는 값 alias와 그것을 받아 그대로 돌려주는 함수가 있으면, 이제 각 target이 객체가 같은 객체로 돌아오는지와 바인딩이
   그 객체의 참조를 남기지 않는지 시험한다(GN-6o). Python은 `sys.getrefcount`와 `weakref`로, Node, PHP, WASM은 새 feature

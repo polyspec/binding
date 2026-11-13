@@ -757,11 +757,27 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
+/// U-3, GN-6o: what a Raised holds: the key of what was thrown in THROWN, whose last drop removes it, so an exception
+/// that the core drops is not kept. The module has one thread, which holds the table.
+#[derive(Debug)]
+struct ThrownKey {
+    key: u64,
+}
+
+impl binding_core::NativeObject for ThrownKey {}
+
+impl Drop for ThrownKey {
+    fn drop(&mut self) {
+        let taken = THROWN.try_with(|map| map.try_borrow_mut().ok().and_then(|mut map| map.remove(&self.key)));
+        drop(taken);
+    }
+}
+
 /// U-3: keeps what was thrown, as the Raised that the core gives back.
 fn raised(error: Thrown) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    let key = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    THROWN.with_borrow_mut(|map| map.insert(key, error));
+    binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { key }))
 }
 ${model.callbacks.length === 0 ? '' : `
 fn thrown(error: Thrown) -> ${failure} {
@@ -771,7 +787,7 @@ fn thrown(error: Thrown) -> ${failure} {
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
-        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
+        binding_core::Failure::Raised(raised) => match raised.native().downcast::<ThrownKey>().and_then(|thrown| THROWN.with_borrow_mut(|map| map.remove(&thrown.key))) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
             None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),

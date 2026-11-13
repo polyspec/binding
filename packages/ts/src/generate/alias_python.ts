@@ -258,9 +258,7 @@ fn handle_position(value: u64) -> usize {
 
 /// U-3: an exception of Python code while the core walks a value, as the Raised that the caller throws again.
 fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    keep_thrown(error.into_value(py).into_any())
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 
