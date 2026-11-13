@@ -836,6 +836,25 @@ test('a language object that a core may keep enters as a Native, which each targ
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
+test('a drop on another thread wakes the Node owner through its unref threadsafe function, which the cleanup aborts under the lock of the owners (GN-6u)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'node'] });
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  // The owner makes the function with its table, without a JavaScript function, and unrefs it.
+  assert.match(node, /napi::sys::napi_create_threadsafe_function\(\n\s+env\.raw\(\),\n\s+std::ptr::null_mut\(\),/);
+  assert.match(node, /napi::sys::napi_unref_threadsafe_function\(env\.raw\(\), waker\)/);
+  assert.match(node, /extern "C" fn release_on_owner\(/);
+  // A drop of the same generation queues its key and wakes the owner, under the lock of the owners.
+  assert.match(node, /Some\(owner\) if owner\.generation == self\.generation => \{\n\s+owner\.released\.push\(self\.key\);\n\s+wake\(owner\);\n\s+\}/);
+  // The cleanup raises the generation and aborts the function under the same lock.
+  assert.match(node, /owner\.generation = owner\.generation\.saturating_add\(1\);\n\s+owner\.released\.clear\(\);\n\s+abort_waker\(owner\);/);
+  assert.match(node, /napi::sys::ThreadsafeFunctionReleaseMode::abort/);
+  // PHP has no event loop: no threadsafe function.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.doesNotMatch(php, /threadsafe_function|fn wake\(/);
+  assert.match(php, /Some\(owner\) if owner\.generation == self\.generation => owner\.released\.push\(self\.key\),/);
+});
+
 test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6u)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
