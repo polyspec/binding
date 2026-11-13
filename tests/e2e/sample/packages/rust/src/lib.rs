@@ -1,6 +1,6 @@
 //! A sample library for the end-to-end check of binding: a callback interface that language code implements (U-3).
 
-use binding_core::{FloatOut, Handle, HostText, HostValue, HostValues, Failure, Kinds, MapOut, OutValue, OutValues};
+use binding_core::{FloatOut, Handle, HostText, HostValue, HostValues, Failure, Kinds, MapOut, Native, OutValue, OutValues};
 use std::fmt;
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
@@ -243,8 +243,8 @@ pub fn shout(tag: &Tag) -> Tag {
     Tag { name: tag.name.to_uppercase() }
 }
 
-/// A value of data: the null, a boolean, a number, a text, a list or a map with text keys (U-7: a value alias whose
-/// core judges the language values and gives its own).
+/// A value of data: the null, a boolean, a number, a text, a list, a map with text keys or an object of the language
+/// (U-7: a value alias whose core judges the language values and gives its own).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
     /// No value.
@@ -259,6 +259,8 @@ pub enum Data {
     List(Vec<Data>),
     /// A map with text keys, in order.
     Map(Vec<(String, Data)>),
+    /// An object or a function of the language, which data keeps and gives back as the same object (GN-6o).
+    Native(Native),
 }
 
 /// The deepest nesting of data that the sample takes.
@@ -317,6 +319,7 @@ fn data_at(host: &mut dyn HostValues, value: HostValue, depth: usize) -> Result<
             }
             Ok(Data::Map(entries))
         }
+        HostValue::Callable(native) | HostValue::Object { native, .. } => Ok(Data::Native(native)),
         other => Err(Failure::Kind(Error::Unsupported { what: format!("{other:?}") })),
     }
 }
@@ -342,6 +345,7 @@ impl<'a> DataOut<'a> {
                 let sequence = entries.iter().enumerate().all(|(index, (key, _value))| *key == index.to_string());
                 OutValue::Map(MapOut::new(Handle::new(widen(self.held.len() - 1)), widen(entries.len()), sequence))
             }
+            Data::Native(native) => OutValue::Native(native.clone()),
         }
     }
 }

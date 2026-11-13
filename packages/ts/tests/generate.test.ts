@@ -736,21 +736,50 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node'] }), /data: the node make tag\.new of the kind bool takes text, not the content of the kind/);
 });
 
-test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
+test('a language object that a core may keep enters as a Native, which each target holds and releases by its rule (GN-6o)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
-  const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
-    contract: read(`${repository}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${repository}`,
-    caseFiles: new Map([['contracts/cases.json', read(`${repository}/contracts/cases.json`)]]), ...(foreign === undefined ? {} : { foreign }),
-  }), 'packages/php-ext/generated/lib.rs');
-  // A crate with a value alias, its own or of another repository, holds the values and releases them.
-  for (const crate of [lib('sample'), lib('consumer', new Map([['sample', read('sample/packages/rust/interface.json')]]))]) {
-    assert.match(crate, /let module = module\.request_shutdown_function\(release_native\);/);
-    assert.match(crate, /extern "C" fn release_native\(_kind: i32, _module: i32\) -> i32 \{\n    NATIVE\.with_borrow_mut\(\|native\| \{\n        RELEASED\.set\([^\n]*\n        native\.clear\(\);/);
-    // A handle of an ended request is below the count of the released ones and finds no value.
-    if (/fn native_object\(/.test(crate)) assert.match(crate, /let position = handle\.raw\(\)\.checked_sub\(RELEASED\.get\(\)\)\.map\(handle_position\);/);
-    assert.match(crate, /Handle::new\(RELEASED\.get\(\)\.saturating_add\(handle_count\(native\.len\(\) - 1\)\)\)/);
+  const sample = read('sample/packages/rust/interface.json');
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  // Python holds the reference, which PyO3 releases at the drop or at its next acquisition of the GIL.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /#\[cfg\(pyo3_disable_reference_pool\)\]\ncompile_error!\(/);
+  assert.match(python, /struct PyNative\(Py<PyAny>\);/);
+  assert.match(python, /impl NativeObject for PyNative \{\}/);
+  assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\)\)\);/);
+  assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\), type_name, json_serializable: false \}\)/);
+  // A value outside the closed set is valid for the call alone.
+  assert.match(python, /HostValue::Other \{ type_name, handle: self\.hold\(Held::Value\(value\.clone\(\)\)\) \}/);
+  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\.0\.clone_ref\(py\)\.into_bound\(py\)\),/);
+  // WASM holds the key of the table of its one thread; the drop removes it.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
+  assert.match(wasm, /impl Drop for WasmNative \{\n    fn drop\(&mut self\) \{\n        let released = NATIVE\.try_with\(/);
+  assert.match(wasm, /return Ok\(HostValue::Date\(self\.hold\(Held::Value\(value\.clone\(\)\)\)\)\);/);
+  assert.match(wasm, /OutValue::Native\(native\) => native_object\(&native\),/);
+  // Node and PHP hold the owner, its generation and the key; a drop queues the key for the owner, which releases it on
+  // its own thread at the start of every entry point, and a drop of an older generation touches nothing.
+  for (const [path, reference] of [['packages/ts/generated/lib.rs', 'napi::UnknownRef<false>'], ['packages/php-ext/generated/lib.rs', 'Zval']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, /struct OwnedNative \{\n    owner: usize,\n    generation: u64,\n    key: u64,\n\}/, path);
+    assert.match(lib, new RegExp(`values: BTreeMap<u64, ${reference.replace(/[<>]/g, (c) => `\\${c}`)}>,`), path);
+    assert.match(lib, /impl Drop for OwnedNative \{\n    fn drop\(&mut self\) \{\n        let Ok\(mut owners\) = OWNERS\.lock\(\) else \{\n            return;\n        \};\n        match owners\.get_mut\(self\.owner\) \{\n            Some\(owner\) if owner\.generation == self\.generation => owner\.released\.push\(self\.key\),\n            _other => return,\n        \}\n        drop\(owners\);\n        release_queue\(\);/, path);
+    assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/, path);
+    assert.match(lib, /owner\.generation = owner\.generation\.saturating_add\(1\);/, path);
+    assert.match(lib, /OutValue::Native\(native\) => native_object\(/, path);
+    assert.doesNotMatch(lib, /static RELEASED|RELEASED\.get/, path);
   }
-  assert.doesNotMatch(lib('shapes'), /request_shutdown_function|release_native/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /env\.add_env_cleanup_hook\(\(\), \|\(\)\| clean_up_native\(\)\)/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let module = module\.request_shutdown_function\(release_native\);/);
+  assert.match(php, /extern "C" fn release_native\(_kind: i32, _module: i32\) -> i32 \{\n    clean_up_native\(\);\n    0\n\}/);
+  // Go holds the cgo.Handle, which the drop deletes on any thread.
+  const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /\[9\] => HostValue::Callable\(Native::new\(GoNative \{ handle: in_uint\(input\)\? \}\)\),/);
+  assert.match(go, /impl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n        \/\/ SAFETY: [^\n]*\n        unsafe \{ polyspec_sample__go_release\(self\.handle\) \};/);
+  const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
+  assert.match(goBinding, /case reflect\.Func:\n\t\tenc\.bytes = append\(enc\.bytes, 9\)\n\t\tenc\.Uint\(uint64\(cgo\.NewHandle\(value\.Interface\(\)\)\)\)/);
+  assert.match(goBinding, /\/\/export polyspec_sample__go_release\nfunc polyspec_sample__go_release\(handle C\.uint64_t\) \{\n\tcgo\.Handle\(uintptr\(handle\)\)\.Delete\(\)\n\}/);
+  for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
 // The consumer sample of the end-to-end check, which names the value alias of the sample (tests/e2e/consumer).

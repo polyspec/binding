@@ -776,6 +776,15 @@
             "go": "map",
             "wasm": "map"
           }
+        },
+        {
+          "kind": "native",
+          "make": {
+            "php": "native",
+            "python": "native",
+            "node": "native",
+            "wasm": "native"
+          }
         }
       ],
       "in": [
