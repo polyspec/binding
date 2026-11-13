@@ -473,7 +473,8 @@
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
   때문이다. `process_wait`도 이름을 대고 거부한다(G-4).
 - **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
-  tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. 진입점은 GN-6m처럼 호출
+  tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. tokio runtime이 없는
+  WASM은 그것을 JavaScript의 event loop에서 돌린다. 진입점은 GN-6m처럼 호출
   스레드에서 인자를 바꾸고 잠금과 fault 장전을 가져오며, future가 그것을 가진다. future는 바꾼 값과 소유한 guard 위의
   `async move`이므로 `Send + 'static`이다. fault는 poll마다 설치되고(`fault::Armed::around`), poll의 panic은 kind
   `internal`의 실패다(`driver::Caught`, B-7). 언어마다 GN-6m의 꼴로 기다린다:
@@ -485,7 +486,12 @@
     `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
     JavaScript 진입은 GN-6m처럼 async 함수다.
   - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
-  - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - WASM은 `wasm_bindgen_futures::future_to_promise`의 `Promise`를 돌려준다. 브라우저에서도 Node에서도 JavaScript의
+    event loop가 모듈의 스레드에서 future를 poll하고, 끝나면 그 결과나 오류를 변환하므로 실패는 promise를 reject한다.
+    WASM crate는 자기 `wasm-bindgen`과 `js-sys`를 고정한 release의 `wasm-bindgen-futures`에 의존하고 binding_core의
+    driver에는 의존하지 않는다. WebAssembly 모듈에서는 tokio runtime이 돌지 않으므로, future가 그것을 필요로 하는 코어는
+    거기서 그 코어가 주는 오류로 실패하며, 그런 member는 지원하는 target을 `only`에 적는다. poll의 panic은 모듈이 unwind하는
+    곳에서는 kind `internal`이고, 모듈이 abort하는 곳에서는 인스턴스를 trap시킨다(GN-18). ES 진입은 Node처럼 async 함수다.
   GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다. 언어 코드에 닿는
   `async_driver` member는 GN-6ab대로 생성한다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
   부르게 되기 때문이다.
@@ -562,7 +568,12 @@
     돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
   - Go는 `async_driver`인 모든 member처럼(GN-6n) 그런 member를 이름을 대고 거부한다. Io future를 기다릴 GN-6m의 완료
     channel을 생성하지 않으며, 어느 스레드의 cgo 호출도 Go를 부를 수 있으므로 Go의 callback에는 owner 스레드가 필요
-    없다(c6 6.4). WASM은 `async_driver`인 모든 member와 함께 이를 이름을 대고 거부한다(GN-6n).
+    없다(c6 6.4).
+  - WASM: Node처럼 진입은 모듈의 스레드에서 machine을 만들고 모듈의 `Driven` 객체를 돌려주며, async 함수인 ES 진입은
+    machine이 끝날 때까지 그 `advance()`를 부른 뒤 그것을 해제한다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
+    모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[false, promise]`를, 끝에서는
+    `[true, result]`를 돌려준다. 두 곳 모두 JavaScript의 event loop가 모듈의 스레드에서 각 Io future를 poll하고 tokio
+    runtime은 쓰지 않으므로, 브라우저와 Node는 같은 단계를 밟는다.
   `machine`이 있는 method는 이름을 대고 거부한다. 단계들에 걸쳐 receiver를 빌리는 machine은 driver가 쥔 guard에서
   빌리게 되는데, 코어는 그런 타입을 적을 수 없기 때문이다. 함수와 static member는 생성한다. 호출이 machine에 awaitable을
   줄 `async_allowed: true`인 callback과 `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기

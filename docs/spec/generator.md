@@ -583,7 +583,8 @@ the design ids are those of the binding design.
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
   hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
 - **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
-  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs.
+  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs;
+  WASM, which has no tokio runtime, runs it on the event loop of JavaScript.
   The entry point converts the arguments and takes the locks and the arming of its faults on the calling thread, as
   GN-6m states, and the future owns them: it is `async move` over the converted values and the owned guards, so it is
   `Send + 'static`. Its faults are installed around each poll (`fault::Armed::around`), and a panic of a poll is a
@@ -596,7 +597,13 @@ the design ids are those of the binding design.
     napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
   - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
-  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
+  - WASM returns a `Promise` of `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the
+    future on the thread of the module, in a browser as in Node, and its result or error is converted when it ends,
+    so a failure rejects the promise. The WASM crate depends on `wasm-bindgen-futures` of the release that pins its
+    `wasm-bindgen` and `js-sys`, and not on the driver of binding_core: no tokio runtime runs in a WebAssembly
+    module, so a core whose future needs one fails there with the error that its core gives, and such a member names
+    the targets that it supports in `only`. A panic of a poll is kind `internal` where the module unwinds, and it traps
+    the instance where the module aborts (GN-18). The ES entry is an async function, as for Node.
   A member with `async_driver` is refused by name where GN-6m refuses a member that waits. A member with
   `async_driver` that reaches language code is generated as GN-6ab states, because a future that a runtime polls on
   its own threads would call the language code there.
@@ -682,8 +689,13 @@ the design ids are those of the binding design.
     on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
   - Go refuses such a member by name, as it refuses every member with `async_driver` (GN-6n): the completion channel of
     GN-6m, which would wait for an Io future, is not generated, and Go needs no owner thread for a callback, because a
-    cgo call from any thread may call Go (c6 6.4). WASM refuses it by name with every member with `async_driver`
-    (GN-6n).
+    cgo call from any thread may call Go (c6 6.4).
+  - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
+    module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
+    `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
+    returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
+    Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
+    both and no tokio runtime is used.
   A method with `machine` is refused by name: a machine that borrowed its receiver across its steps would borrow from
   the guard that the driver holds, a type that the core cannot name; a function and a static member are generated. A
   callback with `async_allowed: true`, whose call would give an awaitable to the machine, and `core.reaches` (c6 6.3)

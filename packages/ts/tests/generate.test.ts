@@ -2472,13 +2472,124 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   }
   assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
   assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
-  // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
+  // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
+  // of binding_core and without a tokio runtime.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-13e: settle a_name_is_settled', async \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(\(await pkg\.settle\('a'\)\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
+  assert.match(String(crates.get('packages/ts/wasm/Cargo.toml')), /\nwasm-bindgen-futures = "=0\.4\.80"\n/);
+  assert.doesNotMatch(String(crates.get('packages/ts/wasm/Cargo.toml')), /"driver"/);
+  // Go names such a member as not generated yet; a WASM method's future owns the guard of its receiver, and a
+  // constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
   };
   assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
-  assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
+  const wasmEverywhere = classes(everywhere, ['wasm']);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ polyspec_classes::Gate::enter_later\(&receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
+});
+
+test('the generated WASM future of a member with wait async_driver compiles against the core of tests/e2e/classes for the host and for wasm32 (GN-6n)', () => {
+  // The entry point of classes.settle and the helpers that it uses, as the generator writes them, with the core
+  // function of the fixture's own source. The stand-ins are the items of wasm-bindgen, of binding_core and of the
+  // module that they name, each with the signature of the item it stands for: future_to_promise of
+  // wasm-bindgen-futures takes a future of Result<JsValue, JsValue> that is 'static.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const wasm = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  const entry = /pub fn settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
+  assert.ok(entry !== null, 'no WASM entry point settle');
+  const params: string[] = [];
+  const body: string[] = [];
+  for (const line of (entry[1] ?? '').split('\n')) {
+    const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+    if (input === null) body.push(line);
+    else params.push(`${input[1]}: ${input[2]}`);
+  }
+  const helper = (name: string): string => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    assert.ok(found !== null, `no helper ${name}`);
+    return found[0];
+  };
+  const core = readFileSync(new URL('../../../tests/e2e/classes/packages/rust/src/lib.rs', import.meta.url), 'utf8');
+  const settle = /(?:\/\/\/[^\n]*\n)*pub async fn settle\([\s\S]*?\n\}\n/.exec(core);
+  const pending = /(?:\/\/\/[^\n]*\n)*#\[derive\(Default\)\]\nstruct Pending \{[\s\S]*?\nimpl std::future::Future for Pending \{[\s\S]*?\n\}\n/.exec(core);
+  assert.ok(settle !== null && pending !== null, 'no core function settle with its future Pending');
+  const source = `use std::panic::{catch_unwind, AssertUnwindSafe};
+
+pub struct JsValue;
+
+pub struct Promise;
+
+impl From<Promise> for JsValue {
+    fn from(_promise: Promise) -> Self {
+        Self
+    }
+}
+
+pub mod wasm_bindgen_futures {
+    pub fn future_to_promise<F>(future: F) -> super::Promise
+    where
+        F: std::future::Future<Output = Result<super::JsValue, super::JsValue>> + 'static,
+    {
+        drop(future);
+        super::Promise
+    }
+}
+
+pub enum BindingError {
+    Internal { detail: String },
+}
+
+pub struct Fail;
+
+fn throw(_fail: Fail) -> JsValue {
+    JsValue
+}
+
+fn binding_error(_error: BindingError) -> Fail {
+    Fail
+}
+
+fn core_error(_error: polyspec_classes::Error) -> Fail {
+    Fail
+}
+
+fn out_text(value: impl AsRef<str>) -> Result<JsValue, Fail> {
+    let _text: &str = value.as_ref();
+    Ok(JsValue)
+}
+
+pub mod polyspec_classes {
+    pub enum Error {
+        Missing { key: String },
+    }
+
+${settle[0]}
+${pending[0]}}
+
+${helper('awaited')}
+${helper('caught')}
+pub fn settle(${params.join(', ')}) -> Result<JsValue, Fail> {
+${body.join('\n')}
+}
+`;
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-future-'));
+  try {
+    for (const target of [[], ['--target', 'wasm32-unknown-unknown']]) {
+      const run = spawnSync('rustc', ['--edition', '2021', '--crate-type', 'lib', '--crate-name', 'awaiting', '--emit', 'metadata', '-D', 'warnings', '--out-dir', where, ...target, '-'], { input: source, encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+      assert.equal(run.status, 0, `rustc ${target.join(' ')}: ${run.stderr}`);
+    }
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
 });
 
 test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
@@ -2551,6 +2662,20 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(cjs, /async function drive\(driven\) \{\n  for \(;;\) \{\n    const \[ended, value\] = driven\.advance\(\);\n    if \(ended\) return value;\n    await value;\n  \}\n\}/);
   assert.match(cjs, /return drive\(addon\.resolveSlowly\(args\[0\], args\[1\]\)\);/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
+  // wait is a promise of the event loop of JavaScript.
+  const wasmOut = sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; }, ['wasm']);
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|\| \{/);
+  assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
+  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(true, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
+  assert.match(wasm, /pub fn advance\(&mut self\) -> Result<JsValue, JsValue> \{/);
+  const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}for \(;;\) \{\n {6}const \[ended, value\] = enter\(Internal, \(\) => driven\.advance\(\)\);\n {6}if \(ended\) return value;\n {6}await value;\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
+  assert.match(mjs, /export async function resolveSlowly\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveSlowly\(args\[0\], args\[1\]\)\)\);/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{/);
   // Go refuses it with every member with async_driver; a method with machine is refused by name.
   assert.throws(() => sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), /sample\.resolve_slowly: wait async_driver is not generated for Go yet \(GN-6n\)/);
   assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);

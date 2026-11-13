@@ -263,6 +263,39 @@ pub async fn fetch(name: &str) -> Result<String, Error> {
     Ok(format!("the fetched text of {name}"))
 }
 
+/// The text of a name, awaited as an async driver would be, on any executor (GN-6n): the future is pending once
+/// before it ends, so the driver polls it again, and it needs no tokio runtime, which a WebAssembly module has not.
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty.
+pub async fn settle(name: &str) -> Result<String, Error> {
+    Pending::default().await;
+    if name.is_empty() {
+        return Err(Error::Missing { key: String::from("name") });
+    }
+    Ok(format!("the settled text of {name}"))
+}
+
+/// A future that is pending once, after it wakes its task, and then ready (GN-6n).
+#[derive(Default)]
+struct Pending {
+    polled: bool,
+}
+
+impl std::future::Future for Pending {
+    type Output = ();
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, context: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        if self.polled {
+            return std::task::Poll::Ready(());
+        }
+        self.polled = true;
+        context.waker().wake_by_ref();
+        std::task::Poll::Pending
+    }
+}
+
 /// GN-6n: a core of tokio needs the runtime of its call, so an async member fails where the binding gives none. The
 /// call yields once, so that the future is polled again.
 async fn on_runtime() -> Result<(), Error> {
