@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- `tests/e2e/relay` has the variant `packet`, whose cases hold the value class of json as a field and in a list,
+  with the members `passed` and `count` and their cases, so that a value class of another repository in a case has
+  a contract of the end-to-end check (T-9, GN-6v, GN-6x). Not verified by an end-to-end run. The generated tests of
+  the relay write a case value of the value class as a built-in value (`Carry("name")` where Go takes `*json.Value`),
+  for `carry` as for the new members, so the Go tests of the relay do not compile until a case value of a value class
+  of another repository is written by the make members of its owner (GN-13b). Verified by `make test-ts` alone: 417
+  of 417 pass.
 - `binding check` has the check CK-72: a field of a case of a variant with the name of the `tag` of the variant,
   compared by their words, is a finding at that field with the remedy "rename the field or the tag", because the
   value of a case is an object whose tag member holds the case value (T-9, GN-6v). The finding of CK-23 for a name

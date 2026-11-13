@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4f8f550d3dc3aebcbdef3c1c85f35a8a8847fbe5cbd2baba5beb8450153f0eb5 -->
+<!-- source-sha256: 82ca57bcbf6c6e8d3911adb180cd1b94115c681f8757314ae95f2476668af0bd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/relay`에 variant `packet`이 생겼다. 그 case는 json의 value class를 field와 list로 담고, member `passed`와
+  `count`, 그 case가 함께 있다. 그래서 case 안의 다른 레포 value class가 e2e 검사의 계약을 가진다(T-9, GN-6v, GN-6x).
+  e2e 실행으로는 확인하지 않았다. relay의 생성된 테스트는 value class의 case 값을 내장 값으로 쓴다(Go가
+  `*json.Value`를 받는 자리에 `Carry("name")`). `carry`도 새 member도 그렇다. 그래서 다른 레포 value class의 case 값을 그
+  owner의 make member로 쓰기 전에는 relay의 Go 테스트가 컴파일되지 않는다(GN-13b). `make test-ts`만으로 확인했다: 417개 중
+  417개가 통과한다.
 - `binding check`에 검사 CK-72가 생겼다: variant case의 field가 그 variant의 `tag`와 이름이 같으면(단어로 비교) 그
   field 자리의 finding이고 해결 방법은 "field나 tag의 이름을 바꾼다"다. case의 값은 tag member가 case 값을 담는 객체이기
   때문이다(T-9, GN-6v). 대상 언어가 예약한 이름에 대한 CK-23의 finding은 해결 방법으로 naming exception을 적었는데

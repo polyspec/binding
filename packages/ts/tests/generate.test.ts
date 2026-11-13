@@ -4757,10 +4757,8 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.match(text(marks, 'packages/python/generated/python/polyspec/plot/_types.py'), /from polyspec\.points import Point as Point\n[^]*class MarkDot:\n[^]*?\n    at: Point\n/);
   assert.match(text(marks, 'packages/python/generated/tests/test_generated.py'), /pkg\.flipped\(pkg\.MarkDot\(at=foreign_points\.Point\(x=1, y=2\)\)\)/);
   assert.match(text(marks, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Plot\\flipped\(new \\Polyspec\\Plot\\MarkDot\(at: new \\Polyspec\\Points\\Point\(x: 1, y: 2\)\)\)/);
-  // The relay with a variant whose cases hold the value class of json, as a field and in a list (GN-6x).
+  // tests/e2e/relay: the cases of the variant packet hold the value class of json, as a field and in a list (GN-6x).
   const relay = relaySample();
-  relay.contract.units.push({ id: 'packet', name: ['packet'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'polyspec_relay::Packet', tag: ['kind'], cases: [{ value: 'one', fields: [{ name: ['value'], type: 'json_value', required: true }] }, { value: 'many', fields: [{ name: ['values'], type: { list: 'json_value' }, required: true }] }] });
-  relay.contract.units[0].members.push({ id: 'relay.passed', name: ['passed'], kind: 'function', visibility: 'public', parameters: [{ name: ['packet'], type: { unit: 'packet' }, required: true }], returns: { unit: 'packet' }, raises: [], wait: 'none', core: 'polyspec_relay::passed' });
   const packets = generate({ contract: relay.contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles: relay.caseFiles, foreign: relay.foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
   assert.match(text(packets, 'packages/python/generated/lib.rs'), /let field_value: polyspec_json::Value = in_json_value\(py, &value\.getattr\("value"\)\?, subject\)\?;/);
   assert.match(text(packets, 'packages/ts/generated/lib.rs'), /in_list\(member\(value, "values", subject\)\?, "values", \|item\| in_json_value\(env, item, "values"\)\)\?;/);
@@ -4770,6 +4768,8 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   assert.match(packetGo, /type PacketOne struct \{\n\tValue \*json\.Value\n\}/);
   assert.match(packetGo, /\nfunc encodePacket\(call \*binding\.Call, enc \*binding\.Writer, value Packet\) \{\n\tswitch case0 := value\.\(type\) \{\n\tcase PacketOne:\n\t\tenc\.Uint\(0\)\n\t\tcall\.Value\(enc, case0\.Value\)\n/);
   assert.match(packetGo, /\t\tcase0\.Value, _ = dec\.Value\(\)\.\(\*json\.Value\)\n/);
+  // The cases of the members run: a value of the class is made as at any other place.
+  assert.match(text(packets, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: count many_values_count_each'/);
   // A value alias of this contract in a case stays refused by name.
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   sample.units.push({ id: 'held', name: ['held'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Held', tag: ['kind'], cases: [{ value: 'one', fields: [{ name: ['value'], type: { unit: 'data' }, required: true }] }] });
