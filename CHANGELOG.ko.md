@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 863692ee0eb023eb37bbd0ca65bf0a25058d22b659b03e241b689f30ca35ef25 -->
+<!-- source-sha256: cfc2e544ed9271159348a2329296de385115acd28a37620533f3d1e3b20a54c1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -27,6 +27,19 @@
   `invalid_callback`이라는 시험을 쓴다. `packages/ts`의 `npm test`로 검증했다. Node closure의 시험, 시험이 연기하는
   machine에 대고 돌린 `drive`의 시험(값, promise, thenable, 거부된 기다리는 값, 거부된 기다림), Node 시험의 시험 세
   개가 통과한다. Python, Go, WASM에 대해 sample을 생성하는 21개 시험은 그 target의 거부로 여전히 실패한다.
+- awaitable을 돌려주는 함수를 주는 case가 없어서, awaitable이 나중에 settle되거나 예외를 내는 `Step::Await`의 경로에는
+  case가 없었다. 함수 fixture는 이제 `"awaits": true`를 적을 수 있다. 그 함수는 그 언어의 awaitable을 돌려주고 그
+  결과는 fixture의 `result`나 `raise`다. 계약 검사는 그 표시를 값이 `true`일 때만, `async_allowed: true`인 함수 타입에만,
+  step 안에서는 그 step의 fixture가 그것을 적을 때만 받아들인다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은
+  fixture가 보통 함수이고, 표시가 있는 case는 다섯 target에서 돈다. PHP 시험은 그렇게 쓴다. sample은 `store.transaction`에
+  그런 case 둘을 가진다: 기다리고 commit하는 함수와 중첩된 함수, 그리고 예외를 내고 항목을 버리는 awaitable이다(CK-22,
+  GN-6ae). `packages/ts`의 `npm test`로 검증했고 그 표시의 시험은 통과한다.
+- 함수 fixture의 step은 그 호출이 돌려주는 값을 적을 수 없었다. 그래서 `store.transaction`의 case는 함수 안에서
+  `scope.get`을 부르면서 그 값을 검증하지 않았고, 아무것도 쥐지 않은 scope도 통과했을 것이다. step은 이제 `result`를
+  적을 수 있다. 계약 검사는 그것을 받아들이고, 생성된 함수는 다음 step 전에 그 값을 요구한다. PHP 시험은 그것을 함수
+  안의 단언으로 쓴다. sample의 세 case는 이제 scope가 쥔 것을 요구한다: commit 전과 예외 전의 대기 중인 항목, 중첩된
+  scope 안에서 본 바깥 scope의 항목, 바깥 scope에서 본 중첩된 scope의 항목이다(CK-22, GN-6ae). `packages/ts`의
+  `npm test`로 검증했고 함수 fixture의 시험은 통과한다.
 - Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
   case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
   때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,

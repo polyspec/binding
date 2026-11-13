@@ -31,6 +31,21 @@
   three tests of the Node closure, of `drive` run against a played machine (a value, a promise, a thenable, a
   rejected awaited value and a rejected wait) and of the Node test pass; the 21 tests that generate the sample for
   Python, Go or WASM still fail with the refusal of those targets.
+- No case could give a function that returns an awaitable, so the path of `Step::Await` whose awaitable settles later,
+  or raises, had no case. A function fixture may now name `"awaits": true`: the function returns an awaitable of its
+  language whose outcome is the `result` or the `raise` of the fixture. The contract check accepts the marker only
+  with the value `true`, only for a function type with `async_allowed: true`, and inside a step only where the
+  fixture of that step names it. PHP and Go have no awaitable, so there the same fixture is a plain function and a
+  case with the marker runs on the five targets; the PHP test writes it so. The sample has two such cases of
+  `store.transaction`: a function and a nested function that await and commit, and an awaitable that raises and
+  drops its entries (CK-22, GN-6ae). Verified by `npm test` in `packages/ts`, whose tests of the marker pass.
+- A step of a function fixture could not state what its call returns, so the cases of `store.transaction` called
+  `scope.get` inside the function without verifying its value, and a scope that held nothing would have passed. A
+  step may now name `result`, which the contract check accepts and the generated function requires before its next
+  step; the PHP test writes it as an assertion inside the function. The three cases of the sample now require what
+  the scope holds: the pending entry before the commit and before the raise, the entry of the outer scope inside the
+  nested scope, and the entry of the nested scope in the outer one (CK-22, GN-6ae). Verified by `npm test` in
+  `packages/ts`, whose tests of the function fixture pass.
 - The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
   word once their target generates a function parameter, because only the PHP test writes them. Each of those test
   generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>
