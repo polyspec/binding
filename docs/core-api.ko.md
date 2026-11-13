@@ -13,6 +13,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 - 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목).
 - feature `lock`: `Exclusive`, `Shared`, `Reading`, `Writing`과 `sync`만 켠 의존 `tokio` 1.54.1을 더한다. Python·Node·PHP 바인딩
   crate가 켜고 코어 crate는 켜지 않는다(B-5c).
+- feature `driver`: `driver::block_on`, `driver::Caught`와 `rt-multi-thread`를 켠 의존 `tokio` 1.54.1을 더한다.
+  `wait: async_driver`인 member가 있는 계약의 PHP·Python·Node 바인딩 crate가 켜고(GN-6n), 코어 crate는 켜지 않는다.
 - feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - feature `fault-test`: 실패 주입점의 장전 자료(`fault::Armed`, `arm`, `take`, `left`)를 컴파일하며, 선택 의존
@@ -62,6 +64,9 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `fault::Injected` | G-5 | `Io { errno: Option<i32> }`(그 자리의 I/O 호출이 실패한다. errno는 fault의 기호가 대상에서 갖는 값이다), `Short { bytes: u64 }`(그 읽기·쓰기가 그만큼만 처리하고 끝난다), `Broken`(그 자리의 불변식이 깨졌다). |
 | `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | `fault-test`에서만. case의 `faults` JSON 목록(`point`, `kind`, `errno`, `bytes`, `nth`)을 이 스레드에서 그 member id를 다음에 부르는 호출에 장전하고 장전 id를 준다. fault는 그 점에 `nth`번째(없으면 첫 번째)로 닿을 때 한 번 주입된다. errno 기호는 Linux와 macOS가 함께 가진 POSIX 기호다. 대상에 없는 기호나 errno가 없는 대상은 `ArmError::Errno`다. |
 | `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | `fault-test`에서만. 생성 진입점은 동기 부분에서 자기 member와 스레드의 장전을 꺼내고, 없으면 빈 장전을 꺼내, 작업과 함께 옮겨 `run` 안에서 작업을 실행한다. `run`은 장전을 그 스레드에 설치하고 끝나면(panic 뒤에도) 이전 장전으로 되돌린다. `point`는 설치된 장전만 읽으므로, callback 안에서 다시 들어온 진입점은 바깥 장전을 보지 않고, 코어가 새로 만든 task·스레드에는 장전이 이어지지 않는다. |
+| `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | `fault-test`가 있을 때. `future`의 poll마다 장전을 설치하고 그 뒤 앞의 장전을 되돌리는 future다. panic 뒤에도 되돌린다. 그래서 `async fn`의 주입점은 runtime의 어느 스레드에서도 자기 호출의 장전을 본다. |
+| `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
+| `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`에서만. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 

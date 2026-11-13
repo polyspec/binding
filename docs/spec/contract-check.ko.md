@@ -87,7 +87,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-15** WASM(Q-4): `wasm`이 target이면, parameter·반환·yields에 `path`가 있거나(record·variant 안 포함) wait가
   `blocking_io`·`process_wait`인 member는 자신이나 unit에 `wasm`이 없는 `only`와 그 규칙 id를 갖는다.
 - **CK-16** Python awaitable(N-5, U-3): wait가 `none`이 아닌 member나 `async_allowed: true`인 callback member의 `a<name>`은
-  같은 unit의 다른 member의 Python 이름이 아니다.
+  같은 unit의 다른 member의 Python 이름이 아니고 Python의 예약어도 아니다. 그래야 GN-6m의 awaitable을 생성할 수 있다.
 - **CK-17** callback(U-3, T-3): `async_allowed`와 `errors`는 callback member만 갖고, 모든 callback member는 `async_allowed`를
   적고, trait 메서드와 receiver를 `core: {path, receiver}`에 receiver `&self`나 `&mut self`로 적는다. 생성된 struct가 그
   trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리킨다. 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌

@@ -1,0 +1,69 @@
+# The release of binding. It starts by itself when a push run of the workflow ci succeeds on main: it checks out the
+# head_sha of that run, and release-tag with AUTO=1 releases the top section ## X.Y.Z of CHANGELOG.md at that commit when
+# it is the version commit of that version. A dispatch with the id of a successful CI run releases the commit of that run.
+# release-tag tags the commit with vX.Y.Z and appends TAG and VERSION to GITHUB_ENV; the later steps check the tag out,
+# install its tools, build the archives of config/release.json, create the GitHub Release of the tag as a draft and make it
+# public. The run of ci is the evidence; the release runs no test again. Every step that runs a command runs one make
+# target, the job runs on ubuntu-26.04-arm, the actions are pinned by commit and no step has a time limit.
+name: release
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run:
+        description: The id of the successful CI run whose exact commit is released
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    # A workflow_run starts the release for a successful push or dispatch run of ci alone. The concurrency group is the
+    # job's, so one release of the repository runs at a time.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')) }}
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
+    runs-on: ubuntu-26.04-arm
+    env:
+      RUN: ${{ inputs.run || github.event.workflow_run.id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # The whole history, so origin/main is there for the ancestry check of release-tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/bootstrap
+      - name: tag the commit of the CI run
+        run: make release-tag ${{ github.event_name == 'workflow_run' && 'AUTO=1' || '' }}
+      - name: check out the tag
+        if: ${{ env.TAG != '' }}
+        run: make release-checkout
+      - uses: ./.github/actions/bootstrap
+        if: ${{ env.TAG != '' }}
+      - name: prepare the release
+        if: ${{ env.TAG != '' }}
+        run: make release-prepare
+      - name: install the tools of the release
+        if: ${{ env.TAG != '' }}
+        run: make release-tools
+      - name: put the installed tools on PATH
+        if: ${{ env.TAG != '' }}
+        run: make release-tools-path
+      - name: build the assets
+        if: ${{ env.TAG != '' }}
+        run: make release-assets
+      - name: create the draft release
+        if: ${{ env.TAG != '' }}
+        run: make release-publish
+      - name: make the release public
+        if: ${{ env.TAG != '' }}
+        run: make release-undraft

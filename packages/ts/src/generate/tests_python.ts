@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -221,6 +221,13 @@ export function pythonTests(model: Model, module: string): string {
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+    def test_b4_${name}_${kase.id}(self) -> None:
+        self.fail(${pyString(refusal)})`);
+        continue;
+      }
       const receiverMade = receiverOfCase(kase.receiver);
       const receiver = receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
@@ -259,6 +266,13 @@ export function pythonTests(model: Model, module: string): string {
         out.push(`
     def test_gn13e_${name}_${kase.id}(self) -> None:
         self.fail(${pyString(kase.refused)})`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+    def test_gn13e_${name}_${kase.id}(self) -> None:
+        self.fail(${pyString(refusal)})`);
         continue;
       }
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));

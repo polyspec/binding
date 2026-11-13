@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW } from './model.ts';
+import { DRIVEN, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -33,7 +33,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
     const name = fn[type];
-    if (name === undefined) throw new Error(`no PHP input conversion for ${type}`);
+    if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
@@ -46,7 +46,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
-  throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -70,7 +70,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(${value})`;
-  throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
 // G-5: the entry points of the feature fault-test, which arm the faults of a case and report what did not fire.
@@ -657,7 +657,9 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
-  const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`);
+  const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  // GN-6n: the calling thread blocks on the future of an async member, on the runtime of binding_core.
+  const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => wait, 'binding_error') : armedCall(model, fn, core);
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -928,7 +930,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);

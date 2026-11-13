@@ -31,4 +31,8 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
 
 export const NOT_READ: readonly Input[] = [
   { path: '.gitattributes', why: 'git archive reads the attributes of the tree of the commit, and git diff --name-only names a file whatever its attributes' },
+  { path: '.github/actions/bootstrap/action.yml', why: 'GitHub runs it in a job of CI or of the release; a run of make e2e does not start it' },
+  { path: '.github/workflows/ci.yml', why: 'GitHub runs it on a push or a manual run; a run of make e2e does not read it' },
+  { path: '.github/workflows/release.yml', why: 'GitHub runs it after a successful CI run; a run of make e2e does not read it' },
+  { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
 ];

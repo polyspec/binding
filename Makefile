@@ -109,3 +109,62 @@ clippy-rust:
 	cargo clippy --locked $(CORE_MANIFEST) --all-targets -- -D warnings
 fmt-rust:
 	cargo fmt $(CORE_MANIFEST) --check
+
+# ---- CI (.github/workflows/ci.yml) -------------------------------------------------------------------------------------
+# ci-targets runs TARGETS past failures with the utility of kit and writes CI_REPORT: the log of each target, record.json
+# and summary.md; ci-summary writes summary.md again, also for a run that stopped; ci-passed, the last job of the
+# workflow, fails unless every job of RESULTS, the JSON of toJSON(needs), has the result success.
+CI_REPORT ?= var/report/ci-targets
+.PHONY: ci-targets ci-summary ci-passed
+ci-targets: ## Run TARGETS past failures and write CI_REPORT (logs, record.json, summary.md)
+	$(NODE) $(KIT)/ci-targets.mjs -k $(CI_REPORT) $(TARGETS)
+
+ci-summary: ## Write summary.md of CI_REPORT again from its record, also for a run that stopped
+	$(NODE) $(KIT)/ci-targets.mjs --summary $(CI_REPORT)
+
+ci-passed: ## Fail unless every job of RESULTS, the JSON of toJSON(needs), has the result success
+	$(NODE) $(KIT)/ci-passed.mjs
+
+# ---- Release (config/release.json, .github/workflows/release.yml) -----------------------------------------------------
+# The steps of release.yml, in this order: release-tag tags the commit of the successful CI run RUN of ci.yml on main with
+# vX.Y.Z of the top section of CHANGELOG.md and appends TAG and VERSION to GITHUB_ENV; release-checkout checks that tag
+# out; release-prepare installs the packages of packages/ts, whose prepack script builds dist with tsc; release-tools
+# installs the tools that config/release.json needs and release-tools-path puts var/tools/bin and the shims of mise on the
+# PATH of the later steps; release-assets builds the archive of every package into var/release/assets; release-publish
+# creates the draft GitHub Release and release-undraft makes it public. release-coverage requires every package file of
+# the checkout to be classified in config/release.json.
+.PHONY: release-tag release-checkout release-prepare release-tools release-tools-path release-assets release-publish release-undraft release-coverage
+release-tag: ## Tag the commit of the successful CI run RUN of ci.yml on main with vX.Y.Z of the change log; AUTO=1 releases only a version commit; reads the run with gh
+	@test -n "$$RUN" || { echo "release-tag: RUN is required, for example make release-tag RUN=123"; exit 1; }
+	RELEASE_MAIN=origin/main $(NODE) $(KIT)/release-run.mjs tag "$$RUN"$(if $(AUTO), --auto)
+
+release-checkout: ## Check out the tag TAG that release-tag created
+	@test -n "$$TAG" || { echo "release-checkout: TAG is required, for example make release-checkout TAG=v0.0.1"; exit 1; }
+	git checkout --quiet "$$TAG"
+
+release-prepare: ## Install the locked packages of the checkout and of packages/ts, for a release; ONLINE
+	$(MAKE) --no-print-directory install-packages
+
+release-tools: ## Install the tools that config/release.json needs for the release; ONLINE
+	$(ONLINE) $(NODE) $(KIT)/release-tools.mjs
+
+release-tools-path: ## Append var/tools/bin and the shims of mise to GITHUB_PATH and the environment of mise to GITHUB_ENV
+	@test -n "$$GITHUB_PATH" && test -n "$$GITHUB_ENV" || { echo 'release-tools-path: GITHUB_PATH and GITHUB_ENV are set only between the steps of a workflow'; exit 1; }
+	printf '%s\n%s\n' "$(KIT_TOOLS)/bin" "$(KIT_TOOLS)/mise/shims" >> "$$GITHUB_PATH"
+	printf 'MISE_DATA_DIR=%s\nMISE_CACHE_DIR=%s\nMISE_STATE_DIR=%s\nMISE_CONFIG_DIR=%s\nMISE_GLOBAL_CONFIG_FILE=%s\nMISE_GLOBAL_CONFIG_ROOT=%s\n' \
+		"$(MISE_DATA_DIR)" "$(MISE_CACHE_DIR)" "$(MISE_STATE_DIR)" "$(MISE_CONFIG_DIR)" "$(MISE_GLOBAL_CONFIG_FILE)" "$(MISE_GLOBAL_CONFIG_ROOT)" >> "$$GITHUB_ENV"
+
+release-assets: ## Build the archive of every package of TAG into var/release/assets; ONLINE
+	@test -n "$$TAG" || { echo "release-assets: TAG is required, for example make release-assets TAG=v0.0.1"; exit 1; }
+	RELEASE_ASSETS=var/release/assets $(ONLINE) $(NODE) $(KIT)/release.mjs assets "$$TAG"
+
+release-publish: ## Create the GitHub Release of TAG as a draft with the archives of release-assets
+	@test -n "$$TAG" || { echo "release-publish: TAG is required, for example make release-publish TAG=v0.0.1"; exit 1; }
+	RELEASE_ASSETS=var/release/assets RELEASE_RECORDS=var/release $(NODE) $(KIT)/release.mjs publish "$$TAG"
+
+release-undraft: ## Make the draft release of TAG public
+	@test -n "$$TAG" || { echo "release-undraft: TAG is required, for example make release-undraft TAG=v0.0.1"; exit 1; }
+	RELEASE_RECORDS=var/release $(NODE) $(KIT)/release.mjs undraft "$$TAG"
+
+release-coverage: ## Require every package file of the checkout to be classified in config/release.json; offline
+	$(NODE) $(KIT)/release.mjs coverage
