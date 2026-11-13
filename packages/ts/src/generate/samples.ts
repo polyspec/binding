@@ -39,6 +39,8 @@ export interface Context {
   instanceNew?: (receiver: Receiver) => string;
   // GN-6z: the expression of a function value of a case from its rows, where the test reads no record of its calls.
   functionNew?: (rows: string[][]) => string;
+  // GN-6z: the member of the fixture that functionNew makes, which its rows name; `__call__` when the language names none.
+  functionMember?: string;
   // GN-6aa: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
   fixtureNew?: (values: { members: string[]; rows: string[][] }) => string;
   // GN-6x: how the generated test names a class of another repository, through the owner's package, which the test
@@ -328,7 +330,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
   }
   // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
-  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', '__call__'));
+  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', ctx.functionMember ?? '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }

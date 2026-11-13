@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A function value inside a case value, such as the function that a step of the receiver of a case of
+  `registry.call` of `tests/e2e/functions` registers, was written as a fixture whose rows named the member
+  `__call__` in every language. That is the member of the Python fixture; the Node, WASM and PHP fixture has the
+  member `call`, so it knew no row of the call that it got and failed the generated test as a call that the case
+  does not expect. The rows now name the member of the fixture of each language (GN-6z, GN-13). Verified by
+  `make test-ts`: the new test failed before the change. Not run: the generated tests, by `make e2e` of
+  `tests/e2e/functions`.
 - A PHP member whose core drops the `Raised` of a function and answers by a value, as `store.attempt` of
   `tests/e2e/sample` does, returned its value and PHP threw the exception of the function all the same: ext-php-rs
   reports a call whose code threw as an error and leaves the exception pending in the engine, and the generated crate

@@ -3053,6 +3053,27 @@ test('PHP takes the exception of a call of PHP code out of the engine before it 
   assert.ok(calls > 0, 'no crate calls PHP code, so this test checked nothing');
 });
 
+test('a function value inside a case value is a fixture whose rows name the member that the fixture has (GN-6z, GN-13)', () => {
+  // The case of registry.call registers a function by a step of its receiver. The rows of that function named the
+  // member of the Python fixture, `__call__`, in every language, so the Node, WASM and PHP fixture, whose member is
+  // `call`, knew no row of the call that it got and failed it as a call that the case does not expect.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  for (const [name, mjs] of [['node', node], ['wasm', wasm]] as const) {
+    assert.match(mjs, /test\('GN-13e: Registry\.call the_kept_function_converts_the_value', \(\) => \{\n[^\n]*\n {2}made0\.register\('up', fixture\(\['call'\], \[\['call', \['ab c', \[2, 1\]\], 'AB C', false, null\]\]\)\.object\.call\);/, name);
+    // Every row of a fixture names a member of that fixture.
+    for (const made of mjs.matchAll(/\bfixture\(\[([^\]]*)\], \[\[('[^']*')/g)) assert.ok((made[1] ?? '').split(', ').includes(made[2] ?? ''), `${name}: ${made[0]}`);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const phpCase = php.slice(php.indexOf('function testGn13eRegistryCallTheKeptFunctionConvertsTheValue'));
+  assert.doesNotMatch(phpCase.slice(0, phpCase.indexOf('\n    }\n')), /__call__/);
+  assert.match(phpCase.slice(0, phpCase.indexOf('\n    }\n')), /\["call", \["ab c", \[2, 1\]\], "AB C"/);
+  // Python: the member of its fixture is the call itself.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0\.register\("up", _fixture\(\("__call__",\), \[\("__call__", \("ab c", \[2, 1\],\), "AB C", False, None\)\]\)\[0\]\)/);
+});
+
 // The conversions of a generated crate, `in_<unit>` and `out_<unit>`, whose parameter `env` or `py` only their own call
 // uses: the lints deny such a parameter (clippy only_used_in_recursion).
 function onlyInRecursion(rust: string): string[] {

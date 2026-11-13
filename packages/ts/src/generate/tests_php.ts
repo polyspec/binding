@@ -158,6 +158,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return phpFixture(values);
   };
   // GN-6z: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
+  ctx.functionMember = 'call';
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;

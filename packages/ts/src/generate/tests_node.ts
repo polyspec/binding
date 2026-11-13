@@ -190,6 +190,7 @@ export function nodeTests(model: Model): string {
     return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
   };
   // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  ctx.functionMember = 'call';
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;

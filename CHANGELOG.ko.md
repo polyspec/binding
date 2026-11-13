@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c33e3f30bbb3207027cba7ea5438c4a2d7a7713b3b9c0cfb32777342bce89fa4 -->
+<!-- source-sha256: d3ae7114a56a3442a2d3130d8e78ed9d9487441086e10e02fac57ebb868ab7c4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- case 값 안의 함수 값, 예를 들어 `tests/e2e/functions`의 `registry.call` case에서 receiver의 step이 등록하는 함수가
+  모든 언어에서 행이 member `__call__`을 이름하는 fixture로 써졌다. 그것은 Python fixture의 member이고, Node·WASM·PHP의
+  fixture는 member `call`을 가지므로 받은 호출의 행을 알지 못해 생성된 시험이 case가 기대하지 않은 호출로 실패했다.
+  이제 행은 각 언어 fixture의 member를 이름한다(GN-6z, GN-13). `make test-ts`로 검증했다: 새 시험이 변경 전에는
+  실패했다. 실행하지 않은 것: `tests/e2e/functions`의 `make e2e`로 도는 생성된 시험.
 - 코어가 함수의 `Raised`를 버리고 값으로 답하는 PHP member(`tests/e2e/sample`의 `store.attempt`)가 값을 돌려주었는데도
   PHP가 그 함수의 예외를 던졌다. ext-php-rs는 코드가 예외를 던진 호출을 오류로 보고하고 예외를 엔진에 pending으로 남겨
   두는데, 생성된 crate는 그 오류에서 예외를 꺼내기 전에 돌아갔다. 이제 crate는 PHP 코드를 부르는 모든 호출(함수,
