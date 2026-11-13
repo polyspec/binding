@@ -270,7 +270,7 @@
               "pattern": "^[A-Z][A-Za-z0-9]*(\\\\[A-Z][A-Za-z0-9]*)*$"
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }
@@ -292,7 +292,7 @@
               "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$"
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }
@@ -353,7 +353,7 @@
               }
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }

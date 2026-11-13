@@ -411,11 +411,11 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
 }
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
-// the path of the manifest, the item and the value it must have.
+// the path of the manifest, the item and the value it must have, compared deeply.
 export interface HostRequirement {
   path: string;
   item: string;
-  want: string;
+  want: unknown;
   found: (manifest: string) => unknown;
 }
 
@@ -438,6 +438,10 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const npm = (contract.packages['node'] as { package: string }).package;
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
+    // GN-3b: the host package is the package of a release, which reads the fields of GN-3c.
+    out.push({ path, item: 'type', want: 'module', found: (t) => json(t)['type'] });
+    out.push({ path, item: 'napi.binaryName', want: npm.slice(npm.indexOf('/') + 1), found: (t) => json(t)['napi']?.['binaryName'] });
+    out.push({ path, item: 'napi.targets', want: NODE_PLATFORMS.map((p) => p.triple), found: (t) => json(t)['napi']?.['targets'] });
     // The generated entry, its declarations and the addon (<name>.<platform>-<arch>[-gnu].node) are in the package.
     for (const platform of NODE_PLATFORMS) {
       const dependency = platformPackage(npm, platform.name);
