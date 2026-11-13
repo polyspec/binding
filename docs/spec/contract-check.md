@@ -194,7 +194,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   a class with `cleanup` releases its resources in its `Drop` (generator GN-6p), because no destructor calls the
   cleanup member. `binding check` reads no Rust source, so it does not verify that `Drop`: it is the duty of the
   core, and the finding of this check says so.
-- **CK-77** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
+- **CK-78** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
   origin `generated` or `value` that names no `core_type` names `only` (Q-4) with none of the targets that generate
   no such class. Python, Node and WASM generate it; PHP takes its own `stdClass` and references (generator GN-6e),
   and Go does not generate it yet. The finding names the unit and each such target. Why: the generator refuses the

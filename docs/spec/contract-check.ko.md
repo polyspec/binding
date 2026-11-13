@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: e1c817e2e2266dfcafd1e6f40ea2ad79a8707d1f728f080c0e5b15455f9364b8 -->
+<!-- source-sha256: 668f06e59acbee35cd2a02eead9d41d57a6a01f5f1da70bbaf7c40bbbcd6742c -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -167,7 +167,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   case로 드러난다. `cleanup`이 있는 class의 코어 타입은 자기 `Drop`에서 자원을 놓는다(생성기 GN-6p). 어느 소멸자도
   cleanup member를 부르지 않기 때문이다. `binding check`는 Rust 소스를 읽지 않으므로 그 `Drop`을 검증하지 않는다. 그것은
   코어의 의무이며, 이 검사의 finding이 그렇게 적는다.
-- **CK-77** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
+- **CK-78** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
   `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM이 그것을
   생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e), Go는 아직 생성하지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가

@@ -1,11 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ee2b802ed6e85ec5a337be3e0d0b7344a4635e70d8d96cc29f7399d85dc1ee6e -->
+<!-- source-sha256: c726f1687c4ac6e2ec300eb559a9b512acacfa332a67d704a881082d6afaf3ef -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성하지 않는 target의 `core_type` 없는 class를 판정하는 검사의 id는 CK-78이다. 이전에는 다른 검사의 id를 썼다.
+  명세, finding, 시험이 CK-78을 적고, 검사의 규칙은 바뀌지 않았다. `make test-ts`로 검증했다. 그 finding의 시험 둘은
+  검사가 새 id를 보고하기 전에 실패했다.
 - 생성된 Node와 WASM의 B-10 시험은 `gc()` 뒤 프로세스의 첫 `ResourceWarning`을 받아 그 메시지를 비교했다. 그래서
   `cleanup`이 있는 class가 둘인 계약은 수거가 앞선 시험의 객체를 먼저 finalize하면 실패했다. `tests/e2e/classes`의
   end-to-end 검사가 Node에서 한 번, `Lease`의 시험에서 `Stall`의 경고로 실패했다. 이제 각 시험은 메시지가 자기 class의
@@ -32,7 +35,7 @@
   enum, 객체를 남기는 cleanup의 검사는 id CK-73, CK-74, CK-75, CK-76을 갖는다. CK-73은 이제 host unit도 판정한다. host
   unit의 `constructor`, `property`, `iterate`, hook이 `none`이 아닌 `wait`를 가지면 finding이다. 손으로 쓰는 코드에도
   언어에는 그것들을 await하는 형태가 없기 때문이다. 그 예외를 지키던 시험은 schema에 실패하는 계약을 읽었으므로 아무것도
-  판정하지 않았다. CK-77은 새 검사다. `core_type`이 없는 class의 target, 곧 그 `only`의 target이나 계약의 target에 PHP나
+  판정하지 않았다. CK-78은 새 검사다. `core_type`이 없는 class의 target, 곧 그 `only`의 target이나 계약의 target에 PHP나
   Go가 있으면 그 unit과 그 target들을 적는 finding이다. Python, Node, WASM만 그런 class를 생성하기 때문이다(GN-6af).
   명세는 `cleanup`이 있는 class의 코어 타입이 자기 `Drop`에서 자원을 놓는다는 것과, Rust 소스를 읽지 않는 계약 검사가
   그것을 검증하지 않는다는 것을 적는다(GN-6p, CK-76). CK-76의 finding이 그렇게 적는다. 계약 검사 fixture의 `core_type`

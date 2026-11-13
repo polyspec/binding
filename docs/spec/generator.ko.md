@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6efe479b8835db14fedd5edf9bdf0df6320fc92e23aec8457789422c20632033 -->
+<!-- source-sha256: 8e26bf50c242c60c2d56f5bb600f298cfa6fcd30c7f50ade9315f486dbdac2e5 -->
 # 생성기
 
 [English](generator.md)
@@ -794,7 +794,7 @@
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
   (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). 그래서 계약 검사는 그런 class가 PHP와 Go가 없는 `only`를
-  적기를 요구한다(CK-77). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  적기를 요구한다(CK-78). PHP는 형식 `php_object`를 entry들을 property로 가진 새
   `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
   가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
   그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는

@@ -1190,7 +1190,7 @@ class Checker {
     }
   }
 
-  // ---- CK-77: a class without core_type on a target that does not generate it (GN-6af) ----
+  // ---- CK-78: a class without core_type on a target that does not generate it (GN-6af) ----
 
   keptClassTargets(): void {
     // GN-6af: Python, Node and WASM generate a class that keeps language values; PHP takes its own stdClass and
@@ -1200,7 +1200,7 @@ class Checker {
       if (unit.kind !== 'class' || (unit.origin !== 'generated' && unit.origin !== 'value') || unit.core_type !== undefined) continue;
       const missing = (unit.only?.targets ?? this.contract.targets).filter((target) => !generated.includes(target)).join(', ');
       if (missing === '') continue;
-      this.report('CK-77', unit.only === undefined ? path : `${path}/only`, `${unit.id}: a class without core_type is not generated for ${missing}, so the unit names only without ${missing} and a reason (GN-6af, Q-4)`);
+      this.report('CK-78', unit.only === undefined ? path : `${path}/only`, `${unit.id}: a class without core_type is not generated for ${missing}, so the unit names only without ${missing} and a reason (GN-6af, Q-4)`);
     }
   }
 

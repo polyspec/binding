@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- The check of a class without `core_type` on a target that does not generate it has the id CK-78; it had the id of
+  another check. The specification, the finding and the tests name CK-78, and the rule of the check is unchanged.
+  Verified by `make test-ts`: the two tests of its finding failed before the check reported the new id.
 - The generated Node and WASM tests of B-10 took the first `ResourceWarning` of the process after `gc()` and
   compared its message, so a contract with two classes with `cleanup` failed when the collection finalized an
   object of an earlier test first: the end-to-end check of `tests/e2e/classes` failed once on Node with the warning
@@ -35,7 +38,7 @@
   CK-74, CK-75 and CK-76. CK-73 now judges a host unit too: a `constructor`, a `property`, an `iterate` or a hook of
   a host unit with a `wait` other than `none` is a finding, because the language has no awaited form of them in
   code written by hand either; the test that held the exemption read a contract that failed the schema, so it
-  judged nothing. CK-77 is new: a class without `core_type` whose targets, those of its `only` or of the contract,
+  judged nothing. CK-78 is new: a class without `core_type` whose targets, those of its `only` or of the contract,
   hold PHP or Go is a finding that names the unit and those targets, because only Python, Node and WASM generate
   such a class (GN-6af). The specification states that the core type of a class with `cleanup` releases its
   resources in its `Drop`, and that the contract check, which reads no Rust source, does not verify it (GN-6p,

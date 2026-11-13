@@ -139,7 +139,7 @@ export function contract(): any {
       },
       {
         id: 'value', name: ['value'], module: 'value', kind: 'class', visibility: 'public', origin: 'value',
-        // GN-6af, CK-77: the targets that generate a class without core_type.
+        // GN-6af, CK-78: the targets that generate a class without core_type.
         only: { targets: ['python', 'node', 'wasm'], reason: 'Q-4' },
         members: [
           { id: 'value.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], wait: 'none' },

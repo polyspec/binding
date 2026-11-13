@@ -959,7 +959,7 @@ the design ids are those of the binding design.
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
   classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e), so the contract
-  check requires that such a class names `only` without PHP and Go (CK-77). PHP makes the form
+  check requires that such a class names `only` without PHP and Go (CK-78). PHP makes the form
   `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
   byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
   string key of those bytes. An object and a reference are made before their content and are the same object or

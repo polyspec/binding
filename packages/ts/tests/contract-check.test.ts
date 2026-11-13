@@ -771,18 +771,18 @@ describe('CK-74 constructible classes', () => {
   });
 });
 
-describe('CK-77 a class without core_type on a target that does not generate it (GN-6af)', () => {
-  const judged = (change: (c: any) => void): Finding[] => findings((c) => { delete unit(c, 'session').core_type; change(c); }).filter((f) => f.check === 'CK-77');
+describe('CK-78 a class without core_type on a target that does not generate it (GN-6af)', () => {
+  const judged = (change: (c: any) => void): Finding[] => findings((c) => { delete unit(c, 'session').core_type; change(c); }).filter((f) => f.check === 'CK-78');
   test('a class without core_type that names php and go', () => {
     assert.deepEqual(judged(() => undefined), [{
-      check: 'CK-77',
+      check: 'CK-78',
       path: at('session'),
       message: 'session: a class without core_type is not generated for php, go, so the unit names only without php, go and a reason (GN-6af, Q-4)',
     }]);
   });
   test('a class without core_type whose only names go', () => {
     assert.deepEqual(judged((c) => { unit(c, 'session').only = { targets: ['python', 'go'], reason: 'Q-4' }; }), [{
-      check: 'CK-77',
+      check: 'CK-78',
       path: `${at('session')}/only`,
       message: 'session: a class without core_type is not generated for go, so the unit names only without go and a reason (GN-6af, Q-4)',
     }]);
@@ -791,7 +791,7 @@ describe('CK-77 a class without core_type on a target that does not generate it 
     assert.deepEqual(judged((c) => { unit(c, 'session').only = { targets: ['python', 'node', 'wasm'], reason: 'Q-4' }; }), []);
   });
   test('a class with core_type and a host class are not judged', () => {
-    assert.deepEqual(findings(() => undefined).filter((f) => f.check === 'CK-77'), []);
+    assert.deepEqual(findings(() => undefined).filter((f) => f.check === 'CK-78'), []);
     assert.deepEqual(judged((c) => { unit(c, 'session').origin = 'host'; }), []);
   });
 });
