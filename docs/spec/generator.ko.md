@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7f60fad839a92bbf688d4a8955c1ca7a82b42deeb86bae938282c7bd58874199 -->
+<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
 # 생성기
 
 [English](generator.md)
@@ -290,15 +290,7 @@
   그것을 켠다.
 - **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
   PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node와 WASM은 plain object를 주고받으며 선언은 field로 적는다. 바인딩
-  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다. `binding scaffold`는
-  계약이 이름 붙인 각 라이브러리에 대한 `pyproject.toml`의 의존을 그 줄의 버전으로 적는다: 코어의 `polyspec-<library>` 의존
-  줄이 버전 `=X.Y.Z`나 태그 `vX.Y.Z`를 적으면 `polyspec-<library>==X.Y.Z`다. 바인딩 crate가 그 라이브러리의 그 배포로
-  빌드되고, 버전 없는 요구는 설치 도구가 다른 배포를 고르게 두기 때문이다. `path` 의존은 개발 체크아웃이고 배포된 버전이
-  없으므로 이름만, 곧 `polyspec-<library>`를 적는다: `pyproject.toml`에는 `go.mod`의 `replace`(GN-15f) 같은 줄이 없고,
-  직접 참조(`polyspec-<library> @ file://...`)는 절대 URL만 받는데 추적되는 파일은 절대 경로를 갖지 않으며, 이름만 적은
-  요구는 그 체크아웃에서 빌드한 패키지가 어떤 버전이든 충족한다. 브랜치, 커밋, 버전 범위를 적은 의존 줄은 배포된 버전이
-  없으므로 GN-15f와 같이 이름을 들어 거부한다. `scaffold`가 쓰는 npm manifest와 Composer manifest는 다른 라이브러리를
-  적지 않는다: Node와 WASM은 plain object를 주고받고, PHP는 class table에서 클래스를 찾는다.
+  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
