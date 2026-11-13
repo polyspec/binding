@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
+  contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
+  parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or
+  another number of items is kind `invalid_argument_type` (GN-6t). `tests/e2e/shapes` has `shapes.span_length`,
+  `shapes.spans_total` and `shapes.labelled`, a tuple parameter, a list of tuples and a tuple of different part
+  types. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
 - The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
   no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
   wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of

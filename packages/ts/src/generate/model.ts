@@ -1446,3 +1446,10 @@ export const implementsClause = (model: Model, object: ObjectClass, lang: 'node'
   });
   return names.length === 0 ? '' : ` implements ${names.join(', ')}`;
 };
+
+// GN-6t: a tuple enters as a sequence of exactly its parts, which in_tuple gives as an array; each part is converted
+// as its type, so the core gets the Rust tuple of the parts.
+export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: string) => string): string => {
+  const names = parts.map((_, i) => `part_${i}`);
+  return `${taken}.and_then(|[${names.join(', ')}]| Ok((${parts.map((t, i) => `${part(t, names[i] ?? '')}?`).join(', ')}${parts.length === 1 ? ',' : ''})))`;
+};

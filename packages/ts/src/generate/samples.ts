@@ -51,6 +51,11 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
+  // GN-6t: a value of a tuple is the sequence of the placeholders of its parts, a tuple in Python.
+  if ('tuple' in type) {
+    const parts = type.tuple.map((part) => placeholder(model, ctx, part, rich));
+    return ctx.lang === 'python' ? `(${parts.map((part) => `${part},`).join(' ')})` : `[${parts.join(', ')}]`;
+  }
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
