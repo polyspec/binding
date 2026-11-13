@@ -531,7 +531,9 @@ the design ids are those of the binding design.
   that hands each callback call to that thread through a thread-safe function and waits for its answer holds a thread
   of the libuv pool for the whole call, and it never ends when the JavaScript thread waits for that pool. A core that
   judges per call whether it reaches language code (`core.reaches`) would let the call run on the pool when it does
-  not; it is not generated yet.
+  not; it is not generated yet. G-5 generates for such a member in Python a test that awaits `a<name>` in
+  `asyncio.run` with a callback that raises (K-2) and requires the exception of the callback, so a callback that the
+  core calls on the worker thread of `asyncio.to_thread` runs there.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

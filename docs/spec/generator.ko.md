@@ -444,7 +444,9 @@
   Node에서 다른 스레드를 쓰지 않는 이유: napi의 callback 객체는 JavaScript 스레드에서만 유효하다. callback 호출마다
   thread-safe function으로 그 스레드에 넘기고 답을 기다리는 pool 스레드는 호출 내내 libuv pool의 스레드 하나를 잡고, JavaScript
   스레드가 그 pool을 기다리면 끝나지 않는다. 호출마다 언어 코드에 닿는지 판단하는 코어(`core.reaches`)가 있으면 닿지 않는
-  호출은 pool에서 실행할 수 있다. 그것은 아직 생성하지 않는다.
+  호출은 pool에서 실행할 수 있다. 그것은 아직 생성하지 않는다. G-5는 그런 member에 대해 Python에서, 예외를 던지는
+  callback(K-2)으로 `a<name>`을 `asyncio.run` 안에서 기다리고 callback의 예외를 요구하는 시험을 생성한다. 그래서 코어가
+  `asyncio.to_thread`의 worker 스레드에서 부르는 callback이 그 스레드에서 실행됨을 본다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
