@@ -3360,6 +3360,29 @@ test('the Python test writes a function fixture as a function of the module, a f
   assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_an_awaitable_without_an_event_loop\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(_function_\d+\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)\n {8}self\.assertIn\("atransaction", str\(caught\.exception\)\)/);
 });
 
+test('Go recovers the panic of a method of a callback in the call, and the member panics with the same value (GN-15b, U-3)', () => {
+  // A contract with a callback unit and no function parameter: the fixture repository.
+  const { contract, caseFiles } = load();
+  for (const out of [scopedSample(['go']), generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] })]) {
+    const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+    assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);
+    // The call recovers the panic of the Go code that it runs and keeps its value as the error of the call.
+    assert.match(binding, /func \(c \*Call\) run\(callback uint64, member uint32, args \[\]byte\) \(status int32, out \[\]byte\) \{\n\tdefer func\(\) \{\n\t\tif value := recover\(\); value != nil \{\n\t\t\tstatus, out = c\.raise\(&panicked\{value: value\}\)\n\t\t\}\n\t\}\(\)\n/);
+    assert.match(binding, /\ntype panicked struct\{ value any \}\n/);
+    // The member panics with that value after the call of the C ABI returned.
+    assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
+    // One place recovers: the dispatch of a func does not.
+    assert.equal(binding.split('recover()').length - 1, 1);
+  }
+  // The test: a callback whose method panics, the same value at the caller, the member again on the same instance,
+  // and a member that writes the instance, which is not busy.
+  const tests = text(scopedSample(['go']), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /\ntype panickingLookup struct\{ value any \}\n\nfunc \(p panickingLookup\) Find\(key string\) \(\*string, error\) \{ panic\(p\.value\) \}\n/);
+  assert.match(tests, /func TestU3LedgerKnownPanicsWithThePanicOfLookup\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the callback"\)\n\t(made\d+), [^\n]*\n(?:\t[^\n]*\n)*?\tfunc\(\) \{\n\t\tdefer func\(\) \{\n\t\t\tif value := recover\(\); value != any\(raised\) \{\n\t\t\t\tt\.Fatalf\("U-3: %#v is not the panic of the callback", value\)\n\t\t\t\}\n\t\t\}\(\)\n\t\t_, err := \1\.Known\(panickingLookup\{value: raised\}\)\n\t\tt\.Fatalf\("U-3: the call returned %v", err\)\n\t\}\(\)\n\t_, err := \1\.Known\(raisingLookup\{err: raised\}\)\n\tif err != raised \{\n\t\tt\.Fatalf\("U-3: %#v is not the error of the callback after its panic", err\)\n\t\}\n\t\{\n\t\terr := \1\.Note\("a"\)\n\t\tif failure, ok := err\.\(\*liberrors\.SampleBusyError\); ok && failure\.Kind\(\) == "busy" \{\n\t\t\tt\.Fatalf\("U-3: the panic of the callback left ledger\.note busy: %v", err\)\n\t\t\}\n\t\}\n\}/);
+  // A function, which has no instance, requires the panic and the call after it.
+  assert.match(tests, /func TestU3SampleResolvePanicsWithThePanicOfLookup\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t\t_, err := Resolve\(panickingLookup\{value: raised\}, "a"\)\n(?:\t[^\n]*\n)*?\t_, err := Resolve\(raisingLookup\{err: raised\}, "a"\)\n\tif err != raised \{\n[^\n]*\n\t\}\n\}/);
+});
+
 // GN-4c: the sample with functions whose names are those of helpers of the generated crates.
 const helperNamedFunctions = (names: string[]) => (contract: any): void => {
   const functions = contract.units.find((u: any) => u.id === 'sample');

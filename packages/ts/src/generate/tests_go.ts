@@ -556,6 +556,34 @@ func TestK2${label}LetsTheErrorOf${testName(argName)}Through(t *testing.T) {
 	raised := errors.New("raised by the callback")
 ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), 'if err != raised {', '\tt.Fatalf("K-2: %#v is not the error of the callback", err)', '}'], 1)}
 }`);
+      // U-3 (GN-15b): a panic of a method of the callback is the panic of the call, with the same value, and the call
+      // released its places: the member runs again on the same instance, and a member that writes it is not busy.
+      const p = new Body();
+      const again = sample === undefined ? '' : made(v, p, sample);
+      const given = (text: string) => callArgs(v, p, fn, (a) => (a === arg ? text : a.default === undefined ? placeholder(v, p, a.type, true) : undefined));
+      const panics = callLine(fn, invoke(v, fn, given(`panicking${goName(callback.unit.name)}{value: raised}`), again));
+      const returns = callLine(fn, invoke(v, fn, given(`raising${goName(callback.unit.name)}{err: raised}`), again));
+      const writer = fn.receiver === undefined ? undefined : model.objects.find((o) => o.members.includes(fn))?.members.find((m) => m.kind === 'method' && m.receiver === '&mut self' && m.special === undefined
+        && m.args.every((a) => callbackOf(model, a.type) === undefined && !(typeof a.type === 'object' && 'function' in a.type)));
+      const written = writer === undefined ? [] : [
+        '{',
+        `	${callLine(writer, invoke(v, writer, callArgs(v, p, writer, (a) => (a.default === undefined ? placeholder(v, p, a.type) : undefined)), again))}`,
+        `	if failure, ok := err.(*liberrors.${types['busy'] ?? ''}); ok && failure.Kind() == "busy" {`,
+        `		t.Fatalf("U-3: the panic of the callback left ${writer.member.id} busy: %v", err)`,
+        '	}',
+        '}',
+      ];
+      out.main.push(`
+func TestU3${label}PanicsWithThePanicOf${testName(argName)}(t *testing.T) {
+	raised := errors.New("raised by the callback")
+${indent([
+    ...p.lines,
+    'func() {', '\tdefer func() {', '\t\tif value := recover(); value != any(raised) {', '\t\t\tt.Fatalf("U-3: %#v is not the panic of the callback", value)', '\t\t}', '\t}()',
+    `\t${panics}`, '\tt.Fatalf("U-3: the call returned %v", err)', '}()',
+    returns, 'if err != raised {', '\tt.Fatalf("U-3: %#v is not the error of the callback after its panic", err)', '}',
+    ...written,
+  ], 1)}
+}`);
     }
     // GN-6ae: a nil func is kind invalid_callback; the error that a func returns is the error of the call, the same
     // value; and a panic of a func is the panic of the call, with the same value.
@@ -824,13 +852,19 @@ function callbackTypes(v: Values, cb: CallbackUnit): string {
     const fixture = result === undefined
       ? `func (f fixture${name}) ${method}(${params}) error {\n\t_, err := f.answer(${[goString(method), ...args].join(', ')})\n\treturn err\n}`
       : `func (f fixture${name}) ${method}(${params}) (${result}, error) {\n\tresult, err := f.answer(${[goString(method), ...args].join(', ')})\n\tvalue, _ := result.(${result})\n\treturn value, err\n}`;
-    return { raising, fixture };
+    const panicking = `func (p panicking${name}) ${method}(${params}) ${result === undefined ? 'error' : `(${result}, error)`} { panic(p.value) }`;
+    return { raising, panicking, fixture };
   });
   return `
 // raising${name} is a ${name} whose methods return err, with a zero result (K-2).
 type raising${name} struct{ err error }
 
 ${methods.map((m) => m.raising).join('\n\n')}
+
+// panicking${name} is a ${name} whose methods panic with value (U-3).
+type panicking${name} struct{ value any }
+
+${methods.map((m) => m.panicking).join('\n\n')}
 
 // fixture${name} is a ${name} that answers by the rows of a case (G-5).
 type fixture${name} struct{ *fixture }

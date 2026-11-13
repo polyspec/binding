@@ -806,7 +806,8 @@ the design ids are those of the binding design.
     value through the export `<prefix>__go_release_passed`, on any thread, because a Go value is bound to no thread.
     A result `passthrough` crosses the C ABI as its handle, and the member takes the value out of the table. An
     `error` that the function returns is kept by the call under its index and is the `Raised` of U-3 (GN-15b), so the
-    member returns the same error value. A panic of the function is recovered in the dispatch, because a panic that
+    member returns the same error value. A panic of the function is recovered by the call, as the panic of a method of a callback
+    is (GN-15b), because a panic that
     unwinds through the frames of the C ABI skips the destructors of the core, its guards and its machine: the call
     keeps the value of the panic as the `Raised`, the core ends as for an error, and the member panics with the same
     value after the call of the C ABI returned.
@@ -890,6 +891,13 @@ the design ids are those of the binding design.
   `error`. The C ABI holds a callback as the handle of the call and of the Go value, calls back through the export
   `<prefix>__go_callback`, and a nil callback is kind `invalid_callback`. An error that a method returns stops the
   core and comes back to the caller as the same error value, which the call keeps by its index until it returns.
+  A panic of a method is recovered by the call (`Call.run`), which runs every Go callback and every Go `func`
+  (GN-6ae), because a panic that unwinds through the frames of the C ABI skips the destructors of the core, its
+  guards and the locks of the places (GN-6h), so an instance that the member borrowed would stay locked: the call
+  keeps the value of the panic as the `Raised` of U-3, the core ends as for an error, and the member panics with the
+  same value after the call of the C ABI returned. The Go test of a member that takes a callback requires that
+  value at the caller, that the member runs again on the same instance, and that a member that writes the instance
+  is not kind `busy` after the panic.
 - **GN-15c** Go value aliases (U-7, T-3): a value alias, also of another repository, is `any`. The C ABI reads the Go
   value through questions to the export `<prefix>__go_host` (its kind, its items, the keys of a map in the order of
   `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the

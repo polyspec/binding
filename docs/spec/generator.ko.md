@@ -670,7 +670,7 @@
     handle의 `Passthrough`를 만든다. 그 release 함수는 export `<prefix>__go_release_passed`로 값을 지우며, 어느
     스레드에서든 그렇게 한다. Go 값은 스레드에 묶이지 않기 때문이다. 결과 `passthrough`는 그 handle로 C ABI를 건너고,
     member는 값을 table에서 꺼낸다. 함수가 돌려준 `error`는 호출이 index로 쥐고 U-3의 `Raised`가 되므로(GN-15b),
-    member는 같은 error 값을 돌려준다. 함수의 panic은 dispatch에서 recover한다. C ABI의 frame을 지나 unwind하는
+    member는 같은 error 값을 돌려준다. 함수의 panic은 callback의 method의 panic처럼(GN-15b) 호출이 recover한다. C ABI의 frame을 지나 unwind하는
     panic은 코어의 destructor, 곧 그 guard와 machine의 것을 건너뛰기 때문이다: 호출은 panic의 값을 `Raised`로 쥐고,
     코어는 error일 때처럼 끝나며, member는 C ABI 호출이 돌아온 뒤 같은 값으로 panic한다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
@@ -740,7 +740,12 @@
 - **GN-15b** Go callback unit(U-3, K-2): callback unit은 결과와 `error`를 돌려주는 method의 Go interface다. C ABI는
   callback을 호출과 Go 값의 handle로 잡고 export `<prefix>__go_callback`으로 되부르며, nil callback은 kind
   `invalid_callback`이다. method가 돌려준 오류는 코어를 멈추고 같은 오류 값으로 호출자에게 돌아온다. 호출은 그 값을 끝날
-  때까지 번호로 지닌다.
+  때까지 번호로 지닌다. method의 panic은 호출(`Call.run`)이 recover한다. 호출은 모든 Go callback과 모든 Go `func`
+  (GN-6ae)를 돌린다. C ABI의 frame을 지나 unwind하는 panic은 코어의 destructor, 곧 그 guard와 자리의 lock(GN-6h)을
+  건너뛰어서 member가 빌린 인스턴스가 잠긴 채 남기 때문이다: 호출은 panic의 값을 U-3의 `Raised`로 쥐고, 코어는 error일
+  때처럼 끝나며, member는 C ABI 호출이 돌아온 뒤 같은 값으로 panic한다. callback을 받는 member의 Go 시험은 호출자가 그
+  값을 받을 것, member가 같은 인스턴스에서 다시 돌 것, 그 인스턴스를 쓰는 member가 panic 뒤에 kind `busy`가 아닐 것을
+  요구한다.
 - **GN-15c** Go 값 alias(U-7, T-3): 값 alias는 다른 레포의 것도 `any`다. C ABI는 export `<prefix>__go_host`에 묻는 방식으로
   Go 값을 읽으므로(종류, 항목, `fmt.Sprint` 순서의 map key) 코어의 `in` 함수가 복사 없이 값을 돈다. `in` 함수의 kind는 그
   category의 오류이며, 다른 레포의 alias는 소유 레포의 E-1을 따른다. 코어 값은 내장 형태인 첫 `out` 행의 Go 값으로
