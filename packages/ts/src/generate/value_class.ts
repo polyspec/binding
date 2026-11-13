@@ -8,7 +8,7 @@ import { Unsupported, type ValueAlias } from './model.ts';
 
 // The binding_core::ValueKind of each kind of an in case.
 const VALUE_KIND: Record<string, string> = {
-  null: 'Null', bool: 'Bool', int: 'Int', int64: 'Int64', float: 'Float', number: 'Number', text: 'Text', bytes: 'Bytes',
+  null: 'Null', bool: 'Bool', int: 'Int', int64: 'Int64', float: 'Float', number: 'Number', text: 'Text', text16: 'Text16', bytes: 'Bytes',
   list: 'List', map: 'Map', object: 'Object',
 };
 
@@ -75,6 +75,9 @@ function namesClass(owner: Contract, type: Type | undefined, id: string): boolea
   return named !== undefined && named.unit === id && (named.library === undefined || named.library === owner.library);
 }
 
+// GN-6x: a list of uint, the UTF-16 code units of a text of the kind text16.
+const uintList = (type: Type | undefined): boolean => typeof type === 'object' && type !== null && 'list' in type && type.list === 'uint';
+
 export function classIn(alias: ValueAlias, lang: Lang): ClassIn {
   const owner = ownerOf(alias);
   const where = `${alias.library ?? ''}.${alias.unit.id}`;
@@ -87,6 +90,9 @@ export function classIn(alias: ValueAlias, lang: Lang): ClassIn {
     if (kind === undefined || kase.is === undefined) throw new Unsupported(`${where}: the ${lang} in case of the kind ${kase.kind} is not generated (GN-6x)`);
     if (kase.read === undefined) return { is: kase.is, kind };
     const read = locate(owner, kase.read, where).member;
+    if (kind === 'Text16' && !uintList(read.returns)) {
+      throw new Unsupported(`${where}: the ${lang} read member ${read.id} of the kind text16 gives no list of uint (GN-6x)`);
+    }
     const returned = unitType(read.returns);
     const unit = returned === undefined ? undefined : owner.units.find((u) => u.id === returned.unit);
     if (unit !== undefined && unit.id !== alias.unit.id && unit.kind === 'class') {
@@ -125,7 +131,10 @@ export function classMakes(alias: ValueAlias, lang: Lang): ClassMake[] {
       if (map !== undefined && constructs && insert !== undefined) return { kind: row.kind, form: 'map', member, map, insert };
       throw new Unsupported(`${where}: the ${lang} make ${make} takes no class of the owner that its constructor makes and a method fills (GN-6x)`);
     }
-    const content = ['null', 'bool', 'number', 'text'].includes(row.kind);
+    if (row.kind === 'text16' && (params.length !== 1 || !uintList(param))) {
+      throw new Unsupported(`${where}: the ${lang} make ${make} of the kind text16 takes no list of uint (GN-6x)`);
+    }
+    const content = ['null', 'bool', 'number', 'text', 'text16'].includes(row.kind);
     if (content && params.length === (row.kind === 'null' ? 0 : 1)) return { kind: row.kind, form: 'content', member, params: params.length };
     throw new Unsupported(`${where}: the ${lang} make ${make} of the kind ${row.kind} is not generated (GN-6x)`);
   });

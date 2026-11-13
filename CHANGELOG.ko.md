@@ -1,11 +1,21 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7f16c96e0b29104d1ab476e287a22b4f1cc23019bfdd4b2a2ab3dc415718957e -->
+<!-- source-sha256: a0e08de34da87d08c6ea29897e809ac5cec06c89011cb00f72ff95eb75a3e14d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 짝 없는 surrogate가 있는 text는 코어를 나갈 형태가 없었다. `binding_core::OutValue`는 text를 Rust `String`으로만
+  담았으므로 json의 `out` 함수는 `polyspec_json::Value`가 담는 문자열 `"\ud800"`을 줄 수 없었고, 값 class는 문자열을
+  text를 주는 member로 읽었는데 json은 그런 문자열에 그것을 거절한다. `OutValue::Text16(Vec<u16>)`과 kind `text16`은
+  text를 짝 없는 surrogate까지 UTF-16 code unit으로 준다. kind `text16`의 `out` 행은 `uint`의 list를 받는 class의
+  member(json `value.from_units`)로 값을 만들고, kind `text16`의 `in` case는 그 list를 주는 member(json
+  `value.string_units`)로 그것을 `HostText::Utf16`으로 읽는다. Python, Node, PHP, WASM이 그렇게 한다. PHP와 Go의
+  문자열은 짝 없는 surrogate를 담지 못하므로 어떤 내장 형태도 그 kind를 만들지 않는다(CK-8). Go는 아직 값 class를
+  받지 않는다(B2.80). Red: `make test-ts`가 301개 중 2개 실패했고(kind의 CK-1, make `value.from_units`와 kind
+  `text16`의 case의 거절), `make test-rust`가 `OutValue::Text16`의 test를 compile하지 못했다. Green: 둘 다 통과한다
+  (B2.81).
 - template의 `engine.render_json.assign`이 받는 json의 class `value`처럼 다른 레포의 값 class인 parameter나 결과는 모든
   target에서 "the type {"unit":"value","library":"json"} is not generated yet"로 거절되었다. 이제 owner가 class에
   `core: {in, out}`과 `core_type`을 적으면(CK-8) Python, Node, PHP, WASM은 owner class의 인스턴스를 받는다. `in` 행의 `by`

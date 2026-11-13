@@ -99,6 +99,13 @@ function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: str
   const arms = classMakes(alias, 'wasm').map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => Ok(${jsCall(make.member, '&class', [])}),`;
+      if (make.kind === 'text16') {
+        // B2.81: the UTF-16 code units of the text as an array of numbers, unpaired surrogates included.
+        return `        OutValue::Text16(value) => {
+            let units: js_sys::Array = value.into_iter().map(JsValue::from).collect();
+            Ok(${jsCall(make.member, '&class', ['&JsValue::from(units)'])})
+        }`;
+      }
       const [variant, arg] = make.kind === 'bool' ? ['Bool', '&JsValue::from_bool(value)'] : [make.kind === 'number' ? 'Number' : 'Text', '&JsValue::from_str(&value)'];
       return `        OutValue::${variant}(value) => Ok(${jsCall(make.member, '&class', [arg])}),`;
     }
@@ -163,7 +170,7 @@ function valueClassesWasmHost(model: Model): string {
     const row = classIn(alias, 'wasm');
     const label = langName('wasm', alias.unit.name, 'class');
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('wasm', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('wasm', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${String(kase.kind === 'Text16')}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const byName = `&JsValue::from_str(${rustString(langName('wasm', row.by.name, 'callable'))})`;
@@ -235,13 +242,30 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((object.clone(), *read)),
             _ => None,
         };
-        let Some((object, (name, call))) = held else {
+        let Some((object, (name, call, units))) = held else {
             return Err(JsValue::from_str("B-1: no such value"));
         };
         let content = Reflect::get(&object, &JsValue::from_str(name))?;
         let content = if call { content.dyn_into::<Function>()?.call0(&object)? } else { content };
+        if units {
+            // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
+            let units = js_sys::Array::from(&content).iter().map(|unit| js_unit(&unit)).collect::<Option<Vec<u16>>>()
+                .ok_or_else(|| JsValue::from_str(&format!("GN-6x: {name} gives a unit that is no integer of 0 to 0xffff")))?;
+            return Ok(HostValue::Text(HostText::Utf16(units)));
+        }
         self.describe(&content)
     }
+}
+
+/// B2.81: a JavaScript number that is a UTF-16 code unit, an integer of 0 to 0xffff.
+fn js_unit(unit: &JsValue) -> Option<u16> {
+    let unit = unit.as_f64()?;
+    if unit.fract() != 0.0 || !(0.0..=f64::from(u16::MAX)).contains(&unit) {
+        return None;
+    }
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "B2.81: an integer of the range of u16, checked above")]
+    let unit = unit as u16;
+    Some(unit)
 }
 `;
 }
@@ -250,7 +274,7 @@ ${checks.join('\n')}
 export function wasmHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return WASM_HOST;
   const host = WASM_HOST
-    .replace("    Properties(JsValue, Array),\n}", "    Properties(JsValue, Array),\n    Value(JsValue, Option<(&'static str, bool)>),\n}")
+    .replace("    Properties(JsValue, Array),\n}", "    Properties(JsValue, Array),\n    Value(JsValue, Option<(&'static str, bool, bool)>),\n}")
     .replace("    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n", "    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }\n")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         self.read_value(value).map_err(js_raised)

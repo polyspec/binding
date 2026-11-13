@@ -104,6 +104,13 @@ function valueClassNode(model: Model, alias: ValueAlias, name: string, core: str
   const arms = classMakes(alias, 'node').map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => Ok(${jsCall(make.member, 'class', '', '')}),`;
+      if (make.kind === 'text16') {
+        // B2.81: the UTF-16 code units of the text as an array of numbers, unpaired surrogates included.
+        return `        OutValue::Text16(value) => {
+            let value: Vec<u32> = value.into_iter().map(u32::from).collect();
+            Ok(${jsCall(make.member, 'class', 'value', 'Vec<u32>')})
+        }`;
+      }
       const [variant, type] = make.kind === 'bool' ? ['Bool', 'bool'] : make.kind === 'number' ? ['Number', 'String'] : ['Text', 'String'];
       return `        OutValue::${variant}(value) => Ok(${jsCall(make.member, 'class', 'value', type)}),`;
     }
@@ -173,7 +180,7 @@ function valueClassesNodeHost(model: Model): string {
     const row = classIn(alias, 'node');
     const label = langName('node', alias.unit.name, 'class');
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('node', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('node', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${String(kase.kind === 'Text16')}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const by = row.by.kind === 'property'
@@ -231,9 +238,20 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((*object, *read)),
             _ => None,
         };
-        let Some((object, (name, call))) = held else {
+        let Some((object, (name, call, units))) = held else {
             return Err(napi::Error::from_reason("B-1: no such value"));
         };
+        if units {
+            // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
+            let units: Vec<u32> = if call {
+                object.get_named_property::<Function<'env, (), Vec<u32>>>(name)?.apply(object, ())?
+            } else {
+                object.get_named_property(name)?
+            };
+            let units = units.into_iter().map(u16::try_from).collect::<Result<Vec<u16>, _>>()
+                .map_err(|_overflow| napi::Error::from_reason(format!("GN-6x: {name} gives a unit above 0xffff")))?;
+            return Ok(HostValue::Text(HostText::Utf16(units)));
+        }
         let content: Unknown<'env> = if call {
             object.get_named_property::<Function<'env, (), Unknown<'env>>>(name)?.apply(object, ())?
         } else {
@@ -249,7 +267,7 @@ ${checks.join('\n')}
 export function nodeHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return NODE_HOST;
   const host = NODE_HOST
-    .replace("    Properties(Object<'env>, Object<'env>),\n", "    Properties(Object<'env>, Object<'env>),\n    Value(Object<'env>, Option<(&'static str, bool)>),\n")
+    .replace("    Properties(Object<'env>, Object<'env>),\n", "    Properties(Object<'env>, Object<'env>),\n    Value(Object<'env>, Option<(&'static str, bool, bool)>),\n")
     .replace("        let object: Object<'env> = unsafe { value.cast() }?;\n        if value.is_array()? {", "        let object: Object<'env> = unsafe { value.cast() }?;\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }\n        if value.is_array()? {")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         self.read_value(value).map_err(|error| raised(Thrown::Js(error)))

@@ -874,6 +874,7 @@
             "float",
             "number",
             "text",
+            "text16",
             "bytes",
             "list",
             "map",

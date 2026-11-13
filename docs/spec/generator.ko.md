@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9ef9ecb74ebf60523b62b8a8bad8899810ff1524f5405a3b8cdabb1f0fe94458 -->
+<!-- source-sha256: 4e794f3c8398d56a050eed5b94da289f1a67b3c3eee984aa4fabba887bb82846 -->
 # 생성기
 
 [English](generator.md)
@@ -254,7 +254,7 @@
   값 타입의 list인 kind `list`의 member는 각각 이 행으로 만든 항목으로 부른다. parameter 하나가
   owner의 생성 class인 kind `map`의 member는 parameter 없는 공개 constructor로 만든 그
   class의 인스턴스로 부른다. 생성 코드는 key와 값 타입의 value를 받는 그 class의 공개 method로 각 entry를
-  순서대로 넣고, key는 kind `text`의 행으로 만든다. 그 밖의 `make`는 이름으로 거절한다(G-4). Python,
+  순서대로 넣고, key는 그 kind(`text`나 `text16`)의 행으로 만든다. 그 밖의 `make`는 이름으로 거절한다(G-4). Python,
   Node, PHP는 이렇게 주고받는다. WASM은 owner의 WASM 패키지의 JavaScript class로 Node와 같이
   주고받는다(GN-18b). Go는 owner class의 Go 타입으로 받으며, GN-15c의 host 질문에 대한 답이 그
   `by`와 `read` member를 부른다. 줄 때는 `out` 행이 적은 owner Go 패키지의 export 함수로 만든다.

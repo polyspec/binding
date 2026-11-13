@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- A text with an unpaired surrogate had no form in which it leaves a core: `binding_core::OutValue` held a text only as
+  a Rust `String`, so the `out` function of json could not give the string `"\ud800"` that `polyspec_json::Value`
+  holds, and a value class read a string by a member that gives a text, which json refuses for such a string.
+  `OutValue::Text16(Vec<u16>)` and the kind `text16` give a text as its UTF-16 code units, unpaired surrogates
+  included. An `out` row of the kind `text16` makes the value by a member of the class that takes a list of `uint`
+  (json `value.from_units`), and an `in` case of the kind `text16` reads it by a member that gives one (json
+  `value.string_units`) as `HostText::Utf16`, in Python, Node, PHP and WASM. No built-in form makes the kind, because
+  the string of PHP and Go cannot hold an unpaired surrogate (CK-8). Go does not take a value class yet (B2.80). Red:
+  `make test-ts` failed 2 of 301 (CK-1 for the kind, and the refusal of the make `value.from_units` and of the case of
+  the kind `text16`), and `make test-rust` failed to compile the test of `OutValue::Text16`; Green: both pass
+  (B2.81).
 - A parameter or a result of a value class of another repository, such as the class `value` of json that
   `engine.render_json.assign` of template takes, was refused in every target as "the type
   {"unit":"value","library":"json"} is not generated yet". When the owner names `core: {in, out}` and `core_type` in

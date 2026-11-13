@@ -94,6 +94,9 @@ function ownerClass(alias: ValueAlias, unit: Unit): string {
 // GN-6x: the Python call of a member of the owner on an object: an attribute for a property, a call for a method.
 const access = (member: Member): { name: string; call: boolean } => ({ name: langName('python', member.name, 'callable'), call: member.kind !== 'property' });
 
+// GN-6x: the OutValue variant of the content that a member of a value class is called on.
+const CONTENT: Record<string, string> = { bool: 'Bool', number: 'Number', text: 'Text', text16: 'Text16' };
+
 // GN-6x: the Python conversions of a value class of another repository: an instance enters as HostValue::Value, which
 // the owner's in function reads through the read members of its in row; a core value leaves as the instance that the
 // owner's members of its out rows make.
@@ -105,7 +108,7 @@ function valueClassPython(alias: ValueAlias, name: string, core: string, failure
   };
   const arms = classMakes(alias, 'python').map((make) => {
     if (make.form === 'content') {
-      const variant = make.kind === 'null' ? 'OutValue::Null' : `OutValue::${make.kind === 'bool' ? 'Bool' : make.kind === 'number' ? 'Number' : 'Text'}(value)`;
+      const variant = make.kind === 'null' ? 'OutValue::Null' : `OutValue::${CONTENT[make.kind] ?? 'Text'}(value)`;
       return `        ${variant} => ${call(make.member, make.params === 0 ? '' : 'value')},`;
     }
     if (make.form === 'list') {
@@ -167,7 +170,7 @@ function valueClassesHost(model: Model): string {
     const row = classIn(alias, 'python');
     const by = access(row.by);
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(access(kase.read).name)}, ${String(access(kase.read).call)}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(access(kase.read).name)}, ${String(access(kase.read).call)}, ${String(kase.kind === 'Text16')}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const maps = row.maps.map((map) => `        if value.is_instance(&${ownerClass(alias, map.unit)})? {
@@ -204,10 +207,14 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((object.clone(), *read)),
             _ => None,
         };
-        let Some((object, (name, call))) = held else {
+        let Some((object, (name, call, units))) = held else {
             return Err(binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }));
         };
         let content = if call { object.call_method0(name)? } else { object.getattr(name)? };
+        if units {
+            // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
+            return Ok(HostValue::Text(HostText::Utf16(content.extract::<Vec<u16>>()?)));
+        }
         self.describe(&content)
     }
 }
@@ -218,7 +225,7 @@ ${checks.join('\n')}
 export function pythonHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return PYTHON_HOST;
   return PYTHON_HOST
-    .replace('    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n', '    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n    Value(Bound<\'py, PyAny>, Option<(&\'static str, bool)>),\n')
+    .replace('    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n', '    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n    Value(Bound<\'py, PyAny>, Option<(&\'static str, bool, bool)>),\n')
     .replace('        if value.is_none() {\n', '        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }\n        if value.is_none() {\n')
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         let py = self.py;

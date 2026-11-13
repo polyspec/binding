@@ -724,6 +724,11 @@ class Checker {
           continue;
         }
         if ((BUILTIN_FORMS as readonly string[]).includes(make)) {
+          // GN-6x: the string of PHP and Go cannot hold an unpaired surrogate, so a member of a class makes text16.
+          if (row.kind === 'text16') {
+            this.report('CK-8', makePath, `the kind text16 is made by a member of a class, not by the built-in form ${make} (GN-6x)`);
+            continue;
+          }
           made = MADE_TYPE[lang][make];
           form = make;
           if (made === undefined) this.report('CK-8', makePath, `${lang} has no built-in ${make} value`);
