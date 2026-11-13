@@ -186,7 +186,9 @@
   쥔다. 한 호출의 읽기 쪽 자리들이 같은 인스턴스이면 잠금 하나를 함께 쓰고(`Arc::ptr_eq`), 한 호출이 같은 인스턴스를 쓰기
   쪽 자리와 다른 자리에 함께 받으면 kind `busy`로 실패한다. 코어에 같은 값의 `&mut`와 다른 빌림을 함께 줄 수 없기
   때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받는다. 생성 코드는 모든 잠금을 얻은 뒤 그 참조를 자리의 이름으로
-  묶으므로, 어떤 `T`의 `&T`든 받아 guard의 참조를 deref하지 않는 trait의 코어 경로(`std::string::ToString::to_string`)도 값을 받는다. 다른 타입 안의 class 값(list 원소,
+  묶으므로, 어떤 `T`의 `&T`든 받아 guard의 참조를 deref하지 않는 trait의 코어 경로(`std::string::ToString::to_string`)도 값을 받는다. class의 parameter는 그 참조의
+  `CoreForm::core_form`을 코어에 준다(GN-6b): 계약이 형태를 적지 않으므로, 코어 parameter의 타입이 `&T`면 참조를, `T`면 사본을
+  고른다(`OrderedMap::insert(&mut self, key: Value, value: Value)`). 다른 타입 안의 class 값(list 원소,
   record field, callback의 반환)은 읽어서 복제하고 곧 놓으므로 그런 class는 `Clone`이다. 쓰기 쪽 자리가 있는 class의 잠금은
   `poisoned` 표지를 가진다: 쓰기 쪽 자리의 guard를 쥔 동안 난 panic은 guard를 놓기 전에 표지를 세우고, 그 뒤 그 객체를 어느
   자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을

@@ -226,7 +226,10 @@ the design ids are those of the binding design.
   fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
   gets `&*guard` for a read place and `&mut *guard` for a write place, which the generated code binds under the name of
   the place once every lock is taken, so a core path of a trait (`std::string::ToString::to_string`), which takes `&T`
-  of any `T` and therefore does not deref a borrow of the guard, gets the value as well. A value of the class inside another type (an
+  of any `T` and therefore does not deref a borrow of the guard, gets the value as well. A parameter of a class gives
+  the core `CoreForm::core_form` of that borrow (GN-6b): the type of the core parameter selects the borrow where the
+  core takes `&T` and a copy where it takes `T` (`OrderedMap::insert(&mut self, key: Value, value: Value)`), as the
+  contract does not name the form. A value of the class inside another type (an
   element of a list, a field of a record, the return of a callback) is read, cloned and released at once, so such a
   class is `Clone`. The lock of a class with a write place holds a flag `poisoned`: a panic while the guard of a write
   place is held sets it before the guard is released, and every later call that takes the object at any place fails

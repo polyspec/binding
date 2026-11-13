@@ -1014,8 +1014,8 @@ test('a class with a write place holds its value in a tried lock, which each cal
     // The receiver &mut self writes and &self reads; a parameter of the class reads, and the core borrows the guards.
     assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &mut \*receiver;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(receiver, amount\)\);/, lang);
     assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &\*receiver;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(receiver\)\);/, lang);
-    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(receiver, other\)\);/, lang);
-    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let tag = &\*tag;\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(tag\)\);/, lang);
+    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(receiver, CoreForm::core_form\(other\)\)\);/, lang);
+    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let tag = &\*tag;\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(CoreForm::core_form\(tag\)\)\);/, lang);
     // A value inside another type is read, cloned and released by the conversion in.
     assert.match(lib, /fn in_tag[^\n]*\n(?:[^\n]*\n){1,4}?[^\n]*inner\.read\("Tag", &\[\]\) \{\n\s+Ok\(held\) => Ok\(\(\*held\)\.clone\(\)\),/, lang);
     assert.doesNotMatch(lib, /fn in_counter/, lang);
@@ -1408,7 +1408,7 @@ test('a parameter of a class gives the core the value in the form that the core 
   // contract names neither form, so the argument takes the one that the core path asks for.
   const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
   for (const file of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
-    assert.match(text(out, file), /let value = &\*value;\n[^\n]*polyspec_classes::show\(value\.core_form\(\)\)/, file);
+    assert.match(text(out, file), /let value = &\*value;\n[^\n]*polyspec_classes::show\(CoreForm::core_form\(value\)\)/, file);
   }
 });
 
@@ -1557,7 +1557,7 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
     // taken, so a call that fails before the core leaves it.
     assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(receiver, other\)\) \{/, path);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(receiver, CoreForm::core_form\(other\)\)\) \{/, path);
     // The core call of an iterate is the whole iteration.
     assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(receiver\)\)\)/, path);
     // Each core call is armed for its own member, and none twice.

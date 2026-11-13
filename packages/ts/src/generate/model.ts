@@ -944,8 +944,9 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   const held = places(model, fn);
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
-    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place.
-    if (held.some((h) => h.param === p)) return variable(p);
+    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
+    // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
+    if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   if (fn.receiver === undefined) return args;

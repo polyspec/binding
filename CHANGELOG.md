@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A parameter of a class that the core takes by value, such as `key` and `value` of `OrderedMap::insert(&mut self, key:
+  Value, value: Value)`, did not compile, because the call gave a borrow of the guard (E0308). The argument is now
+  `CoreForm::core_form` of the borrow of the value, which the type of the core parameter turns into the borrow or a
+  copy (GN-6h). Verified by `npm test` in `packages/ts` and by clippy of the json bindings of Node, Python and WASM.
 - A member of a locked class whose core path is a trait function, such as `value.to_string` with the path
   `std::string::ToString::to_string`, did not compile, because the call gave it a borrow of the guard, which a generic
   path does not deref (E0277). The generated code now binds `&*guard` or `&mut *guard` under the name of each place
