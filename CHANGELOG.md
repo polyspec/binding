@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The crate of the Go C ABI gave a parameter to the core in the type of the table, u64 or a tuple of u64, and read a
+  tuple result by its fields `.0` and `.1`, so the Go binding of `tests/e2e/shapes`, whose core takes `[usize; 2]` in
+  `span_width` and u32 in `span_at` and gives `[u32; 2]`, did not compile. The crate now gives each integer parameter
+  and each integer field of a record to the core through `IntoCore`, reads a tuple result through `partsN`, and
+  widens a usize result after the assertion of its width, as the other crates do (GN-6u); a start of 2^32 is kind
+  `invalid_number`. Verified by `npm test` in `packages/ts`.
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
   (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any

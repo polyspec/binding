@@ -1333,13 +1333,15 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
     assert.match(rust, /into_core_narrow!\(u64, NumberType::Uint, u8, u16, u32, usize\);/, path);
     assert.match(rust, /into_core_narrow!\(i64, NumberType::Int, i8, i16, i32, isize\);/, path);
     assert.match(rust, /impl<A: IntoCore<T>, B: IntoCore<T>, T> IntoCore<\[T; 2\]> for \(A, B\)/, path);
-    // The core call chooses the type: a tuple parameter that the core holds as [usize; 2], and parameters of u32.
-    assert.match(rust, /let span = IntoCore::into_core\(span, "span"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::span_width\(&span\);/, path);
+    // The core call chooses the type: a tuple parameter that the core holds as [usize; 2], and parameters of u32. The
+    // crate of Go judges the end of the encoded arguments after the last parameter (B-8).
+    assert.match(rust, /let span = IntoCore::into_core\(span, "span"\)\.map_err\([^\n]*\)\?;\n\s*(?:finish_input\(input\)\?;\n\s*)?let result = polyspec_shapes::span_width\(&span\);/, path);
     assert.match(rust, /let start = IntoCore::into_core\(start, "start"\)\.map_err\([^\n]*\)\?;\n\s*let length: u64 = /, path);
     // A list parameter keeps the element type of the table, because the core borrows it as a slice (defect 78).
     assert.doesNotMatch(rust, /let spans = IntoCore::into_core/, path);
     // A tuple result is read by partsN, from a Rust tuple or an array; a usize widens after the assertion of its width.
-    assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
+    // The crate of Go writes the result into the buffer that it gives back (B-8).
+    assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*(?:let (?:mut buffer|output) = [^\n]*\n\s*)*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
     assert.match(rust, /impl<T> Parts2<T, T> for \[T; 2\]/, path);
     assert.match(rust, /const _: \(\) = assert!\(usize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6u"\)\]\nimpl WideUint for usize \{/, path);
     // A helper that no member uses is not generated.
