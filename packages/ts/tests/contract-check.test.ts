@@ -243,14 +243,23 @@ describe('CK-10 errors', () => {
     fails('CK-10', '/errors/fixed/5', (c) => { c.errors.fixed.push({ lang: 'go', class: 'error' }); }));
   test('a kind of a dependency that it does not declare', () =>
     fails('CK-10', '/errors/kinds/2/variant', (c) => {
-      c.errors.kinds.push({ variant: 'forms_dep::Error::Nothing', library: 'forms-dep' });
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Nothing', library: 'forms-dep' });
       c.errors.wrapped.push({ library: 'forms-dep', unit: 'dep_error', property: ['field'], drop: { reason: 'P-4' } });
+    }));
+  test('a kind of a dependency without the variant of the core error that holds it (GN-7c)', () =>
+    fails('CK-10', '/errors/kinds/2/variant', (c) => {
+      c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
+      c.errors.wrapped.push({ library: 'forms-dep', unit: 'dep_error', property: ['field'], drop: { reason: 'P-4' } });
+    }));
+  test('a kind of its own with the path of a dependency (GN-7c)', () =>
+    fails('CK-10', '/errors/kinds/2/variant', (c) => {
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', category: 'value' });
     }));
 });
 
 describe('CK-11 wrapped dependency errors', () => {
   const wrap = (c: any): void => {
-    c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
+    c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', library: 'forms-dep' });
   };
   test('a dropped property with a rule is accepted', () => {
     const result = findings((c) => {
@@ -643,8 +652,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const passOn = (c: any, d: any): void => {
       d.errors.kinds[0] = { variant: 'forms_dep::Error::Limit', category: 'internal' };
       d.faults = [{ id: 'internal', core: 'forms_dep::fault::INTERNAL', inject: ['broken'], fills: ['limit'], reason: 'X-1', place: 'forms_dep::limit' }];
-      c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
-      member(c, 'forms.parse').raises.push('forms_dep::Error::Limit');
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', library: 'forms-dep' });
+      member(c, 'forms.parse').raises.push('sample::Error::Dep/forms_dep::Error::Limit');
     };
     const index = contract().errors.kinds.length + 1;
     const withDep = { id: 'dep_broken', body: { hex: '00' }, faults: [{ point: 'forms_dep.internal', kind: 'broken' }], raises: { kind: 'limit' } };

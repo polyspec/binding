@@ -852,6 +852,28 @@ test('an error unit is the class of the kinds that name it, with the properties 
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertSame\(\\Polyspec\\Consumer\\AbsentError::class, \$error::class\);/);
 });
 
+test('a kind of a dependency that the core passes on is matched as the inner variant of its outer variant in every target (GN-7c, E-1b (a))', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  const passed = 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable';
+  contract.errors.kinds.push({ variant: passed, library: 'sample' }, { variant: 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Missing', library: 'sample' });
+  contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.fetch').raises.push(passed);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  const pattern = 'polyspec_consumer::Error::Sample(polyspec_sample::Error::Unreadable { .. })';
+  const arm = (path: string, value: string): void => assert.ok(text(out, path).includes(`        ${pattern} => ${value},`), `${path}: ${pattern} => ${value}`);
+  // The class of the category io of sample's row, in this repository's table of E-2.
+  arm('packages/ts/generated/lib.rs', '2');
+  arm('packages/ts/wasm/generated/lib.rs', '2');
+  arm('packages/python/generated/lib.rs', '"ConsumerIoError"');
+  assert.ok(text(out, 'packages/php-ext/generated/lib.rs').includes(`        ${pattern} => `), 'php');
+  assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes(`        ${pattern} => `), 'go');
+  // GN-7b: the raises of a member is asserted by the same pattern.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.ok(text(out, path).includes(`matches!(error, ${pattern})`), `${path}: the assertion of ${passed}`);
+  }
+  // The member that raises only a kind of the dependency calls a core that returns the core error.
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /Err\(error\) => return Err\(core_error\(error\)\)/);
+});
+
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
   const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
@@ -880,8 +902,10 @@ test('an error unit extends its parent, and what is not generated is refused by 
   refused((contract) => { unit(contract).members[0].core = 'polyspec_consumer::Error::key'; }, /absent_error\.key: a property of an error unit names a function of the core error with the receiver &self/);
   refused((contract) => { unit(contract).members[1].name = ['kind']; }, /absent_error: the property kind is declared twice/);
   refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
-  // E-1b (a): a row that forwards the kind of another library.
-  refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Sample', library: 'sample' }); }, /polyspec_consumer::Error::Sample: a kind of another library \(E-1b \(a\)\) is not generated yet/);
+  // E-1b (a): a row that passes on the kind of another library names the variant of the core error that holds it, and a
+  // row of its own names none (GN-7c).
+  refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_sample::Error::Unreadable', library: 'sample' }); }, /polyspec_sample::Error::Unreadable: a kind of another library names the variant of the core error that holds it, <outer>\/<inner> \(GN-7c\)/);
+  refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable', category: 'io' }); }, /polyspec_consumer::Error::Sample\/polyspec_sample::Error::Unreadable: a kind of this library names no inner variant \(GN-7c\)/);
   // E-2, E-7: in Go an error unit is a struct that embeds its parent, whose Unwrap gives the parent, so errors.As finds
   // the category type and the parent unit; its properties are methods.
   const go = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
