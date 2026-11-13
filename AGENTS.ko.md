@@ -55,3 +55,26 @@
   것도 아니다.
   Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다. 기록이 실행마다 그
   commit을 적는다.
+- Own: `.github/workflows/ci.yml`은 `main`의 push와 수동 실행에서 돈다. matrix 항목마다 job 하나다. `ts`는 `typecheck-ts`,
+  `unit-ts`, `release-coverage`를 실행하고, `rust`는 `test-rust-features`, `test-rust-plain`, `clippy-rust-features`,
+  `clippy-rust`, `fmt-rust`를 실행한다. 그래서 job들은 `make check`의 모든 대상을 한 번씩 실행한다. 각 job은 그 대상을
+  `make ci-targets`로 실행한다. `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
+  `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고, 모든 action을 commit으로
+  고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은
+  모든 job의 bootstrap이다. 끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 확인하는 각 레포의 checkout이
+  필요하고, 위의 규칙이 commit을 push하거나 merge하기 전에 그 commit의 실행을 요구한다. 이유: release는 모든 job이 통과한
+  실행의 id를 받고, 도구를 바로 실행하는 step은 Makefile의 설정을 받지 못한다.
+  Enforced by: none, workflow는 review에서 읽는다. `make ci-passed`가 한 실행의 job을 판정한다.
+- Own: `config/release.json`은 모든 package 파일을 분류한다(`make release-coverage`). tag `vX.Y.Z`는 생성기
+  `packages/ts`를 GitHub Release의 npm archive `polyspec-binding-X.Y.Z.tgz`로 release하고, `npm pack`이 prepack script
+  `npm run build`로 그것을 만든다. `packages/core/rust`의 crate `binding_core`는 Git tag로 release하고, Cargo 의존은 그것을
+  `tag = "vX.Y.Z"`로 가리킨다. 어느 쪽도 registry에 두지 않는다. version 0.1까지 레포는 다른 polyspec 레포를 GitHub tag나
+  release asset으로 받기 때문이다. version-bump commit `chore(release): Release X.Y.Z`는 `packages/ts/package.json`과 그
+  lock, `packages/core/rust/Cargo.toml`에 X.Y.Z를 적고, 두 changelog의 `## Unreleased`를 `## X.Y.Z`로 바꾸고 그 위에 빈
+  `## Unreleased`를 둔다. `main`으로의 그 push의 CI 실행이 성공하면 `.github/workflows/release.yml`이 스스로 시작하고,
+  `gh workflow run release.yml -f run=<id>`가 그것을 다시 시작한다. `make release-tag`가 그 commit에 annotated tag
+  `vX.Y.Z`를 만들어 push하고, `make release-assets`, `make release-publish`, `make release-undraft`가 archive를 만들고
+  GitHub Release를 만든다. tag를 손으로 만들지 않는다. 이유: release는 성공한 실행이 확인한 commit이고, 그 version은 그것이
+  release하는 모든 manifest의 version이다.
+  Enforced by: `make release-coverage`는 `config/release.json`이 분류하지 않은 package 파일을 실패시킨다. `make
+  release-tag`는 성공한 실행의 commit에만 tag를 붙인다.
