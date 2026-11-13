@@ -672,6 +672,17 @@ test('a value alias converts through its core functions in every language (U-7)'
   }
 });
 
+test('an out row of a value alias makes a keyed map of the keys it lists in every language (U-7, T-2, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'map' && r.when.is === false);
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = { keyed_map: { key: lang === 'php' ? ['int', 'bytes'] : ['int', 'text', 'bytes'] } };
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The entries are made as those of a map: each key and each item through the rows of the alias.
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /OutValue::Map\(value\) => if out\.predicate\(Predicate::SequenceKeys\) == Some\(false\) \{ \{\n {12}let handle = value\.handle\(\);/, path);
+  }
+});
+
 test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
