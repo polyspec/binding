@@ -171,8 +171,17 @@ the design ids are those of the binding design.
   function parameter of Node and WASM is `callable_in`, as that of PHP and Python is. A function takes any name, also
   `guard`, `pass`, `called`, `throw` or `in`, and an entry of the bare name is a second definition of the helper in
   the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
-  class of the WASM crate, which has no `impl` block of the class, is `class_<unit>_<member>` of that module. The
-  five crates apply the rule.
+  class of the WASM crate, which has no `impl` block of the class, is the function `member_<member>` of the module
+  `class_<unit>` of that module, which holds `use super::*;`, and the release of a class is the function
+  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. Why: a name that joins the class and
+  the member with `_` reads in two ways, so the member `new_x` of the class `a` and the member `x` of the class
+  `a_new` were one function `class_a_new_x`, and a member `free` was the release `class_<unit>_free` with its export
+  `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
+  prefix inside the module of its class, because a member named as a helper, such as `guard`, would hide the helper
+  there; no export of a member is `__free_<Class>`, because the name of a class starts with a capital letter. The
+  five crates apply the rule. Not applied yet (G-4): the C symbol of a member of a class of the Go crate,
+  `polyspec_<library>_<unit>_<member>`, and its function of package `binding` join the class and the member the same
+  way, so the two classes above give one symbol.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

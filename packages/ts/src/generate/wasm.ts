@@ -455,9 +455,11 @@ const plainName = (unit: Unit): string => rustField(unit.name).replace(/^r#/, ''
 
 const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()}`;
 
-// The Rust name of an export: a member of a class has the name of its class before its own, so it meets no function.
+// GN-4c: the Rust name of an export: function_<name> of a function, and member_<member> of a member of a class, which
+// is a function of the module class_<unit> of its class (objectRust), so the class and the member are read apart; the
+// prefix keeps a member named as a helper, such as guard, from hiding the helper in that module.
 const rustExport = (fn: Fn): string =>
-  fn.kind === 'function' ? `function_${rustField(fn.member.name).replace(/^r#/, '')}` : `class_${plainName(fn.unit)}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
+  `${fn.kind === 'function' ? 'function' : 'member'}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
 
 // GN-6h: whether the class of a member holds its value in a lock.
 const locked = (model: Model, fn: Fn): boolean => model.objects.find((o) => o.unit === fn.unit)?.lock !== undefined;
@@ -744,10 +746,15 @@ ${tables}
 function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('wasm', object.unit.name, 'class');
   const name = plainName(object.unit);
-  return `${object.members.map((fn) => functionRust(model, fn)).join('')}
+  return `
+/// T-5, GN-4c: the exports of the members of ${jsClass}, each a function of this module.
+pub mod class_${name} {
+    use super::*;
+${object.members.map((fn) => functionRust(model, fn)).join('').replace(/\n(?=.)/g, '\n    ')}}
+
 /// T-5: drops the value of an instance of ${jsClass} that the engine collected (the FinalizationRegistry of the ES module).
-#[wasm_bindgen(js_name = ${rustString(`__${jsClass}_free`)})]
-pub fn class_${name}_free(this: u32) {
+#[wasm_bindgen(js_name = ${rustString(`__free_${jsClass}`)})]
+pub fn free_${name}(this: u32) {
     ${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this));
 }
 `;
@@ -1476,7 +1483,7 @@ export class ${cls} {
 
   constructor(...args) {
 ${construct}
-    released.register(this, [glue.${`__${cls}_free`}, this.#handle]);
+    released.register(this, [glue.${`__free_${cls}`}, this.#handle]);
   }
 ${members.join('\n')}
 

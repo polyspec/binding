@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d180b46552371caf296dfc55b3e40eca54fc7b4662e2cd1dea0905750d3866dd -->
+<!-- source-sha256: 78c9074967a12093d6333e1e1f715f1cde7c35341570197c4c33c29192fc7364 -->
 # 생성기
 
 [English](generator.md)
@@ -138,8 +138,15 @@
   Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는 PHP와 Python처럼
   `callable_in`이다. 함수는 어떤 이름이든 가질 수 있고 `guard`, `pass`, `called`, `throw`, `in`도 그렇다. 이름 그대로의
   진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
-  class의 `impl` 블록이 없어서, class의 member의 진입은 그 module의 `class_<unit>_<member>`다. 다섯 crate가 이 규칙을
-  적용한다.
+  class의 `impl` 블록이 없어서, class의 member의 진입은 그 module 안의 module `class_<unit>`의 함수
+  `member_<member>`다. 그 module은 `use super::*;`를 갖는다. class의 해제는 export의 module의 함수 `free_<unit>`이고, 그
+  export는 `__free_<Class>`다. 이유: class와 member를 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 class `a`의 member
+  `new_x`와 class `a_new`의 member `x`가 한 함수 `class_a_new_x`였고, member `free`는 해제 `class_<unit>_free`와 그 export
+  `__<Class>_free`였다. 밑줄 둘의 구분자는 snake_case 이름이 아니어서 lint가 거부한다. member는 자기 class의 module
+  안에서도 접두어를 유지한다. `guard`처럼 helper와 같은 이름의 member가 그 안에서 helper를 가리기 때문이다. class의
+  이름은 대문자로 시작하므로 어떤 member의 export도 `__free_<Class>`가 아니다. 다섯 crate가 이 규칙을 적용한다. 아직
+  적용하지 않음(G-4): Go crate의 class의 member의 C 심볼 `polyspec_<library>_<unit>_<member>`와 package `binding`의 그
+  함수는 class와 member를 같은 방식으로 이으므로, 위의 두 class는 한 심볼을 준다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

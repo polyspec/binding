@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 7aeab1f6952ff405572638479c01c9408a545046adbb7d6b379c953d074ad90b -->
+<!-- source-sha256: 129edc283e5ec37c56ffce3421d72e664bac5930fbb6a0eddab63e83d6959fe5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- WASM crate의 class의 member의 진입은 `class_<unit>_<member>`였고, 이 이름은 두 가지로 읽힌다. class `a`의 member
+  `new_x`와 class `a_new`의 member `x`가 둘 다 `class_a_new_x`였고, member `free`는 class의 해제처럼
+  `class_<unit>_free`와 export `__<Class>_free`였다. 이제 진입은 export의 module 안의 module `class_<unit>`의 함수
+  `member_<member>`이고, 해제는 `free_<unit>`과 export `__free_<Class>`다(GN-4c). member의 export는 이름을 유지한다.
+  `packages/ts`의 `npm test`로 검증했다. 그 테스트는 두 class와 member `free`, `guard`를 가진 sample의 WASM crate를
+  생성하고, 어느 module도 함수를 두 번 정의하지 않고 어느 export도 다른 export의 이름을 갖지 않기를 요구한다. 같은 계약은
+  Go crate에 C 심볼 `polyspec_sample_tag_new_x`를 두 번 주며, 이것은 고치지 않았다(task B2.86-3). 이 변경에 대해 생성된
+  crate는 컴파일하지 않았다.
 - 다른 레포의 unit의 변환은 `in_<library>_<name>`이었고, 이 이름은 두 가지로 읽힌다. 라이브러리 `c`의 record `a_b`와
   라이브러리 `c_a`의 record `b`가 둘 다 `in_c_a_b`여서 한 함수의 두 정의였고, 자체 unit `c_a_b`가 세 번째였다. 이제 다른
   레포의 unit의 변환(`in_`, `out_`, 그리고 value alias의 `make_`)은 crate의 module `library_<library>`의 함수이고, 코드는

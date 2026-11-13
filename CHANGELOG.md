@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The entry of a member of a class of the WASM crate was `class_<unit>_<member>`, which reads in two ways: the member
+  `new_x` of the class `a` and the member `x` of the class `a_new` were both `class_a_new_x`, and a member `free` was
+  `class_<unit>_free` with the export `__<Class>_free`, as the release of the class was. The entry is now the function
+  `member_<member>` of the module `class_<unit>` of the module of the exports, and the release is `free_<unit>` with
+  the export `__free_<Class>` (GN-4c); the exports of the members keep their names. Verified by `npm test` in
+  `packages/ts`: its test generates the WASM crate of the sample with the two classes and with the members `free` and
+  `guard`, and requires that no module defines a function twice and that no export has the name of another. The same
+  contract gives the Go crate the C symbol `polyspec_sample_tag_new_x` twice, which is not fixed (task B2.86-3). The
+  generated crates were not compiled for this change.
 - The conversion of a unit of another repository was named `in_<library>_<name>`, which reads in two ways: the record
   `a_b` of the library `c` and the record `b` of the library `c_a` were both `in_c_a_b`, two definitions of one
   function, and an own unit `c_a_b` was a third. The conversions of the units of another repository (`in_`, `out_`,

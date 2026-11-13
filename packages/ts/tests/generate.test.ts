@@ -2172,10 +2172,11 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(lib, /static TABLE_TAG: RefCell<Table<binding_core::Shared<polyspec_sample::Tag>>> = const \{ RefCell::new\(Table::new\(\)\) \};/);
   // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
-  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn class_tag_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
+  assert.match(lib, /\n {4}pub mod class_tag \{\n {8}use super::\*;\n/);
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {8}pub fn member_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
   // GN-6h: a value of the class comes in from the language, so the class holds it in a lock that each call reads.
-  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let receiver = &\*receiver;\n {12}let result = polyspec_sample::Tag::name\(receiver\);/);
-  assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_free"\)\]/);
+  assert.match(lib, /pub fn member_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {12}guard\(\|\| \{\n {16}let held = held_tag\(this\)\?;\n {16}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {16}let receiver = &\*receiver;\n {16}let result = polyspec_sample::Tag::name\(receiver\);/);
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__free_Tag"\)\]\n {4}pub fn free_tag\(this: u32\) \{/);
   assert.match(lib, /\nfn in_tag\(value: &JsValue, subject: &str\) -> Result<polyspec_sample::Tag, Fail> \{\n {4}let handle = handle_of\(0, value\)\?/);
   assert.match(lib, /pub fn register\(classes: Vec<Function>, makers: Vec<Function>, readers: Vec<Function>\)/);
   // Q-4 only: the to_json of the sample names php and node, so WASM has none.
@@ -2183,7 +2184,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   const entry = text(out, 'packages/ts/wasm/generated/index.mjs');
   assert.match(entry, /\nexport class Tag \{\n {2}#handle;\n/);
   assert.match(entry, /this\.#handle = enter\(SampleInternalError, \(\) => glue\.__Tag_new\(args\[0\]\)\);/);
-  assert.match(entry, /released\.register\(this, \[glue\.__Tag_free, this\.#handle\]\);/);
+  assert.match(entry, /released\.register\(this, \[glue\.__free_Tag, this\.#handle\]\);/);
   assert.match(entry, /\n {2}get name\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_name\(this\.#handle\)\);/);
   assert.match(entry, /\n {2}\[Symbol\.iterator\]\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_iterate\(this\.#handle\)\)\[Symbol\.iterator\]\(\);/);
   assert.match(entry, /\n {2}toString\(\) \{/);
@@ -2212,7 +2213,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
   written.units.push(counter);
   const writing = text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let amount = IntoCore::into_core\(amount, "amount"\)\.map_err\(binding_error\)\?;\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
+  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {16}let amount = IntoCore::into_core\(amount, "amount"\)\.map_err\(binding_error\)\?;\n {16}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
   assert.match(writing, /static TABLE_COUNTER: RefCell<Table<binding_core::Exclusive<polyspec_sample::Counter>>>/);
   assert.match(text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/index.mjs'), /class Counter \{/);
   // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.
@@ -3932,17 +3933,22 @@ const twoLibraries = (): { contract: any; caseFiles: Map<string, unknown>; forei
   return { contract, caseFiles, foreign: new Map([['c', renamed('c', ['a', 'b'])], ['c_a', renamed('c_a', ['b'])]]) };
 };
 
-// The functions that each module of a generated crate defines, by the path of the module from the root of the crate.
+// The functions that each module of a generated crate defines, by the path of the module from the root of the crate;
+// a function under a cfg attribute is one of the forms of a function and is not counted, as in functionNames.
 const definedIn = (lib: string): Map<string, string[]> => {
   const defined = new Map<string, string[]>();
   const open: { name: string; indent: number }[] = [];
+  let conditional = false;
   for (const line of lib.split('\n')) {
     const indent = line.length - line.trimStart().length;
+    const attribute = /^(?:#\[|\/\/\/)/.test(line.trimStart());
+    const counted = !conditional;
+    conditional = attribute && (conditional || line.trimStart().startsWith('#[cfg('));
     const module = /^\s*(?:pub(?:\([a-z]+\))? )?mod ([a-z0-9_]+) \{$/.exec(line);
     if (module !== null) open.push({ name: module[1] ?? '', indent });
     else if (line.trim() === '}' && open.length > 0 && open[open.length - 1]?.indent === indent) open.pop();
     const fn = /^(?:pub(?:\([a-z]+\))? )?(?:unsafe )?(?:extern "C" )?fn ([a-z0-9_]+)/.exec(line.trimStart());
-    if (fn !== null && indent === open.length * 4) {
+    if (fn !== null && counted && indent === open.length * 4) {
       const path = open.map((m) => m.name).join('::');
       defined.set(path, [...(defined.get(path) ?? []), fn[1] ?? '']);
     }
@@ -3987,4 +3993,45 @@ test('the conversions of a unit of another library are functions of the module o
       assert.equal(root.some((name) => /^(?:in|out)_(?:a_b|b)$/.test(name)), false, path);
     }
   }
+});
+
+// GN-4c: the sample with a second class tag_new, whose member x and the member new_x of the class tag gave one name,
+// with a member free of the class tag, which had the name of the release of the class, and with a member guard, the
+// name of a helper.
+const classNames = (contract: any): void => {
+  const tag = unitOf(contract, 'tag');
+  const method = tag.members.find((m: any) => m.id === 'tag.name');
+  const named = (unit: string, name: string[]): any => ({ ...JSON.parse(JSON.stringify(method)), id: `${unit}.${name.join('_')}`, name });
+  tag.members.push(named('tag', ['new', 'x']), named('tag', ['free']), named('tag', ['guard']));
+  const second = JSON.parse(JSON.stringify(tag));
+  second.id = 'tag_new';
+  second.name = ['tag', 'new'];
+  second.members = [{ ...JSON.parse(JSON.stringify(tag.members.find((m: any) => m.kind === 'constructor'))), id: 'tag_new.new' }, named('tag_new', ['x'])];
+  contract.units.push(second);
+};
+
+test('the entry of a member of a class of the WASM crate is a function of the module of its class, and the release of a class has a name of its own (GN-4c)', () => {
+  // Before, the member new_x of the class tag and the member x of the class tag_new were both class_tag_new_x, and
+  // the member free of the class tag was class_tag_free with the export __Tag_free, as the release of the class was.
+  const out = scopedSample(['wasm'], classNames);
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  const defined = definedIn(lib);
+  for (const [module, names] of defined) assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), [], module);
+  for (const name of ['new', 'name', 'new_x', 'free', 'guard']) assert.ok((defined.get('exports::class_tag') ?? []).includes(`member_${name}`), name);
+  assert.deepEqual((defined.get('exports::class_tag_new') ?? []).sort(), ['member_new', 'member_x']);
+  // A member named as a helper does not hide the helper in the module of its class, which names the helper by a glob.
+  for (const [module, names] of defined) if (module.startsWith('exports::class_')) assert.deepEqual(names.filter((name) => !name.startsWith('member_')), [], module);
+  assert.equal([...defined.values()].flat().filter((name) => name.startsWith('member_') || name.startsWith('free_')).every((name) => !(defined.get('') ?? []).includes(name)), true);
+  assert.ok((defined.get('exports') ?? []).includes('free_tag'));
+  assert.ok((defined.get('exports') ?? []).includes('free_tag_new'));
+  assert.match(lib, /\n {4}pub mod class_tag \{\n {8}use super::\*;\n/);
+  // No export of the module has the name of another: the release of a class is __free_<Class>, which no member of a
+  // class has, because the name of a class starts with a capital letter.
+  const exports = [...lib.matchAll(/#\[wasm_bindgen\(js_name = "([^"]+)"\)\]/g)].map((m) => m[1] ?? '');
+  assert.deepEqual(exports.filter((name, i) => exports.indexOf(name) !== i), []);
+  assert.ok(exports.includes('__Tag_free'));
+  assert.ok(exports.includes('__free_Tag'));
+  assert.match(lib, /#\[wasm_bindgen\(js_name = "__free_Tag"\)\]\n {4}pub fn free_tag\(this: u32\) \{/);
+  const entry = text(out, 'packages/ts/wasm/generated/index.js') + [...out].filter(([path]) => path.endsWith('.js') || path.endsWith('.mjs')).map(([, file]) => String(file)).join('\n');
+  assert.match(entry, /released\.register\(this, \[glue\.__free_Tag, this\.#handle\]\);/);
 });
