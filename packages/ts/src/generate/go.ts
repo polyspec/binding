@@ -1482,9 +1482,23 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
+// panicked is the panic of Go code that a call ran (GN-15b, GN-6ae), which the call keeps as its error until the call
+// of the C ABI returned and the member panics with the same value.
+type panicked struct{ value any }
+
+// Error is the text of the value of the panic.
+func (p *panicked) Error() string { return fmt.Sprint(p.value) }
+
 // run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
-// index, the kind and the message of an error that the member recognizes (U-3).
-func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
+// index, the kind and the message of an error that the member recognizes (U-3). A panic of the callback is recovered
+// here, because a panic that unwinds through the frames of the static library skips the destructors of the core, its
+// guards and its locks: it is the error of the call, whose value the member panics with again (GN-15b).
+func (c *Call) run(callback uint64, member uint32, args []byte) (status int32, out []byte) {
+	defer func() {
+		if value := recover(); value != nil {
+			status, out = c.raise(&panicked{value: value})
+		}
+	}()
 	if callback == 0 || callback > uint64(len(c.callbacks)) {
 		return c.raise(Malformed())
 	}
@@ -1514,15 +1528,16 @@ func (c *Call) raise(err error) (int32, []byte) {${model.callbacks.some((cb) => 
 // callOf is the call of a handle that the static library gave back.
 func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*Call) }
 
-// raisedError is the error that a callback of the call returned (U-3).${passes(model) ? ' The panic of a func (GN-6ae) is not returned:\n// the member panics with its value again, now that the call of the C ABI returned.' : ''}
+// raisedError is the error that a callback of the call returned (U-3). A panic of the callback (GN-15b) is not returned:
+// the member panics with its value again, now that the call of the C ABI returned.
 func raisedError(call, index uint64) error {
 	c := callOf(call)
 	if index >= uint64(len(c.raised)) {
 		return Malformed()
-	}${passes(model) ? `
+	}
 	if p, ok := c.raised[index].(*panicked); ok {
 		panic(p.value)
-	}` : ''}
+	}
 	return c.raised[index]
 }
 
@@ -1617,24 +1632,11 @@ func (r *Reader) Passed() any {
 	return value
 }
 
-// panicked is the panic of a func of Go code (GN-6ae), which the call keeps as its error until the call of the C ABI
-// returned and the member panics with the same value.
-type panicked struct{ value any }
-
-// Error is the text of the value of the panic.
-func (p *panicked) Error() string { return fmt.Sprint(p.value) }
-
 // Function is the dispatch of a func of Go code (GN-6ae): run decodes the arguments and calls the func, on the
 // goroutine of the member. What the func returned is held in the table and leaves as its handle, and its error is the
-// error of the call. A panic of the func is recovered here, because a panic that unwinds through the frames of the
-// static library skips the destructors of the core.
+// error of the call. A panic of the func is recovered by the call that runs it (GN-15b).
 func Function(run func(dec *Reader) (any, error)) Callback {
-	return func(_ *Call, _ uint32, dec *Reader, enc *Writer) (err error) {
-		defer func() {
-			if value := recover(); value != nil {
-				err = &panicked{value: value}
-			}
-		}()
+	return func(_ *Call, _ uint32, dec *Reader, enc *Writer) error {
 		value, err := run(dec)
 		if err != nil {
 			return err

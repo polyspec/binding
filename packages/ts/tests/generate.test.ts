@@ -3177,8 +3177,8 @@ test('Go takes a func as a callback of the call, holds its value in the table of
   assert.match(binding, /\/\/export polyspec_sample__go_release_passed\nfunc polyspec_sample__go_release_passed\(handle C\.uint64_t\) \{\n\ttakePassed\(uint64\(handle\)\)\n\}/);
   // A result whose handle names no value is kind internal.
   assert.match(binding, /func \(r \*Reader\) Passed\(\) any \{\n\thandle := r\.Uint\(\)\n\tif r\.failed \{\n\t\treturn nil\n\t\}\n\tvalue, ok := takePassed\(handle\)\n\tif !ok \{\n\t\tr\.failed = true\n\t\tif r\.problem == "" \{\n\t\t\tr\.problem = "GN-6ae: the value of the passthrough is gone"\n\t\t\}\n\t\}\n\treturn value\n\}/);
-  // The dispatch of a func holds what it returned, and recovers its panic, which the member panics with again.
-  assert.match(binding, /func Function\(run func\(dec \*Reader\) \(any, error\)\) Callback \{\n\treturn func\(_ \*Call, _ uint32, dec \*Reader, enc \*Writer\) \(err error\) \{\n\t\tdefer func\(\) \{\n\t\t\tif value := recover\(\); value != nil \{\n\t\t\t\terr = &panicked\{value: value\}\n\t\t\t\}\n\t\t\}\(\)\n\t\tvalue, err := run\(dec\)\n\t\tif err != nil \{\n\t\t\treturn err\n\t\t\}\n\t\tenc\.Uint\(pass\(value\)\)\n\t\treturn nil\n\t\}\n\}/);
+  // The dispatch of a func holds what it returned; the call recovers its panic, which the member panics with again.
+  assert.match(binding, /func Function\(run func\(dec \*Reader\) \(any, error\)\) Callback \{\n\treturn func\(_ \*Call, _ uint32, dec \*Reader, enc \*Writer\) error \{\n\t\tvalue, err := run\(dec\)\n\t\tif err != nil \{\n\t\t\treturn err\n\t\t\}\n\t\tenc\.Uint\(pass\(value\)\)\n\t\treturn nil\n\t\}\n\}/);
   assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
   // The trampoline of the callbacks is exported for a contract whose only Go code is a func.
   assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);
@@ -3361,9 +3361,9 @@ test('the Python test writes a function fixture as a function of the module, a f
 });
 
 test('Go recovers the panic of a method of a callback in the call, and the member panics with the same value (GN-15b, U-3)', () => {
-  // A contract with a callback unit and no function parameter: the fixture repository.
-  const { contract, caseFiles } = load();
-  for (const out of [scopedSample(['go']), generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] })]) {
+  // The sample, and the sample without the classes whose members take a func: a contract with a callback unit alone.
+  const plain = (contract: any): void => { contract.units = contract.units.filter((u: any) => u.id !== 'store' && u.id !== 'scope'); };
+  for (const out of [scopedSample(['go']), scopedSample(['go'], plain)]) {
     const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
     assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);
     // The call recovers the panic of the Go code that it runs and keeps its value as the error of the call.
@@ -3380,7 +3380,7 @@ test('Go recovers the panic of a method of a callback in the call, and the membe
   assert.match(tests, /\ntype panickingLookup struct\{ value any \}\n\nfunc \(p panickingLookup\) Find\(key string\) \(\*string, error\) \{ panic\(p\.value\) \}\n/);
   assert.match(tests, /func TestU3LedgerKnownPanicsWithThePanicOfLookup\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the callback"\)\n\t(made\d+), [^\n]*\n(?:\t[^\n]*\n)*?\tfunc\(\) \{\n\t\tdefer func\(\) \{\n\t\t\tif value := recover\(\); value != any\(raised\) \{\n\t\t\t\tt\.Fatalf\("U-3: %#v is not the panic of the callback", value\)\n\t\t\t\}\n\t\t\}\(\)\n\t\t_, err := \1\.Known\(panickingLookup\{value: raised\}\)\n\t\tt\.Fatalf\("U-3: the call returned %v", err\)\n\t\}\(\)\n\t_, err := \1\.Known\(raisingLookup\{err: raised\}\)\n\tif err != raised \{\n\t\tt\.Fatalf\("U-3: %#v is not the error of the callback after its panic", err\)\n\t\}\n\t\{\n\t\terr := \1\.Note\("a"\)\n\t\tif failure, ok := err\.\(\*liberrors\.SampleBusyError\); ok && failure\.Kind\(\) == "busy" \{\n\t\t\tt\.Fatalf\("U-3: the panic of the callback left ledger\.note busy: %v", err\)\n\t\t\}\n\t\}\n\}/);
   // A function, which has no instance, requires the panic and the call after it.
-  assert.match(tests, /func TestU3SampleResolvePanicsWithThePanicOfLookup\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t\t_, err := Resolve\(panickingLookup\{value: raised\}, "a"\)\n(?:\t[^\n]*\n)*?\t_, err := Resolve\(raisingLookup\{err: raised\}, "a"\)\n\tif err != raised \{\n[^\n]*\n\t\}\n\}/);
+  assert.match(tests, /func TestU3ResolvePanicsWithThePanicOfLookup\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t\t_, err := Resolve\(panickingLookup\{value: raised\}, "a"\)\n(?:\t[^\n]*\n)*?\t_, err := Resolve\(raisingLookup\{err: raised\}, "a"\)\n\tif err != raised \{\n[^\n]*\n\t\}\n\}/);
 });
 
 // GN-4c: the sample with functions whose names are those of helpers of the generated crates.
