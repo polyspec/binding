@@ -1174,6 +1174,32 @@ test('a tuple enters as the sequence of exactly its parts in each language (T-1,
   assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func SpanLength\(span \[2\]uint64\) \(uint64, error\)/m);
 });
 
+test('a value enters the core in its own integer and tuple type and leaves it from that type (T-1, GN-6u)', () => {
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    // The trait narrows with TryFrom, so a value outside the core's type is kind invalid_number (B-2).
+    assert.match(rust, /trait IntoCore<T> \{\n {4}fn into_core\(self, subject: &str\) -> Result<T, BindingError>;/, path);
+    assert.match(rust, /into_core_narrow!\(u64, NumberType::Uint, u8, u16, u32, usize\);/, path);
+    assert.match(rust, /into_core_narrow!\(i64, NumberType::Int, i8, i16, i32, isize\);/, path);
+    assert.match(rust, /impl<A: IntoCore<T>, B: IntoCore<T>, T> IntoCore<\[T; 2\]> for \(A, B\)/, path);
+    // The core call chooses the type: a tuple parameter that the core holds as [usize; 2], and parameters of u32.
+    assert.match(rust, /let span = IntoCore::into_core\(span, "span"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::span_width\(&span\);/, path);
+    assert.match(rust, /let start = IntoCore::into_core\(start, "start"\)\.map_err\([^\n]*\)\?;\n\s*let length: u64 = /, path);
+    // A list parameter keeps the element type of the table, because the core borrows it as a slice (defect 78).
+    assert.doesNotMatch(rust, /let spans = IntoCore::into_core/, path);
+    // A tuple result is read by partsN, from a Rust tuple or an array; a usize widens after the assertion of its width.
+    assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
+    assert.match(rust, /impl<T> Parts2<T, T> for \[T; 2\]/, path);
+    assert.match(rust, /const _: \(\) = assert!\(usize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6u"\)\]\nimpl WideUint for usize \{/, path);
+    // A helper that no member uses is not generated.
+    assert.doesNotMatch(rust, /fn parts1</, path);
+  }
+  // B-2: the case of a start beyond 32 bits, the width of usize on wasm32, is kind invalid_number in each language.
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.spanAt\(4294967296, 1\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_at\(4294967296, 1\)/);
+});
+
 // The repository of the end-to-end check that holds a variant and a class that implements a callback interface
 // (tests/e2e/variants).
 const variants = (change: (contract: any) => void = () => undefined, targets?: Inputs['targets']): Map<string, string | Buffer> => {
@@ -1628,7 +1654,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
   written.units.push(counter);
   const writing = text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
+  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let amount = IntoCore::into_core\(amount, "amount"\)\.map_err\(binding_error\)\?;\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
   assert.match(writing, /static TABLE_COUNTER: RefCell<Table<binding_core::Exclusive<polyspec_sample::Counter>>>/);
   assert.match(text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/index.mjs'), /class Counter \{/);
   // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.

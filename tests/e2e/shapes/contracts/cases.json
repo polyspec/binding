@@ -267,5 +267,45 @@
       ],
       "result": "ab×3"
     }
+  ],
+  "span_width": [
+    {
+      "id": "from_two_to_seven",
+      "span": [
+        2,
+        7
+      ],
+      "result": 5
+    },
+    {
+      "id": "an_end_before_the_start",
+      "span": [
+        7,
+        2
+      ],
+      "result": 0
+    }
+  ],
+  "span_at": [
+    {
+      "id": "three_from_two",
+      "start": 2,
+      "length": 3,
+      "result": [
+        2,
+        5
+      ]
+    },
+    {
+      "id": "a_start_beyond_32_bits",
+      "start": 4294967296,
+      "length": 1,
+      "raises": {
+        "kind": "invalid_number",
+        "status": null,
+        "category": "value",
+        "message": "start is not a value of the type uint"
+      }
+    }
   ]
 }

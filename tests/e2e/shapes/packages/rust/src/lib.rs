@@ -208,6 +208,19 @@ pub fn labelled(pair: &(String, u64)) -> String {
     format!("{}×{}", pair.0, pair.1)
 }
 
+/// The width of a span of a start and an end, none when the end is before the start (GN-6u: a tuple parameter that
+/// the core holds as an array of usize).
+#[must_use]
+pub const fn span_width(span: &[usize; 2]) -> usize {
+    span[1].saturating_sub(span[0])
+}
+
+/// The span of a start and a length (GN-6u: parameters of u32 and a tuple result that the core holds as an array).
+#[must_use]
+pub const fn span_at(start: u32, length: u32) -> [u32; 2] {
+    [start, start.saturating_add(length)]
+}
+
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
 /// the largest.
 #[must_use]

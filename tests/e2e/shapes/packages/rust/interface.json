@@ -466,6 +466,67 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::labelled"
+        },
+        {
+          "id": "shapes.span_width",
+          "name": [
+            "span",
+            "width"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::span_width"
+        },
+        {
+          "id": "shapes.span_at",
+          "name": [
+            "span",
+            "at"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "length"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": {
+            "tuple": [
+              "uint",
+              "uint"
+            ]
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::span_at"
         }
       ]
     },
@@ -788,6 +849,16 @@
       "member": "shapes.labelled",
       "file": "contracts/cases.json",
       "group": "labelled"
+    },
+    {
+      "member": "shapes.span_width",
+      "file": "contracts/cases.json",
+      "group": "span_width"
+    },
+    {
+      "member": "shapes.span_at",
+      "file": "contracts/cases.json",
+      "group": "span_at"
     }
   ]
 }
