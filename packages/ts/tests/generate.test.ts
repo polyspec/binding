@@ -26,7 +26,7 @@ const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
-  // Go refuses the variant figure (GN-6v) and the class ribbon that implements tail (GN-6w).
+  // Go refuses the class ribbon that implements tail (GN-6w).
   variants: ['php', 'python', 'node', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
   classes: ['php', 'python', 'node', 'go', 'wasm'],
@@ -1592,11 +1592,15 @@ test('a variant is an interface of Go and a struct of each case, which the C ABI
   // The number of the case and its fields; a value that is no case struct is 2^64 - 1.
   assert.match(pkg, /case FigureCircle:\n\t\tenc\.Uint\(1\)\n\t\tenc\.Float\(case0\.Radius\)/);
   assert.match(pkg, /default:\n\t\tenc\.Uint\(\^uint64\(0\)\)/);
-  assert.match(pkg, /switch dec\.Case\(4\) \{\n\tcase 0:\n\t\tresult0 = FigureDot\{\}/);
+  assert.match(pkg, /switch dec\.Case\(4\) \{\n\tcase 0:\n\t\tvalue = FigureDot\{\}/);
+  // A variant may hold itself, so the functions of its package encode and decode it.
+  assert.match(pkg, /^func encodeFigure\(enc \*binding\.Writer, value Figure\) \{\n\tswitch case0 := value\.\(type\) \{/m);
+  assert.match(pkg, /^\tencodeFigure\(enc, figure\)$/m);
+  assert.match(pkg, /^\tvalue0 = decodeFigure\(dec\)$/m);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(lib, /fn in_figure\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{\n\s*match in_uint\(input\)\? \{/);
   assert.match(lib, /polyspec_variants::Figure::Dot \{\}/);
-  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(in_figure\(input, subject\)\?\);/);
+  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(in_figure\(input, "Frame"\)\?\);/);
   assert.match(lib, /let field_back: Option<Box<polyspec_variants::Figure>> = in_optional\([^\n]*\.map\(Box::new\);/);
   assert.match(lib, /let field_items: Vec<polyspec_variants::Figure> = /);
   assert.match(lib, /_ => Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("Figure"\) \}\)\),/);

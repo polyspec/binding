@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The generator refused the Go binding of a contract with a variant unit, with "a variant unit is not generated for Go
+  yet (GN-6v)", so `tests/e2e/variants` had no Go binding. Go now declares the variant as an interface of the package
+  of its module, whose one method is unexported, and each case as a struct of its fields that implements it; the
+  functions `encode<Variant>` and `decode<Variant>` of the package write and read the number of the case and its
+  fields, and a value that is no case struct is the number 2^64 - 1, which the C ABI judges kind
+  `invalid_argument_type`. The C ABI converts the variant with a match of its cases without a wildcard, its fields
+  boxed as the core holds them, and the Go tests write a case value as the struct of its case (GN-6v). Verified by
+  `npm test` in `packages/ts` and `gofmt` of the generated Go module of `tests/e2e/variants` without the class that
+  implements `tail`.
 - The generator refused the Go binding of a contract that takes or gives a value class of another repository, with
   "a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and
   making of an instance (GN-6x)", so a function that takes and gives the value class of the owner had no Go binding.

@@ -11,7 +11,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf,
+  takesObject, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -80,6 +80,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
+  if (unit?.kind === 'variant') return `in_${recordFn(unit)}(${input}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
@@ -108,7 +109,7 @@ export function convertOut(model: Model, type: Type, value: string): string {
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${recordFn(unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${plainName(unit)}(output, ${value})`;
   throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
 }
@@ -466,6 +467,45 @@ ${outArmsText}
 }
 
 const rustBytes = (text: string): string => `b${rustString(text)}`;
+
+// T-9, GN-6v: a variant, the number of its case in the contract and then the fields of the case in order, matched
+// without a wildcard; a number that names no case, which Go writes for a value that is no case struct, is kind
+// invalid_argument_type.
+function variantRust(model: Model, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const goType = goName(variant.unit.name);
+  const ins = variant.cases.map((kase, number) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => {
+      const subject = rustString(goName(f.field.name));
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, 'input', subject)}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, subject, 'binding_error')}` : ''}`;
+    });
+    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    return `        ${number} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
+  });
+  const arms = variant.cases.map((kase, number) => {
+    const fields = caseFields(model, variant, kase);
+    const writes = [`            out_uint(output, ${number}_u64);`, ...fields.map((f) => `            ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))};`)];
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
+  });
+  return `
+/// T-9: a value of the variant ${goType}: the number of its case in the contract, then the fields of the case (B-8).
+fn in_${name}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
+    match in_uint(input)? {
+${ins.join('\n')}
+        _ => Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(goType)}) })),
+    }
+}
+
+/// T-9: a value of the variant ${goType} leaves as the number of its case and the fields of the case.
+fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
+    match value.borrow() {
+${arms.join('\n')}
+    }
+}
+`;
+}
 
 // T-4, U-2: a record, its fields in contract order; a field with a default is Option<T>, None when Go leaves it nil.
 // GN-15f: a record of another repository has the helpers in_<library>_<record> and out_<library>_<record>.
@@ -1240,6 +1280,7 @@ function rustUsed(model: Model): string {
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    ...model.variants.map((v) => variantRust(model, v)),
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
@@ -1283,7 +1324,7 @@ function tupleReaders(model: Model): string {
     for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
   };
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
-  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const unit of [...model.records, ...model.variants.flatMap((v) => v.cases.map((c) => c.unit))]) for (const f of unit.fields ?? []) visit(f.type);
   for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
   return [...arities].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);

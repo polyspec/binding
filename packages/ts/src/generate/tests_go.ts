@@ -21,7 +21,7 @@ import {
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
-  objectUnit, places, pointName, unitOf,
+  objectUnit, places, pointName, unitOf, variantOf,
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
@@ -63,7 +63,9 @@ function typed(type: Type, text: string): string {
 
 function pointerTo(v: Values, type: Type, inner: string): string {
   v.usesPtr = true;
-  return aliasOf(v.model, type) !== undefined ? `ptr[any](${inner})` : `ptr(${typed(type, inner)})`;
+  if (aliasOf(v.model, type) !== undefined) return `ptr[any](${inner})`;
+  // GN-6v: a pointer to the interface of a variant, not to the struct of the case.
+  return variantOf(v.model, type) !== undefined ? `ptr[${typeName(v, type)}](${inner})` : `ptr(${typed(type, inner)})`;
 }
 
 const hexBytes = (value: unknown, what: string): string => {
@@ -145,6 +147,25 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (object.unit.origin === 'value') return made(v, b, valueClassReceiver(v.model, 'go', object.unit, json));
     if (Array.isArray(json)) return made(v, b, pairsReceiver(v.model, object, json));
     throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} or the [key, value] pairs that fill it, not ${JSON.stringify(json)} (GN-13f, GN-13)`);
+  }
+  // T-9, GN-6v: a value of a variant is the object of its tag and fields, the struct of its case in Go; a field that
+  // may be left out and is left out is nil.
+  const variant = variantOf(v.model, type);
+  if (variant !== undefined) {
+    const fields = json as Record<string, unknown>;
+    const tag = langName('python', variant.unit.tag ?? [], 'variable');
+    const kase = variant.cases.find((c) => c.value === fields[tag]);
+    if (kase === undefined) throw new Unsupported(`a case value of the variant ${variant.unit.id} names no case by ${tag}: ${JSON.stringify(json)}`);
+    const iface = typeName(v, type);
+    const name = `${iface.slice(0, iface.length - goName(variant.unit.name).length)}${goName(kase.unit.name)}`;
+    return `${name}{${(kase.unit.fields ?? []).map((f) => {
+      const key = langName('python', f.name, 'variable');
+      if (!(key in fields)) {
+        if (f.default !== undefined) return `${goName(f.name)}: nil`;
+        throw new Unsupported(`a case value of the case ${kase.unit.id} has no field ${key}`);
+      }
+      return `${goName(f.name)}: ${value(v, b, f.type, fields[key])}`;
+    }).join(', ')}}`;
   }
   const unit = unitOf(v.model, type);
   if (unit?.kind === 'enum') {
@@ -235,6 +256,13 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
     const factory = factoryOf(v.model, object);
     if (factory === undefined) throw new Unsupported(`no placeholder of the class ${object.unit.id}, which has no constructor or static member that makes it (T-5)`);
     return b.bind(invoke(v, factory, callArgs(v, b, factory, (a) => (a.default === undefined ? placeholder(v, b, a.type, rich) : undefined)), ''), 1, 'GN-13f')[0] ?? '';
+  }
+  // GN-6v: the first case of a variant, its fields placeholders.
+  const variant = variantOf(v.model, type);
+  const firstCase = variant?.cases[0];
+  if (variant !== undefined && firstCase !== undefined) {
+    const iface = typeName(v, type);
+    return `${iface.slice(0, iface.length - goName(variant.unit.name).length)}${goName(firstCase.unit.name)}{${(firstCase.unit.fields ?? []).map((f) => `${goName(f.name)}: ${placeholder(v, b, f.type, rich)}`).join(', ')}}`;
   }
   const unit = unitOf(v.model, type);
   const first = unit?.variants?.[0];

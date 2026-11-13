@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- 생성기는 variant unit이 있는 계약의 Go 바인딩을 "a variant unit is not generated for Go yet (GN-6v)"로 거부해서
+  `tests/e2e/variants`에는 Go 바인딩이 없었다. 이제 Go는 variant를 module 패키지의 interface로 선언하고 그 유일한 method는
+  unexported이며, 각 case를 그 interface를 구현하는 field들의 struct로 선언한다. 패키지의 함수 `encode<Variant>`와
+  `decode<Variant>`는 case 번호와 field들을 쓰고 읽으며, case struct가 아닌 값은 수 2^64 - 1이고 C ABI가 kind
+  `invalid_argument_type`으로 판정한다. C ABI는 wildcard 없는 case match로 variant를 바꾸고 field는 코어가 가진 대로 상자에
+  담으며, Go 시험은 case 값을 그 case의 struct로 적는다(GN-6v). `packages/ts`의 `npm test`, 그리고 `tail`을 구현하는 class를
+  뺀 `tests/e2e/variants`의 생성된 Go module의 `gofmt`로 확인했다.
 - 생성기는 다른 레포의 값 class를 받거나 주는 계약의 Go 바인딩을 "a value class of another repository is not
   generated for Go yet: the call of GN-15c has no description, read and making of an instance (GN-6x)"로 거부해서,
   owner의 값 class를 받고 주는 함수에는 Go 바인딩이 없었다. 이제 Go는 패키지 binding이 import하는 owner Go 타입의
