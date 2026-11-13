@@ -41,13 +41,16 @@ rules of this repository.
   is missing fails the run with the target, the tool and `make install` (GN-14a). Each target generates, builds and
   tests on its own to its end, and the run names every failed target with its causes (GN-14c). No switch leaves a
   target out or adds one, and a report of a run names a lint apart from a test: a lint runs no code, so it verifies no
-  target. Why: a target that did not run is not verified while the run would look passed.
+  target. The copy of a repository gets only the changes that take the binding of the run (GN-14d), and a defect of
+  the repository is a named failure of the run, never repaired in the copy. Why: a target that did not run is not
+  verified while the run would look passed, and a defect that the copy repairs passes the run and stays in the
+  repository.
+  Enforced by: `make e2e`, which fails before its first step when a tool is missing and at its end when a target ran no test.
 - Own: Every contract of `tests/e2e` names the five targets (BD-27). A target that the generator or the contract check
   refuses stays a named failure of the end-to-end check until the generator takes it; no target is left out of a
   contract, skipped or listed as an expected failure. Why: a target left out of a contract hides that the generator
   does not take its form, and a run that passes then verifies less than the rule asks.
   Enforced by: none, which targets a contract names is read in review; the end-to-end check names each refused target.
-  Enforced by: `make e2e`, which fails before its first step when a tool is missing and at its end when a target ran no test.
 - Own: A commit that changes the generator, `binding_core` or the end-to-end check passes the end-to-end check of that
   commit (`make e2e BINDING=<commit>`, GN-14 and GN-14b) before it is pushed or merged, and a failure is fixed by a new
   commit, which is checked the same way. Only a run whose record (`var/report/e2e/`) names it evidence of the commit
