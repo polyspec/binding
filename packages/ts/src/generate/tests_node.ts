@@ -3,7 +3,7 @@
 
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -12,6 +12,33 @@ const BAD_NUMBERS: Record<string, string[]> = {
   int: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)'],
   float: ['true', "'7'", 'null'],
 };
+
+// G-5: the callback fixture. A call that no row answers is recorded and throws, so a core that swallows the exception
+// still fails the test, which reads the record.
+const NODE_FIXTURE = `
+class UnexpectedCall extends Error {}
+
+function fixture(members, rows) {
+  const unexpected = [];
+  const calls = [];
+  const left = [...rows];
+  const object = {};
+  for (const name of members) {
+    object[name] = (...args) => {
+      calls.push([name, args]);
+      const at = left.findIndex((row) => row[0] === name && isDeepStrictEqual(row[1], args));
+      if (at < 0) {
+        unexpected.push([name, args]);
+        throw new UnexpectedCall(\`\${name}(\${args.map(String).join(', ')})\`);
+      }
+      const [, , result, once] = left[at];
+      if (once) left.splice(at, 1);
+      return result;
+    };
+  }
+  return { object, unexpected, calls };
+}
+`;
 
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
@@ -25,6 +52,7 @@ export function nodeTests(model: Model): string {
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
+  let usesFixture = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
@@ -75,16 +103,26 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
       }
     }
     for (const kase of raisingCases(model, fn)) {
-      const args = callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null));
+      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const args = callArgs(model, ctx, fn, (arg) => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : `${found.name}.object`;
+      });
       const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
+      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
+      const after = fixtures
+        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
+        .join('');
       out.push(`
-test('B-4: ${name} ${kase.id}', () => {
+test('B-4: ${name} ${kase.id}', () => {${before}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${cls(kase.raises.category)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === null);
+    error.errno === null);${after}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -134,11 +172,11 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test from 'node:test';
+import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(npm)};
 
 const require = createRequire(import.meta.url);
-
+${usesFixture ? NODE_FIXTURE : ''}
 test('B-7: a panic is kind internal', () => {
   // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
   const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;

@@ -234,16 +234,23 @@
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
-  case의 factory 인자를 쓴다. callback을 받는 member에는 B-4 시험이 없고(case는 callback을 줄 수 없다) K-2 시험이 있다:
+  case의 factory 인자를 쓴다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
-  kind다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다.
-  callback을 받는 member에는 B-4 시험이 생성되지 않는다. B-4는 contract case를 실행하는데 case는 JSON이어서 callback을
-  구현한 객체를 줄 수 없고, 그래서 case의 실패에 그 키로 도달할 수 없기 때문이다. K-2는 다른 요구이며 B-4를 대신하지 않는다.
+  kind다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.
+  case는 callback parameter를 fixture로 준다:
+  `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
+  `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
+  답하는 행의 `"once": true`를 더한 것이다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
+  레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
+  답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
+  예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 형식은 `binding check`가
+  판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
   `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다.
-- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-5c, B-6, B-10, 기본값의 동일성, value unit 행의 왕복, callback을 받는
-  member의 B-4(case가 닫힌 집합의 callback fixture를 가리키고 각 언어의 생성 시험이 그것을 구현한다).
+- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-5c, B-6, B-10, 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
+  거부한다(G-4).
 
 - **GN-13b** Go: 패키지의 시험은 외부 시험 패키지 `zz_generated_test.go`이며 `go test`로 실행한다: text parameter·field마다
   B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, raise하는 contract case마다 B-4(E-7의 정확한 타입, kind, status,
