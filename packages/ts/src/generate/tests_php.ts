@@ -4,7 +4,7 @@
 import type { Unit } from '../contract.ts';
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -47,7 +47,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
+    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+  let usesOutcome = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -60,7 +61,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const argName = langName('php', arg.name, 'variable');
       const number = isNumber(arg.type);
       if (number !== undefined) {
-        const bad = (BAD_NUMBERS[number] ?? []).filter((b) => !(b === 'null' && typeof arg.type === 'object' && 'optional' in arg.type));
+        // U-2: null is an argument with a default that was left out (GN-10), so it is no bad number of one.
+        const bad = (BAD_NUMBERS[number] ?? []).filter((b) => !(b === 'null' && ((typeof arg.type === 'object' && 'optional' in arg.type) || arg.default !== undefined)));
         methods.push(`
     public function testB2${name}${argName}RefusesWhatIsNot${number}(): void
     {
@@ -88,6 +90,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         }
     }`);
       }
+      const bytes = bytesKind(arg.type);
+      if (bytes !== undefined) {
+        methods.push(`
+    public function testT7${name}${argName}RefusesWhatIsNoString(): void
+    {
+        try {
+            ${call(new Map([[arg, '1']]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+      }
       if (textKind(arg.type) === 'text') {
         methods.push(`
     public function testB3${name}${argName}RefusesBytesThatAreNotUtf8(): void
@@ -101,7 +116,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
       }
     }
+    for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
+      usesOutcome = true;
+      methods.push(`
+    public function testU2${name}${langName('php', pair.arg.name, 'class')}LeftOutIsItsDefault(): void
+    {
+        self::assertSame(
+            self::outcome(static fn (): mixed => ${qualified(callArgs(model, ctx, fn, pair.left))}),
+            self::outcome(static fn (): mixed => ${qualified(callArgs(model, ctx, fn, pair.right))}),
+        );
+    }`);
+    }
     for (const kase of raisingCases(model, fn)) {
+      const raised = raisedClass(model, kase.raises);
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
       // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
@@ -135,9 +162,9 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const after = fixtures
         .map((f) => `\n        self::assertSame([], ${f.name}->unexpected);${f.values.calls === undefined ? '' : `\n        self::assertSame([${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}], ${f.name}->calls);`}`)
         .join('');
-      const caseArg = (arg: Fn['args'][number]): string => {
+      const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
       };
       methods.push(`
     public function testB4${name}${id}(): void
@@ -145,8 +172,8 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         try {
             ${invoke(fn, callArgs(model, ctx, fn, caseArg), kase.receiver === undefined ? '' : made(kase.receiver))};
             self::fail('no error');
-        } catch (${cls(kase.raises.category)} $error) {
-            self::assertSame(${cls(kase.raises.category)}::class, $error::class);
+        } catch (\\${layout.namespace}\\${raised.category} $error) {
+            self::assertSame(\\${layout.namespace}\\${raised.exact}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
@@ -205,7 +232,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     methods.push(`
     public function testG7${name}CountsAndNamesItsArguments(): void
-    {${fn.args.length === 0 ? '' : `
+    {${fn.args.every((a) => a.default !== undefined) ? '' : `
         try {
             ${qualified('')};
             self::fail('no error for no argument');
@@ -262,7 +289,21 @@ final class GeneratedTest extends TestCase
             self::assertSame($line, $error->getLine());
         }
     }
-${methods.join('\n')}
+${methods.join('\n')}${usesOutcome ? `
+
+    /**
+     * G-5: what a call gives: its result, or the class and the kind of its failure, as the text that states the types.
+     *
+     * @param \\Closure(): mixed $call
+     */
+    private static function outcome(\\Closure $call): string
+    {
+        try {
+            return var_export(['result' => $call()], true);
+        } catch (\\Throwable $error) {
+            return var_export(['error' => $error::class, 'kind' => \\method_exists($error, 'kind') ? $error->kind() : null], true);
+        }
+    }` : ''}
 }
 ${usesFixture ? `
 /** A call that no row of a callback fixture answers (G-5). */

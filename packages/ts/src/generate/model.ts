@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
 import { convert } from '../names.ts';
 
 export class Unsupported extends Error {}
@@ -12,6 +12,10 @@ export interface Arg {
   type: Type;
   // A field of the record parameter, expanded into the language's parameters (T-4).
   field: boolean;
+  // U-2, T-4: the declared default of a parameter or field that the caller may leave out; the core takes Option<T>.
+  default?: Default;
+  // U-2: the constant of the core that a {literal} or {const} default is asserted to equal.
+  defaultCore?: string;
 }
 
 // U-3: a callback interface that language code implements and the core calls through its trait.
@@ -91,6 +95,8 @@ export const BASE: Readonly<Record<Category, Readonly<Record<'php' | 'python' | 
 };
 
 export interface ErrorClass {
+  // E-2: an error unit, which extends the class of its parent or of its category; absent for a category class.
+  unit?: Unit;
   category: Category;
   // The simple name in the language of the emitter (E-2: <Library><Category>Error in the class form of the language).
   name: string;
@@ -102,6 +108,8 @@ export interface CoreKind {
   variant: string;
   category: Category;
   className: string;
+  // E-2: the error unit that the row's `class` names, whose class the kind is thrown as.
+  unit?: string;
 }
 
 export interface Model {
@@ -134,6 +142,8 @@ const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
 
 function supportedType(type: Type, units: Map<string, Unit>, where: string, foreign: ReadonlyMap<string, Contract> = new Map()): void {
   if (typeof type === 'string') {
+    // T-1: a source is the original of a parsing operation, so it is a parameter (toFn) and no other place.
+    if (type === 'source') throw new Unsupported(`${where}: the type source is generated as a parameter only (T-1)`);
     if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'none'].includes(type)) {
       throw new Unsupported(`${where}: the type ${type} is not generated yet`);
     }
@@ -181,6 +191,7 @@ export function buildModel(
   const objects: ObjectClass[] = [];
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
+  const errorUnits: Unit[] = [];
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -197,18 +208,28 @@ export function buildModel(
     const args: Arg[] = [];
     let record: Fn['record'];
     for (const parameter of params) {
-      if (parameter.required !== true) throw new Unsupported(`${member.id}: a default or rest parameter is not generated yet`);
+      const where = `${member.id}.${parameter.name.join('_')}`;
+      if (parameter.rest === true) throw new Unsupported(`${where}: a rest parameter is not generated yet`);
       const type = parameter.type;
       const recordUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
       if (recordUnit?.kind === 'record') {
+        // U-2 {empty: "object"}: what the core takes for a record parameter that is left out is not decided.
+        if (parameter.required !== true) throw new Unsupported(`${where}: a default of a record parameter is not generated yet (U-2 {empty: "object"})`);
         record = { unit: recordUnit, param: parameter };
-        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true });
+        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
         continue;
       }
       const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
-      supportedType(type, units, `${member.id}.${parameter.name.join('_')}${direct ? '#parameter' : ''}`, foreign);
-      args.push({ name: parameter.name, type, field: false });
+      // T-1: a source is taken as a parameter, or an optional one.
+      const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
+      if (!source) supportedType(type, units, `${where}${direct ? '#parameter' : ''}`, foreign);
+      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
     }
+    // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
+    // parameters in order, and PHP also the fields of the record that follow them.
+    const firstDefault = args.findIndex((a) => a.default !== undefined);
+    const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
+    if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
     const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
@@ -249,7 +270,7 @@ export function buildModel(
     }
     if (unit.kind === 'record') {
       for (const field of unit.fields ?? []) {
-        if (field.default !== undefined) throw new Unsupported(`${unit.id}: a field default is not generated yet`);
+        declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true);
         supportedType(field.type, units, `${unit.id}.${field.name.join('_')}`, foreign);
       }
       records.push(unit);
@@ -308,6 +329,14 @@ export function buildModel(
       callbacks.push({ unit, members, owner: unit.thread === 'owner' });
       continue;
     }
+    if (unit.kind === 'error' && unit.origin === 'generated') {
+      // E-2: an error unit has the members of a class unit; when the binding reads a property from the core error is
+      // not decided, so a unit with members is refused.
+      if ((unit.members ?? []).length > 0) throw new Unsupported(`${unit.id}: the members of an error unit are not generated yet (E-2, E-3)`);
+      if (unit.module !== '') throw new Unsupported(`${unit.id}: an error unit in the module ${unit.module} is not generated yet`);
+      errorUnits.push(unit);
+      continue;
+    }
     if (unit.kind !== 'functions' || unit.origin !== 'generated') {
       throw new Unsupported(`${unit.id}: a ${unit.origin} ${unit.kind} unit is not generated yet`);
     }
@@ -332,12 +361,21 @@ export function buildModel(
     const names = Object.fromEntries(Object.entries(row).map(([lang, value]) => [lang, simple(value)]));
     return { category, name: simple(name), names };
   });
+  // E-2, P-4: the classes of the error units follow the category classes, a parent before the units that extend it.
+  for (const unit of inheritanceOrder(errorUnits)) {
+    const names = Object.fromEntries((['php', 'python', 'node'] as const).map((lang) => [lang, convert(unit.name, lang, 'class')]));
+    classes.push({ unit, category: unit.category as Category, name: convert(unit.name, 'node', 'class'), names });
+  }
   const className = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
   const kinds: CoreKind[] = contract.errors.kinds.map((row) => {
-    if (row.library !== undefined || row.class !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a dependency kind or a class override is not generated yet`);
+    if (row.library !== undefined || row.category === undefined) {
+      throw new Unsupported(`${row.variant}: a dependency kind is not generated yet`);
     }
-    return { variant: row.variant, category: row.category, className: className(row.category) };
+    if (row.class === undefined) return { variant: row.variant, category: row.category, className: className(row.category) };
+    // E-2: the row's class is an error unit of the kind's category (CK-10), whose class the kind is thrown as.
+    const override = classes.find((c) => c.unit?.id === row.class);
+    if (override === undefined) throw new Unsupported(`${row.variant}: the class ${row.class} is no error unit that is generated`);
+    return { variant: row.variant, category: row.category, className: override.name, unit: row.class };
   });
   if (contract.errors.binding.length > 0) throw new Unsupported('errors.binding overrides are not generated yet');
   const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
@@ -372,6 +410,11 @@ export function buildModel(
     for (const field of fn.record?.unit.fields ?? []) visit(field.type);
   }
   const resultRecords = records.filter((r) => result.has(r.id));
+  // T-4: what the result form of a field with a default holds when the core gives None is not decided.
+  for (const unit of resultRecords) {
+    const field = (unit.fields ?? []).find((f) => f.default !== undefined);
+    if (field !== undefined) throw new Unsupported(`${unit.id}.${field.name.join('_')}: a field default of a record with the result form is not generated yet (T-4)`);
+  }
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
     objects, callbacks, aliases, classes, coreError, kinds, cases,
@@ -382,7 +425,7 @@ export function buildModel(
 export function rustType(model: Model, type: Type): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
-      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', none: '()',
+      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', none: '()',
     };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type}`);
@@ -476,7 +519,10 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 // The arguments of the core call of a member: the receiver first (U-2 core.receiver), then the parameters. The record
 // parameter is the record that the expanded fields built (T-4).
 export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
-  const args = fn.params.map((p) => (fn.record !== undefined && p === fn.record.param ? `&${rustField(p.name)}` : coreArg(model, p.type, variable(p))));
+  const args = fn.params.map((p) => {
+    if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
+    return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
+  });
   return fn.receiver === undefined ? args : [`${fn.receiver === '&mut self' ? '&mut ' : '&'}${receiver}`, ...args];
 }
 
@@ -541,7 +587,8 @@ export function membersFor(model: Model, lang: Lang): Model {
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
   const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
-  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
+  const kindName = (k: CoreKind): string => (k.unit === undefined ? nameOf(k.category) : (classes.find((c) => c.unit?.id === k.unit)?.name ?? ''));
+  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: kindName(k) })) };
 }
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
@@ -586,3 +633,77 @@ export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
   const unit = unitOf(model, type);
   return libraryOf(type) === undefined ? model.aliases.find((a) => a.unit === unit) : undefined;
 };
+
+// U-2, T-4: the declared default of a parameter or a field, with the forms that are generated; any other is refused by
+// name (G-4). The core takes Option<T> and decides the value of None; a {literal} or {const} default, which every
+// declaration shows, names the constant of the core that it equals in default_core.
+function declaredDefault(item: Parameter | Field, where: string, field: boolean): { default?: Default; defaultCore?: string } {
+  const declared = item.default;
+  if (declared === undefined) return {};
+  const type = item.type;
+  if (typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: a default of an optional type is not generated yet (U-2)`);
+  const container = typeof type !== 'object' ? undefined : 'list' in type ? 'list' : 'map' in type || 'keyed_map' in type ? 'map' : undefined;
+  if ('empty' in declared) {
+    if (declared.empty !== container) throw new Unsupported(`${where}: the default {empty: ${JSON.stringify(declared.empty)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
+    return { default: declared };
+  }
+  // T-1: the core takes Option of the borrowed form of a parameter; the types below have one that is generated.
+  const scalar = typeof type === 'string' && ['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'source'].includes(type);
+  if ('computed' in declared) {
+    if (!scalar && container === undefined && !field) throw new Unsupported(`${where}: a default of the type ${JSON.stringify(type)} is not generated yet (U-2)`);
+    return { default: declared };
+  }
+  if (item.default_core === undefined) throw new Unsupported(`${where}: a {literal} or {const} default names the constant of the core in default_core (U-2)`);
+  if ('literal' in declared) {
+    const value = declared.literal;
+    const fits =
+      (type === 'bool' && typeof value === 'boolean') ||
+      ((type === 'uint' || type === 'int' || type === 'int64') && typeof value === 'number' && Number.isSafeInteger(value) && (type !== 'uint' || value >= 0)) ||
+      (type === 'float' && typeof value === 'number') ||
+      (type === 'text' && typeof value === 'string');
+    if (!fits) throw new Unsupported(`${where}: the default {literal: ${JSON.stringify(value)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
+    return { default: declared, defaultCore: item.default_core };
+  }
+  if (type !== 'bool' && type !== 'uint' && type !== 'int' && type !== 'text') throw new Unsupported(`${where}: a {const} default of the type ${JSON.stringify(type)} is not generated (U-2, U-5)`);
+  return { default: declared, defaultCore: item.default_core };
+}
+
+// T-1, U-2: how the core takes the Option<T> of a parameter that may be left out: Option of the borrowed form.
+function defaultArg(model: Model, type: Type, variable: string): string {
+  if (byValue(model, type)) return variable;
+  if (typeof type === 'string' || (typeof type === 'object' && 'list' in type)) return `${variable}.as_deref()`;
+  return `${variable}.as_ref()`;
+}
+
+// P-4: the error units in the order of their inheritance, a parent before the units that name it; the contract order
+// otherwise. A cycle is an error of the contract.
+function inheritanceOrder(units: Unit[]): Unit[] {
+  const ordered: Unit[] = [];
+  const left = [...units];
+  while (left.length > 0) {
+    const at = left.findIndex((u) => u.parent === undefined || ordered.some((o) => o.id === u.parent));
+    const next = left[at];
+    if (next === undefined) throw new Unsupported(`${left[0]?.id ?? ''}: the parents of the error units make a cycle, or name a unit that is not generated (P-4)`);
+    left.splice(at, 1);
+    ordered.push(next);
+  }
+  return ordered;
+}
+
+// E-2: the class that an error class extends in the language of the emitter: the class of its parent unit, or of its
+// category; undefined for a category class, which extends the base class of the language.
+export function parentClass(model: Model, error: ErrorClass): ErrorClass | undefined {
+  if (error.unit === undefined) return undefined;
+  const parent = error.unit.parent;
+  return parent === undefined ? model.classes.find((c) => c.unit === undefined && c.category === error.category) : model.classes.find((c) => c.unit?.id === parent);
+}
+
+// E-2: the index of the class of a kind in the classes of the model.
+export const kindClass = (model: Model, kind: CoreKind): number =>
+  model.classes.findIndex((c) => (kind.unit === undefined ? c.unit === undefined && c.category === kind.category : c.unit?.id === kind.unit));
+
+// The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2).
+export const argType = (model: Model, arg: Arg): string => (arg.default === undefined ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
+
+// K-1, B-4: the kind text of a variant of the core error, its name in snake_case (CK-22 reads the cases the same way).
+export const kindText = (variant: string): string => variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();

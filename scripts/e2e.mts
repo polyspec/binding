@@ -295,7 +295,10 @@ function conformCases(contract: Contract, copy: string): string[] {
       .map((kase) => Object.fromEntries(Object.entries(kase).map(([key, value]) => [snake(key), conform(params.get(snake(key)), value)])))
       .filter((kase) => {
         if (kase['raises'] === undefined) return true;
-        const lacks = parameters.filter((p) => !(p.name.join('_') in kase) || !fits(p.type, kase[p.name.join('_')])).map((p) => p.name.join('_'));
+        // U-2: a case that has no key of a parameter with a default leaves it out.
+        const lacks = parameters
+          .filter((p) => (p.name.join('_') in kase ? !fits(p.type, kase[p.name.join('_')]) : p.default === undefined))
+          .map((p) => p.name.join('_'));
         const receiver = typeof found?.member.core === 'object' && found.member.core.receiver !== undefined;
         const noFactory = receiver && found !== undefined && !factories(found.unit).some((names) => names.every((n) => n in kase));
         if (lacks.length === 0 && !noFactory) return true;

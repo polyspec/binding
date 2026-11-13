@@ -3,7 +3,8 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { defaultAsserts, declaredValue } from './defaults.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, argType, parentClass, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -57,6 +58,25 @@ fn in_bytes(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
     match value.extract::<Vec<u8>>() {
         Ok(bytes) => Ok(bytes),
         Err(_not_bytes) => Err(binding_error(py, type_error(subject, "bytes"))),
+    }
+}
+
+/// T-1 source: a str, as its UTF-8 (B-3), or the bytes of bytes, bytearray or memoryview.
+fn in_source(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+    if value.cast::<PyString>().is_ok() {
+        return in_text(py, value, subject).map(String::into_bytes);
+    }
+    match value.extract::<Vec<u8>>() {
+        Ok(bytes) => Ok(bytes),
+        Err(_not_bytes) => Err(binding_error(py, type_error(subject, "str or bytes"))),
+    }
+}
+
+/// U-2: an argument that the caller left out is None, whose value the core decides; any other value is converted.
+fn in_default<'py, T>(value: &Given<'py>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
+    match value {
+        Given::Omitted => Ok(None),
+        Given::Value(value) => item(value).map(Some),
     }
 }
 
@@ -254,9 +274,27 @@ fn out_optional<'py, T>(py: Python<'py>, value: Option<T>, item: impl FnOnce(Pyt
 }
 `;
 
+// U-2: PyO3 reads Option<T> of an argument as None for the None that the caller passes, so an argument that may be left
+// out has a type of its own, which takes every value and whose default is Omitted.
+const GIVEN = `
+/// U-2: an argument that the caller may leave out; None, which a caller passes, is a value that the binding judges.
+enum Given<'py> {
+    Omitted,
+    Value(Bound<'py, PyAny>),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
+    type Error = std::convert::Infallible;
+
+    fn extract(value: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        Ok(Self::Value(value.to_owned()))
+    }
+}
+`;
+
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', bytes: 'in_bytes', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
@@ -396,15 +434,18 @@ function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   // N-4: the string form is __str__.
   const name = memberName('python', fn);
-  const positional = fn.args.filter((a) => !a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
-  const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
+  // U-2: a parameter that may be left out has the default Given::Omitted, so None, which the caller passes, is a value.
+  const declare = (a: Arg): string => `${rustIdent(langName('python', a.name, 'variable'))}${a.default === undefined ? '' : ' = Given::Omitted'}`;
+  const positional = fn.args.filter((a) => !a.field).map(declare);
+  const keyword = fn.args.filter((a) => a.field).map(declare);
   const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
-  const all = [...positional, ...keyword];
-  const params = all.map((p) => `, ${p}: &Bound<'py, PyAny>`).join('');
+  const params = fn.args.map((a) => `, ${rustIdent(langName('python', a.name, 'variable'))}: ${a.default === undefined ? "&Bound<'py, PyAny>" : "Given<'py>"}`).join('');
   const lines: string[] = [];
   for (const arg of fn.args) {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
-    lines.push(`        let ${variable}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, variable, rustString(langName('python', arg.name, 'variable')))}?;`);
+    const subject = rustString(langName('python', arg.name, 'variable'));
+    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
+    lines.push(`        let ${variable}: ${argType(model, arg)} = ${converted}?;`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
@@ -599,7 +640,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   const classOf = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const constants = model.constants
     .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
-    .join('\n');
+    .join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
   const enums = [
     ...model.enums.map((u) => enumRust(model, u)),
@@ -682,7 +723,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${used}${functions}${objects}
+${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]
@@ -706,7 +747,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', none: 'None', never: 'NoReturn' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -721,7 +762,11 @@ function pyType(model: Model, type: Type, input: boolean): string {
 }
 
 function errorsPy(model: Model): string {
-  const classes = model.classes.map((c) => `
+  const classes = model.classes.map((c) => c.unit !== undefined ? `
+
+
+class ${c.name}(${parentClass(model, c)?.name ?? ''}):
+    """E-2: an error of category ${c.category} that a kind of the contract is raised as."""` : `
 
 class ${c.name}(builtins.${pythonBase(c.category)}):
     """The errors of category ${c.category} (E-2): kind, status and errno are attributes (E-3)."""
@@ -815,15 +860,23 @@ ${values.length > 0 ? `\n${values.join('\n')}\n` : ''}`;
 
 function nativePyi(model: Model): string {
   const enumImports = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].map((u) => langName('python', u.name, 'class'));
+  // U-2: the declaration shows a {literal} or {const} default; the value of any other default is the core's.
+  const declared = (a: Arg): string => {
+    const base = `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`;
+    if (a.default === undefined) return base;
+    const value = declaredValue(model, a)?.value;
+    const shown = value === undefined ? '...' : typeof value === 'boolean' ? (value ? 'True' : 'False') : typeof value === 'string' ? pyString(value) : String(value);
+    return `${base} = ${shown}`;
+  };
   const fns = model.functions.map((fn) => {
-    const positional = fn.args.filter((a) => !a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
-    const keyword = fn.args.filter((a) => a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    const positional = fn.args.filter((a) => !a.field).map(declared);
+    const keyword = fn.args.filter((a) => a.field).map(declared);
     const params = keyword.length === 0 ? positional : [...positional, '*', ...keyword];
     return `def ${langName('python', fn.member.name, 'callable')}(${params.join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
   });
   const params = (fn: Fn): string[] => {
-    const positional = fn.args.filter((a) => !a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
-    const keyword = fn.args.filter((a) => a.field).map((a) => `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`);
+    const positional = fn.args.filter((a) => !a.field).map(declared);
+    const keyword = fn.args.filter((a) => a.field).map(declared);
     return keyword.length === 0 ? positional : [...positional, '*', ...keyword];
   };
   const classes = model.objects.map((o) => {

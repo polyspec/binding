@@ -3,7 +3,7 @@
 
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -40,6 +40,17 @@ function fixture(members, rows) {
 }
 `;
 
+// G-5: what a call gives: its result, or the class and the kind of its failure.
+const NODE_OUTCOME = `
+function outcome(call) {
+  try {
+    return { result: call() };
+  } catch (error) {
+    return { error: error.constructor, kind: error.kind };
+  }
+}
+`;
+
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
@@ -66,7 +77,8 @@ export function nodeTests(model: Model): string {
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
+    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+  let usesOutcome = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('node', fn.member.name, 'callable') : `${langName('node', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('node', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -93,6 +105,27 @@ test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
+      if (arg.default !== undefined) {
+        out.push(`
+test('U-2: ${name} takes null in ${argName} as a value', () => {
+  assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
+});`);
+      }
+      const bytes = bytesKind(arg.type);
+      if (bytes !== undefined) {
+        out.push(`
+test('T-7: ${name} refuses a ${argName} that is not ${bytes === 'source' ? 'a string or a Uint8Array' : 'a Uint8Array'}', () => {
+  for (const bad of [1, new Uint16Array(1), [1]${bytes === 'source' ? '' : ", 'a'"}]) {
+    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+  }
+});`);
+      }
+      if (bytes === 'source') {
+        out.push(`
+test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
+});`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
@@ -102,13 +135,22 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
 });`);
       }
     }
+    for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
+      usesOutcome = true;
+      const argName = langName('node', pair.arg.name, 'variable');
+      out.push(`
+test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
+  assert.deepStrictEqual(outcome(() => ${target(callArgs(model, ctx, fn, pair.left))}), outcome(() => ${target(callArgs(model, ctx, fn, pair.right))}));
+});`);
+    }
     for (const kase of raisingCases(model, fn)) {
+      const raised = raisedClass(model, kase.raises);
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
       const args = callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       });
       const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
@@ -118,7 +160,8 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
       out.push(`
 test('B-4: ${name} ${kase.id}', () => {${before}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
-    error.constructor === pkg.${cls(kase.raises.category)} &&
+    error.constructor === pkg.${raised.exact} &&
+    error instanceof pkg.${raised.category} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
@@ -158,12 +201,12 @@ test('N-4: ${name} ${kase.id}', () => {
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('node', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
   const positional = [${fn.args.filter((a) => !a.field).map(values).join(', ')}];
   assert.throws(() => ${target('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
-  for (const field of Object.keys(fields)) {
+  for (const field of [${(record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => jsString(langName('node', f.name, 'variable'))).join(', ')}]) {
     const lacking = { ...fields, [field]: undefined };
     assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     out.push(`
-test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 0 ? '' : `
+test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined && p !== fn.record?.param) ? '' : `
   assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
@@ -176,7 +219,7 @@ import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } fro
 import * as pkg from ${jsString(npm)};
 
 const require = createRequire(import.meta.url);
-${usesFixture ? NODE_FIXTURE : ''}
+${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}
 test('B-7: a panic is kind internal', () => {
   // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
   const platform = \`\${process.platform}-\${process.arch}\${process.platform === 'linux' ? '-gnu' : ''}\`;

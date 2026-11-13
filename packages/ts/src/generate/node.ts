@@ -3,7 +3,8 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { defaultAsserts, declaredValue } from './defaults.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, argType, kindClass, parentClass, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -18,7 +19,7 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
     const name = fn[type];
     if (name === undefined) throw new Error(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -42,8 +43,10 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
-    return `${fn[type]}(env, ${value})`;
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', bytes: 'out_bytes' };
+    const name = fn[type];
+    if (name === undefined) throw new Error(`no Node output conversion for ${type}`);
+    return `${name}(env, ${value})`;
   }
   if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
@@ -96,6 +99,38 @@ fn in_latin1(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
         .into_iter()
         .map(|unit| u8::try_from(unit).map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 })))
         .collect()
+}
+
+/// T-7: bytes are a Uint8Array; a typed array of another element type, or any other value, is refused.
+fn in_bytes(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
+    if !value.is_typedarray().map_err(internal)? {
+        return Err(type_error(subject, "Uint8Array"));
+    }
+    match unsafe { value.cast::<Uint8Array>() } {
+        Ok(bytes) => Ok(bytes.to_vec()),
+        Err(_other) => Err(type_error(subject, "Uint8Array")),
+    }
+}
+
+/// T-1 source: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array.
+fn in_source(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
+    if value.get_type().map_err(internal)? == ValueType::String {
+        return in_text(value, subject).map(String::into_bytes);
+    }
+    in_bytes(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
+}
+
+/// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
+fn in_default<'env, T>(value: Unknown<'env>, item: impl FnOnce(Unknown<'env>) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+    if value.get_type().map_err(internal)? == ValueType::Undefined {
+        return Ok(None);
+    }
+    item(value).map(Some)
+}
+
+/// T-7: bytes leave as a Uint8Array of their copy.
+fn out_bytes<'env>(env: &'env Env, value: impl AsRef<[u8]>) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(Uint8Array::new(value.as_ref().to_vec()), env).map_err(internal)
 }
 
 fn in_bool(value: Unknown<'_>, subject: &str) -> Result<bool, Fail> {
@@ -390,19 +425,24 @@ function functionRust(model: Model, fn: Fn): string {
   const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
+  // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
+  const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string): string =>
+    arg?.default === undefined ? convertIn(model, type, raw, subject) : `in_default(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`;
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('node', field.name, 'variable');
+        const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `member(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${rustType(model, field.type)} = ${convertIn(model, field.type, raw, rustString(name))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
       }
       const recordType = fn.record.unit.core_type ?? '';
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
       lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${fields} };`);
     } else {
-      lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`);
+      const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
+      lines.push(`        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, variable, rustString(langName('node', parameter.name, 'variable')))}?;`);
     }
   }
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
@@ -597,7 +637,7 @@ fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>,
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n');
   return `
 /// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
@@ -611,9 +651,12 @@ ${arms}
 `;
 }
 
+// The names that the addon imports from napi's bindgen_prelude; the others are of the crate root.
+const PRELUDE: ReadonlySet<string> = new Set(['Array', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ToNapiValue', 'Uint8Array']);
+
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
+  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
     model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model);
   const enums = [
@@ -626,17 +669,17 @@ function libRust(model: Model): string {
     model.aliases.length > 0 ? NODE_HOST : '',
   ].join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
-  const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
+  const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'Uint8Array', 'ValueType']
     .filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`));
-  if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
+  if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => t === 'Array' || t === 'FromNapiValue' || t === 'Null' || t === 'Object' || t === 'JsObjectValue' || t === 'ToNapiValue'), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
-use napi::{Env, Unknown${napiTypes.filter((t) => t !== 'Array' && t !== 'FromNapiValue' && t !== 'Null' && t !== 'Object' && t !== 'JsObjectValue' && t !== 'ToNapiValue').map((t) => `, ${t}`).join('')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
@@ -732,7 +775,7 @@ pub fn panic_test(env: &Env) -> napi::Result<()> {
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
@@ -759,7 +802,13 @@ const keyedType = (type: Type): boolean => {
 
 function indexCjs(model: Model): string {
   const base = addonBase(model);
-  const classes = model.classes.map((c) => `
+  const classes = model.classes.map((c) => c.unit !== undefined ? `
+class ${c.name} extends ${parentClass(model, c)?.name ?? ''} {
+  constructor(message, kind, status, errno) {
+    super(message, kind, status, errno);
+    Object.defineProperty(this, 'name', { value: ${jsString(c.name)}, configurable: true, writable: true });
+  }
+}` : `
 class ${c.name} extends globalThis.${nodeBase(c.category)} {
   constructor(message, kind, status, errno) {
     super(message);
@@ -774,12 +823,16 @@ class ${c.name} extends globalThis.${nodeBase(c.category)} {
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
     const count = fn.params.length;
-    const lines = [`  if (args.length !== ${count}) {`, `    throw new TypeError(\`${label} takes ${count} argument${count === 1 ? '' : 's'}, \${args.length} given\`);`, '  }'];
+    // U-2: the parameters that may be left out are the last ones; a record parameter is required.
+    const least = fn.params.filter((p) => p.default === undefined || (fn.record !== undefined && p === fn.record.param)).length;
+    const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+    const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
     const passed = fn.params.map((p, i) => {
       if (fn.record !== undefined && p === fn.record.param) {
         const record = langName('node', p.name, 'variable');
         const names = (fn.record.unit.fields ?? []).map((f) => langName('node', f.name, 'variable'));
-        lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}]);`);
+        const required = (fn.record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => langName('node', f.name, 'variable'));
+        lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
@@ -881,14 +934,14 @@ function fromEntries(value) {
   return value === null ? null : new Map(value);
 }
 
-// G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent; a value
-// that is not an object is judged by the addon.
-function checkRecord(fn, name, record, fields) {
+// G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent; a
+// field without a default is required (U-2); a value that is not an object is judged by the addon.
+function checkRecord(fn, name, record, fields, required) {
   if (typeof record !== 'object' || record === null) return;
   for (const key of Object.keys(record)) {
     if (!fields.includes(key)) throw new TypeError(\`\${fn}: \${name} has no member \${key}\`);
   }
-  for (const field of fields) {
+  for (const field of required) {
     if (record[field] === undefined) throw new TypeError(\`\${fn}: \${name} lacks the member \${field}\`);
   }
 }
@@ -918,7 +971,20 @@ export const { ${exports.join(', ')} } = entry;
 }
 
 function indexDts(model: Model): string {
-  const classes = model.classes.map((c) => `
+  // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
+  const shown = (a: Arg | undefined): string => {
+    if (a?.default === undefined) return '';
+    const value = a === undefined ? undefined : declaredValue(model, a)?.value;
+    return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
+  };
+  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined || (fn.record !== undefined && p === fn.record.param) ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const paramDocs = (fn: Fn, indent: string): string => {
+    const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
+    return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;
+  };
+  const classes = model.classes.map((c) => c.unit !== undefined ? `
+/** E-2: an error of category ${c.category} that a kind of the contract is thrown as. */
+export declare class ${c.name} extends ${parentClass(model, c)?.name ?? ''} {}` : `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${nodeBase(c.category)} {
   readonly kind: string;
@@ -931,14 +997,14 @@ export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) 
   const records = model.records.map((u) => `
 /** T-4: the options record; a member whose value is undefined is absent. */
 export interface ${langName('node', u.name, 'class')} {
-${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, true)};`).join('\n')}
+${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
   const fns = model.functions.map((fn) => {
-    const params = fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`);
-    return `export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${tsType(model, fn.returns, false)};`;
+    const params = fn.params.map((p) => param(fn, p));
+    return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${tsType(model, fn.returns, false)};`;
   }).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
-  const params = (fn: Fn): string => fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
+  const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
       const name = memberName('node', fn);

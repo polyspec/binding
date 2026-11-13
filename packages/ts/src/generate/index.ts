@@ -2,6 +2,7 @@
 // depends only on its inputs: the contract, the case files, the core version and binding itself (I-5).
 
 import type { Contract, Type } from '../contract.ts';
+import { refuseForOthers } from './defaults.ts';
 import { go } from './go.ts';
 import { buildModel, forLanguage, membersFor, Unsupported } from './model.ts';
 import { wasm } from './wasm.ts';
@@ -50,6 +51,7 @@ export function generate(inputs: Inputs): Files {
     cases.set(kase.member, [...(cases.get(kase.member) ?? []), ...group]);
   }
   const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
+  refuseForOthers(model, inputs.contract.targets);
   // T-2: map<T> is generated for the targets of MAP_TARGETS so far; a contract with a map and another target is refused
   // by name (G-4).
   const hasMap = (type: unknown): boolean => JSON.stringify(type).includes('"map"');
