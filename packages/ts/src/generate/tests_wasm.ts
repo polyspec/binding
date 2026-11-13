@@ -21,6 +21,7 @@ export function wasmTests(model: Model): string {
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
+    errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case whose callback fixture has a raise row, such as a loader that reports a missing file, was refused with "a
+  raise row of a callback fixture is not generated yet". The fixture of every target now throws, for such a row, an
+  instance of the error unit of the row with its kind and the message `G-5: <kind>`, as language code makes one; Go
+  makes it with `Raised<Unit>` of `internal/binding` (GN-13). Verified by `npm test` in `packages/ts`.
 - A callback member with `errors.recognize`, such as `file_loader.load` of a loader that reports a missing file, was
   refused with "recognized callback errors are not generated yet", so no target of such a contract was generated. An
   exception of the member that is an instance of a recognized error unit, with a kind of a row of that unit, now

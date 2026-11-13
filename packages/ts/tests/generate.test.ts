@@ -952,14 +952,14 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /\ndef _fixture\(members, rows\):/);
-  assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
+  assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False, None\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
   assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, /\nfunction fixture\(members, rows\) \{/);
-  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
+  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false, null\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
   assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false\]\]\) \{/);
+  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false, null\]\]\) \{/);
   assert.match(php, /public function find\(mixed \.\.\.\$args\): mixed \{ return \$this->answer\("find", \$args\); \}/);
   assert.match(php, /self::assertSame\(\[\], \$fixture0->unexpected\);\n {8}self::assertSame\(\[\["find", \["a"\]\]\], \$fixture0->calls\);/);
   assert.match(php, /\nfinal class UnexpectedCall extends \\LogicException\n/);
@@ -976,7 +976,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
     document['resolve'] = [{ ...document['resolve']?.[0], lookup: row }];
     return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases });
   };
-  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'x', kind: 'y' } }] } }), /a raise row of a callback fixture is not generated yet/);
+  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'x', kind: 'y' } }] } }), /the raise row names x, which is no error unit that is generated \(GN-13\)/);
   assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, result: null, async: true }] } }), /an async row of a callback fixture is not generated yet/);
   assert.throws(withRow('a'), /the case a_key_without_a_value_is_missing of sample\.resolve gives no \{"callback": \.\.\.\} for lookup/);
 });
@@ -1896,7 +1896,8 @@ test('a raise row of a callback fixture throws an instance of its error unit wit
   assert.match(text(out, pythonTests), /pkg\.AbsentError\("G-5: absent", "absent"\)/);
   assert.match(text(out, nodeTests), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
-  assert.match(text(out, phpTests), /new \\Polyspec\\Consumer\\AbsentError\("G-5: absent", "absent"\)/);
+  // PHP code sets the kind in the scope of the class of its category, which declares it.
+  assert.match(text(out, phpTests), /\$error = new \\Polyspec\\Consumer\\AbsentError\("G-5: absent"\); \(static fn \(\) => \$error->kind = "absent"\)->bindTo\(null, \\Polyspec\\Consumer\\ConsumerValueError::class\)\(\);/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /binding\.RaisedAbsentError\("absent", "G-5: absent"\)/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \*AbsentError \{/);
 });

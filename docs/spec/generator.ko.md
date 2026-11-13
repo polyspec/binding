@@ -546,8 +546,9 @@
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
   답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
-  unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·WASM·PHP는
-  메시지와 kind를 받는 그 클래스의 생성자로, Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
+  unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·WASM은
+  메시지와 kind를 받는 그 클래스의 생성자로 만든다. PHP는 메시지를 받는 생성자로 만든 뒤, kind를 받는 PHP 클래스 생성자가
+  없으므로 `kind`를 선언한 category 클래스의 scope에서 `kind`를 적는다. Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
   `Raised<Unit>(kind, message)`로 만든다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그

@@ -665,9 +665,11 @@ the design ids are those of the binding design.
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
   none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
   <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
-  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, WASM and PHP by the constructor of the class with
-  the message and the kind, Go by `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct
-  of the unit with no property value. The generated test of each language makes the fixture
+  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node and WASM by the constructor of the class with the
+  message and the kind; PHP by the constructor with the message, and then sets `kind` in the scope of the class of
+  its category, which declares it, because no constructor of the PHP classes takes a kind; Go by
+  `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
+  value. The generated test of each language makes the fixture
   from one implementation that binding writes into the test module, so a repository writes no fixture code: a call
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a

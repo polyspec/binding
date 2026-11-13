@@ -33,8 +33,9 @@ function fixture(members, rows) {
         unexpected.push([name, args]);
         throw new UnexpectedCall(\`\${name}(\${args.map(String).join(', ')})\`);
       }
-      const [, , result, once] = left[at];
+      const [, , result, once, raised] = left[at];
       if (once) left.splice(at, 1);
+      if (raised !== null) throw raised;
       return result;
     };
   }
@@ -72,6 +73,7 @@ export function nodeTests(model: Model): string {
   const esm = isHost(model.contract, 'node') ? '../index.mjs' : npm;
   const cjsEntry = isHost(model.contract, 'node') ? '../index.cjs' : npm;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+    errorNew: (unit, kind, message) => `new pkg.${langName('node', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';

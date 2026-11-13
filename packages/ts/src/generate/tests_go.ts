@@ -320,7 +320,9 @@ function fixtureLines(v: Values, b: Body, fixture: Fixture, name: string): strin
   const rows = fixture.rows.map((row) => {
     const returns = members[row.member]?.returns ?? 'none';
     const result = row.result === null || returns === 'none' ? 'nil' : typed(returns, value(v, b, returns, row.result));
-    return `{member: ${memberName(row.member)}, args: ${argsOf(row.member, row.args)}, result: ${result}, once: ${String(row.once)}}`;
+    // GN-13: a raise row returns the error unit with its kind, as Go code makes one.
+    const raise = row.raise === undefined ? '' : `, raise: binding.Raised${goName(row.raise.unit.name)}(${goString(row.raise.kind)}, ${goString(`G-5: ${row.raise.kind}`)})`;
+    return `{member: ${memberName(row.member)}, args: ${argsOf(row.member, row.args)}, result: ${result}, once: ${String(row.once)}${raise}}`;
   });
   b.lines.push(`${name} := fixture${goName(fixture.unit.name)}{&fixture{rows: []fixtureRow{${rows.join(', ')}}}}`);
   return name;
@@ -654,6 +656,7 @@ type fixtureRow struct {
 	args   []any
 	result any
 	once   bool
+	raise  error
 }
 
 // fixture answers the calls of the core by its rows and records every call (G-5); a call that no row answers is
@@ -671,6 +674,9 @@ func (f *fixture) answer(member string, args ...any) (any, error) {
 		if row.member == member && (reflect.DeepEqual(row.args, args) || len(row.args)+len(args) == 0) {
 			if row.once {
 				f.rows = append(f.rows[:at:at], f.rows[at+1:]...)
+			}
+			if row.raise != nil {
+				return nil, row.raise
 			}
 			return row.result, nil
 		}

@@ -34,6 +34,8 @@ def _fixture(members, rows):
                 if row[0] == name and row[1] == args:
                     if row[3]:
                         left.remove(row)
+                    if row[4] is not None:
+                        raise row[4]
                     return row[2]
             unexpected.append((name, args))
             raise _UnexpectedCall(f"{name}{args!r}")
@@ -76,6 +78,7 @@ def _outcome(call):
 
 export function pythonTests(model: Model, module: string): string {
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
+    errorNew: (unit, kind, message) => `pkg.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`,
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');

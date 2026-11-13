@@ -709,7 +709,20 @@ func (r *recognized) Error() string { return r.err.Error() }
 
 // Unwrap is the error itself.
 func (r *recognized) Unwrap() error { return r.err }
-${recognizedUnits.map((u) => `
+${recognizedUnits.map((u) => {
+    // GN-13: the unit as Go code makes one, with no property value, through its parents to its category type.
+    const made = (unit: ErrorUnit): string => {
+      const parent = unit.parent === undefined ? `&${categoryType(model, unit.category)}{failure{message: message, kind: kind}}` : made(unit.parent);
+      const field = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
+      return `&${goName(unit.unit.name)}{${field}: ${parent}}`;
+    };
+    return `
+// Raised${goName(u.unit.name)} is a ${goName(u.unit.name)} of the kind and the message, as Go code makes one: it has no property value (G-5).
+func Raised${goName(u.unit.name)}(kind, message string) *${goName(u.unit.name)} {
+\treturn ${made(u)}
+}
+`;
+  }).join('')}${recognizedUnits.map((u) => `
 // Recognize${goName(u.unit.name)} is err as an error that the core recognizes when it is a ${goName(u.unit.name)}, and err otherwise (U-3).
 func Recognize${goName(u.unit.name)}(err error) error {
 	var unit *${goName(u.unit.name)}
