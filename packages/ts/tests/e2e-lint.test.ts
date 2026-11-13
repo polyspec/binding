@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bindingLints, testEntrySymbol } from '../../../scripts/e2e-lint.mts';
+import { bindingLints } from '../../../scripts/e2e-lint.mts';
+import { testEntrySymbol } from '../src/release/go-module.ts';
 
 test('each binding crate is linted with its test features and without a feature, both with -D warnings (GN-14, GN-5)', () => {
   const lints = bindingLints('/copy/Cargo.toml', 'polyspec-sample-node', 'panic-test,codec-test');
