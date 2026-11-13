@@ -855,6 +855,26 @@ test('a drop on another thread wakes the Node owner through its unref threadsafe
   assert.match(php, /Some\(owner\) if owner\.generation == self\.generation => owner\.released\.push\(self\.key\),/);
 });
 
+test('Go deletes the cgo.Handle of every func that a buffer gives before it decodes the buffer, whatever the decoding finds (GN-6u)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  // Rust lists the handles of a buffer first, and a func node is the index of its handle in the list.
+  assert.match(lib, /static GIVEN: RefCell<Vec<u64>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(lib, /fn given_first\(bytes: Vec<u8>\) -> Vec<u8> \{/);
+  assert.match(lib, /Ok\(bytes\) => \(0, given_first\(bytes\)\),\n\s+Err\(fail\) => \(1, given_first\(encode_fail\(fail\)\)\),/);
+  assert.match(lib, /output\.push\(11\);\n\s+out_uint\(output, give\(/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  // Go takes the func of each handle and deletes the handle before it decodes anything else.
+  assert.match(binding, /func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/);
+  assert.match(binding, /\t\tr\.funcs = append\(r\.funcs, handle\.Value\(\)\)\n\t\thandle\.Delete\(\)\n/);
+  assert.match(binding, /func invoke\(fn entry, args \[\]byte\) \(\*Reader, error\) \{/);
+  assert.match(binding, /case 11:\n\t\tindex := r\.Uint\(\)\n/);
+  assert.match(binding, /c\.callbacks\[callback-1\]\(c, member, readerOf\(args\), enc\)/);
+  const pkg = text(out, 'packages/go/zz_generated_sample.go');
+  assert.doesNotMatch(pkg, /binding\.NewReader\(out\)/);
+});
+
 test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6u)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
