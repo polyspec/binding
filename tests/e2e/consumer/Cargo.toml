@@ -2,7 +2,9 @@
 # repository, tests/e2e/sample (T-3, U-7 (a')).
 [workspace]
 resolver = "2"
-members = ["packages/rust"]
+# The binding crates are members as in any repository (GN-4); binding scaffold of the run writes them (GN-14d), because
+# their files are of the commit of binding that the run checks.
+members = ["packages/rust", "packages/python", "packages/ts", "packages/php-ext", "packages/go/internal/ffi", "packages/ts/wasm"]
 
 [workspace.package]
 version = "0.0.1"

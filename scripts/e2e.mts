@@ -16,13 +16,14 @@
 // --dep checkout goes through the same steps first (without its tests), its Python wheel is installed beside and its
 // PHP extension loaded before. Each checkout is copied to <work>/<library>, so the relative paths between them hold.
 //
-// A checkout is only read: its committed tree is copied into the work directory, and the copy gets the changes that
-// the repository has not made yet (L-2: one workspace with the binding packages, which binding scaffold writes; F-2,
-// E-3: the core depends on binding_core and its error implements Kinds). Each is printed, because the repository has to
-// make it itself. A case file whose keys or record values do not follow the case convention of G-5 (keys are the
-// parameter names in snake_case, a record is an object of its fields) is rewritten to it, and a raising case that
-// still lacks the arguments of its member is left out; both are printed, and a run that left a case out fails at its
-// end, after every step ran.
+// A checkout is only read: its committed tree is copied into the work directory. The copy gets only the changes that
+// take the binding of the run, as the repository does when it takes that binding (GN-14d): the tracked packages of
+// binding scaffold and the commit of binding_core in Cargo.lock. A defect of the repository is a named failure and is
+// not repaired in the copy: a workspace without the binding crates (GN-4), a case file whose keys or record values do
+// not follow the case convention of G-5, a core that does not implement Kinds or names the crate of binding by
+// another name (the compiler names it), an error class of another name (CK-10). A raising case that lacks the
+// arguments of its member is left out and printed, and a run that left a case out fails at its end, after every step
+// ran.
 //
 // Each target generates, builds and tests on its own to its end (GN-14c), so a refusal or a failure of one target does
 // not stop another. The run ends with each target, a lint and the tests apart, and the causes of each failed target: a
@@ -140,9 +141,17 @@ const gitDependency = {
   GIT_CONFIG_VALUE_1: 'https://github.com/polyspec/binding.git',
 };
 
+// Runs a command; its stderr is printed after it, and a failure carries the lines of its stderr that start with
+// error (the errors of rustc and Cargo), so the cause of a target names a defect that the compiler finds, such as a
+// core that does not implement Kinds (GN-14d).
 function run(command: string, argv: string[], options: ExecFileSyncOptions = {}): void {
   process.stdout.write(`$ ${command} ${argv.join(' ')}\n`);
-  execFileSync(command, argv, { stdio: 'inherit', ...options, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...options.env } });
+  const ran = spawnSync(command, argv, { ...options, stdio: ['inherit', 'inherit', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...options.env } });
+  process.stdout.write(ran.stderr);
+  if (ran.error !== undefined) throw ran.error;
+  if (ran.status === 0) return;
+  const errors = ran.stderr.split('\n').filter((line) => /^error(\[|:)/.test(line)).map((line) => line.trim());
+  throw new Error(`${command} ${argv[0] ?? ''} (status ${String(ran.status)})${errors.length > 0 ? `: ${errors.join('; ')}` : ''}`);
 }
 
 // Runs a command of the binding CLI of the commit; its stderr is printed, and a failure carries the lines that name its
@@ -160,6 +169,9 @@ function runBinding(argv: string[], copyDir: string): void {
 function step(name: string): void {
   process.stdout.write(`\n== ${name}\n`);
 }
+
+// The suffix of the package of the binding crate of each target: <core crate>-<suffix>.
+const crateSuffix: Record<Lang, string> = { python: 'python', node: 'node', php: 'php-ext', go: 'go', wasm: 'wasm' };
 
 interface Prepared {
   contract: Contract;
@@ -182,101 +194,19 @@ function prepare(checkout: string): Prepared {
   if (existsSync(join(resolve(checkout), '.git'))) execFileSync('sh', ['-c', `git -C '${resolve(checkout)}' archive HEAD | tar -x -C '${copy}'`]);
   else execFileSync('cp', ['-r', `${resolve(checkout)}/.`, copy]);
 
-  step(`${library}: changes the repository needs (each printed)`);
-  const coreManifest = join(copy, 'packages/rust/Cargo.toml');
-  let manifest = readFileSync(coreManifest, 'utf8');
-  const members = `[${[
-    'packages/rust',
-    'packages/python',
-    'packages/ts',
-    'packages/php-ext',
-    ...(contract.targets.includes('go') ? ['packages/go/internal/ffi'] : []),
-    ...(contract.targets.includes('wasm') ? ['packages/ts/wasm'] : []),
-  ].map((m) => JSON.stringify(m)).join(', ')}]`;
-  const rootManifest = join(copy, 'Cargo.toml');
-  const workspaceAt = manifest.indexOf('\n[workspace]');
-  if (existsSync(rootManifest)) {
-    const root = readFileSync(rootManifest, 'utf8');
-    if (!root.includes(`members = ${members}`)) {
-      writeFileSync(rootManifest, root.replace(/^members = \[[^\]]*\]$/m, `members = ${members}`));
-      process.stdout.write('change: the root workspace has the binding packages as members (L-2)\n');
-    }
-  } else if (workspaceAt >= 0) {
-    const lints = manifest.slice(workspaceAt).replace('[workspace]\n', '');
-    manifest = `${manifest.slice(0, workspaceAt)}\n`;
-    writeFileSync(rootManifest, `[workspace]\nresolver = "2"\nmembers = ${members}\n${lints}`);
-    copyFileSync(join(copy, 'packages/rust/Cargo.lock'), join(copy, 'Cargo.lock'));
-    rmSync(join(copy, 'packages/rust/Cargo.lock'));
-    process.stdout.write('change: one Cargo workspace at the root with the core and the binding packages (L-2)\n');
-  }
-  // The crate of this repository is polyspec-binding-core with the library binding_core (formerly bindgen).
-  const manifests = [coreManifest, ...(existsSync(rootManifest) ? [rootManifest] : [])];
-  const sourceFiles = readdirSync(join(copy, 'packages'), { recursive: true })
-    .map(String)
-    .filter((f) => f.endsWith('.rs') && !f.includes('generated') && !f.includes('target'))
-    .map((f) => join(copy, 'packages', f));
-  let renamedCore = false;
-  for (const file of [...manifests, ...sourceFiles]) {
-    const text = file === coreManifest ? manifest : readFileSync(file, 'utf8');
-    const next = text
-      .replace(/^polyspec-bindgen-core = .*$/m, 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }')
-      .replaceAll('bindgen_core', 'binding_core');
-    if (next === text) continue;
-    renamedCore = true;
-    if (file === coreManifest) manifest = next;
-    else writeFileSync(file, next);
-  }
-  if (renamedCore) process.stdout.write('change: the core depends on polyspec-binding-core (binding_core), the renamed crate of binding\n');
-  if (!manifest.includes('polyspec-binding-core')) {
-    const dependency = 'polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }\n';
-    manifest = manifest.includes('\n[dependencies]\n')
-      ? manifest.replace('\n[dependencies]\n', `\n[dependencies]\n${dependency}`)
-      : manifest.replace('\n[lib]', `\n[dependencies]\n${dependency}\n[lib]`);
-    process.stdout.write('change: the core depends on binding_core, a Git dependency before the first release (L-2, F-2)\n');
-  }
-  writeFileSync(coreManifest, manifest);
-  const sources = readdirSync(join(copy, 'packages/rust/src'), { recursive: true }).map(String).filter((f) => f.endsWith('.rs'));
-  if (!sources.some((f) => readFileSync(join(copy, 'packages/rust/src', f), 'utf8').includes('Kinds for'))) {
-    const errorSource = join(copy, 'packages/rust/src/error.rs');
-    writeFileSync(errorSource, `${readFileSync(errorSource, 'utf8')}
-/// The kind interface of the bindings (binding design F-2, E-3).
-impl binding_core::Kinds for Error {
-    fn kind(&self) -> &'static str {
-        Error::kind(self)
-    }
-
-    fn status(&self) -> Option<u16> {
-        Error::status(self)
-    }
-
-    fn errno(&self) -> Option<i32> {
-        None
-    }
-}
-`);
-    process.stdout.write('change: the core error implements binding_core::Kinds (F-2, E-3)\n');
-  }
-  // E-2: the class of a category is <Library><Category>Error in the class form of each language (N-2).
-  const contractPath = join(copy, 'packages/rust/interface.json');
-  const written = JSON.parse(readFileSync(contractPath, 'utf8')) as Contract;
-  let renamed = false;
-  for (const category of CATEGORIES) {
-    const row = written.errors.classes[category] ?? {};
-    for (const [lang, name] of Object.entries(row) as [Lang, string][]) {
-      const want = `${convert(libraryName(libraryParts(written).repository), lang === 'wasm' ? 'node' : lang, 'class')}${convert([category], 'go', 'class')}Error`;
-      const prefix = name.slice(0, name.lastIndexOf('\\') + 1);
-      if (name !== `${prefix}${want}`) {
-        row[lang] = `${prefix}${want}`;
-        renamed = true;
-      }
-    }
-  }
-  if (renamed) {
-    writeFileSync(contractPath, `${JSON.stringify(written, null, 2)}\n`);
-    process.stdout.write('change: the error classes are <Library><Category>Error in the class form of each language (E-2, N-2)\n');
-  }
+  step(`${library}: the changes that take the binding of the run (GN-14d, each printed)`);
   runBinding(['scaffold', '--root', copy], copy);
-  process.stdout.write('change: the tracked binding packages that binding scaffold writes (L-2)\n');
+  process.stdout.write('change: the tracked binding packages that binding scaffold of the run writes (L-2, GN-14d)\n');
+  // GN-4: every binding crate of the targets is a member of the root workspace of the repository; a workspace that
+  // lacks one is a defect of the repository, which the run names and does not repair.
+  const rootManifest = join(copy, 'Cargo.toml');
+  if (!existsSync(rootManifest)) throw new Error('the repository has no root Cargo.toml, whose workspace holds the core and the binding crates (GN-4, L-2)');
+  const metadata = spawnSync('cargo', ['metadata', '--no-deps', '--format-version', '1', '--manifest-path', rootManifest], { encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target } });
+  if (metadata.status !== 0) throw new Error(`cargo metadata of the root workspace failed: ${metadata.stderr.split('\n').filter((line) => line.startsWith('error')).join('; ')}`);
+  const workspace = JSON.parse(metadata.stdout) as { workspace_members: string[]; packages: { id: string; name: string }[] };
+  const memberNames = new Set(workspace.packages.filter((p) => workspace.workspace_members.includes(p.id)).map((p) => p.name));
+  const absent = contract.targets.map((t) => `${crate}-${crateSuffix[t]}`).filter((name) => !memberNames.has(name));
+  if (absent.length > 0) throw new Error(`the root workspace of the repository does not have the binding crate${absent.length === 1 ? '' : 's'} ${absent.join(', ')} as members (GN-4, L-2)`);
 
   step(`${library}: the core builds without the generator`);
   // Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed commit, not the
@@ -309,8 +239,8 @@ impl binding_core::Kinds for Error {
   }
   runBinding(['check', join(copy, 'packages/rust/interface.json')], copy);
 
-  step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
-  const caseFiles = conformCases(contract, copy);
+  step(`${library}: the cases in the convention of G-5 (a case left out is printed)`);
+  const caseFiles = checkCases(contract, copy);
 
   return { contract, copy, caseFiles };
 }
@@ -319,21 +249,33 @@ impl binding_core::Kinds for Error {
 // case that does not run is a test that was dropped without a word.
 let leftOut = 0;
 
-function conformCases(contract: Contract, copy: string): string[] {
+// G-5: a case file of the repository follows the case convention: its keys are the parameter names in snake_case and a
+// record is an object of its fields. A case that does not is a defect of the repository, which the run names, one line
+// per group with the keys and the record values that differ, and does not rewrite. A raising case that lacks the
+// arguments of its member in the form of their types, or of a factory of its class, is left out of the copy and printed.
+function checkCases(contract: Contract, copy: string): string[] {
   const units = new Map(contract.units.map((u) => [u.id, u]));
   const snake = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-  // A case value in the convention: a record given as an array of its field values becomes the object of its fields.
-  const conform = (type: Type | undefined, value: unknown): unknown => {
-    if (type === undefined || typeof type === 'string' || value === null) return value;
-    if ('optional' in type) return conform(type.optional, value);
-    if ('list' in type) return Array.isArray(value) ? value.map((item) => conform(type.list, item)) : value;
+  // The record values of a case that are not the object of their fields: an array of the field values, or an object
+  // whose keys are not the field names in snake_case.
+  const records = (type: Type | undefined, value: unknown, at: string, found: string[]): void => {
+    if (type === undefined || typeof type === 'string' || value === null) return;
+    if ('optional' in type) return records(type.optional, value, at, found);
+    if ('list' in type) {
+      if (Array.isArray(value)) value.forEach((item, i) => records(type.list, item, `${at}[${String(i)}]`, found));
+      return;
+    }
     const unit: Unit | undefined = 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
-    if (unit?.kind !== 'record' || typeof value !== 'object') return value;
-    const fields = unit.fields ?? [];
-    const object: Record<string, unknown> = Array.isArray(value)
-      ? Object.fromEntries(fields.map((f, i) => [f.name.join('_'), value[i]]))
-      : Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [snake(k), v]));
-    return Object.fromEntries(fields.map((f) => [f.name.join('_'), conform(f.type, object[f.name.join('_')])]));
+    if (unit?.kind !== 'record' || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      found.push(`${at} is an array, not the object of the fields of ${unit.id}`);
+      return;
+    }
+    const fields = new Map((unit.fields ?? []).map((f) => [f.name.join('_'), f.type]));
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (snake(key) !== key) found.push(`${at}.${key} is not in snake_case`);
+      records(fields.get(snake(key)), item, `${at}.${key}`, found);
+    }
   };
   // Whether a value has the shape of its type, as far as the generated tests write it.
   const fits = (type: Type, value: unknown): boolean => {
@@ -353,37 +295,44 @@ function conformCases(contract: Contract, copy: string): string[] {
       .filter((m) => m.kind === 'constructor' || (m.kind === 'static' && JSON.stringify(m.returns) === JSON.stringify({ unit: unit.id })))
       .map((m) => (m.parameters ?? []).map((p) => p.name.join('_')));
   const files = new Set<string>();
+  const defects: string[] = [];
   for (const row of contract.cases) {
     const file = join(copy, row.file);
     files.add(file);
     const document = JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>[]>;
-    const before = JSON.stringify(document);
     // U-7: a case of an alias has no parameter of a member; its keys are already in snake_case.
     const found = row.member === undefined ? undefined : memberById.get(row.member);
     const parameters = found?.member.parameters ?? [];
     const params = new Map<string, Type>(parameters.map((p) => [p.name.join('_'), p.type]));
     const group = document[row.group];
     if (!Array.isArray(group)) continue;
-    document[row.group] = group
-      .map((kase) => Object.fromEntries(Object.entries(kase).map(([key, value]) => [snake(key), conform(params.get(snake(key)), value)])))
-      .filter((kase) => {
-        if (kase['raises'] === undefined) return true;
-        // U-2: a case that has no key of a parameter with a default leaves it out.
-        const lacks = parameters
-          .filter((p) => (p.name.join('_') in kase ? !fits(p.type, kase[p.name.join('_')]) : p.default === undefined))
-          .map((p) => p.name.join('_'));
-        const receiver = typeof found?.member.core === 'object' && found.member.core.receiver !== undefined;
-        const noFactory = receiver && found !== undefined && !factories(found.unit).some((names) => names.every((n) => n in kase));
-        if (lacks.length === 0 && !noFactory) return true;
-        leftOut += 1;
-        process.stdout.write(`change: the case ${row.file}#${row.group}/${String(kase['id'])} of ${row.member} gives ${lacks.length > 0 ? `no ${lacks.join(', ')} in the form of its type` : 'no arguments of a factory'} (G-5); left out here\n`);
-        return false;
-      });
-    if (JSON.stringify(document) !== before) {
+    const differ: string[] = [];
+    for (const kase of group) {
+      for (const [key, value] of Object.entries(kase)) {
+        if (snake(key) !== key) differ.push(`${String(kase['id'])}.${key} is not in snake_case`);
+        records(params.get(snake(key)), value, `${String(kase['id'])}.${key}`, differ);
+      }
+    }
+    if (differ.length > 0) defects.push(`${row.file}#${row.group}${row.member === undefined ? '' : ` of ${row.member}`}: ${[...new Set(differ)].join(', ')}`);
+    const kept = group.filter((kase) => {
+      if (kase['raises'] === undefined) return true;
+      // U-2: a case that has no key of a parameter with a default leaves it out.
+      const lacks = parameters
+        .filter((p) => (p.name.join('_') in kase ? !fits(p.type, kase[p.name.join('_')]) : p.default === undefined))
+        .map((p) => p.name.join('_'));
+      const receiver = typeof found?.member.core === 'object' && found.member.core.receiver !== undefined;
+      const noFactory = receiver && found !== undefined && !factories(found.unit).some((names) => names.every((n) => n in kase));
+      if (lacks.length === 0 && !noFactory) return true;
+      leftOut += 1;
+      process.stdout.write(`change: the case ${row.file}#${row.group}/${String(kase['id'])} of ${row.member} gives ${lacks.length > 0 ? `no ${lacks.join(', ')} in the form of its type` : 'no arguments of a factory'} (G-5); left out here\n`);
+      return false;
+    });
+    if (kept.length !== group.length) {
+      document[row.group] = kept;
       writeFileSync(file, `${JSON.stringify(document, null, 2)}\n`);
-      process.stdout.write(`change: the cases ${row.file}#${row.group} follow the case convention (G-5)\n`);
     }
   }
+  if (defects.length > 0) throw new Error(`the cases do not follow the case convention of G-5 (keys are the parameter names in snake_case, a record is the object of its fields): ${defects.join('; ')}`);
   return [...files];
 }
 
@@ -548,7 +497,6 @@ stepOf(targets, 'lint the core', () => {
   run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--all-targets', ...((contract.faults ?? []).length > 0 ? ['--features', 'fault-test'] : []), '--', '-D', 'warnings']);
 });
 for (const t of targets) if (!failed(t)) lintOf(t, 'cargo clippy of the core');
-const crateSuffix: Record<Lang, string> = { python: 'python', node: 'node', php: 'php-ext', go: 'go', wasm: 'wasm' };
 const lintFeatures = (t: Lang): string => (t === 'go' ? 'panic-test,codec-test' : t === 'wasm' ? 'panic-test' : testFeatures(contract));
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate`, () => {

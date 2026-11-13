@@ -464,9 +464,8 @@
 
 - **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
-  `binding scaffold`의 추적 package)을 하며 하나씩 출력하고, `binding check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
-  따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
+  생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.
   `tests/e2e`의 모든 계약은 다섯 target을 적고(BD-27), 생성기가 그 가운데 하나에 거부하는 target은 그 target의 이름 있는
@@ -536,3 +535,21 @@
   끝나며, 실패한 target이 있으면 실패한다. 실패한 `binding check`, `scaffold`, `generate`의 원인은 그 finding이나 거부를 하나씩
   이름한다. 이유: 첫 실패에서 멈추는 실행은 다른 target이 통과하는지를 감추고, 그러면 한
   target의 거부가 모든 target의 실패로 읽힌다.
+- **GN-14d** 레포의 사본은 실행의 binding을 받는 변경, 곧 레포가 그 binding을 받을 때 스스로 하는 변경만 받고, 실행은 그것을
+  하나씩 출력한다: 실행의 `binding scaffold`가 추적 바인딩 package를 쓴다. 그 파일은 그것을 쓰는 binding의 것이기 때문이다(CK-19는
+  레포의 파일을 그 lock이 고정한 binding과 비교하며, 그것은 실행의 binding이 아니다). 그리고 `Cargo.lock`의 `polyspec-binding-core`
+  항목이 실행의 commit을 적거나 그 항목만 가진 lock을 쓴다. 레포의 lock은 그 레포가 받은 binding을 고정하기 때문이다(GN-14).
+  레포의 결함은 사본에서 고치지 않으며 모든 target의 이름 있는 실패다: target의 바인딩 crate를 구성원으로 갖지 않는 루트
+  workspace(GN-4; 실행은 `cargo metadata --no-deps`로 구성원을 읽는다); snake_case가 아닌 case 키나 field 객체가 아닌 record 값(G-5),
+  group마다 그 키와 값을 한 줄로; `binding_core`에 의존하지 않거나 `Kinds`를 구현하지 않거나(F-2, E-3) binding의 crate를 옛 이름으로
+  적는 코어, 이것은 컴파일러가 이름하며 실패한 명령의 원인은 그 stderr 가운데 `error`로 시작하는 줄을 싣는다;
+  `<Library><Category>Error`가 아닌 이름의 오류 class, 이것은 `binding check`가 이름한다(CK-10). 그 member의 인자를 그 타입의
+  형태로, 또는 그 class의 factory 인자를 주지 않는 raising case는 사본에서 빠지고 출력되며, case를 뺀 실행은 끝에서 실패한다:
+  그런 case가 레포의 결함인지 case 규약에 없는 형태(인자로 주는 class 값 등)인지 정해지지 않았으므로, 실행은 그것을 보이지 않게
+  버리지도 그 레포의 다른 case를 거부하지도 않는다. 시험 준비는 레포의 파일을 바꾸지 않는다: `tests/e2e/<library>`의 case runner를
+  생성 시험 옆에 복사하고(`cases_test.go`는 `packages/go/tests`로), 빌드한 addon에서 플랫폼의 npm 패키지를 묶어 라이브러리의
+  패키지와 함께 그 tarball에서 다른 플랫폼의 선택 패키지 없이 설치하며(T-2), runner는 생성 시험이 필요로 하는 설정을 받는다:
+  crate마다 시험 feature(GN-5, GN-13b), Go에는 정적 라이브러리 디렉터리를 가진 `CGO_LDFLAGS`, 그 feature의 tag를 가진 `GOFLAGS`,
+  `GOTOOLCHAIN=local`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `tests/e2e`의 레포는 모든 레포처럼 바인딩
+  crate를 workspace의 구성원으로 갖고, 바인딩 package는 추적하지 않으며 그것은 실행의 scaffold가 쓴다. 이유: 레포가 하지 않은
+  사본의 변경은 어느 commit에도 없는 레포를 확인하고, 그러면 고쳐 준 결함은 실행에서 통과하고 레포에 남는다.

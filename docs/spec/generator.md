@@ -568,10 +568,9 @@ the design ids are those of the binding design.
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
-  copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
-  (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
-  scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
-  GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates for each target, lints the core and each binding crate on the host,
+  copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
+  (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
+  convention (GN-14d), generates for each target, lints the core and each binding crate on the host,
   builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. Every contract of `tests/e2e` names the five targets (BD-27), and a target that the
@@ -650,3 +649,29 @@ the design ids are those of the binding design.
   target, its lint, its tests with their counts and the causes of its failure, one line each, and fails when a target
   failed; the cause of a failed `binding check`, `scaffold` or `generate` names each of its findings or refusals. Why: a run that stops at the first failure hides whether the other targets pass, and a refusal of one target
   then reads as a failure of all.
+- **GN-14d** The copy of a repository gets only the changes that take the binding of the run, the changes that the
+  repository makes itself when it takes that binding, and the run prints each: `binding scaffold` of the run writes the
+  tracked binding packages, because their files are of the binding that writes them (CK-19 compares a repository's
+  files with the binding that its lock pins, which is not the binding of the run); and the entry
+  `polyspec-binding-core` of `Cargo.lock` names the commit of the run, or a lock of that entry alone is written,
+  because the lock of a repository pins the binding that it took (GN-14). A defect of the repository is not repaired
+  in the copy and is a named failure of every target: a root workspace that lacks the binding crate of a target as a
+  member (GN-4; the run reads the members with `cargo metadata --no-deps`); a key of a case that is not in
+  snake_case or a record value that is not the object of its fields (G-5), one line for each group with its keys and
+  values; a core that does not depend on `binding_core`, does not implement `Kinds` (F-2, E-3) or names the crate of
+  binding by an earlier name, which the compiler names, and the cause of a failed command carries the lines of its
+  stderr that start with `error`; an error class of another name than `<Library><Category>Error`, which `binding
+  check` names (CK-10). A raising case that lacks the arguments of its member in the form of their types, or the
+  arguments of a factory of its class, is left out of the copy and printed, and a run that left a case out fails at its
+  end: whether such a case is a defect of the repository or a form that the case convention lacks, such as the value
+  of a class as an argument, is not settled, so the run neither drops it unseen nor refuses the other cases of its
+  repository. The preparation of the tests changes no file of the repository: the case runners of
+  `tests/e2e/<library>` are copied beside the generated tests (`cases_test.go` into `packages/go/tests`), the npm
+  package of the platform is packed from the built addon and installed with the package of the library from their
+  tarballs without the optional packages of other platforms (T-2), and the runners get the settings that the
+  generated tests need: the test features of each crate (GN-5, GN-13b), `CGO_LDFLAGS` with the directory of the
+  static library, `GOFLAGS` with the tags of those features and `GOTOOLCHAIN=local` for Go, `--expose-gc` for WASM
+  (GN-18a), and `CASES` with the case file. The repositories of `tests/e2e` have the binding crates as members of
+  their workspace, as every repository has, and track no binding package, which the scaffold of the run writes. Why: a
+  change of the copy that the repository has not made would verify a repository that no commit holds, and a repaired
+  defect then passes in the run and stays in the repository.
