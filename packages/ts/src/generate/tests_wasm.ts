@@ -5,6 +5,7 @@ import { type Fn, type Model, Unsupported, errorUnitOfKind, hookCall, langName }
 import { type Context, type MadeForm, type Receiver, bytesKind, isPlain, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
+import { isHost } from './packages.ts';
 import { NODE_ORDERED } from './tests_node.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
@@ -17,7 +18,8 @@ const jsBase = (category: string): string => ({ value: 'RangeError', type: 'Type
 
 export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
-  const entry = `${npm}/wasm`;
+  // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
+  const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-18: WASM generates no callback unit (refused by name), so no test makes one.

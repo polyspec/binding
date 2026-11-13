@@ -514,6 +514,8 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.equal(JSON.parse(readFileSync(join(root, 'packages/php/native/composer.json'), 'utf8')).name, 'polyspec/sample-native');
     assert.match(readFileSync(join(root, 'packages/php/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/Cargo.toml'), 'utf8'), /path = "\.\.\/\.\.\/rust"/);
+    // The WASM crate is native/wasm/ of the host Node package, one directory deeper than native/.
+    assert.match(readFileSync(join(root, 'packages/ts/native/wasm/Cargo.toml'), 'utf8'), /polyspec-sample = \{ path = "\.\.\/\.\.\/\.\.\/rust"/);
     assert.match(readFileSync(join(root, 'packages/python/native/src/lib.rs'), 'utf8'), /The native module polyspec\.sample\._binding\._native\./);
     writeFileSync(join(root, 'Cargo.lock'), lock(version));
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
@@ -527,7 +529,7 @@ test('a host package holds its native module in one form per language (L-2a)', (
     writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
-      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts'],
+      files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
       optionalDependencies: {
         '@polyspec/sample-linux-x64-gnu': '1.2.3',
         '@polyspec/sample-linux-arm64-gnu': '1.2.3',
@@ -540,15 +542,18 @@ test('a host package holds its native module in one form per language (L-2a)', (
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
-    // L-2a: the WASM binding of a host Node package is refused by name; the other targets generate.
+    // L-2a: the WASM binding of a host Node package is not refused for its layout; it is native/wasm/generated/.
     const wasm = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'wasm'], { encoding: 'utf8' });
-    assert.equal(wasm.status, 2, wasm.stderr);
-    assert.match(wasm.stderr, /the WASM binding of a host Node package is not generated yet \(L-2a\)/);
+    assert.equal(wasm.status, 0, wasm.stderr);
+    assert.ok(files(out).has('packages/ts/native/wasm/generated/index.mjs'));
+    assert.match(String(files(out).get('packages/ts/native/wasm/generated/tests/generated.test.mjs')), /import \* as pkg from '\.\.\/index\.mjs';/);
     execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'php,python,node']);
     const generated = files(out);
     assert.ok(generated.has('packages/python/native/generated/lib.rs'));
     assert.ok(generated.has('packages/python/src/polyspec/sample/_binding/__init__.py'));
     assert.ok(generated.has('packages/ts/native/generated/index.cjs'));
+    // The tests of a host package import the generated entry beside them; the package's own entry is the host's.
+    assert.match(String(generated.get('packages/ts/native/generated/tests/generated.test.mjs')), /import \* as pkg from '\.\.\/index\.mjs';/);
     assert.ok(generated.has('packages/php/native/generated/lib.rs'));
     assert.match(String(generated.get('packages/python/native/generated/lib.rs')), /polyspec\.sample\._binding\._errors/);
     rmSync(out, { recursive: true, force: true });

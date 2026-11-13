@@ -85,7 +85,10 @@ the design ids are those of the binding design.
     declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
     `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
     packages of GN-3c in `optionalDependencies` at its own `version`; host code imports `native/generated/index.mjs`
-    (or `index.cjs`) by its relative path.
+    (or `index.cjs`) by its relative path, and so do the generated tests, from `native/generated/tests/`. The WASM
+    crate is `native/wasm/`, its module, glue and declarations are `native/wasm/generated/`, which the host's `files`
+    names (`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts` and `*.wasm`), and its tests import
+    `native/wasm/generated/index.mjs` by its relative path.
   - PHP: an extension is a Composer package of its own (type `php-ext`), named `<host package>-native`, at
     `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
     is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
@@ -717,3 +720,9 @@ the design ids are those of the binding design.
   their workspace, as every repository has, and track no binding package, which the scaffold of the run writes. Why: a
   change of the copy that the repository has not made would verify a repository that no commit holds, and a repaired
   defect then passes in the run and stays in the repository.
+
+- **GN-14e** A run takes every contract of the repository (L-1): `packages/rust/interface.json` and each
+  `packages/<component>/rust/interface.json`, in the order of their paths, and a repository without one fails. Each
+  contract is scaffolded, checked, generated, built and tested in its own layout (`place`, L-2a), and the run records
+  the paths of the contracts. The generated tests of a host Node package import the generated entry beside them, so
+  the run puts them in the installed package where the copy has them.

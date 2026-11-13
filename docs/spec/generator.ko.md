@@ -65,7 +65,10 @@
   - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
     `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
     `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 `optionalDependencies`에 자기 `version`으로 적은
-    GN-3c의 플랫폼 패키지를 갖는다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import한다.
+    GN-3c의 플랫폼 패키지를 갖는다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
+    생성 시험도 `native/generated/tests/`에서 그렇게 한다. WASM crate는 `native/wasm/`이고, 그 module, glue, 선언은
+    `native/wasm/generated/`이며 host의 `files`가 그것을 적는다(`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts`,
+    `*.wasm`). 그 시험은 `native/wasm/generated/index.mjs`를 상대 경로로 import한다.
   - PHP: 확장은 별도 Composer 패키지(type `php-ext`) `<host 패키지>-native`이고 자리는
     `packages/<component>/php/native/`다. `scaffold`가 그 crate와 `composer.json`을 거기에 쓰고 `generated/`도 그 옆이다.
     host 라이브러리 `packages/<component>/php/composer.json`은 `ext-<확장 이름>`(`*`)을 require하며, 확장은 PHP가 로드할 때
@@ -586,3 +589,8 @@
   `GOTOOLCHAIN=local`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `tests/e2e`의 레포는 모든 레포처럼 바인딩
   crate를 workspace의 구성원으로 갖고, 바인딩 package는 추적하지 않으며 그것은 실행의 scaffold가 쓴다. 이유: 레포가 하지 않은
   사본의 변경은 어느 commit에도 없는 레포를 확인하고, 그러면 고쳐 준 결함은 실행에서 통과하고 레포에 남는다.
+
+- **GN-14e** 실행은 레포의 모든 계약을 받는다(L-1): `packages/rust/interface.json`과 각
+  `packages/<component>/rust/interface.json`을 경로 순서로 받고, 계약이 없는 레포는 실패한다. 각 계약은 자기 배치(`place`,
+  L-2a)에서 scaffold, 검사, 생성, 빌드, 시험을 받고, 실행 기록은 계약의 경로를 적는다. host Node 패키지의 생성 시험은
+  옆의 생성 진입점을 import하므로, 실행은 그 시험을 설치된 패키지 안의 사본과 같은 자리에 둔다.

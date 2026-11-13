@@ -1100,15 +1100,12 @@ ${constants}
 `;
 }
 
-// G-4: a value alias (U-7), a callback unit (U-3) and a host Node package (L-2a) are not generated for WASM yet; each is
-// refused by name.
+// G-4: a value alias (U-7) and a callback unit (U-3) are not generated for WASM yet; each is refused by name.
 export function refuseForWasm(model: Model, refusals: Refusals): void {
   for (const alias of model.aliases) {
     refusals.refuse(alias.library !== undefined ? `${alias.library}.${alias.unit.id}: a value alias of another repository is not generated for WASM yet` : `${alias.unit.id}: a value alias is not generated for WASM yet`);
   }
   for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
-  // L-2a: a host Node package keeps its binding crate in native/, where the WASM crate has no place yet.
-  if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) refusals.refuse('the WASM binding of a host Node package is not generated yet (L-2a)');
 }
 
 // The WASM generated files of a model that refuseForWasm refused nothing of.

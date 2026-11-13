@@ -4,6 +4,7 @@
 import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
+import { isHost } from './packages.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
@@ -66,6 +67,10 @@ function outcome(call) {
 
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
+  // L-2a: the tests of a host package import the generated entry beside them, as host code does; the package's own
+  // entry is the host's.
+  const esm = isHost(model.contract, 'node') ? '../index.mjs' : npm;
+  const cjsEntry = isHost(model.contract, 'node') ? '../index.cjs' : npm;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
@@ -328,7 +333,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
-${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(npm)};
+${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
 ${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
@@ -339,7 +344,7 @@ function addon() {
   try {
     return require(\`${npm}-\${platform}\`);
   } catch {
-    return require(join(dirname(require.resolve(${jsString(npm)})), \`${addonBase(model)}.\${platform}.node\`));
+    return require(join(dirname(require.resolve(${jsString(cjsEntry)})), \`${addonBase(model)}.\${platform}.node\`));
   }
 }
 
@@ -348,7 +353,7 @@ test('B-7: a panic is kind internal', () => {
 });
 
 test('the CommonJS and the ESM entries share their classes', () => {
-  const cjs = require(${jsString(npm)});
+  const cjs = require(${jsString(cjsEntry)});
   assert.equal(cjs.${cls('value')}, pkg.${cls('value')});
 });
 ${out.join('\n')}

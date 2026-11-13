@@ -205,7 +205,7 @@ python-source = "generated/python"
     languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
   }
   if (contract.targets.includes('wasm')) {
-    if (!contract.targets.includes('node')) files.set('packages/ts/package.json', npmManifest(contract, version));
+    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
@@ -360,7 +360,9 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
         found: (t) => (json(t)['optionalDependencies']?.[dependency] === json(t)['version'] ? 'the version of the package' : json(t)['optionalDependencies']?.[dependency]),
       });
     }
-    for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts']) {
+    // The module of WASM, its glue and its declarations are native/wasm/generated/ of the package (GN-3b).
+    const wasmFiles = contract.targets.includes('wasm') ? ['native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'] : [];
+    for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', ...wasmFiles]) {
       out.push({ path, item: `files (${file})`, want: file, found: (t) => ((json(t)['files'] ?? []) as string[]).find((f) => f === file) });
     }
   }

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The generator refused the WASM binding of a host Node package, the generated Node tests of a host package imported
+  the package's own entry, which is the host's code, and the end-to-end run read only `packages/rust/interface.json` at
+  the paths of the plain layout. The WASM crate of a host Node package is now `native/wasm/`, the tests of a host
+  package import the generated entry beside them, `binding check` asks the host's `files` for the WASM module (GN-3b),
+  and the run takes every contract of the repository, `packages/rust` and `packages/<component>/rust`, each in its
+  own layout (GN-14e). Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/classes`.
 - The scaffold wrote a `[lints]` table of its own into each binding manifest, and a repository whose packages must take
   the lints of their workspace (`lints.workspace = true`) refused those manifests. Each binding manifest now says
   `lints.workspace = true`, so the workspace table states the lints of R-1 for the core and the bindings, and an
