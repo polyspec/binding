@@ -740,7 +740,9 @@ the design ids are those of the binding design.
   each part of a tuple return. The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
-  call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
+  call alone and fails when it raises. The result `null` of an optional has a case form whatever the optional holds,
+  a class too: each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, and Go `nil`
+  of the type of the result). A case whose result has no case form (a class, a result of `none`), whose
   value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
   a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
   The name of the test of a case in a language whose tests are functions or methods (Python, PHP, Go) holds the id of
