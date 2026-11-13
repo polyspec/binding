@@ -551,7 +551,8 @@
           "only": {
             "targets": [
               "php",
-              "node"
+              "node",
+              "go"
             ],
             "reason": "N-4"
           }

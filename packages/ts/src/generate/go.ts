@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo } from './model.ts';
 import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -71,12 +71,13 @@ export function goParam(name: Name): string {
 export const goName = (name: Name): string => langName('go', name, 'class');
 
 // The Go name of a member of a class unit, or of a function: the constructor is New<Class>, a static member
-// <Class><Member>, a stringify String, any other member a method of the class with its own name (N-2, N-4, CK-13).
+// <Class><Member>, a stringify String, a to_json MarshalJSON, any other member a method of the class with its own name (N-2, N-4, CK-13).
 export function goMemberName(fn: Fn): string {
   const member = langName('go', fn.member.name, 'callable');
   if (fn.kind === 'constructor') return `New${goName(fn.unit.name)}`;
   if (fn.kind === 'static') return `${goName(fn.unit.name)}${member}`;
   if (fn.special === 'stringify') return 'String';
+  if (fn.special === 'to_json') return 'MarshalJSON';
   return member;
 }
 
@@ -94,8 +95,11 @@ export interface GoScope {
   usesMap?: boolean;
   // Whether the package names the keyed map of T-2 and its Key.
   usesKeyed?: boolean;
+  // GN-16: the arities of the tuples of different part types that the package names, as Tuple<N>.
+  usesTuples?: Set<number>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
+  usesJson?: boolean;
   usesIter?: boolean;
 }
 
@@ -136,10 +140,12 @@ export function goType(scope: GoScope, type: Type): string {
   }
   if ('optional' in type) return `*${goType(scope, type.optional)}`;
   if ('tuple' in type) {
-    const [first, ...rest] = type.tuple.map((t) => goType(scope, t));
-    // T-2: a tuple inside another type is a Go array, which needs one element type.
-    if (first === undefined || rest.some((t) => t !== first)) throw new Unsupported(`a tuple of ${JSON.stringify(type.tuple)} inside another type is not generated for Go yet (a Go array has one element type)`);
-    return `[${type.tuple.length}]${first}`;
+    // T-2, GN-16: a tuple inside another type or as a parameter is a Go array of its one part type, else a struct of
+    // its parts in order (a Go array has one element type).
+    const parts = type.tuple.map((t) => goType(scope, t));
+    if (tupleArray(parts)) return `[${parts.length}]${parts[0] ?? ''}`;
+    (scope.usesTuples ??= new Set()).add(parts.length);
+    return `Tuple${parts.length}[${parts.join(', ')}]`;
   }
   // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
   if (aliasOf(scope.model, type) !== undefined) return 'any';
@@ -158,6 +164,51 @@ export function goType(scope: GoScope, type: Type): string {
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
 }
+
+// GN-16: whether the Go form of a tuple is an array, which holds parts of one Go type.
+const tupleArray = (parts: string[]): boolean => parts.length > 0 && parts.every((t) => t === parts[0]);
+
+// GN-16: whether a tuple type is a Go array, else a Tuple<N> of its parts.
+export const goTupleArray = (scope: GoScope, parts: Type[]): boolean => tupleArray(parts.map((t) => goType({ ...scope, imports: new Set() }, t)));
+
+// GN-16: the arities of the tuples of different part types in the types of the model, for the Tuple<N> of binding.
+function tupleArities(model: Model): number[] {
+  const found = new Set<number>();
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('tuple' in type) {
+      type.tuple.forEach(visit);
+      if (!goTupleArray(scope, type.tuple)) found.add(type.tuple.length);
+      return;
+    }
+    for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
+  };
+  for (const fn of callablesOf(model)) {
+    for (const p of fn.params) visit(p.type);
+    // A tuple return is several results; a tuple inside it is a value.
+    if (typeof fn.returns === 'object' && 'tuple' in fn.returns) fn.returns.tuple.forEach(visit);
+    else visit(fn.returns);
+    if (fn.yields !== undefined) [fn.yields.value, ...(fn.yields.key === undefined ? [] : [fn.yields.key])].forEach(visit);
+  }
+  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const cb of model.callbacks) for (const m of cb.members) [...m.params.map((p) => p.type), m.returns].forEach(visit);
+  return [...found].sort((a, b) => a - b);
+}
+
+// GN-16: the struct of a tuple of n parts of different types, its parts the fields P0 to P<n-1>.
+function goTupleType(n: number): string {
+  const names = Array.from({ length: n }, (_, i) => `T${i}`);
+  return `
+// Tuple${n} is a tuple of ${n} parts of different types (GN-16), its parts in order.
+type Tuple${n}[${names.join(', ')} any] struct {
+${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
+}
+`;
+}
+
+// The part i of a Go tuple: an item of its array or a field of its struct.
+const tuplePart = (scope: GoScope, parts: Type[], expr: string, i: number): string => (goTupleArray(scope, parts) ? `${expr}[${i}]` : `${expr}.P${i}`);
 
 // U-2, T-4: a field with a default is a pointer, nil when the caller leaves it out.
 export const fieldType = (scope: GoScope, field: { type: Type; default?: unknown }): string =>
@@ -224,7 +275,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   if ('optional' in type) {
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
   }
-  if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, `${expr}[${i}]`, indent, depth));
+  if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
   // U-7: a value of an alias is the call that walks it and its first level.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
   // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
@@ -280,7 +331,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
       `${t}}`,
     ];
   }
-  if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, `${target}[${i}]`, indent, depth));
+  if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, tuplePart(scope, type.tuple, target, i), indent, depth));
   // U-7: a value of an alias is the Go value that its out rows make.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}${target} = dec.Value()`];
   const object = objectUnit(scope.model, type);
@@ -293,7 +344,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
 
 // E-7: the results of a function: the parts of a tuple return, then error.
 export function goResults(scope: GoScope, returns: Type): string[] {
-  if (returns === 'none') return [];
+  if (returns === 'none' || returns === 'never') return [];
   if (typeof returns === 'object' && 'tuple' in returns) return returns.tuple.map((t) => goType(scope, t));
   return [goType(scope, returns)];
 }
@@ -313,10 +364,11 @@ function memberResults(scope: GoScope, fn: Fn): string[] {
   return [yields.key === undefined ? `iter.Seq[${goType(scope, yields.value)}]` : `iter.Seq2[${goType(scope, yields.key)}, ${goType(scope, yields.value)}]`];
 }
 
-// The count of the results of a member in Go before its error: 1 for an iterate, the parts of a tuple, 0 for none.
+// The count of the results of a member in Go before its error: 1 for an iterate, the parts of a tuple, 0 for none and
+// never.
 export const goResultCount = (fn: Fn): number => {
   if (fn.kind === 'iterate') return 1;
-  if (fn.returns === 'none') return 0;
+  if (fn.returns === 'none' || fn.returns === 'never') return 0;
   return typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple.length : 1;
 };
 
@@ -360,7 +412,7 @@ function goCallable(scope: GoScope, fn: Fn): string {
       '\t}, nil',
     );
   } else {
-    const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' ? [] : [fn.returns];
+    const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' || fn.returns === 'never' ? [] : [fn.returns];
     parts.forEach((type, i) => {
       lines.push(`\tvar value${i} ${results[i] ?? ''}`);
       lines.push(...goDecode(scope, type, `value${i}`, 1, 0));
@@ -374,6 +426,24 @@ function goCallable(scope: GoScope, fn: Fn): string {
 // ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
 func ${name}(${params}) ${signature} {
 ${lines.join('\n')}
+}
+`;
+  }
+  if (fn.special === 'to_json') {
+    // GN-15a: json.Marshal of an instance calls MarshalJSON, which marshals the value of the core.
+    const marshal = results.length === 0
+      ? '\treturn nil, this.toJSON()'
+      : '\tvalue, err := this.toJSON()\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn json.Marshal(value)';
+    if (results.length > 0) scope.usesJson = true;
+    return `
+// toJSON calls ${fn.corePath} (contract member ${fn.member.id}).
+func (this *${className}) toJSON() ${signature} {
+${lines.join('\n')}
+}
+
+// MarshalJSON is the JSON form of the ${className} (N-4: to_json), which encoding/json calls through json.Marshaler.
+func (this *${className}) MarshalJSON() ([]byte, error) {
+${marshal}
 }
 `;
   }
@@ -561,7 +631,14 @@ function goPackageFile(model: Model, module: string): string {
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
   ].join('');
-  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true;
+  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true || (scope.usesTuples?.size ?? 0) > 0;
+  const tuples = [...(scope.usesTuples ?? [])].sort((a, b) => a - b).map((n) => {
+    const names = Array.from({ length: n }, (_, i) => `T${i}`);
+    return `
+// Tuple${n} is a tuple of ${n} parts of different types (GN-16), its parts the fields P0 to P${n - 1} in order.
+type Tuple${n}[${names.join(', ')} any] = binding.Tuple${n}[${names.join(', ')}]
+`;
+  }).join('');
   const alias = scope.usesMap === true
     ? `
 // Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each with its value. Its
@@ -588,14 +665,14 @@ func BytesKey(value []byte) Key { return binding.BytesKey(value) }
 func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
-  const std = [...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
+  const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
   const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
 package ${goPackage(model.contract, module)}
-${imports}${alias}${keyed}${body}`;
+${imports}${alias}${keyed}${tuples}${body}`;
 }
 
 export const categoryType = (model: Model, category: string): string => goErrorTypes(model.contract).find(([c]) => c === category)?.[1] ?? '';
@@ -963,7 +1040,7 @@ func (k Key) Text() (string, bool) {
 	}
 	return k.text, true
 }
-
+${tupleArities(model).map(goTupleType).join('')}
 // KeyedMap is the contract type keyed_map<T> (T-2): keys in the order in which they were first set, each once with
 // its value.
 type KeyedMap[T any] struct {
@@ -1553,12 +1630,11 @@ ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'st
 
 // G-4: what the Go binding does not generate, each refused by name with its reason: a record of another repository
 // (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
-// another module than its own (its handle and dispatch are unexported), and a JSON hook (GN-6g).
+// another module than its own (its handle and dispatch are unexported).
 export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
-  for (const fn of model.objects.flatMap((o) => o.members).filter((m) => m.special === 'to_json')) {
-    refusals.refuse(`${fn.member.id}: a to_json member is not generated for Go (GN-6g: encoding/json reads the exported fields of a value, and a class holds only a handle)`);
-  }
+  // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
+  for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {

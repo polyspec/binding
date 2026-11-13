@@ -17,7 +17,7 @@ import type { Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goType,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
@@ -121,7 +121,11 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
-  if ('tuple' in type) return `${typeName(v, type)}{${type.tuple.map((part, i) => value(v, b, part, (json as unknown[])[i] ?? null)).join(', ')}}`;
+  if ('tuple' in type) {
+    const parts = type.tuple.map((part, i) => value(v, b, part, (json as unknown[])[i] ?? null));
+    // GN-16: a Tuple<N> of different part types is written by its fields.
+    return `${typeName(v, type)}{${goTupleArray(v.scope, type.tuple) ? parts.join(', ') : parts.map((part, i) => `P${i}: ${part}`).join(', ')}}`;
+  }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const sets = (json as [unknown, unknown][]).map(([key, item]) => `m.Set(${goKey(key)}, ${value(v, b, type.keyed_map, item)}); `).join('');
@@ -236,9 +240,9 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
 }
 
 // The call of a member as a Go expression: a function, a constructor or a static member by its name, any other member
-// on its receiver. A stringify is called by its unexported form, which returns its error.
+// on its receiver. A stringify or a to_json is called by its unexported form, which returns its error.
 function invoke(fn: Fn, args: string[], receiver: string): string {
-  const name = fn.special === 'stringify' ? 'stringify' : goMemberName(fn);
+  const name = fn.special === 'stringify' ? 'stringify' : fn.special === 'to_json' ? 'toJSON' : goMemberName(fn);
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') return `${name}(${args.join(', ')})`;
   return `${receiver}.${name}(${args.join(', ')})`;
 }
