@@ -11,7 +11,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 
 - 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-binding-core`, 라이브러리 이름 `binding_core`, 버전 0.0.1, edition
   2021, rust-version 1.99.0, toolchain 1.99.0(`rust-toolchain.toml`).
-- 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목).
+- 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목), Unix에서 기본 feature 없는
+  `libc` 0.2.191(errno 기호의 값, `errno::value`).
 - feature `lock`: `Exclusive`, `Shared`, `Reading`, `Writing`과 `sync`만 켠 의존 `tokio` 1.54.1을 더한다. Python·Node·PHP 바인딩
   crate가 켜고 코어 crate는 켜지 않는다(B-5c).
 - feature `driver`: `driver::block_on`, `driver::Caught`와 `rt-multi-thread`를 켠 의존 `tokio` 1.54.1을 더한다.
@@ -19,7 +20,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 - feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - feature `fault-test`: 실패 주입점의 장전 자료(`fault::Armed`, `arm`, `take`, `left`)를 컴파일하며, 선택 의존
-  `serde_json` 1.0.154(case의 faults 목록)와 Unix에서 `libc` 0.2.191(errno 기호의 값)을 쓴다. 주입점을 가진 코어는
+  `serde_json` 1.0.154(case의 faults 목록)를 쓴다. 주입점을 가진 코어는
   `fault-test = ["polyspec-binding-core/fault-test"]`만 선언한다. 바인딩은 case가 이름을 부르는 주입점을 가진 코어마다
   그 코어의 feature를 켠다. 릴리스 빌드에는 켜지 않는다(G-5).
 - 시험: feature가 필요한 crate의 시험 파일(`tests/lock.rs`, `tests/driver.rs`)은 그 feature를 `required-features`에
@@ -72,6 +73,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`가 있을 때. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
+| `errno::value(symbol) -> Option<i32>` | G-5 | feature 없이. 대상에서 errno 기호가 갖는 값을 `arm`이 읽는 표에서 주고, 대상에 없는 기호에는 없음을 준다. PHP 확장은 이것을 시험에 `Internal\errnoOf`로 준다(GN-8a). |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 
 ## 아직 crate에 없는 것

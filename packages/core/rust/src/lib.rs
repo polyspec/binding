@@ -12,6 +12,7 @@ mod cancel;
 mod cleanup;
 #[cfg(feature = "driver")]
 pub mod driver;
+pub mod errno;
 mod error;
 mod failure;
 pub mod fault;

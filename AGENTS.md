@@ -63,7 +63,7 @@ rules of this repository.
   the commit of each run.
 - Own: `.github/workflows/ci.yml` runs on the push of `main` and on a manual run, one job per matrix entry: `ts` runs
   `typecheck-ts`, `unit-ts` and `release-coverage`, and `rust` runs `test-rust-features`, `test-rust-plain`,
-  `clippy-rust-features`, `clippy-rust` and `fmt-rust`, so the jobs run every target of `make check` once. Each job runs
+  `clippy-rust-features`, `clippy-rust`, `fmt-rust` and `fmt-e2e`, so the jobs run every target of `make check` once. Each job runs
   them with `make ci-targets`, which runs every target to its end and writes the report `var/ci/<name>/`, and the last
   job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, pin every action by its
   commit, set no `timeout-minutes` and run every command of a step as one make target, and `.github/actions/bootstrap` is

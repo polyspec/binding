@@ -146,7 +146,7 @@ the design ids are those of the binding design.
 
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
-  | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
+  | `panic-test` | B-7; the poison of B-5c (GN-6h); the errno of a symbol in a PHP test (GN-8a) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld`, `errnoOf` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
@@ -393,7 +393,15 @@ the design ids are those of the binding design.
   conversion of its arguments too, does not see the arming around it. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
-  gives the names of the points whose fault did not fire. A member that waits is not generated yet (GN-1), so the
+  gives the names of the points whose fault did not fire. The PHP extension of every contract has, with the feature
+  `panic-test` that every test build turns on (GN-5), `Internal\errnoOf(symbol)`, the value of an errno symbol on the
+  machine that the extension runs on, read from the table that arms the faults (`binding_core::errno::value`, which
+  needs no feature), and kind `internal` for a symbol that the machine does not have: PHP has no table of the errno
+  symbols of its machine, so its test reads the value from the binding, as Python and Node read it from their
+  language, also in a contract without fault injection points. The end-to-end check builds the PHP extension without
+  features and fails if `llvm-nm` finds a test entry point in it (`panic_test`, `arm_faults`, `fault_left`,
+  `errno_of`, `alias_in_`): the same check shows that a build without features holds neither `errno_of` nor
+  `panic_test`, the entry point of B-7, because both are of the feature `panic-test`. A member that waits is not generated yet (GN-1), so the
   arming is installed for synchronous work only.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
@@ -802,7 +810,8 @@ the design ids are those of the binding design.
   as local values first, arms the faults for the member (`_arm_faults`), calls the member at once, and requires
   `_fault_left` to be empty after the expected failure, so a fault that the call never reached fails the test. The
   `errno` of a case's `raises` is compared with the failure's errno: a number as it is, a symbol as the value that
-  the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`), and no errno when
+  the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`, Go `syscall.<symbol>`, PHP
+  `Internal\errnoOf("<symbol>")` of GN-8a), and no errno when
   the case names none. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
   `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the class of the
   kind's category and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
@@ -817,8 +826,7 @@ the design ids are those of the binding design.
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
-  kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
-  test, because PHP has no table of the errno symbols of its machine; a value of the language by its kind
+  kinds of an alias, each refused by name when a case gives it: a point of another library; a value of the language by its kind
   (`{"host": ...}`), whose kinds have no closed table; and a value of a value type of another kind than those of
   GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
   GN-13e arms no faults yet; the test of a member that takes an alias inside a map, a record field or the
@@ -869,7 +877,15 @@ the design ids are those of the binding design.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
-  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A call of
+  `then` may hold `"faults": [...]`, the fault injection points of its own call in the form of the faults of a case
+  (CK-22): the test arms them for the member of that call just before it and requires every armed fault to have
+  fired just after it, so a kind that a failure of an earlier call leaves for a later call to give has a case (a body
+  whose feed failed to store gives that failure again from its finish). A call of `then` with `"on": "receiver"` is a
+  method of the class of the `receiver` of the instance value, called on that receiver in its order among the calls
+  of `then`, after the pick; so a kind that the instance reaches only after a call of the instance it was picked from
+  has a case (a stored file whose body was removed). A test that needs any receiver (B-2, B-3, G-7) takes none that
+  arms faults, and Go puts a test whose instance values arm faults with the cases that arm faults (GN-13b). A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
@@ -914,7 +930,8 @@ the design ids are those of the binding design.
 
 - **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
-  the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
+  the first among them the two forms of a call of `then` (GN-13f: the tally of a counter that arms its own fault and
+  leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
@@ -939,8 +956,8 @@ the design ids are those of the binding design.
   for python (maturin builds the wheel for the Python of a venv of that Python, into which the wheel is installed from
   its local directory alone), npm of `mise.toml` and the package of the Node addon for node, the wasm-bindgen CLI of `mise.toml` of the release
   of the crate and the Rust target `wasm32-unknown-unknown` of `rust-toolchain.toml` for wasm, the PHP of `.php-version`
-  (its minor is compared, because the PHP of the machine is wrapped as it is) and the PHPUnit of `config/phpunit` for php,
-  and Go of `mise.toml` with `llvm-nm` of the component `llvm-tools` for go (BD-10 (d)); the check itself runs on the
+  (its minor is compared, because the PHP of the machine is wrapped as it is) the PHPUnit of `config/phpunit` and `llvm-nm` of the component
+  `llvm-tools` for php (GN-8a), and Go of `mise.toml` with that `llvm-nm` for go (BD-10 (d)); the check itself runs on the
   Node.js of `mise.toml`, and every command of the run uses the Rust toolchain of `rust-toolchain.toml` of the checkout
   (`RUSTUP_TOOLCHAIN`), because rustup otherwise reads the toolchain file of the directory of a command, and a command
   that runs in a copy would build with the toolchain of the copy or the default of the machine. When a tool is missing, the check fails before it copies anything and names the target, the

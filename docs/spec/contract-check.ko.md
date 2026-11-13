@@ -130,12 +130,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
   행이 내는 kind마다 그 kind를 내는 case를 가진다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
-  snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1).
-  case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다. 그 member가 있고 `pick`을 거쳐 그 class를 주며,
-  메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 모두 그 class의 메서드이고, 그 `raises`는
-  주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인
-  `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다.
-  case는 실패 주입점(G-5)을
+  snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다: 그 member가 있고 `pick`을 거쳐 그 class를
+  주며, 메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 그 class의 메서드이거나, `"on": "receiver"`이면 receiver를 가진 값의 `receiver`의 class의 메서드이며, 그 `raises`는 주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 그 `faults`는 주어지면 그 메서드의 case의 faults이고, `faults`와 `raises`를 함께 가진 호출은 그 점들이 채우는 kind를 기대한다. 인스턴스 값이 fault를 장전하는 case는 `faults`를 가진 case처럼 case와 그 호출들의 점이 `fills`에 가진 kind만 채운다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인 `{"cancel": "fired"}`이거나 발동하지
+  않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다. case는 실패 주입점(G-5)을
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<기호>", "bytes": <n>,
   "nth": <n>}]`로 장전할 수 있다. `<library>`는 snake_case로 쓴 라이브러리 이름이며 이 계약이나 검사가 받은 라이브러리의
   것이고, `<id>`는 그 계약 `faults`의 점이다. `kind`는 그 점의 `inject` 중 하나다. `bytes`는 `short`에만, 그리고 `short`에는

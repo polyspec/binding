@@ -123,6 +123,14 @@ const PANIC_TEST = (layout: PhpLayout): string => `/// B-7: the entry point of t
 pub fn panic_test() -> Result<Zval, PhpException> {
     guard(|| panic!("panic-test"))
 }
+
+/// GN-8a: the value of an errno symbol on this machine, from the table that arms the faults, which PHP does not have.
+#[cfg(feature = "panic-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\errnoOf`)})]
+pub fn errno_of(symbol: String) -> Result<i64, PhpException> {
+    guard(|| binding_core::errno::value(&symbol).map(i64::from).ok_or_else(|| binding_error(BindingError::Internal { detail: format!("the machine has no errno {symbol}") })))
+}
 `;
 
 const HELPERS = `
@@ -1288,7 +1296,7 @@ ${poisonRust(model, layout)}
         // GN-6e: a PHP value that entered as a handle does not outlive its request.
         let module = module.request_shutdown_function(release_native);`}
         #[cfg(feature = "panic-test")]
-        let module = module.function(wrap_function!(panic_test));${model.objects.some((o) => o.lock?.writes === true) ? `
+        let module = module.function(wrap_function!(panic_test)).function(wrap_function!(errno_of));${model.objects.some((o) => o.lock?.writes === true) ? `
         #[cfg(feature = "panic-test")]
         let module = module.function(wrap_function!(panic_test_held));` : ''}${model.faults.length === 0 ? '' : `
         #[cfg(feature = "fault-test")]

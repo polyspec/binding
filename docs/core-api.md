@@ -11,7 +11,8 @@ types of the design rules named below and no rule of any library.
 - Path: `packages/core/rust` of this repository; package `polyspec-binding-core`, library name `binding_core`, version
   0.0.1, edition 2021, rust-version 1.99.0, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
-  (the entries of `OrderedMap`).
+  (the entries of `OrderedMap`) and, on Unix, `libc` 0.2.191 without default features (the value of an errno symbol,
+  `errno::value`).
 - Feature `lock`: adds `Exclusive`, `Shared`, `Reading` and `Writing` and the dependency `tokio` 1.54.1 with `sync`
   only. The binding crates of Python, Node and PHP enable it; a core crate does not (B-5c).
 - Feature `driver`: adds `driver::block_on` and `driver::Caught` and the dependency `tokio` 1.54.1 with `rt-multi-thread`.
@@ -20,8 +21,7 @@ types of the design rules named below and no rule of any library.
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Feature `fault-test`: compiles the arming of fault injection points (`fault::Armed`, `arm`, `take`, `left`) with the
-  optional dependencies `serde_json` 1.0.154 (the list of faults of a case) and, on Unix, `libc` 0.2.191 (the value of
-  an errno symbol). A core that has points declares `fault-test = ["polyspec-binding-core/fault-test"]` and nothing
+  optional dependency `serde_json` 1.0.154 (the list of faults of a case). A core that has points declares `fault-test = ["polyspec-binding-core/fault-test"]` and nothing
   else of it; a binding turns on the feature of each core whose points its cases name. No release build has it (G-5).
 - Tests: a test file of the crate that needs a feature (`tests/lock.rs`, `tests/driver.rs`) is a `[[test]]` target
   with that feature in `required-features`, so `cargo test` without the feature does not build it, and a run of the
@@ -73,6 +73,7 @@ types of the design rules named below and no rule of any library.
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | With `driver`. Runs `future` on the runtime of the process, a multi-thread tokio runtime with every driver of the build, which the first call makes; the calling thread waits until the future ends. A runtime that cannot be made is `BindingError::Internal`. A thread of that runtime does not call it. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | With `driver`. A future whose output is `Result<F::Output, String>`: a panic of a poll of `future` ends it with the message of the panic, which generated code gives as kind `internal`. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | With `fault-test`. The points of the arming whose fault did not fire, and forgets the arming; a generated test requires it to be empty. |
+| `errno::value(symbol) -> Option<i32>` | G-5 | Without a feature. The value of an errno symbol on the target, from the table that `arm` reads, and none for a symbol that the target does not have; the PHP extension gives it to its tests as `Internal\errnoOf` (GN-8a). |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`; `Display`, `std::error::Error`. |
 
 ## Not yet in the crate

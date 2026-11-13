@@ -37,7 +37,7 @@ jobs:
             targets: typecheck-ts unit-ts release-coverage
           - name: rust
             tools: rust
-            targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust
+            targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust fmt-e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         id: checkout

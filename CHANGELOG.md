@@ -145,6 +145,37 @@
   covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q). Verified by `make
   e2e` of `tests/e2e/sample`: every target passed, php with 67 tests, python 66, node 67, go 41 and wasm 54, and by `npm
   test` in `packages/ts`: 289 of 289 pass.
+- The Rust cores of the repositories of the end-to-end check (`tests/e2e/*/packages/rust`) were in no checked form,
+  because `fmt-rust` read `binding_core` alone. `make fmt-e2e`, a target of `lint-rust` and of the `rust` job of CI,
+  checks them with the defaults of rustfmt, and the four cores are in that form now.
+
+- The PHP test of a case whose `raises` names an errno symbol, such as `EIO`, was refused ("the errno symbol EIO is
+  not compared in PHP yet"), because PHP has no table of the errno symbols of its machine. `binding_core::errno::value`
+  gives the value of a symbol from the table that arms the faults, without a feature and with `libc` a dependency on
+  Unix; the PHP extension of every contract gives it with the feature `panic-test`, which every test build turns on, as
+  `Internal\errnoOf`, and the PHP test compares the errno of the failure with it, as Python, Node and Go compare it with
+  the value of their language, also in a contract without fault injection points (GN-8a). The end-to-end check builds
+  the PHP extension without features and fails if `llvm-nm` finds a test entry point in it, after it found `errno_of`
+  in the extension built with the test features. The cases of the tally of the sample name `EIO` again.
+
+- The two forms of a call of `then` (GN-13f) had only unit tests, so no run showed that the generated tests of
+  either form pass in a target. The end-to-end sample `tests/e2e/sample` now holds both: `counter.tally` arms the fault
+  `sample.tally` and leaves its failure `unreadable` for `counter.settle`, whose case arms the fault in a call of
+  `then`, and `slip.read` of a slip that `shelf.slip` made fails with `missing` after the call `shelf.clear` with
+  `"on": "receiver"`. The test of a contract without fault injection points leaves out the cases of the tally that
+  arm faults.
+
+- A kind that a failure of an earlier call leaves for a later call to give, and a kind that an instance reaches only
+  after a call of the instance it was picked from, had no case form, so a contract that gives them could not pass
+  CK-22: the arming of a case holds for its own call alone, and every call of `then` ran on the instance itself. A
+  call of `then` may now hold `faults`, armed for the member of that call just before it and required to have fired
+  just after it, and `"on": "receiver"`, which calls a method of the class of the `receiver` of the value on that
+  receiver after the pick (GN-13f). `binding check` takes both keys: the faults of such a call are the faults of a
+  case, a failure that it expects is a kind of its points, and a case whose instance values arm faults fills only the
+  kinds of their points (CK-22). The tests of PHP, Python, Node and WASM arm and check the faults of the call (WASM
+  through the glue module that a hook before the tests loads), and Go puts such a test with the cases that arm faults,
+  its goroutine locked to its thread. A test that needs any receiver takes none that arms faults.
+
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,

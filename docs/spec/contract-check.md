@@ -151,8 +151,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
   none (CK-1). The `receiver` of a case and an argument of a class type may be an instance value of GN-13f: its member exists and
   gives the class, through its `pick`; a method has its `receiver`; `args` are the parameters of the member; each call
-  of `then` is a method of the class, and its `raises`, when given, is `{"kind": <kind>}` of a kind of that method's
-  `raises`. An argument of the type `cancel` is `{"cancel": "fired"}`, a cancellation that
+  of `then` is a method of the class, or, with `"on": "receiver"`, a method of the class of the `receiver` of a value
+  that has one, and its `raises`, when given, is `{"kind": <kind>}` of a kind of that method's `raises`; its
+  `faults`, when given, are faults of a case of that method, and a call with both `faults` and `raises` expects a kind
+  that its points fill. A case whose instance values arm faults fills, as a case with `faults` does, only the kinds
+  that the points of the case and of those calls have in `fills`. An argument of the type `cancel` is `{"cancel": "fired"}`, a cancellation that
   fired before the call, or `{"cancel": "open"}`, one that does not fire; an `optional<cancel>` may be `null`. A case may arm fault injection points (G-5) in
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<symbol>", "bytes": <n>,
   "nth": <n>}]`: `<library>` is the library name in snake_case, of this contract or of a library that the check was

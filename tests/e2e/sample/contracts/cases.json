@@ -199,6 +199,116 @@
     }
   ],
   "ledger_known": [],
+  "counter_tally": [
+    {
+      "id": "a_tally_gives_the_total",
+      "start": 2,
+      "result": 2
+    },
+    {
+      "id": "a_tally_that_fails_is_unreadable",
+      "start": 2,
+      "faults": [
+        {
+          "point": "sample.tally",
+          "kind": "io",
+          "errno": "EIO"
+        }
+      ],
+      "raises": {
+        "kind": "unreadable",
+        "status": null,
+        "category": "io",
+        "message": "the text could not be read",
+        "errno": "EIO"
+      }
+    }
+  ],
+  "counter_settle": [
+    {
+      "id": "a_counter_settles_at_its_total",
+      "start": 2,
+      "result": 2
+    },
+    {
+      "id": "a_counter_whose_tally_failed_settles_as_unreadable",
+      "receiver": {
+        "new": "counter.new",
+        "args": {
+          "start": 2
+        },
+        "then": [
+          {
+            "call": "counter.tally",
+            "faults": [
+              {
+                "point": "sample.tally",
+                "kind": "io",
+                "errno": "EIO"
+              }
+            ],
+            "raises": {
+              "kind": "unreadable"
+            }
+          }
+        ]
+      },
+      "raises": {
+        "kind": "unreadable",
+        "status": null,
+        "category": "io",
+        "message": "the text could not be read",
+        "errno": "EIO"
+      }
+    }
+  ],
+  "shelf_new": [
+    {
+      "id": "a_shelf_holds_its_count",
+      "count": 3
+    }
+  ],
+  "shelf_slip": [],
+  "shelf_clear": [],
+  "slip_read": [
+    {
+      "id": "a_slip_reads_the_count_of_its_shelf",
+      "receiver": {
+        "new": "shelf.slip",
+        "receiver": {
+          "new": "shelf.new",
+          "args": {
+            "count": 3
+          }
+        }
+      },
+      "result": 3
+    },
+    {
+      "id": "a_slip_of_a_cleared_shelf_is_missing",
+      "receiver": {
+        "new": "shelf.slip",
+        "receiver": {
+          "new": "shelf.new",
+          "args": {
+            "count": 3
+          }
+        },
+        "then": [
+          {
+            "call": "shelf.clear",
+            "on": "receiver"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for slip"
+      }
+    }
+  ],
   "measure": [
     {
       "id": "a_read_that_fails_is_unreadable",

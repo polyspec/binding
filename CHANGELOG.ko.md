@@ -124,6 +124,33 @@
   `sample.resolve_slowly`가 이것을 다루고, 예외를 던지는 callback으로 `aresolve_slowly`를 기다리는 Python 시험이 있다
   (GN-6q). `tests/e2e/sample`의 `make e2e`로 확인했다: 모든 target이 통과했고 php는 시험 67개, python 66개, node 67개,
   go 41개, wasm 54개다. `packages/ts`의 `npm test`로도 확인했다: 289개 중 289개 통과.
+- end-to-end 검사의 레포의 Rust 코어(`tests/e2e/*/packages/rust`)는 확인된 형식이 없었다. `fmt-rust`가
+  `binding_core`만 읽었기 때문이다. `lint-rust`와 CI의 `rust` job의 대상인 `make fmt-e2e`가 rustfmt의 기본값으로 그것을
+  확인하며, 네 코어는 이제 그 형식이다.
+
+- `raises`가 `EIO` 같은 errno 기호를 적는 case의 PHP 시험은 거부되었다("the errno symbol EIO is not compared in PHP
+  yet"). PHP에는 그 기계의 errno 기호 표가 없기 때문이다. `binding_core::errno::value`가 feature 없이, Unix에서 `libc`를
+  의존으로 하여, fault를 장전하는 표에서 기호의 값을 준다. 모든 계약의 PHP 확장은 모든 시험 빌드가 켜는 feature
+  `panic-test`에서 그것을 `Internal\errnoOf`로 주며, PHP 시험은 Python, Node, Go가 자기 언어의 값과 비교하듯이 fault
+  주입점이 없는 계약에서도 실패의 errno를 그것과 비교한다(GN-8a). end-to-end 검사는 시험 feature로 빌드한 확장에서
+  `errno_of`를 찾은 뒤, feature 없이 빌드한 PHP 확장에서 `llvm-nm`이 시험용 진입점을 찾으면 실패한다. sample의 tally case는 다시 `EIO`를 적는다.
+
+- `then` 호출의 두 꼴(GN-13f)에는 단위 시험만 있어서, 어느 꼴의 생성된 시험이 target에서 통과하는지를 보인 실행이
+  없었다. end-to-end sample `tests/e2e/sample`이 이제 둘을 모두 담는다. `counter.tally`는 fault `sample.tally`를 장전하고
+  그 실패 `unreadable`을 `counter.settle`에 남기며, settle의 case는 `then`의 호출에서 그 fault를 장전한다. 그리고
+  `shelf.slip`이 만든 slip의 `slip.read`는 `"on": "receiver"`를 가진 호출 `shelf.clear` 뒤에 `missing`으로 실패한다.
+  fault 주입점이 없는 계약의 시험은 tally의 case 가운데 fault를 장전하는 것을 뺀다.
+
+- 앞선 호출의 실패가 뒤의 호출이 내도록 남기는 kind와, 인스턴스를 꺼낸 인스턴스의 호출 뒤에만 닿는 kind에는 case
+  꼴이 없었다. 그래서 그런 kind를 내는 계약은 CK-22를 통과할 수 없었다. case의 장전은 자기 호출에만 걸리고, `then`의
+  모든 호출은 인스턴스 자신에 불렸기 때문이다. 이제 `then`의 호출은 `faults`를 가질 수 있다. 그것은 그 호출 바로 앞에서
+  그 호출의 member에 장전되고 바로 뒤에서 발동했음이 요구된다. 또 `"on": "receiver"`를 가질 수 있다. 그것은 pick 뒤에 값의
+  `receiver`의 class의 메서드를 그 receiver에 부른다(GN-13f). `binding check`는 두 키를 받는다. 그런 호출의 faults는
+  case의 faults이고, 그것이 기대하는 실패는 그 점들의 kind이며, 인스턴스 값이 fault를 장전하는 case는 그 점들의 kind만
+  채운다(CK-22). PHP, Python, Node, WASM의 시험은 그 호출의 fault를 장전하고 확인하며(WASM은 시험 전의 hook이 읽는 glue
+  module로), Go는 그런 시험을 fault를 장전하는 case와 함께 두고 그 goroutine을 thread에 고정한다. 아무 receiver나 필요한
+  시험은 fault를 장전하는 receiver를 쓰지 않는다.
+
 - 코어 receiver가 `self`인 method와 `cleanup`이 있는 class unit은 모든 target이 거부했다("a receiver self is not
   generated yet", "cleanup is not generated yet"). 그래서 닫는 호출이 소비하는 자원에는 binding이 없었다. 이제 PHP·Python·
   Node는 class의 잠금에서 값을 꺼내고(`Exclusive`와 `Shared`의 `take`, 객체는 그 뒤 kind `consumed`다, GN-6o), `cleanup`이

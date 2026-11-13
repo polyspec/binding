@@ -480,9 +480,14 @@ export interface Receiver {
   // steps into its result when the result holds the instance (from), and the calls on the instance that prepare it.
   on?: Receiver;
   pick?: Pick[];
-  // A call of then may fail with a kind, which the test requires before the next step.
-  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string }[];
+  // A call of then may fail with a kind, which the test requires before the next step; it may arm faults for itself
+  // alone, as the JSON text that the arming entry point takes, and with on: receiver it calls the receiver of the value.
+  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver' }[];
 }
+
+// GN-13f: whether a receiver, or a receiver that it is made on, has a call of then that arms faults.
+export const armsFaults = (receiver: Receiver | undefined): boolean =>
+  receiver !== undefined && ((receiver.then ?? []).some((step) => step.faults !== undefined) || armsFaults(receiver.on));
 
 // G-5 (GN-13f): a step into a result: a field of a record, an item of a list, a part of a tuple.
 export type Pick = { field: string } | { index: number } | { tuple: number };
@@ -549,11 +554,21 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
   const then = (Array.isArray(record['then']) ? record['then'] : []).map((item, i) => {
     const step = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
     const fn = typeof step['call'] === 'string' ? memberById(model, step['call']) : undefined;
-    if (fn === undefined || fn.unit.id !== unitId || fn.receiver === undefined) return fail(`then ${i} calls ${String(step['call'])}, which is no method of ${unitId}`);
+    // on: receiver calls a method of the class of the receiver of the value, on that receiver.
+    const onReceiver = step['on'] === 'receiver';
+    if (step['on'] !== undefined && !onReceiver) return fail(`then ${i} calls on ${String(step['on'])}, but on names only receiver`);
+    if (onReceiver && on === undefined) return fail(`then ${i} calls ${String(step['call'])} on its receiver, but ${factory.member.id} gives the value without one`);
+    const callee = onReceiver ? factory.unit.id : unitId;
+    if (fn === undefined || fn.unit.id !== callee || fn.receiver === undefined) return fail(`then ${i} calls ${String(step['call'])}, which is no method of ${callee}`);
+    const faults = step['faults'];
+    if (faults !== undefined && model.faults.length === 0) return fail(`then ${i} arms faults, but the contract names no fault injection point (G-5)`);
+    const own = `${model.contract.library.replaceAll('-', '_')}.`;
+    const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
+    if (other !== undefined) return fail(`then ${i}: the point ${other} of another library is not armed yet (G-5)`);
     const args = argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`);
     const kind = (step['raises'] as Record<string, unknown> | undefined)?.['kind'];
     if (step['raises'] !== undefined && typeof kind !== 'string') return fail(`then ${i} expects ${fn.member.id} to fail by {"kind": <kind>}`);
-    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}) };
+    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}), ...(faults === undefined ? {} : { faults: shown(faults) }), ...(onReceiver ? { on: 'receiver' as const } : {}) };
   });
   const picks = pick.map((step): Pick => (typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
@@ -572,6 +587,10 @@ export interface MadeForm {
   fails: (expr: string, kind: string, what: string) => string;
   // The expression that steps into a value: a field (snake_case name), an item or a part of a tuple.
   pick: (expr: string, step: Pick) => string;
+  // G-5: the statement that arms the faults (JSON text) for the next call of the member and binds the arming to a local,
+  // and the statement that requires every fault of that arming to have fired; `what` names the step in the message.
+  arm: (local: string, member: string, faults: string) => string;
+  left: (local: string, what: string) => string;
 }
 
 // G-5 (GN-13f): the statements that make an instance and the expression that names it. Every instance that the value
@@ -598,6 +617,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     }
     const on = r.on === undefined ? '' : make(r.on);
     let expr = form.invoke(r.factory, argsText(r.factory, r.args), on);
+    const onName = on;
     for (const step of r.pick ?? []) {
       const local = fresh();
       lines.push(form.bind(local, expr));
@@ -606,8 +626,12 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     const local = fresh();
     lines.push(form.bind(local, expr));
     for (const [i, step] of (r.then ?? []).entries()) {
-      const call = form.invoke(step.fn, argsText(step.fn, step.args), form.name(local));
+      const call = form.invoke(step.fn, argsText(step.fn, step.args), step.on === 'receiver' ? onName : form.name(local));
+      // G-5: the faults of the call are armed for its member just before it, and every one must have fired after it.
+      const armed = step.faults === undefined ? undefined : fresh();
+      if (armed !== undefined && step.faults !== undefined) lines.push(form.arm(armed, step.fn.member.id, step.faults));
       lines.push(step.raises === undefined ? form.run(call) : form.fails(call, step.raises, `then ${i} fails with ${step.raises}`));
+      if (armed !== undefined) lines.push(form.left(armed, `the faults of then ${i} fire`));
     }
     return form.name(local);
   };
@@ -661,7 +685,8 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
       const record = kase as Record<string, unknown>;
       if (record['raises'] !== undefined) continue;
       const found = receiverOf(model, fn, record);
-      if (found !== undefined) return found;
+      // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
+      if (found !== undefined && !armsFaults(found)) return found;
     }
   }
   return undefined;

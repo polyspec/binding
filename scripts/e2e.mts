@@ -366,7 +366,9 @@ const goTool = targets.includes('go') ? need('go', 'go', 'mise.toml', miseWhich(
 const gofmt = targets.includes('go') ? need('go', 'gofmt', 'mise.toml', miseWhich('gofmt')) : '';
 // BD-10 (d): the symbols of the Go static library are read with llvm-nm of the toolchain (llvm-tools), not the nm of PATH.
 const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what], { encoding: 'utf8' }).stdout.trim();
-const llvmNm = targets.includes('go') ? need('go', 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))) : '';
+// llvm-nm reads the static library of go and the extension of php built without features (GN-13b, GN-8a).
+const llvmNmFor = targets.filter((t) => t === 'go' || t === 'php');
+const llvmNm = llvmNmFor.length === 0 ? '' : llvmNmFor.map((t) => need(t, 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))))[0] ?? '';
 const wasmBindgen = targets.includes('wasm') ? need('wasm', 'the wasm-bindgen CLI', 'mise.toml', miseWhich('wasm-bindgen')) : '';
 if (targets.includes('wasm')) {
   const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' });
@@ -646,6 +648,25 @@ if (targets.includes('php')) {
       extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)}`);
     }
   });
+  // GN-8a: the test entry points are of the test features alone. The extension built with them holds errno_of, which
+  // shows that llvm-nm reads the names of the entry points, and the extension built without features holds none.
+  const testEntry = /panic_test|arm_faults|fault_left|errno_of|alias_in_/;
+  for (const p of mainsOf('php')) {
+    const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
+    const what = `llvm-nm: the extension${of} without features holds no test entry point`;
+    if (stepOf(['php'], what, () => {
+      const read = (path: string): string[] => {
+        process.stdout.write(`$ llvm-nm --defined-only ${path}\n`);
+        return execFileSync(llvmNm, ['--defined-only', path], { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n');
+      };
+      if (!read(join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)).some((line) => line.includes('errno_of'))) throw new Error('the extension built with the test features holds no errno_of, so llvm-nm does not show the entry points');
+      const release = join(work, 'target-release-check');
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`], { env: { CARGO_TARGET_DIR: release } });
+      const leaked = read(join(release, `debug/lib${extensionOf(p.contract)}.${dylib}`)).filter((line) => testEntry.test(line));
+      if (leaked.length > 0) throw new Error(`the extension built without features holds test entry points: ${leaked.join(', ')}`);
+      rmSync(release, { recursive: true, force: true });
+    })) lintOf('php', what);
+  }
   if (stepOf(['php'], 'php -l of the stub', () => {
     for (const p of mainsOf('php')) run(phpTool, ['-l', at(p, `packages/php-ext/generated/${extensionOf(p.contract)}.stub.php`)]);
   })) lintOf('php', 'php -l of the stub');

@@ -952,6 +952,39 @@ describe('CK-22 instance values (GN-13f)', () => {
   });
 });
 
+describe('CK-22 the faults and the receiver of a call of then (GN-13f)', () => {
+  const read = (repo: string, path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  const run = (repo: string, change: (cases: any) => void): Finding[] => {
+    const cases = read(repo, 'contracts/cases.json');
+    change(cases);
+    return checkContract(read(repo, 'packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const messages = (repo: string, change: (cases: any) => void): string => run(repo, change).map((f) => `${f.check} ${f.message}`).join('\n');
+  // A counter whose draw ran with the faults of the call, then the total of the counter.
+  const drawn = (step: object) => (c: any) => {
+    c.counter_total.push({ id: 'the_total_after_a_draw', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.draw', args: { other: { new: 'counter.new', args: { start: 1 } } }, ...step }] }, result: 2 });
+  };
+  test('a call of then arms the faults of its own call', () => {
+    assert.deepEqual(run('sample', drawn({ faults: [{ point: 'sample.draw', kind: 'broken' }], raises: { kind: 'internal' } })), []);
+  });
+  test('the faults of a call of then are the faults of a case, and a failure that it expects is a kind of its points', () => {
+    assert.match(messages('sample', drawn({ faults: [{ point: 'sample.nothing', kind: 'broken' }] })), /CK-22 .*sample\.nothing/);
+    assert.match(messages('sample', drawn({ faults: [{ point: 'sample.read', kind: 'io' }], raises: { kind: 'internal' } })), /then 0 of the receiver expects counter\.draw to fail with internal, which no point that it arms fills/);
+  });
+  test('a case whose instance values arm faults fills only the kinds of their points', () => {
+    const added = (c: any) => {
+      c.counter_draw.push({ id: 'a_draw_after_an_add', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.add', args: { amount: 1 }, faults: [{ point: 'sample.read', kind: 'io' }] }] }, other: { new: 'counter.new', args: { start: 1 } }, raises: { kind: 'internal', status: null, category: 'internal', message: 'the draw is broken' } });
+    };
+    assert.match(messages('sample', added), /the case a_draw_after_an_add of counter\.draw: no point that the case arms fills the kind internal/);
+  });
+  test('a call of then on the receiver of the value', () => {
+    assert.deepEqual(run('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'receiver' }]; }), []);
+    assert.match(messages('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'gate.close', on: 'receiver' }]; }), /then 0 of the receiver calls gate\.close on its receiver, which is no method of tag/);
+    assert.match(messages('classes', (c) => { c.gate_enter[0].receiver.receiver.then = [{ call: 'tag.name', on: 'receiver' }]; }), /then 0 of the receiver of the receiver calls tag\.name on its receiver, but tag\.new gives the value without one/);
+    assert.match(messages('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'self' }]; }), /then 0 of the receiver calls on self, but on names only receiver/);
+  });
+});
+
 describe('CK-64 integers of a case (T-1)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
   const run = (change: (cases: any) => void): string[] => {

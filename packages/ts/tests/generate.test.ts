@@ -1975,7 +1975,7 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // of B-5c (GN-5) is no member.
     const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n');
     assert.notEqual(members, lib, path);
-    assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
+    assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|binding_core::errno|\{\n        let (id: u64|_value))/g), null, path);
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
     // taken, so a call that fails before the core leaves it.
     assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
@@ -2003,22 +2003,46 @@ test('a contract without fault injection points has no item of them (G-5)', () =
   const out = sampleWith((c, cases) => {
     delete c.faults;
     cases.measure = [];
+    // The tally of a counter arms faults too, in its own case and in a call of then of settle (GN-13f).
+    cases.counter_tally = cases.counter_tally.filter((kase: any) => kase.faults === undefined);
+    cases.counter_settle = cases.counter_settle.filter((kase: any) => kase.receiver === undefined);
   });
   for (const path of LIBS) assert.doesNotMatch(text(out, path), /with_faults|fault::|fault-test/, path);
   assert.throws(() => sampleWith((c) => { delete c.faults; }), /arms faults, but the contract names no fault injection point/);
 });
 
-test('the errno of a case is the value of its symbol in Python and Node, and PHP is refused by name (G-5)', () => {
+test('the errno of a case is the value of its symbol in Python, Node and PHP, which reads it from the binding (G-5, GN-8a)', () => {
   const withErrno = (c: any, cases: any): void => {
     cases.measure[0].faults[0].errno = 'ENOSPC';
     cases.measure[0].raises.errno = 'ENOSPC';
   };
-  const out = sampleWith(withErrno, ['python', 'node']);
+  const out = sampleWith(withErrno, ['python', 'node', 'php']);
   assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
-  assert.throws(() => sampleWith(withErrno), /a_read_that_fails_is_unreadable of sample\.measure: the errno symbol ENOSPC is not compared in PHP yet/);
+  // GN-8a: PHP has no table of the errno symbols of its machine, so the extension gives the value of a symbol from the
+  // table that arms the faults, with the other entry points of the feature fault-test.
+  assert.match(text(out, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
+  const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
+  const errnoOf = /#\[cfg\(feature = "panic-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| binding_core::errno::value\(&symbol\)/;
+  const registered = /#\[cfg\(feature = "panic-test"\)\]\n {8}let module = module\.function\(wrap_function!\(panic_test\)\)\.function\(wrap_function!\(errno_of\)\);/;
+  assert.match(phpLib, errnoOf);
+  assert.match(phpLib, registered);
+  // A contract without fault injection points reads the value through the same entry point of panic-test, which every
+  // test build turns on, and its binding names nothing of fault.
+  const withoutPoints = (c: any, cases: any): void => {
+    delete c.faults;
+    cases.measure = [];
+    cases.counter_tally = cases.counter_tally.filter((kase: any) => kase.faults === undefined);
+    cases.counter_settle = cases.counter_settle.filter((kase: any) => kase.receiver === undefined);
+    cases.resolve[0].raises.errno = 'ENOSPC';
+  };
+  const without = sampleWith(withoutPoints, ['php']);
+  assert.match(text(without, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
+  assert.match(text(without, 'packages/php-ext/generated/lib.rs'), errnoOf);
+  assert.match(text(without, 'packages/php-ext/generated/lib.rs'), registered);
+  assert.doesNotMatch(text(without, 'packages/php-ext/generated/lib.rs'), /fault::|fault-test/);
 });
 
 test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
@@ -2272,6 +2296,40 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_\d+\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
+});
+
+test('a call of then arms the faults of its own call, or calls the receiver of the value, in every target (GN-13f)', () => {
+  const read = (repo: string, path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  // A counter whose draw fails with the faults of that call only, then the total of the counter.
+  const sample = read('sample', 'contracts/cases.json');
+  const faults = [{ point: 'sample.draw', kind: 'broken' }];
+  sample.counter_total.push({ id: 'the_total_after_a_broken_draw', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.draw', args: { other: { new: 'counter.new', args: { start: 1 } } }, faults, raises: { kind: 'internal' } }] }, result: 2 });
+  const armed = generate({ contract: read('sample', 'packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', sample]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const shown = JSON.stringify(faults);
+  const node = text(armed, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`  const made2 = addon().__armFaults('counter.draw', '${shown}');\n  assert.equal(outcome(() => made0.draw(made1)).kind, 'internal'`), node);
+  assert.match(node, /\n  assert\.deepEqual\(addon\(\)\.__faultLeft\(made2\), \[\], 'G-5: the faults of then 0 fire'\);\n/);
+  const python = text(armed, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(`        made2 = _native._arm_faults("counter.draw", ${JSON.stringify(shown)})\n        assert _outcome(lambda: made0.draw(made1))`), python);
+  assert.ok(python.includes('        assert _native._fault_left(made2) == [], "G-5: the faults of then 0 fire"\n'), python);
+  const php = text(armed, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(`        $made2 = \\Polyspec\\Sample\\Internal\\armFaults("counter.draw", ${JSON.stringify(shown)});\n`), php);
+  assert.ok(php.includes('        self::assertSame([], \\Polyspec\\Sample\\Internal\\faultLeft($made2), "G-5: the faults of then 0 fire");\n'), php);
+  const wasm = text(armed, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasm, /\nlet stepGlue;\nbefore\(async \(\) => \{\n  stepGlue = await glueModule\(\);\n\}\);\n/);
+  assert.ok(wasm.includes(`  const made2 = stepGlue.__armFaults('counter.draw', '${shown}');\n`), wasm);
+  // Go puts the test whose receiver arms faults with the cases that arm faults, its goroutine locked to its thread.
+  const goFault = text(armed, 'packages/go/zz_generated_fault_test.go');
+  assert.match(goFault, /func TestGN13eCounterTotalTheTotalAfterABrokenDraw\(t \*testing\.T\) \{\n\truntime\.LockOSThread\(\)\n\tdefer runtime\.UnlockOSThread\(\)\n[^]*binding\.ArmFaults\("counter\.draw"/);
+  assert.doesNotMatch(text(armed, 'packages/go/zz_generated_test.go'), /TheTotalAfterABrokenDraw/);
+  // A call of then on the receiver of the value runs after the pick, on the instance that the value was picked from.
+  const classes = read('classes', 'contracts/cases.json');
+  classes.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'receiver' }];
+  const on = generate({ contract: read('classes', 'packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', classes]]), targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(on, 'packages/ts/generated/tests/generated.test.mjs'), /const made1 = made0\.gates\(2\);\n  const made2 = made1\[1\];\n  made0\.name;\n/);
+  assert.match(text(on, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const made2 = made1\[1\];\n  made0\.name;\n/);
+  assert.match(text(on, 'packages/python/generated/tests/test_generated.py'), /made2 = made1\[1\]\n        made0\.name\n/);
+  assert.match(text(on, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made2 = \$made1\[1\];\n        \$made0->name\(\);\n/);
 });
 
 test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {
