@@ -920,6 +920,51 @@ test('a kind of a dependency that the core passes on is matched as the inner var
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /polyspec_consumer::pair\([^\n]*\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(core_error\(error\)\),/);
 });
 
+// consumer.look takes the callback lookup of sample, which language code implements (T-3, U-3).
+const looking = (contract: any): void => {
+  contract.units.find((u: any) => u.id === 'consumer').members.push({
+    id: 'consumer.look', name: ['look'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['lookup'], type: { unit: 'lookup', library: 'sample' }, required: true }, { name: ['key'], type: 'text', required: true }],
+    returns: { optional: 'text' }, optional_reason: 'U-3', raises: [], wait: 'none', core: 'polyspec_consumer::look',
+  });
+};
+
+test('a callback unit of another repository is wrapped as its core trait, and the owning package declares its type (GN-6q, T-3)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node'] });
+  // The trait methods return the failure of the core error of sample.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /impl(<'env>)? polyspec_sample::Lookup for CbLookup(<'env>)? \{/, path);
+    assert.match(rust, /fn find\(&mut self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>>/, path);
+    assert.match(rust, /fn in_lookup\(/, path);
+  }
+  // No declaration of the unit: each declaration names the type of the owning package.
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function look\(lookup: import\("@polyspec\/sample"\)\.Lookup, key: string\): string \| null;/);
+  assert.doesNotMatch(dts, /export interface Lookup/);
+  const pyi = text(out, 'packages/python/generated/python/polyspec/consumer/_native.pyi');
+  assert.match(pyi, /^from polyspec\.sample import [^\n]*Lookup as Lookup/m);
+  assert.match(pyi, /def look\(lookup: Lookup, key: str\) -> str \| None: \.\.\./);
+  assert.doesNotMatch(text(out, 'packages/python/generated/python/polyspec/consumer/_types.py'), /class Lookup\(Protocol\)/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php');
+  assert.match(stub, /@param \\Polyspec\\Sample\\Lookup \$lookup/);
+  assert.doesNotMatch(stub, /interface Lookup/);
+});
+
+test('a callback unit of another repository is refused by name in Go and WASM, and where its name is a unit of the contract (GN-6q, G-4)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract);
+  for (const target of ['go', 'wasm'] as const) {
+    assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), /consumer\.look\.lookup: a callback unit lookup of sample is not generated yet in (go|wasm) \(GN-6q\)/, target);
+  }
+  const named = structuredClone(contract);
+  named.units.find((u: any) => u.id === 'holder').id = 'lookup';
+  named.units.find((u: any) => u.id === 'lookup').name = ['lookup'];
+  assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6q\)/);
+});
+
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
   const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
