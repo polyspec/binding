@@ -13,11 +13,16 @@ import { type Files, header } from './text.ts';
 const bindingCore = (_suffix: string): string =>
   `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock'].map((f) => JSON.stringify(f)).join(', ')}] }`;
 
-// GN-3a: an allow attribute in the form that rustfmt gives it: on one line while its arguments fit the width of a
-// function-like attribute (attr_fn_like_width, 70), and else each argument on a line of its own.
+// GN-3a: an allow attribute in a form that rustfmt keeps with its defaults and with the settings of a repository
+// (use_small_heuristics = "Max", a wider max_width): on one line of at most 80 columns, which is narrower than the
+// width of a function-like attribute of either. A reason that does not fit is the comment above the attribute, which
+// then names its rule id alone.
 function allow(lint: string, reason: string): string {
-  const args = [lint, `reason = ${JSON.stringify(reason)}`];
-  return args.join(', ').length <= 70 ? `#![allow(${args.join(', ')})]` : `#![allow(\n${args.map((a) => `    ${a}`).join(',\n')}\n)]`;
+  const whole = `#![allow(${lint}, reason = ${JSON.stringify(reason)})]`;
+  if (whole.length <= 80) return whole;
+  const id = /^[A-Za-z]+-[0-9]+[a-z]?/.exec(reason)?.[0];
+  if (id === undefined) throw new Error(`internal: the reason of ${lint} names no rule id: ${reason}`);
+  return `// ${reason}\n#![allow(${lint}, reason = ${JSON.stringify(id)})]`;
 }
 
 function entry(what: string, allows: [string, string][]): string {
@@ -83,12 +88,11 @@ function coreFeatures(contract: Contract, suffix: string): string {
 // GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature fault-test of the core
 // when the contract names fault injection points, and of each core of another library whose points a case arms (G-5);
 // codec-test adds the entry points that run the in function of a
-// value alias with in_raises alone (U-7). Go has neither yet.
+// value alias with in_raises alone (U-7); the Go crate has it always, for its round-trip entry points (GW-4, T-2).
 function testFeatures(contract: Contract, suffix: string, armed: string[]): string {
-  if (suffix === 'go') return '';
   const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
   const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
-  const codec = contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
+  const codec = suffix === 'go' || contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
   return `${faults}${codec}`;
 }
 
@@ -216,7 +220,7 @@ python-source = "generated/python"
       'napi-derive = "=3.7.1"',
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
-    files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'napi: a value is cast to its type after its type was checked']]));
+    files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'GN-4: napi casts a value to its type after its type was checked']]));
     languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
   }
   if (contract.targets.includes('wasm')) {
@@ -257,9 +261,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' })
-      // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
-      .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));

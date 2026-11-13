@@ -154,6 +154,7 @@ const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'),
   package?: { name?: string; version?: string | { workspace?: boolean } };
   lib?: { name?: string };
   dependencies?: Record<string, unknown>;
+  'dev-dependencies'?: Record<string, unknown>;
 };
 const core = manifest.package;
 let version = core?.version;
@@ -186,6 +187,19 @@ if (command === 'check') {
     if (mine === undefined || mine !== commit) {
       differs = true;
       process.stderr.write(`${lockPath}: CK-20 Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine ?? 'the commit of this binding, which is unknown'} (L-2)\n`);
+    }
+  }
+  // CK-65 (GN-5): a core with fault injection points has itself as a dev-dependency with fault-test, so cargo test of
+  // the core without flags arms them, in every repository alike.
+  if ((checked.faults ?? []).length > 0) {
+    const coreDir = join(root, checked.core.path);
+    const own = (manifest['dev-dependencies'] ?? {})[checked.core.crate];
+    const entry = typeof own === 'object' && own !== null ? (own as { path?: unknown; features?: unknown }) : undefined;
+    const itself = typeof entry?.path === 'string' && resolve(coreDir, entry.path) === resolve(coreDir);
+    const armed = Array.isArray(entry?.features) && entry.features.includes('fault-test');
+    if (!itself || !armed) {
+      differs = true;
+      process.stderr.write(`${join(coreDir, 'Cargo.toml')}: CK-65 the core ${checked.core.crate} has fault injection points, but its [dev-dependencies] name no ${checked.core.crate} = { path = ".", features = ["fault-test"] }, so cargo test without flags does not arm them (GN-5)\n`);
     }
   }
   const names = failedChecks.has('CK-18');

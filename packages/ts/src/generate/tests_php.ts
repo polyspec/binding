@@ -78,6 +78,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const built = madeLines(model, form, receiver);
     return `(function () { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
+  ctx.instanceNew = made;
   let usesOutcome = false;
   let usesSame = false;
   for (const fn of callables(model)) {

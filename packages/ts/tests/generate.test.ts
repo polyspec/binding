@@ -7,6 +7,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
@@ -24,10 +25,10 @@ const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
 const TAKEN: Record<string, string[]> = {
   // Go refuses the tuple of two types in the list that words.split returns (a Go array has one element type).
   fixture: ['php', 'python', 'node', 'wasm'],
-  sample: ['php', 'python', 'node'],
-  shapes: ['php', 'python', 'node', 'wasm'],
-  consumer: ['php', 'python', 'node'],
-  classes: ['php', 'python', 'node', 'wasm'],
+  sample: ['php', 'python', 'node', 'go'],
+  shapes: ['php', 'python', 'node', 'go', 'wasm'],
+  consumer: ['php', 'python', 'node', 'go'],
+  classes: ['php', 'python', 'node', 'go', 'wasm'],
 };
 const generate = (inputs: Inputs): ReturnType<typeof generateTargets> => {
   const taken = TAKEN[inputs.contract.library === 'sample' && inputs.contract.units[0]?.id === 'words' ? 'fixture' : inputs.contract.library];
@@ -190,6 +191,31 @@ test('an integer return widens a narrower Rust integer with From (T-1)', () => {
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     assert.match(text(out, path), /fn out_uint[^\n]*value: impl WideUint\)/, path);
     assert.match(text(out, path), /wide_uint!\(u8, u16, u32, u64\);/, path);
+  }
+});
+
+test('a core with fault injection points has itself as a dev-dependency with fault-test, so cargo test without flags arms them (CK-65, GN-5)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-s-'));
+  try {
+    execFileSync('cp', ['-r', fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), `${root}/`]);
+    const contract = join(root, 'packages/rust/interface.json');
+    const manifestPath = join(root, 'packages/rust/Cargo.toml');
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    const run = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const passed = run();
+    assert.equal(passed.status, 0, String(passed.stderr));
+    const manifest = readFileSync(manifestPath, 'utf8');
+    const self = /\npolyspec-sample = \{ path = "\.", features = \["fault-test"\] \}\n/;
+    assert.match(manifest, self);
+    writeFileSync(manifestPath, manifest.replace(self, '\n'));
+    const missing = run();
+    assert.equal(missing.status, 1, String(missing.stderr));
+    assert.match(String(missing.stderr), /packages\/rust\/Cargo\.toml: CK-65 the core polyspec-sample has fault injection points, but its \[dev-dependencies\] name no polyspec-sample = \{ path = "\.", features = \["fault-test"\] \}/);
+    writeFileSync(manifestPath, manifest.replace(self, '\npolyspec-sample = { path = "." }\n'));
+    assert.match(String(run().stderr), /CK-65 the core polyspec-sample has fault injection points/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -388,7 +414,8 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(rust, /fn out_latin1\([^]*char::from\(\*byte\)/);
   assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__echo_latin1\(/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
-  assert.match(text(out, 'packages/go/zz_generated_test.go'), /range \[\]string\{"\\u0100", "\\xff"\}/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextAboveU00FF\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\u0100"/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextThatIsNotUTF8\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\xff"/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
@@ -762,23 +789,18 @@ test('a value alias of another repository converts through the core of its owner
 });
 
 test('a value alias of another repository is refused by name where it is not generated (G-4, GN-6k)', () => {
-  const generated = (change: (parts: ReturnType<typeof consumerSample>) => void): (() => unknown) => () => {
+  const generated = (change: (parts: ReturnType<typeof consumerSample>) => void): (() => Map<string, string | Buffer>) => () => {
     const parts = consumerSample();
     change(parts);
     return generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign });
   };
-  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go']] as const) {
-    assert.throws(generated(({ contract }) => {
-      contract.targets.push(target);
-      if (entry !== undefined) contract.packages.go = entry;
-      for (const row of Object.values(contract.errors.classes) as any[]) row.wasm = row.node;
-      // A callback is refused first for these targets; the functions alone name the alias.
-      contract.units = contract.units.filter((u: any) => u.id !== 'holder' && u.id !== 'absent_error');
-      delete contract.errors.kinds[0].class;
-      contract.units[0].members = contract.units[0].members.filter((m: any) => !['consumer.fetch', 'consumer.copy'].includes(m.id));
-      contract.cases = contract.cases.filter((c: any) => !['consumer.fetch', 'consumer.copy'].includes(c.member));
-    }), new RegExp(`sample\\.data: a value alias of another repository is not generated for ${name} yet`));
-  }
+  // T-3, U-7: Go takes the alias of another repository as any and runs the in function of its owner, whose kinds
+  // come back through the failure of that owner.
+  const go = generated(({ contract }) => {
+    if (!contract.targets.includes('go')) contract.targets.push('go');
+    contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+  })();
+  assert.match(text(go, 'packages/go/internal/ffi/generated/lib.rs'), /fn sample_failure_error\(/);
   // E-1b (a): an owner that forwards the kinds of a third library.
   assert.throws(generated(({ foreign }) => {
     foreign.get('sample').errors.kinds.push({ variant: 'polyspec_sample::Error::Other', library: 'third' });
@@ -860,16 +882,11 @@ test('an error unit extends its parent, and what is not generated is refused by 
   refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
   // E-1b (a): a row that forwards the kind of another library.
   refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Sample', library: 'sample' }); }, /polyspec_consumer::Error::Sample: a kind of another library \(E-1b \(a\)\) is not generated yet/);
-  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go']] as const) {
-    refused((contract) => {
-      contract.targets.push(target);
-      if (entry !== undefined) contract.packages.go = entry;
-      for (const row of Object.values(contract.errors.classes) as any[]) row.wasm = row.node;
-      contract.units = contract.units.filter((u: any) => u.id !== 'holder');
-      contract.units[0].members = contract.units[0].members.filter((m: any) => !['consumer.fetch', 'consumer.copy'].includes(m.id));
-      contract.cases = contract.cases.filter((c: any) => !['consumer.fetch', 'consumer.copy'].includes(c.member));
-    }, new RegExp(`absent_error: an error unit is not generated for ${name.toLowerCase()} yet \\(E-2, E-7\\)`));
-  }
+  // E-2, E-7: in Go an error unit is a struct that embeds its parent, whose Unwrap gives the parent, so errors.As finds
+  // the category type and the parent unit; its properties are methods.
+  const go = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(go, /type AbsentError struct \{\n\t\*MissingError\n/);
+  assert.match(go, /func \(e \*AbsentError\) Unwrap\(\) error \{ return e\.MissingError \}/);
 });
 
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
@@ -1119,7 +1136,8 @@ test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array 
   assert.match(nodeTests, /test\('T-7: reversed refuses a data that is not a Uint8Array'/);
   // G-4: a source is a parameter only, and Go and WASM generate none.
   assert.throws(() => shaped((c) => { member(c, 'shapes.reversed').returns = 'source'; }), /the type source is generated as a parameter only \(T-1\)/);
-  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; }), /shapes\.length\.source: the type source is not generated for go yet \(T-1\)/);
+  // T-1: in Go a source is a []byte, which holds the bytes of any string.
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func Length\(source \[\]byte\) \(uint64, error\)/m);
 });
 
 test('a parameter or field with a default is None for the core when it is left out (U-2, T-4, GN-6i)', () => {
@@ -1164,7 +1182,10 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.throws(() => shaped((c) => { member(c, 'shapes.repeat').parameters.push({ name: ['last'], type: 'uint', required: true }); }), /shapes\.repeat: the required last follows a parameter with a default, which is not generated yet \(U-2\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.total', 'numbers').default = { empty: 'map' }; }), /the default \{empty: "map"\} of the type \{"list":"uint"\} is not generated \(U-2\)/);
   assert.throws(() => shaped((c) => { member(c, 'shapes.frame').returns = { unit: 'frame_options' }; }), /frame_options\.upper: a field default of a record with the result form is not generated yet \(T-4\)/);
-  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; c.packages.go = { module: 'github.com/polyspec/shapes/packages/go' }; member(c, 'shapes.length').parameters[0].type = 'text'; }), /shapes\.repeat\.times: a default is not generated for go yet \(U-2, T-4\)/);
+  // U-2, T-4: in Go a parameter or field with a default is a pointer, nil when the caller leaves it out.
+  const goShapes = text(shaped(), 'packages/go/zz_generated_shapes.go');
+  assert.match(goShapes, /^func Repeat\(text_ string, times \*uint64, separator \*string\) \(string, error\)/m);
+  assert.match(text(shaped(), 'packages/go/zz_generated_test.go'), /func TestU2RepeatWithoutTimesIsTheCallWithItsDefault/);
   // WASM: a parameter or field that may be left out is undefined when it is, and the ES module counts it.
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
@@ -1231,7 +1252,10 @@ test('an error unit is a class under its parent, and a kind names the class it i
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').members = [{ id: 'parse_error.offset', name: ['offset'], kind: 'property', visibility: 'public', type: 'uint', core: 'polyspec_shapes::Error::offset' }]; }), /parse_error\.offset: a property of an error unit names a function of the core error with the receiver &self/);
   assert.throws(() => shaped((c) => { c.errors.kinds[2].class = 'frame_options'; }), /TooMany: the class frame_options is not an error unit of category value \(E-2\)/);
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').parent = 'utf8_error'; }), /the parents form a cycle \(P-4\)/);
-  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; c.units = c.units.filter((u: any) => u.id !== 'buffer'); c.cases = c.cases.filter((row: any) => !String(row.member).startsWith('buffer.')); member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
+  // E-2, B-4: in Go the exact type of a case is the struct of its error unit, which errors.As finds as its category.
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTests, /failure, ok := err\.\(\*liberrors\.Utf8Error\)/);
+  assert.match(goTests, /var category \*liberrors\.ShapesValueError\n\tif !errors\.As\(err, &category\) \{/);
 });
 
 test('each variant that a member raises is asserted against the core error in every crate (E-5, I-2, GN-7b)', () => {
@@ -1547,7 +1571,11 @@ test('fault injection points, the kinds of an alias and the point of another lib
     c.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
     void cases;
   };
-  assert.throws(() => sampleWith(drop, ['go']), /faults: the entry points of the feature fault-test are not generated for go yet/);
+  // Go arms the faults of a case through the entry points of the feature fault-test, in a test file of its build tag.
+  const go = sampleWith(drop, ['go']);
+  assert.match(text(go, 'packages/go/internal/ffi/generated/lib.rs'), /#\[cfg\(feature = "fault-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__arm_faults\(/);
+  assert.match(text(go, 'packages/go/zz_generated_fault_test.go'), /^\/\/go:build polyspec_fault_test$/m);
+  assert.match(text(go, 'packages/go/zz_generated_fault_test.go'), /armed, armErr := binding\.ArmFaults\("sample\.measure", /);
   // WASM arms the faults of a case through the entry points of its feature fault-test.
   const wasm = sampleWith(drop, ['wasm']);
   const lib = text(wasm, 'packages/ts/wasm/generated/lib.rs');
@@ -1651,16 +1679,16 @@ test('the refusals of each target are named together, and a target generates alo
   }
   assert.deepEqual([...parts.keys()].sort(), [...whole.keys()]);
   for (const [path, text] of whole) assert.ok(String(parts.get(path)) === String(text), path);
-  // Go refuses the classes, the callback interface and the value alias, each by name, WASM generates them, and Python
-  // alone is generated from the same contract.
+  // Every target generates the classes, the callback interface and the value alias, and Python alone is generated
+  // from the same contract.
   const five = sample;
   assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
-  assert.throws(() => generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), (error: Error) => {
-    for (const message of [/tag: a class unit is not generated for Go yet/, /counter: a class unit is not generated for Go yet/, /ledger: a class unit is not generated for Go yet/, /lookup: a callback unit is not generated for Go yet/]) assert.match(error.message, message);
-    assert.doesNotMatch(error.message, /WASM/);
-    return true;
-  });
+  // A member of a class in another module is refused by name in Go, whose handle of the class is unexported.
+  const moved = JSON.parse(JSON.stringify(five));
+  moved.units.find((u: any) => u.id === 'tag').module = 'tags';
+  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /tag: a class unit of the module tags in the module \(the root\) is not generated for Go yet/);
+  assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }).has('packages/go/zz_generated_sample.go'));
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }).has('packages/ts/wasm/generated/lib.rs'));
 });
 
@@ -1690,11 +1718,11 @@ test('generate --target writes the directories of those targets alone, the files
 test('the Rust files of the thin packages are in the form that rustfmt gives them (GN-3a)', () => {
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
   const files = trackedPackages(contract, '0.0.0');
-  // An allow whose arguments are wider than attr_fn_like_width (70) has each argument on a line of its own.
-  assert.match(files.get('packages/go/internal/ffi/src/lib.rs') as string, /\n#!\[allow\(\n {4}unsafe_code,\n {4}reason = "B-8: [^"\n]*"\n\)\]\n/);
+  // A reason that does not fit on a line of 80 columns is the comment above the allow, which names its rule id alone.
+  assert.match(files.get('packages/go/internal/ffi/src/lib.rs') as string, /\n\/\/ B-8: the C ABI reads [^\n]*\n#!\[allow\(unsafe_code, reason = "B-8"\)\]\n/);
   for (const [path, body] of files) {
     if (!path.endsWith('.rs')) continue;
-    for (const found of (body as string).matchAll(/^#!\[allow\((.*)\)\]$/gm)) assert.ok((found[1] ?? '').length <= 70, `${path}: ${found[0]}`);
+    for (const found of (body as string).matchAll(/^#!\[allow.*$/gm)) assert.ok(found[0].length <= 80 && found[0].endsWith(')]'), `${path}: ${found[0]}`);
   }
 });
 
@@ -1735,10 +1763,10 @@ test('every case that does not raise runs and compares its result in every targe
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /expected = \[\("a", "0",\), \("b", "2",\)\]\n\s+self\.assertTrue\(_same\(result, expected\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertSame\(self::same\(\[\["a", "0"\], \["b", "2"\]\]\), self::same\(\\Polyspec\\Sample\\splitWords\("a b"/);
   const go = text(out, 'packages/go/zz_generated_test.go');
-  assert.match(go, /func TestGN13eSplitWords\(t \*testing\.T\) \{\n\tt\.Run\("two"/);
+  assert.match(go, /func TestGN13eSplitWordsTwo\(t \*testing\.T\) \{\n\tvalue0, err := SplitWords\("a b"/);
   assert.match(go, /!reflect\.DeepEqual\(value0, want\)/);
   // A case without the result key runs the call alone, which must not raise.
-  assert.match(go, /t\.Run\("unread", func\(t \*testing\.T\) \{\n\t\t_, err := sample\.SplitWords\("c"/);
+  assert.match(go, /func TestGN13eSplitWordsUnread\(t \*testing\.T\) \{\n\t_, err := SplitWords\("c"/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: splitWords unread', \(\) => \{\n\s+pkg\.splitWords\('c'/);
 });
 
@@ -1758,9 +1786,14 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
   assert.match(text(failing, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made1->close\(\);\n        self::assertStringContainsString\("'kind' => 'closed'", self::outcome\(fn \(\) => \$made1->close\(\)\), "G-5: then 1 fails with closed"\);\n[^]*private static function outcome/);
+  // GN-13f: an instance value is the value of a class at any place of a case, an item of a list included.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.join\(\[new pkg\.Tag\('a'\), \(\(\) => \{ const made0 = new pkg\.Tag\('c'\); const made1 = made0\.repeat\(1\); const made2 = made1\[0\]; return made2; \}\)\(\)\]\)\), ordered\('a,c'\)\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.join\(\[pkg\.Tag\("a"\), _made_\d+\(\)\]\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Classes\\join\(\[new \\Polyspec\\Classes\\Tag\("a"\), \(function \(\) \{ /);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.join\(\[new pkg\.Tag\('a'\), \(\(\) => \{ const made0/);
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_\d+\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
 });
 
 test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {

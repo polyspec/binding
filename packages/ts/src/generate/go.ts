@@ -1,19 +1,22 @@
-// The Go binding (cgo and a C ABI layer): the Rust crate of the C ABI, which links into a static library, the Go
-// packages around it (one per contract module, the error types of E-7 in package errors) and the generated tests (G-5).
+// The Go binding (cgo and a C ABI layer): the Rust crate of the C ABI (go_rust.ts), which links into a static library,
+// the Go packages around it (one per contract module, the error types of E-7 in package errors) and the generated
+// tests (G-5).
 //
-// Each function crosses the C ABI as bytes: Go encodes the arguments into one buffer in the order of the parameters,
-// the C ABI function decodes them into the Rust types of T-1 and judges them (T-8), calls the core and encodes the
-// result or the failure into a buffer that Rust allocated and Go frees. The encoding is binding's own and both sides
-// of it are generated from the same contract types (B-8).
+// Each call crosses the C ABI as bytes: Go encodes the arguments into one buffer in the order of the parameters, the
+// C ABI function decodes them into the Rust types of T-1 and judges them (T-8), calls the core and encodes the result
+// or the failure into a buffer that Rust allocated and Go frees. The encoding is binding's own and both sides of it are
+// generated from the same contract types (B-8). A class unit is a Go struct around the handle of its core value (T-5),
+// a callback unit a Go interface whose methods the core runs through functions that package binding exports (U-3), and
+// a value alias a Go value of type any, which package binding describes to the core one level at a time (U-7).
 
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type Constant, type Fn, type Model, type Refusals, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
+import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
+import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
-import { goCodecTest, goMapTest, goTests, goPanicTest } from './tests_go.ts';
-import { raisesAssertions } from './raises.ts';
-import { type Files, header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
+import type { Files } from './text.ts';
 
 const GO = 'packages/go';
 export const FFI = `${GO}/internal/ffi`;
@@ -37,8 +40,6 @@ export function goPackage(contract: Contract, module: string): string {
   return base.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
-const prefix = (model: Model): string => extensionName(model.contract);
 export const staticLib = (contract: Contract): string => `${extensionName(contract)}_go`;
 
 const GO_KEYWORDS = new Set([
@@ -46,29 +47,46 @@ const GO_KEYWORDS = new Set([
   'if', 'import', 'interface', 'map', 'package', 'range', 'return', 'select', 'struct', 'switch', 'type', 'var',
 ]);
 // The identifiers of a generated Go function body; a parameter of the same name takes a trailing underscore.
-const GO_LOCALS = new Set(['binding', 'enc', 'dec', 'out', 'err', 'result', 'value', 'errors', 'string', 'len', 'make', 'nil', 'true', 'false', 'append']);
+const GO_LOCALS = new Set([
+  'binding', 'enc', 'dec', 'out', 'err', 'result', 'value', 'errors', 'string', 'len', 'make', 'nil', 'true', 'false',
+  'append', 'call', 'this', 'member', 'object', 'returned', 'keys', 'values', 'yield', 'iter', 'runtime', 'at', 'n', 'text',
+]);
 
 // A Go parameter: lower camel case, an acronym in lower case at the start and in capitals elsewhere (N-2).
-export function goParam(name: Name): string {
-  const words = name.map((word, i) => {
+// The name of a parameter in the messages of the binding (B-3): its words in the form of a Go parameter.
+export function goSubject(name: Name): string {
+  return name.map((word, i) => {
     const text = typeof word === 'string' ? word : word.acronym;
     if (i === 0) return text.toLowerCase();
     return typeof word === 'string' ? text.charAt(0).toUpperCase() + text.slice(1) : text.toUpperCase();
-  });
-  const joined = words.join('');
+  }).join('');
+}
+
+// The Go parameter: the subject, with _ after it where it is a keyword or a local of the generated body.
+export function goParam(name: Name): string {
+  const joined = goSubject(name);
   return GO_KEYWORDS.has(joined) || GO_LOCALS.has(joined) ? `${joined}_` : joined;
 }
 
 export const goName = (name: Name): string => langName('go', name, 'class');
 
-// The symbol of a member in the C ABI and in package binding: the module and the member name.
-const memberWords = (fn: Fn): Name => [...fn.module.split('/').filter((s) => s !== '').flatMap((s) => s.split(/[^a-z0-9]+/)), ...fn.member.name];
-const cSymbol = (model: Model, fn: Fn): string => `${prefix(model)}_${memberWords(fn).map((w) => (typeof w === 'string' ? w : w.acronym)).join('_')}`;
-const bindingFn = (fn: Fn): string => goName(memberWords(fn));
+// The Go name of a member of a class unit, or of a function: the constructor is New<Class>, a static member
+// <Class><Member>, a stringify String, any other member a method of the class with its own name (N-2, N-4, CK-13).
+export function goMemberName(fn: Fn): string {
+  const member = langName('go', fn.member.name, 'callable');
+  if (fn.kind === 'constructor') return `New${goName(fn.unit.name)}`;
+  if (fn.kind === 'static') return `${goName(fn.unit.name)}${member}`;
+  if (fn.special === 'stringify') return 'String';
+  return member;
+}
+
+const moduleWordsOf = (module: string): Name => module.split('/').filter((s) => s !== '').flatMap((s) => s.split(/[^a-z0-9]+/));
+// The Go function of package binding that releases a value of a class unit (T-5).
+const releaseFn = (unit: Unit): string => `Release${goName([...moduleWordsOf(unit.module), ...unit.name])}`;
 
 // ---- Go types ----
 
-interface GoScope {
+export interface GoScope {
   model: Model;
   module: string;
   imports: Set<string>;
@@ -76,6 +94,9 @@ interface GoScope {
   usesMap?: boolean;
   // Whether the package names the keyed map of T-2 and its Key.
   usesKeyed?: boolean;
+  // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
+  usesRuntime?: boolean;
+  usesIter?: boolean;
 }
 
 function goUnitName(scope: GoScope, unit: Unit): string {
@@ -84,9 +105,21 @@ function goUnitName(scope: GoScope, unit: Unit): string {
   return `${goPackage(scope.model.contract, unit.module)}.${goName(unit.name)}`;
 }
 
+export const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
+  const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+  return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
+};
+
+// T-5, U-3: a class or a callback is a type of the package of its module, which another module cannot make or
+// implement through the unexported functions of that package.
+function sameModule(scope: GoScope, unit: Unit, what: string): void {
+  if (unit.module !== scope.module) throw new Unsupported(`${unit.id}: a ${what} of the module ${unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its handle and dispatch are unexported)`);
+}
+
 export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
-    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte' };
+    // T-1: a source is a []byte, which holds the bytes of any Go string ([]byte(s)).
+    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte' };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type} is not generated for Go yet`);
     return found;
@@ -108,46 +141,83 @@ export function goType(scope: GoScope, type: Type): string {
     if (first === undefined || rest.some((t) => t !== first)) throw new Unsupported(`a tuple of ${JSON.stringify(type.tuple)} inside another type is not generated for Go yet (a Go array has one element type)`);
     return `[${type.tuple.length}]${first}`;
   }
+  // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
+  if (aliasOf(scope.model, type) !== undefined) return 'any';
+  const object = objectUnit(scope.model, type);
+  if (object !== undefined) {
+    sameModule(scope, object.unit, 'class unit');
+    return `*${goName(object.unit.name)}`;
+  }
+  const callback = callbackOf(scope.model, type);
+  if (callback !== undefined) {
+    sameModule(scope, callback.unit, 'callback unit');
+    return goName(callback.unit.name);
+  }
+  if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
 }
 
-const pad = (text: string, width: number): string => text + ' '.repeat(Math.max(0, width - text.length));
+// U-2, T-4: a field with a default is a pointer, nil when the caller leaves it out.
+export const fieldType = (scope: GoScope, field: { type: Type; default?: unknown }): string =>
+  field.default === undefined ? goType(scope, field.type) : `*${goType(scope, field.type)}`;
+const fieldWire = (field: { type: Type; default?: unknown }): Type => (field.default === undefined ? field.type : { optional: field.type });
+
+export const pad = (text: string, width: number): string => text + ' '.repeat(Math.max(0, width - text.length));
+
+// Whether a value of the type holds an instance of a class unit, which the call keeps alive (runtime.KeepAlive).
+function holdsClass(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+  if (typeof type === 'string') return false;
+  if ('list' in type) return holdsClass(model, type.list, seen);
+  if ('map' in type) return holdsClass(model, type.map, seen);
+  if ('keyed_map' in type) return holdsClass(model, type.keyed_map, seen);
+  if ('optional' in type) return holdsClass(model, type.optional, seen);
+  if ('tuple' in type) return type.tuple.some((t) => holdsClass(model, t, seen));
+  if (objectUnit(model, type) !== undefined) return true;
+  const unit = unitOf(model, type);
+  if (unit?.kind !== 'record' || libraryOf(type) !== undefined || seen.has(unit.id)) return false;
+  seen.add(unit.id);
+  return (unit.fields ?? []).some((f) => holdsClass(model, f.type, seen));
+}
+
+// Whether the encoding of a value of the type needs the call of package binding: a callback or a value alias in it.
+function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+  if (typeof type === 'string') return false;
+  if ('list' in type) return needsCall(model, type.list, seen);
+  if ('map' in type) return needsCall(model, type.map, seen);
+  if ('keyed_map' in type) return needsCall(model, type.keyed_map, seen);
+  if ('optional' in type) return needsCall(model, type.optional, seen);
+  if ('tuple' in type) return type.tuple.some((t) => needsCall(model, t, seen));
+  if (aliasOf(model, type) !== undefined || callbackOf(model, type) !== undefined) return true;
+  const unit = unitOf(model, type);
+  if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+  seen.add(unit.id);
+  return (unit.fields ?? []).some((f) => needsCall(model, f.type, seen));
+}
 
 // ---- Go encoding of the arguments and decoding of the result ----
 
 function goEncode(scope: GoScope, type: Type, expr: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
     return [`${t}enc.${method[type] ?? ''}(${expr})`];
   }
   if ('list' in type) {
     const item = `item${depth}`;
     return [`${t}enc.Len(len(${expr}))`, `${t}for _, ${item} := range ${expr} {`, ...goEncode(scope, type.list, item, indent + 1, depth + 1), `${t}}`];
   }
-  if ('map' in type) {
+  if ('map' in type || 'keyed_map' in type) {
     const key = `key${depth}`;
     const entry = `entry${depth}`;
-    return [
-      `${t}enc.Len(${expr}.Len())`,
-      `${t}for _, ${key} := range ${expr}.Keys() {`,
-      `${t}	${entry}, _ := ${expr}.Get(${key})`,
-      `${t}	enc.Text(${key})`,
-      ...goEncode(scope, type.map, entry, indent + 1, depth + 1),
-      `${t}}`,
-    ];
-  }
-  if ('keyed_map' in type) {
-    const key = `key${depth}`;
-    const entry = `entry${depth}`;
+    const inner = 'map' in type ? type.map : type.keyed_map;
     return [
       `${t}enc.Len(${expr}.Len())`,
       `${t}for _, ${key} := range ${expr}.Keys() {`,
       `${t}\t${entry}, _ := ${expr}.Get(${key})`,
-      `${t}\tenc.Key(${key})`,
-      ...goEncode(scope, type.keyed_map, entry, indent + 1, depth + 1),
+      `${t}\tenc.${'map' in type ? 'Text' : 'Key'}(${key})`,
+      ...goEncode(scope, inner, entry, indent + 1, depth + 1),
       `${t}}`,
     ];
   }
@@ -155,16 +225,25 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, `${expr}[${i}]`, indent, depth));
+  // U-7: a value of an alias is the call that walks it and its first level.
+  if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
+  // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
+  if (objectUnit(scope.model, type) !== undefined) return [`${t}enc.Uint(${expr}.handle())`];
+  // U-3: a callback is the call and its index in it; a nil interface is kind invalid_callback.
+  const callback = callbackOf(scope.model, type);
+  if (callback !== undefined) {
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, dispatch${goName(callback.unit.name)}(${expr}))`, `${t}}`];
+  }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum') return [`${t}enc.Text(string(${expr}))`];
-  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goEncode(scope, f.type, `${expr}.${goName(f.name)}`, indent, depth));
+  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goEncode(scope, fieldWire(f), `${expr}.${goName(f.name)}`, indent, depth));
   throw new Unsupported(`no Go encoding of ${JSON.stringify(type)}`);
 }
 
-function goDecode(scope: GoScope, type: Type, target: string, indent: number, depth: number): string[] {
+export function goDecode(scope: GoScope, type: Type, target: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
     return [`${t}${target} = dec.${method[type] ?? ''}()`];
   }
   if ('list' in type) {
@@ -176,30 +255,17 @@ function goDecode(scope: GoScope, type: Type, target: string, indent: number, de
       `${t}}`,
     ];
   }
-  if ('map' in type) {
+  if ('map' in type || 'keyed_map' in type) {
     const index = `i${depth}`;
     const count = `n${depth}`;
     const entry = `entry${depth}`;
+    const inner = 'map' in type ? type.map : type.keyed_map;
     return [
-      `${t}${target} = &Map[${goType(scope, type.map)}]{}`,
+      `${t}${target} = &${'map' in type ? 'Map' : 'KeyedMap'}[${goType(scope, inner)}]{}`,
       `${t}for ${index}, ${count} := 0, dec.Len(); ${index} < ${count}; ${index}++ {`,
-      `${t}	key${depth} := dec.Text()`,
-      `${t}	var ${entry} ${goType(scope, type.map)}`,
-      ...goDecode(scope, type.map, entry, indent + 1, depth + 1),
-      `${t}	${target}.Set(key${depth}, ${entry})`,
-      `${t}}`,
-    ];
-  }
-  if ('keyed_map' in type) {
-    const index = `i${depth}`;
-    const count = `n${depth}`;
-    const entry = `entry${depth}`;
-    return [
-      `${t}${target} = &KeyedMap[${goType(scope, type.keyed_map)}]{}`,
-      `${t}for ${index}, ${count} := 0, dec.Len(); ${index} < ${count}; ${index}++ {`,
-      `${t}\tkey${depth} := dec.Key()`,
-      `${t}\tvar ${entry} ${goType(scope, type.keyed_map)}`,
-      ...goDecode(scope, type.keyed_map, entry, indent + 1, depth + 1),
+      `${t}\tkey${depth} := dec.${'map' in type ? 'Text' : 'Key'}()`,
+      `${t}\tvar ${entry} ${goType(scope, inner)}`,
+      ...goDecode(scope, inner, entry, indent + 1, depth + 1),
       `${t}\t${target}.Set(key${depth}, ${entry})`,
       `${t}}`,
     ];
@@ -215,40 +281,123 @@ function goDecode(scope: GoScope, type: Type, target: string, indent: number, de
     ];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, `${target}[${i}]`, indent, depth));
+  // U-7: a value of an alias is the Go value that its out rows make.
+  if (aliasOf(scope.model, type) !== undefined) return [`${t}${target} = dec.Value()`];
+  const object = objectUnit(scope.model, type);
+  if (object !== undefined) return [`${t}${target} = new${goName(object.unit.name)}(dec.Uint())`];
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum') return [`${t}${target} = ${goUnitName(scope, unit)}(dec.Text())`];
-  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goDecode(scope, f.type, `${target}.${goName(f.name)}`, indent, depth));
+  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goDecode(scope, fieldWire(f), `${target}.${goName(f.name)}`, indent, depth));
   throw new Unsupported(`no Go decoding of ${JSON.stringify(type)}`);
 }
 
 // E-7: the results of a function: the parts of a tuple return, then error.
-function goResults(scope: GoScope, returns: Type): string[] {
+export function goResults(scope: GoScope, returns: Type): string[] {
   if (returns === 'none') return [];
   if (typeof returns === 'object' && 'tuple' in returns) return returns.tuple.map((t) => goType(scope, t));
   return [goType(scope, returns)];
 }
 
-function goFunction(scope: GoScope, fn: Fn): string {
-  const params = fn.params.map((p) => `${goParam(p.name)} ${goType(scope, p.type)}`).join(', ');
-  const results = goResults(scope, fn.returns);
+// U-2: a parameter with a default is a pointer, nil when the caller leaves it out.
+const hasDefault = (fn: Fn, parameter: Fn['params'][number]): boolean => parameter.default !== undefined && fn.record?.param !== parameter;
+const paramType = (scope: GoScope, fn: Fn, parameter: Fn['params'][number]): string =>
+  hasDefault(fn, parameter) ? `*${goType(scope, parameter.type)}` : goType(scope, parameter.type);
+const paramWire = (fn: Fn, parameter: Fn['params'][number]): Type => (hasDefault(fn, parameter) ? { optional: parameter.type } : parameter.type);
+
+// The results of a member: an iterate gives an iterator over its items (N-4), any other member the results of its
+// return (E-7).
+function memberResults(scope: GoScope, fn: Fn): string[] {
+  if (fn.kind !== 'iterate') return goResults(scope, fn.returns);
+  scope.usesIter = true;
+  const yields = fn.yields ?? { value: 'none' };
+  return [yields.key === undefined ? `iter.Seq[${goType(scope, yields.value)}]` : `iter.Seq2[${goType(scope, yields.key)}, ${goType(scope, yields.value)}]`];
+}
+
+// The count of the results of a member in Go before its error: 1 for an iterate, the parts of a tuple, 0 for none.
+export const goResultCount = (fn: Fn): number => {
+  if (fn.kind === 'iterate') return 1;
+  if (fn.returns === 'none') return 0;
+  return typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple.length : 1;
+};
+
+function goCallable(scope: GoScope, fn: Fn): string {
+  const model = scope.model;
+  const params = fn.params.map((p) => `${goParam(p.name)} ${paramType(scope, fn, p)}`).join(', ');
+  const results = memberResults(scope, fn);
   const signature = results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})`;
   const zero = results.map((_, i) => `zero${i}`);
   const fail = (err: string): string => `return ${[...zero, err].join(', ')}`;
   const lines: string[] = [];
   results.forEach((type, i) => lines.push(`\tvar zero${i} ${type}`));
+  if (fn.params.some((p) => needsCall(model, p.type))) lines.push('\tcall := binding.NewCall()', '\tdefer call.Close()');
   lines.push('\tenc := binding.NewWriter()');
-  for (const parameter of fn.params) lines.push(...goEncode(scope, parameter.type, goParam(parameter.name), 1, 0));
-  lines.push(`\tout, err := binding.${bindingFn(fn)}(enc.Done())`, '\tif err != nil {', `\t\t${fail('err')}`, '\t}', '\tdec := binding.NewReader(out)');
-  const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' ? [] : [fn.returns];
-  parts.forEach((type, i) => {
-    lines.push(`\tvar value${i} ${results[i] ?? ''}`);
-    lines.push(...goDecode(scope, type, `value${i}`, 1, 0));
-  });
-  lines.push('\tif err := dec.Finish(); err != nil {', `\t\t${fail('err')}`, '\t}', `\treturn ${[...parts.map((_, i) => `value${i}`), 'nil'].join(', ')}`);
-  const name = langName('go', fn.member.name, 'callable');
-  return `
-// ${name} calls the core function ${fn.corePath} (contract member ${fn.member.id}).
+  if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
+  for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name), 1, 0));
+  lines.push(`\tout, err := binding.${bindingFn(fn)}(enc.Done())`);
+  // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
+  // the call.
+  const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name))];
+  for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
+  if (alive.length > 0) scope.usesRuntime = true;
+  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}', '\tdec := binding.NewReader(out)');
+  if (fn.kind === 'iterate') {
+    // N-4 iterate: the items are converted when the call returns, and the iterator gives them in order.
+    const yields = fn.yields ?? { value: 'none' };
+    lines.push('\tn := dec.Len()');
+    if (yields.key !== undefined) lines.push(`\tkeys := make([]${goType(scope, yields.key)}, n)`);
+    lines.push(`\tvalues := make([]${goType(scope, yields.value)}, n)`, '\tfor at := range n {');
+    if (yields.key !== undefined) lines.push(...goDecode(scope, yields.key, 'keys[at]', 2, 0));
+    lines.push(...goDecode(scope, yields.value, 'values[at]', 2, 0), '\t}');
+    lines.push('\tif err := dec.Finish(); err != nil {', `\t\t${fail('err')}`, '\t}');
+    const yieldType = yields.key === undefined ? `func(${goType(scope, yields.value)}) bool` : `func(${goType(scope, yields.key)}, ${goType(scope, yields.value)}) bool`;
+    lines.push(
+      `\treturn func(yield ${yieldType}) {`,
+      '\t\tfor at := range values {',
+      `\t\t\tif !yield(${yields.key === undefined ? '' : 'keys[at], '}values[at]) {`,
+      '\t\t\t\treturn',
+      '\t\t\t}',
+      '\t\t}',
+      '\t}, nil',
+    );
+  } else {
+    const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' ? [] : [fn.returns];
+    parts.forEach((type, i) => {
+      lines.push(`\tvar value${i} ${results[i] ?? ''}`);
+      lines.push(...goDecode(scope, type, `value${i}`, 1, 0));
+    });
+    lines.push('\tif err := dec.Finish(); err != nil {', `\t\t${fail('err')}`, '\t}', `\treturn ${[...parts.map((_, i) => `value${i}`), 'nil'].join(', ')}`);
+  }
+  const className = goName(fn.unit.name);
+  const name = goMemberName(fn);
+  if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
+    return `
+// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
 func ${name}(${params}) ${signature} {
+${lines.join('\n')}
+}
+`;
+  }
+  if (fn.special === 'stringify') {
+    return `
+// stringify calls ${fn.corePath} (contract member ${fn.member.id}).
+func (this *${className}) stringify() ${signature} {
+${lines.join('\n')}
+}
+
+// String is the text of the ${className} (N-4: stringify). fmt.Stringer has no error result, so a failure of the core
+// panics with its error.
+func (this *${className}) String() string {
+	text, err := this.stringify()
+	if err != nil {
+		panic(err)
+	}
+	return text
+}
+`;
+  }
+  return `
+// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
+func (this *${className}) ${name}(${params}) ${signature} {
 ${lines.join('\n')}
 }
 `;
@@ -281,12 +430,83 @@ ${variants.map((v) => `\t${pad(v.id, width)} ${name} = ${goString(v.value)}`).jo
 
 function goRecord(scope: GoScope, unit: Unit): string {
   const name = goName(unit.name);
-  const fields = (unit.fields ?? []).map((f) => ({ name: goName(f.name), type: goType(scope, f.type) }));
+  const fields = (unit.fields ?? []).map((f) => ({ name: goName(f.name), type: fieldType(scope, f) }));
   const width = Math.max(...fields.map((f) => f.name.length));
+  const defaults = (unit.fields ?? []).some((f) => f.default !== undefined) ? ' A field that is a pointer has a default: nil leaves it to\n// the core (U-2).' : '';
   return `
-// ${name} is the record ${unit.id} (T-4): the last argument of the functions that take it, and a result.
+// ${name} is the record ${unit.id} (T-4): the last argument of the functions that take it, and a result.${defaults}
 type ${name} struct {
 ${fields.map((f) => `\t${pad(f.name, width)} ${f.type}`).join('\n')}
+}
+`;
+}
+
+// T-5: a class unit is a struct around the handle of its value in the static library, which the binding releases when
+// the Go runtime finds the instance unreachable (runtime.AddCleanup).
+function goClass(unit: Unit): string {
+  const name = goName(unit.name);
+  return `
+// ${name} is the class ${unit.id} (T-5): it holds a value of ${unit.core_type ?? ''} in the static library, which
+// the binding releases when the Go runtime finds the ${name} unreachable. nil and the zero value hold no value: a call
+// that takes one fails with kind invalid_argument_type.
+type ${name} struct{ ref *binding.Ref }
+
+// new${name} holds the value under the handle that a call gave.
+func new${name}(handle uint64) *${name} {
+	return &${name}{ref: binding.NewRef(handle, binding.${releaseFn(unit)})}
+}
+
+// handle is the handle of the value, 0 for nil and for the zero value.
+func (this *${name}) handle() uint64 {
+	if this == nil || this.ref == nil {
+		return 0
+	}
+	return this.ref.Handle()
+}
+`;
+}
+
+// U-3: a callback unit is a Go interface, and its dispatch runs a member for the core with the decoded arguments.
+function goCallback(scope: GoScope, cb: CallbackUnit): string {
+  const name = goName(cb.unit.name);
+  const methods = cb.members.map((m) => {
+    const method = langName('go', m.member.name, 'callable');
+    const params = m.params.map((p) => `${goParam(p.name)} ${goType(scope, p.type)}`).join(', ');
+    const results = goResults(scope, m.returns);
+    return { m, method, params, signature: results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})` };
+  });
+  const cases = methods.map(({ m, method }, index) => {
+    const lines: string[] = [`\t\tcase ${index}:`];
+    for (const p of m.params) {
+      lines.push(`\t\t\tvar ${goParam(p.name)} ${goType(scope, p.type)}`);
+      lines.push(...goDecode(scope, p.type, goParam(p.name), 3, 0));
+    }
+    lines.push('\t\t\tif err := dec.Finish(); err != nil {', '\t\t\t\treturn err', '\t\t\t}');
+    const args = m.params.map((p) => goParam(p.name)).join(', ');
+    if (m.returns === 'none') {
+      lines.push(`\t\t\treturn object.${method}(${args})`);
+    } else {
+      lines.push(`\t\t\treturned, err := object.${method}(${args})`, '\t\t\tif err != nil {', '\t\t\t\treturn err', '\t\t\t}');
+      lines.push(...goEncode(scope, m.returns, 'returned', 3, 0), '\t\t\treturn nil');
+    }
+    return lines.join('\n');
+  });
+  return `
+// ${name} is the callback interface ${cb.unit.id} (U-3): Go code implements it, and the core calls its methods during
+// the call that takes it, on the goroutine of that call. An error that a method returns ends that call, which returns
+// the same error.
+type ${name} interface {
+${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
+}
+
+// dispatch${name} runs a member of a ${name} for the core (U-3).
+func dispatch${name}(object ${name}) binding.Callback {
+	return func(call *binding.Call, member uint32, dec *binding.Reader, enc *binding.Writer) error {
+		switch member {
+${cases.join('\n')}
+		}
+		return binding.Malformed()
+	}
 }
 `;
 }
@@ -316,21 +536,32 @@ export function goBytes(bytes: Iterable<number>): string {
   return `${out}"`;
 }
 
-function goImports(scope: GoScope, extra: string[]): string {
-  const paths = [...extra, ...[...scope.imports].map((m) => goImport(scope.model.contract, m))].sort();
-  if (paths.length === 1) return `import "${paths[0] ?? ''}"\n`;
-  return `import (\n${paths.map((p) => `\t"${p}"`).join('\n')}\n)\n`;
+// The import block of a file: the standard library first, then the packages of the module, as gofmt groups them.
+export function goImportBlock(std: string[], own: string[]): string {
+  // gofmt sorts a group by the path, not by the name before it.
+  const byPath = (a: string, b: string): number => {
+    const pa = a.slice(a.indexOf('"'));
+    const pb = b.slice(b.indexOf('"'));
+    return pa < pb ? -1 : pa > pb ? 1 : 0;
+  };
+  const paths = [...[...new Set(std)].sort(byPath), ...(std.length > 0 && own.length > 0 ? [''] : []), ...[...new Set(own)].sort(byPath)];
+  if (paths.length === 1) return `import ${paths[0] ?? ''}\n`;
+  return `import (\n${paths.map((p) => (p === '' ? '' : `\t${p}`)).join('\n')}\n)\n`;
 }
 
 function goPackageFile(model: Model, module: string): string {
   const scope: GoScope = { model, module, imports: new Set() };
+  const objects = model.objects.filter((o) => o.unit.module === module);
+  const callbacks = model.callbacks.filter((c) => c.unit.module === module);
   const body = [
     ...model.enums.filter((u) => u.module === module).map(goEnum),
     ...model.records.filter((u) => u.module === module).map((u) => goRecord(scope, u)),
     ...model.constants.filter((c) => c.module === module).map(goConstant),
-    ...model.functions.filter((f) => f.module === module).map((f) => goFunction(scope, f)),
+    ...callbacks.map((c) => goCallback(scope, c)),
+    ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
+    ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
   ].join('');
-  const usesBinding = model.functions.some((f) => f.module === module) || scope.usesMap === true || scope.usesKeyed === true;
+  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true;
   const alias = scope.usesMap === true
     ? `
 // Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each with its value. Its
@@ -357,7 +588,9 @@ func BytesKey(value []byte) Key { return binding.BytesKey(value) }
 func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
-  const imports = usesBinding || scope.imports.size > 0 ? `\n${goImports(scope, usesBinding ? [goImport(model.contract, 'internal/binding')] : [])}` : '';
+  const std = [...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`)];
+  const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
@@ -365,11 +598,12 @@ package ${goPackage(model.contract, module)}
 ${imports}${alias}${keyed}${body}`;
 }
 
-const internalType = (model: Model): string => goErrorTypes(model.contract).find(([c]) => c === 'internal')?.[1] ?? '';
+export const categoryType = (model: Model, category: string): string => goErrorTypes(model.contract).find(([c]) => c === category)?.[1] ?? '';
+const internalType = (model: Model): string => categoryType(model, 'internal');
 
 // ---- package binding: cgo, the encoding and the error types of E-7 ----
 
-function cDeclarations(model: Model, extra: string[]): string {
+function cDeclarations(model: Model, extra: string[], others: string[] = []): string {
   const buffer = `${prefix(model)}_buffer`;
   return `#include <stddef.h>
 #include <stdint.h>
@@ -380,7 +614,7 @@ typedef struct {
 	size_t cap;
 } ${buffer};
 
-${extra.map((symbol) => `int32_t ${symbol}(const uint8_t *args, size_t len, ${buffer} *result);`).join('\n')}`;
+${[...extra.map((symbol) => `int32_t ${symbol}(const uint8_t *args, size_t len, ${buffer} *result);`), ...others].join('\n')}`;
 }
 
 // E-2, E-7: the Go error type of each category, <Library><Category>Error with the Go capitals of N-2
@@ -390,16 +624,55 @@ export function goErrorTypes(contract: Contract): [string, string][] {
   return CATEGORIES.map((category) => [category, `${library}${convert([category], 'go', 'class')}Error`]);
 }
 
+// The members whose entry points package binding calls: the functions and the members of the class units.
+export const callablesOf = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members)];
+
+// E-2, I-3: an error unit is a struct that embeds its parent, the unit or the error type of its category, so errors.As
+// finds every class above it; its properties are methods.
+function goErrorUnit(model: Model, unit: ErrorUnit): string {
+  const name = goName(unit.unit.name);
+  const parent = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const props = unit.properties.map((p) => ({ field: `p${goName(p.member.name)}`, method: langName('go', p.member.name, 'callable'), type: goType(scope, p.returns), property: p }));
+  const width = Math.max(0, ...props.map((p) => p.field.length));
+  const fields = [`\t*${parent}`, ...props.map((p) => `\t${pad(p.field, width)} ${p.type}`)];
+  const decodes = props.flatMap((p) => goDecode(scope, p.property.returns, `e.${p.field}`, 1, 0).map((l) => l.replace(/\bdec\./g, 'r.')));
+  const base = unit.parent === undefined ? 'base' : `make${goName(unit.parent.unit.name)}(base, r)`;
+  return `
+// ${name} is the error unit ${unit.unit.id} (E-2): an error of category ${unit.category}${unit.parent === undefined ? '' : ` and of the unit ${unit.parent.unit.id}`},
+// which errors.As finds as each of them too.
+type ${name} struct {
+${fields.join('\n')}
+}
+
+// Unwrap is the ${unit.parent === undefined ? 'error of the category' : 'error of the parent unit'}, which errors.As reads on.
+func (e *${name}) Unwrap() error { return e.${parent} }
+${props.map((p) => `
+// ${p.method} is the property ${p.property.member.id} (I-3).
+func (e *${name}) ${p.method}() ${p.type} { return e.${p.field} }
+`).join('')}
+func make${name}(base *${categoryType(model, unit.category)}, r *Reader) *${name} {
+	${props.length === 0 ? 'return' : 'e :='} &${name}{${parent}: ${base}}${props.length === 0 ? '' : `\n${decodes.join('\n')}\n\treturn e`}
+}
+`;
+}
+
 function goBinding(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
   const lib = staticLib(model.contract);
-  const calls = model.functions.map((fn) => `
+  const fns = callablesOf(model);
+  const calls = fns.map((fn) => `
 // ${bindingFn(fn)} calls ${cSymbol(model, fn)} with the encoded arguments (B-8).
 func ${bindingFn(fn)}(args []byte) ([]byte, error) {
-	return call(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	return invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${cSymbol(model, fn)}(pointer, length, result)
 	}, args)
 }
+`).join('');
+  const releases = model.objects.map((o) => `
+// ${releaseFn(o.unit)} releases the value of an instance of ${goName(o.unit.name)} (T-5).
+func ${releaseFn(o.unit)}(handle uint64) { C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) }
 `).join('');
   const types = goErrorTypes(model.contract).map(([category, name]) => `
 // ${name} is an error of category ${category} (E-7).
@@ -416,10 +689,16 @@ func (e *${name}) Status() (int, bool) { return e.status, e.hasStatus }
 
 // Errno is the OS error number of an I/O failure, when there is one (B-4).
 func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
-
-// Unwrap is the error of a callback that the failure carries, or nil (E-7).
-func (e *${name}) Unwrap() error { return e.cause }
 `).join('');
+  const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('');
+  const classCases = model.errorUnits.map((u, i) => `\tcase ${i + 1}:\n\t\tif category != ${CATEGORIES.indexOf(u.category)} {\n\t\t\treturn Malformed()\n\t\t}\n\t\treturn finished(make${goName(u.unit.name)}(&${categoryType(model, u.category)}{f}, properties), properties)`).join('\n');
+  const back = callsBack(model);
+  const others = [
+    `void ${p}__free(${p}_buffer buffer);`,
+    ...model.objects.map((o) => `void ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
+    ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
+  ];
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -430,24 +709,20 @@ package binding
 #cgo LDFLAGS: -l${lib}
 #cgo linux LDFLAGS: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
 #cgo darwin LDFLAGS: -lSystem -lc -lm
-${cDeclarations(model, model.functions.map((fn) => cSymbol(model, fn)))}
-void ${prefix(model)}__free(${prefix(model)}_buffer buffer);
+${cDeclarations(model, fns.map((fn) => cSymbol(model, fn)), others)}
 */
 import "C"
 
 import (
-	"encoding/binary"
-	"math"
-	"runtime"
-	"unsafe"
+${std.map((s) => `\t"${s}"`).join('\n')}
 )
 
 // entry is a function of the C ABI: the encoded arguments in, the encoded result or failure out, 0 or 1 back.
 type entry func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t
 
-// call runs an entry with the encoded arguments and copies its result out of the buffer that Rust allocated, which it
-// then frees. The call returns when the core returns (wait none).
-func call(fn entry, args []byte) ([]byte, error) {
+// invoke runs an entry with the encoded arguments and copies its result out of the buffer that Rust allocated, which
+// it then frees. The call returns when the core returns (wait none).
+func invoke(fn entry, args []byte) ([]byte, error) {
 	var pointer *C.uint8_t
 	if len(args) > 0 {
 		pointer = (*C.uint8_t)(unsafe.Pointer(&args[0]))
@@ -459,13 +734,27 @@ func call(fn entry, args []byte) ([]byte, error) {
 	if result.len > 0 {
 		copy(out, unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), int(result.len)))
 	}
-	C.${prefix(model)}__free(result)
+	C.${p}__free(result)
 	if status != 0 {
 		return nil, decodeFailure(out)
 	}
 	return out, nil
 }
-${calls}
+${calls}${releases}${model.objects.length === 0 ? '' : `
+// Ref is the handle of the value of an instance of a class unit (T-5), which the release function frees when the Go
+// runtime finds the Ref unreachable.
+type Ref struct{ handle uint64 }
+
+// NewRef holds a handle that a call gave and releases it with release.
+func NewRef(handle uint64, release func(uint64)) *Ref {
+	ref := &Ref{handle: handle}
+	runtime.AddCleanup(ref, release, handle)
+	return ref
+}
+
+// Handle is the handle of the value.
+func (r *Ref) Handle() uint64 { return r.handle }
+`}${back ? goCallBack(model) : ''}
 // Writer encodes the arguments of a call: each value in the order of the parameters (B-8).
 type Writer struct{ bytes []byte }
 
@@ -514,8 +803,9 @@ func (w *Writer) Bytes(value []byte) {
 // Reader decodes the result of a call. A result that does not follow the encoding, which only a fault of the
 // generated code can make, fails Finish with kind internal.
 type Reader struct {
-	bytes  []byte
-	failed bool
+	bytes   []byte
+	failed  bool
+	problem string
 }
 
 // NewReader reads an encoded result.
@@ -585,8 +875,11 @@ func (r *Reader) Bytes() []byte {
 
 // Finish is nil when the result was read whole, and an error of kind internal otherwise.
 func (r *Reader) Finish() error {
+	if r.problem != "" {
+		return internalError(r.problem)
+	}
 	if r.failed || len(r.bytes) != 0 {
-		return malformed()
+		return Malformed()
 	}
 	return nil
 }
@@ -742,7 +1035,7 @@ func (r *Reader) Key() Key {
 	r.failed = true
 	return Key{}
 }
-
+${model.aliases.length === 0 ? '' : GO_VALUE}
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -751,17 +1044,32 @@ type failure struct {
 	hasStatus bool
 	errno     int
 	hasErrno  bool
-	cause     error
 }
 
-func malformed() error {
-	return &${internalType(model)}{failure{message: "internal error: the encoded result does not follow the encoding of the binding", kind: "internal"}}
+// Malformed is the error of a result that does not follow the encoding, which only a fault of the generated code
+// makes: kind internal.
+func Malformed() error {
+	return internalError("the encoded result does not follow the encoding of the binding")
 }
 
-// decodeFailure reads an encoded failure: the category, the message, the kind, the status and the errno.
+func internalError(detail string) error {
+	return &${internalType(model)}{failure{message: fmt.Sprintf("internal error: %s", detail), kind: "internal"}}
+}
+
+// finished is the error of a failure whose properties were read whole, or kind internal.
+func finished(err error, properties *Reader) error {
+	if properties.Finish() != nil {
+		return Malformed()
+	}
+	return err
+}
+
+// decodeFailure reads an encoded failure: the category, the message, the kind, the status, the errno, the class of
+// the kind with the properties of its unit (E-2, I-3), and the error that a Go callback returned (U-3), which the call
+// returns unchanged.
 func decodeFailure(bytes []byte) error {
 	r := NewReader(bytes)
-	category := r.take(1)
+	head := r.take(1)
 	f := failure{message: r.Text(), kind: r.Text()}
 	if r.Tag() {
 		f.status, f.hasStatus = int(r.Uint()), true
@@ -769,19 +1077,326 @@ func decodeFailure(bytes []byte) error {
 	if r.Tag() {
 		f.errno, f.hasErrno = int(r.Int()), true
 	}
+	class := r.take(1)
+	properties := NewReader(r.Bytes())
+	var call, index uint64
+	present := r.Tag()
+	if present {
+		call, index = r.Uint(), r.Uint()
+	}
 	if r.Finish() != nil {
-		return malformed()
+		return Malformed()
 	}
-	switch category[0] {
-${goErrorTypes(model.contract).map(([, name], i) => `\tcase ${i}:\n\t\treturn &${name}{f}`).join('\n')}
+	if present {
+		return raisedError(call, index)
 	}
-	return malformed()
+	category := head[0]
+	switch class[0] {
+	case 0:
+		switch category {
+${goErrorTypes(model.contract).map(([, name], i) => `\t\tcase ${i}:\n\t\t\treturn finished(&${name}{f}, properties)`).join('\n')}
+		}
+${classCases}
+	}
+	return Malformed()
 }
-${types}`;
+${back ? '' : `
+// raisedError is never reached: no call of ${model.contract.library} runs Go code.
+func raisedError(call, index uint64) error {
+	return internalError(fmt.Sprintf("U-3: no call runs Go code (%d, %d)", call, index))
 }
+`}${types}${units}`;
+}
+
+// U-3, U-7: the call of a Go function that runs Go code during its core call: the Go values that the core walks, the
+// callbacks that it runs and the errors that they returned, and the functions that package binding exports for them.
+function goCallBack(model: Model): string {
+  const p = prefix(model);
+  const buffer = `C.${p}_buffer`;
+  return `
+// Callback runs a member of a Go callback for the core (U-3): the decoded arguments in, the encoded result out.
+type Callback func(call *Call, member uint32, dec *Reader, enc *Writer) error
+
+// held is a Go value whose children the core may ask for (U-7), with the keys of a map in their order.
+type held struct {
+	value reflect.Value
+	keys  []reflect.Value
+}
+
+// Call is one call into the static library that runs Go code: the values that the core walks (U-7), the callbacks
+// that it runs and the errors that they returned (U-3). The static library names it by its cgo.Handle.
+type Call struct {
+	handle    cgo.Handle
+	held      []held
+	callbacks []Callback
+	raised    []error
+}
+
+// NewCall is a call, which Close ends.
+func NewCall() *Call {
+	c := &Call{}
+	c.handle = cgo.NewHandle(c)
+	return c
+}
+
+// Close ends the call; the static library names it no more.
+func (c *Call) Close() { c.handle.Delete() }
+
+// Callback encodes a callback of the call: the call and its index in it.
+func (c *Call) Callback(enc *Writer, callback Callback) {
+	c.callbacks = append(c.callbacks, callback)
+	enc.Uint(uint64(c.handle))
+	enc.Uint(uint64(len(c.callbacks)))
+}
+
+// Value encodes a value of a value alias (U-7): the call, through which the core walks it, and its first level.
+func (c *Call) Value(enc *Writer, value any) {
+	enc.Uint(uint64(c.handle))
+	c.describe(enc, reflect.ValueOf(value))
+}
+
+// describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 as its
+// decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
+// text, 9 a func, 10 any other value with its type name; a container with its handle and length.
+func (c *Call) describe(enc *Writer, value reflect.Value) {
+	for value.IsValid() && value.Kind() == reflect.Interface {
+		value = value.Elem()
+	}
+	if !value.IsValid() {
+		enc.bytes = append(enc.bytes, 0)
+		return
+	}
+	switch value.Kind() {
+	case reflect.Bool:
+		enc.bytes = append(enc.bytes, 1)
+		enc.Bool(value.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		enc.bytes = append(enc.bytes, 2)
+		enc.Int(value.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if value.Uint() <= math.MaxInt64 {
+			enc.bytes = append(enc.bytes, 2)
+			enc.Int(int64(value.Uint()))
+		} else {
+			enc.bytes = append(enc.bytes, 3)
+			enc.Text(strconv.FormatUint(value.Uint(), 10))
+		}
+	case reflect.Float32, reflect.Float64:
+		enc.bytes = append(enc.bytes, 4)
+		enc.Float(value.Float())
+	case reflect.String:
+		enc.bytes = append(enc.bytes, 5)
+		enc.Text(value.String())
+	case reflect.Slice, reflect.Array:
+		if value.Kind() == reflect.Slice && value.Type().Elem().Kind() == reflect.Uint8 {
+			enc.bytes = append(enc.bytes, 6)
+			enc.Bytes(value.Bytes())
+			return
+		}
+		enc.bytes = append(enc.bytes, 7)
+		enc.Uint(c.hold(held{value: value}))
+		enc.Uint(uint64(value.Len()))
+	case reflect.Map:
+		keys := value.MapKeys()
+		slices.SortFunc(keys, func(a, b reflect.Value) int {
+			return strings.Compare(fmt.Sprint(a.Interface()), fmt.Sprint(b.Interface()))
+		})
+		enc.bytes = append(enc.bytes, 8)
+		enc.Uint(c.hold(held{value: value, keys: keys}))
+		enc.Uint(uint64(len(keys)))
+	case reflect.Func:
+		enc.bytes = append(enc.bytes, 9)
+		enc.Uint(c.hold(held{value: value}))
+	default:
+		enc.bytes = append(enc.bytes, 10)
+		enc.Text(value.Type().String())
+		enc.Uint(c.hold(held{value: value}))
+	}
+}
+
+func (c *Call) hold(value held) uint64 {
+	c.held = append(c.held, value)
+	return uint64(len(c.held))
+}
+
+// host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
+// of a map (op 1).
+func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
+	if handle == 0 || handle > uint64(len(c.held)) {
+		return nil, false
+	}
+	value := c.held[handle-1].value
+	keys := c.held[handle-1].keys
+	enc := NewWriter()
+	switch {
+	case op == 0 && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) && index < uint64(value.Len()):
+		c.describe(enc, value.Index(int(index)))
+	case op == 1 && value.Kind() == reflect.Map && index < uint64(len(keys)):
+		c.describe(enc, keys[index])
+		c.describe(enc, value.MapIndex(keys[index]))
+	default:
+		return nil, false
+	}
+	return enc.Done(), true
+}
+
+// run runs a callback of the call: 0 and the encoded result, or 1 and the index of the error that it returned.
+func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
+	if callback == 0 || callback > uint64(len(c.callbacks)) {
+		return c.raise(Malformed())
+	}
+	enc := NewWriter()
+	if err := c.callbacks[callback-1](c, member, NewReader(args), enc); err != nil {
+		return c.raise(err)
+	}
+	return 0, enc.Done()
+}
+
+func (c *Call) raise(err error) (int32, []byte) {
+	c.raised = append(c.raised, err)
+	enc := NewWriter()
+	enc.Uint(uint64(len(c.raised) - 1))
+	return 1, enc.Done()
+}
+
+// callOf is the call of a handle that the static library gave back.
+func callOf(handle uint64) *Call { return cgo.Handle(uintptr(handle)).Value().(*Call) }
+
+// raisedError is the error that a callback of the call returned (U-3).
+func raisedError(call, index uint64) error {
+	c := callOf(call)
+	if index >= uint64(len(c.raised)) {
+		return Malformed()
+	}
+	return c.raised[index]
+}
+
+// give writes bytes into a buffer of the static library, which takes it back.
+func give(bytes []byte, result *${buffer}) {
+	C.${p}__alloc(C.size_t(len(bytes)), result)
+	if len(bytes) > 0 {
+		copy(unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), len(bytes)), bytes)
+	}
+}
+${model.callbacks.length === 0 ? '' : `
+// ${p}__go_callback runs a member of a callback of a call for the static library (U-3).
+//
+//export ${p}__go_callback
+func ${p}__go_callback(call C.uint64_t, callback C.uint64_t, member C.uint32_t, args *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	bytes := C.GoBytes(unsafe.Pointer(args), C.int(length))
+	status, out := callOf(uint64(call)).run(uint64(callback), uint32(member), bytes)
+	give(out, result)
+	return C.int32_t(status)
+}
+`}${model.aliases.length === 0 ? '' : `
+// ${p}__go_host describes a child of a Go value of a call for the static library (U-7, B-1).
+//
+//export ${p}__go_host
+func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.uint64_t, result *${buffer}) C.int32_t {
+	out, ok := callOf(uint64(call)).host(uint32(op), uint64(handle), uint64(index))
+	give(out, result)
+	if !ok {
+		return 1
+	}
+	return 0
+}
+`}`;
+}
+
+// U-7: the Go values that the out rows of a value alias make: nil, bool, int64, float64, string, []byte, []any,
+// map[string]any and *KeyedMap[any]; a container that the core gives twice is the same Go value.
+const GO_VALUE = `
+// Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
+// 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], and 255 a
+// value that the out rows give no Go form, which fails Finish with kind internal.
+func (r *Reader) Value() any {
+	var made []any
+	return r.value(&made)
+}
+
+func (r *Reader) value(made *[]any) any {
+	head := r.take(1)
+	if r.failed {
+		return nil
+	}
+	switch head[0] {
+	case 0:
+		return nil
+	case 1:
+		return r.Bool()
+	case 2:
+		return r.Int()
+	case 3:
+		return r.Float()
+	case 4:
+		return r.Text()
+	case 5:
+		return r.Bytes()
+	case 6:
+		items := make([]any, r.Len())
+		*made = append(*made, items)
+		for at := range items {
+			items[at] = r.value(made)
+		}
+		return items
+	case 7:
+		entries := map[string]any{}
+		*made = append(*made, entries)
+		for at, n := 0, r.Len(); at < n; at++ {
+			key, ok := r.value(made).(string)
+			if !ok {
+				r.fail("U-7: a key of a map[string]any that is not a text")
+				return nil
+			}
+			entries[key] = r.value(made)
+		}
+		return entries
+	case 8:
+		index := r.Uint()
+		if index >= uint64(len(*made)) {
+			r.failed = true
+			return nil
+		}
+		return (*made)[index]
+	case 9:
+		entries := &KeyedMap[any]{}
+		*made = append(*made, entries)
+		for at, n := 0, r.Len(); at < n; at++ {
+			var key Key
+			switch found := r.value(made).(type) {
+			case int64:
+				key = IntKey(found)
+			case string:
+				key = TextKey(found)
+			case []byte:
+				key = BytesKey(found)
+			default:
+				r.fail("U-7: a key of a keyed map that is no integer, byte string or text")
+				return nil
+			}
+			entries.Set(key, r.value(made))
+		}
+		return entries
+	case 255:
+		r.fail(r.Text())
+		return nil
+	}
+	r.failed = true
+	return nil
+}
+
+func (r *Reader) fail(problem string) {
+	if r.problem == "" {
+		r.problem = problem
+	}
+	r.failed = true
+}
+`;
 
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
+  const written = model.objects.some((o) => o.lock?.writes === true);
   return `${goHeader()}
 
 //go:build polyspec_panic_test
@@ -789,17 +1404,81 @@ function goBindingPanic(model: Model): string {
 package binding
 
 /*
-${cDeclarations(model, [`${prefix(model)}__panic_test`])}
+${cDeclarations(model, [`${p}__panic_test`, ...(written ? [`${p}__panic_test_held`] : [])])}
 */
 import "C"
 
 // panicTest calls the entry point of the B-7 test, which panics in the core; the static library has it with the
 // feature panic-test.
 func panicTest() error {
-	_, err := call(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
-		return C.${prefix(model)}__panic_test(pointer, length, result)
+	_, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__panic_test(pointer, length, result)
 	}, nil)
 	return err
+}
+${written ? `
+// PanicTestHeld calls the entry point of the B-5c test, which panics while it holds the write guard of the instance
+// of the class (its index in the contract) under the handle.
+func PanicTestHeld(class, handle uint64) error {
+	enc := NewWriter()
+	enc.Uint(class)
+	enc.Uint(handle)
+	_, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__panic_test_held(pointer, length, result)
+	}, enc.Done())
+	return err
+}
+` : ''}`;
+}
+
+// G-5: the Go side of the arming of fault injection points, with the build tag polyspec_fault_test.
+function goBindingFault(model: Model): string {
+  const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
+  return `${goHeader()}
+
+//go:build polyspec_fault_test
+
+package binding
+
+/*
+${cDeclarations(model, [`${p}__arm_faults`, `${p}__fault_left`])}
+*/
+import "C"
+
+// ArmFaults arms the faults of a case (their JSON list) for the next call of the member from this thread, and gives
+// the id of the arming. A test locks its goroutine to its thread (runtime.LockOSThread) around the arming and the call.
+func ArmFaults(member, faults string) (uint64, error) {
+	enc := NewWriter()
+	enc.Text(member)
+	enc.Text(faults)
+	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__arm_faults(pointer, length, result)
+	}, enc.Done())
+	if err != nil {
+		return 0, err
+	}
+	dec := NewReader(out)
+	id := dec.Uint()
+	return id, dec.Finish()
+}
+
+// FaultLeft is the points of the arming whose fault did not fire.
+func FaultLeft(id uint64) ([]string, error) {
+	enc := NewWriter()
+	enc.Uint(id)
+	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__fault_left(pointer, length, result)
+	}, enc.Done())
+	if err != nil {
+		return nil, err
+	}
+	dec := NewReader(out)
+	left := make([]string, dec.Len())
+	for at := range left {
+		left[at] = dec.Text()
+	}
+	return left, dec.Finish()
 }
 `;
 }
@@ -807,615 +1486,32 @@ func panicTest() error {
 function goErrors(model: Model): string {
   return `${goHeader()}
 
-// Package errors holds the error types of ${model.contract.library} (E-7): one per category. errors.As finds them in an
-// error that a function of the binding returns.
+// Package errors holds the error types of ${model.contract.library} (E-7): one per category${model.errorUnits.length === 0 ? '' : ' and one per error unit (E-2)'}.
+// errors.As finds them in an error that a function of the binding returns.
 package errors
 
 import "${goImport(model.contract, 'internal/binding')}"
 ${goErrorTypes(model.contract).map(([category, name]) => `
 // ${name} is an error of category ${category} (E-7).
 type ${name} = binding.${name}
+`).join('')}${model.errorUnits.map((u) => `
+// ${goName(u.unit.name)} is the error unit ${u.unit.id} (E-2).
+type ${goName(u.unit.name)} = binding.${goName(u.unit.name)}
 `).join('')}`;
 }
 
-// ---- Rust: the C ABI ----
-
-function convertIn(model: Model, type: Type, input: string, subject: string): string {
-  if (typeof type === 'string') {
-    if (type === 'text') return `in_text(${input}, ${subject})`;
-    if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
-    const fn: Record<string, string> = { bytes: 'in_bytes', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
-    return `${name}(${input})`;
-  }
-  if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
-  if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
-  if ('keyed_map' in type) {
-    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
-  }
-  if ('optional' in type) return `in_optional(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
-  const unit = unitOf(model, type);
-  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${rustField(unit.name)}(${input})`;
-  throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
-}
-
-function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
-    return `${fn[type] ?? ''}(output, ${value})`;
-  }
-  if ('list' in type) return `out_list(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
-  // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `out_optional(output, ${value}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
-  const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(output, ${value})`;
-  throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
-}
-
-const RUST_HELPERS = `
-/// The encoded arguments do not follow the encoding, which only a fault of the generated code makes: kind internal.
-fn malformed() -> Fail {
-    binding_error(BindingError::Internal { detail: String::from("the encoded arguments do not follow the encoding of the binding") })
-}
-
-fn take<'a>(input: &mut &'a [u8], count: usize) -> Result<&'a [u8], Fail> {
-    if count > input.len() {
-        return Err(malformed());
-    }
-    let (head, tail) = input.split_at(count);
-    *input = tail;
-    Ok(head)
-}
-
-fn read_word(input: &mut &[u8]) -> Result<[u8; 8], Fail> {
-    <[u8; 8]>::try_from(take(input, 8)?).map_err(|_length| malformed())
-}
-
-fn read_length(input: &mut &[u8]) -> Result<usize, Fail> {
-    Ok(usize::from_le_bytes(read_word(input)?))
-}
-
-fn read_tag(input: &mut &[u8]) -> Result<bool, Fail> {
-    match take(input, 1)? {
-        [0] => Ok(false),
-        [1] => Ok(true),
-        _ => Err(malformed()),
-    }
-}
-
-fn read_bytes<'a>(input: &mut &'a [u8]) -> Result<&'a [u8], Fail> {
-    let length = read_length(input)?;
-    take(input, length)
-}
-
-/// The arguments end where the last parameter ends.
-fn finish_input(input: &[u8]) -> Result<(), Fail> {
-    if input.is_empty() {
-        Ok(())
-    } else {
-        Err(malformed())
-    }
-}
-
-fn in_bool(input: &mut &[u8]) -> Result<bool, Fail> {
-    read_tag(input)
-}
-
-fn in_uint(input: &mut &[u8]) -> Result<u64, Fail> {
-    Ok(u64::from_le_bytes(read_word(input)?))
-}
-
-fn in_int(input: &mut &[u8]) -> Result<i64, Fail> {
-    Ok(i64::from_le_bytes(read_word(input)?))
-}
-
-fn in_float(input: &mut &[u8]) -> Result<f64, Fail> {
-    Ok(f64::from_le_bytes(read_word(input)?))
-}
-
-/// B-8: a Go string of the contract type text is UTF-8; other bytes are kind invalid_text.
-fn in_text(input: &mut &[u8], subject: &str) -> Result<String, Fail> {
-    String::from_utf8(read_bytes(input)?.to_vec())
-        .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
-}
-
-/// B-8, T-1 latin1: a Go string of UTF-8 whose runes are U+0000 to U+00FF, one byte each; a rune above U+00FF is kind
-/// invalid_text, as in every language.
-fn in_latin1(input: &mut &[u8], subject: &str) -> Result<Vec<u8>, Fail> {
-    let text = in_text(input, subject)?;
-    text.chars()
-        .map(|character| {
-            u8::try_from(u32::from(character))
-                .map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 }))
-        })
-        .collect()
-}
-
-/// A []byte is its bytes.
-fn in_bytes(input: &mut &[u8]) -> Result<Vec<u8>, Fail> {
-    Ok(read_bytes(input)?.to_vec())
-}
-
-fn in_list<'a, T>(input: &mut &'a [u8], item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
-    let count = read_length(input)?;
-    let mut items = Vec::new();
-    for _ in 0..count {
-        items.push(item(input)?);
-    }
-    Ok(items)
-}
-
-fn in_optional<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
-    if read_tag(input)? {
-        item(input).map(Some)
-    } else {
-        Ok(None)
-    }
-}
-
-/// T-2: an ordered map, its text keys each once; a key twice is a fault of the generated Go code (kind internal).
-fn in_map<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
-    let count = read_length(input)?;
-    let mut map = binding_core::OrderedMap::new();
-    for _ in 0..count {
-        let key = in_text(input, subject)?;
-        let value = item(input)?;
-        if map.insert(key, value).is_some() {
-            return Err(malformed());
-        }
-    }
-    Ok(map)
-}
-
-/// T-2: an ordered map, owned or borrowed, in its order.
-fn out_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
-    let map = value.borrow();
-    write_length(output, map.len());
-    for (key, value) in map.iter() {
-        out_text(output, key);
-        item(output, value);
-    }
-}
-
-/// T-2, U-7 (c): a keyed map, its keys each once: kind 0 an integer, 1 a byte string, 2 a text; a key of a kind that
-/// the contract does not list is kind invalid_argument_type, a key twice a fault of the generated Go code.
-fn in_keyed_map<'a, T>(
-    input: &mut &'a [u8],
-    subject: &str,
-    kinds: &[u8],
-    expected: &str,
-    item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>,
-) -> Result<binding_core::KeyedMap<T>, Fail> {
-    let count = read_length(input)?;
-    let mut map = binding_core::KeyedMap::new();
-    for _ in 0..count {
-        let (tag, key) = match take(input, 1)? {
-            [0] => (0, binding_core::Key::Int(in_int(input)?)),
-            [1] => (1, binding_core::Key::Bytes(in_bytes(input)?)),
-            [2] => (2, binding_core::Key::Text(in_text(input, subject)?)),
-            _ => return Err(malformed()),
-        };
-        if !kinds.contains(&tag) {
-            return Err(type_error(subject, expected));
-        }
-        let value = item(input)?;
-        if map.insert(key, value).is_some() {
-            return Err(malformed());
-        }
-    }
-    Ok(map)
-}
-
-/// T-2: a keyed map, owned or borrowed, in its order.
-fn out_keyed_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
-    let map = value.borrow();
-    write_length(output, map.len());
-    for (key, value) in map.iter() {
-        match key {
-            binding_core::Key::Int(integer) => {
-                output.push(0);
-                out_int(output, integer);
-            }
-            binding_core::Key::Bytes(bytes) => {
-                output.push(1);
-                out_bytes(output, bytes);
-            }
-            binding_core::Key::Text(text) => {
-                output.push(2);
-                out_text(output, text);
-            }
-        }
-        item(output, value);
-    }
-}
-
-fn type_error(subject: &str, expected: &str) -> Fail {
-    binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: expected.to_owned() })
-}
-
-fn write_length(output: &mut Vec<u8>, length: usize) {
-    output.extend_from_slice(&length.to_le_bytes());
-}
-
-fn out_bytes(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
-    let bytes = value.as_ref();
-    write_length(output, bytes.len());
-    output.extend_from_slice(bytes);
-}
-
-fn out_text(output: &mut Vec<u8>, value: impl AsRef<str>) {
-    out_bytes(output, value.as_ref().as_bytes());
-}
-
-/// T-1 latin1: each byte leaves as the rune of the same code point, so a Go string reads it as UTF-8.
-fn out_latin1(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
-    let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
-    out_text(output, text);
-}
-
-fn out_bool(output: &mut Vec<u8>, value: impl Borrow<bool>) {
-    output.push(u8::from(*value.borrow()));
-}
-
-fn out_uint(output: &mut Vec<u8>, value: impl WideUint) {
-    output.extend_from_slice(&value.widen_uint().to_le_bytes());
-}
-
-fn out_int(output: &mut Vec<u8>, value: impl WideInt) {
-    output.extend_from_slice(&value.widen_int().to_le_bytes());
-}
-
-fn out_float(output: &mut Vec<u8>, value: impl Borrow<f64>) {
-    output.extend_from_slice(&value.borrow().to_le_bytes());
-}
-
-fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: impl Fn(&mut Vec<u8>, T)) {
-    let items: Vec<T> = value.into_iter().collect();
-    write_length(output, items.len());
-    for value in items {
-        item(output, value);
-    }
-}
-
-/// An optional value, owned or borrowed (\`&Option<T>\` is an \`Option<&T>\`).
-fn out_optional<T>(output: &mut Vec<u8>, value: impl Into<Option<T>>, item: impl FnOnce(&mut Vec<u8>, T)) {
-    match value.into() {
-        Some(value) => {
-            output.push(1);
-            item(output, value);
-        }
-        None => output.push(0),
-    }
-}
-`;
-
-function enumRust(unit: Unit): string {
-  const name = rustField(unit.name);
-  const core = unit.core_type ?? '';
-  const arms = (unit.variants ?? []).map((v) => `        ${rustBytes(v.value)} => Ok(${core}::${rustVariant(v.name)}),`).join('\n');
-  const outArms = (unit.variants ?? []).map((v) => `        ${core}::${rustVariant(v.name)} => ${rustString(v.value)},`).join('\n');
-  return `
-/// T-6: a value of ${goName(unit.name)} is one of its constants; any other string is kind invalid_argument_type.
-fn in_${name}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
-    match read_bytes(input)? {
-${arms}
-        _ => Err(type_error(subject, ${rustString(goName(unit.name))})),
-    }
-}
-
-fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
-    let text = match value.borrow() {
-${outArms}
-    };
-    out_text(output, text);
-}
-`;
-}
-
-const rustBytes = (text: string): string => `b${rustString(text)}`;
-
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
-  const core = unit.core_type ?? '';
-  const fields = unit.fields ?? [];
-  const reads = fields.map((f) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, 'input', rustString(goName(f.name)))}?;`);
-  const writes = fields.map((f) => `    ${convertOut(model, f.type, `&value.${rustField(f.name)}`)};`);
-  return `
-/// T-4: the record ${goName(unit.name)}, its fields in contract order.
-fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
-${reads.join('\n')}
-    Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
-}
-
-fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
-    let value = value.borrow();
-${writes.join('\n')}
-}
-`;
-}
-
-function functionRust(model: Model, fn: Fn): string {
-  const lines: string[] = [];
-  for (const parameter of fn.params) {
-    const variable = rustField(parameter.name);
-    lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', rustString(goParam(parameter.name)))}?;`);
-  }
-  lines.push('        finish_input(input)?;');
-  const callArgs = fn.params.map((p) => coreArg(model, p.type, rustField(p.name)));
-  const call = `${fn.corePath}(${callArgs.join(', ')})`;
-  if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
-  } else if (fn.returns === 'none') {
-    lines.push(`        ${call};`);
-  } else {
-    lines.push(`        let result = ${call};`);
-  }
-  lines.push('        let mut buffer = Vec::new();');
-  if (fn.returns !== 'none') {
-    lines.push('        let output = &mut buffer;');
-    lines.push(`        ${convertOut(model, fn.returns, 'result')};`);
-  }
-  lines.push('        Ok(buffer)');
-  const symbol = cSymbol(model, fn);
-  return `
-/// The C ABI of ${fn.corePath} (contract member ${fn.member.id}).
-///
-/// # Safety
-///
-/// \`args\` points to \`len\` bytes that stay valid during the call, or is null with \`len\` 0, and \`result\` points to a
-/// writable \`Buffer\` (B-8).
-#[no_mangle]
-pub unsafe extern "C" fn ${symbol}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
-    // SAFETY: the caller's contract above.
-    let input = unsafe { arguments(args, len) };
-    let outcome = guard(move || {
-        let mut input = input;
-${lines.join('\n')}
-    });
-    // SAFETY: the caller's contract above.
-    unsafe { respond(result, outcome) }
-}
-`;
-}
-
-function coreErrorRust(model: Model): string {
-  if (model.coreError === undefined) return '';
-  const variant = (category: string): string => `Category::${category.charAt(0).toUpperCase()}${category.slice(1)}`;
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${variant(k.category)},`).join('\n');
-  return `
-/// I-2 (3): the category of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches
-/// a variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn core_error(error: ${model.coreError}) -> Fail {
-    let category: Category = match error {
-${arms}
-    };
-    Fail { category, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error) }
-}
-`;
-}
-
-// The Rust helpers that the contract's functions use.
-function rustUsed(model: Model): string {
-  const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const units = [...model.enums.map(enumRust), ...model.records.map((u) => recordRust(model, u))].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, functions);
-}
-
-// GW-4, T-2: the conversions that the test entry points of the feature codec-test send back unchanged, for the
-// round-trip tests: latin1 when the contract takes and gives it, map<text> when it takes and gives a map of text.
-interface Echoes {
-  latin1: boolean;
-  map: boolean;
-  keyed: boolean;
-}
-
-function echoes(model: Model): Echoes {
-  const used = rustUsed(model);
-  const has = (...names: string[]): boolean => names.every((name) => new RegExp(`\\bfn ${name}\\b`).test(used));
-  return {
-    latin1: has('in_latin1', 'out_latin1'),
-    map: has('in_map', 'out_map', 'in_text', 'out_text'),
-    keyed: has('in_keyed_map', 'out_keyed_map', 'in_text', 'out_text'),
-  };
-}
-
-function echoRust(model: Model, name: string, read: string, write: string): string {
-  return `
-/// GW-4, T-2: a test entry point that gives back the value it takes, through the conversions of the binding.
-///
-/// # Safety
-///
-/// As for every function of this library.
-#[cfg(feature = "codec-test")]
-#[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}__echo_${name}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
-    // SAFETY: the caller's contract above.
-    let input = unsafe { arguments(args, len) };
-    let outcome = guard(move || {
-        let mut input = input;
-        let value = ${read};
-        finish_input(input)?;
-        let mut buffer = Vec::new();
-        ${write};
-        Ok(buffer)
-    });
-    // SAFETY: the caller's contract above.
-    unsafe { respond(result, outcome) }
-}
-`;
-}
-
-function libRust(model: Model): string {
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
-  const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
-  const used = rustUsed(model);
-  const echo = echoes(model);
-  const echoEntries = [
-    echo.latin1 ? echoRust(model, 'latin1', 'in_latin1(&mut input, "value")?', 'out_latin1(&mut buffer, &value)') : '',
-    echo.map ? echoRust(model, 'map', 'in_map(&mut input, "value", |input| in_text(input, "value"))?', 'out_map(&mut buffer, &value, |output, item| out_text(output, item))') : '',
-    echo.keyed ? echoRust(model, 'keyed_map', 'in_keyed_map(&mut input, "value", &[0, 1, 2], "a key", |input| in_text(input, "value"))?', 'out_keyed_map(&mut buffer, &value, |output, item| out_text(output, item))') : '',
-  ].join('');
-  const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
-  return `${header('//')}
-// The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
-// Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure
-// in a buffer that Go copies and frees with ${prefix(model)}__free.
-
-use binding_core::{BindingError, Category, Kinds${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::mem::ManuallyDrop;
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
-// U-5: the constants of the contract are the constants of the core.
-${constants}
-
-// The encoding writes a length as the eight bytes of a usize; every target of T-2 has a 64-bit usize.
-const _: () = assert!(size_of::<usize>() == 8);
-
-/// A buffer that Rust allocated: the encoded result or failure of a call, which Go copies and then frees (B-8).
-#[repr(C)]
-pub struct Buffer {
-    ptr: *mut u8,
-    len: usize,
-    cap: usize,
-}
-
-/// A failure on its way to Go: the category, the message, the kind, the status and the errno (E-7).
-struct Fail {
-    category: Category,
-    message: String,
-    kind: &'static str,
-    status: Option<u16>,
-    errno: Option<i32>,
-}
-
-/// E-1a: an error that the binding raises itself, of its fixed category.
-fn binding_error(error: BindingError) -> Fail {
-    Fail { category: error.category(), message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno() }
-}
-${coreErrorRust(model)}${raisesAssertions(model)}
-/// B-7, B-8: a panic of the call reaches Go as kind internal and never crosses the C ABI.
-fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {
-    match catch_unwind(AssertUnwindSafe(body)) {
-        Ok(result) => result,
-        Err(payload) => {
-            let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
-                (Some(text), _) => (*text).to_owned(),
-                (None, Some(text)) => text.clone(),
-                (None, None) => String::from("a panic without a message"),
-            };
-            Err(binding_error(BindingError::Internal { detail }))
-        }
-    }
-}
-
-/// The argument buffer of Go.
-///
-/// # Safety
-///
-/// \`args\` points to \`len\` bytes that stay valid during the call, or is null.
-unsafe fn arguments<'a>(args: *const u8, len: usize) -> &'a [u8] {
-    if args.is_null() {
-        &[]
-    } else {
-        // SAFETY: the caller's contract above.
-        unsafe { std::slice::from_raw_parts(args, len) }
-    }
-}
-
-/// The encoded failure: the category (its index in E-1), the message, the kind, the status and the errno.
-fn encode_fail(fail: Fail) -> Vec<u8> {
-    let category: u8 = match fail.category {
-${categoryIndex}
-    };
-    let mut output = vec![category];
-    for text in [fail.message.as_bytes(), fail.kind.as_bytes()] {
-        output.extend_from_slice(&text.len().to_le_bytes());
-        output.extend_from_slice(text);
-    }
-    match fail.status {
-        Some(status) => {
-            output.push(1);
-            output.extend_from_slice(&u64::from(status).to_le_bytes());
-        }
-        None => output.push(0),
-    }
-    match fail.errno {
-        Some(errno) => {
-            output.push(1);
-            output.extend_from_slice(&i64::from(errno).to_le_bytes());
-        }
-        None => output.push(0),
-    }
-    output
-}
-
-/// Writes the result or the failure into Go's result buffer: 0 for a result, 1 for a failure.
-///
-/// # Safety
-///
-/// \`result\` points to a writable \`Buffer\`.
-unsafe fn respond(result: *mut Buffer, outcome: Result<Vec<u8>, Fail>) -> i32 {
-    let (status, bytes) = match outcome {
-        Ok(bytes) => (0, bytes),
-        Err(fail) => (1, encode_fail(fail)),
-    };
-    let mut bytes = ManuallyDrop::new(bytes);
-    let buffer = Buffer { ptr: bytes.as_mut_ptr(), len: bytes.len(), cap: bytes.capacity() };
-    // SAFETY: the caller's contract above.
-    unsafe { result.write(buffer) };
-    status
-}
-
-/// Frees a buffer that a call gave to Go.
-///
-/// # Safety
-///
-/// \`buffer\` is a buffer that a function of this library wrote, freed once.
-#[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}__free(buffer: Buffer) {
-    if !buffer.ptr.is_null() {
-        // SAFETY: the buffer is the parts of a Vec<u8> that respond gave away (the caller's contract above).
-        drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
-    }
-}
-${used}${functions}
-/// B-7: the entry point of the generated panic test.
-///
-/// # Safety
-///
-/// As for every function of this library.
-#[cfg(feature = "panic-test")]
-#[no_mangle]
-pub unsafe extern "C" fn ${prefix(model)}__panic_test(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
-    // SAFETY: the caller's contract above.
-    let input = unsafe { arguments(args, len) };
-    let outcome = guard(move || {
-        finish_input(input)?;
-        panic!("panic-test")
-    });
-    // SAFETY: the caller's contract above.
-    unsafe { respond(result, outcome) }
-}
-${echoEntries}`;
-}
-
-// GW-4, T-2: the Go side of the codec test entry points, with the build tag polyspec_codec_test.
+// GW-4, T-2, U-7: the Go side of the codec test entry points, with the build tag polyspec_codec_test.
 function goBindingCodec(model: Model, echo: Echoes): string {
   const buffer = `C.${prefix(model)}_buffer`;
-  const symbols = [...(echo.latin1 ? ['latin1'] : []), ...(echo.map ? ['map'] : []), ...(echo.keyed ? ['keyed_map'] : [])].map((n) => `${prefix(model)}__echo_${n}`);
+  const p = prefix(model);
+  const aliases = aliasesWithKinds(model).filter((a) => a.library === undefined);
+  const symbols = [...(echo.latin1 ? ['latin1'] : []), ...(echo.map ? ['map'] : []), ...(echo.keyed ? ['keyed_map'] : [])].map((n) => `${p}__echo_${n}`);
   const wrap = (symbol: string, params: string, encode: string[], result: string, decode: string[]): string => `
-func echo${goName(symbol.slice(`${prefix(model)}__echo_`.length).split('_'))}(${params}) (${result}, error) {
+func echo${goName(symbol.slice(`${p}__echo_`.length).split('_'))}(${params}) (${result}, error) {
 	var zero ${result}
 	enc := NewWriter()
 ${encode.map((l) => `	${l}`).join('\n')}
-	out, err := call(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${symbol}(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
@@ -1429,6 +1525,19 @@ ${decode.map((l) => `	${l}`).join('\n')}
 	return value, nil
 }
 `;
+  const aliasIn = aliases.map((alias) => `
+// AliasIn${goName(alias.unit.name)} runs the in function of the alias ${alias.unit.id} alone (U-7), for the tests of its kinds.
+func AliasIn${goName(alias.unit.name)}(value any) error {
+	call := NewCall()
+	defer call.Close()
+	enc := NewWriter()
+	call.Value(enc, value)
+	_, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__alias_in_${plainName(alias.unit)}(pointer, length, result)
+	}, enc.Done())
+	return err
+}
+`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test
@@ -1436,40 +1545,65 @@ ${decode.map((l) => `	${l}`).join('\n')}
 package binding
 
 /*
-${cDeclarations(model, symbols)}
+${cDeclarations(model, [...symbols, ...aliases.map((a) => `${p}__alias_in_${plainName(a.unit)}`)])}
 */
 import "C"
-${echo.latin1 ? wrap(`${prefix(model)}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${prefix(model)}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${prefix(model)}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}`;
+${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${p}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${p}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}${aliasIn}`;
 }
 
-// The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate.
-// G-4: a class unit (T-5), a value alias and a record of another repository (T-3) and a callback unit (U-3) are not
-// generated for Go yet; each is refused by name.
+// G-4: what the Go binding does not generate, each refused by name with its reason: a record of another repository
+// (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
+// another module than its own (its handle and dispatch are unexported), and a JSON hook (GN-6g).
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  for (const object of model.objects) refusals.refuse(`${object.unit.id}: a class unit is not generated for Go yet`);
-  for (const alias of model.aliases.filter((a) => a.library !== undefined)) refusals.refuse(`${alias.library ?? ''}.${alias.unit.id}: a value alias of another repository is not generated for Go yet`);
-  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
-  for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for Go yet`);
+  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  for (const fn of model.objects.flatMap((o) => o.members).filter((m) => m.special === 'to_json')) {
+    refusals.refuse(`${fn.member.id}: a to_json member is not generated for Go (GN-6g: encoding/json reads the exported fields of a value, and a class holds only a handle)`);
+  }
+  // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
+  const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
+  const refusedBefore = (type: Type): boolean => {
+    if (typeof type === 'string') return false;
+    if ('unit' in type) return type.library === undefined && aliasOf(model, type) === undefined && !held.has(type.unit);
+    return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(refusedBefore);
+  };
+  const check = (module: string, type: Type): void => {
+    if (type === 'none' || type === 'never' || refusedBefore(type)) return;
+    refusals.attempt(() => goType({ model, module, imports: new Set() }, type));
+  };
+  for (const fn of callablesOf(model)) {
+    for (const p of fn.params) check(fn.module, p.type);
+    check(fn.module, fn.returns);
+    if (fn.yields !== undefined) {
+      check(fn.module, fn.yields.value);
+      if (fn.yields.key !== undefined) check(fn.module, fn.yields.key);
+    }
+  }
+  for (const cb of model.callbacks) {
+    for (const m of cb.members) {
+      for (const p of m.params) check(cb.unit.module, p.type);
+      check(cb.unit.module, m.returns);
+    }
+  }
 }
 
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
 // model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module)])];
+  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module)])];
   for (const module of modules) {
     files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module));
-    const tests = goTests(model, module);
-    if (tests !== undefined) files.set(`${goDir(module)}/zz_generated_test.go`, tests);
+    for (const [name, text] of goTestFiles(model, module)) files.set(`${goDir(module)}/${name}`, text);
   }
   files.set(`${GO}/errors/zz_generated_errors.go`, goErrors(model));
   files.set(`${BINDING}/zz_generated_binding.go`, goBinding(model));
   files.set(`${BINDING}/zz_generated_panic.go`, goBindingPanic(model));
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
+  if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   const echo = echoes(model);
-  if (echo.latin1 || echo.map || echo.keyed) {
+  if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined)) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));
-    files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model.contract, echo, goErrorTypes(model.contract).find(([c]) => c === 'value')?.[1] ?? ''));
+    files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model, echo));
   }
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
 }

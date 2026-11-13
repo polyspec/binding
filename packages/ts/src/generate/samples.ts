@@ -29,6 +29,8 @@ export interface Context {
   objectNew?: (factory: Fn, args: string) => string;
   // The target whose rows of make a value takes, when it is not lang: WASM writes its tests as Node does.
   target?: 'wasm';
+  // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
+  instanceNew?: (receiver: Receiver) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -167,6 +169,10 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
     );
+  }
+  // GN-13f: the value of a class is an instance value, at any place of the case.
+  if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
+    return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
   // U-1, GN-13: a value of a class of origin value is made by the member that its out row of the kind names.
   if (unit?.kind === 'class' && unit.origin === 'value' && !out) return valueClassFromJson(model, ctx, unit, value);
