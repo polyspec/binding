@@ -2709,6 +2709,33 @@ test('a member with wait async_driver that reaches language code drives the stat
   }
 });
 
+test('a member with machine takes a function parameter and returns passthrough, which each target refuses by name until it generates them (GN-6ae)', () => {
+  const sample = (change: (contract: any) => void, targets: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
+  };
+  const fn = { function: { parameters: [{ unit: 'ledger' }], returns: { passthrough: 'T' }, async_allowed: true } };
+  const scoped = (c: any): void => {
+    const m = member(c, 'ledger.known');
+    m.wait = 'async_driver';
+    m.core.machine = true;
+    m.parameters = [{ name: ['scope'], type: fn, required: true }];
+    m.returns = { passthrough: 'T' };
+  };
+  for (const [target, name] of [['php', 'PHP'], ['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+    assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
+  }
+  // A function parameter and a result passthrough belong to a member with machine.
+  const plain = (c: any): void => { member(c, 'ledger.known').parameters = [{ name: ['scope'], type: fn, required: true }]; };
+  assert.throws(() => sample(plain, ['php']), /ledger\.known\.scope: a parameter of a function type is generated for a member with machine only \(GN-6ae\)/);
+  const returned = (c: any): void => { member(c, 'ledger.size').returns = { passthrough: 'T' }; };
+  assert.throws(() => sample(returned, ['php']), /ledger\.size: a result passthrough is generated for a member with machine only \(GN-6ae\)/);
+  // The function returns passthrough, which the core moves without reading.
+  const typed = (c: any): void => { scoped(c); member(c, 'ledger.known').parameters[0].type.function.returns = 'text'; };
+  assert.throws(() => sample(typed, ['php']), /ledger\.known\.scope: a function parameter of a member with machine returns passthrough \(GN-6ae\)/);
+});
+
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
