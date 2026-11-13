@@ -349,7 +349,11 @@ the design ids are those of the binding design.
   In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
   value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
-  does when `raises` names a variant of the contract's own core error or the member takes a callback. The generated
+  does when `raises` names a variant of the contract's own core error or the member takes a callback. The error of
+  such a path is `binding_core::Failure<E>`, a kind or what language code raised, when `core.failure` is true, and
+  without it when a parameter holds a callback or a function; `core.failure: true` names a member that calls language
+  code that its receiver keeps (template `engine.render`), whose error the generated code converts as that of a member
+  that takes a callback (GN-6d, GN-6m). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
   `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose
   `errors.kinds` names no core error is refused by name. The error is matched without a wildcard into the

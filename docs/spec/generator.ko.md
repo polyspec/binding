@@ -286,7 +286,10 @@
   `Uint8Array`를 받고 string을 포함한 그 밖의 값을 kind `invalid_argument_type`으로 거부하며, 결과는 사본의 새
   `Uint8Array`다.
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
-  코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 생성 코드는 그런 경로를
+  코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 그런 경로의 오류는 `core.failure`가 참이면, 그리고
+  그것이 없으면 parameter가 callback이나 함수를 담을 때 kind 또는 언어 코드가 던진 것인 `binding_core::Failure<E>`다.
+  `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template `engine.render`)를 가리키며, 생성 코드는 그
+  오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6m). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는
   `core.result`는 컴파일되지 않는다(I-2). `errors.kinds`가 코어 오류를 가리키지 않는 계약의 `core.result: true`는 이름을
   대고 거부한다. 그 오류는 wildcard 없는 match로 kind의 category
