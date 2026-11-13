@@ -361,15 +361,20 @@ export function pythonTests(model: Model, module: string): string {
         self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test. A member without parameters is
-    // a function of no arguments in CPython, which says so for a positional and for a keyword argument.
+    // a function of no arguments in CPython, which says so for a positional and for a keyword argument; a constructor
+    // without parameters is the __new__ of PyO3, which counts the positional arguments and names the keyword.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
+    const bare = fn.args.length === 0;
+    const pyo3New = bare && fn.kind === 'constructor';
+    const extra = pyo3New ? 'takes 0 positional arguments' : bare ? 'takes no arguments' : 'positional';
+    const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
     out.push(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${target('')}`}
-        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no arguments' : 'positional'}"):
+        with self.assertRaisesRegex(TypeError, "${extra}"):
             ${target(callArgs(model, ctx, fn, values, 'None'))}
-        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no keyword arguments' : 'unexpected keyword'}"):
+        with self.assertRaisesRegex(TypeError, "${unknown}"):
             ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
   }
   // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.

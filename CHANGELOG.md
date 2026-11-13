@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Python G-7 test of a constructor without parameters, such as `OrderedMap()` of json, expected `takes no
+  arguments`, the words of a CPython function of no arguments, but the constructor is the `__new__` of PyO3, which
+  reports `takes 0 positional arguments` and `unexpected keyword argument`. The test now expects the words of each
+  form (G-7). Verified by `npm test` in `packages/ts`.
 - A float case value that JSON writes as an integer, such as `0`, `100` and `1e20` of `value.from_float` of json, was
   written as an integer in Python and PHP, which refuse an integer for a float (kind `invalid_argument_type`), and a
   negative zero lost its sign in every language. A float is now a float literal in Python and PHP (`0.0`, `1e+20`),

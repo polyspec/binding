@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- parameter 없는 생성자(json `OrderedMap()`)의 Python G-7 시험은 인자 없는 CPython 함수의 말인 `takes no arguments`를
+  기대했지만, 그 생성자는 PyO3의 `__new__`이고 `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 이제 시험은
+  형태마다 그 말을 기대한다(G-7). `packages/ts`의 `npm test`로 검증했다.
 - JSON이 정수로 적는 float case 값(json `value.from_float`의 `0`, `100`, `1e20`)은 Python과 PHP에서 정수로 적혔는데, 두 언어는
   float 자리의 정수를 거부한다(kind `invalid_argument_type`). 음의 0은 모든 언어에서 부호를 잃었다. 이제 float는 Python과 PHP에서
   float literal(`0.0`, `1e+20`)이고, 음의 0은 `-0.0`, Node와 WASM에서 `-0`이다(B-2, G-5). `packages/ts`의 `npm test`로 검증했다.
