@@ -41,10 +41,13 @@ function libraries(contract: unknown): Set<string> {
 
 // The contracts of the named libraries, read from the packages that Cargo resolved for the crate beside the contract:
 // each library's crate is polyspec-<library> (P-1) and ships its interface.json (I-1). No other checkout is read (S15).
-function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
+// GN-15f: cargo metadata resolves the workspace, so it fails where Cargo cannot: without network for a Git dependency
+// that the machine has not fetched, or for a manifest that names a crate that no longer exists. The failure is given
+// back with what to run, so that scaffold can name the Go module alone.
+function cargoContracts(contract: unknown, crateDir: string): { found: Map<string, unknown>; failure?: string } {
   const wanted = libraries(contract);
   const found = new Map<string, unknown>();
-  if (wanted.size === 0) return found;
+  if (wanted.size === 0) return { found };
   // Cargo writes the metadata into a file rather than a pipe, so its size (megabytes for a workspace with the binding
   // crates) meets no buffer limit of the child process.
   const scratch = mkdtempSync(join(tmpdir(), 'binding-metadata-'));
@@ -57,7 +60,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
         stdio: ['ignore', fd, 'inherit'],
       });
       if (run.error !== undefined) throw run.error;
-      if (run.status !== 0) fail(`cargo metadata failed with status ${String(run.status)}`);
+      if (run.status !== 0) return { found, failure: `cargo metadata failed with status ${String(run.status)}; run the install target of the repository that fetches the crates of its Cargo.lock (cargo fetch --locked), then run the command again` };
     } finally {
       closeSync(fd);
     }
@@ -70,6 +73,13 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
     if (crate === undefined) continue;
     found.set(library, JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')));
   }
+  return { found };
+}
+
+// check and generate read the contracts for every target, so a failure of Cargo stops them.
+function dependencies(contract: unknown, crateDir: string): Map<string, unknown> {
+  const { found, failure } = cargoContracts(contract, crateDir);
+  if (failure !== undefined) fail(failure);
   return found;
 }
 
@@ -183,6 +193,7 @@ if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${ch
 // with the target go reads the contracts of the libraries it names: the contract of a path dependency of the core is
 // the interface.json of that path, which needs no Cargo, and one of any other dependency is found through Cargo, as
 // generate finds it.
+let metadataFailure: string | undefined;
 function scaffolded(): Map<string, unknown> {
   const found = new Map<string, unknown>();
   if (!checked.targets.includes('go')) return found;
@@ -198,7 +209,13 @@ function scaffolded(): Map<string, unknown> {
     }
     else others = true;
   }
-  if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
+  // Only go.mod reads these contracts, so a failure of Cargo leaves them not found: the Go module is then named as not
+  // written with the failure, and the packages of the other targets are written.
+  if (others) {
+    const cargo = cargoContracts(contract, join(root, checked.core.path));
+    metadataFailure = cargo.failure;
+    for (const [library, other] of cargo.found) if (!found.has(library)) found.set(library, other);
+  }
   return found;
 }
 const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
@@ -206,7 +223,9 @@ const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
 // named with its reason, and so is a failure of the whole that the contract, a case file or a manifest causes.
 function trackedOf(): Tracked {
   try {
-    return trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense);
+    const result = trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense);
+    const failure = metadataFailure;
+    return failure === undefined ? result : { files: result.files, refused: result.refused.map((r) => (r.path === goModuleDir(checked) ? { path: r.path, message: `${r.message}: ${failure}` } : r)) };
   } catch (error) {
     return { files: new Map(), refused: sentences(error).map((message) => ({ path: componentBase(checked), message })) };
   }

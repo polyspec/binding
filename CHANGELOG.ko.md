@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3637f2867d92b4c7f641309c71326774a28cee0638aa536785406fd7f0e2ff47 -->
+<!-- source-sha256: 76bac74081a56b02adfc389b6927c1cf160724698c6160ceef2834cf9e3f00be -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- target go가 있고 코어가 다른 라이브러리를 `path`가 아닌 의존으로 적는 계약의 `binding scaffold`는 그 라이브러리의 계약을
+  `cargo metadata`에 묻는데, Cargo가 실패하면 모든 target의 scaffold가 멈췄다. 그 계약을 읽는 것은 `go.mod`뿐이므로, 이제
+  실패는 Go module만 쓰지 않은 것으로 이름하고, Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를 fetch하는 install
+  target(`cargo fetch --locked`)을 실행하라는 안내를 적으며, 다른 target의 package는 쓴다(GN-15f, GN-3e). 모든 target에서
+  계약을 읽는 `check`와 `generate`는 같은 안내와 함께 실패한다. `cargo metadata`는 Cargo가 workspace를 해석할 수 없는 곳에서
+  실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을 때다.
+  `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했고(401개 중 1개), 변경 뒤 401개 중 401개가 통과한다.
 - `binding check`는 host 패키지(L-2a)의 손으로 쓴 manifest의 licence를 읽지 않았다. 그래서 host 패키지가 코어와 다른
   licence를 적거나 적지 않을 수 있었다. 이제 코어의 licence를 host manifest의 항목으로 읽는다(GN-3f, CK-19). host의
   `pyproject.toml`의 `project.license`, host의 `package.json`과 host 라이브러리의 `composer.json`의 `license`다. 없거나 다른

@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- `binding scaffold` of a contract with the target go whose core names another library by a dependency that is no
+  `path` asks `cargo metadata` for the contract of that library, and a failure of Cargo stopped the scaffold for every
+  target. Only `go.mod` reads those contracts, so a failure now names the Go module alone as not written, with the
+  status of Cargo and the instruction to run the install target of the repository that fetches the crates of its
+  `Cargo.lock` (`cargo fetch --locked`), and the packages of the other targets are written (GN-15f, GN-3e). `check`
+  and `generate`, which read the contracts for every target, fail with the same instruction. `cargo metadata` fails
+  where Cargo cannot resolve the workspace: without network for a Git dependency that the machine has not fetched, or
+  for a manifest that names a crate that no longer exists. Verified by `make test-ts`: the new test failed before the
+  change (1 of 401), and 401 of 401 pass with it.
 - `binding check` did not read the licence of the hand-written manifest of a host package (L-2a), so a host package
   could name another licence than its core or none. It now reads the licence of the core as an item of the host's
   manifest (GN-3f, CK-19): `project.license` of the host's `pyproject.toml`, and `license` of the host's `package.json`
