@@ -1,0 +1,147 @@
+{
+  "carry": [
+    {
+      "id": "a_text",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "text",
+        "value": "nameé"
+      }
+    },
+    {
+      "id": "an_unpaired_high_surrogate",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "text16",
+        "value": [
+          55296
+        ]
+      }
+    },
+    {
+      "id": "an_unpaired_low_surrogate",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "text16",
+        "value": [
+          56320
+        ]
+      }
+    },
+    {
+      "id": "a_paired_surrogate_pair",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "text16",
+        "value": [
+          55357,
+          56832
+        ]
+      }
+    },
+    {
+      "id": "a_text_that_mixes_them",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "text16",
+        "value": [
+          97,
+          55296,
+          98,
+          55357,
+          56832,
+          56320,
+          99
+        ]
+      }
+    },
+    {
+      "id": "a_key_with_an_unpaired_surrogate",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text16",
+              "value": [
+                56320
+              ]
+            },
+            {
+              "kind": "null"
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "k"
+            },
+            {
+              "kind": "text16",
+              "value": [
+                55296
+              ]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "a_big_integer_token",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "number",
+        "value": "123456789012345678901234567890"
+      }
+    },
+    {
+      "id": "a_document_of_every_kind",
+      "rule": "RQ-036",
+      "value": {
+        "kind": "map",
+        "value": [
+          [
+            {
+              "kind": "text",
+              "value": "list"
+            },
+            {
+              "kind": "list",
+              "value": [
+                {
+                  "kind": "bool",
+                  "value": true
+                },
+                {
+                  "kind": "number",
+                  "value": "-1.5e3"
+                },
+                {
+                  "kind": "null"
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "kind": "text",
+              "value": "text"
+            },
+            {
+              "kind": "text",
+              "value": "中\n\""
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "carry_deep": [
+    {
+      "id": "the_depth_limit",
+      "rule": "RQ-036",
+      "depth": 256
+    }
+  ]
+}

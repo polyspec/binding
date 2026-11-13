@@ -1036,6 +1036,35 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(lib, /OutValue::Text16\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 4\);\n\s*out_list\(output, value, \|output, unit\| out_uint\(output, u64::from\(unit\)\)\);/);
 });
 
+// B2.87: the relay of the end-to-end check, whose one function takes and gives the value class of json; the owner
+// fixture under the name json stands for the contract of json.
+const relaySample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const owner = readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8');
+  return {
+    contract: read('relay/packages/rust/interface.json'),
+    caseFiles: new Map([['contracts/cases.json', read('relay/contracts/cases.json')]]),
+    foreign: new Map([['json', JSON.parse(owner.replaceAll('owner', 'json').replaceAll('Owner', 'Json'))]]),
+  };
+};
+
+test('the relay of the value class of json is generated for every target, Go included (B2.87, GN-6x, GN-15c)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /polyspec_json::value_in\(&mut host, described\)/, path);
+    assert.match(lib, /polyspec_json::value_out\(/, path);
+    assert.match(lib, /polyspec_relay::carry\(/, path);
+  }
+  const pkg = text(out, 'packages/go/zz_generated_relay.go');
+  assert.match(pkg, /"github\.com\/polyspec\/json\/packages\/go"/);
+  assert.match(pkg, /^func Carry\(value_ \*json\.Value\) \(\*json\.Value, error\)/m);
+  // GN-15f: go.mod requires the Go module of json, whose package the binding imports, beside it by the path dependency.
+  const goMod = String(trackedPackages(contract, '0.0.0', new Map([['polyspec-json', { path: '../../../json/packages/rust' }]]), [], foreign).get('packages/go/go.mod'));
+  assert.match(goMod, /\nrequire github\.com\/polyspec\/json\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/json\/packages\/go => \.\.\/\.\.\/\.\.\/json\/packages\/go\n$/);
+});
+
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
   const { contract, caseFiles, foreign } = valueClassSample();
   delete foreign.get('owner').units.find((u: any) => u.id === 'value').core;
