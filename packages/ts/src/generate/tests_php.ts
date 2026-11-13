@@ -249,8 +249,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
       const errno = expectedErrno(kase);
       // GN-8a: PHP has no table of the errno symbols of its machine, so the test reads the value of a symbol from the
-      // extension, whose entry point is of the feature fault-test.
-      if (errno !== null && 'symbol' in errno && model.faults.length === 0) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is read through Internal\\errnoOf of the feature fault-test, which a contract without fault injection points does not have (GN-8a)`);
+      // extension, whose entry point is of the feature panic-test that every test build turns on.
       const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       methods.push(`
     public function testB4${name}${id}(): void

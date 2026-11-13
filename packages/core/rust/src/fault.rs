@@ -67,7 +67,7 @@ pub fn reach(name: &'static str) -> Option<Injected> {
 }
 
 #[cfg(feature = "fault-test")]
-pub use armed::{arm, errno, left, take, ArmError, Armed, Around};
+pub use armed::{arm, left, take, ArmError, Armed, Around};
 
 #[cfg(feature = "fault-test")]
 mod armed {
@@ -283,16 +283,6 @@ mod armed {
         Ok(armed.left())
     }
 
-    /// The value of an errno symbol on the target, from the table that [`arm`] reads, which a test of a language
-    /// without such a table compares with the errno of a failure (GN-8a).
-    ///
-    /// # Errors
-    ///
-    /// The target has no errno of this symbol, or no errno at all.
-    pub fn errno(symbol: &str) -> Result<i32, ArmError> {
-        errno_of(symbol).ok_or_else(|| ArmError::Errno(symbol.to_owned()))
-    }
-
     fn form(detail: impl Into<String>) -> ArmError {
         ArmError::Form(detail.into())
     }
@@ -329,7 +319,7 @@ mod armed {
         let injected = match (kind, errno, bytes) {
             (Some("io"), None, None) => Injected::Io { errno: None },
             (Some("io"), Some(symbol), None) => Injected::Io {
-                errno: Some(errno_of(symbol).ok_or_else(|| ArmError::Errno(symbol.to_owned()))?),
+                errno: Some(crate::errno::value(symbol).ok_or_else(|| ArmError::Errno(symbol.to_owned()))?),
             },
             (Some("short"), None, Some(bytes)) => Injected::Short { bytes },
             (Some("broken"), None, None) => Injected::Broken,
@@ -346,31 +336,6 @@ mod armed {
             visits: AtomicU64::new(0),
             fired: AtomicBool::new(false),
         })
-    }
-
-    /// The value of an errno symbol on the target; a target without errno has none.
-    #[cfg(unix)]
-    fn errno_of(symbol: &str) -> Option<i32> {
-        macro_rules! table {
-            ($($name:ident)*) => {
-                match symbol {
-                    $(stringify!($name) => Some(libc::$name),)*
-                    _ => None,
-                }
-            };
-        }
-        table!(
-            E2BIG EACCES EADDRINUSE EADDRNOTAVAIL EAGAIN EALREADY EBADF EBUSY ECANCELED ECHILD ECONNABORTED ECONNREFUSED
-            ECONNRESET EDEADLK EDQUOT EEXIST EFAULT EFBIG EHOSTUNREACH EINTR EINVAL EIO EISDIR ELOOP EMFILE EMLINK
-            EMSGSIZE ENAMETOOLONG ENETDOWN ENETUNREACH ENFILE ENOBUFS ENODEV ENOENT ENOEXEC ENOLCK ENOMEM ENOSPC ENOSYS
-            ENOTCONN ENOTDIR ENOTEMPTY ENOTSOCK ENOTSUP ENOTTY ENXIO EPERM EPIPE ERANGE EROFS ESPIPE ESRCH ESTALE
-            ETIMEDOUT ETXTBSY EXDEV
-        )
-    }
-
-    #[cfg(not(unix))]
-    fn errno_of(_symbol: &str) -> Option<i32> {
-        None
     }
 
     #[cfg(test)]

@@ -10,12 +10,13 @@
   checks them with the defaults of rustfmt, and the four cores are in that form now.
 
 - The PHP test of a case whose `raises` names an errno symbol, such as `EIO`, was refused ("the errno symbol EIO is
-  not compared in PHP yet"), because PHP has no table of the errno symbols of its machine. `binding_core::fault::errno`
-  gives the value of a symbol from the table that arms the faults, the PHP extension gives it with the feature
-  `fault-test` as `Internal\errnoOf`, and the PHP test compares the errno of the failure with it, as Python, Node and Go
-  compare it with the value of their language (GN-8a). A PHP test of such a case in a contract without fault injection
-  points is refused by name, because the contract has no feature `fault-test`. The cases of the tally of the sample
-  name `EIO` again.
+  not compared in PHP yet"), because PHP has no table of the errno symbols of its machine. `binding_core::errno::value`
+  gives the value of a symbol from the table that arms the faults, without a feature and with `libc` a dependency on
+  Unix; the PHP extension of every contract gives it with the feature `panic-test`, which every test build turns on, as
+  `Internal\errnoOf`, and the PHP test compares the errno of the failure with it, as Python, Node and Go compare it with
+  the value of their language, also in a contract without fault injection points (GN-8a). The end-to-end check builds
+  the PHP extension without features and fails if `llvm-nm` finds a test entry point in it, after it found `errno_of`
+  in the extension built with the test features. The cases of the tally of the sample name `EIO` again.
 
 - The two forms of a call of `then` (GN-13f) had only unit tests, so no run showed that the generated tests of
   either form pass in a target. The end-to-end sample `tests/e2e/sample` now holds both: `counter.tally` arms the fault

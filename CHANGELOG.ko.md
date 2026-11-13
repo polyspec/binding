@@ -10,10 +10,11 @@
   확인하며, 네 코어는 이제 그 형식이다.
 
 - `raises`가 `EIO` 같은 errno 기호를 적는 case의 PHP 시험은 거부되었다("the errno symbol EIO is not compared in PHP
-  yet"). PHP에는 그 기계의 errno 기호 표가 없기 때문이다. `binding_core::fault::errno`가 fault를 장전하는 표에서 기호의
-  값을 주고, PHP 확장은 feature `fault-test`에서 그것을 `Internal\errnoOf`로 주며, PHP 시험은 Python, Node, Go가 자기
-  언어의 값과 비교하듯이 실패의 errno를 그것과 비교한다(GN-8a). fault 주입점이 없는 계약에서 그런 case의 PHP 시험은
-  그 계약에 feature `fault-test`가 없으므로 이름을 대고 거부한다. sample의 tally case는 다시 `EIO`를 적는다.
+  yet"). PHP에는 그 기계의 errno 기호 표가 없기 때문이다. `binding_core::errno::value`가 feature 없이, Unix에서 `libc`를
+  의존으로 하여, fault를 장전하는 표에서 기호의 값을 준다. 모든 계약의 PHP 확장은 모든 시험 빌드가 켜는 feature
+  `panic-test`에서 그것을 `Internal\errnoOf`로 주며, PHP 시험은 Python, Node, Go가 자기 언어의 값과 비교하듯이 fault
+  주입점이 없는 계약에서도 실패의 errno를 그것과 비교한다(GN-8a). end-to-end 검사는 시험 feature로 빌드한 확장에서
+  `errno_of`를 찾은 뒤, feature 없이 빌드한 PHP 확장에서 `llvm-nm`이 시험용 진입점을 찾으면 실패한다. sample의 tally case는 다시 `EIO`를 적는다.
 
 - `then` 호출의 두 꼴(GN-13f)에는 단위 시험만 있어서, 어느 꼴의 생성된 시험이 target에서 통과하는지를 보인 실행이
   없었다. end-to-end sample `tests/e2e/sample`이 이제 둘을 모두 담는다. `counter.tally`는 fault `sample.tally`를 장전하고
