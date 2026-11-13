@@ -618,23 +618,39 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
     assert.match(missing.stderr, /ts\/package\.json: CK-19 optionalDependencies\.@polyspec\/sample-linux-x64-gnu is missing/);
+    // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 type is missing, not "module"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.binaryName is missing, not "sample"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.targets is missing, not \["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"\]/);
     const pyproject = (module: string): string =>
       `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
     // T-2: the addon is in the package of each platform, which the host names at its own version.
-    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
+    const hostNpm = (targets: string[]): string => JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
+      type: 'module',
       files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
       optionalDependencies: {
         '@polyspec/sample-linux-x64-gnu': '1.2.3',
         '@polyspec/sample-linux-arm64-gnu': '1.2.3',
         '@polyspec/sample-darwin-arm64': '1.2.3',
       },
-    }));
+      napi: { binaryName: 'sample', targets },
+    });
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
     writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
+    assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 napi\.targets is \["x86_64-unknown-linux-gnu","aarch64-apple-darwin"\], not \[/);
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']));
+    // The extension of a host PHP package is written by scaffold, so check compares it whole (GN-3b, GN-3c).
+    const nativeComposer = join(root, 'packages/php/native/composer.json');
+    const scaffolded = readFileSync(nativeComposer, 'utf8');
+    const ext = JSON.parse(scaffolded);
+    writeFileSync(nativeComposer, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
+    assert.match(spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' }).stderr, /php\/native\/composer\.json: CK-19 differs/);
+    writeFileSync(nativeComposer, scaffolded);
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
