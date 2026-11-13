@@ -264,6 +264,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
+    // GN-6o: the binding converts only the types that it generates, and it generates nothing of a host unit.
+    if (unit?.origin === 'host') throw new Unsupported(`${where}: a host unit ${unit.id} in a type of a generated unit is not generated (GN-6o)`);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
@@ -401,6 +403,8 @@ export function collectModel(
     if (refusals.found.length > before) refusedUnits.add(unit.id);
   }
   function collectUnit(unit: Unit): void {
+    // GN-6o, I-1: a host unit is code of the repository whose source is its declaration; the binding writes nothing of it.
+    if (unit.origin === 'host') return;
     // GN-6n: an internal unit is generated as a public one and marked by each target; a member of a public unit has
     // one form in every language, so an internal one is refused.
     if (unit.visibility === 'public') {

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A contract with a unit of origin `host` generated no target: a host class and a host functions unit were refused
+  with "a host class unit is not generated yet" and "a host functions unit is not generated yet", and the fields of a
+  host record were judged as those of a generated one. The generator now writes nothing of a host unit in any
+  target, because its source is its declaration and the host package exports it, and a generated unit that names a
+  host unit in a type is refused with that reason (GN-6o). Verified by `npm test` in `packages/ts`.
 - A contract with a unit of visibility `internal` generated no target: every such unit was refused with "an internal
   unit is not generated yet". An internal unit is now generated as a public unit of its kind and marked as no public
   API: `@internal` in the PHP stub and in the Node and WASM declarations, its Python names in no `__all__` (the root
