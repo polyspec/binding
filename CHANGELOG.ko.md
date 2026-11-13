@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- callback unit은 있고 class unit은 없는 계약의 Go C ABI가 컴파일되지 않았다(9a23122의 `tests/e2e/consumer`에서 E0425 `Table`,
+  E0433 `Arc`). 생성기는 도우미 이름이 코드의 단어로 나오면 쓰인 것으로 셌기 때문에, method 호출
+  `lock(&THROWN).insert(handle, error)`가 class unit의 `Table`과 `Arc`를 적는 table 도우미 `insert`를 끌어들였다. 이제 도우미와
+  이름이 같은 method(`.insert(`)는 그 도우미를 쓰는 것이 아니며, 모든 target이 `usedHelpers`로 도우미를 고르므로 다섯 target에
+  같이 적용된다(GN-4). `make test-ts`로 검증했다: 293 통과.
 - 다른 레포의 callback unit을 받는 class나 member를 언어 코드에 닿지 않는 것으로 판정했다. 언어 코드를 담는 타입의 계산(GN-6h)이
   다른 레포의 모든 타입에 false를 돌려주어서, 그런 callback을 받는 wait `blocking_io`나 `async_driver` member가 생성되었고 그
   class의 lock도 그것을 세지 않았다. 이제 그런 callback unit은 언어 코드를 담으므로, 그 member는 "a member with wait ... that

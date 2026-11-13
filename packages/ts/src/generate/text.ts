@@ -60,12 +60,12 @@ export function usedHelpers(block: string, code: string): string {
   const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
   const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
   const used = new Set<string>();
-  // A helper is used where its name is a word of the code, called or passed; comments and a field of that name
-  // (`member: ...`) do not count.
+  // A helper is used where its name is a word of the code, called or passed; comments, a field of that name
+  // (`member: ...`) and a method of that name (`map.insert(...)`) do not count (GN-4).
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
   let frontier = strip(code);
   for (;;) {
-    const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\b(?!\\s*:[^:])`).test(frontier));
+    const added = named.filter(({ name }) => !used.has(name) && new RegExp(`(?<![.\\w])${name}\\b(?!\\s*:[^:])`).test(frontier));
     if (added.length === 0) break;
     for (const { name } of added) used.add(name);
     frontier = strip(added.map(({ item }) => item).join('\n'));

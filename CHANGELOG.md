@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The Go C ABI of a contract with a callback unit and no class unit did not compile (E0425 `Table`, E0433 `Arc`, in
+  `tests/e2e/consumer` at 9a23122): the generator counted a helper as used where its name was a word of the code, so
+  the method call `lock(&THROWN).insert(handle, error)` brought in the table helper `insert`, which names the `Table`
+  and `Arc` of class units. A method of the name of a helper (`.insert(`) is now no use of it, in the helpers of every
+  target, which all select them through `usedHelpers` (GN-4). Verified by `make test-ts`: 293 pass.
 - A class or a member that took a callback unit of another repository was judged as one that reaches no language
   code: the computation of the types that carry language code (GN-6h) returned false for every type of another
   repository, so a member with wait `blocking_io` or `async_driver` that took such a callback was generated, and the
