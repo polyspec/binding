@@ -559,7 +559,8 @@ function functionRust(model: Model, fn: Fn): string {
   }
   // GN-6h: the guards of the places of the call, the receiver's first. A future owns the guards (GN-6n), so it binds
   // the borrows of the guards inside it.
-  const moved = waitsAsync(fn);
+  // GN-6ab: the core of a member with machine is called at once, so the entry binds the borrows.
+  const moved = waitsAsync(fn) && fn.machine !== true;
   lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2
@@ -921,7 +922,7 @@ fn thrown(error: Thrown) -> ${failure} {
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(error),
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match raised.native().downcast::<ThrownKey>().and_then(|thrown| THROWN.with_borrow_mut(|map| map.remove(&thrown.key))) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
@@ -994,25 +995,23 @@ where
 
 /// GN-6n, B-7: the output of a future, or kind internal for a panic of a poll where the module unwinds; a module built
 /// with panic=abort traps instead (GN-18).
-fn caught<F, O>(future: F) -> impl std::future::Future<Output = Result<O, Fail>>
+async fn caught<F, O>(future: F) -> Result<O, Fail>
 where
     F: std::future::Future<Output = Result<O, Fail>>,
 {
-    async move {
-        let mut future = std::pin::pin!(future);
-        std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
-            Ok(poll) => poll,
-            Err(payload) => {
-                let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
-                    (Some(text), _) => (*text).to_owned(),
-                    (None, Some(text)) => text.clone(),
-                    (None, None) => String::from("a panic without a message"),
-                };
-                std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
-            }
-        })
-        .await
-    }
+    let mut future = std::pin::pin!(future);
+    std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+        Ok(poll) => poll,
+        Err(payload) => {
+            let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
+                (Some(text), _) => (*text).to_owned(),
+                (None, Some(text)) => text.clone(),
+                (None, None) => String::from("a panic without a message"),
+            };
+            std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
+        }
+    })
+    .await
 }
 `;
 

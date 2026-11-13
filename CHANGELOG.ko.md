@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 76bac74081a56b02adfc389b6927c1cf160724698c6160ceef2834cf9e3f00be -->
+<!-- source-sha256: 047f616f3b2c84050ce870c6dcacc4214fd3c120cd0686469b9cac1c3e56f125 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -60,6 +60,65 @@
   `generate`의 실패는 그 문장을 가진 거부된 target이며 stack trace가 없어서 다른 target을 멈추지 않는다(GN-1c).
   `make test-ts`로 확인했다. 새 시험 셋과 GN-15f의 바뀐 시험은 변경 전에 실패했고(396개 중 4개), 변경 뒤 396개 중 396개가
   통과한다.
+- PHP, Python, Node, WASM crate의 helper `handle_count`와 `handle_position`은 `clippy::manual_unwrap_or` allow 아래에서
+  `try_from`의 결과를 손으로 match했고, 그 이유는 `unwrap_or`가 금지라고 했다. R-1은 그 계열을 `Option`에만 금지하고, 생성
+  코드는 다른 곳에서 `Result::unwrap_or`를 부른다. 이제 여덟 helper는 allow 없이 `try_from(value).unwrap_or(MAX)`이고,
+  모든 입력에 같은 값을 준다. `make test-ts`로 검증했다: 새 테스트가 그 allow 때문에 실패했고, 변경 후 413개 중 413개가
+  통과한다.
+- consumer sample의 계약 case "refused by the owner"는 alias에 callable을 주고 kind `unsupported`를 기대했는데, sample의
+  코어는 callable을 Native로 받는다(GN-6u). 그래서 그 case는 PHP, Python, Node, WASM에서 실패했다. 이제 그 case는 모든
+  target에서 소유자가 거부하는 두 값을 각각 `measure`, `pair`, `fetch`의 callback으로 준다. 하나는 key가 텍스트가 아닌
+  map이고, 다른 하나는 Unicode 텍스트가 아닌 텍스트다(PHP와 Go에서는 UTF-8이 아닌 바이트, Python, Node, WASM에서는 짝 없는
+  surrogate). Go에는 consumer의 계약 case가 없었다. 이제 `tests/e2e/consumer/cases_test.go`가 다른 네 runner와 같은 case를
+  돌린다.
+- end-to-end 검사의 relay가 드러낸 생성기의 네 텍스트. relay는 다른 저장소의 value class를 받고 돌려주며 kind를 가리키지
+  않는다. Go를 뺀 모든 crate가 `failure_error`에 `core_error` 호출을 썼는데, kind가 없는 계약에는 그 함수가 없어서 crate가
+  컴파일되지 않았다. `binding_core::Failure<()>`의 kind는 어떤 member도 주지 않는 unit이고, 이제 그 갈래는 kind
+  `internal`이다(E-1c, GN-6x). PHP는 소유자의 클래스 이름을 namespace와 함께 두 Rust 문자열에 backslash를 escape하지
+  않고 썼다("unknown character escape"). 이제 그 문자열을 Rust 문자열로 쓴다. PHP는 host가 소유한 handle의 bit를
+  `OWNED`라고 불렀는데, 같은 module에 있는 GN-6u 표의 이름이다. 이제 그 bit는 `HOST_OWNED`다. Go는 value class와 그 out
+  row의 번호를 접미사 없는 literal로 썼고, 그것은 `out_uint(…, impl WideUint)`에서 `i32`다. 이제 `u64` literal이다
+  (GN-15c). json의 계약으로 돌린 relay의 end-to-end 실행이 찾았다. `make test-ts`로 검증했다: 새 테스트 셋이 각각 자기
+  텍스트 때문에 실패했고, 변경 후 412개 중 412개가 통과한다.
+- 생성 crate의 helper가 `async fn`이면 모든 crate에 남았다. `usedHelpers`는 항목의 처음에서 `fn`이나 `trait` 뒤의
+  이름만 읽었고, 그래서 WASM crate의 `async fn caught`는 이름이 없어 쓰인 것으로 세어졌다. `wait: async_driver`
+  member가 없는 WASM crate(variants, sample)에 죽은 코드가 있었고 lint가 이를 deny한다. 이제 `usedHelpers`는
+  `async fn`의 이름도 읽는다(GN-4, GN-6n). variants와 sample의 end-to-end 실행이 찾았다("function `caught` is never
+  used"). `make test-ts`로 검증: `caught`의 테스트가 variants의 WASM crate 때문에 실패했고, 변경 후 409개 중
+  409개가 통과한다.
+- `tests/e2e`의 어느 계약도 드러내지 않는 생성기의 텍스트 세 가지. PHP는 실패하는 member나 value alias가 있는 모든
+  계약에 helper `thrown`을 썼는데, 그것을 부르는 것은 callback이나 함수 타입뿐이다. 그래서 alias가 있고 callback이 없는
+  계약(relay fixture)의 crate에 죽은 코드가 있었고, lint가 이를 deny한다. 이제 PHP는 Node처럼 `keepsThrown`이 성립할
+  때에만 그것을 쓴다(U-3, GN-6z). member의 borrow 단언(GN-6h, I-2)은 함수 포인터 타입에서 `wait: blocking_io`의 `Io`
+  토큰을 빼고 receiver `self`를 `&`로 썼다. 그래서 올바른 코어가 그 단언과 컴파일되지 않았다. 이제 단언은 receiver
+  뒤에 토큰 자리의 `_`를 두고, receiver `self`를 class의 값으로 쓴다(GN-6m, GN-6o). `machine`과 class 매개변수를 가진
+  Node 또는 WASM member는 코어에 매개변수의 guard를 주었다. 진입점이 guard의 borrow를 machine에는 없는 future에
+  맡겼기 때문이다. 이제 진입점은 코어가 machine을 만들기 전에 borrow를 바인딩한다(GN-6ab). `make test-ts`로 검증:
+  새 테스트 세 개가 각자의 텍스트 때문에 실패했고, 변경 후 409개 중 409개가 통과한다.
+- `WORK` 없는 `make e2e`는 스크립트에 빈 `--work`를 주었고, 스크립트는 그것을 checkout의 루트로 해석했다. 그래서 실행이
+  commit의 트리, 레포의 복사본, 빌드 디렉터리를 checkout 안에 썼다. `DEPS`가 있으면 그 빈 값이 `--dep`을 디렉터리로
+  받기도 했다. 이제 `WORK`는 선택이다. recipe는 이름이 주어진 디렉터리에만 `--work`를 주고, 그것이 없는 실행은
+  시스템 임시 디렉터리 아래에 디렉터리를 만들어, 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 그것을 지운다. 실행의
+  명령은 자기 프로세스 그룹에서 돌고 스크립트의 파이프 하나에 쓴다. 그래서 신호는 그 그룹을 멈추고, 마지막 프로세스가
+  끝나 파이프가 닫힌 뒤에 디렉터리가 지워진다(GN-14, HR-87). 실행의 오류는 출력과 함께, 쓰인 순서대로 출력된다.
+  end-to-end 검사는 각 바인딩 crate를 시험 feature로만 lint했다. 그래서 시험 feature의 진입점만 쓰는 import는 feature
+  없는 빌드에서 쓰이지 않았는데도 어느 실행도 그것을 보지 못했다. 이제 검사는 각 바인딩 crate를 feature 없이도
+  `-D warnings`로 lint하고, 두 lint를 target의 결과에 적는다(GN-14, GN-5). `scripts/e2e-work.mts`와
+  `scripts/e2e-lint.mts`는 실행이 checkout에서 읽는 파일이다(GN-14b). `make test-ts`로 검증: 새 테스트는 두 모듈이
+  없을 때 실패했고, 모듈이 있을 때 406개 중 406개가 통과한다.
+- end-to-end 검사가 이 트리의 생성 crate를 처음으로 컴파일했고 여섯 가지 텍스트를 거부했다. PHP와 Node:
+  `thrown_thread`가 스레드 번호를 `Err` 가지가 0을 주는 `match`로 읽었고, clippy는 이를 `manual_unwrap_or_default`로
+  지적한다. 이제 `let ... else`로 읽는다(U-3, GN-6u). Python: 생성 코드가 cfg `pyo3_disable_reference_pool`을 읽는데
+  어느 crate도 그것을 선언하지 않아 rustc가 거부했다(`unexpected_cfgs`). 이제 Python crate는 그 cfg를 선언하는
+  `build.rs`를 갖고 manifest가 그것을 가리킨다(GN-3a, GN-6u). WASM: `caught`가 `async` 블록 하나를 감싼
+  `impl Future`를 돌려주었고, clippy는 이를 `manual_async_fn`으로 지적한다. 이제 `async fn`이다(GN-6n). Go: callback
+  unit이 있고 value alias가 없는 계약에서, package binding이 버퍼의 handle 목록을 읽었으나 Rust crate는 alias가 있는
+  계약에서만 그 목록을 쓴다. 그래서 모든 호출이 "the encoded result does not follow the encoding of the binding" 또는
+  `cgo.Handle` 오용으로 실패했다. 이제 Go는 crate가 목록을 쓸 때에만 그것을 읽는다(GN-6u). Go: 테스트가 optional
+  callback을 fixture struct의 포인터로 주었고, interface의 포인터인 매개변수에 대해 `go vet`이 이를 거부한다. 이제
+  테스트는 `ptr[<interface>](...)`를 준다(GN-6aa). Node와 WASM: 테스트가 options record 앞에서 생략하는 인자를
+  빼 버려 record가 그 자리에 들어갔다. 이제 테스트는 그 자리에 `undefined`를 주고, 뒤쪽 인자만 빠진다(U-2, GN-6i).
+  `make test-ts`로 검증: 새 테스트 여섯 개가 각자의 텍스트 때문에 실패했고, 변경 후 399개 중 399개가 통과한다.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
   `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
   feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는

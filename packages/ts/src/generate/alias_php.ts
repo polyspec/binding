@@ -229,12 +229,12 @@ function valueClassesPhpHost(model: Model): string {
             Some(case) => case.get_property::<String>("value").map_err(php_failed)?,
             None => match by.string() {
                 Some(text) => text,
-                None => return Err(binding_error(BindingError::Internal { detail: String::from("GN-6x: the kind of ${own} is no enum case") })),
+                None => return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6x: the kind of ${own} is no enum case`)}) })),
             },
         };
         let (kind, read) = match by.as_str() {
 ${arms}
-            other => return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: ${own} gives the kind {other}, which its in row has no case for") })),
+            other => return Err(binding_error(BindingError::Internal { detail: format!(${rustString(`GN-6x: ${own} gives the kind {other}, which its in row has no case for`)}) })),
         };
         values.push((value.shallow_clone(), read));
         return Ok(Some(HostValue::Value { kind, handle: Handle::new(VALUE | handle_count(values.len() - 1)) }));
@@ -249,14 +249,14 @@ ${arms}
         }
         let len = handle_count(entries.len());
         owned.push(entries);
-        return Ok(Some(HostValue::Map { handle: Handle::new(OWNED | handle_count(owned.len() - 1)), len }));
+        return Ok(Some(HostValue::Map { handle: Handle::new(HOST_OWNED | handle_count(owned.len() - 1)), len }));
     }`)];
   });
   return `
 /// GN-6x: the bits of a handle of a value that the host owns: an instance of a value class of another repository, or
 /// the entries of a value that a read member gave; any other handle is of a value that the caller lent.
 const VALUE: u64 = 1 << 62;
-const OWNED: u64 = 1 << 61;
+const HOST_OWNED: u64 = 1 << 61;
 
 /// GN-6x: whether a value is an instance of the class of that name of another repository's extension.
 fn php_instance(value: &Zval, class: &str) -> bool {
@@ -332,7 +332,7 @@ impl PhpHost<'_> {
             }
             let len = handle_count(entries.len());
             self.owned.push(entries);
-            return Ok(HostValue::PhpArray { handle: Handle::new(OWNED | handle_count(self.owned.len() - 1)), len, is_list });
+            return Ok(HostValue::PhpArray { handle: Handle::new(HOST_OWNED | handle_count(self.owned.len() - 1)), len, is_list });
         }
         if value.object().is_some() || value.array().is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("GN-6x: a read member gave an object that no in row describes") }));
@@ -343,10 +343,10 @@ impl PhpHost<'_> {
 
     /// GN-6x: the item or the entry of a value that the host owns, its key described as an owned value.
     fn owned_entry(&mut self, handle: Handle, index: u64) -> Result<Option<(HostValue, HostValue)>, binding_core::Raised> {
-        if handle.raw() & OWNED == 0 {
+        if handle.raw() & HOST_OWNED == 0 {
             return Ok(None);
         }
-        let entry = self.owned.get(handle_position(handle.raw() & !OWNED)).and_then(|entries| entries.get(handle_position(index)));
+        let entry = self.owned.get(handle_position(handle.raw() & !HOST_OWNED)).and_then(|entries| entries.get(handle_position(index)));
         let Some((key, item)) = entry.map(|(key, item)| (key.shallow_clone(), item.shallow_clone())) else {
             return Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no such entry") }))));
         };
@@ -681,21 +681,13 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
-#[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_count(value: usize) -> u64 {
-    match u64::try_from(value) {
-        Ok(value) => value,
-        Err(_wide) => u64::MAX,
-    }
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
-#[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_position(value: u64) -> usize {
-    match usize::try_from(value) {
-        Ok(value) => value,
-        Err(_wide) => usize::MAX,
-    }
+    usize::try_from(value).unwrap_or(usize::MAX)
 }
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.

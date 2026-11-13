@@ -58,7 +58,7 @@ export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) =>
 // helper, because its lints deny dead code.
 export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}): string {
   const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
-  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
+  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:(?:async )?fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
   // A helper is used where its name is a word of the code, called or passed; comments, a field of that name
   // (`member: ...`) and a method of that name (`map.insert(...)`) do not count (GN-4).
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');

@@ -3,7 +3,7 @@
 // another type, or one that names no variant, does not compile.
 
 import { variantPattern } from '../contract.ts';
-import { type Model, errorMatched, paramBorrow, unitOf } from './model.ts';
+import { type Model, errorMatched, paramBorrow, unitOf, waitsIo } from './model.ts';
 
 // The assertions of a crate, one for each variant that a member of the model raises, in the order the members first
 // name them. Every member of a contract returns the one core error enum of E-1, so a variant is asserted once.
@@ -38,13 +38,17 @@ function borrowAssertions(model: Model): string {
   const coreOf = (type: Parameters<typeof unitOf>[1]): string => unitOf(model, type)?.core_type ?? '_';
   const assertions = [...model.functions, ...model.objects.flatMap((o) => o.members)].flatMap((fn) => {
     if (!fn.params.some((p) => p.core !== undefined)) return [];
-    const receiver = fn.receiver === undefined ? [] : [`${fn.receiver === '&mut self' ? '&mut ' : '&'}${fn.unit.core_type ?? '_'}`];
+    // GN-6o: the receiver self is the value of the class; GN-6m: the token of wait blocking_io is the first argument
+    // after the receiver, whose type the assertion leaves to the core.
+    const borrowed = { '&self': '&', '&mut self': '&mut ', self: '' } as const;
+    const receiver = fn.receiver === undefined ? [] : [`${borrowed[fn.receiver]}${fn.unit.core_type ?? '_'}`];
+    const token = waitsIo(fn) ? ['_'] : [];
     const params = fn.params.map((p) => {
       if (p.core === undefined) return '_';
       const prefix: Record<NonNullable<ReturnType<typeof paramBorrow>>, string> = { '&': '&', '&mut': '&mut ', value: '' };
       return `${prefix[p.core]}${coreOf(p.type)}`;
     });
-    return [`const _: () = {\n    let _: fn(${[...receiver, ...params].join(', ')}) -> _ = ${fn.corePath};\n};`];
+    return [`const _: () = {\n    let _: fn(${[...receiver, ...token, ...params].join(', ')}) -> _ = ${fn.corePath};\n};`];
   });
   if (assertions.length === 0) return '';
   return `

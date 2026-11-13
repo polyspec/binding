@@ -111,9 +111,9 @@ final class CasesTest extends TestCase
     /** A value that the owner of the alias refuses is its kind in the class of this library. */
     public function testRefusedByTheOwner(): void
     {
-        // A map with a key that is no text is not data, and neither is a Closure, which enters as a handle that the
-        // extension keeps until the request ends (GN-6e).
-        foreach ([[5 => 'x'], static fn (): int => 1] as $refused) {
+        // The owner refuses a map with a key that is no text and a string whose bytes are no text; a Closure is data of
+        // the owner, which keeps it as a Native (GN-6u).
+        foreach ([[5 => 'x'], "\xff"] as $refused) {
             $calls = [
                 static fn (): mixed => Consumer\measure($refused),
                 static fn (): mixed => Consumer\pair([$refused]),

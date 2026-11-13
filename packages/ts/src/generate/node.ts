@@ -594,7 +594,8 @@ function entryRust(model: Model, fn: Fn): string {
     }
   }
   // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
-  const moved = waitsAsync(fn) || pooled(fn);
+  // GN-6ab: the core of a member with machine is called at once on this thread, so the entry binds the borrows.
+  const moved = (waitsAsync(fn) && fn.machine !== true) || pooled(fn);
   lines.push(...locks(model, fn, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
@@ -947,7 +948,7 @@ ${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failu
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => core_error(error),
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,

@@ -2,10 +2,11 @@
 // and run the generated tests (G-5) and, where tests/e2e/<library> holds them, the contract cases (V-1) on each
 // language's standard runner, for every target of the contract (GN-14).
 //
-//   make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]
+//   make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]
 //
-// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> --work <directory> [--dep <checkout>]... with the
-// Node.js of the checkout and the environment of its mise. The run checks the commit BINDING of binding (HEAD by
+// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> [--work <directory>] [--dep <checkout>]... with the
+// Node.js of the checkout and the environment of its mise. Without WORK the run makes a work directory of its own
+// outside the checkout and removes it at its end (scripts/e2e-work.mts). The run checks the commit BINDING of binding (HEAD by
 // default), whose tree it writes into <work>/binding and runs from there (GN-14b). Every tool is the one that the
 // checkout pins and `make install` installs into var/tools (AGENTS.md): before any step the check finds the tool of
 // each target and fails, naming the target, the tool and `make install`, when one is missing. No switch leaves a
@@ -33,6 +34,8 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
+import { bindingLints } from './e2e-lint.mts';
+import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -48,12 +51,10 @@ for (const key of args.keys()) {
   if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work and --dep`);
 }
 const repoArg = args.get('--repo');
-const workArg = args.get('--work');
-if (repoArg === undefined || workArg === undefined) {
-  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]\n');
+if (repoArg === undefined || repoArg === '') {
+  process.stderr.write('usage: make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]\n');
   process.exit(2);
 }
-const work = resolve(workArg);
 // The directory of this script, with a trailing slash.
 const here = new URL('..', import.meta.url).pathname;
 const git = (dir: string, argv: string[]): string => execFileSync('git', ['-C', dir, ...argv], { encoding: 'utf8' }).trim();
@@ -65,29 +66,32 @@ const git = (dir: string, argv: string[]): string => execFileSync('git', ['-C', 
 if (args.get('--checkout') === undefined) {
   const checkout = resolve(here);
   const commit = git(checkout, ['rev-parse', '--verify', `${args.get('--binding') ?? 'HEAD'}^{commit}`]);
-  const source = join(work, 'binding');
-  process.stdout.write(`\n== binding: the tree of the commit ${commit}\n`);
-  rmSync(source, { recursive: true, force: true });
-  mkdirSync(source, { recursive: true });
-  execFileSync('tar', ['-x', '-C', source], { input: execFileSync('git', ['-C', checkout, 'archive', '--format=tar', commit], { maxBuffer: 1 << 30 }) });
   const npm = join(checkout, 'var/tools/bin/npm');
   if (!existsSync(npm)) {
     process.stderr.write('the check installs the packages of the generator with the npm of mise.toml, which is not installed; run make install (AGENTS.md)\n');
     process.exit(1);
   }
-  execFileSync(npm, ['ci', '--prefix', join(source, 'packages/ts'), '--no-audit', '--no-fund'], { stdio: 'inherit' });
+  // GN-14: the directory that WORK names, or one of the run, which the run removes at its end, at its failure and on
+  // SIGINT and SIGTERM.
+  const run = workOf(args.get('--work'));
+  const source = join(run.path, 'binding');
+  process.stdout.write(`\n== binding: the tree of the commit ${commit}\n`);
   // A repository inside this checkout (tests/e2e/<library>) is read from the same commit.
   const inSource = (path: string): string => {
     const at = relative(checkout, resolve(path));
     return at.startsWith('..') || isAbsolute(at) ? resolve(path) : join(source, at);
   };
   const forwarded = [
-    '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', work,
+    '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', run.path,
     ...deps.flatMap((dep) => ['--dep', inSource(dep)]),
   ];
-  const child = spawnSync(process.execPath, [join(source, 'scripts/e2e.mts'), ...forwarded], { stdio: 'inherit' });
-  process.exit(child.status ?? 1);
+  process.exit(await runIn(run, [
+    { command: 'sh', argv: ['-c', 'rm -rf "$1" && mkdir -p "$1" && git -C "$2" archive --format=tar -o "$1.tar" "$3" && tar -x -C "$1" -f "$1.tar" && rm "$1.tar"', 'sh', source, checkout, commit] },
+    { command: npm, argv: ['ci', '--prefix', join(source, 'packages/ts'), '--no-audit', '--no-fund'] },
+    { command: process.execPath, argv: [join(source, 'scripts/e2e.mts'), ...forwarded] },
+  ]));
 }
+const work = resolve(args.get('--work') ?? '');
 
 // The script of the checkout reads no source of the generator (READ_FROM_CHECKOUT, GN-14b): the script of the tree of
 // the commit loads them here.
@@ -491,8 +495,9 @@ stepOf(targets, `lint the core${mains.length === 1 ? '' : 's'}`, () => {
 for (const t of targets) if (!failed(t)) lintOf(t, `cargo clippy of the core${mains.length === 1 ? '' : 's'}`);
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'}`, () => {
-    for (const p of mainsOf(t)) run('cargo', ['clippy', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-${crateSuffix[t]}`, '--all-targets', '--features', testFeatures(p, t), '--', '-D', 'warnings']);
-  })) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} with ${mainsOf(t).length === 1 ? 'its' : 'their'} test features`);
+    // GN-5: with the test features, which the tests build, and without a feature, which a release builds.
+    for (const p of mainsOf(t)) for (const lint of bindingLints(join(p.copy, 'Cargo.toml'), `${p.contract.core.crate}-${crateSuffix[t]}`, testFeatures(p, t))) run('cargo', lint.argv);
+  })) for (const lint of bindingLints('', '', '')) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} ${lint.what}`);
 }
 
 const [cases] = mains[0]?.caseFiles ?? [];
