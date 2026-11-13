@@ -2,19 +2,15 @@
 // and run the generated tests (G-5) and, where tests/e2e/<library> holds them, the contract cases (V-1) on each
 // language's standard runner, for every target of the contract (GN-14).
 //
-//   make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
+//   make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]
 //
-// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> --work <directory> [--dep <checkout>]...
-// [--add-targets go,wasm] with the Node.js of the checkout and the environment of its mise. The run checks the commit
-// BINDING of binding (HEAD by default), whose tree it writes into <work>/binding and runs from there (GN-14b). Every tool is the one that the checkout pins and `make
-// install` installs into var/tools (AGENTS.md): before any step the check finds the tool of each target and fails, naming
-// the target, the tool and `make install`, when one is missing. No switch leaves a target out, because a target that did
-// not run is not verified while the run would look passed.
-//
-// --add-targets adds targets that the repository's contract does not have yet to the copy of --repo, with the package
-// entry that P-1 names (the Go module github.com/polyspec/<repository>/packages/go; WASM in the npm package of Node,
-// chosen by the browser condition of each entry, P-5) and the WASM classes of E-2, so a generator can be checked before
-// a repository takes it; the run says so.
+// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> --work <directory> [--dep <checkout>]... with the
+// Node.js of the checkout and the environment of its mise. The run checks the commit BINDING of binding (HEAD by
+// default), whose tree it writes into <work>/binding and runs from there (GN-14b). Every tool is the one that the
+// checkout pins and `make install` installs into var/tools (AGENTS.md): before any step the check finds the tool of
+// each target and fails, naming the target, the tool and `make install`, when one is missing. No switch leaves a
+// target out or adds one: the run checks the targets of the contract, because a target that did not run is not
+// verified while the run would look passed, and a target that the run adds hides that the contract lacks it.
 //
 // A repository whose contract names the types of another repository (T-3) needs that repository's packages: each
 // --dep checkout goes through the same steps first (without its tests), its Python wheel is installed beside and its
@@ -47,18 +43,14 @@ for (let i = 2; i < process.argv.length; i += 2) {
   if (key === '--dep') deps.push(value);
   else args.set(key, value);
 }
-const options = ['--binding', '--repo', '--work', '--add-targets', '--checkout'];
+const options = ['--binding', '--repo', '--work', '--checkout'];
 for (const key of args.keys()) {
-  if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work, --dep and --add-targets`);
+  if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work and --dep`);
 }
 const repoArg = args.get('--repo');
 const workArg = args.get('--work');
-const addTargets = (args.get('--add-targets') ?? '').split(',').filter((t) => t !== '') as Lang[];
-for (const added of addTargets) {
-  if (!['go', 'wasm'].includes(added)) throw new Error(`--add-targets takes go and wasm, not ${added}`);
-}
 if (repoArg === undefined || workArg === undefined) {
-  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]\n');
+  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]\n');
   process.exit(2);
 }
 const work = resolve(workArg);
@@ -92,7 +84,6 @@ if (args.get('--checkout') === undefined) {
   const forwarded = [
     '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', work,
     ...deps.flatMap((dep) => ['--dep', inSource(dep)]),
-    ...(addTargets.length > 0 ? ['--add-targets', addTargets.join(',')] : []),
   ];
   const child = spawnSync(process.execPath, [join(source, 'scripts/e2e.mts'), ...forwarded], { stdio: 'inherit' });
   process.exit(child.status ?? 1);
@@ -161,7 +152,7 @@ interface Prepared {
 
 // Copies a checkout, makes the changes it lacks, checks and tests its core and conforms its cases; each target
 // generates its own files afterwards (GN-14c).
-function prepare(checkout: string, added: Lang[] = []): Prepared {
+function prepare(checkout: string): Prepared {
   const contract = JSON.parse(readFileSync(join(resolve(checkout), 'packages/rust/interface.json'), 'utf8')) as Contract;
   const library = contract.library;
   const crate = contract.core.crate;
@@ -173,25 +164,6 @@ function prepare(checkout: string, added: Lang[] = []): Prepared {
   // A checkout of its own is copied as committed; a directory inside this repository (tests/e2e/sample) as it is.
   if (existsSync(join(resolve(checkout), '.git'))) execFileSync('sh', ['-c', `git -C '${resolve(checkout)}' archive HEAD | tar -x -C '${copy}'`]);
   else execFileSync('cp', ['-r', `${resolve(checkout)}/.`, copy]);
-
-  if (added.some((t) => !contract.targets.includes(t))) {
-    step(`${library}: targets added for this run (the repository has not taken them)`);
-    for (const lang of added) {
-      if (contract.targets.includes(lang)) continue;
-      contract.targets.push(lang);
-      if (lang === 'go') contract.packages['go'] = { module: `github.com/polyspec/${library}/packages/go` };
-      if (lang === 'wasm') {
-        const node = contract.packages['node'] as { entries: Record<string, { conditions?: unknown }> };
-        for (const entry of Object.values(node.entries)) entry.conditions = { node: 'napi', browser: 'wasm' };
-        // E-2: the WASM class of a category is the Node one (the same capitals, N-2).
-        for (const row of Object.values(contract.errors.classes)) {
-          if (row !== undefined && row.node !== undefined) row.wasm = row.node;
-        }
-      }
-      process.stdout.write(`added: the target ${lang} (P-1, P-5)\n`);
-    }
-    writeFileSync(join(copy, 'packages/rust/interface.json'), `${JSON.stringify(contract, null, 2)}\n`);
-  }
 
   step(`${library}: changes the repository needs (each printed)`);
   const coreManifest = join(copy, 'packages/rust/Cargo.toml');
@@ -407,11 +379,7 @@ const extensionOf = (contract: Contract): string => `polyspec_${contract.library
 
 // The tools of the checkout (AGENTS.md), found before any step: a target whose tool is missing fails the run here, with
 // the target, the tool and the file that pins it, so no target is left out (GN-14). A tool runs by its absolute path.
-const targetsOf = (checkout: string, added: Lang[]): Lang[] => {
-  const declared = (JSON.parse(readFileSync(join(resolve(checkout), 'packages/rust/interface.json'), 'utf8')) as Contract).targets;
-  return [...declared, ...added.filter((t) => !declared.includes(t))];
-};
-const targets = targetsOf(repo, addTargets);
+const targets = (JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract).targets;
 const missing: string[] = [];
 const need = (forTarget: string, tool: string, pinned: string, found: string | undefined): string => {
   if (found === undefined) missing.push(`the target ${forTarget} needs ${tool} (${pinned})`);
@@ -517,7 +485,6 @@ process.on('exit', (code) => {
     diagnosis,
     repository: { path: resolve(repo), commit: repositoryCommit(repo) },
     dependencies: deps.map((dep) => ({ path: resolve(dep), commit: repositoryCommit(dep) })),
-    addedTargets: addTargets,
     targets: Object.fromEntries([...results].map(([t, o]) => [t, { result: o.causes.length > 0 ? 'failed' : 'passed', ...o }])),
     result: code === 0 ? 'passed' : 'failed',
   };
@@ -528,15 +495,15 @@ process.on('exit', (code) => {
 });
 
 // The steps of a repository that every target needs; a failure fails every target with its cause.
-const prepared = (checkout: string, added: Lang[] = []): Prepared | undefined => {
+const prepared = (checkout: string): Prepared | undefined => {
   let found: Prepared | undefined;
   stepOf(targets, `${checkout}: copy, the changes the repository needs, the core, the contract check and the cases`, () => {
-    found = prepare(checkout, added);
+    found = prepare(checkout);
   });
   return found;
 };
 const dependencies = deps.map((dep) => prepared(dep));
-const main = prepared(repo, addTargets);
+const main = prepared(repo);
 const contract = main?.contract ?? (JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract);
 const copy = main?.copy ?? join(work, contract.library);
 const library = contract.library;

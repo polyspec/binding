@@ -549,11 +549,11 @@ the design ids are those of the binding design.
 
 ## End-to-end check
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`,
+- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
-  no unit that WASM refuses, whose contract has the target wasm (GN-18a); and `tests/e2e/consumer` is one that names the
+  no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
@@ -562,8 +562,9 @@ the design ids are those of the binding design.
   GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates for each target, lints the core and each binding crate on the host,
   builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
-  and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. `ADD_TARGETS` adds those targets to the copy
-  with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
+  and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. Every contract of `tests/e2e` names the five targets (BD-27), and a target that the
+  generator refuses for one of them is a named failure of that target (GN-14c); the run checks the targets of the
+  contract and no option adds one, because an added target would hide that the contract lacks it. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
   run's commands). Before Cargo first resolves the copy, the check writes the commit of the run into the entry of
   `polyspec-binding-core` in `Cargo.lock`, or writes a lock of that entry alone when the copy has none: Cargo asks
   GitHub for the head of the branch first, which is the pushed commit, and a manifest that `binding scaffold` writes may

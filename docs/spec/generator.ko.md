@@ -451,14 +451,16 @@
 
 ## 끝에서 끝까지 확인
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`는
+- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없고 계약의 target에 wasm이 있다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
   `binding scaffold`의 추적 package)을 하며 하나씩 출력하고, `binding check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
   따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.
-  `ADD_TARGETS`는 그 target을 P-1과 P-5의 package 항목, E-2의 WASM 클래스와 함께 사본에 더하고 그 사실을 출력한다. binding의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
+  `tests/e2e`의 모든 계약은 다섯 target을 적고(BD-27), 생성기가 그 가운데 하나에 거부하는 target은 그 target의 이름 있는
+  실패다(GN-14c). 실행은 계약의 target을 확인하며 target을 더하는 옵션은 없다. 더한 target은 계약에 그것이 없다는 사실을
+  감추기 때문이다. binding의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
   (`url.<base>.insteadOf`). Cargo가 사본을 처음 해석하기 전에, 검사는 `Cargo.lock`의 `polyspec-binding-core` 항목에 실행의
   커밋을 적고, 사본에 lock이 없으면 그 항목만 가진 lock을 쓴다. Cargo는 먼저 GitHub에 브랜치의 head를 묻는데 그것은 push된
   커밋이고, `binding scaffold`가 쓰는 manifest는 checkout에만 있는 `binding_core`의 feature를 필요로 할 수 있기 때문이다.

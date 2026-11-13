@@ -29,9 +29,15 @@
   Enforced by: `packages/ts`의 `npm test`
 - Own: 끝에서 끝까지 확인은 계약의 모든 target을 checkout의 도구로 실행하고, 도구가 없는 target은 그 target, 도구,
   `make install`을 적고 실행을 실패시킨다(GN-14a).
-  target마다 생성·빌드·시험을 따로 끝까지 돌리고, 실행은 실패한 target을 그 원인과 함께 모두 이름한다(GN-14c). target을 빼는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를
-  실행하지 않으므로 어느 target도 검증하지 않는다. 이유: 돌지 않은 target은 검증되지 않았는데 결과는 통과로 보인다.
+  target마다 생성·빌드·시험을 따로 끝까지 돌리고, 실행은 실패한 target을 그 원인과 함께 모두 이름한다(GN-14c). target을
+  빼거나 더하는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를 실행하지 않으므로 어느 target도 검증하지
+  않는다. 이유: 돌지 않은 target은 검증되지 않았는데 결과는 통과로 보인다.
   Enforced by: `make e2e`, 도구가 없으면 첫 단계 전에, 시험이 돌지 않은 target이 있으면 끝에서 실패한다.
+- Own: `tests/e2e`의 모든 계약은 다섯 target을 적는다(BD-27). 생성기나 계약 검사가 거부하는 target은 생성기가 그것을 받을
+  때까지 끝에서 끝까지 확인의 이름 있는 실패로 남는다. 어떤 target도 계약에서 빼거나, 건너뛰거나, 기대 실패로 적지 않는다.
+  이유: 계약에서 뺀 target은 생성기가 그 형태를 받지 못한다는 사실을 감추고, 그러면 통과한 실행은 규칙이 요구하는 것보다 적게
+  검증한다.
+  Enforced by: none, 계약이 적는 target은 검토에서 읽는다. 끝에서 끝까지 확인이 거부된 target을 하나씩 이름한다.
 - Own: 생성기, `binding_core`, 끝에서 끝까지 확인을 바꾸는 commit은 push나 merge 전에 그 commit의 끝에서 끝까지
   확인(`make e2e BINDING=<commit>`, GN-14와 GN-14b)을 통과하고, 실패는 새 commit으로 고치며 그 commit도 같은 방법으로
   확인한다. 기록(`var/report/e2e/`)이 그 commit의 증거라고 적은 실행만 센다. 이유: 작업 tree의 실행은 어느 commit에도 없는

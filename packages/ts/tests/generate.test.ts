@@ -7,12 +7,30 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
-import { generate } from '../src/generate/index.ts';
+import type { Lang } from '../src/contract.ts';
+import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
+// The contracts of tests/e2e name the five targets (BD-27), and the generator refuses some of them for each contract by
+// name, which the end-to-end check reports as the failures of those targets (GN-14c). A test generates the targets
+// that the generator takes for its contract (GN-1b), with each target that the test adds after the five; a test that
+// names its targets, or gives the contract other targets, generates those.
+const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
+const TAKEN: Record<string, string[]> = {
+  sample: ['php', 'python', 'node'],
+  shapes: ['php', 'python', 'node'],
+  consumer: ['php', 'python', 'node'],
+  classes: ['php', 'python', 'node', 'wasm'],
+};
+const generate = (inputs: Inputs): ReturnType<typeof generateTargets> => {
+  const taken = TAKEN[inputs.contract.library];
+  const declared: string[] = inputs.contract.targets;
+  if (inputs.targets !== undefined || taken === undefined || !FIVE.every((t, i) => declared[i] === t)) return generateTargets(inputs);
+  return generateTargets({ ...inputs, targets: [...new Set([...taken, ...declared.slice(FIVE.length)])] as Inputs['targets'] & string[] });
+};
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 const lock = (core: string): string => `version = 4\n\n[[package]]\nname = "polyspec-binding-core"\nversion = "${core}"\n`;
@@ -1029,7 +1047,7 @@ test('each variant that a member raises is asserted against the core error in ev
   for (const row of Object.values(contract.errors.classes) as Record<string, string>[]) row['wasm'] = row['node'] ?? '';
   contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
   const assertion = '#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&polyspec_sample::Error) -> bool = |error| matches!(error, polyspec_sample::Error::TooLong { .. });\n';
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: contract.targets });
   for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
     assert.equal(text(out, crate).split(assertion).length, 2, `${crate} asserts the variant once`);
   }
@@ -1066,7 +1084,7 @@ test('PHP: getIterator returns the iterator class of the extension, which is reg
 test('the classes repository of the end-to-end check is generated for WASM too (GN-14, GN-18a)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');
-  assert.deepEqual(contract.targets, ['php', 'python', 'node', 'wasm']);
+  assert.deepEqual(contract.targets, ['php', 'python', 'node', 'go', 'wasm']);
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
   // A static member that raises, a method that takes the class and one that gives a list of it, in the four crates.
   const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
@@ -1342,17 +1360,18 @@ test('the generator reads the whole contract and names every refused item before
 test('the refusals of each target are named together, and a target generates alone what the whole generation writes for it (G-4, GN-1b)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const caseFiles = sampleCases();
+  // The targets that the generator takes for the sample, generated at once and one by one.
   const whole = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const parts = new Map<string, string | Buffer>();
-  for (const target of sample.targets) {
+  for (const target of (TAKEN['sample'] ?? []) as Lang[]) {
     for (const [path, text] of generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: [target] })) parts.set(path, text);
   }
   assert.deepEqual([...parts.keys()].sort(), [...whole.keys()]);
   for (const [path, text] of whole) assert.ok(String(parts.get(path)) === String(text), path);
   // Go and WASM refuse the classes, the callback interface and the value alias, each by name, and Python alone is
   // generated from the same contract.
-  const five = { ...sample, targets: [...sample.targets, 'go', 'wasm'], packages: { ...sample.packages, go: { module: 'github.com/polyspec/sample/packages/go' } } };
-  for (const row of Object.values(five.errors.classes) as any[]) row.wasm = row.node;
+  const five = sample;
+  assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
   assert.throws(() => generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), (error: Error) => {
     for (const message of [/tag: a class unit is not generated for Go yet/, /counter: a class unit is not generated for Go yet/, /ledger: a class unit is not generated for Go yet/, /lookup: a callback unit is not generated for Go yet/]) assert.match(error.message, message);

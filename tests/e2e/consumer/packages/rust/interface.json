@@ -8,7 +8,9 @@
   "targets": [
     "php",
     "python",
-    "node"
+    "node",
+    "go",
+    "wasm"
   ],
   "packages": {
     "php": {
@@ -26,9 +28,16 @@
           "formats": [
             "import",
             "require"
-          ]
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
         }
       }
+    },
+    "go": {
+      "module": "github.com/polyspec/consumer/packages/go"
     }
   },
   "naming": {
@@ -40,32 +49,38 @@
       "value": {
         "php": "Polyspec\\Consumer\\ConsumerValueError",
         "python": "ConsumerValueError",
-        "node": "ConsumerValueError"
+        "node": "ConsumerValueError",
+        "wasm": "ConsumerValueError"
       },
       "type": {
         "php": "Polyspec\\Consumer\\ConsumerTypeError",
         "python": "ConsumerTypeError",
-        "node": "ConsumerTypeError"
+        "node": "ConsumerTypeError",
+        "wasm": "ConsumerTypeError"
       },
       "io": {
         "php": "Polyspec\\Consumer\\ConsumerIoError",
         "python": "ConsumerIoError",
-        "node": "ConsumerIoError"
+        "node": "ConsumerIoError",
+        "wasm": "ConsumerIoError"
       },
       "store": {
         "php": "Polyspec\\Consumer\\ConsumerStoreError",
         "python": "ConsumerStoreError",
-        "node": "ConsumerStoreError"
+        "node": "ConsumerStoreError",
+        "wasm": "ConsumerStoreError"
       },
       "busy": {
         "php": "Polyspec\\Consumer\\ConsumerBusyError",
         "python": "ConsumerBusyError",
-        "node": "ConsumerBusyError"
+        "node": "ConsumerBusyError",
+        "wasm": "ConsumerBusyError"
       },
       "internal": {
         "php": "Polyspec\\Consumer\\ConsumerInternalError",
         "python": "ConsumerInternalError",
-        "node": "ConsumerInternalError"
+        "node": "ConsumerInternalError",
+        "wasm": "ConsumerInternalError"
       }
     },
     "fixed": [

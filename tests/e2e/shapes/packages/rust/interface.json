@@ -8,7 +8,9 @@
   "targets": [
     "php",
     "python",
-    "node"
+    "node",
+    "go",
+    "wasm"
   ],
   "packages": {
     "php": {
@@ -26,9 +28,16 @@
           "formats": [
             "import",
             "require"
-          ]
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
         }
       }
+    },
+    "go": {
+      "module": "github.com/polyspec/shapes/packages/go"
     }
   },
   "naming": {
@@ -40,32 +49,38 @@
       "value": {
         "php": "Polyspec\\Shapes\\ShapesValueError",
         "python": "ShapesValueError",
-        "node": "ShapesValueError"
+        "node": "ShapesValueError",
+        "wasm": "ShapesValueError"
       },
       "type": {
         "php": "Polyspec\\Shapes\\ShapesTypeError",
         "python": "ShapesTypeError",
-        "node": "ShapesTypeError"
+        "node": "ShapesTypeError",
+        "wasm": "ShapesTypeError"
       },
       "io": {
         "php": "Polyspec\\Shapes\\ShapesIoError",
         "python": "ShapesIoError",
-        "node": "ShapesIoError"
+        "node": "ShapesIoError",
+        "wasm": "ShapesIoError"
       },
       "store": {
         "php": "Polyspec\\Shapes\\ShapesStoreError",
         "python": "ShapesStoreError",
-        "node": "ShapesStoreError"
+        "node": "ShapesStoreError",
+        "wasm": "ShapesStoreError"
       },
       "busy": {
         "php": "Polyspec\\Shapes\\ShapesBusyError",
         "python": "ShapesBusyError",
-        "node": "ShapesBusyError"
+        "node": "ShapesBusyError",
+        "wasm": "ShapesBusyError"
       },
       "internal": {
         "php": "Polyspec\\Shapes\\ShapesInternalError",
         "python": "ShapesInternalError",
-        "node": "ShapesInternalError"
+        "node": "ShapesInternalError",
+        "wasm": "ShapesInternalError"
       }
     },
     "fixed": [
