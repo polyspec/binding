@@ -147,11 +147,14 @@ the design ids are those of the binding design.
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
+  | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
   A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, the Go crate always
-  (for its round-trip entry points), and every crate has
+  (for its round-trip entry points); a Node or PHP crate has `thread-test` when a member takes a function type, because
+  those targets hold a function on its owner thread, and its entry point calls the function on another thread and
+  gives the kind of the failure; and every crate has
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
   `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
   library (`<library>.<id>`, G-5): then the feature of each binding crate also names `polyspec-<library>/fault-test`
