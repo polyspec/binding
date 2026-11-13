@@ -1,11 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d06a56197d73c371eb739cd5c8850d1b47d6db1a8287afd07948cde238ad5197 -->
+<!-- source-sha256: 863a93fe0005e7cb70b767a66eef3d5f3a1176857921100e264b4d754a4c69cb -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 시험의 디렉터리를 벗어나는 경로의 case 값(빈 경로, 절대 경로, `..` 부분)은 Go target 전체를 거부했고, Python, Node, PHP는 그 이유로
+  실패하는 case 시험을 썼다. 이제 Go도 생성기가 쓰지 못하는 다른 case와 같이 그 실패하는 시험을 쓰므로, target의 나머지 시험은 쓰인다(G-4,
+  GN-6y, GN-13e). `make test-ts`로 확인했다.
 - 함수 타입이 있고 callback unit이 없는 계약의 바인딩이 컴파일되지 않았다. 함수 호출은 던져진 것을 `thrown`에 넘기는데,
   Node, Python, WASM은 callback unit이 있는 계약에만 `thrown`을 생성했고, PHP는 Closure 호출이 만드는 변형
   `Thrown::Php`를 뺐다. WASM은 그런 계약에 `Thrown`, `failure_error`, 실패의 필드 `thrown`도 생성하지 않았다. 이제 각
@@ -187,6 +190,49 @@
   "go test failed the packages …"로만 적혔다. 이제 `scripts/go-test-events.mts`가 사건을 읽고, 각 빌드의 출력을 찍고 원인에
   그것을 적는다(GN-14a). `packages/ts`의 `npm test`로 확인했다: 289개 중 289개 통과이고,
   `tests/go-test-events.test.ts`의 시험 두 개가 그 안에 있다. 그 뒤의 e2e 실행에는 빌드되지 않는 Go 패키지가 없었다.
+- `binding scaffold`는 플랫폼 패키지 `<npm 패키지>-<platform>`을 자기 버전으로 `package.json`의 `optionalDependencies`에 썼고, `binding check`는 손으로 쓴 host `package.json`에 그것을 요구했다(CK-19). 그래서 npm workspace의 lock은 그 버전의 release 전에는 그것을 담을 수 없었고 `npm ci`가 manifest를 거부했다("Missing: @polyspec/hyper-darwin-arm64@ from lock file"). 이제 source manifest와 workspace lock은 그것을 적지 않는다. 배포 도구가 pack하는 manifest의 `optionalDependencies`에 그 release의 버전으로 적는다(GN-3b, GN-3c). end-to-end 검사는 플랫폼 패키지와 패키지를 두 tarball로 설치하므로, 진입점은 그 필드 없이 addon을 찾는다. `make test-ts`(시험 291개)로 검증했다.
+- `binding check`는 손으로 쓴 host `package.json`(L-2a)에서 이름, `files`, 플랫폼 패키지만 읽었다. 그래서 release가 읽는
+  `"type"`, `napi.binaryName`, `napi.targets`(kit K1189)가 없는 host 패키지도 검사를 통과했다. 이제 이 세 항목도 읽고, 각각을
+  GN-3c의 값과 깊이 비교하며, 없거나 다른 항목은 그 값과 함께 이름을 적는다. 예: `CK-19 napi.targets is missing, not
+  ["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"]`. host PHP 확장의 `composer.json`은
+  scaffold가 쓰므로 `php-ext.download-url-method`를 포함해 파일 전체를 비교한다(GN-3b, CK-19). `make test-ts`(시험 291개)로
+  검증했다.
+- `binding scaffold`는 `napi.binaryName`, `napi.targets`, `type`이 없는 `package.json`과,
+  `php-ext.download-url-method`가 없는 PHP 확장 `composer.json`을 썼다. 그래서 kit의 배포(K1189)가 npm-native 패키지를
+  ("names no napi.binaryName")와 php-ext 패키지를("lists no pre-packaged-binary in php-ext.download-url-method") 거부했고,
+  Node는 WASM의 ES 모듈 글루를 `MODULE_TYPELESS_PACKAGE_JSON` 경고와 함께 읽었다. 이제 target `node`를 가진 라이브러리의
+  `package.json`은 scope 없는 npm 이름인 `napi.binaryName`과, Rust triple `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`인 `napi.targets`를 적는다. scaffold가 쓰는 모든 `package.json`은
+  `"type": "module"`을 갖고, PHP 확장(`<host package>-native`도)의 `composer.json`은 `php-ext.download-url-method`
+  `["pre-packaged-binary"]`를 적는다. `binding check`는 각 파일의 일부로 이것을 비교한다(GN-3c, CK-19). `make test-ts`
+  (시험 291개)로 확인했다.
+- 생성기는 타입 `path`를 "the type path is not generated yet"로 거부했다. 그래서 `host_options.files: optional<path>`
+  같은 path를 가진 member나 record field에 바인딩이 없었다. 이제 `path`는 Python, Node, PHP, Go에서 모든 자리에 OS
+  경로의 바이트이고, 코어는 `&Path`를 받고 `PathBuf`를 준다. Python은 `str`, `bytes`, `os.PathLike`를 `os.fsencode`로
+  받고 `os.fsdecode`한 `str`을 준다. Node는 string을 그 UTF-8로, 또는 `Uint8Array`를 받고, string을 주되 UTF-8이 아닌
+  바이트에는 `Uint8Array`를 준다. PHP와 Go는 그 바이트의 string을 받고 준다. NUL 바이트, `os.fsencode`가 인코딩하지
+  못하는 Python `str`, Windows에서 UTF-8이 아닌 바이트는 kind `invalid_path`이고, 짝 없는 surrogate가 든 Node string은
+  kind `invalid_text`이며, 그 밖의 값은 kind `invalid_argument_type`이다. 새 함수 `binding_core::path_from_bytes`와
+  `binding_core::path_bytes`가 모든 target의 바이트를 바꾼다. WASM은 path를 이름으로 거부한다. 계약이 그런 member를
+  WASM에서 빼기 때문이다(CK-15). path의 case 값은 상대 경로이고, 생성된 시험마다 자기 임시 디렉터리에서 풀고 지운다.
+  빈 경로, 절대 경로, `..` 부분은 이름으로 거부한다(GN-6y). `tests/e2e/shapes`에 함수 `joined`와 `parent_of`가 있다.
+  `packages/ts`의 `npm test`(시험 290개), `make test-rust-features`(시험 64개, 그 가운데
+  `binding_core::path`의 3개), `make test-rust-plain`(시험 46개), `make clippy-rust`, `make clippy-rust-features`,
+  `make fmt-rust`로 확인했다.
+- 기본값이 있는 optional 타입 field의 결과 형태를 spec에 적은 커밋(GN-6i)에는 optional 타입 기본값의 Green 일부(`defaults.ts`, `model.ts`,
+  `node.ts`, `php.ts`, `python.ts`, `wasm.ts`)도 들어 있다. patch를 stage한 것이 그 커밋에 함께 들어갔고, 나머지는 optional 타입, enum, 값 타입의
+  기본값을 생성하는 커밋에 있다.
+- 생성기는 `optional` 타입의 기본값을 "a default of an optional type is not generated yet (U-2)"로, enum의
+  `{literal}` 기본값과 값 타입의 `{literal: null}` 기본값을 "a {literal} or {const} default names the constant of the
+  core in default_core (U-2)"로 거부했다. 그래서 `format_options.delimiters: optional<text> = {literal: null}` 같은
+  record field, `optional<uint> = {computed}` field, `= {literal: "indent"}` enum field, parameter
+  `assign: template_value = {literal: null}`에 바인딩이 없었다. 이제 `{literal: null}`이나 `{computed}`인 optional
+  타입의 기본값은 그 타입 자신의 `Option<T>`다. 바인딩은 생략된 값에도 null에도 `None`을 넘기고, Go는 포인터 `*T`
+  하나를 그대로 쓰며, member가 돌려주기도 하는 record는 `None`에 언어의 null을 준다. enum의 `{literal}` 기본값은
+  `default_core`에 상수를 적고, crate는 그것이 그 값의 variant임을 `matches!`로 단언한다. 값 타입의
+  `{literal: null}` 기본값은 상수 없이 `None`을 넘긴다. 명시한 null이 거부됨을 보는 시험은 null을 값으로 받는
+  optional과 값 타입을 제외한다(GN-6i, GN-13d, GN-15e). `tests/e2e/shapes`에 이 기본값들을 가진 함수 `pad`가,
+  `tests/e2e/sample`에 함수 `describe`가 있다. `packages/ts`의 `npm test`(시험 289개)로 확인했다.
 - B-2의 Go 시험은 안전한 정수보다 큰 정수를 `1 << 53`으로 적었는데, gofmt는 그것이 여러 인자 가운데 하나일 때
   `1<<53`으로 바꾼다. 그래서 `tests/e2e/points` Go module의 `gofmt -l`이 `zz_generated_test.go`를
   (`Shift(1 << 53, Point{X: 0, Y: 0})`) 이름했다. 이제 시험은 어느 자리에서든 gofmt가 그대로 두는 수

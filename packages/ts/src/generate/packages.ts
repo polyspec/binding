@@ -277,7 +277,8 @@ python-source = "generated/python"
       type: 'php-ext',
       license: 'MIT',
       require: { php: '>=8.4' },
-      'php-ext': { 'extension-name': extensionName(contract) },
+      // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
+      'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
   }
   if (contract.targets.includes('go')) {
@@ -341,26 +342,28 @@ function npmManifest(contract: Contract, version: string): string {
     version,
     description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
     license: 'MIT',
+    // GN-3c: the only .js files of the package are the glue of wasm-bindgen --target web, an ES module.
+    type: 'module',
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
     exports,
     files: [
       ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
-    ...(node ? { optionalDependencies: Object.fromEntries(NODE_PLATFORMS.map((p) => [platformPackage(npm.package, p.name), version])) } : {}),
+    // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
+    // loads, and builds it for the Rust triples of the platforms.
+    ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
   }, null, 2)}\n`;
 }
 
 // T-2: the platforms of a release, as napi-rs names them, and the npm package of each that holds the Node addon. The
-// npm package of a library (or its host package, L-2a) holds no addon; it names these packages in
-// optionalDependencies at its own version, and npm installs the one of the machine's platform.
+// npm package of a library (or its host package, L-2a) holds no addon; the release writes these packages into
+// optionalDependencies of the manifest it packs, and npm installs the one of the machine's platform (GN-3c).
 export const NODE_PLATFORMS = [
-  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc' },
-  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc' },
-  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
+  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc', triple: 'x86_64-unknown-linux-gnu' },
+  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc', triple: 'aarch64-unknown-linux-gnu' },
+  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64', triple: 'aarch64-apple-darwin' },
 ] as const;
-
-export const platformPackage = (npm: string, platform: string): string => `${npm}-${platform}`;
 
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
@@ -417,11 +420,11 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
 }
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
-// the path of the manifest, the item and the value it must have.
+// the path of the manifest, the item and the value it must have, compared deeply.
 export interface HostRequirement {
   path: string;
   item: string;
-  want: string;
+  want: unknown;
   found: (manifest: string) => unknown;
 }
 
@@ -444,14 +447,11 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const npm = (contract.packages['node'] as { package: string }).package;
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
+    // GN-3b: the host package is the package of a release, which reads the fields of GN-3c.
+    out.push({ path, item: 'type', want: 'module', found: (t) => json(t)['type'] });
+    out.push({ path, item: 'napi.binaryName', want: npm.slice(npm.indexOf('/') + 1), found: (t) => json(t)['napi']?.['binaryName'] });
+    out.push({ path, item: 'napi.targets', want: NODE_PLATFORMS.map((p) => p.triple), found: (t) => json(t)['napi']?.['targets'] });
     // The generated entry, its declarations and the addon (<name>.<platform>-<arch>[-gnu].node) are in the package.
-    for (const platform of NODE_PLATFORMS) {
-      const dependency = platformPackage(npm, platform.name);
-      out.push({
-        path, item: `optionalDependencies.${dependency}`, want: 'the version of the package',
-        found: (t) => (json(t)['optionalDependencies']?.[dependency] === json(t)['version'] ? 'the version of the package' : json(t)['optionalDependencies']?.[dependency]),
-      });
-    }
     // The module of WASM, its glue and its declarations are native/wasm/generated/ of the package (GN-3b).
     const wasmFiles = contract.targets.includes('wasm') ? ['native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'] : [];
     for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', ...wasmFiles]) {

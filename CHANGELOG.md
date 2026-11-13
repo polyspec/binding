@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case value of a path that would leave the directory of its test (an empty path, an absolute path, a part `..`)
+  refused the whole Go target, while Python, Node and PHP wrote a test of the case that fails with the reason. Go now
+  writes that failing test too, as for every case that the generator does not write, so the other tests of the target
+  are written (G-4, GN-6y, GN-13e). Verified by `make test-ts`.
 - A contract with a function type and no callback unit made bindings that did not compile: the call of the function
   gives what it threw to `thrown`, which Node, Python and WASM generated only for a contract with a callback unit, and
   PHP left out the variant `Thrown::Php` that the call of a Closure makes. WASM also generated no `Thrown`, no
@@ -216,6 +220,53 @@
   `scripts/go-test-events.mts`, which prints the output of each build and names it in the cause (GN-14a). Verified by
   `npm test` in `packages/ts`: 289 of 289 pass, with the two tests of `tests/go-test-events.test.ts`; no e2e run since
   had a Go package that does not build.
+- `binding scaffold` wrote the platform packages `<npm package>-<platform>` into `optionalDependencies` of `package.json` at its own version, and `binding check` required them of a hand-written host `package.json` (CK-19), so the lock of an npm workspace could not hold them before the release of that version and `npm ci` refused the manifest ("Missing: @polyspec/hyper-darwin-arm64@ from lock file"). The source manifest and the workspace lock no longer name them: release tooling writes them into `optionalDependencies` of the manifest it packs, at the version of the release (GN-3b, GN-3c). The end-to-end check installs the platform package and the package as two tarballs, so the entry finds the addon without the field. Verified by `make test-ts` (291 tests).
+- `binding check` read from a hand-written host `package.json` (L-2a) only its name, its `files` and its platform
+  packages, so a host package without `"type"`, `napi.binaryName` or `napi.targets`, which a release reads (kit
+  K1189), passed the check. It now also reads these three items, compares each deeply with the value of GN-3c, and
+  names a missing or different item with that value, such as `CK-19 napi.targets is missing, not
+  ["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"]`. The `composer.json` of a host PHP
+  extension is written by scaffold and compared whole, its `php-ext.download-url-method` included (GN-3b, CK-19).
+  Verified by `make test-ts` (291 tests).
+- `binding scaffold` wrote a `package.json` without `napi.binaryName`, `napi.targets` and `type`, and a PHP extension
+  `composer.json` without `php-ext.download-url-method`, so the release of kit (K1189) refused the npm-native package
+  ("names no napi.binaryName") and the php-ext package ("lists no pre-packaged-binary in php-ext.download-url-method"),
+  and Node read the ES module glue of WASM with the warning `MODULE_TYPELESS_PACKAGE_JSON`. The `package.json` of a
+  library with the target `node` now names `napi.binaryName`, the npm name without scope, and `napi.targets`, the Rust
+  triples `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`; every `package.json` that
+  scaffold writes has `"type": "module"`; and the `composer.json` of a PHP extension, also `<host package>-native`,
+  names `php-ext.download-url-method` `["pre-packaged-binary"]`. `binding check` compares them as part of each file
+  (GN-3c, CK-19). Verified by `make test-ts` (291 tests).
+- The generator refused the type `path` with "the type path is not generated yet", so a member or a record field with a
+  path, such as `host_options.files: optional<path>`, had no binding. A `path` is now the bytes of an OS path in
+  Python, Node, PHP and Go, in every place: the core takes `&Path` and gives `PathBuf`. Python takes a `str`, `bytes`
+  or `os.PathLike` through `os.fsencode` and gives the `str` of `os.fsdecode`; Node takes a string as its UTF-8 or a
+  `Uint8Array` and gives a string, or a `Uint8Array` for bytes that are not UTF-8; PHP and Go take and give a string of
+  the bytes. A NUL byte, a Python `str` that `os.fsencode` cannot encode, and on Windows bytes that are not UTF-8 are
+  kind `invalid_path`; a Node string with an unpaired surrogate is kind `invalid_text`; any other value is kind
+  `invalid_argument_type`. The new functions `binding_core::path_from_bytes` and `binding_core::path_bytes` convert the
+  bytes for every target. WASM refuses a path by name, because the contract leaves such a member out of WASM (CK-15).
+  A case value of a path is a relative path, which each generated test resolves in its own temporary directory and
+  removes; an empty or absolute path or a part `..` is refused by name (GN-6y). `tests/e2e/shapes` has the functions
+  `joined` and `parent_of`. Verified by `npm test` in `packages/ts` (290 tests), `make test-rust-features` (64 tests,
+  the 3 of `binding_core::path` among them), `make test-rust-plain` (46 tests), `make clippy-rust`,
+  `make clippy-rust-features` and `make fmt-rust`.
+- The commit that states in the spec the result form of a field of an optional type with a default (GN-6i) also holds
+  part of the Green of the defaults of an optional type (`defaults.ts`, `model.ts`, `node.ts`, `php.ts`, `python.ts`,
+  `wasm.ts`), which the staging of a patch put into it; the commit that generates the defaults of an optional type, of
+  an enum and of a value type holds the rest.
+- The generator refused a default of an `optional` type with "a default of an optional type is not generated yet
+  (U-2)", a `{literal}` default of an enum, and a `{literal: null}` default of a value type with "a {literal} or
+  {const} default names the constant of the core in default_core (U-2)", so a record field such as
+  `format_options.delimiters: optional<text> = {literal: null}`, a field `optional<uint> = {computed}`, an enum field
+  `= {literal: "indent"}` and a parameter `assign: template_value = {literal: null}` had no binding. A default of an
+  optional type that is `{literal: null}` or `{computed}` is now the `Option<T>` of the type itself: the binding passes
+  `None` for a value that was left out and for a null, Go keeps its one pointer `*T`, and a record that a member also
+  returns gives the null of the language for `None`. An enum `{literal}` default names its constant in
+  `default_core`, which the crate asserts with `matches!` to be the variant of the value. A `{literal: null}` default
+  of a value type passes `None` without a constant. The test that an explicit null is refused leaves out an optional
+  and a value type, which take null as a value (GN-6i, GN-13d, GN-15e). `tests/e2e/shapes` has the function `pad` with
+  these defaults and `tests/e2e/sample` the function `describe`. Verified by `npm test` in `packages/ts` (289 tests).
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
   (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any

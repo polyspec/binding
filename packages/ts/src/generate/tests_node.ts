@@ -1,11 +1,11 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, type Arg, nativeRoundTrip, takesFunction } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPath, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -86,6 +86,21 @@ const awaitedTest = (block: string): string => {
     .replaceAll('outcome(() => ', 'await settled(async () => ');
 };
 
+// GN-6y: the directory of a test, in which a case resolves its relative paths; the tests of a file run one after
+// another, and the directory is removed after each.
+const NODE_CASE_PATH = `
+let caseDir;
+afterEach(() => {
+  if (caseDir !== undefined) rmSync(caseDir, { recursive: true, force: true });
+  caseDir = undefined;
+});
+
+function casePath(relative) {
+  caseDir ??= mkdtempSync(join(tmpdir(), 'case-'));
+  return join(caseDir, ...relative.split('/'));
+}
+`;
+
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them, as host code does; the package's own
@@ -93,6 +108,7 @@ export function nodeTests(model: Model): string {
   const esm = isHost(model.contract, 'node') ? '../index.mjs' : npm;
   const cjsEntry = isHost(model.contract, 'node') ? '../index.cjs' : npm;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+    casePath: (relative) => `casePath(${jsString(relative)})`,
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
@@ -218,10 +234,27 @@ test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () =>
   assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
-      if (refusesNull(arg)) {
+      // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
+      if (refusesNull(arg) && !takesNull(model, arg.type)) {
         out.push(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
   assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
+});`);
+      }
+      // GN-6y: a path with a NUL byte is kind invalid_path, a string with an unpaired surrogate kind invalid_text, and a
+      // value that is neither a string nor a Uint8Array kind invalid_argument_type.
+      if (isPath(arg.type)) {
+        out.push(`
+test('T-1: ${name} refuses a NUL byte in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, "'a\\u0000b'"]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_path');
+});
+
+test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_text');
+});
+
+test('T-1: ${name} refuses a value that is no path in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
       const bytes = bytesKind(arg.type);
@@ -498,15 +531,16 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   const blocks = out.map(awaitedTest);
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
+  const usesCasePath = blocks.some((block) => block.includes('casePath('));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? "\nimport { mkdtempSync, rmSync } from 'node:fs';\nimport { tmpdir } from 'node:os';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesCasePath ? NODE_CASE_PATH : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

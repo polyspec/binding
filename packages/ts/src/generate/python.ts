@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -76,6 +76,24 @@ fn in_source(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResul
         Ok(bytes) => Ok(bytes),
         Err(_not_bytes) => Err(binding_error(py, type_error(subject, "str or bytes"))),
     }
+}
+
+/// T-1 path, B-3, GN-6y: a str, bytes or os.PathLike, as the bytes of os.fsencode. A value that os.fsencode refuses
+/// by its type is kind invalid_argument_type, a str that it cannot encode kind invalid_path, and binding_core judges
+/// the bytes.
+fn in_path(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<std::path::PathBuf> {
+    let encoded = match py.import("os").and_then(|os| os.getattr("fsencode")).and_then(|fsencode| fsencode.call1((value,))) {
+        Ok(encoded) => encoded,
+        Err(error) if error.is_instance_of::<pyo3::exceptions::PyUnicodeError>(py) => {
+            return Err(binding_error(py, BindingError::InvalidPath { subject: subject.to_owned() }));
+        }
+        Err(error) if error.is_instance_of::<pyo3::exceptions::PyTypeError>(py) => {
+            return Err(binding_error(py, type_error(subject, "str, bytes or os.PathLike")));
+        }
+        Err(error) => return Err(error),
+    };
+    let bytes: Vec<u8> = encoded.extract()?;
+    binding_core::path_from_bytes(bytes, subject).map_err(|error| binding_error(py, error))
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides; any other value is converted.
@@ -171,6 +189,12 @@ fn out_latin1<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'
 
 fn out_bytes<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyBytes::new(py, value.as_ref()).into_any())
+}
+
+/// T-1 path, GN-6y: the str of os.fsdecode of the bytes of the path.
+fn out_path<'py>(py: Python<'py>, value: impl AsRef<std::path::Path>) -> PyResult<Bound<'py, PyAny>> {
+    let bytes = PyBytes::new(py, binding_core::path_bytes(value.as_ref()));
+    py.import("os")?.getattr("fsdecode")?.call1((bytes,))
 }
 
 fn out_bool<'py>(py: Python<'py>, value: impl Borrow<bool>) -> PyResult<Bound<'py, PyAny>> {
@@ -317,7 +341,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float', path: 'in_path' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
@@ -369,7 +393,7 @@ fn in_function(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyRes
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', path: 'out_path', none: 'out_none' };
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
@@ -509,7 +533,7 @@ function entryRust(model: Model, fn: Fn): string {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     const subject = rustString(langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
+    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, variable, subject)) : convertIn(model, arg.type, variable, subject)) : leftOut(arg, `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`);
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);
@@ -1025,7 +1049,7 @@ ${register}
 
 function pyType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', none: 'None', never: 'NoReturn' };
+    const map: Record<string, string> = { text: 'str', latin1: 'str', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', bytes: input ? 'bytes | bytearray | memoryview' : 'bytes', source: 'str | bytes | bytearray | memoryview', path: input ? 'str | bytes | PathLike[str] | PathLike[bytes]' : 'str', none: 'None', never: 'NoReturn' };
     return map[type] ?? 'object';
   }
   if ('list' in type) return input ? `Sequence[${pyType(model, type.list, input)}]` : `list[${pyType(model, type.list, input)}]`;
@@ -1178,7 +1202,16 @@ function nativePyi(model: Model): string {
     const base = `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`;
     if (a.default === undefined) return base;
     const value = declaredValue(model, a)?.value;
-    const shown = value === undefined ? '...' : typeof value === 'boolean' ? (value ? 'True' : 'False') : typeof value === 'string' ? pyString(value) : String(value);
+    // GN-6i: an enum default is its member, and a {literal: null} default is None.
+    const unit = unitOf(model, a.type);
+    const variant = unit?.kind === 'enum' ? (unit.variants ?? []).find((v) => v.value === value) : undefined;
+    const shown =
+      value === undefined ? '...'
+      : value === null ? 'None'
+      : variant !== undefined && unit !== undefined ? `${langName('python', unit.name, 'class')}.${langName('python', variant.name, 'constant')}`
+      : typeof value === 'boolean' ? (value ? 'True' : 'False')
+      : typeof value === 'string' ? pyString(value)
+      : String(value);
     return `${base} = ${shown}`;
   };
   const fns = model.functions.map((fn) => {
@@ -1227,7 +1260,7 @@ function nativePyi(model: Model): string {
   }
   return `${pyHeader()}
 from collections.abc import ${/\bCallable\[/.test([...fns, ...classes].join('\n')) ? 'Callable, ' : ''}${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
-from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
+${/\bPathLike\b/.test([...fns, ...classes].join('\n')) ? 'from os import PathLike\n' : ''}from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}
 ${classes.join('')}`;

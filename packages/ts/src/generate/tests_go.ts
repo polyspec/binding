@@ -21,11 +21,11 @@ import {
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
-  objectUnit, places, pointName, unitOf,
+  objectUnit, places, pointName, pointed, unitOf,
   nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -122,6 +122,8 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (type === 'bytes') return hexBytes(json, type);
     // T-1: a source is a text or {"hex": ...}, both a []byte.
     if (type === 'source') return typeof json === 'string' ? `[]byte(${goString(json)})` : hexBytes(json, type);
+    // GN-6y: a path of a case is relative to the directory of the test.
+    if (type === 'path') return `casePath(t, ${goString(casePathOf(json))})`;
     throw new Unsupported(`no Go case value of the type ${type}`);
   }
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
@@ -172,7 +174,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
         throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
       }
       const inner = value(v, b, f.type, fields[key]);
-      return `${goName(f.name)}: ${f.default === undefined || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
+      return `${goName(f.name)}: ${!pointed(f) || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
     }).join(', ')}}`;
   }
   throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
@@ -227,7 +229,7 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
 // A value of the type that the binding converts without failing; rich: a list has one item, so that a member that
 // calls a callback per item calls it (K-2).
 function placeholder(v: Values, b: Body, type: Type, rich = false): string {
-  if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")' } as Record<string, string>)[type] ?? '0';
+  if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")', path: '"a"' } as Record<string, string>)[type] ?? '0';
   if ('list' in type) return rich ? `${typeName(v, type)}{${placeholder(v, b, type.list, rich)}}` : 'nil';
   if ('optional' in type || 'map' in type || 'keyed_map' in type) return 'nil';
   if ('tuple' in type) return `${typeName(v, type)}{}`;
@@ -280,14 +282,14 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
         const arg = fn.args.find((a) => a.field && a.name === f.name);
         const text = arg === undefined ? undefined : given(arg);
         if (text === undefined) return `${goName(f.name)}: ${f.default === undefined ? placeholder(v, b, f.type) : 'nil'}`;
-        return `${goName(f.name)}: ${f.default === undefined || text === 'nil' ? text : pointerTo(v, f.type, text)}`;
+        return `${goName(f.name)}: ${!pointed(f) || text === 'nil' ? text : pointerTo(v, f.type, text)}`;
       });
       return `${typeName(v, p.type)}{${fields.join(', ')}}`;
     }
     const arg = fn.args.find((a) => !a.field && a.name === p.name);
     const text = arg === undefined ? undefined : given(arg);
     if (text === undefined) return arg?.default === undefined ? placeholder(v, b, p.type) : 'nil';
-    return arg?.default === undefined || text === 'nil' ? text : pointerTo(v, p.type, text);
+    return arg === undefined || !pointed(arg) || text === 'nil' ? text : pointerTo(v, p.type, text);
   });
 }
 
@@ -458,6 +460,8 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
       if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
     }
+    // GN-6y: a path with a NUL byte is kind invalid_path.
+    if (base === 'path') single('T-1', `refuses a nul byte in ${argName}`, arg, () => wrap('"a\\x00b"'), expectKind(types['value'] ?? '', 'invalid_path', 'T-1'));
     if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-3'));
     if (base === 'latin1') {
       single('B-8', `refuses ${argName} above U+00FF`, arg, () => wrap('"\\u0100"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-8'));
@@ -780,6 +784,24 @@ func sameFailure(a, b error) bool {
 }
 `;
 
+// GN-6y: the directory of a test, in which a case resolves its relative paths; t.TempDir removes it at the end of the
+// test.
+const CASE_PATH = `
+var caseDirs sync.Map
+
+// casePath is the relative path of a case inside the directory of the test t.
+func casePath(t *testing.T, relative string) string {
+	dir, ok := caseDirs.Load(t)
+	if !ok {
+		dir = t.TempDir()
+		caseDirs.Store(t, dir)
+		t.Cleanup(func() { caseDirs.Delete(t) })
+	}
+	path, _ := dir.(string)
+	return filepath.Join(path, filepath.FromSlash(relative))
+}
+`;
+
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
@@ -787,7 +809,7 @@ func ptr[T any](value T) *T { return &value }
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'math', 'reflect', 'runtime', 'syscall'].filter((p) => new RegExp(`\\b${p}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['errors', 'fmt', 'math', 'path/filepath', 'reflect', 'runtime', 'sync', 'syscall'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   const own = [
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
@@ -843,6 +865,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
+    ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),

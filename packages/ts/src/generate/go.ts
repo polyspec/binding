@@ -10,9 +10,9 @@
 // a value alias a Go value of type any, which package binding describes to the core one level at a time (U-7).
 
 import { libraryParts } from '../check.ts';
-import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Contract, type Default, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, poisoned, unitOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, waitsIo, waitsAsync } from './model.ts';
 import { type Echoes, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -155,7 +155,7 @@ const namesUnit = (type: Type): boolean => {
 export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
     // T-1: a source is a []byte, which holds the bytes of any Go string ([]byte(s)).
-    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte' };
+    const base: Record<string, string> = { bool: 'bool', int: 'int64', int64: 'int64', uint: 'uint64', float: 'float64', text: 'string', latin1: 'string', bytes: '[]byte', source: '[]byte', path: 'string' };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type} is not generated for Go yet`);
     return found;
@@ -249,9 +249,9 @@ ${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
 const tuplePart = (scope: GoScope, parts: Type[], expr: string, i: number): string => (goTupleArray(scope, parts) ? `${expr}[${i}]` : `${expr}.P${i}`);
 
 // U-2, T-4: a field with a default is a pointer, nil when the caller leaves it out.
-export const fieldType = (scope: GoScope, field: { type: Type; default?: unknown }): string =>
-  field.default === undefined ? goType(scope, field.type) : `*${goType(scope, field.type)}`;
-const fieldWire = (field: { type: Type; default?: unknown }): Type => (field.default === undefined ? field.type : { optional: field.type });
+export const fieldType = (scope: GoScope, field: { type: Type; default?: Default }): string =>
+  pointed(field) ? `*${goType(scope, field.type)}` : goType(scope, field.type);
+const fieldWire = (field: { type: Type; default?: Default }): Type => (pointed(field) ? { optional: field.type } : field.type);
 
 export const pad = (text: string, width: number): string => text + ' '.repeat(Math.max(0, width - text.length));
 
@@ -290,7 +290,7 @@ function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boo
 function goEncode(scope: GoScope, type: Type, expr: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes', path: 'Text' };
     return [`${t}enc.${method[type] ?? ''}(${expr})`];
   }
   if ('list' in type) {
@@ -338,7 +338,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
 export function goDecode(scope: GoScope, type: Type, target: string, indent: number, depth: number): string[] {
   const t = '\t'.repeat(indent);
   if (typeof type === 'string') {
-    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes' };
+    const method: Record<string, string> = { bool: 'Bool', int: 'Int', int64: 'Int', uint: 'Uint', float: 'Float', text: 'Text', latin1: 'Text', bytes: 'Bytes', source: 'Bytes', path: 'Text' };
     return [`${t}${target} = dec.${method[type] ?? ''}()`];
   }
   if ('list' in type) {
@@ -405,7 +405,7 @@ export function goResults(scope: GoScope, returns: Type): string[] {
 }
 
 // U-2: a parameter with a default is a pointer, nil when the caller leaves it out.
-const hasDefault = (fn: Fn, parameter: Fn['params'][number]): boolean => parameter.default !== undefined && fn.record?.param !== parameter;
+const hasDefault = (fn: Fn, parameter: Fn['params'][number]): boolean => pointed(parameter) && fn.record?.param !== parameter;
 const paramType = (scope: GoScope, fn: Fn, parameter: Fn['params'][number]): string =>
   hasDefault(fn, parameter) ? `*${goType(scope, parameter.type)}` : goType(scope, parameter.type);
 const paramWire = (fn: Fn, parameter: Fn['params'][number]): Type => (hasDefault(fn, parameter) ? { optional: parameter.type } : parameter.type);

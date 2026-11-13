@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 7cd9190b19d9c748b6b9fb6a0c11872c92d230b1ad3027b1f2ed87c7e0f634ee -->
+<!-- source-sha256: 168b615e939bd68df7af5e04d078f17c25347291eaae420921985d8dadd62271 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -111,7 +111,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 - **CK-19** 추적하는 바인딩 package(L-2): `binding check`는 바인딩 package의 추적 파일(docs/spec/generator.md
   GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다. host 패키지(L-2a, GN-3b)는 host
-  manifest에서 네이티브 모듈에 필요한 항목만 읽는다.
+  manifest에서 네이티브 모듈과 그 release에 필요한 항목만 읽고, 없거나 다른 항목마다 그 이름과 가져야 할 값을 적는다.
 - **CK-21** 코어의 빌드, exclusive member, 코어 경로의 결과(I-1, U-6, E-1c): `core.features`는 target만 가리킨다.
   `exclusive`는 generated class의 receiver `&self` member에만 둔다. `core.result`가 `false`인 member는 `raises`가 없고
   callback이나 함수를 담은 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의 실패를 둘

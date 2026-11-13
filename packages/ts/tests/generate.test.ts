@@ -527,6 +527,46 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   assert.equal(host.get('packages/php/native/build.rs'), PHP_BUILD);
 });
 
+test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
+  const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  contract.targets.push('wasm');
+  const out = trackedPackages(contract, '0.0.0');
+  const npm = JSON.parse(String(out.get('packages/ts/package.json')));
+  // The napi CLI names the addon <binaryName>.<platform>.node, the file that the entry loads, and builds the triples.
+  assert.deepEqual(npm.napi, { binaryName: 'sample', targets: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin'] });
+  // The release writes the platform packages into the packed manifest, so a workspace lock can be installed (GN-3c).
+  assert.equal(npm.optionalDependencies, undefined);
+  // The .js glue of wasm-bindgen --target web is an ES module.
+  assert.equal(npm.type, 'module');
+  const composer = JSON.parse(String(out.get('packages/php-ext/composer.json')));
+  assert.deepEqual(composer['php-ext'], { 'extension-name': 'polyspec_sample', 'download-url-method': ['pre-packaged-binary'] });
+  // L-2a: the extension of a host package is the same Composer package, <host package>-native.
+  const host = trackedPackages({ ...contract, packages: { ...contract.packages, php: { ...contract.packages.php, host: true } } }, '0.0.0');
+  assert.deepEqual(JSON.parse(String(host.get('packages/php/native/composer.json')))['php-ext'], composer['php-ext']);
+  // A package of WASM alone holds no addon, so it names no napi configuration; it is still an ES module package.
+  const wasmOnly = JSON.parse(String(trackedPackages({ ...contract, targets: contract.targets.filter((t: string) => t !== 'node') }, '0.0.0').get('packages/ts/package.json')));
+  assert.equal(wasmOnly.napi, undefined);
+  assert.equal(wasmOnly.type, 'module');
+  // CK-19: a tracked manifest without these fields differs from what scaffold writes.
+  const { root, contract: path } = fixtureCopy(() => {});
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    const npmPath = join(root, 'packages/ts/package.json');
+    const written = JSON.parse(readFileSync(npmPath, 'utf8'));
+    writeFileSync(npmPath, `${JSON.stringify({ ...written, napi: undefined }, null, 2)}\n`);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /ts\/package\.json: CK-19 differs/);
+    writeFileSync(npmPath, `${JSON.stringify(written, null, 2)}\n`);
+    const composerPath = join(root, 'packages/php-ext/composer.json');
+    const ext = JSON.parse(readFileSync(composerPath, 'utf8'));
+    writeFileSync(composerPath, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /php-ext\/composer\.json: CK-19 differs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('scaffold writes under --out and not into the repository', () => {
   const { root } = fixtureCopy(() => {});
   const out = mkdtempSync(join(tmpdir(), 'binding-k-'));
@@ -579,24 +619,36 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
-    assert.match(missing.stderr, /ts\/package\.json: CK-19 optionalDependencies\.@polyspec\/sample-linux-x64-gnu is missing/);
+    // GN-3c: the release writes the platform packages into the packed manifest; the source manifest does not name them.
+    assert.doesNotMatch(missing.stderr, /optionalDependencies/);
+    // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 type is missing, not "module"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.binaryName is missing, not "sample"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.targets is missing, not \["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"\]/);
     const pyproject = (module: string): string =>
       `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
-    // T-2: the addon is in the package of each platform, which the host names at its own version.
-    writeFileSync(join(root, 'packages/ts/package.json'), JSON.stringify({
+    // GN-3b: the host names its files and the fields of a release; the release writes the platform packages (GN-3c).
+    const hostNpm = (targets: string[]): string => JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
+      type: 'module',
       files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
-      optionalDependencies: {
-        '@polyspec/sample-linux-x64-gnu': '1.2.3',
-        '@polyspec/sample-linux-arm64-gnu': '1.2.3',
-        '@polyspec/sample-darwin-arm64': '1.2.3',
-      },
-    }));
+      napi: { binaryName: 'sample', targets },
+    });
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
     writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
+    assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 napi\.targets is \["x86_64-unknown-linux-gnu","aarch64-apple-darwin"\], not \[/);
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']));
+    // The extension of a host PHP package is written by scaffold, so check compares it whole (GN-3b, GN-3c).
+    const nativeComposer = join(root, 'packages/php/native/composer.json');
+    const scaffolded = readFileSync(nativeComposer, 'utf8');
+    const ext = JSON.parse(scaffolded);
+    writeFileSync(nativeComposer, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
+    assert.match(spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' }).stderr, /php\/native\/composer\.json: CK-19 differs/);
+    writeFileSync(nativeComposer, scaffolded);
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._binding._native'));
     execFileSync(process.execPath, [cli, 'check', contract], { stdio: 'pipe' });
     const out = mkdtempSync(join(tmpdir(), 'binding-l-'));
@@ -1581,9 +1633,9 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
 
-// The internal form of shapes: its functions unit, a record and the class, which moves to the module store.
+// The internal form of shapes: its functions unit, its records, its enum and the class, which moves to the module store.
 const internal = (contract: any): void => {
-  for (const id of ['shapes', 'frame_options', 'text_measure', 'buffer']) {
+  for (const id of ['shapes', 'frame_options', 'pad_options', 'side', 'text_measure', 'buffer']) {
     const unit = unitOf(contract, id);
     unit.visibility = 'internal';
     for (const m of unit.members ?? []) m.visibility = 'internal';
@@ -1820,7 +1872,7 @@ test('a parameter or field with a default is None for the core when it is left o
   // G-4: each default that is not generated is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   const field = (c: any, name: string): any => unitOf(c, 'frame_options').fields.find((f: any) => f.name.join('_') === name);
-  assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /a default of an optional type is not generated yet \(U-2\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /shapes\.repeat\.times: a default of an optional type is \{literal: null\} or \{computed\} \(U-2\)/);
   assert.throws(() => shaped((c) => { delete parameter(c, 'shapes.repeat', 'separator').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { delete field(c, 'upper').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { member(c, 'shapes.repeat').parameters.push({ name: ['last'], type: 'uint', required: true }); }), /shapes\.repeat: the required last follows a parameter with a default, which is not generated yet \(U-2\)/);
@@ -1863,6 +1915,147 @@ test('a record parameter whose every field has a default may be left out as a wh
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /shapes\.frame\.options: the default \{empty: "object"\} leaves out the record, but its field prefix has no default \(U-2\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.wrap', 'options').default = { empty: 'list' }; }), /shapes\.wrap\.options: the default \{empty: "list"\} of a record parameter is not generated \(U-2\)/);
+});
+
+test('a default of an optional type is one Option, None when it is left out or null (U-2, GN-6i, GN-15e)', () => {
+  // shapes.pad takes fill: optional<text> = {literal: null} and the record pad_options, whose width is optional<uint> =
+  // {computed} and whose end is optional<text> = {literal: null}.
+  const out = shaped();
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  const libs = [[out, 'packages/python/generated/lib.rs'], [out, 'packages/ts/generated/lib.rs'], [out, 'packages/php-ext/generated/lib.rs'], [wasmOut, 'packages/ts/wasm/generated/lib.rs']] as const;
+  for (const [files, path] of libs) {
+    const lib = text(files, path);
+    assert.match(lib, /let fill: Option<String> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: left out and null are both None`);
+    assert.match(lib, /let width: Option<u64> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: a {computed} default of an optional type`);
+    assert.match(lib, /let end: Option<String> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: a field`);
+    assert.match(lib, /polyspec_shapes::pad\(&text, fill\.as_deref\(\), &options\)/, `${path}: the core takes the optional type itself`);
+    assert.doesNotMatch(lib, /Option<Option</, `${path}: no second Option`);
+  }
+  // The declarations show null as the declared value.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def pad\(text: str, fill: str \| None = None, \*, side: [^\n]*, width: int \| None = \.\.\., end: str \| None = None\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function pad\(mixed \$text, mixed \$fill = null, mixed \$side = "left", mixed \$width = null, mixed \$end = null\): string \{\}/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function pad\(text: string, fill\?: string \| null, options\?: PadOptions\): string;/);
+  // GN-13d: the call without fill is the call with null, and null is a value of an optional type, so it is not
+  // tested as a refused value.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_u2_pad_fill_left_out_is_its_default/);
+  assert.doesNotMatch(python, /def test_u2_pad_fill_takes_none_as_a_value/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('U-2: pad without fill is the call with its default'/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /U-2: pad takes null for fill as a value/);
+  // GN-15e: in Go the optional type keeps its one pointer.
+  const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
+  assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);
+  assert.match(goShapes, /\tEnd +\*string\n/);
+  assert.doesNotMatch(goShapes, /\*\*/);
+  assert.doesNotMatch(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /Option<Option</);
+  // G-4: another default of an optional type is refused by name.
+  const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.pad', 'fill').default = { literal: '.' }; }), /shapes\.pad\.fill: a default of an optional type is \{literal: null\} or \{computed\} \(U-2\)/);
+  // T-4: a field of an optional type with a default has the result form of its type, so a record that a member also
+  // returns is generated, and a None of the core is the null of the language.
+  const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
+  assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None\n/);
+});
+
+test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
+  const out = shaped();
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  for (const [files, path] of [[out, 'packages/python/generated/lib.rs'], [out, 'packages/ts/generated/lib.rs'], [out, 'packages/php-ext/generated/lib.rs'], [wasmOut, 'packages/ts/wasm/generated/lib.rs']] as const) {
+    const lib = text(files, path);
+    assert.match(lib, /const _: \(\) = assert!\(matches!\(polyspec_shapes::DEFAULT_SIDE, polyspec_shapes::Side::Left\)\);/, path);
+    assert.match(lib, /let side: Option<polyspec_shapes::Side> = in_default\(/, path);
+  }
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_pad_side_left_out_is_its_default/);
+  // G-4: an enum default without its constant, or of a value that is no variant, is refused by name.
+  const field = (c: any, name: string): any => unitOf(c, 'pad_options').fields.find((f: any) => f.name.join('_') === name);
+  assert.throws(() => shaped((c) => { delete field(c, 'side').default_core; }), /pad_options\.side: a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
+  assert.throws(() => shaped((c) => { field(c, 'side').default = { literal: 'up' }; }), /pad_options\.side: the default \{literal: "up"\} of the type \{"unit":"side"\} is not generated \(U-2\)/);
+});
+
+test('a {literal: null} default of a value type is None without a constant, and null is a value (U-2, GN-6i)', () => {
+  // sample.describe takes value: data = {literal: null}.
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /let value: Option<polyspec_sample::Data> = in_default\(/, path);
+    assert.match(lib, /polyspec_sample::describe\(value\.as_ref\(\)\)/, path);
+    assert.doesNotMatch(lib, /DEFAULT_VALUE|assert!\([^\n]*describe/, `${path}: no constant and no assertion`);
+  }
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_u2_describe_value_left_out_is_its_default/);
+  assert.doesNotMatch(python, /def test_u2_describe_value_takes_none_as_a_value/);
+});
+
+test('a path is the bytes of an OS path in every place, and each target judges it by binding_core (T-1, B-3, GN-6y)', () => {
+  // shapes.joined takes a path and a text and returns a path; shapes.parent_of returns an optional<path>. Both leave out WASM (CK-15).
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /let dir: std::path::PathBuf = in_path\(/, `${path}: a path parameter`);
+    assert.match(lib, /polyspec_shapes::joined\(&dir, &name\)/, `${path}: the core takes &Path`);
+    assert.match(rustFn(lib, 'in_path'), /binding_core::path_from_bytes\(/, `${path}: the bytes are judged by binding_core`);
+    assert.match(rustFn(lib, 'out_path'), /binding_core::path_bytes\(/, `${path}: the bytes that leave`);
+  }
+  // Python: os.fsencode and os.fsdecode; a TypeError of fsencode is invalid_argument_type, a UnicodeError invalid_path.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(rustFn(python, 'in_path'), /"fsencode"/);
+  assert.match(rustFn(python, 'in_path'), /PyUnicodeError/);
+  assert.match(rustFn(python, 'out_path'), /"fsdecode"/);
+  // Node: a string as its UTF-8 or a Uint8Array in; out a string when the bytes are UTF-8, else a Uint8Array.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(rustFn(node, 'out_path'), /from_utf8/);
+  // The declarations.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def joined\(dir: str \| bytes \| PathLike\[str\] \| PathLike\[bytes\], name: str\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def parent_of\(path: [^\n]*\) -> str \| None: \.\.\./);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function joined\(dir: string \| Uint8Array, name: string\): string \| Uint8Array;/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function joined\(mixed \$dir, mixed \$name\): string \{\}/);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func Joined\(dir string, name string\) \(string, error\)/m);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func ParentOf\(path string\) \(\*string, error\)/m);
+  // G-5: a NUL byte is kind invalid_path, a value of another type invalid_argument_type, in each language.
+  const pythonTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pythonTests, /def test_t1_joined_dir_refuses_a_nul_byte\(self\) -> None:\n[^\n]*\n\s+pkg\.joined\("a\\x00b", [^\n]*\n\s+self\.assertEqual\(caught\.exception\.kind, "invalid_path"\)/);
+  assert.match(pythonTests, /def test_t1_joined_dir_refuses_what_is_no_path\(self\) -> None:/);
+  const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(nodeTests, /test\('T-1: joined refuses a NUL byte in dir'/);
+  assert.match(nodeTests, /test\('B-3: joined refuses an unpaired surrogate in dir'/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function testT1joineddirRefusesANulByte\(\): void/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestT1JoinedRefusesANulByteInDir\(t \*testing\.T\)/);
+  // WASM has no OS path: the members are absent, and a path that reaches the target is refused by name.
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  assert.doesNotMatch(text(wasmOut, 'packages/ts/wasm/generated/lib.rs'), /joined/);
+  assert.throws(
+    () => { const { contract, caseFiles } = shapes(); delete member(contract, 'shapes.joined').only; generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] }); },
+    /shapes\.joined: a path is not generated for WASM, which has no OS path \(Q-4, CK-15, GN-6y\)/,
+  );
+  // G-5: a case value of a path is resolved in the directory of the test, the input and the expected result alike.
+  assert.match(pythonTests, /pkg\.joined\(self\._case_path\("a"\), "b"\)/);
+  assert.match(pythonTests, /self\._case_path\("a\/b"\)/);
+  assert.match(pythonTests, /def _case_path\(self, relative: str\) -> str:/);
+  assert.match(nodeTests, /pkg\.joined\(casePath\('a'\), 'b'\)/);
+  assert.match(nodeTests, /afterEach\(/);
+  const phpTests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(phpTests, /joined\(\$this->casePath\("a"\), "b"\)/);
+  assert.match(phpTests, /protected function tearDown\(\): void/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Joined\(casePath\(t, "a"\), "b"\)/);
+  // G-4, GN-13e: a case path that would leave the directory of the test is refused by name: the test of the case fails
+  // with the reason in every target, and the other tests are written.
+  for (const bad of ['/a', '../a', 'a/../b', '']) {
+    const { contract, caseFiles } = shapes();
+    const kase = (caseFiles.get('contracts/cases.json') as any).joined[0];
+    kase.dir = bad;
+    const refusedOut = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+    const reason = `a case value of the type path is a relative path inside the directory of the test, without .. (GN-6y), not ${JSON.stringify(bad)}`;
+    const written: [string, (text: string) => string][] = [
+      ['packages/python/generated/tests/test_generated.py', (t) => `self.fail(${JSON.stringify(t)})`],
+      ['packages/ts/generated/tests/generated.test.mjs', (t) => `assert.fail('${t.replaceAll("'", "\\'")}')`],
+      ['packages/php-ext/generated/tests/GeneratedTest.php', (t) => `self::fail(${JSON.stringify(t)})`],
+      ['packages/go/zz_generated_test.go', (t) => `t.Fatal(${JSON.stringify(t)})`],
+    ];
+    for (const [path, fails] of written) {
+      const tests = text(refusedOut, path);
+      assert.ok(tests.includes(fails(`the case ${kase.id} of shapes.joined: ${reason}`)), `${path}: ${JSON.stringify(bad)}`);
+    }
+  }
 });
 
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {

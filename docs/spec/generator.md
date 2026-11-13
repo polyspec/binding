@@ -88,7 +88,9 @@ the design ids are those of the binding design.
   - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry and
     declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
     `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
-    packages of GN-3c in `optionalDependencies` at its own `version`; host code imports `native/generated/index.mjs`
+    fields of a release of GN-3c: `"type":
+    "module"`, `napi.binaryName` and `napi.targets`, because the host package is the package that a release builds
+    and publishes; host code imports `native/generated/index.mjs`
     (or `index.cjs`) by its relative path, and so do the generated tests, from `native/generated/tests/`. The WASM
     crate is `native/wasm/`, its module, glue and declarations are `native/wasm/generated/`, which the host's `files`
     names (`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts` and `*.wasm`), and its tests import
@@ -97,14 +99,30 @@ the design ids are those of the binding design.
     `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
     is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
     the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
+    The `composer.json` of the extension is written by `scaffold`, so `check` compares it whole, its
+    `php-ext.download-url-method` of GN-3c included.
 - **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
   napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
   <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
-  (L-2a), holds no addon and names every platform package in `optionalDependencies` at its own version, so npm
-  installs the one of the machine; release tooling builds and publishes the platform packages (K-3). The generated
+  (L-2a), holds no addon; release tooling builds and publishes the platform packages (K-3), and when it packs the
+  package it writes every platform package into `optionalDependencies` of the packed manifest at the version of the
+  release, so npm installs the one of the machine. The source manifest and the lock of a workspace do not name them:
+  the platform packages of a version are made by the release of that version, so a lock that named them could not be
+  installed before that release, and `npm ci` refuses a manifest whose dependencies its lock lacks. The generated
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
   entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
-  release does and installs both tarballs.
+  release does and installs both tarballs, so the entry finds the platform package without `optionalDependencies`. The `package.json` that `scaffold` writes for a library with the target
+  `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
+  which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
+  in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). Without them
+  the release refuses the package (kit K1189). Every manifest of an npm package that `scaffold` writes has `"type":
+  "module"`: the only `.js` files of the package are the glue of `wasm-bindgen --target web`, which is an ES module,
+  and the Node entries are `.cjs` and `.mjs`, whose extension decides their form. Without the field Node reads a
+  `.js` file that is an ES module with the warning `MODULE_TYPELESS_PACKAGE_JSON`. The `composer.json` of a PHP
+  extension (type `php-ext`, also `<host package>-native` of GN-3b) names `php-ext.extension-name` and
+  `php-ext.download-url-method` `["pre-packaged-binary"]`, so that PIE installs the binary of the release for the PHP
+  and the platform of the machine (kit K1189). `binding check` compares these fields as it compares the whole file
+  (CK-19).
 - **GN-3d** The PHP binding crate links on macOS by its `build.rs` alone (BD-9): the script emits
   `cargo:rustc-cdylib-link-arg=-undefined` and `cargo:rustc-cdylib-link-arg=dynamic_lookup` when `CARGO_CFG_TARGET_OS`
   is `macos`, emits nothing for another target, and fails when that variable cannot be read (P-3). The crate's `[lib]`
@@ -397,7 +415,13 @@ the design ids are those of the binding design.
   `None`; the generated crate asserts at compile time that the constant equals the declared value (a text by its
   bytes, a float by its bits), and the declarations show the value. A `{computed}` or `{empty}` default has no
   constant; the declarations show `...` in Python, `null` or `[]` in PHP, and an optional parameter in TypeScript,
-  with the rule id of a `{computed}` default in the comment. What "left out" is in each language: Python, an argument
+  with the rule id of a `{computed}` default in the comment. A default of an `optional` type is `{literal: null}`
+  or `{computed}`: its core parameter or field is the `Option<T>` of the optional type itself, with no second
+  `Option`, and the binding passes `None` for a value that was left out as for a null, because both mean that no
+  value was given. A `{literal}` default of an enum names in `default_core` a constant of the core enum, and the
+  crate asserts at compile time with `matches!` that the constant is the variant of the declared value. A
+  `{literal: null}` default of a value type passes `None` and names no constant, so the crate asserts nothing: the
+  core decides what no value means. What "left out" is in each language: Python, an argument
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
@@ -406,10 +430,13 @@ the design ids are those of the binding design.
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
   and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
-  field without a default, any other default of a record parameter, a default of an `optional` type, a default of a type that is no
-  number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
+  field without a default, any other default of a record parameter, a default of an `optional` type other than
+  `{literal: null}` and `{computed}`, a default of a type that is no number, bool, text, latin1, bytes, source, list,
+  map, enum, value type or `optional`, a `{literal}` or `{const}` default without `default_core` other than
+  `{literal: null}` of an `optional` or a value type,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
-  also has the result form.
+  also has the result form, other than a default of an `optional` type: the result form of such a field is the value of
+  its optional type, so a `None` of the core is the null of the language.
 - **GN-6j** A parameter of type `source` (T-1), also inside `optional`, takes a text or bytes and reaches the core as
   `&[u8]`, which the core judges: Python takes a `str` as its UTF-8, or a value that PyO3 reads as bytes; Node takes a
   string as its UTF-8, or a `Uint8Array`; PHP takes a string, whose bytes are passed as they are, because a PHP string
@@ -417,6 +444,25 @@ the design ids are those of the binding design.
   `invalid_argument_type`. A `source` in any other place (a result, a field, an element) is refused by name (G-4).
   In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
   value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
+- **GN-6y** The type `path` (T-1, B-3) is the bytes of an OS path, in every place: a parameter, a result, a field
+  and an element, also inside `optional`. The core takes a parameter as `&std::path::Path`, an `optional<path>` as
+  `Option<&Path>`, and gives a result or a field as `std::path::PathBuf`. In each language the input is: Python a
+  `str`, `bytes` or `os.PathLike`, as the bytes of `os.fsencode`; Node a string as its UTF-8, or a `Uint8Array`; PHP a
+  string, whose bytes are passed as they are; Go a `string`, whose bytes are passed as they are. The output is: Python
+  the `str` of `os.fsdecode`; Node a string when the bytes are UTF-8, and a `Uint8Array` when they are not, so that no
+  byte is replaced; PHP a string of the bytes; Go a `string` of the bytes. The kinds are the same in every language: a
+  value of another type, and a Python value that `os.fsencode` refuses with `TypeError`, is kind
+  `invalid_argument_type`; a Node string with an unpaired surrogate is kind `invalid_text` (B-3); a path with a NUL
+  byte, a Python `str` that `os.fsencode` cannot encode, and, where the OS path is no bytes (Windows), bytes that are
+  not UTF-8, are kind `invalid_path`. `binding_core::path_from_bytes` and `binding_core::path_bytes` convert the bytes,
+  so every target judges them by one function. WASM has no OS path: the contract gives a member with `path` an `only`
+  without `wasm` (Q-4, CK-15), and a `path` that reaches the WASM target is refused by name. A case value of type
+  `path` (G-5) is a relative path with `/` between its parts, which the generated test resolves inside a new temporary
+  directory of each test and removes with it: Python `tempfile.TemporaryDirectory` of the test, Node `mkdtempSync`
+  with `afterEach`, PHP a directory under `sys_get_temp_dir()` with `tearDown`, Go `t.TempDir()`. An input and the
+  expected result of one test resolve in the same directory, so a result that names the path is compared as the path
+  in that directory. An empty path, an absolute path and a path with a part `..` are refused by name (G-4), because
+  they would leave the directory of the test: the test of the case fails with that reason in every target (GN-13e).
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
   does when `raises` names a variant of the contract's own core error or the member takes a callback. The error of
   such a path is `binding_core::Failure<E>`, a kind or what language code raised, when `core.failure` is true, and
@@ -777,7 +823,8 @@ the design ids are those of the binding design.
   the C ABI read from the core error. A kind whose row names the unit is created as that struct.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
-  it out, and the core decides its value.
+  it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
+  already means no value (GN-6i).
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through
@@ -1042,7 +1089,8 @@ the design ids are those of the binding design.
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
   compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
   explicit `None` or `null` for such a parameter is tested as a value that is refused, except where the default is
-  `{literal: null}`, whose declared value is that null. T-1: a `source` parameter gives
+  `{literal: null}`, whose declared value is that null, and except for an `optional` or a value type, which takes it
+  as a value (GN-6i). T-1: a `source` parameter gives
   the same for a text and for the bytes of its UTF-8 (Python, Node), a text with an unpaired surrogate is kind
   `invalid_text`, and a value that is neither is kind `invalid_argument_type`. T-7: a `bytes` parameter refuses a
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is

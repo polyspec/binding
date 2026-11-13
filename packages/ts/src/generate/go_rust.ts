@@ -11,7 +11,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, nativeRoundTrip, objectUnit, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -56,6 +56,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (typeof type === 'string') {
     if (type === 'text') return `in_text(${input}, ${subject})`;
     if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
+    if (type === 'path') return `in_path(${input}, ${subject})`;
     // T-1: a source is a Go []byte, whose bytes the core judges.
     // GN-12a: an int or a uint of the contract is a safe integer, which the Go types do not hold to.
     if (type === 'int' || type === 'uint') return `in_safe_${type}(${input}, ${subject})`;
@@ -88,7 +89,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
 export function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     if (type === 'never') return `match ${value} {}`;
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', path: 'out_path' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go output conversion for ${type}`);
     return `${name}(output, ${value})`;
@@ -208,6 +209,11 @@ fn in_bytes(input: &mut &[u8]) -> Result<Vec<u8>, Fail> {
     Ok(read_bytes(input)?.to_vec())
 }
 
+/// T-1 path, GN-6y: the bytes of a Go string, as they are, which binding_core judges.
+fn in_path(input: &mut &[u8], subject: &str) -> Result<std::path::PathBuf, Fail> {
+    binding_core::path_from_bytes(read_bytes(input)?.to_vec(), subject).map_err(binding_error)
+}
+
 fn in_list<'a, T>(input: &mut &'a [u8], item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     let count = read_length(input)?;
     let mut items = Vec::new();
@@ -324,6 +330,11 @@ fn out_bytes(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
     let bytes = value.as_ref();
     write_length(output, bytes.len());
     output.extend_from_slice(bytes);
+}
+
+/// T-1 path, GN-6y: the bytes of the path, which a Go string holds as they are.
+fn out_path(output: &mut Vec<u8>, value: impl AsRef<std::path::Path>) {
+    out_bytes(output, binding_core::path_bytes(value.as_ref()));
 }
 
 fn out_text(output: &mut Vec<u8>, value: impl AsRef<str>) {
@@ -470,12 +481,12 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const subject = rustString(goName(f.name));
-    if (f.default !== undefined) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
+    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
     return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, 'input', subject))}?;`;
   });
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
-  const writes = (): string[] => fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `${f.default === undefined && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
+  const writes = (): string[] => fields.map((f) => `    ${convertOut(model, pointed(f) ? { optional: f.type } : f.type, `${!pointed(f) && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
   // GN-6aa: a record with a callback field has one lifetime and only enters.
   const entersOnly = fields.some((f) => unitOf(model, f.type)?.origin === 'callback');
   return `
@@ -619,7 +630,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
       continue;
     }
     const arg = fn.args.find((a: Arg) => !a.field && a.name === parameter.name);
-    if (arg?.default !== undefined) {
+    if (arg !== undefined && pointed(arg)) {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
     } else {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', subject)}?;`);

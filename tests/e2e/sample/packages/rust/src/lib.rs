@@ -498,6 +498,21 @@ pub fn size(value: &Data) -> u64 {
     }
 }
 
+/// The kind of the data, and `null` for no data (U-2: a `{literal: null}` default of a value type, so `None` is
+/// what the core decides it is).
+#[must_use]
+pub fn describe(value: Option<&Data>) -> String {
+    let kind = match value {
+        None | Some(Data::Null) => "null",
+        Some(Data::Bool(_)) => "bool",
+        Some(Data::Float(_)) => "float",
+        Some(Data::Text(_)) => "text",
+        Some(Data::List(_)) => "list",
+        Some(Data::Map(_)) => "map",
+    };
+    String::from(kind)
+}
+
 /// A counter, which its members change (U-2: a receiver `&mut self`, held in the mutex of B-5c).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Counter {

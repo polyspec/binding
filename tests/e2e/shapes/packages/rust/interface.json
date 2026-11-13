@@ -273,6 +273,120 @@
           "core": "polyspec_shapes::wrap"
         },
         {
+          "id": "shapes.pad",
+          "name": [
+            "pad"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "fill"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "default": {
+                "literal": null
+              }
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "pad_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::pad"
+        },
+        {
+          "id": "shapes.joined",
+          "name": [
+            "joined"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "dir"
+              ],
+              "type": "path",
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "path",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::joined",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "SH-4"
+          }
+        },
+        {
+          "id": "shapes.parent_of",
+          "name": [
+            "parent",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "path",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "path"
+          },
+          "optional_reason": "SH-4",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::parent_of",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "SH-4"
+          }
+        },
+        {
           "id": "shapes.checksum",
           "name": [
             "checksum"
@@ -462,6 +576,81 @@
       ]
     },
     {
+      "id": "side",
+      "name": [
+        "side"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Side",
+      "variants": [
+        {
+          "name": [
+            "left"
+          ],
+          "value": "left"
+        },
+        {
+          "name": [
+            "right"
+          ],
+          "value": "right"
+        }
+      ]
+    },
+    {
+      "id": "pad_options",
+      "name": [
+        "pad",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::PadOptions",
+      "fields": [
+        {
+          "name": [
+            "side"
+          ],
+          "type": {
+            "unit": "side"
+          },
+          "default": {
+            "literal": "left"
+          },
+          "default_core": "polyspec_shapes::DEFAULT_SIDE"
+        },
+        {
+          "name": [
+            "width"
+          ],
+          "type": {
+            "optional": "uint"
+          },
+          "default": {
+            "computed": "SH-2"
+          },
+          "reason": "SH-2"
+        },
+        {
+          "name": [
+            "end"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          },
+          "reason": "SH-3"
+        }
+      ]
+    },
+    {
       "id": "text_measure",
       "name": [
         "text",
@@ -646,6 +835,21 @@
       "member": "shapes.wrap",
       "file": "contracts/cases.json",
       "group": "wrap"
+    },
+    {
+      "member": "shapes.pad",
+      "file": "contracts/cases.json",
+      "group": "pad"
+    },
+    {
+      "member": "shapes.joined",
+      "file": "contracts/cases.json",
+      "group": "joined"
+    },
+    {
+      "member": "shapes.parent_of",
+      "file": "contracts/cases.json",
+      "group": "parent_of"
     },
     {
       "member": "shapes.checksum",

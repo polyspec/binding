@@ -53,6 +53,8 @@ types of the design rules named below and no rule of any library.
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, all required; implemented by every core error enum and by `BindingError`. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`; `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`; `category()`, `KINDS` (kind and category table), `Kinds`, `Display` (the whole message, E-4), `std::error::Error`. |
+| `path_from_bytes(bytes: Vec<u8>, subject: &str) -> Result<PathBuf, BindingError>` | T-1 `path`, B-3 | The path of OS bytes: a NUL byte, and where the OS path is no bytes (Windows) bytes that are not UTF-8, are `InvalidPath`. |
+| `path_bytes(path: &Path) -> &[u8]` | T-1 `path`, B-3 | The bytes of a path that leave to a language: the OS bytes, or the encoded bytes of `OsStr` where the OS path is no bytes. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
 | `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
 | `Handle` | B-1, T-3 | Opaque `u64` of the side that made it: `new(u64)`, `raw()`. A handle of a container, a `Date` or an `Other` value is valid only inside the `in` or `out` call that gave it. |
