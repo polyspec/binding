@@ -82,7 +82,7 @@ define run_all
 endef
 # binding_core, the Rust crate of packages/core/rust, built by the cargo of rust-toolchain.toml.
 CORE_MANIFEST := --manifest-path packages/core/rust/Cargo.toml
-.PHONY: check test-ts typecheck-ts unit-ts test-rust test-rust-features test-rust-plain lint-rust clippy-rust clippy-rust-features fmt-rust
+.PHONY: check test-ts typecheck-ts unit-ts test-rust test-rust-features test-rust-plain lint-rust clippy-rust clippy-rust-features fmt-rust fmt-e2e
 
 check: ## Run test-ts, test-rust and lint-rust, each to its end, and name each failed one
 	$(call run_all,test-ts test-rust lint-rust)
@@ -101,14 +101,19 @@ test-rust-features:
 test-rust-plain:
 	cargo test --locked $(CORE_MANIFEST)
 
-lint-rust: ## Run clippy on binding_core with all features and with none, and check its format
-	$(call run_all,clippy-rust-features clippy-rust fmt-rust)
+lint-rust: ## Run clippy on binding_core with all features and with none, and check its format and that of the e2e cores
+	$(call run_all,clippy-rust-features clippy-rust fmt-rust fmt-e2e)
 clippy-rust-features:
 	cargo clippy --locked $(CORE_MANIFEST) --all-targets --all-features -- -D warnings
 clippy-rust:
 	cargo clippy --locked $(CORE_MANIFEST) --all-targets -- -D warnings
 fmt-rust:
 	cargo fmt $(CORE_MANIFEST) --check
+# The cores of the repositories of the end-to-end check are in the form that rustfmt gives with its defaults. rustfmt
+# reads each source alone, because cargo fmt reads a workspace whose binding crates only a run writes (GN-14d).
+E2E_RUST := $(sort $(wildcard tests/e2e/*/packages/rust/src/*.rs))
+fmt-e2e:
+	$(if $(E2E_RUST),rustfmt --check --edition 2021 $(E2E_RUST),$(error fmt-e2e: no Rust source under tests/e2e/*/packages/rust/src))
 
 # ---- CI (.github/workflows/ci.yml) -------------------------------------------------------------------------------------
 # ci-targets runs TARGETS past failures with the utility of kit and writes CI_REPORT: the log of each target, record.json
