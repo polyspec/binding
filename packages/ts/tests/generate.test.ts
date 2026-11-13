@@ -1429,9 +1429,8 @@ test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name 
   assert.match(stub, /case Word = 'word';/);
 });
 
-test('the pairs of a case value of kind map fill the class that the make member of the kind takes (U-1, GN-13)', () => {
-  // As Value.object of json takes an OrderedMap, Token.of_map takes a TokenMap, which its constructor makes and its one
-  // member with the receiver &mut self and two parameters fills with each pair.
+// The token classes with Token.of_map, which takes a TokenMap, as Value.object of json takes an OrderedMap.
+function tokenMapClasses(): { contract: any; caseFiles: Map<string, unknown> } {
   const { contract, caseFiles } = tokenClasses();
   const token = contract.units.find((u: any) => u.id === 'token');
   token.members.push({ id: 'token.of_map', name: ['of', 'map'], kind: 'static', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::of_map' } });
@@ -1444,6 +1443,13 @@ test('the pairs of a case value of kind map fill the class that the make member 
       { id: 'token_map.size', name: ['size'], kind: 'property', visibility: 'public', returns: 'uint', raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::size', receiver: '&self' } },
     ],
   });
+  return { contract, caseFiles };
+}
+
+test('the pairs of a case value of kind map fill the class that the make member of the kind takes (U-1, GN-13)', () => {
+  // As Value.object of json takes an OrderedMap, Token.of_map takes a TokenMap, which its constructor makes and its one
+  // member with the receiver &mut self and two parameters fills with each pair.
+  const { contract, caseFiles } = tokenMapClasses();
   (caseFiles.get('contracts/cases.json') as any).show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
@@ -1453,6 +1459,15 @@ test('the pairs of a case value of kind map fill the class that the make member 
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.Token\.ofMap\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.word\('v'\)\); return made0; \}\)\(\)\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0\.insert\(pkg\.Token\.word\("k"\), pkg\.Token\.word\("v"\)\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0->insert\([^\n]*Token::word\("k"\), [^\n]*Token::word\("v"\)\);/);
+});
+
+test('a case value of a class that is no value class is the pairs that fill it (U-1, GN-13)', () => {
+  const { contract, caseFiles } = tokenMapClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
+  (caseFiles.get('contracts/cases.json') as any).count = [{ id: 'one', members: [['k', { kind: 'null' }]], result: 1 }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] });
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.count\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.none\(\)\); return made0; \}\)\(\)\)/);
 });
 
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
