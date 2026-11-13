@@ -17,6 +17,77 @@
   as dead code; a helper that only the entry points of a test feature use is now compiled under those features (GN-4).
   Verified by `make e2e` of `tests/e2e/sample`: every target passed, node with 67 tests and go 41, and by `npm test` in
   `packages/ts`: 289 of 289 pass.
+- A changelog entry named the commit that an end-to-end run had checked, which tells a reader nothing without a lookup
+  and is lost in a shallow history. No tracked file now names a Git commit, except the commit pin of a GitHub action
+  and a lock; `tests/tracked-commits.test.ts` fails any other token of a commit name, and the entry states the run
+  that verified it (B1.4). Verified by `npm test` in `packages/ts`.
+- GN-13a listed B-10 among the tests that G-5 does not generate, while GN-6p states that PHP, Python and Node generate
+  a B-10 test for each class unit with `cleanup`. GN-13a now names B-10 as open only in Go and WASM, which refuse such
+  a unit by name (GN-6p, GN-13a). Verified by reading the B-10 tests that `npm test` in `packages/ts` requires of PHP,
+  Python and Node.
+- binding had no document check: no `make docs-check`, no `config/documents.json` and no checklist, so a broken link,
+  a Korean twin without the revision of its source or a checklist row of a wrong form went unnoticed. `make docs-check`
+  now runs the document check of the installed `@polyspec/kit` on every Markdown document, the changelogs and the
+  checklist `docs/plans/execution/checklist.md` that `config/checklist.json` declares, and `make documents-stamp`
+  writes the `source-sha256` of a reviewed Korean twin (B1.1, B1.2). Verified by `make docs-check`.
+- A Go case value of a class that was not an instance value, such as `{"kind": "text", "value": "a"}` of a `Value` of
+  json, refused the whole Go target with "a case value of the class value is an instance value". Go now writes it as
+  the other targets do: a class of origin value by the make member of the kind, another class by its constructor and
+  the inserts of its pairs, each a local of the test; a case whose receiver or argument is not written fails its test
+  by name, and the other tests of the target are written (U-1, GN-13, GN-13e, GN-13f). Verified by `npm test` in
+  `packages/ts`.
+- The Python G-7 test of a constructor without parameters, such as `OrderedMap()` of json, expected `takes no
+  arguments`, the words of a CPython function of no arguments, but the constructor is the `__new__` of PyO3, which
+  reports `takes 0 positional arguments` and `unexpected keyword argument`. The test now expects the words of each
+  form (G-7). Verified by `npm test` in `packages/ts`.
+- A float case value that JSON writes as an integer, such as `0`, `100` and `1e20` of `value.from_float` of json, was
+  written as an integer in Python and PHP, which refuse an integer for a float (kind `invalid_argument_type`), and a
+  negative zero lost its sign in every language. A float is now a float literal in Python and PHP (`0.0`, `1e+20`),
+  and a negative zero is `-0.0`, or `-0` in Node and WASM (B-2, G-5). Verified by `npm test` in `packages/ts`.
+- A case whose result is `null` of an optional of a class, such as `get_absent` of `ordered_map.get` of json, failed
+  its test with "a class has no case value form". The result `null` of an optional now has a case form whatever the
+  optional holds, and each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, Go
+  `nil` of the type of the result); a result that is a class still fails with the reason (GN-13e). Verified by `npm
+  test` in `packages/ts`.
+- A Node class member named by a word that JavaScript reserves, such as the static member `null` of `Value` of json,
+  gave an entry that did not parse, because the entry defined it as `function null(...args)` (SyntaxError). The entry
+  now writes each member over the addon as a method of the computed key `<name>`, which keeps `<name>` as its `name`,
+  and every reserved word of JavaScript is tested against the Node entry and the WASM module (GN-6b). Verified by `npm
+  test` in `packages/ts`.
+- A Python case value nested deeper than the parser of Python takes, such as `array_past_limit` of `value.array` of
+  json, gave a test module that did not import ("too many nested parentheses"). A case value whose brackets would nest
+  more than 50 deep is now made step by step in the local variables of a function of the test module, which the test
+  calls, so the case stays whole (GN-13e). Verified by `npm test` in `packages/ts`.
+- A case whose id holds a character that no identifier takes, such as `document-order` of json, gave the PHP method
+  `testGn13eparseDocument-order` and the Python method `test_gn13e_parse_document-order`, so PHPUnit and unittest
+  could not read the generated tests. The name of the test of a case now holds the words of its id, split at every
+  run of characters other than ASCII letters and digits (`DocumentOrder`, `document_order`), as Go already did, and
+  two ids of one member or one value alias that give one name refuse the target by name, PHP comparing without case
+  (GN-13e). Verified by `npm test` in `packages/ts`.
+- A case value of kind map of a class of origin value whose make member takes another class, such as `Value.object`
+  of json, which takes an `OrderedMap`, failed its test with "takes more than one value" or "no case value of the
+  type", because the `[key, value]` pairs of the case are no value of that class. The pairs now fill the class: its
+  constructor without parameters makes it, and its one member with the receiver `&mut self` and two parameters takes
+  each pair, a text key as a value of kind text where the parameter is a class of origin value; a case value of such a
+  class at another place, such as `members` of `value.object`, is the same list of pairs (GN-13). Verified by
+  `npm test` in `packages/ts`.
+- A PHP enum with a case named by a keyword or a type name, such as `object`, `array`, `string` and `null` of the
+  enum `kind` of json, did not compile: the macro `php_enum` of ext-php-rs refuses those names, also as the name of
+  `#[php(name)]`, and the enum type that the module registers was then missing (E0425). Such a case now takes a
+  trailing `_` in the extension and the stub (`Kind::Object_`); its backed value is the value of the contract (GN-10).
+  Verified by `npm test` in `packages/ts` and by clippy of the json PHP binding.
+- A parameter of a class that the core takes by value, such as `key` and `value` of `OrderedMap::insert(&mut self, key:
+  Value, value: Value)`, did not compile, because the call gave a borrow of the guard (E0308). The argument is now
+  `CoreForm::core_form` of the borrow of the value, which the type of the core parameter turns into the borrow or a
+  copy (GN-6h). Verified by `npm test` in `packages/ts` and by clippy of the json bindings of Node, Python and WASM.
+- A member of a locked class whose core path is a trait function, such as `value.to_string` with the path
+  `std::string::ToString::to_string`, did not compile, because the call gave it a borrow of the guard, which a generic
+  path does not deref (E0277). The generated code now binds `&*guard` or `&mut *guard` under the name of each place
+  once every lock is taken, and the core call takes those names (GN-6h). Verified by `npm test` in `packages/ts`.
+- A class result that the core gives by reference, such as `&OrderedMap` of `Value::members` or the `&Value` items of
+  `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
+  conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
+  reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
 - The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
   class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
   was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static
@@ -54,7 +125,10 @@
   `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
   `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
   requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
-  block had dropped because only that test entry uses it; the helper is now kept.
+  block had dropped because only that test entry uses it; the helper is now kept. Verified for Python and PHP by
+  `make e2e` of `tests/e2e/classes`, whose record is evidence: PHP passed 60 generated tests and 4 contract cases, and
+  Python 58 and 4; Go failed in that run because `held_lease` was unused without `panic-test`, which the entry above
+  fixes.
 - A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
   ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
   and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
@@ -73,7 +147,7 @@
   cleanup call: `E_WARNING`, `ResourceWarning`, or `process.emitWarning` of type `ResourceWarning` (GN-6p, B-10). The
   generated tests require kind `consumed` after the call and the warning. Go and WASM refuse such members and units by
   name. Verified by `make check`.
-- The end-to-end check of `tests/e2e/classes` at 8d9ed8c failed for Python, because `a<name>` built its tuple of
+- The end-to-end check of `tests/e2e/classes` failed for Python, because `a<name>` built its tuple of
   arguments from a chained iterator, which `PyTuple::new` does not take (it needs an exact size), and for Node and
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
   clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
@@ -292,7 +366,9 @@
 - The cores of `tests/e2e/shapes` and `tests/e2e/sample` converted lengths and indexes with `as`, which the lints of
   R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
   function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data
-  value is the nearest float with the reason of U-7.
+  value is the nearest float with the reason of U-7. Verified by `make e2e`
+  of `tests/e2e/shapes`, whose record is evidence and passed in every target (PHP 74, Python 86, Node 87, Go 50 and
+  WASM 85 tests), and of `tests/e2e/sample`, whose record is evidence and passed the lint of the core in every target.
 - A case that armed a fault injection point of another library (`<library>.<id>`) ran against a binding crate whose
   `fault-test` turned on the feature of its own core alone, so the point of the other core was not compiled and the
   case could not arm it, and `binding check` did not report the manifest. `binding scaffold` now reads the libraries

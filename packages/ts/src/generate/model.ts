@@ -865,6 +865,14 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     lines.push(`        let ${name} = ${cell}.read(${text}, &[${beside.map((b) => `Some(&${b})`).join(', ')}]).map_err(${fail})?;`);
     reads.set(place.object.unit, [...beside, name]);
   }
+  // The core gets the value that each guard holds, which a path of a trait (ToString::to_string) does not find
+  // through a borrow of the guard. The guards stay alive under the names that the borrows shadow.
+  // GN-6o: the receiver self is the value itself, which the core consumes.
+  for (const place of places(model, fn)) {
+    if (place.param === undefined && fn.receiver === 'self') continue;
+    const name = place.param === undefined ? RECEIVER_GUARD : variable(place.param);
+    lines.push(`        let ${name} = ${place.write ? '&mut ' : '&'}*${name};`);
+  }
   return lines;
 }
 
@@ -969,17 +977,17 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   const held = places(model, fn);
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
-    // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
-    const place = held.find((h) => h.param === p);
-    if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
+    // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
+    if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
   if (waitsIo(fn)) args.unshift(IO_TOKEN);
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
-  // GN-6o: the receiver self is the value that its place took.
-  if (held.some((h) => h.param === undefined)) return [fn.receiver === 'self' ? RECEIVER_GUARD : `${mut ? '&mut ' : '&'}${RECEIVER_GUARD}`, ...args];
+  // GN-6o: the receiver self is the value that its place took; any other receiver is the borrow that lockLines bound.
+  if (held.some((h) => h.param === undefined)) return [RECEIVER_GUARD, ...args];
   return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
 

@@ -85,3 +85,24 @@ rules of this repository.
   every manifest that it releases.
   Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
   release-tag`, which tags only the commit of a successful run.
+- Own: `make docs-check` reads each document that `config/documents.json` selects on its own with the document check of
+  the installed `@polyspec/kit`: its links, anchors and fences, the changelogs, and the checklists of `docs/plans/<plan>/`
+  that `config/checklist.json` declares. Every English document has a Korean twin `.ko.md` with the same `doc-id`, and the
+  twin holds `source-sha256`, the sha256 of its English file, which `make documents-stamp PATHS=<twin>` writes after the
+  translation is reviewed. Run `make docs-check` before a commit. Why: every polyspec repository keeps the same structure
+  of documents, and a broken link or a twin that says another thing than its source misleads its reader.
+  Enforced by: `make docs-check`; whether a twin says what its source says is judged by review.
+- Own: This repository has one checklist, `docs/plans/execution/checklist.md`, with its twin; `docs/plans/execution/plan.md`
+  holds the background and the dependencies of each wave. A task ID has the form `B<wave>.<number>`, a sub-task adds
+  `-<number>`, and a row holds the ID, the task, its deliverables, its verification command and its state. Split a task
+  into sub-items or add tasks to it; do not create another checklist. Why: one list of tasks with their verification
+  commands shows what is done and how it was checked.
+  Enforced by: `make docs-check`
+- Own: No tracked file names a Git commit, of this repository or of another, except where a tool requires the commit:
+  a GitHub action is pinned by its commit on its `uses:` line, and a lock records what its package manager resolved. The
+  evidence of a run, such as the commit that an end-to-end run checked, is in its record under the ignored
+  `var/report/`; a changelog entry or a document states what was verified, by which command, on which inputs. Why: a
+  commit name says nothing to a reader who does not look it up, it does not survive a history that is rewritten or
+  shallow, and a fact that a reader needs belongs in the sentence itself.
+  Enforced by: `npm test` in `packages/ts`, whose `tests/tracked-commits.test.ts` fails a token of a commit name in a
+  tracked file.

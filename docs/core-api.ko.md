@@ -1,4 +1,5 @@
 <!-- doc-id: core-api -->
+<!-- source-sha256: b72e5628fd8117f03b55e3334b1312a24c5cdef535a87b9334c91225469edfc1 -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -45,9 +46,9 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | key가 `Key::Int(i64)`, `Key::Bytes(Vec<u8>)`, `Key::Text(String)`인 삽입 순서 보존 맵. API와 규칙은 `OrderedMap`과 같다. |
 | `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 handle로 담는다. `Raised::from_generated(Handle)`와 `handle()`은 `construct`에서만. `Display`, `std::error::Error`. kind 없음. |
-| `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)`, `Callback(Box<dyn std::error::Error + Send + Sync>)`. callback을 부르는 코어 함수의 오류 타입. 마지막 변형은 Rust 역호출의 오류를 Rust 호출자에게 그대로 돌려주며 `construct` 없이 만들고 생성 코드에는 오지 않는다. `From<Raised>`, `Display`, `std::error::Error`(source는 Rust 역호출의 오류). `Debug`만 derive한다. |
+| `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)`, `Callback(Box<dyn std::error::Error + Send + Sync>)`. callback을 부르는 코어 함수의 오류 타입. 마지막 변형은 Rust 역호출의 오류를 Rust 호출자에게 그대로 돌려주며 `construct` 없이 만들고 생성 코드에는 오지 않는다. `From<Raised>`, `Display`, `std::error::Error`(source는 Rust 역호출의 오류). derive하는 trait는 `Debug`뿐이다. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`. `ALL`, `as_str()`. |
-| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. binding 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 시험 벡터를 binding의 TypeScript 변환과 함께 쓴다. |
+| `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. binding 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 그 벡터를 binding의 TypeScript 변환과 함께 쓴다. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
@@ -57,7 +58,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `ValueKind` | U-1 `value`, T-3 | `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`, `safe_text`, `native`, `nested:<value type>`. `ALL`, `as_str()`. `out`·`in` 행의 `kind`. |
 | `Predicate` | U-1 `when` | `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float). `ALL`, `as_str()`, `kind()`. |
 | `OutValue` | T-3 | 나가는 값의 한 단계: `Null`, `Bool`, `Int(IntOut)`, `Int64(i64)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `Reference { handle, value }`, `SafeText(String)`, `Native(Handle)`, `Nested { value_type, value }`. `kind()`, `predicate(Predicate) -> Option<bool>`(술어가 그 종류에 해당하지 않으면 `None`). |
-| `IntOut`, `FloatOut`, `BytesOut`, `MapOut` | U-1 `when` | 술어를 여기서 계산하는 래퍼(`MapOut::new`의 `sequence_keys`는 키를 보는 코어가 준다). 같은 handle은 같은 언어 객체이고, 컨테이너는 자식보다 먼저 만들므로 공유와 순환이 그대로 나간다(U-7 (d)). |
+| `IntOut`, `FloatOut`, `BytesOut`, `MapOut` | U-1 `when` | 술어를 여기서 계산하는 래퍼(`MapOut::new`의 `sequence_keys`는 키를 보는 코어가 준다). 같은 handle은 같은 언어 객체이고, 컨테이너는 자식보다 먼저 만들므로 공유 값과 순환 값이 모양을 유지한다(U-7 (d)). |
 | `HostValue` | B-1, T-2 `host_value` | `Int`는 `i64`에 드는 JavaScript `bigint`도 포함한다. `Number`는 `i64` 밖의 Python `int`나 JavaScript `bigint`의 10진 토큰, `Bytes`는 Python `bytes`. `Float`는 PHP, Python, Go의 실수이며 실수로 남는다. JavaScript number는 모두 `UntypedNumber`이고 정수인지는 코어가 정한다(U-7 (f)). `PhpReference`는 참조 원소와 그 정체성을 알린다. 들어오는 값의 한 단계: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `UntypedNumber(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `PhpReference { identity, target }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
 | `HostText` | B-1, B-3 | `Bytes(Vec<u8>)`(PHP, Go), `Utf16(Vec<u16>)`(JavaScript), `CodePoints(Vec<u32>)`(Python). |
 | `Prototype` | B-1 | `Object`, `Null`. |
@@ -65,16 +66,15 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `HostValues` | B-1 | 코어가 `HostValue` handle의 자식을 바인딩에 묻는 trait. 생성 코드가 구현한다. `item(&mut self, list, index) -> Result<HostValue, Raised>`, `entry(&mut self, map, index) -> Result<(HostValue, HostValue), Raised>`(맵, PHP 배열, plain object, `stdClass`, 언어의 순서), `read(&mut self, value) -> Result<HostValue, Raised>`(값 표 class의 `read` member). 물음은 언어 코드를 부를 수 있으므로 실패는 그 코드의 예외다. |
 | `fault::point!(name) -> Option<fault::Injected>` | G-5, X-1, GN-5 | 코어의 실패 주입점. 이름은 `<library>.<id>`이며 계약의 `faults`가 가리키는 코어의 `#[doc(hidden)] pub const`다. 늘 있는 macro이고, 그 점을 적은 crate 자신의 feature `fault-test`로 판정된다. Cargo는 binding_core의 feature를 합치므로, 코어 하나가 `fault-test`를 켜면 build 안의 모든 코어에서 binding_core의 feature가 켜지기 때문이다. 그 crate에 자기 `fault-test`가 없거나 이 스레드에 그 점의 fault가 장전되지 않았으면 `None`이다. 한 번 쓰일 때마다 그 점에 닿은 한 번이다. |
 | `fault::Injected` | G-5 | `Io { errno: Option<i32> }`(그 자리의 I/O 호출이 실패한다. errno는 fault의 기호가 대상에서 갖는 값이다), `Short { bytes: u64 }`(그 읽기·쓰기가 그만큼만 처리하고 끝난다), `Broken`(그 자리의 불변식이 깨졌다). |
-| `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | `fault-test`에서만. case의 `faults` JSON 목록(`point`, `kind`, `errno`, `bytes`, `nth`)을 이 스레드에서 그 member id를 다음에 부르는 호출에 장전하고 장전 id를 준다. fault는 그 점에 `nth`번째(없으면 첫 번째)로 닿을 때 한 번 주입된다. errno 기호는 Linux와 macOS가 함께 가진 POSIX 기호다. 대상에 없는 기호나 errno가 없는 대상은 `ArmError::Errno`다. |
-| `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | `fault-test`에서만. 생성 진입점은 동기 부분에서 자기 member와 스레드의 장전을 꺼내고, 없으면 빈 장전을 꺼내, 작업과 함께 옮겨 `run` 안에서 작업을 실행한다. `run`은 장전을 그 스레드에 설치하고 끝나면(panic 뒤에도) 이전 장전으로 되돌린다. `point`는 설치된 장전만 읽으므로, callback 안에서 다시 들어온 진입점은 바깥 장전을 보지 않고, 코어가 새로 만든 task·스레드에는 장전이 이어지지 않는다. |
+| `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | `fault-test`가 있을 때. case의 `faults` JSON 목록(`point`, `kind`, `errno`, `bytes`, `nth`)을 이 스레드에서 그 member id를 다음에 부르는 호출에 장전하고 장전 id를 준다. fault는 그 점에 `nth`번째(없으면 첫 번째)로 닿을 때 한 번 주입된다. errno 기호는 Linux와 macOS가 함께 가진 POSIX 기호다. 대상에 없는 기호나 errno가 없는 대상은 `ArmError::Errno`다. |
+| `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | `fault-test`가 있을 때. 생성 진입점은 동기 부분에서 자기 member와 스레드의 장전을 꺼내고, 없으면 빈 장전을 꺼내, 작업과 함께 옮겨 `run` 안에서 작업을 실행한다. `run`은 장전을 그 스레드에 설치하고 끝나면(panic 뒤에도) 이전 장전으로 되돌린다. `point`는 설치된 장전만 읽으므로, callback 안에서 다시 들어온 진입점은 바깥 장전을 보지 않고, 코어가 새로 만든 task·스레드에는 장전이 이어지지 않는다. |
 | `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | `fault-test`가 있을 때. `future`의 poll마다 장전을 설치하고 그 뒤 앞의 장전을 되돌리는 future다. panic 뒤에도 되돌린다. 그래서 `async fn`의 주입점은 runtime의 어느 스레드에서도 자기 호출의 장전을 본다. |
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
-| `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`에서만. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
+| `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`가 있을 때. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 
 ## 아직 crate에 없는 것
 
 설계의 호출 규약은 모두 crate에 있다.
-설계는 handle을 정하지만 호출은 정하지 않는다.
 

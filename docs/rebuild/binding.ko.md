@@ -1,4 +1,5 @@
 <!-- doc-id: rebuild-binding -->
+<!-- source-sha256: 6e43b887ba5507672ae3358c3634f597862ec3b4f9f3be675042a4c9b09d7298 -->
 # 재구현 기록: binding
 
 [English](binding.md)
@@ -21,7 +22,7 @@ binding은 레포마다 인터페이스 계약 하나(`contracts/interface.json`
   언어 예외가 코어를 어떻게 지나는지(`propagate`, `{kind}`, `{recognize}`), 스레드 규칙(`owner`는 다른 스레드를 kind
   `wrong_thread`로 거부)을 적고, callback 객체는 받는 시점에 확인한다(U-3, B-5b).
 - R4 wait 형태: `none`, `blocking_io`, `process_wait`, `async_driver`는 언어마다 서로 다른 네 형태이고(Node는 libuv 풀의
-  `AsyncTask`와 전용 스레드와 `ThreadsafeFunction`, Python은 `py.detach`와 생성된 `a<name>` awaitable), 코어 시그니처의 서로
+  `AsyncTask`와 `ThreadsafeFunction`을 쓰는 전용 스레드를 구별하고, Python은 `py.detach`와 생성된 `a<name>` awaitable), 코어 시그니처의 서로
   다른 토큰 타입으로 증명되며, busy 규칙 B-5c는 receiver에서 생성된다(U-2).
 - R5 계약 먼저: Rust 소스가 아니라 언어 중립 계약이 공개 API의 선언이다. 이름은 언어마다 한 규칙으로 바꾸는 낱말 목록이고
   예외에는 규칙 id가 필요하다. 패키지 배치, 상속, `changes`, `cases`가 계약에 있다. binding은 Rust 소스를 파싱하지 않고,

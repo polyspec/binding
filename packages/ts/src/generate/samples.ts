@@ -6,7 +6,7 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -31,6 +31,17 @@ export interface Context {
   target?: 'wasm';
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
+  // GN-13e: the steps that make a deep case value in local variables (Python), at the depth of the values in making.
+  steps?: Steps | undefined;
+}
+
+// GN-13e: bind gives a value that reaches the bound of nesting a local variable and returns its name; done ends the
+// whole value, in a function of the module when a step was bound; drop forgets the steps of a value that failed.
+export interface Steps {
+  depth: number;
+  bind: (expr: string) => string;
+  done: (expr: string) => string;
+  drop: () => void;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -77,7 +88,22 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
 // and a tuple a tuple in Python.
+// GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
+// each value is given to the steps, and the whole value to their end.
 export function fromJson(model: Model, ctx: Context, type: Type, value: unknown, out = false): string {
+  const steps = ctx.steps;
+  if (steps === undefined) return valueForm(model, ctx, type, value, out);
+  steps.depth += 1;
+  try {
+    const expr = valueForm(model, ctx, type, value, out);
+    return steps.depth === 1 ? steps.done(expr) : steps.bind(expr);
+  } finally {
+    steps.depth -= 1;
+    if (steps.depth === 0) steps.drop();
+  }
+}
+
+function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: boolean): string {
   const none = ctx.lang === 'python' ? 'None' : 'null';
   if (value === null) return none;
   if (typeof type === 'string') {
@@ -112,6 +138,14 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
     // them as a bigint (cli.ts), whose decimal token every language writes.
     if (type === 'int64' && ctx.lang === 'node' && (out || typeof value === 'bigint')) return `${String(value)}n`;
+    // B-2, G-5: a float is a float literal in Python and PHP, which refuse an integer there, also where JSON writes an
+    // integer; a negative zero keeps its sign, and an integer of 1e16 or more is written with its exponent, as Python
+    // writes it.
+    if (type === 'float' && typeof value === 'number') {
+      if (Object.is(value, -0)) return ctx.lang === 'node' ? '-0' : '-0.0';
+      if (ctx.lang === 'node' || !Number.isInteger(value)) return String(value);
+      return Math.abs(value) >= 1e16 ? value.toExponential() : `${String(value)}.0`;
+    }
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
@@ -176,6 +210,9 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   }
   // U-1, GN-13: a value of a class of origin value is made by the member that its out row of the kind names.
   if (unit?.kind === 'class' && unit.origin === 'value' && !out) return valueClassFromJson(model, ctx, unit, value);
+  // U-1, GN-13: a value of another class is the [key, value] pairs that fill it, as those of a kind map do.
+  const filled = objectUnit(model, type);
+  if (filled !== undefined && Array.isArray(value) && !out) return pairsInto(model, ctx, filled, value);
   throw new Unsupported(`no case value of the type ${shown(type)} is written yet (G-5)`);
 }
 
@@ -184,25 +221,62 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
 // without a value (null), and otherwise a member of one parameter, which takes the value of the case as a case value of
 // its type (a list of the class for a list). A kind that no row makes by such a member is refused by name (G-4).
 function valueClassFromJson(model: Model, ctx: Context, unit: Unit, value: unknown): string {
+  const made = valueClassReceiver(model, ctx.target ?? ctx.lang, unit, value);
+  if (ctx.objectNew === undefined) throw new Unsupported(`the kind of a case value of ${unit.id} is made by ${made.factory.member.id}, which this target does not call in a case yet (U-1, G-5)`);
+  const [arg] = made.factory.args;
+  if (arg === undefined) return ctx.objectNew(made.factory, '');
+  const held = made.args.get(arg);
+  const filled = objectUnit(model, arg.type);
+  if ((value as Record<string, unknown>)['kind'] === 'map' && filled !== undefined && filled.unit !== unit) return ctx.objectNew(made.factory, callArgs(model, ctx, made.factory, () => pairsInto(model, ctx, filled, held)));
+  return ctx.objectNew(made.factory, callArgs(model, ctx, made.factory, () => fromJson(model, ctx, arg.type, held)));
+}
+
+// U-1, GN-13: the call that makes a case value of a class of origin value in the language lang, as a receiver whose
+// one argument, if any, is the value of the case; each target writes that argument as a case value of its type.
+export function valueClassReceiver(model: Model, lang: string, unit: Unit, value: unknown): Receiver {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${unit.id} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
-  const lang = ctx.target ?? ctx.lang;
-  const makes = [...new Set((unit.out ?? []).filter((row) => row.kind === kind).map((row) => row.make[lang]))];
+  const makes = [...new Set((unit.out ?? []).filter((row) => row.kind === kind).map((row) => (row.make as Record<string, unknown>)[lang]))];
   const make = makes[0];
   if (makes.length !== 1 || typeof make !== 'string') throw new Unsupported(`the kind ${kind} of ${unit.id} is made in ${lang} by ${makes.length === 0 ? 'no out row' : shown(makes)}, not by one member, so a case value of it is not written (U-1, G-5)`);
   const factory = model.objects.find((o) => o.unit === unit)?.members.find((m) => m.member.id === make && (m.kind === 'static' || m.kind === 'constructor'));
-  if (factory === undefined || ctx.objectNew === undefined) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which is no static member or constructor of ${unit.id} (U-1, G-5)`);
+  if (factory === undefined) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which is no static member or constructor of ${unit.id} (U-1, G-5)`);
   const given = 'value' in record;
-  const held = record['value'];
   if (factory.args.length === 0) {
     if (given) throw new Unsupported(`a case value of the kind ${kind} of ${unit.id} has no value, because ${make} takes none (U-1, G-5)`);
-    return ctx.objectNew(factory, '');
+    return { factory, args: new Map() };
   }
   const [arg, ...rest] = factory.args;
   if (arg === undefined || rest.length > 0 || arg.field) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which takes more than one value, so a case value of it is not written (U-1, G-5)`);
   if (!given) throw new Unsupported(`a case value of the kind ${kind} of ${unit.id} holds the value that ${make} takes (U-1, G-5)`);
-  return ctx.objectNew(factory, callArgs(model, ctx, factory, () => fromJson(model, ctx, arg.type, held)));
+  return { factory, args: new Map([[arg, record['value']]]) };
+}
+
+// U-1, GN-13: the pairs of a case value of kind map, given to a make member that takes another class (Value.object of
+// json takes an OrderedMap): the constructor of that class without parameters makes it, and its one member with the
+// receiver &mut self and two parameters takes each pair, the key as a case value of its parameter (a key of text for a
+// class of origin value) and the value as the case value of the pair.
+function pairsInto(model: Model, ctx: Context, filled: ObjectClass, held: unknown): string {
+  const made = pairsReceiver(model, filled, held);
+  if (ctx.instanceNew === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${filled.unit.id}, which this target does not make in a case yet (G-5)`);
+  return ctx.instanceNew(made);
+}
+
+// U-1, GN-13: the constructor and the inserts that fill a class with the pairs of a case, as a receiver with then.
+export function pairsReceiver(model: Model, filled: ObjectClass, held: unknown): Receiver {
+  const id = filled.unit.id;
+  const constructor = filled.members.find((fn) => fn.kind === 'constructor' && fn.args.length === 0);
+  if (constructor === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${id}, which has no constructor without parameters (U-1, G-5)`);
+  const inserts = filled.members.filter((fn) => fn.receiver === '&mut self' && fn.args.length === 2 && fn.args.every((a) => !a.field));
+  const insert = inserts[0];
+  if (inserts.length !== 1 || insert === undefined) throw new Unsupported(`the pairs of a case value of kind map fill ${id}, which has ${inserts.length === 0 ? 'no member' : 'more than one member'} with the receiver &mut self and two parameters (U-1, G-5)`);
+  if (!Array.isArray(held) || !held.every((pair) => Array.isArray(pair) && pair.length === 2)) throw new Unsupported(`a case value of kind map that fills ${id} is a list of [key, value] pairs, not ${shown(held)} (G-5)`);
+  const [keyArg, valueArg] = insert.args as [Arg, Arg];
+  const keyUnit = unitOf(model, keyArg.type);
+  const keyOf = (key: unknown): unknown => (typeof key === 'string' && keyUnit?.kind === 'class' && keyUnit.origin === 'value' ? { kind: 'text', value: key } : key);
+  const then = (held as [unknown, unknown][]).map(([key, value]) => ({ fn: insert, args: new Map<Arg, unknown>([[keyArg, keyOf(key)], [valueArg, value]]) }));
+  return { factory: constructor, args: new Map(), then };
 }
 
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
@@ -617,6 +691,9 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
 export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
   // A row of a callback fixture that is not generated yet refuses the target (G-4), as the emitters read the fixtures.
   const fixed = new Set(fixturesOf(model, fn, kase.id, kase.args).map((fixture) => fixture.arg));
+  // The probe writes no steps of a deep value (GN-13e), which the test of the case writes when it makes the value.
+  const steps = ctx.steps;
+  ctx.steps = undefined;
   try {
     receiver(kase.receiver);
     for (const arg of fn.args) if (!fixed.has(arg)) caseValue(model, ctx, arg, kase.args);
@@ -624,6 +701,8 @@ export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: stri
   } catch (error) {
     if (!(error instanceof Unsupported)) throw error;
     return `the case ${kase.id} of ${fn.member.id}: ${error.message}`;
+  } finally {
+    ctx.steps = steps;
   }
 }
 
@@ -707,7 +786,9 @@ export function resultCases(model: Model, fn: Fn): ResultCase[] {
       out.push(base);
       continue;
     }
-    const reason = comparableResult(model, fn.returns);
+    // GN-13e: the result null of an optional has a case form whatever the optional holds.
+    const absent = record[key] === null && typeof fn.returns === 'object' && 'optional' in fn.returns;
+    const reason = absent ? undefined : comparableResult(model, fn.returns);
     out.push(reason === undefined ? { ...base, expected: { value: record[key] } } : { ...base, refused: `the case ${id} of ${fn.member.id} gives ${key}, but ${reason} (GN-13e)` });
   }
   return out;
@@ -879,6 +960,31 @@ export interface AliasCase {
   value: unknown;
   kind: string;
   category: string;
+}
+
+// GN-13e: the words of the id of a case, split at every run of characters other than ASCII letters and digits, which
+// the name of its test holds in a language whose tests are functions or methods.
+export const caseWords = (id: string): string[] => id.split(/[^A-Za-z0-9]+/).filter((word) => word !== '');
+// GN-13e: the words of an id capitalized and joined (PHP, Go), or joined by _ (Python).
+export const casePascal = (id: string): string => caseWords(id).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+export const caseSnake = (id: string): string => caseWords(id).join('_');
+
+// GN-13e: two ids of the cases of one member, or of one value alias, that give one test name refuse the target, PHP
+// comparing the names without case as it does for its methods; an id without a word gives no name.
+export function checkCaseNames(model: Model, name: (id: string) => string, caseless: boolean): void {
+  const groups: [string, unknown[]][] = [...model.cases.entries(), ...[...model.aliasCases.entries()].map(([id, cases]): [string, unknown[]] => [`the alias ${id}`, cases])];
+  for (const [owner, cases] of groups) {
+    const seen = new Map<string, string>();
+    for (const kase of cases) {
+      const id = String((kase as Record<string, unknown>)['id']);
+      const made = name(id);
+      if (caseWords(id).length === 0) throw new Unsupported(`the case ${id} of ${owner} has no letter or digit for the name of its test (GN-13e)`);
+      const key = caseless ? made.toLowerCase() : made;
+      const other = seen.get(key);
+      if (other !== undefined && other !== id) throw new Unsupported(`the cases ${other} and ${id} of ${owner} give one test name ${made} (GN-13e)`);
+      seen.set(key, id);
+    }
+  }
 }
 
 export function aliasCases(model: Model): AliasCase[] {
