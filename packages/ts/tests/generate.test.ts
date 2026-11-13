@@ -1564,13 +1564,50 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureGroup\(items=\[pkg\.FigureCircle\(radius=1\.25\), pkg\.FigureLabel\(text="ab", at=2\)\], frame=pkg\.FigureDot\(\), back=None\)\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'group', items: \[\{ type: 'circle', radius: 1\.25 \}, \{ type: 'label', text: 'ab', at: 2 \}\], frame: \{ type: 'dot' \}, back: null \}\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /new \\Polyspec\\Variants\\FigureGroup\(/);
-  // GN-1: Go refuses the variant by name.
-  assert.throws(() => variants(undefined, ['go']), /figure: a variant unit is not generated for Go yet \(GN-6v\)/);
   // GN-6v: what is not generated yet is refused by name.
   assert.throws(() => variants((c) => { delete unitOf(c, 'figure').core_type; }), /figure: a variant names its core enum in core_type \(T-9\)/);
   assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].type = { unit: 'ribbon' }; }), /figure\.circle\.radius: a class in a case of a variant is not generated yet \(GN-6v\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
+});
+
+// The variants repository for Go without what Go refuses until GN-6w: the class that implements tail, and its case.
+const variantsGo = (): Map<string, string | Buffer> => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
+  delete unitOf(contract, 'ribbon').implements;
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8'));
+  cases.tail_of = cases.tail_of.filter((c: { id: string }) => c.id !== 'a_ribbon_is_a_tail');
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
+};
+
+test('a variant is an interface of Go and a struct of each case, which the C ABI converts by the number of the case (T-9, GN-6v)', () => {
+  const out = variantsGo();
+  const pkg = text(out, 'packages/go/zz_generated_variants.go');
+  assert.match(pkg, /type Figure interface \{\n\tisFigure\(\)\n\}/);
+  assert.match(pkg, /type FigureDot struct\{\}\n\nfunc \(FigureDot\) isFigure\(\) \{\}/);
+  // A field of the variant is the interface, a field that may be left out a pointer.
+  assert.match(pkg, /type FigureGroup struct \{\n\tItems \[\]Figure\n\tFrame Figure\n\tBack  \*Figure\n\}/);
+  assert.match(pkg, /type FigureLabel struct \{\n\tText string\n\tAt   \*uint64\n\}/);
+  assert.match(pkg, /^func Grown\(figure Figure\) \(Figure, error\)/m);
+  // The number of the case and its fields; a value that is no case struct is 2^64 - 1.
+  assert.match(pkg, /case FigureCircle:\n\t\tenc\.Uint\(1\)\n\t\tenc\.Float\(case0\.Radius\)/);
+  assert.match(pkg, /default:\n\t\tenc\.Uint\(\^uint64\(0\)\)/);
+  assert.match(pkg, /switch dec\.Case\(4\) \{\n\tcase 0:\n\t\tresult0 = FigureDot\{\}/);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /fn in_figure\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{\n\s*match in_uint\(input\)\? \{/);
+  assert.match(lib, /polyspec_variants::Figure::Dot \{\}/);
+  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(in_figure\(input, subject\)\?\);/);
+  assert.match(lib, /let field_back: Option<Box<polyspec_variants::Figure>> = in_optional\([^\n]*\.map\(Box::new\);/);
+  assert.match(lib, /let field_items: Vec<polyspec_variants::Figure> = /);
+  assert.match(lib, /_ => Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("Figure"\) \}\)\),/);
+  assert.match(lib, /fn out_figure\(output: &mut Vec<u8>, value: impl Borrow<polyspec_variants::Figure>\) \{\n\s*match value\.borrow\(\) \{/);
+  assert.match(lib, /polyspec_variants::Figure::Circle \{ radius: field_radius \} => \{\n\s*out_uint\(output, 1_u64\);\n\s*out_float\(output, \*field_radius\);/);
+  assert.doesNotMatch(lib, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/);
+  // G-5: a case value is the struct of its case; a field left out is nil.
+  const tests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Grown\(FigureGroup\{Items: \[\]Figure\{FigureCircle\{Radius: 1\.25\}, FigureLabel\{Text: "ab", At: ptr\(uint64\(2\)\)\}\}, Frame: FigureDot\{\}, Back: nil\}\)/);
+  assert.match(tests, /Grown\(FigureLabel\{Text: "ok", At: nil\}\)/);
+  assert.match(tests, /Back: ptr\[Figure\]\(FigureGroup\{/);
 });
 
 test('an optional field of a case whose default is {literal: null} may be left out, and is null (T-4, T-9, GN-6v)', () => {
