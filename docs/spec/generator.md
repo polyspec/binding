@@ -297,10 +297,15 @@ the design ids are those of the binding design.
   - Node and PHP hold the owner, its generation and the key of the owner table, which holds the language reference on
     the thread that owns it, because a reference of that thread cannot be released on another one. A drop on the
     owner thread releases at once; a drop on another thread puts the key in the release queue of the owner, which every
-    generated entry point of that owner empties at the start of its synchronous part. The Node env cleanup hook and
-    the PHP request shutdown release what the table holds and raise its generation; a drop of an older generation
-    discards its key and touches nothing of the language, whose environment is gone, and the `out` of such a `Native`
-    is kind `internal`.
+    generated entry point of that owner empties at the start of its synchronous part. In Node a drop on another
+    thread also calls the threadsafe function of the owner, which empties the queue on the owner thread when no entry
+    point runs for a while, so the release does not wait for the next entry point. The owner makes that function when
+    it makes its table, without a JavaScript function, and unrefs it, so that it does not keep the event loop alive.
+    The Node env cleanup hook and the PHP request shutdown release what the table holds and raise its generation, and
+    the Node hook releases the threadsafe function with abort under the lock of the owners. A drop compares the
+    generation under that lock; a drop of an older generation discards its key and touches nothing of the language,
+    whose environment is gone, neither a reference nor the threadsafe function, and the `out` of such a `Native` is
+    kind `internal`.
   - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
   - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
     so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.

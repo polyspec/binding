@@ -243,9 +243,13 @@
   - WASM은 그 한 스레드의 표에서 `JsValue`를 가진 key를 갖고, drop이 그것을 지운다.
   - Node와 PHP는 owner, 그 generation, owner 표의 key를 갖는다. 그 표는 언어 참조를 그것을 가진 스레드에 둔다. 그 스레드의
     참조는 다른 스레드에서 해제할 수 없기 때문이다. owner 스레드의 drop은 곧바로 해제하고, 다른 스레드의 drop은 key를 owner의
-    해제 대기열에 넣으며, 그 owner의 모든 생성 진입점은 동기 부분의 처음에 대기열을 비운다. Node env cleanup hook과 PHP request
-    shutdown은 표가 가진 것을 해제하고 generation을 올린다. 이전 generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤
-    것도 건드리지 않으며, 그런 `Native`의 `out`은 kind `internal`이다.
+    해제 대기열에 넣으며, 그 owner의 모든 생성 진입점은 동기 부분의 처음에 대기열을 비운다. Node에서 다른 스레드의 drop은
+    owner의 threadsafe function도 부른다. 그 함수는 한동안 진입점이 없을 때 owner 스레드에서 대기열을 비우므로, 해제가 다음
+    진입점을 기다리지 않는다. owner는 표를 만들 때 JavaScript 함수 없이 그 함수를 만들고 unref하므로, 그 함수는 event loop를
+    붙잡지 않는다. Node env cleanup hook과 PHP request shutdown은 표가 가진 것을 해제하고 generation을 올리며, Node hook은
+    owner들의 lock 안에서 threadsafe function을 abort로 해제한다. drop은 그 lock 안에서 generation을 비교한다. 이전
+    generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤 것도, 참조도 threadsafe function도 건드리지 않으며, 그런
+    `Native`의 `out`은 kind `internal`이다.
   - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
   - `Raised`(GN-6d)의 `Native`는 던져진 객체 표의 key를 갖고, 마지막 drop이 그 항목을 지운다. 그래서 코어가 돌려주지 않고
     버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
