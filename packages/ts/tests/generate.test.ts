@@ -1098,6 +1098,35 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+// GN-6m: a member of shapes that takes a function type, which the core keeps or calls during the call.
+const withFunction = (contract: any): void => {
+  unitOf(contract, 'shapes').members.push({
+    id: 'shapes.apply', name: ['apply'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_shapes::apply',
+    parameters: [
+      { name: ['convert'], type: { function: { parameters: ['text', { list: 'int' }], returns: 'text', async_allowed: false } }, required: true },
+      { name: ['value'], type: 'text', required: true },
+    ],
+  });
+};
+
+test('Python takes a function type as a boxed Fn that calls the callable; the other targets refuse it by name (T-2, GN-6m)', () => {
+  const { contract, caseFiles } = shapes();
+  withFunction(contract);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] });
+  const lib = text(out, 'packages/python/generated/lib.rs');
+  // The core takes the function by value, in the form that it may keep: 'static, Send and Sync.
+  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = in_function\(py, /);
+  assert.match(lib, /polyspec_shapes::apply\(convert, /);
+  // The callable is checked as it enters, and each call converts the arguments out and the result in.
+  assert.match(lib, /fn in_function\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n    if !value\.is_callable\(\) \{/);
+  assert.match(lib, /\.call1\(\(out_text\(py, [a-z0-9_]+\)\?, out_list\(py, [a-z0-9_]+, /);
+  assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, Sequence\[int\]\], str\]/);
+  for (const target of ['node', 'php', 'wasm', 'go']) {
+    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
+  }
+});
+
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
