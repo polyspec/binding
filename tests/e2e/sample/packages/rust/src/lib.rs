@@ -3,6 +3,12 @@
 use binding_core::{FloatOut, Handle, HostText, HostValue, HostValues, Failure, Kinds, MapOut, OutValue, OutValues};
 use std::fmt;
 
+/// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
+#[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
+const fn widen(length: usize) -> u64 {
+    length as u64
+}
+
 /// The errors of the sample.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -231,6 +237,8 @@ fn data_at(host: &mut dyn HostValues, value: HostValue, depth: usize) -> Result<
     match value {
         HostValue::Null => Ok(Data::Null),
         HostValue::Bool(value) => Ok(Data::Bool(value)),
+        // U-7: an integer of the language is the float nearest to it, as JSON reads a number.
+        #[allow(clippy::as_conversions, clippy::cast_precision_loss, reason = "U-7: data holds every number as a float, the nearest one to an integer")]
         HostValue::Int(value) => Ok(Data::Float(value as f64)),
         HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Data::Float(value)),
         HostValue::Text(text) => match text {
@@ -284,12 +292,12 @@ impl<'a> DataOut<'a> {
             Data::Text(value) => OutValue::Text(value.clone()),
             Data::List(items) => {
                 self.held.push(value);
-                OutValue::List { handle: Handle::new((self.held.len() - 1) as u64), len: items.len() as u64 }
+                OutValue::List { handle: Handle::new(widen(self.held.len() - 1)), len: widen(items.len()) }
             }
             Data::Map(entries) => {
                 self.held.push(value);
                 let sequence = entries.iter().enumerate().all(|(index, (key, _value))| *key == index.to_string());
-                OutValue::Map(MapOut::new(Handle::new((self.held.len() - 1) as u64), entries.len() as u64, sequence))
+                OutValue::Map(MapOut::new(Handle::new(widen(self.held.len() - 1)), widen(entries.len()), sequence))
             }
         }
     }
@@ -297,9 +305,9 @@ impl<'a> DataOut<'a> {
 
 impl OutValues for DataOut<'_> {
     fn item(&mut self, list: Handle, index: u64) -> OutValue {
-        let held = self.held.get(list.raw() as usize).copied();
+        let held = usize::try_from(list.raw()).ok().and_then(|at| self.held.get(at)).copied();
         match held {
-            Some(Data::List(items)) => match items.get(index as usize) {
+            Some(Data::List(items)) => match usize::try_from(index).ok().and_then(|at| items.get(at)) {
                 Some(item) => self.describe(item),
                 None => OutValue::Null,
             },
@@ -308,9 +316,9 @@ impl OutValues for DataOut<'_> {
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> (OutValue, OutValue) {
-        let held = self.held.get(map.raw() as usize).copied();
+        let held = usize::try_from(map.raw()).ok().and_then(|at| self.held.get(at)).copied();
         match held {
-            Some(Data::Map(entries)) => match entries.get(index as usize) {
+            Some(Data::Map(entries)) => match usize::try_from(index).ok().and_then(|at| entries.get(at)) {
                 Some((key, value)) => (OutValue::Text(key.clone()), self.describe(value)),
                 None => (OutValue::Null, OutValue::Null),
             },
@@ -337,8 +345,8 @@ pub fn echo(value: &Data) -> Data {
 #[must_use]
 pub fn size(value: &Data) -> u64 {
     match value {
-        Data::List(items) => items.len() as u64,
-        Data::Map(entries) => entries.len() as u64,
+        Data::List(items) => widen(items.len()),
+        Data::Map(entries) => widen(entries.len()),
         _ => 1,
     }
 }
@@ -410,7 +418,7 @@ impl Ledger {
     /// The number of the noted keys.
     #[must_use]
     pub fn size(&self) -> u64 {
-        self.keys.len() as u64
+        widen(self.keys.len())
     }
 
     /// The number of the noted keys that the lookup holds.
@@ -432,7 +440,7 @@ pub fn measure(text: &str) -> Result<u64, Error> {
     if binding_core::fault::point(fault::INTERNAL).is_some() {
         return Err(Error::Internal { detail: String::from("the length of a text is unknown") });
     }
-    let length = text.len() as u64;
+    let length = widen(text.len());
     match binding_core::fault::point(fault::READ) {
         Some(binding_core::fault::Injected::Io { errno }) => Err(Error::Unreadable { errno }),
         Some(binding_core::fault::Injected::Short { bytes }) => Ok(length.min(bytes)),
@@ -446,7 +454,7 @@ pub fn measure(text: &str) -> Result<u64, Error> {
 ///
 /// None.
 pub fn checked(text: &str) -> Result<u64, Error> {
-    Ok(text.len() as u64)
+    Ok(widen(text.len()))
 }
 
 /// Takes a text and gives nothing (E-1c: a core that returns no `Result` and no value).

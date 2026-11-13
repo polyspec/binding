@@ -5,6 +5,12 @@
 use binding_core::Kinds;
 use std::fmt;
 
+/// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
+#[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
+const fn widen(length: usize) -> u64 {
+    length as u64
+}
+
 /// How often `repeat` repeats a text when the caller gives no number (U-2: a `{const}` default).
 pub const DEFAULT_TIMES: u64 = 1;
 
@@ -82,7 +88,7 @@ pub fn length(source: &[u8]) -> Result<u64, Error> {
         return Err(Error::Empty);
     }
     match std::str::from_utf8(source) {
-        Ok(text) => Ok(text.chars().count() as u64),
+        Ok(text) => Ok(widen(text.chars().count())),
         Err(error) => Err(Error::NotUtf8 { offset: error.valid_up_to() }),
     }
 }
@@ -126,7 +132,7 @@ pub fn frame(text: &str, options: &FrameOptions) -> String {
         None => DEFAULT_UPPER,
     };
     let body = if upper { text.to_uppercase() } else { text.to_owned() };
-    let mut count = body.chars().count() as u64;
+    let mut count = widen(body.chars().count());
     let width = match options.width {
         Some(width) => width,
         None => count,
@@ -183,7 +189,7 @@ impl Buffer {
     /// The number of the bytes.
     #[must_use]
     pub fn size(&self) -> u64 {
-        self.bytes.len() as u64
+        widen(self.bytes.len())
     }
 
     /// Appends the bytes of a source `times` times and gives the new size (U-2: `None` is the default of the core).

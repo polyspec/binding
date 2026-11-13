@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The cores of `tests/e2e/shapes` and `tests/e2e/sample` converted lengths and indexes with `as`, which the lints of
+  R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
+  function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data
+  value is the nearest float with the reason of U-7.
 - A case that armed a fault injection point of another library (`<library>.<id>`) ran against a binding crate whose
   `fault-test` turned on the feature of its own core alone, so the point of the other core was not compiled and the
   case could not arm it, and `binding check` did not report the manifest. `binding scaffold` now reads the libraries
