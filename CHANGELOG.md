@@ -31,6 +31,14 @@
   three tests of the Node closure, of `drive` run against a played machine (a value, a promise, a thenable, a
   rejected awaited value and a rejected wait) and of the Node test pass; the 21 tests that generate the sample for
   Python, Go or WASM still fail with the refusal of those targets.
+- The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
+  helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
+  `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to
+  the conversions of units alone, and a helper states its direction last: `text_in`, `list_out`, `default_in`,
+  `callable_in`, `passed_out` (GN-4c). The crates of PHP and Python apply the rule; those of Node, WASM and Go do
+  not yet. Verified by `npm test` in `packages/ts`, whose test generates the PHP crate of the sample with the enums
+  `default`, `callable` and `text` and requires one definition of each conversion and no other function named
+  `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_default`.
 - No case could give a function that returns an awaitable, so the path of `Step::Await` whose awaitable settles later,
   or raises, had no case. A function fixture may now name `"awaits": true`: the function returns an awaitable of its
   language whose outcome is the `result` or the `raise` of the fixture. The contract check accepts the marker only
