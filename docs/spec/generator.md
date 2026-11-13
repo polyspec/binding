@@ -362,7 +362,17 @@ the design ids are those of the binding design.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node and WASM take and give a plain object, which the declarations write by its fields. Each binding crate depends
-  on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
+  on that repository's crate with the core's own dependency line, which `binding scaffold` copies. `binding scaffold`
+  writes the dependency of `pyproject.toml` on each library that the contract names with the version of that line:
+  `polyspec-<library>==X.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z`
+  or the tag `vX.Y.Z`, because the binding crate is built with that release of the library, and a requirement without
+  a version lets an installer take any other release. A `path` dependency is a development checkout, which has no
+  released version, so it gives the name alone, `polyspec-<library>`: `pyproject.toml` has no line like the `replace`
+  of `go.mod` (GN-15f), a direct reference (`polyspec-<library> @ file://...`) takes only an absolute URL, which a
+  tracked file does not hold, and the name alone is the requirement that the package built from that checkout meets
+  at whatever version it has. A dependency line that names a branch, a commit or a version range has no released
+  version and is refused by name, as GN-15f refuses it. The npm manifest and the Composer manifest that `scaffold`
+  writes name no other library: Node and WASM take a plain object, and PHP finds the class in the class table.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
