@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
+  so one core with `fault-test` turned on the points of every core: a binding crate that left
+  `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
+  is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
+  `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
+  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
 - The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
   9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
   refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a

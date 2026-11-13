@@ -126,7 +126,9 @@
   `polyspec-<library>/fault-test`도 적고, crate는 코어가 하듯이 그 코어에 의존한다(T-3). Cargo feature는 직접 의존의
   feature만 켜기 때문이며, 계약의 코어가 그것을 적을 필요는 없다. `binding scaffold`는 case 파일의 지점에서 라이브러리를
   읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
-  비교한다(CK-19). WASM crate의 시험은
+  비교한다(CK-19). 지점(`fault::point!`)은 자기 feature `fault-test`가 켜진 crate에서만 살아 있다. Cargo가 build 전체에서
+  binding_core의 feature를 합치기 때문이다. 그래서 이 목록이 빠뜨린 feature는 그 라이브러리의 지점을 꺼 둔 채로 두고, 그
+  case는 실패한다. WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go에는 둘 다
   아직 없다. `in_raises`나 `faults`를 가진 계약에 Go가 있으면 이름을 대고 거부한다(G-4).
 

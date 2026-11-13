@@ -153,7 +153,9 @@ the design ids are those of the binding design.
   of each such library, and the crate depends on that core as the core does (T-3), because a Cargo feature turns on a
   feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
-  its name, and `binding check` compares the manifests with them (CK-19). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
+  its name, and `binding check` compares the manifests with them (CK-19). A point (`fault::point!`) is live only in a
+  crate whose own feature `fault-test` is on, because Cargo unifies the feature of binding_core across the build;
+  so the feature that this list leaves out keeps the points of that library off, and its cases fail. The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. Go has neither of
   the two yet: a contract with `in_raises` or with `faults` and Go is refused by name (G-4).
 

@@ -20,7 +20,8 @@ construct = []
 # Holds the locks of class units (design B-5c). The binding crates of Python, Node and PHP enable it; a core crate does
 # not, so tokio is no dependency of a core through this crate.
 lock = ["dep:tokio"]
-# Compiles the arming of fault injection points (design G-5): fault::point always exists and does nothing without it.
+# Compiles the arming of fault injection points (design G-5). A point (fault::point!) is judged by the feature
+# fault-test of the crate that writes it, which Cargo does not unify (GN-5).
 # A core turns it on only through its own feature fault-test, and a binding through that of its core, for tests only.
 fault-test = ["dep:serde_json", "dep:libc"]
 
