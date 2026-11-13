@@ -45,6 +45,10 @@ impl Kinds for Error {
     fn status(&self) -> Option<u16> {
         None
     }
+
+    fn errno(&self) -> Option<i32> {
+        None
+    }
 }
 
 /// A figure (T-9: a variant). Its cases are a unit variant and struct variants, and a group holds figures itself: in a
