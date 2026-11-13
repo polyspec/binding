@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record와 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record(GN-15f)와 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -417,6 +417,14 @@
   그 struct로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
+- **GN-15f** 다른 레포의 Go record(T-3, GN-6c), 아직 구현하지 않음: 생성기는 그런 record를 이름으로 거부하고 이 행을
+  적는다(G-4). 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
+  `<Record>`이며, C ABI는 이 레포의 record처럼 field마다 쓰고 읽는다. `binding scaffold`는 `binding generate`처럼
+  계약이 record를 이름하는 라이브러리의 계약을 읽고, 라이브러리마다 `go.mod`에 `require <module> <version>` 줄을
+  적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면 버전은 `vX.Y.Z`다. `path` 의존은
+  `v0.0.0`과 `packages/go` 기준 상대 경로의 `replace <module> => <path>/packages/go` 줄을 준다. branch나 commit을 적은
+  의존 줄에는 Go 버전이 없으므로 이름으로 거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며,
+  `CGO_LDFLAGS`가 이 레포의 디렉터리 옆에 그 디렉터리를 적는다(GN-15).
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- 다른 레포 record의 Go 거부는 Go가 그것을 어떻게 생성할지 적은 행을 이름하지 않았다. 이제 GN-15f가 그 설계를
+  적는다. `binding scaffold`가 코어의 의존 줄에 따라 그 레포의 Go module을 `go.mod`에 적는 설계이며, 아직 구현하지
+  않았다고 표시한다. 거부는 GN-15f를 이름한다. `packages/ts`의 `npm test`로 확인했다.
 - 생성기는 다른 module의 class·callback unit을 이름하는 member의 Go 바인딩을 "a class unit of the module tags in the
   module (the root) is not generated for Go yet"로 거부했다. 이제 Go는 그런 unit에 그 module 패키지의 `<Class>Handle`,
   `<Class>FromHandle`, `Dispatch<Callback>`으로 닿는다. 그 첫 parameter `binding.Token`은 Go module의 패키지만

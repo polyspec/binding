@@ -176,7 +176,7 @@ export function goType(scope: GoScope, type: Type): string {
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) return goUnitName(scope, callback.unit);
-  if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet (GN-15f): its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
@@ -1734,7 +1734,7 @@ ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'st
 // (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
 // another module than its own (its handle and dispatch are unexported).
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet (GN-15f): its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {

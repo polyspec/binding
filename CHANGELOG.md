@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Go refusal of a record of another repository named no row that states how Go would generate it. GN-15f now
+  states the design, in which `binding scaffold` writes the Go module of that repository in `go.mod` by the dependency
+  line of the core, and marks it as not implemented; the refusal names GN-15f. Verified by `npm test` in
+  `packages/ts`.
 - The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
   class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
   through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first
