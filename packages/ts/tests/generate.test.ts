@@ -2664,7 +2664,9 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(node, /let lookup = owned_lookup\(env, lookup, "lookup"\)\?;/);
   assert.match(node, /pub struct OwnedCbLookup \{\n {4}object: Owned,\n/);
   assert.match(node, /impl Drop for Owned \{\n {4}fn drop\(&mut self\) \{\n[^\n]*\n {8}unsafe \{ napi::sys::napi_delete_reference\(self\.env, self\.reference\) \};/);
-  assert.match(node, /Driven::new\(env, advancing\(move \|env\| \{/);
+  assert.match(node, /Driven::start\(env, advancing\(move \|env\| \{/);
+  // A function new that returns no Self fails clippy new_ret_no_self.
+  assert.doesNotMatch(node, /fn new<'env>\(env: &'env Env, advance/);
   assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
   // GN-6ae: a machine of a member without a function parameter holds no value of language code, so it awaits none.
   assert.match(node, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
@@ -2677,6 +2679,9 @@ test('a member with wait async_driver that reaches language code drives the stat
   // Go: the call of the C ABI drives the machine, and each call of the Go callback goes through cgo.
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(go, made);
+  // GN-15: a helper that only an entry point of a test feature uses carries the feature, so the build without it has
+  // no dead code.
+  assert.match(go, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
   assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
   // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
