@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A parameter or a result of a value class of another repository, such as the class `value` of json that
+  `engine.render_json.assign` of template takes, was refused in every target as "the type
+  {"unit":"value","library":"json"} is not generated yet". When the owner names `core: {in, out}` and `core_type` in
+  the class (CK-8), Python, Node, PHP and WASM now take an instance of the owner's class, describe it as
+  `HostValue::Value` by the `by` member of its `in` row and read its content through the `read` members, an instance
+  of the owner's map class as the entries of its iteration, and make a core value by the static and constructor
+  members of its `out` rows through the owner's package; the owner's `in` and `out` functions are the only conversion
+  (GN-6x). Go refuses it by name, because the call of GN-15c has no form of an instance yet, and a value class of
+  another repository without those functions is refused by name. Verified with `make test-ts` (300 passed).
 - binding had no document check: no `make docs-check`, no `config/documents.json` and no checklist, so a broken link,
   a Korean twin without the revision of its source or a checklist row of a wrong form went unnoticed. `make docs-check`
   now runs the document check of the installed `@polyspec/kit` on every Markdown document, the changelogs and the

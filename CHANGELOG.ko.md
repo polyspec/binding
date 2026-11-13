@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 83e2e51c10a9c3117cb94b47988f4394aa9d1f7adc9c1ff58c399635da52f135 -->
+<!-- source-sha256: 7f16c96e0b29104d1ab476e287a22b4f1cc23019bfdd4b2a2ab3dc415718957e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- template의 `engine.render_json.assign`이 받는 json의 class `value`처럼 다른 레포의 값 class인 parameter나 결과는 모든
+  target에서 "the type {"unit":"value","library":"json"} is not generated yet"로 거절되었다. 이제 owner가 class에
+  `core: {in, out}`과 `core_type`을 적으면(CK-8) Python, Node, PHP, WASM은 owner class의 인스턴스를 받는다. `in` 행의 `by`
+  member로 그것을 `HostValue::Value`로 묘사하고, `read` member로 내용을 읽으며, owner의 map class 인스턴스는 그 iteration의
+  entry로 읽는다. 코어 값은 owner 패키지를 통해 `out` 행의 static과 constructor member로 만든다. owner의 `in`과 `out` 함수가
+  유일한 변환이다(GN-6x). Go는 GN-15c의 호출에 아직 인스턴스의 꼴이 없으므로 이름으로 거절하고, 그 함수가 없는 다른 레포의
+  값 class도 이름으로 거절한다. `make test-ts`로 검증했다(300개 통과).
 - binding에는 문서 검사가 없었다: `make docs-check`도 `config/documents.json`도 체크리스트도 없어서, 깨진 link, 원문의
   개정을 갖지 않은 한국어 짝, 꼴이 틀린 체크리스트 행이 드러나지 않았다. 이제 `make docs-check`가 설치된
   `@polyspec/kit`의 문서 검사를 모든 Markdown 문서, changelog, `config/checklist.json`이 선언한 체크리스트

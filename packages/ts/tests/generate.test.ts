@@ -890,10 +890,10 @@ const valueClassSample = (): ReturnType<typeof consumerSample> => {
   return parts;
 };
 
-test('a value class of another repository converts through the core of its owner in every target (T-3, U-1, GN-6x)', () => {
+test('a value class of another repository converts through the core of its owner in Python, Node, PHP and WASM (T-3, U-1, GN-6x)', () => {
   const { contract, caseFiles, foreign } = valueClassSample();
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
-  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     // The owner's two core functions are the conversion, under names that carry the library.
     assert.match(lib, /\nfn in_owner_value[(<]/, path);
@@ -903,6 +903,12 @@ test('a value class of another repository converts through the core of its owner
     assert.match(lib, /HostValue::Value \{/, path);
     assert.doesNotMatch(lib, /no value class is read/, path);
   }
+});
+
+test('Go refuses a value class of another repository by name, whose call protocol has no form of an instance (G-4, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }),
+    /owner\.value: a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and making of an instance \(GN-6x\)/);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {

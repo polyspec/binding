@@ -35,4 +35,6 @@ export const NOT_READ: readonly Input[] = [
   { path: '.github/workflows/ci.yml', why: 'GitHub runs it on a push or a manual run; a run of make e2e does not read it' },
   { path: '.github/workflows/release.yml', why: 'GitHub runs it after a successful CI run; a run of make e2e does not read it' },
   { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
+  { path: 'config/checklist.json', why: 'make docs-check reads it to check the checklist; a run of make e2e does not' },
+  { path: 'config/documents.json', why: 'make docs-check and make documents-stamp read it to select the documents; a run of make e2e does not' },
 ];

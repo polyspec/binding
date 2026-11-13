@@ -440,8 +440,8 @@ describe('CK-8 representative units and predicate round trips', () => {
       delete value.in;
       value.origin = 'value';
     }));
-  test('a value class with core functions (U-7)', () =>
-    fails('CK-8', `${at('value')}/core`, (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
+  test('a value class with core functions and no core_type (U-7, GN-6x)', () =>
+    fails('CK-8', at('value'), (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
   const gather = (c: any): void => {
     const value = unit(c, 'value');
     c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, out: value.out, in: value.in });

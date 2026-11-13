@@ -969,6 +969,10 @@ export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
 }
 
 function aliasRust(model: Model, alias: ValueAlias): string {
+  // GN-6x: the call protocol of GN-15c describes no instance of a value class and makes none, so Go refuses it by name.
+  if (alias.owner !== undefined) {
+    throw new Unsupported(`${alias.library ?? ''}.${alias.unit.id}: a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and making of an instance (GN-6x)`);
+  }
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;

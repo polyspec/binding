@@ -67,7 +67,10 @@ const unitType = (type: Type | undefined): { unit: string; library?: string } | 
 
 // The id of the unit that a type names when it is the value class itself, by its unit or by a name of `types`.
 function namesClass(owner: Contract, type: Type | undefined, id: string): boolean {
-  if (typeof type === 'string') return owner.types[type]?.unit === id && (owner.types[type]?.library ?? owner.library) === owner.library;
+  if (typeof type === 'string') {
+    const named = (owner.types as Record<string, { library?: string; unit: string } | undefined>)[type];
+    return named?.unit === id && (named.library ?? owner.library) === owner.library;
+  }
   const named = unitType(type);
   return named !== undefined && named.unit === id && (named.library === undefined || named.library === owner.library);
 }
