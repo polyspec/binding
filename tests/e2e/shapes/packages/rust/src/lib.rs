@@ -201,7 +201,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, frame, length, repeat, reversed, total, Error, FrameOptions};
+    use super::{checksum, frame, length, repeat, reversed, total, Buffer, Error, FrameOptions};
 
     #[test]
     fn none_is_the_default() {
