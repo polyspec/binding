@@ -1,6 +1,5 @@
 //! The driver of a member with wait async_driver (GN-6n): the runtime of the process, a panic of a poll, and the
 //! arming of the faults of the call around each poll.
-#![cfg(feature = "driver")]
 
 use binding_core::driver::{block_on, Caught};
 use binding_core::BindingError;
