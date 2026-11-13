@@ -376,7 +376,7 @@ mod armed {
     #[cfg(test)]
     mod tests {
         use super::super::{point, Injected};
-        use super::{arm, errno, left, take, ArmError, Armed};
+        use super::{arm, left, take, ArmError, Armed};
 
         const COPY: &str = "sample.copy";
         const RENAME: &str = "sample.rename";
@@ -510,14 +510,6 @@ mod armed {
                 ),
                 Err(ArmError::Errno(String::from("ENOTANERRNO")))
             );
-        }
-
-        /// GN-8a: the value of an errno symbol is that of the table that arms the faults, which a PHP test reads.
-        #[test]
-        fn an_errno_symbol_has_the_value_of_the_target() {
-            assert_eq!(errno("EIO"), Ok(libc::EIO));
-            assert_eq!(errno("ENOSPC"), Ok(libc::ENOSPC));
-            assert_eq!(errno("ENOTANERRNO"), Err(ArmError::Errno(String::from("ENOTANERRNO"))));
         }
     }
 }

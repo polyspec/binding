@@ -1654,7 +1654,7 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // of B-5c (GN-5) is no member.
     const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n');
     assert.notEqual(members, lib, path);
-    assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
+    assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|binding_core::errno|\{\n        let (id: u64|_value))/g), null, path);
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
     // taken, so a call that fails before the core leaves it.
     assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
@@ -1704,9 +1704,12 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
   // table that arms the faults, with the other entry points of the feature fault-test.
   assert.match(text(out, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
   const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(phpLib, /#\[cfg\(feature = "fault-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| binding_core::fault::errno\(&symbol\)\.map\(i64::from\)/);
-  assert.match(phpLib, /\.function\(wrap_function!\(fault_left\)\)\.function\(wrap_function!\(errno_of\)\);/);
-  // A contract without fault injection points has no feature fault-test, so its PHP test cannot read the value.
+  const errnoOf = /#\[cfg\(feature = "panic-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| binding_core::errno::value\(&symbol\)/;
+  const registered = /#\[cfg\(feature = "panic-test"\)\]\n {8}let module = module\.function\(wrap_function!\(panic_test\)\)\.function\(wrap_function!\(errno_of\)\);/;
+  assert.match(phpLib, errnoOf);
+  assert.match(phpLib, registered);
+  // A contract without fault injection points reads the value through the same entry point of panic-test, which every
+  // test build turns on, and its binding names nothing of fault.
   const withoutPoints = (c: any, cases: any): void => {
     delete c.faults;
     cases.measure = [];
@@ -1714,7 +1717,11 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
     cases.counter_settle = cases.counter_settle.filter((kase: any) => kase.receiver === undefined);
     cases.resolve[0].raises.errno = 'ENOSPC';
   };
-  assert.throws(() => sampleWith(withoutPoints, ['php']), /a_key_without_a_value_is_missing of sample\.resolve: the errno symbol ENOSPC is read through Internal\\errnoOf of the feature fault-test, which a contract without fault injection points does not have \(GN-8a\)/);
+  const without = sampleWith(withoutPoints, ['php']);
+  assert.match(text(without, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
+  assert.match(text(without, 'packages/php-ext/generated/lib.rs'), errnoOf);
+  assert.match(text(without, 'packages/php-ext/generated/lib.rs'), registered);
+  assert.doesNotMatch(text(without, 'packages/php-ext/generated/lib.rs'), /fault::|fault-test/);
 });
 
 test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
