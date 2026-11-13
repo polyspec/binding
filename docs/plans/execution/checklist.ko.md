@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 193f9be11d708c5a769fa9d8cb782b2ed0e449b5c56f203dc5f7150678dbc89c -->
+<!-- source-sha256: 4555086f090f6cfb6c1d3242d0058746f47e087d08cf580ccf42bf82103d712d -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -9,4 +9,4 @@
 | B1.1 | `make docs-check`가 설치된 kit의 문서 검사를 `config/documents.json`이 고른 문서, changelog, `config/checklist.json`이 선언한 체크리스트에 돌리고, `make documents-stamp`가 검토한 한국어 짝에 개정 표시를 쓴다 | `Makefile`, `config/documents.json`, `config/checklist.json` | `make docs-check` | [o] |
 | B1.2 | 계획과 이 체크리스트와 그 한국어 짝, 그리고 `AGENTS.md`의 체크리스트 규칙 | `docs/plans/execution/`(.ko), `AGENTS.md`(.ko), `CHANGELOG.md`(.ko) | `make docs-check` | [o] |
 | B1.3 | 한국어 짝마다 영어 원문과 같은 것을 말하고 그 `source-sha256`을 가진다 | `config/documents.json`의 한국어 짝 | `make documents-stamp`가 원문이 바뀐 짝을 하나도 적지 않는다 | [o] |
-| B1.4 | 추적 파일은 GitHub action의 commit 고정과 lock 말고는 Git commit을 이름하지 않는다. 규칙은 `AGENTS.md`에 있고, 시험이 추적 파일 안의 commit 이름을 실패시킨다 | `AGENTS.md`(.ko), `packages/ts/tests/tracked-commits.test.ts`, `CHANGELOG.md`(.ko) | `packages/ts`의 `npm test` | [~] |
+| B1.4 | 추적 파일은 GitHub action의 commit 고정과 lock 말고는 Git commit을 이름하지 않는다. 규칙은 `AGENTS.md`에 있고, 시험이 추적 파일 안의 commit 이름을 실패시킨다 | `AGENTS.md`(.ko), `packages/ts/tests/tracked-commits.test.ts`, `CHANGELOG.md`(.ko) | `packages/ts`의 `npm test` | [o] |
