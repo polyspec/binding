@@ -77,20 +77,32 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name and writes nothing (BD-27, G-4, GN-1b)', () => {
+test('the fixture names the five targets, and the generator refuses its go target by name and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
+  const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
   const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
   try {
-    for (const targets of [[], ['--target', 'go']]) {
-      const refused = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, ...targets], { encoding: 'utf8' });
-      assert.equal(refused.status, 2, refused.stderr);
-      assert.match(refused.stderr, /not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/);
-      assert.equal(files(out).size, 0, 'a refused generation wrote files');
+    // The target Go alone writes nothing.
+    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
+    assert.equal(alone.status, 2, alone.stderr);
+    assert.match(alone.stderr, goRefused);
+    assert.match(alone.stderr, /no target was generated/);
+    assert.equal(files(out).size, 0, 'a refused generation wrote files');
+    // Every target: the refused Go is named, and every other target is written as it is alone.
+    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
+    assert.equal(whole.status, 2, whole.stderr);
+    assert.match(whole.stderr, goRefused);
+    assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
+    const written = files(out);
+    assert.ok(![...written.keys()].some((path) => path.startsWith('packages/go/')), 'the refused target Go wrote files');
+    const taken = mkdtempSync(join(tmpdir(), 'binding-w-'));
+    try {
+      execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', taken, '--target', FIXTURE_TAKEN]);
+      assert.deepEqual(files(taken), written);
+    } finally {
+      rmSync(taken, { recursive: true, force: true });
     }
-    // Every other target generates.
-    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', FIXTURE_TAKEN]);
-    assert.ok(files(out).has('packages/ts/wasm/generated/lib.rs'));
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

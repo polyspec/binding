@@ -22,11 +22,11 @@ the design ids are those of the binding design.
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit, a record of
+  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5); Go and WASM refuse a callback unit, a record of
   another repository and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
-  then fails without writing anything (G-4). An item (a unit, a member, a field, a row of the kinds) is named with the
+  then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
   refused as a whole is not named again for the items that depend on it. A refusal that a target finds only while it
   writes its files (a type that its conversions do not take) is named after the refusals of the contract are none,
@@ -37,6 +37,11 @@ the design ids are those of the binding design.
   that the generation of every target writes, and checks the refusals of those targets alone; the refusals of the
   contract are refusals of every target. Why: one target that the generator refuses does not stop the generation of
   another (GN-14c).
+- **GN-1c** `binding generate` generates each target that it is given, or each target of the contract, by itself
+  (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
+  items, keeps the files of a refused target as they are, and then fails with status 2 when a target was refused.
+  Why: a contract that one target cannot take yet still gives the bindings of the other targets, and every target
+  that fails is named.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice

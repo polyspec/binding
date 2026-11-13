@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- `binding generate` wrote nothing when one target refused an item, so a contract that Go cannot take yet gave no
+  binding of any target. It now generates each target by itself, writes every target that refuses nothing, names each
+  refused target with its items and fails with status 2 (GN-1c). Verified by `npm test` in `packages/ts`.
 - The value alias `data` of `tests/e2e/sample` declared the targets Go and WASM but its out rows made no Go and no
   WASM value and no in row classified one, so `binding check` failed every target of `tests/e2e/sample` and `tests/e2e/consumer` (CK-8). Each out
   row now makes the Go and the WASM value of its kind, and in rows classify those values. Verified by `npm test` in `packages/ts` and `make e2e`.
