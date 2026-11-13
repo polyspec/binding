@@ -16,6 +16,11 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
+// G-5: the target of WASM has no errno (binding_core::errno::value gives none, and an arming that names a symbol is
+// refused, GN-8a), so the faults of a case are armed without their errno.
+const withoutErrno = (faults: string): string =>
+  JSON.stringify((JSON.parse(faults) as Record<string, unknown>[]).map(({ errno: _errno, ...fault }) => fault));
+
 export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
@@ -41,7 +46,6 @@ export function wasmTests(model: Model): string {
   let usesStepGlue = false;
   let usesOrdered = false;
   let usesFixture = false;
-  let usesErrno = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
@@ -73,7 +77,7 @@ export function wasmTests(model: Model): string {
     arm: (local, member, faults) => {
       usesGlue = true;
       usesStepGlue = true;
-      return `const ${local} = stepGlue.__armFaults(${jsString(member)}, ${jsString(faults)});`;
+      return `const ${local} = stepGlue.__armFaults(${jsString(member)}, ${jsString(withoutErrno(faults))});`;
     },
     left: (local, what) => `assert.deepEqual(stepGlue.__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
   };
@@ -197,11 +201,10 @@ test('B-4: ${name} ${kase.id}', () => {
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg${i}`, value]]; })];
-      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(kase.faults)});`;
+      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(withoutErrno(kase.faults))});`;
       const args = callArgs(model, ctx, fn, kase.faults === undefined ? caseArg : (arg) => (caseArg(arg) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
       const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
       const errno = expectedErrno(kase);
-      usesErrno ||= errno !== null && 'symbol' in errno;
       usesGlue ||= kase.faults !== undefined;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
@@ -215,7 +218,7 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}
+    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -310,8 +313,8 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   return `${header('//')}
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
-${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
-${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+import * as pkg from ${jsString(entry)};
+${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

@@ -615,7 +615,7 @@ function raisedLines(v: Values, kase: RaisingCase): string[] {
     kase.raises.status === null ? 'if _, ok := failure.Status(); ok {' : `if status, ok := failure.Status(); !ok || status != ${kase.raises.status} {`,
     '\tt.Fatalf("B-4: the status of %#v", err)',
     '}',
-    errno === null ? 'if _, ok := failure.Errno(); ok {' : `if errno, ok := failure.Errno(); !ok || errno != ${'symbol' in errno ? `int64(syscall.${errno.symbol})` : String(errno.value)} {`,
+    errno === null ? 'if _, ok := failure.Errno(); ok {' : `if errno, ok := failure.Errno(); !ok || errno != ${'symbol' in errno ? `int(syscall.${errno.symbol})` : String(errno.value)} {`,
     '\tt.Fatalf("B-4: the errno of %#v", err)',
     '}',
   ];

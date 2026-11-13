@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e2e9e82eff55a592b190823dcb3e5b7ca9018a754eb2cd9be094e8a3d31c915c -->
+<!-- source-sha256: eff25ae380276f1cd124b6717179654efdc0f13fb8aeeeeac23ae9f3367985a7 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- case가 errno 기호로 fault를 장전하자(`sample.tally`의 `EIO`) `tests/e2e/sample`의 e2e 실행이 Go와 WASM에서 실패했다.
+  Go: 생성 시험이 errno를 `int64(syscall.<기호>)`와 비교했는데 `Errno()`는 `int`를 돌려주므로, `go vet`가 시험 파일을
+  거부했다(타입 불일치). 이제 시험은 `int(syscall.<기호>)`와 비교한다. WASM: 생성 시험이 fault를 errno 기호와 함께
+  장전하고 Node가 그 기호에 주는 값을 요구했는데, WASM의 target에는 errno가 없으므로 `__armFaults`가 장전을 kind
+  `internal`로 거부했다. 이제 WASM 시험은 case와 `then` 호출의 fault를 `errno` 없이 장전하고, case가 기호를 적은
+  자리에서는 errno가 없어야 한다고 요구한다(G-5). `packages/ts`의 `npm test`로 검증했다: 310개 중 310개가 통과했고, 두
+  형태를 요구하는 시험이 그 안에 있다.
 - `tests/e2e/classes`의 Node 바인딩이 컴파일되지 않았다(E0515, E0597): 호출이 receiver guard의 참조를
   (`let receiver = &*receiver;`) 묶은 뒤 guard를 `Gate.enter_later`(async_driver)의 future와 `Gate.enter_slowly`
   (blocking_io)의 pool closure로 옮겼으므로, future와 closure가 호출의 지역 변수를 빌린 참조를 쥐었다. 이제 future와 pool

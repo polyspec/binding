@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The e2e run of `tests/e2e/sample` failed in Go and WASM once a case armed a fault with an errno symbol (`EIO` at
+  `sample.tally`). Go: the generated test compared the errno with `int64(syscall.<symbol>)`, while `Errno()` gives an
+  `int`, so `go vet` refused the test file (mismatched types); the test now compares with `int(syscall.<symbol>)`.
+  WASM: the generated test armed the faults with their errno symbol and required the value that Node gives the symbol,
+  but the target of WASM has no errno, so `__armFaults` refused the arming with kind `internal`; the WASM test now arms
+  the faults of a case and of a call of `then` without their `errno` and requires no errno where the case names a
+  symbol (G-5). Verified by `npm test` in `packages/ts`: 310 of 310 pass, with the test that requires both forms.
 - The Node binding of `tests/e2e/classes` did not compile (E0515, E0597): the call bound the borrow of the guard of its
   receiver (`let receiver = &*receiver;`) before it moved the guard into the future of `Gate.enter_later` (async_driver)
   and into the closure of the pool of `Gate.enter_slowly` (blocking_io), so the future and the closure held a borrow of
