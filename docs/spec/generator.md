@@ -256,8 +256,10 @@ the design ids are those of the binding design.
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
   binding makes the value for each call, so it has nothing to keep, and a borrowed list would not let the core call a
   member with the receiver `&mut self`. The core type of a record with a callback field has one lifetime parameter
-  (`polyspec_x::Options<'a>`), which the generator names in the `in` function of the record and in every place that
-  holds it. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
+  (`polyspec_x::Options<'a>`); the contract names it by its path in `core_type`, and the generator writes the lifetime
+  where it names the type: `'env` in Node, whose callback lives in the environment of the call, and `'static` in the
+  other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
+  parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
   Node, PHP and WASM give on the native lifetime as GN-6m states.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the

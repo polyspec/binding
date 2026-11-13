@@ -209,8 +209,10 @@
 - **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
-  `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가지며
-  (`polyspec_x::Options<'a>`), 생성기는 그 record의 `in` 함수와 그것을 담는 모든 자리에 그 lifetime을 적는다. 코어가 호출
+  `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가진다
+  (`polyspec_x::Options<'a>`). 계약은 `core_type`에 그 경로를 적고, 생성기는 그 타입을 적는 곳에 lifetime을 적는다. callback이
+  호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
+  record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
   뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6m대로 native 수명 위에서
   그것을 준다.
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
