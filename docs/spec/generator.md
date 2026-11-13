@@ -591,7 +591,13 @@ the design ids are those of the binding design.
   lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
-  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}` at the first place of its id and
+  `{"id": n}` at every later place, the same reference; an `object` with `"id": n` beside its kind is named at every
+  later place by `{"kind": "object", "id": n}`, the same object. Places are ordered as the value is written, depth
+  first, so a later place may lie inside the value of the first, which makes a cycle; the ids of objects and those of
+  references are separate. An object nested deeper than a JSON reader takes is
+  `{"kind": "object", "repeat": <n>, "key": <key>, "value": <value>}`: n objects (at least 1), each the one property
+  `key` of the one around it, the innermost holding the value.
   A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
   `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
   refused by name (G-4).
@@ -648,11 +654,15 @@ the design ids are those of the binding design.
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes. A PHP reference is a place of an array or of a property, so a case value of
-  PHP whose places hold `{"kind": "reference", "value": {"id", "value"}}` is made in a closure that sets one variable
-  per id and returns the value whose places take the variables by reference. Python, Node and WASM make one instance of the
-  class of a reference (GN-6m) per id, before the value that holds it, in an expression that names each instance (an
-  assignment expression of a tuple in Python, an arrow function in Node and WASM), so every place of an id holds the
-  same instance. A case whose argument has no form in the
+  PHP whose places hold `{"kind": "reference", "value": {"id", "value"}}` or an object with an id is made in a closure
+  that names one variable per id, a new `stdClass` for an object, then fills each object and sets each reference, and
+  returns the value whose places take the reference variables by reference and the object variables. Python, Node and
+  WASM make, per id, one instance of the class of a reference or of an object (GN-6m) without content, then set its
+  value or fill its map, in an expression that names each instance (an assignment expression of a tuple in Python, an
+  arrow function in Node and WASM), so every place of an id holds the same instance and a cycle is made. A repeated
+  object is made from the outermost in, each object filled after it is made, so no constructor judges the objects
+  inside it again; PHP makes it from the innermost out with `(object)` casts. A case-test entry point (GN-5) describes
+  the later place of an id by the identity of the first, which the core does not read again. A case whose argument has no form in the
   language of a target, so that no call of that language can give it, runs through an entry point of the feature
   `case-test` of that target (GN-5), beside `panic-test` and `fault-test`: the entry point makes the argument in the
   binding's own encoding, as the host values that the binding describes (B-1) or as the value stream of the C ABI of

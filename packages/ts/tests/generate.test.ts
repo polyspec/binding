@@ -1826,30 +1826,65 @@ test('the PHP extension finds the classes of PHP at startup and has no panic (GN
   assert.match(lib, /extern "C" fn startup\(_kind: i32, _module: i32\) -> i32 \{\n[^\n]*\n {4}for \(slot, name\) in BUILTINS\.iter\(\)\.zip\(BUILTIN_NAMES\) \{[\s\S]*?None => return 1,[\s\S]*?let registered = ClassBuilder::new/);
 });
 
-test('a case value of Python, Node and WASM makes one instance per reference id (GN-13, G-5)', () => {
+test('a case value names a reference or an object by its id after its first place, which may make a cycle, and repeats an object (GN-13, G-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const targets = ['python', 'node', 'wasm'];
-  sample.units.push({
-    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6m' },
-    members: [
-      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
-      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
-    ],
-  });
+  const only = { targets, reason: 'the test of GN-6m' };
+  sample.units.push(
+    {
+      id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+        { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+    {
+      id: 'bag', name: ['bag'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'bag.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, default: { empty: 'map' } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_bag' },
+        { id: 'bag.entries', name: ['entries'], kind: 'property', visibility: 'public', returns: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+  );
   const data = sample.units.find((u: any) => u.id === 'data');
-  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
   for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
   const cases = sampleCases();
   const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
   const inner = { kind: 'reference', value: { id: 1, value: { kind: 'text', value: 'x' } } };
   const outer = { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [inner] } } };
-  file['echo']?.push({ id: 'shared_references', value: { kind: 'list', value: [outer, inner, outer] } });
+  const object = { kind: 'object', id: 0, value: [['a', { kind: 'object', id: 0 }]] };
+  const repeated = { kind: 'object', repeat: 3, key: 'k', value: { kind: 'null' } };
+  const later = (id: number): unknown => ({ kind: 'reference', value: { id } });
+  file['echo']?.push(
+    { id: 'shared_places', value: { kind: 'list', value: [outer, later(1), later(0), object, { kind: 'object', id: 0 }, repeated] } },
+    // A top reference has no PHP form: its case-test entry point describes the later place of the object by the
+    // identity of the first.
+    { id: 'a_top_reference_of_an_object_twice', value: { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [{ kind: 'object', id: 0, value: [['a', { kind: 'null' }]] }, { kind: 'object', id: 0 }] } } } },
+  );
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
-  // Each id is one instance, made before the value that holds it, so both places hold the same instance.
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\(r1 := pkg\.Boxed\("x"\), r0 := pkg\.Boxed\(\[r1\]\), \[r0, r1, r0\]\)\[-1\]/);
+  // Each id is one instance, made without content before any value, then filled, so a later place, inside the first
+  // or not, holds the same instance; a repeated object is made from the outermost in.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(
+    '(r0 := pkg.Boxed(), r1 := pkg.Boxed(), o0 := pkg.Bag({}), setattr(r1, "value", "x"), setattr(r0, "value", [r1]), o0.entries.__setitem__("a", o0), ' +
+      '[r0, r1, r0, o0, o0, (lambda top: (lambda at: ([at.__setitem__(0, at[0].entries.setdefault("k", pkg.Bag({}))) for _ in range(2)], at[0].entries.__setitem__("k", None), top)[-1])([top]))(pkg.Bag({}))])[-1]',
+  ), 'python');
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
-    assert.match(text(out, path), /\(\(\) => \{ const r1 = new pkg\.Boxed\('x'\); const r0 = new pkg\.Boxed\(\[r1\]\); return \[r0, r1, r0\]; \}\)\(\)/, path);
+    assert.ok(text(out, path).includes(
+      "(() => { const r0 = new pkg.Boxed(); const r1 = new pkg.Boxed(); const o0 = new pkg.Bag(new Map()); r1.value = 'x'; r0.value = [r1]; o0.entries.set('a', o0); " +
+        "return [r0, r1, r0, o0, o0, (() => { const top = new pkg.Bag(new Map()); let at = top; for (let i = 1; i < 3; i += 1) { const next = new pkg.Bag(new Map()); at.entries.set('k', next); at = next; } at.entries.set('k', null); return top; })()]; })()",
+    ), path);
   }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(
+    '(static function () { $o0 = new \\stdClass(); $r1 = "x"; $r0 = [&$r1]; $o0->{"a"} = $o0; ' +
+      'return [&$r0, &$r1, &$r0, $o0, $o0, array_reduce(array_fill(0, 3, null), fn ($inner) => (object) ["k" => $inner], null)]; })()',
+  ), 'php');
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, /let object_0 = host\.reserve\(\);\n\s*let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(/);
+  assert.match(lib, /host\.fill\(object_0, vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\]\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
+  assert.match(lib, /\(HostValue::Int\(1\), HostValue::StdClass \{ handle: object_0, len: 1 \}\)/);
 });
 
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {

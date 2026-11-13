@@ -491,7 +491,12 @@
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
-  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. 타입 `cancel`의 값은 호출 전에 발동한
+  `{"hex": ...}`), `reference`는 그 id의 첫 자리에서 `{"id": n, "value": ...}`를, 그 뒤의 모든 자리에서 같은 참조인 `{"id": n}`을
+  담는다. kind 옆에 `"id": n`을 가진 `object`는 그 뒤의 모든 자리에서 같은 객체인 `{"kind": "object", "id": n}`로 부른다.
+  자리의 순서는 값을 쓰는 순서(깊이 우선)이므로, 뒤의 자리가 첫 자리의 값 안에 있을 수 있고 그것이 순환을 만든다.
+  객체의 id와 참조의 id는 따로 센다. JSON reader가 받는 것보다 깊이 중첩된 객체는
+  `{"kind": "object", "repeat": <n>, "key": <key>, "value": <값>}`이다. 이것은 n개(1 이상)의 객체이고, 각 객체는 그것을
+  감싸는 객체의 유일한 property `key`이며 가장 안쪽 객체가 그 값을 담는다. 타입 `cancel`의 값은 호출 전에 발동한
   취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 이 타입은 아직 생성되지 않으므로
   그것을 받는 member는 이름을 대고 거부한다(G-4). 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
@@ -535,10 +540,14 @@
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP reference는 배열이나 property의
-  자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`를 가진 PHP case 값은 id마다 변수 하나를 정하고
-  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. Python, Node, WASM은 reference의 class(GN-6m)의
-  인스턴스를 id마다 하나, 그것을 담는 값보다 먼저, 각 인스턴스에 이름을 붙이는 식(Python은 tuple의 대입식, Node와 WASM은
-  화살표 함수) 안에서 만든다. 그래서 같은 id의 모든 자리가 같은 인스턴스를 가진다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
+  자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`나 id를 가진 객체를 가진 PHP case 값은 closure
+  안에서 만든다. closure는 id마다 변수 하나(객체면 새 `stdClass`)를 정하고, 각 객체를 채우고 각 참조를 정한 뒤, 그 자리가
+  참조 변수를 reference로 받고 객체 변수를 받는 값을 돌려준다. Python, Node, WASM은 id마다 참조나 객체의 class(GN-6m)의
+  인스턴스 하나를 내용 없이 만든 뒤 그 값을 정하거나 그 map을 채우며, 이것을 각 인스턴스에 이름을 붙이는 식(Python은
+  tuple의 대입식, Node와 WASM은 화살표 함수) 안에서 한다. 그래서 같은 id의 모든 자리가 같은 인스턴스를 가지고 순환도
+  만들어진다. 되풀이되는 객체는 바깥 객체부터 만들고 각 객체를 만든 뒤에 채우므로, 어떤 생성자도 그 안의 객체를 다시
+  판정하지 않는다. PHP는 `(object)` 변환으로 가장 안쪽부터 만든다. case-test 진입점(GN-5)은 id의 뒤 자리를 첫 자리의
+  동일성으로 기술하며, 코어는 그것을 다시 읽지 않는다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
   언어의 어떤 호출로도 줄 수 없는 case는, `panic-test`, `fault-test`와 나란한 그 target의 feature `case-test`(GN-5)의
   진입점으로 실행한다. 진입점은 인자를 바인딩 자신의 인코딩, 곧 바인딩이 기술하는 host 값(B-1)이나 Go C ABI의 값
   stream(B-8)으로 만들어, 호출이 쓰는 것과 같은 변환(value alias의 `in` 함수, 인자의 decode)에 넘긴다. 그 시험은 case의
