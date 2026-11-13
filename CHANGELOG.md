@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- The generated tests of Python, Node and WASM held no test of a value class without `core_type` (GN-6m): its
+  constructor and its properties were absent from the members that the tests call, so their cases ran in no target.
+  They now have the tests of the members of a class (GN-13): B-4 for each case that raises, GN-13e for each other
+  case, with a property read on an instance that the constructor makes from the case's keys, and the tests of their
+  parameters, G-7 among them. A primitive (N-4, `valueOf` of Node and WASM) has a test for each case that does not
+  raise, which compares `Number(instance)` with the case's `result` by `assert.strictEqual`, or takes the number form
+  alone when the case gives no `result`; before, its cases ran nowhere. A case float `-0` is written as a negative
+  zero (`-0`, `-0.0`); before, it was written as `0`. The test that an explicit null is refused is not written for a
+  parameter whose default is `{literal: null}`, whose declared value is that null (GN-13d). Verified by
+  `make test-ts` (272 tests).
 - The PHP test of a case whose value is a reference that is no place of an array or of a property, such as the top
   value of `serialize`, failed with `self::fail`, because no PHP call can give that value, so the refusal of the core
   was never run in PHP. Such a case now runs through the entry point `<namespace>\Internal\caseTest<n>` of the feature

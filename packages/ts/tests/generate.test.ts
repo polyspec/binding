@@ -1775,6 +1775,7 @@ test('the members of a value class without core_type and a primitive run their c
   for (const name of ['b4_boxed_new_bytes_that_are_no_text_are_not_boxed', 'gn13e_boxed_new_a_text_is_boxed', 'gn13e_boxed_value_the_value_is_kept', 'g7_boxed_new_counts_and_names_its_arguments']) {
     assert.match(python, new RegExp(`def test_${name}\\(self\\)`), name);
   }
+  assert.doesNotMatch(python, /def test_u2_boxed_new_value_takes_none_as_a_value/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const tests = text(out, path);
     for (const name of ['B-4: Boxed.constructor bytes_that_are_no_text_are_not_boxed', 'GN-13e: Boxed.constructor a_text_is_boxed', 'GN-13e: Boxed.value the_value_is_kept', 'G-7: Boxed.constructor counts and names its arguments']) {

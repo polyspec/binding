@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Python, Node, WASM의 생성 시험에는 `core_type`이 없는 value class(GN-6m)의 시험이 없었다. 그 생성자와 property가
+  시험이 부르는 member에 들어 있지 않아, 그 case는 어느 target에서도 실행되지 않았다. 이제 이것들은 class의 member의
+  시험을 가진다(GN-13). 실패하는 case마다 B-4, 그 밖의 case마다 GN-13e이며, property는 생성자가 case의 키로 만든
+  인스턴스에서 읽는다. G-7을 포함한 parameter의 시험도 가진다. primitive(N-4, Node와 WASM의 `valueOf`)는 실패하지 않는
+  case마다 시험을 가지며, 그 시험은 `Number(instance)`를 case의 `result`와 `assert.strictEqual`로 비교하고, case가
+  `result`를 주지 않으면 수 형태만 얻는다. 전에는 그 case가 어디서도 실행되지 않았다. case의 float `-0`은 음의 영(`-0`,
+  `-0.0`)으로 쓴다. 전에는 `0`으로 썼다. 명시한 null이 거부되는지 보는 시험은 기본값이 `{literal: null}`인 parameter에는
+  쓰지 않는다. 그 null이 선언된 값이기 때문이다(GN-13d). `make test-ts`(시험 272개)로 확인했다.
 - 값이 배열이나 property의 자리가 아닌 reference인 case(예: `serialize`의 맨 위 값)의 PHP 시험은 `self::fail`로 실패했다.
   어떤 PHP 호출도 그 값을 줄 수 없어서, 코어의 거부가 PHP에서 한 번도 실행되지 않았다. 이제 그런 case는 feature
   `case-test`의 진입점 `<namespace>\Internal\caseTest<n>`으로 실행한다. 진입점은 PHP가 기술할 host 값으로 그 값을 만들어

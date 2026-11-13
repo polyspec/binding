@@ -125,6 +125,8 @@ export interface KeptClass {
   constructor: Fn;
   // One kept value per parameter of the constructor, with its property, when the class has one of that name.
   fields: KeptField[];
+  // GN-13: the constructor and the properties as the members that the tests call; a property has no core path.
+  members: Fn[];
 }
 
 export interface KeptField {
@@ -449,6 +451,11 @@ export function collectModel(
       const declared = construct.parameters?.[index]?.default;
       return declared === undefined ? arg : { ...arg, default: declared };
     });
+    // G-7: the tests count the parameters that the call may leave out.
+    fn.params = fn.params.map((param, index) => {
+      const declared = construct.parameters?.[index]?.default;
+      return declared === undefined ? param : { ...param, default: declared };
+    });
     if (!fn.fallible) throw new Unsupported(`${construct.id}: the constructor of a value class without core_type judges its arguments and returns a Result (GN-6m)`);
     for (const member of members) {
       if (member.kind === 'constructor') continue;
@@ -463,7 +470,12 @@ export function collectModel(
     }
     const hidden = fields.find((f) => f.property === undefined);
     if (hidden !== undefined) throw new Unsupported(`${construct.id}.${hidden.name.join('_')}: a value class without core_type has a property for each value that it keeps (GN-6m)`);
-    return { unit, constructor: fn, fields };
+    const properties = fields.flatMap((f): Fn[] =>
+      f.property === undefined
+        ? []
+        : [{ unit, member: f.property, kind: 'property', receiver: '&self', module: unit.module, params: [], args: [], returns: f.type, fallible: false, failure: false, corePath: '' }],
+    );
+    return { unit, constructor: fn, fields, members: [fn, ...properties] };
   };
   for (const unit of contract.units) {
     const before = refusals.found.length;

@@ -108,6 +108,8 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
     // them as a bigint (cli.ts), whose decimal token every language writes.
     if (type === 'int64' && ctx.lang === 'node' && (out || typeof value === 'bigint')) return `${String(value)}n`;
+    // A negative zero is written as one; String writes it as 0.
+    if (type === 'float' && Object.is(value, -0)) return ctx.lang === 'node' ? '-0' : '-0.0';
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
@@ -422,7 +424,11 @@ export interface RaisingCase {
 // The callables whose tests are generated: the functions, then the members of each class unit.
 // An iterate has no arguments to test; it is iterated in the round trip of GN-13a. A stringify and a to_json are
 // called by the name of the language's hook (N-4, memberName).
-export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate'))];
+// GN-13: the members that the tests call, those of a value class without core_type (GN-6m) among them.
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate')), ...model.kept.flatMap((k) => k.members)];
+
+// The members of the class of a member: a class unit or a value class without core_type.
+const classMembers = (model: Model, unit: Unit): Fn[] => model.objects.find((o) => o.unit === unit)?.members ?? model.kept.find((k) => k.unit === unit)?.members ?? [];
 
 export interface Receiver {
   factory: Fn;
@@ -592,8 +598,7 @@ export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>
   if (fn.receiver === undefined) return undefined;
   // GN-13f: a case that gives its receiver as an instance value.
   if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);
-  const object = model.objects.find((o) => o.unit === fn.unit);
-  for (const factory of object?.members ?? []) {
+  for (const factory of classMembers(model, fn.unit)) {
     const returns = factory.returns;
     const makes = typeof returns === 'object' && 'unit' in returns && returns.unit === fn.unit.id && returns.library === undefined;
     if (factory.receiver !== undefined || !makes) continue;
@@ -606,8 +611,7 @@ export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>
 // An instance for the tests of a method that need any valid receiver: the factory arguments of the first case of the
 // class's members that does not raise.
 export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
-  const object = model.objects.find((o) => o.unit === fn.unit);
-  for (const member of object?.members ?? []) {
+  for (const member of classMembers(model, fn.unit)) {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
       if (record['raises'] !== undefined) continue;
@@ -632,6 +636,26 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
       throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
     }
     out.push({ id: String(record['id']), receiver, result });
+  }
+  return out;
+}
+
+// GN-13d: a parameter with a default for which an explicit null is a refused value: every default but {literal: null},
+// whose declared value is that null.
+export const refusesNull = (arg: Arg): boolean =>
+  arg.default !== undefined && !(typeof arg.default === 'object' && arg.default !== null && 'literal' in arg.default && arg.default.literal === null);
+
+// N-4: the cases of a primitive that do not raise, each with the instance of its factory arguments and the number that
+// the language's number form gives, written as the language writes it; a case without result takes the form alone.
+export function primitiveCases(model: Model, ctx: Context, fn: Fn): { id: string; receiver: Receiver; result: string | undefined }[] {
+  if (fn.special !== 'primitive') return [];
+  const out: { id: string; receiver: Receiver; result: string | undefined }[] = [];
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    const receiver = receiverOf(model, fn, record);
+    if (receiver === undefined) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, N-4)`);
+    out.push({ id: String(record['id']), receiver, result: 'result' in record ? fromJson(model, ctx, fn.returns, record['result'], true) : undefined });
   }
   return out;
 }
