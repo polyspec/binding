@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b8c397c63e4d84a9253812db0efa1fb790c8ed04d4c6b5f91a4626d7f7a14145 -->
+<!-- source-sha256: cff891a6adfe67db37e06daca009df88f1716c930851ab1cc2f8c89be99c9e41 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- target go가 있는 계약이, 계약에 Go module(`packages.go`)을 적지 않은 라이브러리의 record나 값 class를 이름하면
+  `binding generate`가 stack trace와 함께 멈췄다("Cannot read properties of undefined"). Go 생성기가 그 계약에 module이
+  있는지 묻지 않고 읽었기 때문이다. `scaffold`와 `check`는 이미 이 이유로 Go module을 이름했다. 이제 `generate`는 Go
+  target을 그 라이브러리와 이유와 함께 거부하고 다른 target을 생성한다(GN-15f, GN-1c). `Cargo.lock`이 다른 라이브러리의
+  Go module이 생기기 전 commit을 고정한 레포에서 `binding generate --target go`로 발견했다. `make test-ts`로 확인했다. 새
+  테스트는 변경 전에 stack trace로 실패했고, 변경 후 423개 가운데 423개가 통과한다.
 - 다른 라이브러리의 값을 넘겨주기만 하는 코어처럼 `polyspec-binding-core` 줄을 적지 않은 코어에 대해, `binding scaffold`는
   어느 생성기가 실행되든 binding의 개발 줄인 branch `v1/rust-core`를 모든 바인딩 crate에 썼다. 그래서 release의 생성기가
   scaffold한 레포의 바인딩 crate도 branch를 적었고 `binding check --release`가 그것을 하나씩 보고했다. 이제 그런 코어는

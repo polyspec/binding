@@ -1106,7 +1106,9 @@ the design ids are those of the binding design.
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through
   `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
-  one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
+  one whose package has the name of a package of this repository, are refused by name. A library whose contract names no
+  Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
+  targets are generated (GN-1c), as `scaffold` names the Go module alone as not written (GN-3e). `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
   of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`.
   `cargo metadata` resolves the workspace, so it fails where Cargo cannot resolve it: without network for a Git

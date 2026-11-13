@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: df9d21803b1f388c06b74671d4fb248a41654eb83064191ff3c027e2731db3d1 -->
+<!-- source-sha256: f7887fbb178ddf2870e714229378c959b199ec8bf5dbddff4985d8f492856718 -->
 # 생성기
 
 [English](generator.md)
@@ -908,7 +908,9 @@
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
   `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
   `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. unit 타입 field가 있는 다른 레포의 record와, 패키지
-  이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. `binding scaffold`는 `binding generate`처럼 계약이
+  이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. 계약이 Go module(`packages.go`)을 적지 않은 라이브러리는
+  `generate`의 Go target을 그 라이브러리와 이유와 함께 거부하고 다른 target은 생성한다(GN-1c). `scaffold`가 Go module만 쓰지
+  않은 것으로 이름하는 것과 같다(GN-3e). `binding scaffold`는 `binding generate`처럼 계약이
   이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
   없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. `cargo metadata`는 workspace를 해석하므로 Cargo가 그것을 해석할 수 없는
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을

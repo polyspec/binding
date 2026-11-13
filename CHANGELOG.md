@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- `binding generate` of a contract with the target go that names a record or a value class of a library whose
+  contract names no Go module (`packages.go`) stopped with a stack trace ("Cannot read properties of undefined"),
+  because the Go generator read the module of that contract without asking whether it has one; `scaffold` and `check`
+  already named the Go module with this reason. `generate` now refuses the Go target with the library and the reason
+  and generates the other targets (GN-15f, GN-1c). Found by `binding generate --target go` in a repository whose
+  `Cargo.lock` pins a commit of the other library from before it had a Go module. Verified by `make test-ts`: the new
+  test failed with the stack trace before the change, and 423 of 423 pass with it.
 - For a core that names no line on `polyspec-binding-core`, such as a core that only passes the values of another
   library on, `binding scaffold` wrote the development line of binding, the branch `v1/rust-core`, into every binding
   crate, whichever generator ran, so the binding crates of a repository that a released generator scaffolded named a
