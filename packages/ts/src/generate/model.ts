@@ -445,6 +445,16 @@ export function collectModel(
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
         continue;
       }
+      // GN-6ae: a parameter of a function type belongs to a member with machine, and its function returns passthrough,
+      // which the core moves without reading.
+      if (typeof type === 'object' && 'function' in type) {
+        if (!(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${where}: a parameter of a function type is generated for a member with machine only (GN-6ae)`);
+        if (typeof type.function.returns !== 'object' || !('passthrough' in type.function.returns)) throw new Unsupported(`${where}: a function parameter of a member with machine returns passthrough (GN-6ae)`);
+        if (type.function.errors !== undefined) throw new Unsupported(`${where}: the recognized errors of a function parameter are not generated yet (GN-6ae)`);
+        for (const [i, part] of type.function.parameters.entries()) supportedType(part, units, `${where} parameter ${i}`, foreign);
+        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
+        continue;
+      }
       const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
@@ -456,11 +466,15 @@ export function collectModel(
     const firstDefault = args.findIndex((a) => a.default !== undefined);
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
-    const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
+    // E-1c, GN-6ae: a callback and a function of language code fail with Failure<E>.
+    const takesCallback = params.some((p) => typeof p.type === 'object' && (('unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback') || 'function' in p.type));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
-    if (returns !== 'never') supportedType(returns, units, `${member.id} returns`, foreign);
+    // GN-6ae: a result passthrough is the value that a function of the machine returned.
+    const passes = typeof returns === 'object' && 'passthrough' in returns;
+    if (passes && !(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${member.id}: a result passthrough is generated for a member with machine only (GN-6ae)`);
+    if (returns !== 'never' && !passes) supportedType(returns, units, `${member.id} returns`, foreign);
     let yields: Fn['yields'];
     if (kind === 'iterate') {
       const given = member.yields;
@@ -1202,6 +1216,15 @@ export function refuseConsumers(model: Model, target: string, refusals: Refusals
   for (const object of model.objects) {
     if (object.unit.cleanup !== undefined && object.members.length > 0) refusals.refuse(`${object.unit.id}: a class unit with cleanup is not generated for ${target} yet (GN-6p)`);
     for (const fn of object.members.filter((m) => m.receiver === 'self')) refusals.refuse(`${fn.member.id}: a method with the receiver self is not generated for ${target} yet (GN-6o)`);
+  }
+}
+
+// GN-6ae: a target that does not generate a parameter of a function type and a result passthrough yet refuses the
+// member by name (G-4).
+export function refusePassing(model: Model, target: string, refusals: Refusals): void {
+  const passing = (fn: Fn): boolean => fn.params.some((p) => typeof p.type === 'object' && 'function' in p.type) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)].filter(passing)) {
+    refusals.refuse(`${fn.member.id}: a parameter of a function type and a result passthrough are not generated for ${target} yet (GN-6ae)`);
   }
 }
 

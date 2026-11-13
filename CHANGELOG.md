@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A parameter of a function type and a result `passthrough` were refused as "the type ... is not generated yet" for
+  every member, so the refusal named neither the rule nor the target. The model now takes them on a member with
+  `machine` only, requires the function to return `passthrough` and checks the types of its parameters; another
+  member is refused with "a parameter of a function type is generated for a member with machine only" or "a result
+  passthrough is generated for a member with machine only", and each target refuses such a member by name with "a
+  parameter of a function type and a result passthrough are not generated for <Target> yet" until it generates them
+  (GN-6ae, G-4). Verified by `npm test` in `packages/ts`.
 - Two generated tests failed in `make e2e` of `tests/e2e/sample` for a reason of the generator: the Node test file
   did not load, because only the first test of a block that awaits was an async function, and the K-2 test
   `resolveSlowly lets the exception of a callback through` used `await` in a plain function; and the Go test of a

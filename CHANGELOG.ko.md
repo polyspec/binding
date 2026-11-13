@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- 함수 타입의 parameter와 결과 `passthrough`는 모든 member에서 "the type ... is not generated yet"로 거부되어, 그
+  거부는 규칙도 target도 대지 않았다. 이제 model은 그것을 `machine`이 있는 member에서만 받고, 함수가 `passthrough`를
+  돌려주기를 요구하며 그 parameter의 타입을 검사한다. 다른 member는 "a parameter of a function type is generated for a
+  member with machine only"나 "a result passthrough is generated for a member with machine only"로 거부하고, 각
+  target은 그것을 생성하기 전까지 그런 member를 "a parameter of a function type and a result passthrough are not
+  generated for <Target> yet"로 이름을 대고 거부한다(GN-6ae, G-4). `packages/ts`의 `npm test`로 확인했다.
 - 생성된 테스트 둘이 생성기 때문에 `tests/e2e/sample`의 `make e2e`에서 실패했다. Node 테스트 파일은 load되지 않았는데,
   기다리는 block의 첫 테스트만 async 함수였고 K-2 테스트 `resolveSlowly lets the exception of a callback through`는
   보통 함수에서 `await`를 썼기 때문이다. 또 호출을 기대하지 않는 fixture의 Go 테스트는 nil인 calls를 빈 slice와
