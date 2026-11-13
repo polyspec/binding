@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9b4cae2d719a69c218a259317583ce38efc06755c25ad3fd91857d55c22ebd1a -->
+<!-- source-sha256: 457aa3c9727a01d58a0ae94ef4ebeae17410c9ab09d2dc18f16301e90617367d -->
 # 생성기
 
 [English](generator.md)
@@ -1499,3 +1499,12 @@
   `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
   단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
   링크하므로, tag로 받은 모듈이 자기가 실은 라이브러리를 링크한다는 것은 이 단계만 보인다.
+- **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
+  의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
+  적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적을
+  때에만 job이 실행한다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고, job에는 그
+  항목이 없다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
+  `tests/e2e`에 없는 레포를 경로로 더는 적지 않는데 목록에 남은 계약을 실패로 한다. 코어가 json 레포에 의존하는
+  `tests/e2e/relay`는 json의 첫 release tag까지 목록에 있다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
+  레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
+  없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.

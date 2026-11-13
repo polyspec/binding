@@ -70,7 +70,9 @@ rules of this repository.
   the bootstrap of every job. The job `e2e` runs the end-to-end check of each repository of `tests/e2e`, one entry of its
   matrix per repository with the repositories that its core depends on (`DEPS`), installs every tool with
   `make install-tools`, runs in a work directory outside the checkout and uploads the record `var/report/e2e/`; an entry
-  whose run fails stays in the matrix. The end-to-end check of another repository is no job of the workflow: it needs a
+  whose run fails stays in the matrix. A contract of `tests/e2e` whose core depends on a repository that is not in
+  `tests/e2e` has no entry until a tracked file of the contract names a release tag of that repository, and
+  `tests/e2e/not-in-ci.json` lists it with its reason and the condition that ends it (GN-14g). The end-to-end check of another repository is no job of the workflow: it needs a
   checkout of that repository, and the rule above requires its run of a commit before that commit is pushed or merged.
   Why: a release takes the id of a run whose every job passed, a step that runs a tool directly would miss the settings
   of the Makefile, and a release is built and used on Linux, where only the job `e2e` runs the five targets and the

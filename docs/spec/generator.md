@@ -1847,3 +1847,15 @@ the design ids are those of the binding design.
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. Why: the generated tests
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
+- **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
+  repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
+  `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on
+  a repository that is not in `tests/e2e` is run by the job only when a tracked file of the contract names a release
+  tag of that repository. Until then `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
+  that ends it, and the job has no entry of it. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
+  neither in the job nor in the list, one that is in both, and a listed contract whose core no longer names by a
+  path a repository that `tests/e2e` does not hold. `tests/e2e/relay`, whose core depends on the repository json, is
+  listed until the first release tag of json. A listed contract is still checked by `make e2e` with a checkout of
+  its dependency as `DEPS`, before a commit is pushed or merged. Why: a job cannot check out a repository at a
+  release that does not exist, an entry that names a missing directory fails for a reason that is no defect of the
+  commit, and a contract that is silently left out of the job would look checked.

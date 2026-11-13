@@ -1,0 +1,10 @@
+{
+  "comment": "GN-14g: the contracts of tests/e2e that the job e2e of .github/workflows/ci.yml does not run, each with its reason and the condition that ends it. A contract is listed here only while its core depends on a repository that is not in tests/e2e and no tracked file of the contract names a release tag of that repository; packages/ts/tests/ci-workflow.test.ts fails a contract that is neither here nor in the matrix of the job, and one that is in both.",
+  "contracts": [
+    {
+      "contract": "tests/e2e/relay",
+      "reason": "its core depends on the repository json, which is not in tests/e2e, by a path that only a run with a checkout of json as DEPS fills, and no tracked file of the contract names a release tag of json",
+      "until": "waits for the first json release tag: a tracked file of the contract names that tag as the release of its dependency"
+    }
+  ]
+}

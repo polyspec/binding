@@ -17,7 +17,9 @@
 # repository with the repositories that its core depends on (DEPS), on every tool of the checkout (make install-tools)
 # and in a work directory outside the checkout. It is the run of the five targets, and of the released form of the Go
 # module (GN-14f), on Linux; an entry whose run fails stays in the matrix and fails ci-passed. Each entry uploads the
-# record var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job.
+# record var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job, and a
+# contract of tests/e2e whose core depends on a repository that is not in tests/e2e has no entry until a tracked file of
+# the contract names a release tag of that repository: tests/e2e/not-in-ci.json lists it with its reason (GN-14g).
 name: ci
 
 on:
@@ -85,9 +87,6 @@ jobs:
           - name: plot
             repo: tests/e2e/plot
             deps: tests/e2e/points
-          - name: relay
-            repo: tests/e2e/relay
-            deps: tests/e2e/json
           - name: sample
             repo: tests/e2e/sample
             deps: ""

@@ -1,7 +1,9 @@
 // AGENTS.md: the rules of .github/workflows/ci.yml, read from its text. Every job runs on ubuntu-26.04-arm, pins each
 // action by its commit, sets no timeout-minutes and runs every command of a step as one make target; a job of a matrix
 // runs every step after its first past a failed step; the job e2e runs the end-to-end check of every repository of
-// tests/e2e with the repositories that its core depends on, and uploads its record; ci-passed needs every other job.
+// tests/e2e with the repositories that its core depends on, and uploads its record; a repository whose core depends on
+// a repository that tests/e2e does not hold is in tests/e2e/not-in-ci.json and not in the job (GN-14g); ci-passed needs
+// every other job.
 
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -49,6 +51,14 @@ function matrix(job: string[]): Record<string, string>[] {
   return found;
 }
 
+// GN-14g: the repositories of tests/e2e that the job e2e does not run, each with its reason and the condition that ends
+// it.
+function notInCi(): { contract: string; reason: string; until: string }[] {
+  const list = JSON.parse(readFileSync(`${top}tests/e2e/not-in-ci.json`, 'utf8')) as { contracts: { contract: string; reason: string; until: string }[] };
+  for (const entry of list.contracts) assert.deepEqual(Object.keys(entry).sort(), ['contract', 'reason', 'until'], 'an entry of tests/e2e/not-in-ci.json names its contract, its reason and its until');
+  return list.contracts;
+}
+
 test('every job runs on ubuntu-26.04-arm, pins its actions by commit, has no time limit and runs one make target per step (AGENTS)', () => {
   const all = jobs();
   assert.ok(all.size > 0, 'the workflow has no job');
@@ -76,7 +86,7 @@ test('a job of a matrix runs every step after its first past a failed step (AGEN
   }
 });
 
-test('the job e2e runs the end-to-end check of every repository of tests/e2e and uploads its record (GN-14, GN-14f)', () => {
+test('the job e2e runs the end-to-end check of every repository of tests/e2e that waits for no other repository and uploads its record (GN-14, GN-14f, GN-14g)', () => {
   const job = jobs().get('e2e');
   assert.ok(job !== undefined, 'the workflow has no job e2e');
   const entries = matrix(job);
@@ -86,14 +96,26 @@ test('the job e2e runs the end-to-end check of every repository of tests/e2e and
   assert.ok(repositories.includes('sample') && repositories.includes('plot'), 'tests/e2e holds no sample or no plot');
   const depsOf = (name: string): string[] =>
     [...readFileSync(`${top}tests/e2e/${name}/packages/rust/Cargo.toml`, 'utf8').matchAll(/path = "\.\.\/\.\.\/\.\.\/([a-z0-9-]+)\/packages\/rust"/g)].map((m) => `tests/e2e/${m[1] ?? ''}`).sort();
-  // Every repository has its own run, except points, which holds the record that plot names and is built by the run
-  // of plot as its dependency (GN-14).
-  const wanted = repositories.filter((name) => name !== 'points');
+  // GN-14g: a repository whose core names by a path a repository that tests/e2e does not hold waits for a release tag
+  // of that repository, and the list of the repositories that the job does not run names it; every other one is run.
+  const waiting = repositories.filter((name) => depsOf(name).some((dep) => !existsSync(`${top}${dep}/Cargo.toml`)));
+  const listed = notInCi();
+  assert.deepEqual(listed.map((e) => e.contract).sort(), waiting.map((name) => `tests/e2e/${name}`).sort(),
+    'tests/e2e/not-in-ci.json lists exactly the repositories whose core depends on a repository that tests/e2e does not hold: one that is not listed is run by no entry, and a listed one whose condition ended has no entry yet');
+  for (const entry of listed) {
+    assert.ok(entry.reason.trim() !== '', `${entry.contract} of tests/e2e/not-in-ci.json states no reason`);
+    assert.ok(entry.until.trim() !== '', `${entry.contract} of tests/e2e/not-in-ci.json states no condition that ends it`);
+  }
+  // Every other repository has its own run, except points, which holds the record that plot names and is built by the
+  // run of plot as its dependency (GN-14).
+  const wanted = repositories.filter((name) => name !== 'points' && !waiting.includes(name));
+  assert.ok(wanted.length > 0, 'no repository of tests/e2e is run');
   assert.ok(repositories.flatMap(depsOf).includes('tests/e2e/points'), 'no repository of tests/e2e depends on points, so it needs its own run');
   assert.deepEqual(entries.map((e) => e['repo']).sort(), wanted.map((name) => `tests/e2e/${name}`).sort());
   for (const entry of entries) {
     const name = (entry['repo'] ?? '').replace('tests/e2e/', '');
     assert.equal(entry['name'], name);
+    for (const directory of [entry['repo'] ?? '', ...(entry['deps'] ?? '').split(' ').filter((d) => d !== '')]) assert.ok(existsSync(`${top}${directory}/Cargo.toml`), `the entry ${name} names ${directory}, which is no repository of this checkout`);
     assert.deepEqual((entry['deps'] ?? '').split(' ').filter((d) => d !== '').sort(), depsOf(name), `the entry ${name} does not name the repositories that its core depends on`);
   }
   const all = steps(job);

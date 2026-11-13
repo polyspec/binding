@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 0c552eb56419395b04dedb5fe3c00a4988cc3af99876ee5e27e5575334cb70ba -->
+<!-- source-sha256: c6c993f7c3cdd1aace62f379b467c518287cf62aff495d3410d9870b79003d4c -->
 # 개발
 
 [English](AGENTS.md)
@@ -64,7 +64,9 @@
   고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은
   모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
   하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. 이 job은 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
-  work 디렉터리에서 실행하며, 기록 `var/report/e2e/`를 upload한다. 실행이 실패하는 항목도 matrix에 남는다. 다른 레포의
+  work 디렉터리에서 실행하며, 기록 `var/report/e2e/`를 upload한다. 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
+  없는 레포에 의존하는 `tests/e2e`의 계약은 그 계약의 추적되는 파일이 그 레포의 release tag를 적을 때까지 항목이 없고,
+  `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적는다(GN-14g). 다른 레포의
   끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 그 레포의 checkout이 필요하고, 위의 규칙이 commit을 push하거나
   merge하기 전에 그 commit의 실행을 요구한다. 이유: release는 모든 job이 통과한 실행의 id를 받고, 도구를 바로 실행하는
   step은 Makefile의 설정을 받지 못하며, release는 Linux에서 빌드되고 쓰이는데 Linux에서 다섯 target과 Go 모듈의 release

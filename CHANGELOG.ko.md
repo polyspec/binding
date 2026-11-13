@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9a7c20f23235a391122ddb182e895994fa8547ae396d42ef39ff14882510d49c -->
+<!-- source-sha256: 3430fff3c10e28470fb4b9d78af3389740995c44985ec515f7e6f314303af8a9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `.github/workflows/ci.yml`의 job `e2e`가 `tests/e2e/relay`의 의존으로 checkout에 없는 디렉터리 `tests/e2e/json`을
+  적었다. relay의 코어가 json 레포에 의존하기 때문이며, 그 항목은 실패할 수밖에 없었다. 이제 job은 코어가 `tests/e2e`의
+  레포에만 의존하는 계약을 실행하고, `tests/e2e` 밖 레포의 release tag를 기다리는 계약은 `tests/e2e/not-in-ci.json`이
+  이유와 끝나는 조건과 함께 적는다. relay는 json의 첫 release tag까지다(GN-14g). workflow 시험은 job에도 목록에도 없는
+  계약, 둘 다에 있는 계약, 조건이 끝났는데 목록에 남은 계약, checkout의 레포가 아닌 디렉터리를 적은 항목을 실패로
+  한다. `make test-ts`로 검증했다. 실행하지 않은 것: workflow 자체와 relay의 `make e2e`.
 - generator 문서가 타입 `cancel`이 각 target에서 무엇인지 말한다(GN-6aq): core는 `binding_core::Cancel`을 받고, 언어
   값은 Node와 WASM에서 `AbortSignal`, Python에서 future, Go에서 첫 parameter `ctx context.Context`, PHP에서 생성된
   class `Cancellation`이다. 이 규칙은 구현되지 않음으로 표시되어 있다: 생성기는 이 타입을 받는 member를 여전히

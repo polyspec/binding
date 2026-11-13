@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The job `e2e` of `.github/workflows/ci.yml` named `tests/e2e/json` as the dependency of `tests/e2e/relay`, a
+  directory that the checkout does not hold, because the core of relay depends on the repository json, so that entry
+  could only fail. The job now runs the contracts whose core depends only on repositories of `tests/e2e`, and
+  `tests/e2e/not-in-ci.json` lists a contract that waits for a release tag of a repository outside `tests/e2e`, with
+  its reason and the condition that ends it: relay, until the first release tag of json (GN-14g). The workflow test
+  fails a contract that is neither in the job nor in the list, one that is in both, a listed contract whose
+  condition ended and an entry that names a directory that is no repository of the checkout. Verified by
+  `make test-ts`. Not run: the workflow itself, and `make e2e` of relay.
 - The generator document states what the type `cancel` is on each target (GN-6aq): the core takes a
   `binding_core::Cancel`, and the language value is an `AbortSignal` in Node and WASM, a future in Python, the first
   parameter `ctx context.Context` in Go and the generated class `Cancellation` in PHP. The rule is marked as not
