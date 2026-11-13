@@ -1072,8 +1072,8 @@ the design ids are those of the binding design.
   the types of `internal/binding`, which also holds the cgo calls and the encoding, so their constructor is not public
   API (L-3). The C ABI crate `polyspec-<repository>-go` is the tracked thin package `packages/go/internal/ffi`
   (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
-  directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
-  consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
+  directory of the library is the one of the platform inside the Go module, which a release fills (GN-15g), and a
+  checkout, whose tree holds no library, gives the directory of its build by `CGO_LDFLAGS=-L<dir>`. A parameter is lower camel case; one that
   is a Go keyword, a name of the generated body or the package name of a module of the contract takes a trailing `_`.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
@@ -1159,6 +1159,38 @@ the design ids are those of the binding design.
   checkout resolves through its development link, an untracked `go.work` that names the checkout of that repository
   (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
+- **GN-15g** The static library of the Go module (B-8, L-1, K-3): the platforms of a Go module are `linux_amd64`
+  and `linux_arm64`, whose library is built for the GNU C library, and `darwin_arm64`, the `<GOOS>_<GOARCH>` of the
+  platforms of GN-3c. musl is not supported: a build constraint of Go does not tell the C library of a Linux apart,
+  so a consumer on musl compiles the file of its `<GOOS>_<GOARCH>` and its link of the library of the GNU C library
+  fails. For each platform
+  `binding generate` writes two files. `internal/binding/zz_generated_link_<platform>.go`, which Go compiles for that
+  platform alone by its name, holds the directive `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and imports the
+  package `internal/ffi/lib/<platform>`; `internal/ffi/lib/<platform>/zz_generated_lib.go` is the one file of that
+  package. The library of a platform is `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`, beside that
+  file. Why the directory is a package that the binding imports: `go mod vendor` copies only the directories of the
+  packages that a build imports, so a consumer that vendors its modules gets the library of every platform, and the
+  directory of the directive exists in a tree without a library. No tracked tree holds a library or a generated
+  file. A checkout builds its library and names its directory by `CGO_LDFLAGS` (GN-14), which the linker searches
+  before the directory of the directive.
+  A release carries the Go module, because Go fetches a module as the source of a tag. From the commit of the tag
+  `vX.Y.Z` the release tooling writes the files of `binding generate` for the target go, builds the crate
+  `polyspec-<repository>-go` for each platform with the release profile and without a feature, removes the debug
+  sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
+  the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
+  sections of the Rust standard library), and creates one
+  commit whose parent is that commit and whose tree adds, below the directory of the Go module, those generated
+  files and the library of each platform. It tags that commit `<directory of the Go module>/vX.Y.Z`
+  (`packages/go/vX.Y.Z`), the tag that Go reads for a module in a subdirectory of its repository. It creates no
+  commit and no tag when the library of a platform is missing, holds a test entry point (GN-13b) or holds a debug
+  section. No branch holds
+  the commit, and no such commit or tag is made by hand. A consumer needs the line `require <module> vX.Y.Z` alone:
+  no `CGO_LDFLAGS` and no `replace`, and its `go.sum` pins the module with its libraries. A build for another
+  platform compiles no file that names a directory, so its link fails with the library that is not found.
+  A program that imports the Go modules of several libraries (GN-15f) links the static library of each, and each
+  holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
+  a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
+  one program. It has run on `darwin_arm64` alone: that the copies link on Linux is not verified yet.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
@@ -1676,3 +1708,21 @@ the design ids are those of the binding design.
   contract is scaffolded, checked, generated, built and tested in its own layout (`place`, L-2a), and the run records
   the paths of the contracts. The generated tests of a host Node package import the generated entry beside them, so
   the run puts them in the installed package where the copy has them.
+- **GN-14f** The released form of the Go module (GN-15g): after the Go tests, the run builds the static library of
+  each contract of the repository, and of each dependency whose Go module its `go.mod` requires, with the release
+  profile and without a feature, removes its debug sections with `llvm-strip --strip-debug` of `llvm-tools` and
+  fails when `llvm-size -A` still names a debug section in it, and makes for each a Git repository in the work
+  directory that stands for the
+  remote: one commit whose tree is the Go module at its place with the library of the platform of the run in
+  `internal/ffi/lib/<platform>`, and the tag `<directory of the Go module>/<version>`, where the version is `v` and
+  the version of the core, and for a dependency the version that the `go.mod` requires. Git reads
+  `https://github.com/<owner>/` as the directory of these repositories (`url.<base>.insteadOf` of a configuration
+  file of the run, the one configuration that the Git of these commands reads), so `go` fetches each module by its
+  module path and its tag without a network. A consumer module, whose `go.mod` holds the line `require` of the Go
+  module of each contract and nothing else of them, imports every package of those modules in a test; the run writes
+  its `go.sum` with `go mod tidy`, then runs `go test` of the consumer and of every package of the fetched modules
+  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOFLAGS` empty and
+  no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
+  GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. Why: the generated tests
+  of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
+  tag links the library that it carries.

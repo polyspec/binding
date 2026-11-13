@@ -30,12 +30,13 @@
 // lint reads the code and runs nothing, so only the tests verify a target, and a target without a test that ran fails.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints } from './e2e-lint.mts';
 import { runIn, workOf } from './e2e-work.mts';
+import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -99,6 +100,7 @@ const { libraryParts } = await import('../packages/ts/src/check.ts');
 const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
 const { convert, libraryName } = await import('../packages/ts/src/names.ts');
 const { componentBase, isHost, place } = await import('../packages/ts/src/generate/packages.ts');
+const { GO_PLATFORMS } = await import('../packages/ts/src/generate/go.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -373,6 +375,11 @@ const rustcPrint = (what: string): string => spawnSync('rustc', ['--print', what
 // llvm-nm reads the static library of go and the extension of php built without features (GN-13b, GN-8a).
 const llvmNmFor = targets.filter((t) => t === 'go' || t === 'php');
 const llvmNm = llvmNmFor.length === 0 ? '' : llvmNmFor.map((t) => need(t, 'llvm-nm of the component llvm-tools', 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin/llvm-nm'))))[0] ?? '';
+// GN-15g: llvm-strip removes the debug sections of the static library that the released form carries, and llvm-size
+// names the sections that are left.
+const llvmTool = (name: string): string => (targets.includes('go') ? need('go', `${name} of the component llvm-tools`, 'rust-toolchain.toml', file(join(rustcPrint('sysroot'), 'lib/rustlib', rustcPrint('host-tuple'), 'bin', name))) : '');
+const llvmStrip = llvmTool('llvm-strip');
+const llvmSize = llvmTool('llvm-size');
 const wasmBindgen = targets.includes('wasm') ? need('wasm', 'the wasm-bindgen CLI', 'mise.toml', miseWhich('wasm-bindgen')) : '';
 if (targets.includes('wasm')) {
   const libdir = spawnSync('rustc', ['--print', 'target-libdir', '--target', 'wasm32-unknown-unknown'], { encoding: 'utf8' });
@@ -783,6 +790,123 @@ if (targets.includes('go')) {
       counted('go', what, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
     });
   }
+  // GN-14f: the released form. A release carries the Go module with the static library of each platform in the commit
+  // of the tag <directory of the Go module>/vX.Y.Z (GN-15g); the run makes that commit and tag for the platform of the
+  // run in repositories of the work directory, which Git reads in place of the remote, and a consumer module that
+  // requires the modules and nothing else runs its test and the tests of the fetched modules from the module cache,
+  // with no CGO_LDFLAGS, so the programs link the libraries that the modules carry.
+  const released = 'the released form of the Go module: the tests of a consumer that requires it at its tag, and of the fetched modules (GN-14f)';
+  stepOf(['go'], released, () => {
+    const root = join(work, 'go-release');
+    const modcache = join(root, 'modcache');
+    // Go keeps the directories of a module cache read-only, so go removes it.
+    const cleanCache = (): void => {
+      if (existsSync(modcache)) run(goTool, ['clean', '-modcache'], { env: { GOMODCACHE: modcache, GOFLAGS: '', GOENV: 'off', GOTOOLCHAIN: 'local' } });
+    };
+    cleanCache();
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(join(root, 'remote'), { recursive: true });
+    try {
+      const goEnvValue = (name: string): string => execFileSync(goTool, ['env', name], { encoding: 'utf8', env: { ...process.env, GOTOOLCHAIN: 'local' } }).trim();
+      const platform = `${goEnvValue('GOOS')}_${goEnvValue('GOARCH')}`;
+      if (!(GO_PLATFORMS as readonly string[]).includes(platform)) throw new Error(`the platform ${platform} of the run is no platform of a Go module (${GO_PLATFORMS.join(', ')}), so no file of the module names the directory of its library (GN-15g)`);
+      const goMains = mainsOf('go');
+      const moduleOf = (p: Prepared): string => (p.contract.packages['go'] as { module: string }).module;
+      const goMods = goMains.map((p) => readFileSync(join(at(p, 'packages/go'), 'go.mod'), 'utf8'));
+      // The version of a contract of the repository is the version of its core, which the scaffolded manifest of the C
+      // ABI crate holds; the version of a dependency is the one that a go.mod of the repository requires.
+      const versionOf = (p: Prepared): string => {
+        const manifestPath = at(p, 'packages/go/internal/ffi/Cargo.toml');
+        const version = /^version = "([^"]+)"$/m.exec(readFileSync(manifestPath, 'utf8'))?.[1];
+        if (version === undefined) throw new Error(`${manifestPath} names no version`);
+        return `v${version}`;
+      };
+      const carried: { p: Prepared; version: string; main: boolean }[] = goMains.map((p) => ({ p, version: versionOf(p), main: true }));
+      for (const d of dependencies.filter((d) => d.contract.targets.includes('go'))) {
+        const version = goMods.map((goMod) => requiredVersion(goMod, moduleOf(d))).find((found) => found !== undefined);
+        if (version !== undefined) carried.push({ p: d, version, main: false });
+      }
+      // The configuration of Git for these commands alone: the identity of the commits, and the directory of the
+      // repositories of the run in place of GitHub. GIT_CONFIG_COUNT 0 leaves the Git dependency of Cargo out.
+      const remotes = carried.map((c) => ({ ...c, remote: goRemote(moduleOf(c.p), c.version) }));
+      const owners = [...new Set(remotes.map((r) => r.remote.owner))];
+      const gitConfig = join(root, 'gitconfig');
+      writeFileSync(gitConfig, `[user]\n\tname = binding e2e\n\temail = e2e@example.invalid\n[init]\n\tdefaultBranch = main\n${owners.map((owner) => `[url "file://${join(root, 'remote', owner)}/"]\n\tinsteadOf = https://github.com/${owner}/\n`).join('')}`);
+      const gitEnv = { GIT_CONFIG_COUNT: '0', GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1' };
+      const sources = new Map<string, { dir: string; tags: string[] }>();
+      const required: Required[] = [];
+      for (const r of remotes) {
+        const goModule = at(r.p, 'packages/go');
+        const crate = r.p.contract.core.crate;
+        const placed = place(r.p.contract, 'packages/go');
+        if (placed !== r.remote.directory) throw new Error(`${moduleOf(r.p)}: the Go module is at ${placed} of its repository, not at ${r.remote.directory}, the directory of its module path (GN-15)`);
+        run('cargo', ['build', '--release', '--manifest-path', join(r.p.copy, 'Cargo.toml'), '-p', `${crate}-go`]);
+        const key = `${r.remote.owner}/${r.remote.repository}`;
+        const source = sources.get(key) ?? { dir: join(root, 'source', key), tags: [] };
+        sources.set(key, source);
+        source.tags.push(r.remote.tag);
+        const moduleDir = join(source.dir, r.remote.directory);
+        mkdirSync(dirname(moduleDir), { recursive: true });
+        execFileSync('cp', ['-R', goModule, moduleDir]);
+        // The contract cases of the run are no file of the repository: the run copied them into the module (GN-14).
+        rmSync(join(moduleDir, 'tests/cases_test.go'), { force: true });
+        const carriedLibrary = join(moduleDir, 'internal/ffi/lib', platform, `lib${lib(r.p.contract, 'go')}.a`);
+        copyFileSync(join(target, `release/lib${lib(r.p.contract, 'go')}.a`), carriedLibrary);
+        // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
+        // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
+        const built = statSync(carriedLibrary).size;
+        run(llvmStrip, ['--strip-debug', carriedLibrary]);
+        const left = debugSections(execFileSync(llvmSize, ['-A', carriedLibrary], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+        if (left.length > 0) throw new Error(`lib${lib(r.p.contract, 'go')}.a holds the debug sections ${left.join(', ')} after llvm-strip --strip-debug (GN-15g)`);
+        process.stdout.write(`lib${lib(r.p.contract, 'go')}.a of ${platform}: ${String(built)} bytes as built, ${String(statSync(carriedLibrary).size)} bytes without its debug sections\n`);
+        // The packages that a consumer can import: the directories of the module with a Go file that is no test,
+        // outside internal.
+        const packages: string[] = [];
+        const walk = (dir: string): void => {
+          const entries = readdirSync(join(moduleDir, dir), { withFileTypes: true });
+          if (entries.some((e) => e.isFile() && e.name.endsWith('.go') && !e.name.endsWith('_test.go'))) packages.push(dir);
+          for (const e of entries) if (e.isDirectory() && e.name !== 'internal') walk(dir === '' ? e.name : `${dir}/${e.name}`);
+        };
+        walk('');
+        if (r.main) required.push({ module: moduleOf(r.p), version: r.version, packages: packages.sort() });
+      }
+      for (const [key, source] of sources) {
+        const bare = join(root, 'remote', `${key}.git`);
+        run('git', ['-C', source.dir, 'init', '--quiet'], { env: gitEnv });
+        run('git', ['-C', source.dir, 'add', '--all', '--force', '.'], { env: gitEnv });
+        run('git', ['-C', source.dir, 'commit', '--quiet', '--message', 'The Go module with the static library of the platform of the run (GN-14f)'], { env: gitEnv });
+        for (const tag of source.tags) run('git', ['-C', source.dir, 'tag', tag], { env: gitEnv });
+        mkdirSync(dirname(bare), { recursive: true });
+        run('git', ['clone', '--quiet', '--bare', source.dir, bare], { env: gitEnv });
+      }
+      const consumer = join(root, 'consumer');
+      mkdirSync(consumer, { recursive: true });
+      const goVersion = /^go (\S+)$/m.exec(goMods[0] ?? '')?.[1];
+      if (goVersion === undefined) throw new Error('the go.mod of the Go module names no Go version (GN-15)');
+      for (const [name, text] of consumerFiles(goVersion, required)) writeFileSync(join(consumer, name), text);
+      // No setting of the machine reaches these commands (GOENV off), no proxy and no checksum database is asked, and
+      // the library is the one of the module: CGO_LDFLAGS and GOFLAGS are empty.
+      const consumerEnv = { ...gitEnv, GOENV: 'off', GOTOOLCHAIN: 'local', GOPROXY: 'direct', GOSUMDB: 'off', GOMODCACHE: modcache, GOFLAGS: '', CGO_LDFLAGS: '' };
+      run(goTool, ['mod', 'tidy'], { cwd: consumer, env: consumerEnv });
+      const consumerMod = readFileSync(join(consumer, 'go.mod'), 'utf8');
+      if (/^replace /m.test(consumerMod)) throw new Error('the go.mod of the consumer holds a replace, so it does not fetch the module at its tag (GN-15g)');
+      const sums = readFileSync(join(consumer, 'go.sum'), 'utf8');
+      const unpinned = remotes.filter((r) => !sums.includes(`${moduleOf(r.p)} ${r.version} h1:`)).map((r) => `${moduleOf(r.p)} ${r.version}`);
+      if (unpinned.length > 0) throw new Error(`the go.sum of the consumer does not pin ${unpinned.join(', ')} (GN-15g)`);
+      const tested = ['.', ...remotes.map((r) => `${moduleOf(r.p)}/...`)];
+      process.stdout.write(`$ ${goTool} test -json -count=1 ${tested.join(' ')}\n`);
+      const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...tested], { cwd: consumer, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...consumerEnv } });
+      const read = readGoTestEvents(goTest.stdout);
+      process.stdout.write(read.printed);
+      process.stdout.write(goTest.stderr);
+      const failure = goPackageFailure(read, goTest.status);
+      if (failure !== undefined) throw new Error(failure);
+      const { counts, packageFailures } = read;
+      counted('go', released, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+    } finally {
+      cleanCache();
+    }
+  });
 }
 
 if (targets.includes('node') && installed) {

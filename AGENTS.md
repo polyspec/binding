@@ -67,10 +67,16 @@ rules of this repository.
   them with `make ci-targets`, which runs every target to its end and writes the report `var/ci/<name>/`, and the last
   job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, pin every action by its
   commit, set no `timeout-minutes` and run every command of a step as one make target, and `.github/actions/bootstrap` is
-  the bootstrap of every job. The end-to-end check is no job of the workflow: it needs a checkout of each repository that
-  it checks, and the rule above requires its run of a commit before that commit is pushed or merged. Why: a release takes
-  the id of a run whose every job passed, and a step that runs a tool directly would miss the settings of the Makefile.
-  Enforced by: none, the workflow is read in review; `make ci-passed` judges the jobs of a run.
+  the bootstrap of every job. The job `e2e` runs the end-to-end check of each repository of `tests/e2e`, one entry of its
+  matrix per repository with the repositories that its core depends on (`DEPS`), installs every tool with
+  `make install-tools`, runs in a work directory outside the checkout and uploads the record `var/report/e2e/`; an entry
+  whose run fails stays in the matrix. The end-to-end check of another repository is no job of the workflow: it needs a
+  checkout of that repository, and the rule above requires its run of a commit before that commit is pushed or merged.
+  Why: a release takes the id of a run whose every job passed, a step that runs a tool directly would miss the settings
+  of the Makefile, and a release is built and used on Linux, where only the job `e2e` runs the five targets and the
+  released form of the Go module (GN-14f).
+  Enforced by: `npm test` in `packages/ts`, whose `tests/ci-workflow.test.ts` reads the workflow; `make ci-passed` judges
+  the jobs of a run.
 - Own: `config/release.json` classifies every package file (`make release-coverage`). A tag `vX.Y.Z` releases the
   generator `packages/ts` as the npm archive `polyspec-binding-X.Y.Z.tgz` of the GitHub Release, which `npm pack` builds
   with the prepack script `npm run build`, and the crate `binding_core` of `packages/core/rust` as the Git tag, which a

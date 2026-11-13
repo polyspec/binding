@@ -5,6 +5,39 @@
 
 ## Unreleased
 
+- The end-to-end check ran on macOS alone: `.github/workflows/ci.yml` ran no end-to-end check, so no run tested the five
+  targets, or the released form of the Go module, on Linux, where a release is built and used. The workflow now has the
+  job `e2e`, which runs `make e2e` of each repository of `tests/e2e` (classes, consumer with sample, plot with points,
+  sample, shapes) with every tool of the checkout and uploads the record `var/report/e2e/`, and `ci-passed` needs it;
+  `tests/ci-workflow.test.ts` requires the entries and the rules of a workflow. The entry plot fails while its targets
+  php, python and wasm fail. Verified by `make test-ts` (314 tests passed). Not run: the job in CI, which runs on the
+  push of `main`.
+- The static library of the released form of a Go module held the debug sections of the Rust standard library, a
+  third of its size, and the `strip` of a Cargo profile does not change a static library (19402832 bytes of the
+  sample on darwin/arm64 with `strip = "debuginfo"` and without it). The specification states that a release removes
+  them with `llvm-strip --strip-debug` of the pinned toolchain (GN-15g), and the step of the released form of the
+  end-to-end check does so and fails when `llvm-size -A` still names a debug section (GN-14f). Verified by
+  `make test-ts` and by `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on darwin/arm64, whose record is
+  evidence: the library of plot went from 19046784 to 12618176 bytes and the one of points from 19043472 to 12614864,
+  and the 18 tests of the released form passed with them (the targets php, python and wasm of that run failed as
+  before). Not run: `make e2e` of `tests/e2e/sample` with the libraries without debug sections.
+- No consumer could take the Go module of a library: a Go module is fetched as the source of a tag, the generated Go
+  files and the static library are no tracked files, and the generated code named no directory of the library, so a
+  build needed `CGO_LDFLAGS`. `binding generate` now writes, for each platform of a Go module (`linux_amd64`,
+  `linux_arm64`, `darwin_arm64`), `internal/binding/zz_generated_link_<platform>.go` with the directive
+  `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and the package `internal/ffi/lib/<platform>` that it imports, and
+  the specification states the commit and the tag `packages/go/vX.Y.Z` with which a release carries the module and
+  the library of each platform (GN-15g), that musl is not supported, and the files of the Go module that CK-19 compares. A checkout builds as
+  before, with the directory of its library in `CGO_LDFLAGS`. The end-to-end check has the step of the released form
+  (GN-14f): it makes that commit and tag for the platform of the run in a repository of the work directory, and a
+  consumer module that requires the module alone runs its test and the tests of the fetched modules from the
+  read-only module cache without `CGO_LDFLAGS` and without `replace`. Verified by `make test-ts` (309 tests passed)
+  and by `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on darwin/arm64, whose record is evidence: the target
+  go passed with 8 generated tests and 18 tests of the released form, in which one program links the static
+  libraries of plot and of points; the targets php, python and wasm of that run failed in steps that this change
+  does not touch, and by `make e2e` of `tests/e2e/sample` on darwin/arm64, whose record is evidence and passed in
+  every target (PHP 67 generated tests, Python 66, Node 67, WASM 54, Go 41 and 35 tests of the released form). Not
+  run: the released form on Linux.
 - A contract that takes a callback unit of another library whose member names a unit of a third library, by a named
   type of that library's contract (`types`), was refused for every target as "`<library>.<member>` returns: `<third>`
   has no unit `<unit>` (T-3)", although the third library has the unit: `binding` read only the contracts of the

@@ -1,11 +1,39 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 70b17e8d65f8a1835e53458afc0c1b63b1bce521fd9f5d8011ca7f8261e9ebdd -->
+<!-- source-sha256: e1887e18b56d3ac63d172fb1ec32f2c9fd2bdcd05c49a57a8e0bca860274a733 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 검사는 macOS에서만 실행되었다: `.github/workflows/ci.yml`이 end-to-end 검사를 실행하지 않아서, release가
+  빌드되고 쓰이는 Linux에서 다섯 target과 Go 모듈의 release 형태를 시험한 실행이 없었다. 이제 workflow에 job `e2e`가 있다.
+  이 job은 `tests/e2e`의 각 레포(classes, sample과 함께 consumer, points와 함께 plot, sample, shapes)의 `make e2e`를
+  checkout의 모든 도구로 실행하고 기록 `var/report/e2e/`를 upload하며, `ci-passed`가 이 job을 요구한다.
+  `tests/ci-workflow.test.ts`가 그 항목들과 workflow의 규칙을 요구한다. 항목 plot은 그 target php, python, wasm이 실패하는
+  동안 실패한다. 확인: `make test-ts`(시험 314개 통과). 실행하지 않은 것: CI의 job. 그것은 `main`의 push에서 실행된다.
+- Go 모듈의 release 형태의 정적 라이브러리가 Rust 표준 라이브러리의 debug section을 담았고 그것이 크기의 3분의 1이었으며,
+  Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않는다(darwin/arm64에서 sample은 `strip = "debuginfo"`가 있든 없든
+  19402832 bytes). 명세는 release가 고정 toolchain의 `llvm-strip --strip-debug`로 그것을 뗀다고 적고(GN-15g), end-to-end
+  검사의 release 형태 단계가 그렇게 하며 `llvm-size -A`가 debug section을 여전히 적으면 실패한다(GN-14f). 확인:
+  `make test-ts`, 그리고 darwin/arm64에서 `tests/e2e/points`와 함께 돌린 `tests/e2e/plot`의 `make e2e`. 그 기록은 증거이고,
+  plot의 라이브러리는 19046784 bytes에서 12618176 bytes로, points의 것은 19043472 bytes에서 12614864 bytes로 줄었으며,
+  release 형태의 시험 18개가 그 라이브러리로 통과했다(그 실행의 target php, python, wasm은 전과 같이 실패했다). 실행하지
+  않은 것: debug section을 뗀 라이브러리로 돌리는 `tests/e2e/sample`의 `make e2e`.
+- 어떤 소비자도 라이브러리의 Go 모듈을 받을 수 없었다: Go 모듈은 tag의 소스로 받아지는데, 생성된 Go 파일과 정적
+  라이브러리는 추적 파일이 아니고, 생성 코드는 라이브러리의 디렉터리를 가리키지 않아서 빌드에 `CGO_LDFLAGS`가 필요했다.
+  이제 `binding generate`는 Go 모듈의 플랫폼(`linux_amd64`, `linux_arm64`, `darwin_arm64`)마다 지시문
+  `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>`을 담은 `internal/binding/zz_generated_link_<platform>.go`와 그것이
+  import하는 패키지 `internal/ffi/lib/<platform>`을 쓴다. 명세는 release가 모듈과 각 플랫폼의 라이브러리를 싣는 commit과
+  tag `packages/go/vX.Y.Z`를 적고(GN-15g), musl을 지원하지 않는다고 적고, CK-19가 비교하는 Go 모듈의 파일을 적는다. checkout은 전과 같이 자기 라이브러리의
+  디렉터리를 `CGO_LDFLAGS`로 주고 빌드한다. end-to-end 검사에 release 형태의 단계가 생겼다(GN-14f): 실행 플랫폼에 대해 그
+  commit과 tag를 work 디렉터리의 레포에 만들고, 그 모듈만 require하는 소비자 모듈이 자기 시험과 받은 모듈의 시험을 읽기
+  전용 모듈 cache에서 `CGO_LDFLAGS`와 `replace` 없이 돌린다. 확인: `make test-ts`(시험 309개 통과), 그리고 darwin/arm64에서
+  `tests/e2e/points`와 함께 돌린 `tests/e2e/plot`의 `make e2e`. 그 기록은 증거이고, target go가 생성 시험 8개와 release
+  형태의 시험 18개로 통과했으며, release 형태에서는 한 프로그램이 plot과 points의 정적 라이브러리를 함께 링크한다. 그
+  실행의 target php, python, wasm은 이 변경이 건드리지 않는 단계에서 실패했다. darwin/arm64에서 돌린 `tests/e2e/sample`의
+  `make e2e`도 기록이 증거이고 모든 target이 통과했다(PHP 생성 시험 67개, Python 66개, Node 67개, WASM 54개, Go 41개와
+  release 형태의 시험 35개). 실행하지 않은 것: Linux의 release 형태.
 - 계약이 다른 라이브러리의 callback unit을 받고 그 member가 제3 라이브러리의 unit을 그 라이브러리 계약의 이름 있는
   타입(`types`)으로 이름하면, 제3 라이브러리에 그 unit이 있는데도 모든 target이 "`<library>.<member>` returns: `<third>`
   has no unit `<unit>` (T-3)"로 거부되었다. `binding`이 계약 자신이 이름하는 라이브러리의 계약만 읽었기 때문이다. member가

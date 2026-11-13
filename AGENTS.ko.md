@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 073115cbaad0f36eccc5ef7e6bc3268ce329a752cac6b302cab1e3bd4592c4ef -->
+<!-- source-sha256: 0c552eb56419395b04dedb5fe3c00a4988cc3af99876ee5e27e5575334cb70ba -->
 # 개발
 
 [English](AGENTS.md)
@@ -62,10 +62,15 @@
   `make ci-targets`로 실행한다. `make ci-targets`는 모든 대상을 끝까지 실행하고 보고서 `var/ci/<name>/`을 쓴다. 마지막 job
   `ci-passed`는 다른 모든 job이 통과했을 때만 통과한다. job은 `ubuntu-26.04-arm`에서 돌고, 모든 action을 commit으로
   고정하며, `timeout-minutes`를 두지 않고, step의 모든 명령을 make target 하나로 실행한다. `.github/actions/bootstrap`은
-  모든 job의 bootstrap이다. 끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 확인하는 각 레포의 checkout이
-  필요하고, 위의 규칙이 commit을 push하거나 merge하기 전에 그 commit의 실행을 요구한다. 이유: release는 모든 job이 통과한
-  실행의 id를 받고, 도구를 바로 실행하는 step은 Makefile의 설정을 받지 못한다.
-  Enforced by: none, workflow는 review에서 읽는다. `make ci-passed`가 한 실행의 job을 판정한다.
+  모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
+  하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. 이 job은 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
+  work 디렉터리에서 실행하며, 기록 `var/report/e2e/`를 upload한다. 실행이 실패하는 항목도 matrix에 남는다. 다른 레포의
+  끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 그 레포의 checkout이 필요하고, 위의 규칙이 commit을 push하거나
+  merge하기 전에 그 commit의 실행을 요구한다. 이유: release는 모든 job이 통과한 실행의 id를 받고, 도구를 바로 실행하는
+  step은 Makefile의 설정을 받지 못하며, release는 Linux에서 빌드되고 쓰이는데 Linux에서 다섯 target과 Go 모듈의 release
+  형태(GN-14f)를 실행하는 것은 job `e2e`뿐이다.
+  Enforced by: `packages/ts`의 `npm test`. 그 `tests/ci-workflow.test.ts`가 workflow를 읽는다. `make ci-passed`가 한
+  실행의 job을 판정한다.
 - Own: `config/release.json`은 모든 package 파일을 분류한다(`make release-coverage`). tag `vX.Y.Z`는 생성기
   `packages/ts`를 GitHub Release의 npm archive `polyspec-binding-X.Y.Z.tgz`로 release하고, `npm pack`이 prepack script
   `npm run build`로 그것을 만든다. `packages/core/rust`의 crate `binding_core`는 Git tag로 release하고, Cargo 의존은 그것을
