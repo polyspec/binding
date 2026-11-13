@@ -327,7 +327,9 @@ the design ids are those of the binding design.
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
   What a language value is as a `HostValue` is binding's rule: Python takes the exact built-in types (a subclass of
-  `int`, `float`, `str` or `bytes` is `Other`); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
+  `int`, `float`, `str` or `bytes` is `Other`), a `str` as its UTF-8 bytes and a `str` that holds a surrogate as its
+  code points; WASM takes a string that `isWellFormed` as its UTF-8 bytes and any other string as its UTF-16 units, so
+  that a common text crosses the boundary once, as one text (B2.89); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
   token outside `i64`), a string as its UTF-16 units, an Array, a Map, a plain object (prototype `Object.prototype` or
   `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
   element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
@@ -371,7 +373,11 @@ the design ids are those of the binding design.
   value}` as a map of the entries of that iteration, a snapshot taken when the map is described (GN-6f); an instance
   of the value class again as `HostValue::Value`; a text or a bool as the `HostValue` of that kind; and for a case of
   the kind `text16`, whose `read` member gives a list of `uint`, the UTF-16 code units of a text as
-  `HostValue::Text(HostText::Utf16)`, unpaired surrogates included, in every language. The owner's
+  `HostValue::Text(HostText::Utf16)`, unpaired surrogates included, in every language. A case of the kind `text`
+  with `units` calls its `read` member once: a text is described as the text of the language (UTF-8 bytes in PHP, Go,
+  Node and WASM, the code points in Python), and none calls `units` and describes its code units as
+  `HostText::Utf16`, so the code units of a text cross the boundary only when it holds an unpaired surrogate (B2.89).
+  The owner's
   `in` function judges the description; its failure and an exception of language code are reported as GN-6k states.
   Out: the owner's `out` function gives the core value as `OutValue`, and the generated code makes the language value
   by the `out` rows of the class for its language, each `make` a public `constructor` or `static` member of the owner
@@ -701,7 +707,9 @@ the design ids are those of the binding design.
   of the class for Go: it calls the `by` member and writes node 11 with the kind of the case whose `is` the result is
   and a handle; the question read (op 2) of that handle calls the `read` member of the case and describes its result
   by these rules, except for a case of the kind `text16`, whose result, a slice of unsigned integers, is node 13 with
-  its length and its UTF-16 code units, which the static library reads as `HostText::Utf16`; an instance of a class of
+  its length and its UTF-16 code units, which the static library reads as `HostText::Utf16`, and for a case of the
+  kind `text` with `units`, whose `read` gives a nil pointer, which is node 13 of the code units that `units` gives;
+  an instance of a class of
   the owner whose `iterate` member yields `{key, value}` is a map of the entries of that iteration. An error that a member of the owner returns is node 12 with the call and its index, so
   the Go function returns that error unchanged, as it returns the error of a callback (U-3). A core value of the class
   leaves as node 11 of the result with the number of the value class and the number of its Go `out` row, followed by

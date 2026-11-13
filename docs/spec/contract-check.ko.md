@@ -59,6 +59,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     `native`인 case는 내용이 없거나 코어가 열어 보지 않으므로 `read`가 없다(U-1, VAL-18). kind `native`는 형태
     `native`로 만들고 그 형태는 다른 kind를 만들지 않는다. native 값은 `OutValue::Native`의 handle로 들어온 언어 객체
     그대로이기 때문이다(VAL-18).
+  - `by`가 있는 class의 kind `text` case는 `uint`의 list를 주는 공개 member인 `units`를 적을 수 있다. 그러면 `read`는
+    optional `text`를 주고, 없음은 그 text가 Unicode text가 아니어서 `units`가 주는 UTF-16 code unit으로 읽는다는
+    뜻이다(GN-6x). 그래서 `read` 한 번의 호출이 언어의 모든 text를 한 번 판정하고, code unit은 짝 없는 surrogate를
+    가진 text에서만 경계를 건넌다(B2.89).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태(`keyed_map`은 `{keyed_map: {key: [...]}}`),
     대표 class나 alias가 모으는 class의 공개 `constructor`·`static` member, 또는 kind `nested:X`의 `{value: X}`다.
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
@@ -67,8 +71,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     binding의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
     `text`는 UTF-8, `int`는 정수인 안전 정수, `list`는 키 0~n-1). `when`이 맞는 첫 case가 그 case이며, 표가 정하지 않는
     술어는 finding이다. `by`가 있는 class는 `is`를 실행 때만 알 수 있으므로 행의 kind가 case 하나를 정확히
-    가리켜야 하며, kind `text`의 행은 kind `text16`의 case로 돌아와도 된다. Unicode text는 그 UTF-16 code unit과 같은
-    값이기 때문이다(GN-6x). case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
+    가리켜야 하며, `units`를 가진 kind `text`의 case는 kind `text16`의 case이기도 하다. 짝 없는 surrogate를 가진 text를
+    그 UTF-16 code unit으로 읽기 때문이다(GN-6x). case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
     시험은 남는다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼

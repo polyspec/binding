@@ -263,7 +263,9 @@
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
-  (`int`, `float`, `str`, `bytes`의 하위 클래스는 `Other`), Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
+  (`int`, `float`, `str`, `bytes`의 하위 클래스는 `Other`) `str`은 UTF-8 byte로, surrogate를 가진 `str`은 code point로
+  받는다. WASM은 `isWellFormed`인 string을 UTF-8 byte로, 그 밖의 string을 UTF-16 단위로 받으므로 흔한 text는 text
+  하나로 경계를 한 번 건넌다(B2.89). Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
   키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
   `array_is_list`와 함께, stdClass와 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
@@ -300,7 +302,10 @@
   owner의 생성 class 인스턴스는 그 iteration의 entry로 이루어진 map으로 묘사하며, map을 묘사할 때
   snapshot을 뜬다(GN-6f). 값 class의 인스턴스는 다시 `HostValue::Value`로, text나 bool은 그
   kind의 `HostValue`로 묘사한다. `read` member가 `uint`의 list를 주는 kind `text16`의 case는 모든 언어에서
-  text의 UTF-16 code unit을 짝 없는 surrogate까지 `HostValue::Text(HostText::Utf16)`로 묘사한다. 묘사는 owner의 `in` 함수가 판정한다. 그 실패와 언어 코드의 예외는
+  text의 UTF-16 code unit을 짝 없는 surrogate까지 `HostValue::Text(HostText::Utf16)`로 묘사한다. `units`를 가진 kind
+  `text`의 case는 `read` member를 한 번 부른다. text는 언어의 text로(PHP, Go, Node, WASM은 UTF-8 byte, Python은 code
+  point) 묘사하고, 없음이면 `units`를 불러 그 code unit을 `HostText::Utf16`으로 묘사한다. 그래서 text의 code unit은
+  짝 없는 surrogate를 가질 때만 경계를 건넌다(B2.89). 묘사는 owner의 `in` 함수가 판정한다. 그 실패와 언어 코드의 예외는
   GN-6k대로 보고한다. 나갈 때: owner의 `out` 함수가 코어 값을 `OutValue`로 주고, 생성 코드는 자기 언어에
   대한 class의 `out` 행으로 언어 값을 만든다. 각 `make`는 owner 패키지의 언어 API로 부르는 owner의 공개
   `constructor`나 `static` member다. parameter 하나가 그 kind의 내용인 member는 그 내용으로
@@ -583,7 +588,8 @@
   패키지를 import한다. 패키지 binding은 인스턴스를 그 class의 Go `in` 행으로 묘사한다: `by` member를 부르고, 결과가
   `is`인 case의 kind와 handle을 담은 node 11을 쓴다. 그 handle에 대한 질문 read(op 2)는 case의 `read` member를 불러
   그 결과를 이 규칙대로 묘사한다. 다만 kind `text16`의 case는 그 결과인 부호 없는 정수 slice를 길이와 UTF-16 code
-  unit을 담은 node 13으로 쓰고, static library는 그것을 `HostText::Utf16`으로 읽는다. `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
+  unit을 담은 node 13으로 쓰고, static library는 그것을 `HostText::Utf16`으로 읽는다. `units`를 가진 kind `text`의
+  case에서 `read`가 nil pointer를 주면 `units`가 주는 code unit의 node 13을 쓴다. `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
   map이다. owner의 member가 돌려준 오류는 call과 그 index를 담은 node 12이므로, Go 함수는 callback의 오류처럼(U-3) 그
   오류를 그대로 돌려준다. class의 코어 값은 값 class의 번호와 그 Go `out` 행의 번호를 담은 결과의 node 11로 나가고,
   그 뒤에 행 kind의 내용이 온다: `null`은 없음, bool, 수의 literal, text, `uint64` list인 `text16`의 code unit, 항목들,
