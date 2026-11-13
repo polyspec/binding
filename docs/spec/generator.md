@@ -600,7 +600,10 @@ the design ids are those of the binding design.
   that array of `[key, value]`. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
-  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
+  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A value
+  class without `core_type` (GN-6m) is such a class in Python, Node and WASM: its constructor and its properties have
+  these tests, and a property is read on an instance that the constructor makes from the case's keys of its
+  parameters. A member
   that takes a callback has the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's
@@ -619,8 +622,10 @@ the design ids are those of the binding design.
   ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
-  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; a
+  primitive has a test for each of its cases that does not raise, in which the number form of the instance
+  (`Number(instance)` in Node and WASM) is the case's `result`, or is taken alone when the case gives no `result`; the B-4
+  test of a to_json calls `JSON.stringify` or `json_encode`; none has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
@@ -676,7 +681,8 @@ the design ids are those of the binding design.
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
   compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
-  explicit `None` or `null` for such a parameter is tested as a value that is refused. T-1: a `source` parameter gives
+  explicit `None` or `null` for such a parameter is tested as a value that is refused, except where the default is
+  `{literal: null}`, whose declared value is that null. T-1: a `source` parameter gives
   the same for a text and for the bytes of its UTF-8 (Python, Node), a text with an unpaired surrogate is kind
   `invalid_text`, and a value that is neither is kind `invalid_argument_type`. T-7: a `bytes` parameter refuses a
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is

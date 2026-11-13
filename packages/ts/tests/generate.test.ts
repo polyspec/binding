@@ -1743,6 +1743,57 @@ test('a value class without core_type keeps the language values that its constru
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
 });
 
+test('the members of a value class without core_type and a primitive run their cases (GN-13, GN-6m, GN-13d)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  sample.units.push({
+    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6m' },
+    members: [
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  const tag = sample.units.find((u: any) => u.id === 'tag');
+  tag.members.push({ id: 'tag.weight', name: ['weight'], kind: 'primitive', visibility: 'public', parameters: [], returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Tag::weight', receiver: '&self' } });
+  sample.cases.push(
+    { member: 'boxed.constructor', file: 'contracts/cases.json', group: 'boxed_constructor' },
+    { member: 'boxed.value', file: 'contracts/cases.json', group: 'boxed_value' },
+    { member: 'tag.weight', file: 'contracts/cases.json', group: 'tag_weight' },
+  );
+  const caseFiles = sampleCases();
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, unknown>;
+  cases['boxed_constructor'] = [
+    { id: 'a_text_is_boxed', value: { kind: 'text', value: 'x' } },
+    { id: 'bytes_that_are_no_text_are_not_boxed', value: { kind: 'bytes', value: { hex: 'ff' } }, raises: { kind: 'unsupported', status: null, category: 'value' } },
+  ];
+  cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }];
+  cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm'] });
+  // Each case of the constructor and of the property runs: the raising one as B-4, the others as GN-13e; the
+  // constructor counts and names its arguments (G-7).
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  for (const name of ['b4_boxed_new_bytes_that_are_no_text_are_not_boxed', 'gn13e_boxed_new_a_text_is_boxed', 'gn13e_boxed_value_the_value_is_kept', 'g7_boxed_new_counts_and_names_its_arguments']) {
+    assert.match(python, new RegExp(`def test_${name}\\(self\\)`), name);
+  }
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    for (const name of ['B-4: Boxed.constructor bytes_that_are_no_text_are_not_boxed', 'GN-13e: Boxed.constructor a_text_is_boxed', 'GN-13e: Boxed.value the_value_is_kept', 'G-7: Boxed.constructor counts and names its arguments']) {
+      assert.ok(tests.includes(`test('${name}'`), `${path}: ${name}`);
+    }
+  }
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    // The property is read on the instance that the constructor makes from the case's keys.
+    assert.match(tests, /test\('GN-13e: Boxed\.value the_value_is_kept', \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Boxed\('x'\)\.value\), ordered\('x'\)\);/, path);
+    // The default of the constructor is the null of the language, so null is no refused value there (GN-13d).
+    assert.doesNotMatch(tests, /U-2: Boxed\.constructor takes null/, path);
+    // A primitive runs its case through the number form of the instance.
+    assert.match(tests, /test\('N-4: Tag\.weight a_tag_weighs_its_length', \(\) => \{\n {2}assert\.equal\(Number\(new pkg\.Tag\('ab'\)\), 2\);/, path);
+  }
+  // PHP holds nothing of the class.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\bBoxed\b/);
+});
+
 test('the PHP extension finds the classes of PHP at startup and has no panic (GN-10)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] });
