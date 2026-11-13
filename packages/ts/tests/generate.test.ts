@@ -442,7 +442,8 @@ test('Go: a tuple parameter is read part by part, a Tuple<N> of different part t
   assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
-  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), in_uint, in_bool\)\?/);
+  // GN-12a: a uint part is a safe integer, as at every place of the contract.
+  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), \|input\| in_safe_uint\(input, "text"\), in_bool\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
@@ -808,6 +809,22 @@ const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; for
   };
 };
 
+test('Go: an optional output is an Option of a reference to the value of the core, so a generic item takes one type (GN-16)', () => {
+  // An optional property of an error unit (absent_error.length, of the form of machine_error.expected of fsm).
+  const { contract: consumer, caseFiles, foreign } = consumerSample();
+  const ffi = text(generate({ contract: consumer, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(ffi, /\nfn out_optional<T>\(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce\(&mut Vec<u8>, T\)\) \{/);
+  assert.match(ffi, /out_optional\(output, polyspec_consumer::Error::length\(&error\)\.as_ref\(\), out_uint\);/);
+  // An optional uint and an optional text field of a record that leaves the C ABI.
+  const { contract } = load();
+  contract.units[0].members[0].returns = { unit: 'options' };
+  unitOf(contract, 'options').fields.push({ name: ['label'], type: { optional: 'text' }, required: true, reason: 'S-1' });
+  contract.cases = [];
+  const sample = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(sample, /out_optional\(output, value\.max_words\.as_ref\(\), out_uint\);/);
+  assert.match(sample, /out_optional\(output, value\.label\.as_ref\(\), out_text\);/);
+});
+
 test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6k)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
@@ -1149,6 +1166,73 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 };
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+
+// The Rust function `name` of a generated crate, from its line to the closing brace of its body.
+const rustFn = (code: string, name: string): string => {
+  const start = code.search(new RegExp(`\\nfn ${name}[(<]`));
+  return start < 0 ? '' : code.slice(start, code.indexOf('\n}\n', start) + 3);
+};
+
+test('an integer key of a keyed_map outside the safe integers is kind invalid_number in every target, and a key of a kind that the contract does not list is invalid_argument_type (GN-12a, GN-13, GN-13b)', () => {
+  const { contract } = load();
+  contract.units[0].members[0].parameters[0].type = { keyed_map: 'text', key: ['int', 'text'] };
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const safe = /9_007_199_254_740_991/;
+  const node = rustFn(text(out, 'packages/ts/generated/lib.rs'), 'in_keyed_map');
+  assert.match(node, /ValueType::Number if kinds\.contains\(&0\) => \(0, binding_core::Key::Int\(safe_integer\(key, subject, NumberType::Int\)\?\)\)/, 'Node: a number key of a listed int is invalid_number when it is no safe integer');
+  const wasm = rustFn(text(out, 'packages/ts/wasm/generated/lib.rs'), 'in_keyed_map');
+  assert.match(wasm, /key\.as_f64\(\)\.is_some\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(safe_integer\(&key, subject, NumberType::Int\)\?\)\)/, 'WASM: as Node');
+  const python = rustFn(text(out, 'packages/python/generated/lib.rs'), 'in_keyed_map');
+  assert.match(python, /key\.is_exact_instance_of::<PyInt>\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(in_int\(py, &key, subject\)\?\)\)/, 'Python: in_int, the safe integers');
+  const php = rustFn(text(out, 'packages/php-ext/generated/lib.rs'), 'in_keyed_map');
+  assert.match(php, safe, 'PHP: an int key is a safe integer');
+  assert.match(php, /BindingError::InvalidNumber/, 'PHP: an int key outside is invalid_number');
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\{2\*\*53: [^\n]*\n\s+self\.assertEqual\(caught\.exception\.kind, "invalid_number"\)/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(out, path), /new Map\(\[\[2 \*\* 53, [^\n]*error\.kind === 'invalid_number'/, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\[2 \*\* 53 => [^\n]*;\n\s+self::fail\('no error'\);\n\s+\} catch \([^\n]*ValueError \$error\) \{\n\s+self::assertSame\('invalid_number', \$error->kind\(\)\);/);
+  // Go refuses the list of tuples that the member returns (a Go array has one element type), as in the test of T-2.
+  contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'in_keyed_map');
+  assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n(?:\s+\/\/[^\n]*\n)?\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(1 << 53\)[\s\S]{0,400}?"invalid_number"/);
+});
+
+test('an int or a uint outside the safe integers is kind invalid_number in every target, and an int64 takes the range of i64 (GN-12a, GN-13, GN-13b)', () => {
+  // buffer.from_end takes an int, shapes.total a list of uint and shapes.negate an int64.
+  const out = shaped((contract) => {
+    member(contract, 'buffer.from_end').parameters[0].type = 'int';
+  });
+  const safe = /9_007_199_254_740_991/;
+  for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(rustFn(lib, 'in_int'), safe, `${path}: in_int refuses an int outside the safe integers`);
+    assert.match(rustFn(lib, 'in_uint'), safe, `${path}: in_uint refuses a uint above 2^53 - 1`);
+    assert.notEqual(rustFn(lib, 'in_int64'), '', `${path}: in_int64 takes an int64`);
+    assert.doesNotMatch(rustFn(lib, 'in_int64'), safe, `${path}: in_int64 takes the range of i64`);
+  }
+  const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rustFn(ffi, 'in_safe_int'), safe, 'the Go C ABI refuses an int outside the safe integers');
+  assert.match(rustFn(ffi, 'in_safe_uint'), safe, 'the Go C ABI refuses a uint above 2^53 - 1');
+  assert.match(ffi, /in_list\(input, \|input\| in_safe_uint\(input, /, 'an item of a list of uint is in the range');
+  assert.doesNotMatch(rustFn(ffi, 'in_int'), safe, 'an int64, a handle and a length take the range of their word');
+  assert.match(
+    text(out, 'packages/python/generated/tests/test_generated.py'),
+    /def test_b2_buffer_from_end_count_refuses_what_is_not_int\(self\) -> None:\n\s+for bad in \[[^\n]*2\*\*53, -\(2\*\*53\)/,
+  );
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB2BufferFromEnd\w*RefusesWhatIsNotint\(\): void\n\s+\{\n\s+foreach \(\[[^\n]*2 \*\* 53, -\(2 \*\* 53\)/);
+  const goTest = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountAboveTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(1 << 53\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountBelowTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(-\(1 << 53\)\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2TotalRefusesNumbersAboveTheSafeIntegers\(t \*testing\.T\) \{\n\t[^\n]*Total\(ptr\(\[\]uint64\{1 << 53\}\)\)/, 'an item of a list of uint');
+  assert.doesNotMatch(goTest, /func TestB2\w*Negate/, 'an int64 takes the range of i64');
+});
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();

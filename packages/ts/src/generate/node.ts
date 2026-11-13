@@ -324,7 +324,8 @@ fn in_keyed_map<'env, T>(
     for entry in entries {
         let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, expected))?;
         let (tag, key) = match key.get_type().map_err(internal)? {
-            ValueType::Number => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?)),
+            // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
+            ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
             _ => return Err(type_error(subject, expected)),
         };

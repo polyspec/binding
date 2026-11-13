@@ -5,7 +5,7 @@ import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind,
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -179,6 +179,13 @@ test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
         out.push(`
 test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+});`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
       if (arg.default !== undefined) {

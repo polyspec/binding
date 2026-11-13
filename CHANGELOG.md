@@ -18,6 +18,27 @@
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
   clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
   (GN-6m, GN-6n). Verified by `make e2e` of `tests/e2e/classes`.
+- The Go C ABI of fsm did not compile (E0283, type annotations needed): `out_optional` took `impl Into<Option<T>>`, which
+  an `Option<i64>` of an optional property of an error unit and the `&Option<String>` of an optional text field meet
+  for two types `T`, and the generic `out_int` and `out_text` left `T` unknown. `out_optional` now takes `Option<T>`,
+  given the `as_ref` of the value of the core, as in PHP, Python and Node (GN-16). Verified by `npm test` in
+  `packages/ts`: 280 of 280 pass.
+- The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
+  safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
+  277 of 277 pass.
+- The same integer key of a `keyed_map` gave two results: Node and WASM refused a number key that is no safe integer
+  as `invalid_argument_type`, and PHP, Python and Go took any key of the range of i64. A key of a listed `int` is now
+  a safe integer in every target, and a key outside is kind `invalid_number` (GN-12a); a key of a kind that the
+  contract does not list stays `invalid_argument_type`, and that kind is judged first. The generated tests give the
+  key 2^53 in every target (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 269 pass; the 7 failures are the
+  tests of GN-6m (wait `blocking_io`), which this change does not touch.
+- PHP and Python took an `int` argument of the range of i64 and the Go C ABI any `int64`, so a contract case with
+  9223372036854775807 for an `int` gave `invalid_number` in Node and the error of the core in PHP and Python. An `int`
+  is now a safe integer and a `uint` 0 to 2^53 - 1 in every target and at every place that the binding takes (an
+  argument, an item, a field), and an integer outside is kind `invalid_number` (GN-12a); an `int64` and a key of a
+  `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
+  (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
+  `blocking_io`), which this change does not touch.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
   runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,

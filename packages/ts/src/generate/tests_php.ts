@@ -5,13 +5,13 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', 'null'],
-  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", 'null'],
+  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', '2 ** 53', 'null'],
+  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)', 'null'],
   float: ['true', "'7'", '1', 'null'],
 };
 
@@ -119,6 +119,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (${cls('type')} $error) {
             self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        methods.push(`
+    public function testB2${name}${argName}RefusesAKeyOutsideTheSafeIntegers(): void
+    {
+        try {
+            ${call(new Map([[arg, unsafeKey]]))};
+            self::fail('no error');
+        } catch (${cls('value')} $error) {
+            self::assertSame('invalid_number', $error->kind());
         }
     }`);
       }
