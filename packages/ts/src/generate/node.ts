@@ -558,7 +558,7 @@ function entryRust(model: Model, fn: Fn): string {
     const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
         let given = std::sync::Arc::new(std::sync::Mutex::new(None));
-        Driven::new(env, advancing(move |env| {
+        Driven::start(env, advancing(move |env| {
             let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
             if let Some(output) = output {
                 machine.give(output);
@@ -691,7 +691,7 @@ pub struct Driven {
 }
 
 impl Driven {
-    fn new<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+    fn start<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
         ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
     }
 }

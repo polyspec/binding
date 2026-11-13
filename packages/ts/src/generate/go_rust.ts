@@ -1201,8 +1201,24 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  const block = `${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${units}\n${tupleReaders(model)}`;
+  // A helper that only the test entry points of a feature use carries that feature, because the build without it
+  // denies dead code (GN-15).
+  const plain = new Set(helperItems(usedHelpers(block, code)));
+  const features = new Map<string, Set<string>>();
+  for (const [feature, names] of testEntryUses(model)) {
+    for (const item of helperItems(usedHelpers(block, names))) features.set(item, (features.get(item) ?? new Set()).add(feature));
+  }
+  return helperItems(usedHelpers(block, `${code} ${[...testEntryUses(model).values()].join(' ')}`)).map((item) => {
+    const named = [...(features.get(item) ?? [])].sort().map((f) => `feature = ${JSON.stringify(f)}`);
+    if (plain.has(item) || named.length === 0) return `\n${item}\n`;
+    const cfg = named.length === 1 ? named[0] : `any(${named.join(', ')})`;
+    return `\n${item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1#[cfg(${cfg})]\n`)}\n`;
+  }).join('');
 }
+
+// The items of a block of helpers that usedHelpers gave.
+const helperItems = (block: string): string[] => block.split(/\n\n/).map((item) => item.trim()).filter((item) => item !== '');
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
 // names are left out.
@@ -1232,9 +1248,13 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
   }).join('\n\n');
 }
 
-// The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
-const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+// The helpers that the test entry points of each feature use, which count as uses where the entry points compile with
+// their feature.
+const testEntryUses = (model: Model): Map<string, string> => new Map([
+  ['panic-test', model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''],
+  ['fault-test', model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''],
+  ['codec-test', aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')],
+]);
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);

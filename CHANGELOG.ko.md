@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 두 결함이 더 `tests/e2e/sample`의 `make e2e`가 Node, WASM, Go의 테스트를 돌리지 못하게 했다. Node `Driven` 객체는
+  `Self`를 돌려주지 않는 함수 `new`로 만들어졌고(clippy `new_ret_no_self`), Go binding crate는 feature `fault-test`의
+  진입점 `_fault_left`만 쓰는 helper `out_list`를 dead code를 거부하는 feature 없는 build에도 지녔다. 이제 Node 함수는
+  `Driven::start`이고, 한 feature의 테스트 진입점만 쓰는 Go helper는 그런 각 feature의 `#[cfg(feature = ...)]`를
+  지닌다(GN-6ab, GN-15). `packages/ts`의 `npm test`와 sample의 `make e2e`로 확인했다.
 - `machine`이 있는 member를 가진 계약의 binding crate는 compile되지도 lint를 통과하지도 못해서, `tests/e2e/sample`의
   `make e2e`는 모든 target에서 테스트가 돌기 전에 실패했다. PHP, Python, Go는 결과를 match하는 식이 block인 곳에서
   machine을 만들었고(clippy `blocks_in_conditions`) 각 Io future를 `async move { io.await }`로 감쌌다(clippy

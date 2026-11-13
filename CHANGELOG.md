@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Two more defects kept `make e2e` of `tests/e2e/sample` from running the tests of Node, WASM and Go: the Node
+  `Driven` object was made by a function `new` that returns no `Self` (clippy `new_ret_no_self`), and the Go binding
+  crate held the helper `out_list`, which only the entry point `_fault_left` of the feature `fault-test` uses, in the
+  build without features, which denies dead code. The Node function is `Driven::start`, and a Go helper that only the
+  test entry points of a feature use carries `#[cfg(feature = ...)]` of each such feature (GN-6ab, GN-15). Verified
+  by `npm test` in `packages/ts` and by `make e2e` of the sample.
 - No binding crate of a contract with a member with `machine` compiled or passed its lints, so `make e2e` of
   `tests/e2e/sample` failed in every target before any test ran: PHP, Python and Go made the machine in a block that
   was the scrutinee of the match of its result (clippy `blocks_in_conditions`) and wrapped each Io future in
