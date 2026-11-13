@@ -1168,9 +1168,35 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   assert.match(lib, /\.call1\(\(out_text\(py, [a-z0-9_]+\)\?, out_list\(py, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
-  for (const target of ['node', 'php', 'wasm', 'go']) {
+  for (const target of ['php', 'wasm', 'go']) {
     assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target as Lang] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
   }
+});
+
+test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6o)', () => {
+  const { contract, caseFiles } = shapes();
+  withFunction(contract);
+  contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
+  (caseFiles.get('contracts/cases.json') as any).apply = [
+    { id: 'the_function_converts_the_value', convert: { function: [{ args: { 0: 'a', 1: [1] }, result: 'A' }] }, value: 'a', result: 'A' },
+  ];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['node'] });
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = in_function\(env, /);
+  assert.match(lib, /fn in_function\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Native, Fail> \{\n    if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{/);
+  // Each call runs on the owner thread, in the env of the owner table.
+  assert.match(lib, /let env = &native_env\(&native, "convert"\)\?;/);
+  assert.match(lib, /fn native_env\(native: &Native, subject: &str\) -> Result<Env, Thrown> \{/);
+  assert.match(lib, /BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}/);
+  assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
+  assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[napi\(js_name = "__threadTest"\)\]/);
+  assert.match(text(out, 'packages/ts/Cargo.toml'), /\nthread-test = \[\]\n/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /convert: \(argument0: string, argument1: [^)]+\) => string/);
+  const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
+  assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
+  assert.match(tests, /assert\.equal\(addon\(\)\.__threadTest\(\(\) => null\), 'wrong_thread'\);/);
+  assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
