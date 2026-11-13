@@ -938,7 +938,7 @@ test('a callback unit of another repository is wrapped as its core trait, and th
     const rust = text(out, path);
     assert.match(rust, /impl(<'env>)? polyspec_sample::Lookup for CbLookup(<'env>)? \{/, path);
     assert.match(rust, /fn find\(&mut self, key: &str\) -> Result<Option<String>, binding_core::Failure<polyspec_sample::Error>>/, path);
-    assert.match(rust, /fn in_lookup\(/, path);
+    assert.match(rust, /fn in_lookup(<'env>)?\(/, path);
   }
   // No declaration of the unit: each declaration names the type of the owning package.
   const dts = text(out, 'packages/ts/generated/index.d.ts');

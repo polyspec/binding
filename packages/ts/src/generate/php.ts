@@ -624,9 +624,9 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 // a failure of the binding in the callback, goes to the core as a Raised that the generated caller throws again.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const label = langName('php', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('php', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -710,7 +710,7 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-fn thrown(error: Thrown) -> ${failure} {
+fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
@@ -831,7 +831,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.objects.map((object) => objectOut(model, object)),
-    ...model.callbacks.map((c) => callbackRust(model, c)),
+    ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),

@@ -64,6 +64,10 @@ export interface CallbackUnit {
   members: CallbackMember[];
   // thread owner: a call from another thread is kind wrong_thread.
   owner: boolean;
+  // GN-6q: a callback unit of another repository, whose trait methods return the failure of that repository's core
+  // error; its types name that repository's units with their library.
+  library?: string;
+  error?: string;
 }
 
 export interface CallbackMember {
@@ -225,6 +229,8 @@ export interface Model {
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
   callbacks: CallbackUnit[];
+  // GN-6q: the callback units of other repositories that a parameter takes; the owning package declares them.
+  foreignCallbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
   // E-2: the error units, a parent before the units that extend it (P-4).
@@ -274,6 +280,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
+    // GN-6q: a callback unit of another repository as a parameter, which collectModel wraps.
+    if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
     // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
     if (unit === undefined) throw new Unsupported(`${where}: ${type.library} has no unit ${type.unit} (T-3)`);
@@ -319,6 +327,46 @@ export function collectModel(
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
+  // GN-6q: the callback units of other repositories that parameters take, each wrapped once. A unit of the owning
+  // contract that a member names without a library is that repository's unit.
+  const foreignCallbacks: CallbackUnit[] = [];
+  const foreignCallback = (id: string, library: string, where: string): boolean => {
+    const owner = foreign.get(library);
+    const unit = owner?.units.find((u) => u.id === id);
+    if (owner === undefined || unit?.kind !== 'interface' || unit.origin !== 'callback') return false;
+    if (units.has(id)) throw new Unsupported(`${where}: the callback unit ${id} of ${library} has the name of a unit of this contract (GN-6q)`);
+    if (foreignCallbacks.some((c) => c.unit.id === id && c.library === library)) return true;
+    const resolved = resolveNamedTypes(owner).units.find((u) => u.id === id) ?? unit;
+    const qualify = (type: Type): Type => {
+      if (typeof type === 'string') return type;
+      if ('list' in type) return { ...type, list: qualify(type.list) };
+      if ('optional' in type) return { ...type, optional: qualify(type.optional) };
+      if ('map' in type) return { ...type, map: qualify(type.map) };
+      if ('keyed_map' in type) return { ...type, keyed_map: qualify(type.keyed_map) };
+      if ('tuple' in type) return { ...type, tuple: type.tuple.map(qualify) };
+      if ('unit' in type && type.library === undefined) return { ...type, library };
+      return type;
+    };
+    const members: CallbackMember[] = (resolved.members ?? []).map((member) => {
+      if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
+      if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
+      if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
+      const params = (member.parameters ?? []).map((parameter) => {
+        if (parameter.required !== true) throw new Unsupported(`${member.id}: a default or rest parameter is not generated yet`);
+        const typed = { ...parameter, type: qualify(parameter.type) };
+        supportedType(typed.type, units, `${library}.${member.id}.${parameter.name.join('_')}`, foreign);
+        return typed;
+      });
+      const returns = qualify(member.returns ?? 'none');
+      supportedType(returns, units, `${library}.${member.id} returns`, foreign);
+      return { member, params, returns, receiver };
+    });
+    const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
+    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
+    return true;
+  };
   // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
   const ownVariants = new Set(contract.errors.kinds.map((row) => row.variant));
   const carrying = carriers(contract.units);
@@ -363,7 +411,7 @@ export function collectModel(
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
         continue;
       }
-      const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
+      const direct = typeof type === 'object' && 'unit' in type && (type.library === undefined ? units.get(type.unit)?.origin === 'callback' : foreignCallback(type.unit, type.library, where));
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
       if (!source) supportedType(type, units, `${where}${direct ? '#parameter' : ''}`, foreign);
@@ -374,7 +422,7 @@ export function collectModel(
     const firstDefault = args.findIndex((a) => a.default !== undefined);
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
-    const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
+    const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && (p.type.library === undefined ? units.get(p.type.unit)?.origin === 'callback' : foreignCallbacks.some((c) => c.unit.id === (p.type as { unit: string }).unit && c.library === (p.type as { library?: string }).library)));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -677,10 +725,10 @@ export function collectModel(
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
   }
   for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
-  for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
+  for (const callback of [...callbacks, ...foreignCallbacks]) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, callbacks, foreignCallbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 

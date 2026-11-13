@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- 다른 레포의 callback unit을 parameter로 받는 member(unit의 origin이 `callback`인 `{unit, library}` 타입)는 어떤 target도
+  생성되지 않았다. "the type ... is not generated yet"으로 거부되었기 때문이다. 이제 PHP, Python, Node는 언어 객체를 소유 레포의
+  코어 trait 구현으로 감싸고, 그 method는 `binding_core::Failure<<소유 레포 오류>>`를 돌려준다. 선언은 소유 패키지의 타입을
+  적는다. PHP는 소유 namespace의 interface, Python은 소유 패키지에서 가져온 Protocol, TypeScript는
+  `import("<소유 npm>").<이름>`이다. Go와 WASM은 그런 parameter를 이름으로 거부하고, id가 이 계약의 unit과 같은 callback unit도
+  거부한다(GN-6q). `make test-ts`로 검증했다.
 - 코어가 의존 레포의 kind를 그대로 전달하는 계약(E-1b (a))은 어떤 target도 생성되지 않았다. `errors.kinds`의 그런 행마다 "a kind of
   another library (E-1b (a)) is not generated yet"으로 거부되었기 때문이다. 이제 그런 행은 `<바깥>/<안쪽>`을 적는다. 바깥은 그
   라이브러리의 오류를 담은 코어 오류의 variant이고 안쪽은 그 오류의 variant이며, member는 `raises`에 같은 경로를 적는다. 모든

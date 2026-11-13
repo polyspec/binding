@@ -644,9 +644,9 @@ impl Unarmed {
 // that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
@@ -728,7 +728,7 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-fn thrown(error: Thrown) -> ${failure} {
+fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
@@ -897,7 +897,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -1087,6 +1087,11 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
+  // GN-6q: a callback unit of another repository is the interface that its package declares.
+  const library = libraryOf(type);
+  if (unit?.origin === 'callback' && library !== undefined) {
+    return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
+  }
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
     return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;

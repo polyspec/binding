@@ -617,9 +617,9 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 // goes to the core as a Raised that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
-  const struct = rustType(model, { unit: cb.unit.id });
+  const struct = rustType(model, { unit: cb.unit.id, ...(cb.library === undefined ? {} : { library: cb.library }) });
   const pyName = langName('python', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     const params = m.params.map((p) => `${rustField(p.name)}: ${traitParam(model, p.type)}`);
@@ -689,7 +689,7 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
-fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
+fn thrown<E>(py: Python<'_>, error: PyErr) -> binding_core::Failure<E> {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     thrown_map().insert(handle, error.into_value(py).into_any());
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
@@ -794,7 +794,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
-  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
+  const rest = [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
@@ -998,6 +998,11 @@ function foreignImports(model: Model): string[] {
   for (const r of model.foreignRecords) {
     const module = (r.contract.packages['python'] as { module: string }).module;
     byModule.set(module, [...(byModule.get(module) ?? []), langName('python', r.unit.name, 'class')]);
+  }
+  // GN-6q: a callback unit of another repository is the Protocol that its package declares.
+  for (const c of model.foreignCallbacks) {
+    const module = (model.foreign.get(c.library ?? '')?.packages['python'] as { module: string }).module;
+    byModule.set(module, [...(byModule.get(module) ?? []), langName('python', c.unit.name, 'class')]);
   }
   return [...byModule].map(([module, names]) => `from ${module} import ${names.map((n) => `${n} as ${n}`).join(', ')}`);
 }

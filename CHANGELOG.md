@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A member whose parameter is a callback unit of another repository (a `{unit, library}` type whose unit has origin
+  `callback`) generated no target: it was refused with "the type ... is not generated yet". PHP, Python and Node now
+  wrap the language object as an implementation of the owner's core trait, whose methods return
+  `binding_core::Failure<<owner error>>`, and the declarations name the type of the owning package: the PHP interface
+  in the owner namespace, the Python Protocol imported from the owner package, and `import("<owner npm>").<Name>` in
+  TypeScript. Go and WASM refuse such a parameter by name, and a callback unit whose id is a unit of this contract is
+  refused (GN-6q). Verified by `make test-ts`.
 - A contract whose core passes on the kinds of a dependency (E-1b (a)) generated no target: every such row of
   `errors.kinds` was refused with "a kind of another library (E-1b (a)) is not generated yet". Such a row now names
   `<outer>/<inner>`, the variant of the core error that holds the error of the library and the variant of that error,
