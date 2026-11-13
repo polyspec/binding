@@ -897,6 +897,35 @@ test('an error unit is the class of the kinds that name it, with the properties 
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertSame\(\\Polyspec\\Consumer\\AbsentError::class, \$error::class\);/);
 });
 
+test('a property of an error unit that raises raises in place of the error, and a property is a list of text (GN-7a, I-3)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Internal', category: 'internal' });
+  const unit = contract.units.find((u: any) => u.id === 'absent_error');
+  unit.members[0].raises = ['polyspec_consumer::Error::Internal'];
+  unit.members.push({ id: 'absent_error.trace', name: ['trace'], kind: 'property', visibility: 'public', returns: { list: 'text' }, wait: 'none', raises: [], core: { path: 'polyspec_consumer::Error::trace', receiver: '&self' } });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(py, failure\)\) \};/);
+  assert.match(python, /let value = polyspec_consumer::Error::trace\(error\);\n    object\.setattr\("_trace", out_list\(py, value, /);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py'), /    def trace\(self\) -> list\[str\] \| None:\n/);
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /fn absent_error_properties\(error: &polyspec_consumer::Error\) -> Result<Properties, Fail> \{/);
+  assert.match(node, /let value0 = String::from\(match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(failure\)\) \}\);/);
+  assert.match(node, /let value2 = polyspec_consumer::Error::trace\(error\)\.into_iter\(\)\.map\(\|item\| String::from\(AsRef::<str>::as_ref\(&item\)\)\)\.collect::<Vec<String>>\(\);/);
+  assert.match(node, /polyspec_consumer::Error::Absent \{ \.\. \} => match absent_error_properties\(&error\) \{\n            Ok\(properties\) => Some\(Box::new\(properties\)\),\n            Err\(fail\) => return fail,\n        \},/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /  readonly trace: readonly \(string\)\[\];\n\}/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(failure\)\) \};/);
+  assert.match(php, /\.method\(FunctionBuilder::new\("trace", absent_error_trace_method\)\.returns\(DataType::Array, false, true\), MethodFlags::Public\)/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /        \/\*\* @return list<string>\|null \*\/\n        public function trace\(\): array\|null \{\}/);
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /out_text\(match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\)/);
+  assert.match(wasm, /\("trace", out_list\(polyspec_consumer::Error::trace\(&error\), /);
+  const goRust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goRust, /out_text\(output, match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\);/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func \(e \*AbsentError\) Trace\(\) \[\]string \{ return e\.pTrace \}/);
+});
+
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
   const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
@@ -921,7 +950,10 @@ test('an error unit extends its parent, and what is not generated is refused by 
   const refused = (change: (contract: any) => void, message: RegExp): void =>
     assert.throws(() => generated(change), (error: Error) => error.constructor.name === 'Unsupported' && message.test(error.message), String(message));
   refused((contract) => { unit(contract).members[0].kind = 'method'; }, /absent_error\.key: a method of an error unit is not generated yet/);
-  refused((contract) => { unit(contract).members[0].returns = { list: 'text' }; }, /absent_error\.key: a property of an error unit of type \{"list":"text"\} is not generated yet/);
+  refused((contract) => { unit(contract).members[0].returns = { list: 'int' }; }, /absent_error\.key: a property of an error unit of type \{"list":"int"\} is not generated yet/);
+  // GN-7a: a variant of the raises of a property is a kind whose class is no unit with a property that raises.
+  refused((contract) => { unit(contract).members[0].raises = ['polyspec_consumer::Error::Other']; }, /absent_error\.key: the variant polyspec_consumer::Error::Other of its raises is no kind of errors\.kinds \(GN-7a\)/);
+  refused((contract) => { unit(contract).members[0].raises = ['polyspec_consumer::Error::Absent']; }, /absent_error\.key: the kind polyspec_consumer::Error::Absent of its raises has the class absent_error, which has a property that raises \(GN-7a\)/);
   refused((contract) => { unit(contract).members[0].core = 'polyspec_consumer::Error::key'; }, /absent_error\.key: a property of an error unit names a function of the core error with the receiver &self/);
   refused((contract) => { unit(contract).members[1].name = ['kind']; }, /absent_error: the property kind is declared twice/);
   refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
