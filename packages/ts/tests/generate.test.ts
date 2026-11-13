@@ -1879,3 +1879,24 @@ test('a callback member gives the core the kind of an error unit that it recogni
   get.errors.recognize = [{ unit: 'data', library: 'sample' }];
   assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), /holder\.get: a recognized error unit of another library is not generated yet/);
 });
+
+test('a raise row of a callback fixture throws an instance of its error unit with its kind in every target (GN-13, U-3)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get').errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.fetch.push({
+    id: 'a_holder_that_raises_absent_is_absent',
+    holder: { callback: { 'holder.get': [{ args: { key: 'b' }, raise: { error: 'absent_error', kind: 'absent' } }] } },
+    key: 'b',
+    raises: { kind: 'absent', status: null, category: 'value' },
+  });
+  const targets = ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets });
+  assert.match(text(out, pythonTests), /pkg\.AbsentError\("G-5: absent", "absent"\)/);
+  assert.match(text(out, nodeTests), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
+  assert.match(text(out, phpTests), /new \\Polyspec\\Consumer\\AbsentError\("G-5: absent", "absent"\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /binding\.RaisedAbsentError\("absent", "G-5: absent"\)/);
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \*AbsentError \{/);
+});
