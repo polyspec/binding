@@ -1,11 +1,26 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 39e752eb3737079f2bb16d8680860effbd797e071def66e1574e3f899b9708f4 -->
+<!-- source-sha256: 9a7c20f23235a391122ddb182e895994fa8547ae396d42ef39ff14882510d49c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- generator 문서가 타입 `cancel`이 각 target에서 무엇인지 말한다(GN-6aq): core는 `binding_core::Cancel`을 받고, 언어
+  값은 Node와 WASM에서 `AbortSignal`, Python에서 future, Go에서 첫 parameter `ctx context.Context`, PHP에서 생성된
+  class `Cancellation`이다. 이 규칙은 구현되지 않음으로 표시되어 있다: 생성기는 이 타입을 받는 member를 여전히
+  이름으로 거절한다.
+- generated interface unit은 이름으로 거절되었고(`connection: a generated interface unit is not generated yet`), 그것을
+  `implements`하는 class와 그것으로 type된 parameter도 함께 거절되었다. member 없는 generated interface를 이제 PHP,
+  Python, Node, Go, WASM에 대해 생성한다(GN-6ap): `core_type`은 core가 받는 타입을 이름하고, core는 각 구현 class의
+  core 타입 `C`에 대해 `impl From<&C> for <core_type>`을 가지며, 그 interface나 그것의 `optional`로 type된 parameter는
+  구현 class의 instance를 받는다. binding은 그 값을 읽어 그 `From`으로 core에 주고, 그 밖의 값은
+  `InvalidArgumentType`이다. interface는 PHP에서 extension의 interface, Python에서 패키지가 class를 등록하는 `abc.ABC`,
+  Node와 WASM에서 선언 파일의 `export interface`, Go에서 export되지 않은 method 하나를 가진 interface다. `binding
+  check`는 그 unit, 구현 class, 그것을 이름하는 자리, case 값을 판정한다(CK-77). member를 선언하는 generated
+  interface와 다른 레포의 generated interface는 이름으로 거절된 채 남는다. `tests/e2e/classes`는 `tag`와 `gate`의
+  interface `named`와, 그것을 받는 함수, optional로 받는 함수, method를 가진다. `make test-ts`로 검증했다: 변경 없는
+  생성기에서 새 테스트 8개 가운데 7개가 실패했고, 변경과 함께 421개 가운데 421개가 통과한다.
 - `tests/e2e/relay`에 variant `packet`이 생겼다. 그 case는 json의 value class를 field와 list로 담고, member `passed`와
   `count`, 그 case가 함께 있다. 그래서 case 안의 다른 레포 value class가 e2e 검사의 계약을 가진다(T-9, GN-6v, GN-6x).
   e2e 실행으로는 확인하지 않았다. relay의 생성된 테스트는 value class의 case 값을 내장 값으로 쓴다(Go가

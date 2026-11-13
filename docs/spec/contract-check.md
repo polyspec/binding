@@ -224,6 +224,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   a class with `cleanup` releases its resources in its `Drop` (generator GN-6p), because no destructor calls the
   cleanup member. `binding check` reads no Rust source, so it does not verify that `Drop`: it is the duty of the
   core, and the finding of this check says so.
+- **CK-77** A generated interface (generator GN-6ap): an interface unit of origin `generated` names `core_type`,
+  declares no `core`, and at least one class of this contract `implements` it; each such class has the origin
+  `generated` and a `core_type`. A parameter typed by the interface, or by an `optional` of it, names no `core`
+  borrow, and no return, field, `yields` or member of a callback interface names the interface, because the binding
+  converts an instance of an implementing class to the `core_type` only as it enters a call. In a case an argument at
+  such a parameter is an instance value (GN-13f) of a class that implements the interface, or `null` in an `optional`.
 - **CK-78** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
   origin `generated` or `value` that names no `core_type` names `only` (Q-4) with none of the targets that generate
   no such class. Python, Node and WASM generate it; PHP takes its own `stdClass` and references (generator GN-6e),

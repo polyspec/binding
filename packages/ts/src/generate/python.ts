@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -360,7 +360,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('function' in type) return functionIn(model, type.function, value, subject);
   if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(py, ${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) {
+  if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined) {
     return `in_${recordFn(unit ?? { name: [] }, aliasOf(model, type)?.library)}(py, ${value}, ${subject})`;
   }
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
@@ -786,6 +786,23 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 ` : ''}`;
 }
 
+// GN-6ap: a value of a generated interface is an instance of a class that implements it; the core takes the From of
+// the value that the instance holds.
+function interfaceRust(model: Model, iface: Unit): string {
+  const pyName = langName('python', iface.name, 'class');
+  const core = iface.core_type ?? '';
+  return `
+/// GN-6ap: a value of the interface ${pyName} is an instance of a class that implements it, whose value the core takes
+/// as ${core}.
+fn in_${rustField(iface.name)}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+${implementorsOf(model, iface).map((o) => `    if value.cast::<Py${langName('python', o.unit.name, 'class')}>().is_ok() {
+        return in_${rustField(o.unit.name)}(py, value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
+    }
+`).join('')}    Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyName)}) }))
+}
+`;
+}
+
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
 // arguments out and the return in, and an exception of the language code, or a failure of the binding in the callback,
 // goes to the core as a Raised that the generated caller throws again unchanged. GN-6q: each call takes the GIL on the
@@ -1009,7 +1026,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // a class that no member returns has none (the lints deny dead code).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
   const recognizes = model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
-  const rest = [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailurePython(model);
+  const rest = [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + model.kept.map((k) => keptPython(moduleOf(layout, k.unit.module), k)).join('') + rest;
@@ -1240,7 +1257,7 @@ function foreignImports(model: Model): string[] {
 
 // The units of <root>._types: the enums, the records of the result form, the variants after the classes of their cases
 // (GN-6v) and the callbacks.
-const typeUnits = (model: Model): Unit[] => [...model.enums, ...model.resultRecords, ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit)];
+const typeUnits = (model: Model): Unit[] => [...model.enums, ...model.resultRecords, ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit), ...model.interfaces];
 
 function typesPy(model: Model): string {
   const enums = model.enums.map((u) => {
@@ -1276,16 +1293,23 @@ class ${langName('python', cb.unit.name, 'class')}(Protocol):
     \"\"\"U-3: a callback that Python code implements; the binding checks the members of the object it receives.\"\"\"
 
 ${cb.members.map((m) => `    def ${langName('python', m.member.name, 'callable')}(self${m.params.map((p) => `, ${langName('python', p.name, 'variable')}: ${pyType(model, p.type, false)}`).join('')}) -> ${pyType(model, m.returns, true)}: ...`).join('\n\n')}`).join('');
+  // GN-6ap: a generated interface is an abstract base class, with which the package registers the classes that
+  // implement it; a Protocol without a member would accept every value.
+  const interfaces = model.interfaces.map((i) => `
+
+
+class ${langName('python', i.name, 'class')}(ABC):
+    \"\"\"GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('python', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.\"\"\"`).join('');
   const names = typeUnits(model).map((u) => pyString(langName('python', u.name, 'class')));
   return `${pyHeader()}
 \"\"\"The enums, records and variants of ${model.contract.library} (T-6, T-4, T-9).\"\"\"
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+${model.interfaces.length > 0 ? 'from abc import ABC\n' : ''}from dataclasses import dataclass
 from enum import StrEnum
 ${model.callbacks.length > 0 ? 'from typing import Protocol\n' : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
-__all__ = [${names.join(', ')}]${enums}${records}${variants}${callbacks}
+__all__ = [${names.join(', ')}]${enums}${records}${variants}${callbacks}${interfaces}
 `;
 }
 
@@ -1370,7 +1394,9 @@ function nativePyi(model: Model): string {
       // GN-6m: the awaitable of a method that waits takes the same parameters.
       return awaits(fn) ? `    ${declaration}\n    async def a${declaration.slice('def '.length)}` : `    ${declaration}`;
     });
-    return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
+    // GN-6ap: the class has the generated interfaces that it implements as its bases.
+    const bases = model.interfaces.filter((i) => (o.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === i.id)).map((i) => langName('python', i.name, 'class'));
+    return `\n@final\nclass ${langName('python', o.unit.name, 'class')}${bases.length === 0 ? '' : `(${bases.join(', ')})`}:\n${lines.join('\n')}\n`;
   });
   // GN-6af: a value class without core_type: the constructor, which keeps its arguments, and a property for each, which
   // a writable property also sets.
@@ -1395,7 +1421,7 @@ ${classes.join('')}`;
 // The units of the module files of the package, each with its module; an internal unit is in no __all__ (GN-6r).
 const moduleUnits = (model: Model): Unit[] => [
   ...model.functions.map((f) => f.unit), ...model.objects.map((o) => o.unit), ...model.kept.map((k) => k.unit), ...model.enums, ...model.resultRecords,
-  ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit), ...model.constants.map((c) => c.unit), ...model.errorUnits.map((u) => u.unit),
+  ...model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), ...model.callbacks.map((c) => c.unit), ...model.interfaces, ...model.constants.map((c) => c.unit), ...model.errorUnits.map((u) => u.unit),
 ];
 
 function initPy(model: Model): string {
@@ -1412,16 +1438,19 @@ function initPy(model: Model): string {
     ...open(model.resultRecords, (u) => u).map((u) => langName('python', u.name, 'class')),
     ...open(model.variants.flatMap((v) => [...v.cases.map((c) => c.unit), v.unit]), (u) => u).map((u) => langName('python', u.name, 'class')),
     ...open(model.callbacks, (c) => c.unit).map((c) => langName('python', c.unit.name, 'class')),
+    ...open(model.interfaces, (i) => i).map((i) => langName('python', i.name, 'class')),
     ...open(model.constants, (c) => c.unit).map((c) => langName('python', c.member.name, 'constant')),
   ];
+  // GN-6ap: each class that implements a generated interface is registered with the abstract base class of it.
+  const registers = model.interfaces.flatMap((i) => implementorsOf(model, i).map((o) => `_types.${langName('python', i.name, 'class')}.register(_native.${langName('python', o.unit.name, 'class')})`));
   return `${pyHeader()}
 """${model.contract.library}: the public API (P-3)."""
 
-from ._errors import *  # noqa: F403
+${registers.length > 0 ? 'from . import _native, _types\n' : ''}from ._errors import *  # noqa: F403
 ${imports.join('\n')}
 
 __all__ = [${names.map(pyString).join(', ')}]
-`;
+${registers.length > 0 ? `\n${registers.join('\n')}\n` : ''}`;
 }
 
 export function python(model: Model, files: Files): void {

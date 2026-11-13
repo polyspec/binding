@@ -23,11 +23,11 @@ import {
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
-  objectUnit, places, pointName, pointed, unitOf, variantOf,
+  objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf,
   nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -76,7 +76,7 @@ function pointerTo(v: Values, type: Type, inner: string): string {
   if (aliasOf(v.model, type) !== undefined) return `ptr[any](${inner})`;
   // GN-6v, GN-6aa: a pointer to the interface of a variant or of a callback, not to the struct of the case or of the
   // fixture.
-  return variantOf(v.model, type) !== undefined || callbackOf(v.model, type) !== undefined ? `ptr[${typeName(v, type)}](${inner})` : `ptr(${typed(type, inner)})`;
+  return variantOf(v.model, type) !== undefined || callbackOf(v.model, type) !== undefined || interfaceOf(v.model, type) !== undefined ? `ptr[${typeName(v, type)}](${inner})` : `ptr(${typed(type, inner)})`;
 }
 
 const hexBytes = (value: unknown, what: string): string => {
@@ -155,6 +155,9 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
   if (implemented !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
+  // GN-13f, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
+  const iface = interfaceOf(v.model, type);
+  if (iface !== undefined) return made(v, b, interfaceInstance(v.model, iface, json));
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
     // GN-13f, U-1, GN-13: an instance value, the call of the make member of a class of origin value, or the pairs that
@@ -274,6 +277,13 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
       if (found !== undefined) return found;
     }
     return 'nil';
+  }
+  // GN-6ap: a value of a generated interface is an instance of the first class that implements it and has a factory.
+  const iface = interfaceOf(v.model, type);
+  if (iface !== undefined) {
+    const first = implementorsOf(v.model, iface).find((o) => factoryOf(v.model, o) !== undefined);
+    if (first === undefined) throw new Unsupported(`no placeholder of the generated interface ${iface.id}: no class that implements it has a constructor or static member that makes it (GN-6ap)`);
+    return placeholder(v, b, { unit: first.unit.id }, rich);
   }
   const object = objectUnit(v.model, type);
   if (object !== undefined) {

@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -41,7 +41,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
-  if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit !== undefined && (objectUnit(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   // U-3, U-7: a callback object and a value of an alias are judged by their own conversions.
   if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   const alias = aliasOf(model, type);
@@ -674,6 +674,23 @@ fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
 ` : ''}`;
 }
 
+// GN-6ap: a value of a generated interface is an instance of a class that implements it; the core takes the From of
+// the value that the instance holds.
+function interfaceRust(model: Model, iface: Unit): string {
+  const jsName = langName('wasm', iface.name, 'class');
+  const core = iface.core_type ?? '';
+  return `
+/// GN-6ap: a value of the interface ${jsName} is an instance of a class that implements it, whose value the core takes
+/// as ${core}.
+fn in_${rustField(iface.name)}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
+${implementorsOf(model, iface).map((o) => `    if handle_of(${model.objects.findIndex((other) => other.unit.id === o.unit.id)}, value)?.is_some() {
+        return in_${rustField(o.unit.name)}(value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
+    }
+`).join('')}    Err(type_error(subject, ${rustString(jsName)}))
+}
+`;
+}
+
 const OBJECT_HELPERS = `
 /// T-5: the instance of the class \`class\` around a handle, made by the function that the ES module handed over.
 fn make_instance(class: usize, handle: u32) -> Result<JsValue, Fail> {
@@ -1065,7 +1082,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), drivesMachine(model) ? MACHINE : ''].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
@@ -1602,10 +1619,14 @@ ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('wasm', f.na
 export interface ${langName('wasm', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
+  // GN-6ap: a generated interface, which the classes that implement it name.
+  const interfaces = model.interfaces.map((i) => `
+/** GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('wasm', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.${tag(i)} */
+export interface ${langName('wasm', i.name, 'class')} {}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}${variants === '' ? '' : `\n${variants}`}${objects === '' ? '' : `\n${objects}`}${kept === '' ? '' : `\n${kept}`}${callbacks === '' ? '' : `\n${callbacks}`}
+${records}${variants === '' ? '' : `\n${variants}`}${objects === '' ? '' : `\n${objects}`}${kept === '' ? '' : `\n${kept}`}${callbacks === '' ? '' : `\n${callbacks}`}${interfaces === '' ? '' : `\n${interfaces}`}
 
 ${fns}
 

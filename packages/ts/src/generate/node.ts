@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -38,7 +38,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
+  if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
   // GN-6c, GN-6v: the conversion of a record or a variant takes the env, which a value alias or a class in it reads.
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(env, ${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
@@ -1010,6 +1010,24 @@ fn failure_error(failure: ${failure}) -> Fail {
 ${takesFunction(model) ? elsewhereRust(model) : ''}`;
 }
 
+// GN-6ap: a value of a generated interface is an instance of a class that implements it; the core takes the From of
+// the value that the instance holds.
+function interfaceRust(model: Model, iface: Unit): string {
+  const jsName = langName('node', iface.name, 'class');
+  const core = iface.core_type ?? '';
+  return `
+/// GN-6ap: a value of the interface ${jsName} is an instance of a class that implements it, whose value the core takes
+/// as ${core}.
+fn in_${rustField(iface.name)}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+${implementorsOf(model, iface).map((o) => `    // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+    if unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${langName('node', o.unit.name, 'class')}> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }.is_ok() {
+        return in_${rustField(o.unit.name)}(env, value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
+    }
+`).join('')}    Err(type_error(subject, ${rustString(jsName)}))
+}
+`;
+}
+
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
 // members (G-7).
 // A value of a class that comes in is unwrapped as a ClassInstance, by its type tag: napi-rs gives a reference `&T` only
@@ -1177,7 +1195,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    [...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
     ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
   const enums = [
     ...model.enums.map(enumRust),
@@ -1727,12 +1745,16 @@ ${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.na
 export interface ${langName('node', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
+  // GN-6ap: a generated interface, which the classes that implement it name.
+  const interfaces = model.interfaces.map((i) => `
+/** GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('node', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.${tag(i)} */
+export interface ${langName('node', i.name, 'class')} {}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
 ${records}${variants === '' ? '' : `\n${variants}`}
 ${objects}${kept}
-${callbacks}
+${callbacks}${interfaces}
 
 ${fns}
 

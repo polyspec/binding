@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+- The generator document states what the type `cancel` is on each target (GN-6aq): the core takes a
+  `binding_core::Cancel`, and the language value is an `AbortSignal` in Node and WASM, a future in Python, the first
+  parameter `ctx context.Context` in Go and the generated class `Cancellation` in PHP. The rule is marked as not
+  implemented: the generator still refuses a member that takes the type by name.
+- A generated interface unit was refused by name (`connection: a generated interface unit is not generated yet`), and
+  with it each class that `implements` it and each parameter typed by it. A generated interface without members is
+  now generated for PHP, Python, Node, Go and WASM (GN-6ap): `core_type` names the type that the core takes, the core
+  has `impl From<&C> for <core_type>` for the core type `C` of each implementing class, and a parameter typed by the
+  interface, or by an `optional` of it, takes an instance of an implementing class, whose value the binding reads and
+  gives the core as that `From`; any other value is `InvalidArgumentType`. The interface is a PHP interface of the
+  extension, a Python `abc.ABC` with which the package registers the classes, `export interface` in the declaration
+  files of Node and WASM, and a Go interface with one unexported method. `binding check` judges the unit, its
+  implementing classes, the places that name it and its case values (CK-77). A generated interface that declares
+  members and one of another repository stay refused by name. `tests/e2e/classes` has the interface `named` of `tag`
+  and `gate` with a function, a function with an optional and a method that take it. Verified by `make test-ts`: 7
+  of the 8 new tests failed on the generator without the change, and 421 of 421 pass with it.
 - `tests/e2e/relay` has the variant `packet`, whose cases hold the value class of json as a field and in a list,
   with the members `passed` and `count` and their cases, so that a value class of another repository in a case has
   a contract of the end-to-end check (T-9, GN-6v, GN-6x). Not verified by an end-to-end run. The generated tests of

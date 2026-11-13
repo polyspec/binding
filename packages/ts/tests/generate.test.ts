@@ -3233,6 +3233,94 @@ test('the classes repository of the end-to-end check is generated for WASM too (
   }
 });
 
+test('a generated interface is declared in each language, and a parameter of it takes an instance of a class that implements it (U-1, GN-6ap)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const inputs = (change: (contract: any) => void = () => undefined): Inputs => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return { contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) };
+  };
+  const out = generate(inputs());
+  // The conversion in finds the class of the instance in contract order and gives the core the From of its value.
+  const from = (lib: string, given: string, path: string): void => {
+    for (const [fn, core] of [['in_tag', 'Tag'], ['in_gate', 'Gate']]) {
+      assert.ok(lib.includes(`return ${fn}(${given}value, subject).map(|held| <polyspec_classes::Named as From<&polyspec_classes::${core}>>::from(&held));`), `${path}: ${fn}`);
+    }
+    assert.ok(lib.indexOf('return in_tag(') < lib.indexOf('return in_gate('), path);
+  };
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn in_named\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<polyspec_classes::Named> \{\n {4}if value\.cast::<PyTag>\(\)\.is_ok\(\) \{/);
+  from(python, 'py, ', 'python');
+  assert.match(python, /expected: String::from\("Named"\)/);
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /fn in_named<'env>\(env: &'env Env, value: Unknown<'env>, subject: &str\) -> Result<polyspec_classes::Named, Fail> \{/);
+  from(node, 'env, ', 'node');
+  assert.match(node, /Err\(type_error\(subject, "Named"\)\)/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /fn in_named\(value: &Zval, subject: &str\) -> Result<polyspec_classes::Named, Fail> \{\n {4}if <&entry::PhpTag as FromZval>::from_zval\(value\)\.is_some\(\) \{/);
+  from(php, '', 'php');
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn in_named\(value: &JsValue, subject: &str\) -> Result<polyspec_classes::Named, Fail> \{\n {4}if handle_of\(0, value\)\?\.is_some\(\) \{/);
+  from(wasm, '', 'wasm');
+  // The core takes the value, and an optional one as an Option of it.
+  for (const [name, lib] of [['python', python], ['node', node], ['php', php], ['wasm', wasm]] as const) {
+    assert.match(lib, /polyspec_classes::label_of\(named\)/, name);
+    assert.match(lib, /polyspec_classes::label_or\(named, &fallback\)/, name);
+    assert.match(lib, /polyspec_classes::Tag::names\([^,]+, named\)/, name);
+  }
+  // PHP: an interface of the extension without a method, which the classes implement in their entries and in the stub.
+  assert.match(php, /ClassBuilder::new\("Polyspec\\\\Classes\\\\Named"\)\n {8}\.flags\(ClassFlags::Interface\)\n {8}\.registration/);
+  assert.match(php, /#\[php\(implements\(ce = interface_named, stub = "\\\\Polyspec\\\\Classes\\\\Named"\)\)\]\n(#\[[^\n]*\n)*pub struct PhpTag /);
+  assert.match(php, /#\[php\(implements\(ce = interface_named, stub = "\\\\Polyspec\\\\Classes\\\\Named"\)\)\]\n(#\[[^\n]*\n)*pub struct PhpGate /);
+  assert.match(php, /fn interface_named\(\) -> &'static ClassEntry \{\n {4}own_interface\("Polyspec\\\\Classes\\\\Named"\)\n\}/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_classes.stub.php');
+  assert.match(stub, /\n {4}interface Named\n {4}\{\n {4}\}\n/);
+  assert.match(stub, /final class Tag implements \\Polyspec\\Classes\\Named[,\n]/);
+  assert.match(stub, /final class Gate implements \\Polyspec\\Classes\\Named\n/);
+  // Python: an abstract base class, with which the package registers the classes; the stub has it as their base.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_types.py'), /from abc import ABC\n[\s\S]*\nclass Named\(ABC\):\n {4}"""GN-6ap: /);
+  const init = text(out, 'packages/python/generated/python/polyspec/classes/__init__.py');
+  assert.match(init, /from \. import _native, _types\n/);
+  assert.match(init, /\n_types\.Named\.register\(_native\.Tag\)\n_types\.Named\.register\(_native\.Gate\)\n$/);
+  assert.match(init, /__all__ = \[[^\]]*"Named"/);
+  const pyi = text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi');
+  assert.match(pyi, /@final\nclass Tag\(Named\):\n/);
+  assert.match(pyi, /@final\nclass Gate\(Named\):\n/);
+  assert.match(pyi, /def label_of\(named: Named\) -> str: \.\.\./);
+  assert.match(pyi, /def label_or\(named: Named \| None, fallback: str\) -> str: \.\.\./);
+  // Node and WASM: an interface of the declaration file, which the classes name.
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    const dts = text(out, path);
+    assert.match(dts, /\nexport interface Named \{\}\n/, path);
+    assert.match(dts, /export declare class Tag implements Named \{/, path);
+    assert.match(dts, /export declare class Gate implements Named \{/, path);
+    assert.match(dts, /export declare function labelOf\(named: Named\): string;/, path);
+  }
+  // Go: an interface with one unexported method, which the pointers to the classes have, and the encoding of a value.
+  const go = text(out, 'packages/go/zz_generated_classes.go');
+  assert.match(go, /\ntype Named interface \{\n(\t\/\/[^\n]*\n)+\timplementsNamed\(\) \(uint64, uint64\)\n\}\n/);
+  assert.match(go, /^func \(this \*Tag\) implementsNamed\(\) \(uint64, uint64\) \{ return 1, this\.handle\(\) \}\n\nvar _ Named = \(\*Tag\)\(nil\)$/m);
+  assert.match(go, /^func \(this \*Gate\) implementsNamed\(\) \(uint64, uint64\) \{ return 2, this\.handle\(\) \}\n\nvar _ Named = \(\*Gate\)\(nil\)$/m);
+  assert.match(go, /^func LabelOf\(named Named\) \(string, error\) \{\n[\s\S]*?\n\tencodeNamed\(enc, named\)\n/m);
+  assert.match(go, /^func LabelOr\(named \*Named, fallback string\) \(string, error\) \{/m);
+  const goLib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goLib, /fn in_named\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_classes::Named, Fail> \{\n {4}match in_uint\(input\)\? \{\n {8}1 => in_tag\(input, subject\)\.map\(\|held\| <polyspec_classes::Named as From<&polyspec_classes::Tag>>::from\(&held\)\),\n {8}2 => in_gate\(input, subject\)/);
+  // G-5: a case gives an instance value of a class that implements the interface.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.label_of\(pkg\.Tag\("a"\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.labelOf\(new pkg\.Tag\('a'\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.labelOf\(new pkg\.Tag\('a'\)\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /labelOf\(new \\Polyspec\\Classes\\Tag\("a"\)\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /LabelOf\(made\d+\)/);
+  // Refused by name: an interface with members, without core_type or without a class, and the type at another place.
+  const named = (c: any): any => unitOf(c, 'named');
+  const labelOf = (c: any): any => unitOf(c, 'classes').members.find((m: any) => m.id === 'classes.label_of');
+  assert.throws(() => generate(inputs((c) => { named(c).members = [{ id: 'named.label', name: ['label'], kind: 'method', visibility: 'public', parameters: [], returns: 'text', raises: [], wait: 'none' }]; })), /named: a generated interface that declares members is not generated yet \(GN-6ap\)/);
+  assert.throws(() => generate(inputs((c) => { delete named(c).core_type; })), /named: a generated interface names in core_type the type that the core takes \(GN-6ap\)/);
+  assert.throws(() => generate(inputs((c) => { delete unitOf(c, 'tag').implements; delete unitOf(c, 'gate').implements; })), /named: no generated class of this contract implements the generated interface \(GN-6ap\)/);
+  assert.throws(() => generate(inputs((c) => { labelOf(c).parameters[0].type = { list: { unit: 'named' } }; })), /classes\.label_of\.named: the generated interface named is taken as a parameter or an optional parameter only \(GN-6ap\)/);
+  assert.throws(() => generate(inputs((c) => { labelOf(c).parameters[0].core = '&'; })), /classes\.label_of\.named: a parameter of the generated interface named names no core borrow, because the core takes the value \(GN-6ap\)/);
+});
+
 // U-1: the classes repository with a class of origin value, token, whose out rows make each kind by a static member, and
 // a function that takes it, with a case of each kind.
 function tokenClasses(): { contract: any; caseFiles: Map<string, unknown> } {

@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
@@ -202,6 +202,8 @@ export function goType(scope: GoScope, type: Type): string {
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) return goUnitName(scope, callback.unit);
+  const iface = interfaceOf(scope.model, type);
+  if (iface !== undefined) return interfacePackage(scope, iface);
   const library = libraryOf(type);
   if (library !== undefined) {
     // GN-15f: a record of another repository is the struct of the package of its module in the Go module of that
@@ -351,6 +353,9 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
     const pkg = reached(scope, object.unit);
     return [`${t}enc.Uint(${pkg === undefined ? `${expr}.handle()` : `${pkg}.${goName(object.unit.name)}Handle(binding.Token{}, ${expr})`})`];
   }
+  // GN-6ap: a value of a generated interface is encoded by the function of its package.
+  const iface = interfaceOf(scope.model, type);
+  if (iface !== undefined) return [`${t}encode${interfacePackage(scope, iface)}(enc, ${expr})`];
   // U-3: a callback is the call and its index in it; a nil interface is kind invalid_callback.
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) {
@@ -595,10 +600,55 @@ ${variants.map((v) => `\t${pad(v.id, width)} ${name} = ${goString(v.value)}`).jo
 `;
 }
 
+// GN-6ap: the name of a generated interface for its type and its encode function, which is unexported, as its method
+// is, so a package of another module does not reach them.
+function interfacePackage(scope: GoScope, iface: Unit): string {
+  if (iface.module !== scope.module) throw new Unsupported(`${iface.id}: a generated interface of the module ${iface.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its method and its encode function are unexported) (GN-6ap)`);
+  return goName(iface.name);
+}
+
+// GN-6ap: a generated interface is a Go interface whose one method is unexported, so that only the classes of its
+// package that the contract names implement it; the method gives the position of the class and the handle.
+function goInterface(model: Model, iface: Unit): string {
+  const name = goName(iface.name);
+  const classes = implementorsOf(model, iface);
+  const outside = classes.find((o) => o.unit.module !== iface.module);
+  if (outside !== undefined) throw new Unsupported(`${outside.unit.id}: a class of the module ${outside.unit.module || '(the root)'} that implements the generated interface ${iface.id} of the module ${iface.module || '(the root)'} is not generated for Go yet (the method of the interface is unexported) (GN-6ap)`);
+  return `
+// ${name} is the interface ${iface.id} (GN-6ap): a parameter of it takes ${classes.map((o) => `a *${goName(o.unit.name)}`).join(' or ')}. Only the classes that the
+// contract names implement it.${internalDoc(model, iface)}
+type ${name} interface {
+	// implements${name} gives the position of the class among the classes that implement ${name}, from 1, and the handle
+	// of the value.
+	implements${name}() (uint64, uint64)
+}
+
+// encode${name} encodes the position of the class of value and the handle of its value; a nil interface is position 0,
+// which the binding refuses with kind invalid_argument_type.
+func encode${name}(enc *binding.Writer, value ${name}) {
+	if value == nil {
+		enc.Uint(0)
+		enc.Uint(0)
+		return
+	}
+	class, handle := value.implements${name}()
+	enc.Uint(class)
+	enc.Uint(handle)
+}
+${classes.map((o, i) => `
+// implements${name} makes *${goName(o.unit.name)} a ${name} (GN-6ap).
+func (this *${goName(o.unit.name)}) implements${name}() (uint64, uint64) { return ${i + 1}, this.handle() }
+
+var _ ${name} = (*${goName(o.unit.name)})(nil)
+`).join('')}`;
+}
+
 // GN-6w: the pointer to a class that implements callback interfaces has their methods, which the compiler checks.
 function goImplements(scope: GoScope, object: ObjectClass): string {
   const name = goName(object.unit.name);
   return (object.unit.implements ?? []).map((ref) => {
+    // GN-6ap: the method of a generated interface is written with the interface.
+    if (scope.model.interfaces.some((i) => i.id === ref.unit)) return '';
     const callback = scope.model.callbacks.find((c) => c.unit.id === ref.unit);
     if (callback === undefined) throw new Unsupported(`${object.unit.id}: implements ${ref.unit}, which is no callback interface of this contract (U-1)`);
     return `
@@ -837,6 +887,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(model, o.unit), ...o.members.map((f) => goCallable(scope, f)), goImplements(scope, o)]),
+    ...model.interfaces.filter((i) => i.module === module).map((i) => goInterface(model, i)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
   ].join('');

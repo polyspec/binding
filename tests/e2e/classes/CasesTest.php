@@ -84,6 +84,34 @@ final class CasesTest extends TestCase
         }
     }
 
+    public function testAGeneratedInterfaceTakesTheClassesThatImplementIt(): void
+    {
+        // GN-6ap: Named is an interface of the extension, which Tag and Gate implement.
+        $a = new Tag('a');
+        self::assertInstanceOf(Classes\Named::class, $a);
+        self::assertInstanceOf(Classes\Named::class, $a->gate());
+        self::assertSame('#a', Classes\labelOf($a));
+        self::assertSame('gate of a', Classes\labelOf($a->gate()));
+        self::assertSame('none', Classes\labelOr(null, 'none'));
+        self::assertSame('#a', Classes\labelOr($a, 'none'));
+        self::assertTrue($a->names($a));
+        self::assertFalse($a->names((new Tag('b'))->gate()));
+        foreach ([null, 1, 'a', [], new \stdClass()] as $index => $bad) {
+            $calls = [
+                static fn (): mixed => Classes\labelOf($bad),
+                static fn (): mixed => $a->names($bad),
+            ];
+            foreach ($calls as $call) {
+                try {
+                    $call();
+                    self::fail("no error: {$index}");
+                } catch (Classes\ClassesTypeError $error) {
+                    self::assertSame('invalid_argument_type', $error->kind());
+                }
+            }
+        }
+    }
+
     public function testAStaticMemberAndAMethodGiveTheKindOfTheCore(): void
     {
         $calls = [

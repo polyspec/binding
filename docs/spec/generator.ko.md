@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4c93281017e26739bbe0122105b0dfa7b8a4b3a0dbd99c1e2ce86b5d51aa8f3c -->
+<!-- source-sha256: 9b4cae2d719a69c218a259317583ce38efc06755c25ad3fd91857d55c22ebd1a -->
 # 생성기
 
 [English](generator.md)
@@ -11,7 +11,7 @@
 ## 범위
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
-  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
+  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w), member 없는 generated interface(GN-6ap)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해, receiver가 `self`인 method(GN-6o)와 `cleanup`이 있는 class unit(GN-6p)에 대해, Python·Node·PHP·Go는 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
   callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
@@ -395,6 +395,56 @@
   뜻은 코어가 정하고(U-3), binding은 Rust 소스를 읽지 않으므로 코어 오류를 만드는 함수를 계약이 적는다. 언어 코드가 만든
   인스턴스는 property 값이 없으므로(GN-7a) 인스턴스의 property는 코어에 가지 않는다. 다른 라이브러리의 오류 unit을
   recognize하는 것은 이름을 대어 거부한다(G-4).
+- **GN-6ap** origin이 `generated`인 interface unit(U-1)은 core가 호출하지 않는 interface다: 한 parameter가 받는
+  계약의 class들을 이름한다. 그 `core_type`은 그 interface로 type된 parameter에서 core가 받는 Rust 타입이고, 계약의
+  class 가운데 그것을 `implements`하는 class(구현 class)의 core 타입 `C`마다 core는 `impl From<&C> for <core_type>`을
+  갖는다. core 타입이 구현 class의 enum인지 trait object의 box인지는 그 `From` 뒤에 있으므로, 계약은 타입만 말하고
+  `From`이 없으면 생성된 crate가 컴파일되지 않는다. interface로 type된 값은 함수나 class member의 parameter로
+  들어오며 `optional` 안에도 들어온다. 다른 자리(반환, field, list, callback의 member)에서는 그 타입을 이름으로
+  거절한다. binding은 언어 값이 어느 구현 class의 instance인지 계약 순서로 찾고, 그 instance의 값을 다른 타입 안의
+  class 값을 읽듯 읽어(GN-6h: 읽고 clone하고 놓는다) 그것의 `<core_type as From<&C>>::from`을 core에 준다. 따라서
+  구현 class의 core 타입은 `Clone`이고, core가 값을 받으므로 parameter는 `core` 빌림을 이름하지 않는다. 그 밖의
+  언어 값은 `InvalidArgumentType`이고 그 `expected`는 interface의 언어 이름이다. 선언은 interface를 이름한다: PHP는
+  extension이 등록하는 interface이고 각 구현 class의 entry와 stub이 `implements`로 이름한다. Python은 types module의
+  `abc.ABC` class이고 패키지가 각 구현 class를 그것에 등록하며(`<Interface>.register(<Class>)`) class의 stub은 그것을
+  base로 갖는다. member 없는 `Protocol`은 모든 값을 받기 때문이다. Node와 WASM은 선언 파일의 `export interface
+  <Interface>`이고 각 구현 class가 `implements`로 이름한다. Go는 export되지 않은 method 하나를 가진 interface여서
+  다른 package가 구현하지 못하고, 각 구현 class의 pointer가 그 method를 가지며 `var _ <Interface> = (*<Class>)(nil)`이
+  이를 확인한다. 그 method는 구현 class들 가운데 그 class의 위치와 값의 handle을 주고 호출이 이를 인코딩한다.
+  Go에서 구현 class는 interface의 module에 있고, 다른 module은 Go에 대해서만 이름으로 거절한다. case에서 그런
+  parameter의 argument는 구현 class의 instance 값(GN-13f)이고, 아무 값이나 필요한 테스트는 factory가 있는 첫 구현
+  class의 instance를 쓴다. 이름으로 거절하며 아직 생성하지 않는 것: member를 선언하는 generated interface, 다른
+  레포의 generated interface. 이유: 여러 handle 가운데 하나 위에서 도는 core는 그것들에 대해 한 타입을 받고,
+  호출자는 가진 instance를 스스로 변환하지 않고 넘긴다.
+- **GN-6aq** 타입 `cancel`(T-1)이나 그것의 `optional`인 parameter는 언어의 취소를 받고, core는
+  `binding_core::Cancel`을 값으로 받는다(`optional`이면 그것의 `Option`). 생성 코드는 `binding_core::cancel_pair()`의
+  쌍을 만들어 `Cancel`을 core에 주고 `CancelTrigger`를 언어 값에 묶는다. 그래서 trigger는 언어 값이 발화할 때
+  발화하고 다른 때에는 발화하지 않는다: 호출 뒤에도 `Cancel`을 갖는 core(그것을 지니는 handle)는 언어 값이 사는
+  동안 취소될 수 있고, 발화하지 않고 버려진 언어 값은 trigger를 버리며 이는 아무것도 취소하지 않는다. 호출 전에
+  이미 발화한 언어 값은 core를 부르기 전에 trigger를 발화시킨다. 그 밖의 값은 `InvalidArgumentType`이다. 이 타입은
+  parameter에만 있고, 다른 자리에서는 이름으로 거절한다. 언어 값은 T-1의 것이다:
+  - Node와 WASM: `AbortSignal`. binding은 `aborted`를 읽고, 아니면 `once`로 `abort`의 listener를 더하며 그것이
+    signal의 thread에서 trigger를 발화시킨다. signal은 자기 thread에 속하므로, 다른 thread는 owner thread가
+    `AbortController`의 `abort()`를 부르게 하여 취소한다.
+  - Python: future, 곧 `cancelled()`와 `add_done_callback`을 가진 객체(`asyncio.Future`,
+    `concurrent.futures.Future`). binding은 `cancelled()`를 읽고, 아니면 done callback을 더하며 그것은 future가
+    취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
+    `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
+    취소한다.
+  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). binding은 `ctx.Err()`를 읽고, 아니면
+    `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를 발화시킨다. 기다리거나
+    polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때 놓인다
+    (`runtime.AddCleanup`).
+  - PHP: root namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
+    `isCancelled(): bool`을 갖는다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
+    호출 사이에 불린다: signal handler(`pcntl_async_signals`), core의 callback, 또는 다른 process와 공유하는 상태를
+    호출 전에 읽어 그 상태가 그렇다고 할 때 `cancel()`을 부르는 host 코드가 부른다. binding은 그런 상태를 모르며,
+    그것이 필요한 레포가 그 host 코드를 쓴다(GN-6ag).
+  case에서 이 타입의 값은 `{"cancel": "fired"}`이거나 `{"cancel": "open"}`이다(GN-13, CK-22): 생성된 테스트는 이미
+  발화한 언어 값이나 발화하지 않는 언어 값을 만들어 넘긴다. 이유: 호출자만이, 자기 언어가 이미 가진 취소로
+  취소하고, core는 한 타입으로 그것을 관찰한다.
+  구현되지 않음: 생성기는 이 타입을 받는 member를 모든 target에 대해 이름으로 거절한다(`the type cancel is not
+  generated yet`).
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
@@ -1148,8 +1198,7 @@
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지
   않는다. 타입 `cancel`의 값은 호출 전에 발동한
-  취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 이 타입은 아직 생성되지 않으므로
-  그것을 받는 member는 이름을 대고 거부한다(G-4). 끝에서 끝까지 확인은 case를 뺀
+  취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 생성된 테스트는 GN-6aq가 말하는 대로 그것을 준다. 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫

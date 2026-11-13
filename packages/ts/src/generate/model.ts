@@ -322,6 +322,8 @@ export interface Model {
   // T-9: the variant units, in contract order (GN-6v).
   variants: Variant[];
   callbacks: CallbackUnit[];
+  // GN-6ap: the generated interfaces, each the type that the core takes for the classes that implement it.
+  interfaces: Unit[];
   // GN-6s: the callback units of other repositories that a parameter takes; the owning package declares them.
   foreignCallbacks: CallbackUnit[];
   aliases: ValueAlias[];
@@ -381,6 +383,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
     if (unit?.kind === 'interface' && unit.origin === 'callback' && entering) return;
+    // GN-6ap: a value of a generated interface is an instance that enters a call; toFn takes the parameter itself.
+    if (unit?.kind === 'interface' && unit.origin === 'generated') throw new Unsupported(`${where}: the generated interface ${unit.id} is taken as a parameter or an optional parameter only (GN-6ap)`);
   }
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
@@ -434,6 +438,7 @@ export function collectModel(
   const objects: ObjectClass[] = [];
   const kept: KeptClass[] = [];
   const callbacks: CallbackUnit[] = [];
+  const interfaces: Unit[] = [];
   const aliases: ValueAlias[] = [];
   const variants: Variant[] = [];
   const errorUnits: ErrorUnit[] = [];
@@ -511,7 +516,7 @@ export function collectModel(
       const where = `${member.id}.${parameter.name.join('_')}`;
       if (parameter.rest === true) throw new Unsupported(`${where}: a rest parameter is not generated yet`);
       const type = parameter.type;
-      if (parameter.core !== undefined && typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: the borrow of an optional class is not generated yet`);
+      if (parameter.core !== undefined && typeof type === 'object' && 'optional' in type && !(typeof type.optional === 'object' && 'unit' in type.optional && units.get(type.optional.unit)?.kind === 'interface')) throw new Unsupported(`${where}: the borrow of an optional class is not generated yet`);
       // GN-6h, CK-67: a class parameter names the borrow of the core; no default stands for it.
       const classUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
       if (classUnit?.kind === 'class' && classUnit.origin === 'generated' && parameter.core === undefined) throw new Unsupported(`${where}: a class parameter names the borrow that the core takes in core (GN-6h)`);
@@ -534,7 +539,12 @@ export function collectModel(
       const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
-      if (!source && !foreignDirect) supportedType(type, units, where, foreign, true);
+      // GN-6ap: a generated interface as a parameter, or an optional one; the core takes the value, so no borrow is named.
+      const inner = typeof type === 'object' && 'optional' in type ? type.optional : type;
+      const iface = typeof inner === 'object' && 'unit' in inner && inner.library === undefined ? units.get(inner.unit) : undefined;
+      const generatedInterface = iface?.kind === 'interface' && iface.origin === 'generated';
+      if (generatedInterface && parameter.core !== undefined) throw new Unsupported(`${where}: a parameter of the generated interface ${iface.id} names no core borrow, because the core takes the value (GN-6ap)`);
+      if (!source && !foreignDirect && !generatedInterface) supportedType(type, units, where, foreign, true);
       args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
     }
     // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
@@ -707,6 +717,8 @@ export function collectModel(
       function implemented(ref: { unit: string; library?: string }): true {
         if (ref.library !== undefined) throw new Unsupported(`${unit.id}: implements ${ref.library}.${ref.unit}, an interface of another repository, which is not generated yet`);
         const iface = units.get(ref.unit);
+        // GN-6ap: a generated interface has no member that the class gets; the class enters where the interface is taken.
+        if (iface?.kind === 'interface' && iface.origin === 'generated') return true;
         if (iface?.kind !== 'interface' || iface.origin !== 'callback') throw new Unsupported(`${unit.id}: implements ${ref.unit}, which is no callback interface of this contract (U-1)`);
         for (const member of iface.members ?? []) {
           if ((unit.members ?? []).some((own) => sameName(own.name, member.name))) continue;
@@ -768,6 +780,16 @@ export function collectModel(
       if (typeof unit.core !== 'object') throw new Unsupported(`${unit.id}: a value alias without core: {in, out} is not generated`);
       if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a value alias names its core type in core_type`);
       aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: unit.in_raises ?? [] });
+      return;
+    }
+    // GN-6ap: a generated interface is the type that the core takes for the classes that implement it.
+    if (unit.kind === 'interface' && unit.origin === 'generated') {
+      if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a generated interface names in core_type the type that the core takes (GN-6ap)`);
+      if ((unit.members ?? []).length > 0) throw new Unsupported(`${unit.id}: a generated interface that declares members is not generated yet (GN-6ap)`);
+      if (!contract.units.some((u) => u.kind === 'class' && u.origin === 'generated' && u.core_type !== undefined && (u.implements ?? []).some((ref) => ref.library === undefined && ref.unit === unit.id))) {
+        throw new Unsupported(`${unit.id}: no generated class of this contract implements the generated interface (GN-6ap)`);
+      }
+      interfaces.push(unit);
       return;
     }
     if (unit.kind === 'interface' && unit.origin === 'callback') {
@@ -1031,7 +1053,7 @@ export function collectModel(
   for (const callback of [...callbacks, ...foreignCallbacks]) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, variants, kept, callbacks, foreignCallbacks, aliases, classes, errorUnits, coreError, codeOf, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, variants, kept, callbacks, interfaces, foreignCallbacks, aliases, classes, errorUnits, coreError, codeOf, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -1183,6 +1205,8 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
     const record = value as Record<string, unknown>;
     if (typeof record['unit'] === 'string' && record['library'] === undefined) {
       if (record['unit'] === object.unit.id) return true;
+      // GN-6ap: a value of a generated interface is an instance of a class that implements it.
+      if (model.interfaces.some((i) => i.id === record['unit']) && (object.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === record['unit'])) return true;
       const unit = model.contract.units.find((u) => u.id === record['unit']);
       if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
       seen.add(unit.id);
@@ -1291,6 +1315,8 @@ export function rustType(model: Model, type: Type, inside = false): string {
 export function coreArg(model: Model, type: Type, variable: string): string {
   // GN-6z: a function moves into the core, which may keep it.
   if (byValue(model, type) || (typeof type === 'object' && 'function' in type)) return variable;
+  // GN-6ap: the core takes the value of a generated interface, and an optional one as an Option of it.
+  if (interfaceOf(model, typeof type === 'object' && 'optional' in type ? type.optional : type) !== undefined) return variable;
   // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
   if (typeof type === 'object' && !('unit' in type) && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), type)) return variable;
   // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
@@ -1521,6 +1547,8 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
     const record = value as Record<string, unknown>;
     if (typeof record['unit'] === 'string' && record['library'] === undefined) {
       if (record['unit'] === object.unit.id) return true;
+      // GN-6ap: a value of a generated interface is an instance of a class that implements it.
+      if (model.interfaces.some((i) => i.id === record['unit']) && (object.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === record['unit'])) return true;
       const unit = model.contract.units.find((u) => u.id === record['unit']);
       if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
       seen.add(unit.id);
@@ -1568,6 +1596,7 @@ export function membersFor(model: Model, lang: Lang): Model {
     objects: model.objects.filter((o) => unitHas(o.unit)).map((o) => ({ ...o, members: o.members.filter(has) })),
     kept: model.kept.filter((k) => unitHas(k.unit)),
     callbacks: model.callbacks.filter((c) => unitHas(c.unit)),
+    interfaces: model.interfaces.filter(unitHas),
     aliases: model.aliases.filter((a) => unitHas(a.unit)),
     errorUnits: model.errorUnits.filter((u) => unitHas(u.unit)),
   };
@@ -1943,6 +1972,16 @@ export const caseStruct = (variant: Variant, kase: VariantCase, fields: CaseFiel
 // GN-6v: a case without fields is matched as <Case> {}, which a unit variant of the core takes too; the attribute is on
 // the arm of such a case only.
 export const UNIT_CASE_ALLOW = '#[allow(clippy::unneeded_struct_pattern, reason = "GN-6v")]';
+
+// GN-6ap: the generated interface of a type, when the type is one of this contract.
+export const interfaceOf = (model: Model, type: Type): Unit | undefined => {
+  const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
+  return unit !== undefined && model.interfaces.some((i) => i.id === unit.id) ? unit : undefined;
+};
+
+// GN-6ap: the classes that implement a generated interface, in contract order.
+export const implementorsOf = (model: Model, iface: Unit): ObjectClass[] =>
+  model.objects.filter((o) => (o.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === iface.id));
 
 // GN-6w: the interfaces that a class implements, as a clause of a declaration of a JavaScript or PHP class.
 export const implementsClause = (model: Model, object: ObjectClass, lang: 'node' | 'wasm' | 'php' = 'node', qualify: (unit: Unit) => string = (unit) => langName(lang, unit.name, 'class')): string => {
