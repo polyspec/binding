@@ -25,7 +25,7 @@ the design ids are those of the binding design.
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
   refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
-  Go refuses a variant unit and a class that implements an interface (GN-6v, GN-6w).
+  Go generates a variant unit as GN-6v states and refuses a class that implements an interface (GN-6w).
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -234,13 +234,18 @@ the design ids are those of the binding design.
   of its fields, named `<Variant><Case>`: Python a frozen keyword-only `dataclass` in `<root>._types` and the alias
   `type <Variant> = <Variant><Case> | ...`; Node and WASM a plain object whose tag member (the `tag` of the unit, by its
   language name) holds the case value, and the declarations the union of the case interfaces; PHP a final class of
-  each case that implements the interface `<Variant>`. A value that is no case (an object without the tag, a tag that
-  names no case, an instance of another class) is kind `invalid_argument_type`. In a case file a variant value is an
+  each case that implements the interface `<Variant>`; Go an interface `<Variant>` of the package of its module, whose
+  one method is the unexported `is<Variant>()`, and a struct `<Variant><Case>` of the fields of each case, of the Go
+  types of their contract types, which implements it with a value receiver, so a field that holds the variant is the
+  interface. The C ABI of Go reads and writes a variant as the number of its case in the contract followed by its
+  fields in order, and Go encodes a value that is no case struct, nil or a pointer to a case struct, as the number
+  2^64 - 1. A value that is no case (an object without the tag, a tag that names no case, an instance of another
+  class, a Go value that is no case struct) is kind `invalid_argument_type`. In a case file a variant value is an
   object whose tag key holds the case value and whose other keys are the fields by their snake_case names (G-5).
   An `optional` field whose default is `{literal: null}` (T-4) may be left out, and a field left out is null, which the
   core gets as `None`: Python gives the dataclass field the default `None`, Node and WASM read a missing or `undefined`
-  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), and a case
-  value may leave out its key. Such a field always leaves with its value or null.
+  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), Go leaves
+  the pointer of the field nil, and a case value may leave out its key. Such a field always leaves with its value or null.
   Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
   not generated yet, any other field default of a case and a field that holds a class, a callback, a value alias or a
   unit of another repository.
