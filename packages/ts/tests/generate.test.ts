@@ -847,6 +847,15 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
 });
 
+test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
+  // gofmt writes 1 << 53 as 1<<53 where it is one of several arguments, so the test writes the number itself.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const tests = text(generate({ contract: read('points/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_points', caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]), targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Shift\(9007199254740992, Point\{X: 0, Y: 0\}\)/);
+  assert.match(tests, /Shift\(-9007199254740992, Point\{X: 0, Y: 0\}\)/);
+  assert.doesNotMatch(tests, /<< 53/);
+});
+
 test('binding scaffold reads the contract of a path dependency and writes its Go module in go.mod (GN-15f)', () => {
   const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
   try {
