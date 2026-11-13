@@ -326,7 +326,7 @@
             }
           ],
           "returns": {
-            "unit": "measure"
+            "unit": "text_measure"
           },
           "raises": [],
           "wait": "none",
@@ -396,8 +396,9 @@
       ]
     },
     {
-      "id": "measure",
+      "id": "text_measure",
       "name": [
+        "text",
         "measure"
       ],
       "module": "",
