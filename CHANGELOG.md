@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- GN-13a listed B-10 among the tests that G-5 does not generate, while GN-6p states that PHP, Python and Node generate
+  a B-10 test for each class unit with `cleanup`. GN-13a now names B-10 as open only in Go and WASM, which refuse such
+  a unit by name (GN-6p, GN-13a). Verified by reading the B-10 tests that `npm test` in `packages/ts` requires of PHP,
+  Python and Node.
 - binding had no document check: no `make docs-check`, no `config/documents.json` and no checklist, so a broken link,
   a Korean twin without the revision of its source or a checklist row of a wrong form went unnoticed. `make docs-check`
   now runs the document check of the installed `@polyspec/kit` on every Markdown document, the changelogs and the

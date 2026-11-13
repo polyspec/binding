@@ -6,6 +6,9 @@
 
 ## Unreleased
 
+- GN-13a는 B-10을 G-5가 생성하지 않는 시험에 넣었지만, GN-6p는 PHP, Python, Node가 `cleanup`이 있는 class unit마다
+  B-10 시험을 생성한다고 적는다. 이제 GN-13a는 B-10을 그런 unit을 이름으로 거부하는 Go와 WASM에서만 열린 항목으로
+  적는다(GN-6p, GN-13a). `packages/ts`의 `npm test`가 PHP, Python, Node에 요구하는 B-10 시험을 읽어 확인했다.
 - binding에는 문서 검사가 없었다: `make docs-check`도 `config/documents.json`도 체크리스트도 없어서, 깨진 link, 원문의
   개정을 갖지 않은 한국어 짝, 꼴이 틀린 체크리스트 행이 드러나지 않았다. 이제 `make docs-check`가 설치된
   `@polyspec/kit`의 문서 검사를 모든 Markdown 문서, changelog, `config/checklist.json`이 선언한 체크리스트

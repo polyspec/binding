@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0e12966a7fa10d8ccc3f83105997be4a77ec6d910cb16f16779083ec6170253e -->
+<!-- source-sha256: 453f0fd9ea9095ad70d53ab548a54d6471d6e74b015fb6e95752c4c31f37057d -->
 # 생성기
 
 [English](generator.md)
@@ -662,7 +662,8 @@
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다.
-- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
+- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, 그리고 `cleanup`이 있는 class unit을 이름으로 거부하는 Go와 WASM의
+  B-10(PHP, Python, Node는 그것을 생성한다, GN-6p), B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의

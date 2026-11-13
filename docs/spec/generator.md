@@ -806,7 +806,8 @@ the design ids are those of the binding design.
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes.
-- **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
+- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; B-10 in Go and WASM, which refuse a class unit
+  with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
