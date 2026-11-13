@@ -2649,17 +2649,19 @@ test('a member with wait async_driver that reaches language code drives the stat
   // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, made);
-  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\)\)\.map_err\(binding_error\)\?`));
+  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, made);
-  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| ${wait}\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?`));
+  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| ${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?`));
   assert.match(python, /#\[pyfunction\(name = "aresolve_driven", signature = \(\*args, \*\*kwargs\)\)\]/);
   // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);/);
   assert.match(node, /Driven::new\(env, advancing\(move \|env\| \{/);
   assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
+  // GN-6ae: a machine of a member without a function parameter holds no value of language code, so it awaits none.
+  assert.match(node, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
   assert.match(node, /pub struct Driven \{/);
   assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env\) -> napi::Result<Unknown<'env>> \{/);
   const cjs = text(out, 'packages/ts/generated/index.cjs');
@@ -2669,7 +2671,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   // Go: the call of the C ABI drives the machine, and each call of the Go callback goes through cgo.
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(go, made);
-  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\)\)\.map_err\(binding_error\)\?`));
+  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
   // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
   // wait is a promise of the event loop of JavaScript.
@@ -2678,6 +2680,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|\| \{/);
   assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
   assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(true, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
   assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
   assert.match(wasm, /pub fn advance\(&mut self\) -> Result<JsValue, JsValue> \{/);
   const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
