@@ -939,7 +939,7 @@ fn release_passed(handle: binding_core::Handle) {
 }
 
 /// GN-6ae: the value of a result passthrough, or of a value that the machine awaits, which leaves the table unchanged.
-fn passed_out<'env>(env: &'env Env, value: binding_core::Passthrough) -> Result<Unknown<'env>, Fail> {
+fn passed_out(env: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_>, Fail> {
     let handle = value.into_handle();
     let held = PASSED
         .with_borrow_mut(|map| map.remove(&handle.raw()))
