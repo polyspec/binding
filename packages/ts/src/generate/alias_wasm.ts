@@ -6,7 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, readValue, valueReads } from './alias_shared.ts';
+import { container, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
 import { foreignClasses } from './alias_node.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
@@ -173,6 +173,10 @@ function readAs(kase: ReadCase): string {
 
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesWasmHost(model: Model): string {
+  return readAsVariants(valueClassesWasmHostAll(model));
+}
+
+function valueClassesWasmHostAll(model: Model): string {
   const classes = foreignClasses(model);
   const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
     const row = classIn(alias, 'wasm');
@@ -255,8 +259,11 @@ ${checks.join('\n')}
         };
         let content = js_member(&object, name, call)?;
         match read_as {
+            /*Units{*/
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
             ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(js_units(&content, name)?))),
+            /*}Units*/
+            /*TextOr{*/
             ReadAs::TextOr(units, units_call) => {
                 // B2.89: null names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
                 // so only such a text crosses as a list of numbers; any other text crosses as its UTF-8 bytes.
@@ -268,7 +275,10 @@ ${checks.join('\n')}
                 };
                 Ok(HostValue::Text(HostText::Bytes(text.into_bytes())))
             }
+            /*}TextOr*/
+            /*Content{*/
             ReadAs::Content => self.describe(&content),
+            /*}Content*/
         }
     }
 }
@@ -288,12 +298,18 @@ fn js_units(content: &JsValue, name: &str) -> Result<Vec<u16>, JsValue> {
 /// GN-6x: how the read member of an in case gives the content of an instance.
 #[derive(Clone, Copy)]
 enum ReadAs {
+    /*Content{*/
     /// The content, described by the rules of the language.
     Content,
+    /*}Content*/
+    /*Units{*/
     /// The UTF-16 code units of a text of the kind text16 (B2.81).
     Units,
+    /*}Units*/
+    /*TextOr{*/
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str, bool),
+    /*}TextOr*/
 }
 
 /// B2.81: a JavaScript number that is a UTF-16 code unit, an integer of 0 to 0xffff.

@@ -873,7 +873,7 @@ fn thrown<E>(py: Python<'_>, error: PyErr) -> binding_core::Failure<E> {
 `}
 fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
     match failure {
-        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(py, BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(py, error)'},
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(py, BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(py, error)'},
         binding_core::Failure::Raised(raised) => match raised.native().downcast::<ThrownKey>().and_then(|thrown| thrown_map().remove(&thrown.key)) {
             Some(object) => PyErr::from_value(object.into_bound(py)),
             None => binding_error(py, BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),

@@ -1314,7 +1314,7 @@ test('a library without kinds that takes a value class of another repository cal
     assert.doesNotMatch(lib, /\bcore_error\(/, path);
     // The failure of the owner of the value class gives its Raised and its Callback to failure_error of this library,
     // whose kind is the unit that no member gives.
-    if (!path.includes('/go/')) assert.match(lib, /binding_core::Failure::Kind\(\(\)\) => binding_error\((?:py, )?BindingError::Internal \{ detail: String::from\("E-1c: this library names no kind, so no member gives one"\) \}\),/, path);
+    if (!path.includes('/go/')) assert.match(lib, /binding_core::Failure::Kind\(\(\)\) => binding_error\((?:py, )?BindingError::Internal \{ detail: String::from\("E-1c: this library names no kind, so no call gives one"\) \}\),/, path);
   }
 });
 
@@ -1347,6 +1347,44 @@ test('the Go crate writes the numbers of a value class and of its out row as u64
   // out_uint takes impl WideUint, for which a literal without a suffix is an i32, which is no unsigned integer.
   assert.deepEqual(lib.match(/out_uint\(output, \d+\);/g), null);
   assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0_u64\);\n\s*out_uint\(output, 0_u64\);/);
+});
+
+test('a crate with a value class of another repository holds only what its in and out rows use (GN-6x, GN-6u, U-7)', () => {
+  const hosts = ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
+  const relay = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
+  // The in cases of the fixture read a content and a text or its units, and none has the kind text16.
+  for (const path of hosts) {
+    const lib = text(relay, path);
+    assert.match(lib, /\nenum ReadAs \{\n/, path);
+    assert.doesNotMatch(lib, /ReadAs::Units|\n {4}Units,\n/, path);
+    assert.match(lib, /\n {4}Content,\n/, path);
+    assert.match(lib, /\n {4}TextOr\(/, path);
+    assert.match(lib, /\n {12}ReadAs::TextOr\(/, path);
+    assert.doesNotMatch(lib, /\/\*\}?(?:Content|Units|TextOr)\{?\*\//, path);
+  }
+  // An in case of the kind text16 constructs Units, and the fixture then reads no text or its units.
+  const sample = relaySample();
+  for (const row of sample.foreign.get('json').units.find((u: any) => u.id === 'value').in) {
+    const string = row.cases.find((kase: any) => kase.is === 'string');
+    string.kind = 'text16';
+    string.read = string.units;
+    delete string.units;
+  }
+  const units = generate({ ...sample, version: '0.0.0', coreLib: 'polyspec_relay' });
+  for (const path of hosts) {
+    const lib = text(units, path);
+    assert.match(lib, /\n {4}Units,\n/, path);
+    assert.match(lib, /\n {12}ReadAs::Units => /, path);
+    assert.doesNotMatch(lib, /ReadAs::TextOr|\n {4}TextOr\(/, path);
+  }
+  // PHP makes a value class by the members of its owner, without the making of an alias of its own.
+  assert.doesNotMatch(text(relay, 'packages/php-ext/generated/lib.rs'), /PhpMaking/);
+  assert.match(text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/php-ext/generated/lib.rs'), /\nstruct PhpMaking \{\n/);
+  // Python reads the object of a PyNative only where an out row gives a native value back.
+  assert.match(text(relay, 'packages/python/generated/lib.rs'), /#\[derive\(Debug\)\]\n#\[allow\(dead_code, reason = "GN-6u: [^"]+"\)\]\nstruct PyNative\(Py<PyAny>\);/);
+  const given = text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/python/generated/lib.rs');
+  assert.match(given, /native\.downcast::<PyNative>\(\)/);
+  assert.match(given, /#\[derive\(Debug\)\]\nstruct PyNative\(Py<PyAny>\);/);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
@@ -4589,6 +4627,35 @@ test('a Node or WASM test passes undefined in the place of an argument left out 
     // A trailing argument that is left out is still missing.
     assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/, path);
   }
+});
+
+test('a crate with a value class of another repository defines no function that it does not call (GN-4, GN-6x)', () => {
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  const unused: string[] = [];
+  let crates = 0;
+  for (const [name, make] of Object.entries(inputs)) {
+    const out = make();
+    for (const path of [...out.keys()].filter((p) => p.endsWith('/lib.rs'))) {
+      crates += 1;
+      const lines = withoutFeatures(text(out, path)).split('\n').filter((line) => !/^\s*\/\//.test(line));
+      const code = lines.join('\n');
+      for (const [i, line] of lines.entries()) {
+        // A function of the module or of an extern block, which no attribute gives to the language or to the linker.
+        const defined = /^(?:(?:unsafe )?(?:async )?fn ([a-z0-9_]+)[<(]| {4}fn (polyspec_[a-z0-9_]+)\()/.exec(line)?.slice(1).find((found) => found !== undefined);
+        if (defined === undefined || /^\s*#\[/.test(lines[i - 1] ?? '')) continue;
+        // A use is a call, or the function as the one argument of a call; a variable of the same name is neither.
+        if (!new RegExp(`(?<!fn |\\.)\\b${defined}(?:::<[^>]*>)?\\(|[(,] ?${defined}[,)]|= ${defined};`).test(code)) unused.push(`${name} ${path}: ${defined}`);
+      }
+    }
+  }
+  assert.ok(crates >= 9, String(crates));
+  assert.deepEqual(unused, []);
+  // The Node crate reads the code units of a string only for a parameter that takes them, which the name of a variable
+  // hides from the search above.
+  assert.doesNotMatch(text(inputs['relay']?.() ?? new Map(), 'packages/ts/generated/lib.rs'), /\nfn units\(/);
 });
 
 test('a PHP crate has the helper thrown only where a callback or a function keeps what the PHP code threw (U-3, GN-6z)', () => {

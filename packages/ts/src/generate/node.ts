@@ -107,7 +107,7 @@ fn type_error(subject: &str, expected: &str) -> Fail {
 }
 
 /// The UTF-16 code units of a string, without the terminating NUL that napi writes.
-fn units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
+fn string_units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::String {
         return Err(type_error(subject, "string"));
     }
@@ -121,13 +121,13 @@ fn units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
 
 /// B-3: text is a string without an unpaired surrogate.
 fn in_text(value: Unknown<'_>, subject: &str) -> Result<String, Fail> {
-    String::from_utf16(&units(value, subject)?)
+    String::from_utf16(&string_units(value, subject)?)
         .map_err(|_unpaired| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::UnpairedSurrogate }))
 }
 
 /// B-3, T-1 latin1: a string whose code units are U+0000 to U+00FF, one byte each.
 fn in_latin1(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
-    units(value, subject)?
+    string_units(value, subject)?
         .into_iter()
         .map(|unit| u8::try_from(unit).map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 })))
         .collect()
@@ -948,7 +948,7 @@ ${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failu
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,

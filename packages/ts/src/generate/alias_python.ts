@@ -5,7 +5,7 @@
 // takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, readValue, valueReads } from './alias_shared.ts';
+import { container, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
@@ -174,6 +174,10 @@ function readAs(kase: ReadCase): string {
 // GN-6x: the description of an instance of each value class of another repository by its in row, and of an instance of
 // a class of its owner that a read member gives, as a map of the entries of its iteration.
 function valueClassesHost(model: Model): string {
+  return readAsVariants(valueClassesHostAll(model));
+}
+
+function valueClassesHostAll(model: Model): string {
   const classes = model.aliases.filter((a) => a.owner !== undefined);
   const checks = classes.flatMap((alias) => {
     const row = classIn(alias, 'python');
@@ -221,8 +225,11 @@ ${checks.join('\n')}
         };
         let content = if call { object.call_method0(name)? } else { object.getattr(name)? };
         match read_as {
+            /*Units{*/
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
             ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(content.extract::<Vec<u16>>()?))),
+            /*}Units*/
+            /*TextOr{*/
             ReadAs::TextOr(units, units_call) => {
                 // B2.89: a text as its UTF-8 bytes; none names a text with an unpaired surrogate, whose UTF-16 code
                 // units the member units gives, so only such a text crosses as a list of integers.
@@ -232,7 +239,10 @@ ${checks.join('\n')}
                 }
                 Ok(HostValue::Text(HostText::Bytes(content.cast::<PyString>()?.to_str()?.as_bytes().to_vec())))
             }
+            /*}TextOr*/
+            /*Content{*/
             ReadAs::Content => self.describe(&content),
+            /*}Content*/
         }
     }
 }
@@ -240,12 +250,18 @@ ${checks.join('\n')}
 /// GN-6x: how the read member of an in case gives the content of an instance.
 #[derive(Clone, Copy)]
 enum ReadAs {
+    /*Content{*/
     /// The content, described by the rules of the language.
     Content,
+    /*}Content*/
+    /*Units{*/
     /// The UTF-16 code units of a text of the kind text16 (B2.81).
     Units,
+    /*}Units*/
+    /*TextOr{*/
     /// A text, or none for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str, bool),
+    /*}TextOr*/
 }
 `;
 }
@@ -467,6 +483,14 @@ fn ${library}_failure_error(py: Python<'_>, failure: binding_core::Failure<${err
 // value class of another repository is HostValue::Value too, held as Held::Foreign with the read member of its in case,
 // which read calls.
 export function pythonHost(model: Model): string {
+  // GN-6u: the object of a PyNative is read where an out row gives a native value back; without such a row the field
+  // only keeps the object for the core that holds the Native, which the lints name dead code.
+  const givenBack = model.aliases.some((a) => (a.unit.out ?? []).some((row) => row.kind === 'native'));
+  const held = '#[derive(Debug)]\nstruct PyNative(Py<PyAny>);';
+  return givenBack ? pythonHostAll(model) : pythonHostAll(model).replace(held, held.replace('\n', '\n#[allow(dead_code, reason = "GN-6u: the field keeps the object for the core that holds the Native; no out row of this contract gives it back")]\n'));
+}
+
+function pythonHostAll(model: Model): string {
   const reads = valueReads(model, 'python');
   const foreign = model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';

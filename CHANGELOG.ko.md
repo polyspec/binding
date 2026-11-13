@@ -1,11 +1,24 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ed6531d4929004293f6dbc5795d14221e3d20f9f3a856af694c6eeebae3a4808 -->
+<!-- source-sha256: d603af92b09f8d9c230179e20aa2f690a4f7019cd5e3ec15b0a8194a29c802b0 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- json의 계약으로 돌린 end-to-end 검사의 relay가 드러낸 생성기의 텍스트가 더 있고, 모두 lint가 deny하는 죽은 코드다.
+  PHP, Python, Node, WASM host의 enum `ReadAs`는 모든 variant를, 읽기는 모든 갈래를 가졌는데, json의 in case는 `Units`를
+  만들지 않는다. 이제 host는 그 계약의 in case가 만드는 variant와 그 갈래만 가진다(GN-6x). PHP는 유일한 alias가 다른
+  저장소의 value class인 계약에도 struct `PhpMaking`을 썼는데, 그 class는 소유자의 member가 만든다. 이제 계약 자신의
+  alias가 있을 때만 쓴다(U-7). Python은 out row가 native 값을 돌려주는 곳에서만 `PyNative`의 객체를 읽으므로, 그런 row가
+  없으면 그 field는 읽히지 않았다. 그때 struct는 이유를 적은 `dead_code` allow를 가진다. 그 field는 Native를 가진 코어를
+  위해 객체를 붙들기 때문이다(GN-6u). Go crate는 alias가 있는 모든 계약에 helper `give`를 쓰고 package binding의 함수
+  `__go_native`를 선언했는데, native 값을 돌려주는 out row만 그것들을 부른다. 이제 그런 row가 있을 때만 쓴다. Node의
+  helper `units`는 host에 그 이름의 변수가 있는 모든 crate에 남았다. helper는 그 이름이 코드의 단어인 곳에서 쓰인 것으로
+  세기 때문이다. 이제 그 이름은 `string_units`다. kind가 없는 라이브러리의 `failure_error`가 쓰는 kind의 메시지는
+  member를 단어로 적었고, 그것이 Node와 WASM의 helper `member`를 남겼다. 이제 그 메시지는 호출을 적는다. `make
+  test-ts`로 검증했다: variant 테스트는 `Units` 때문에, 부르지 않는 함수의 테스트는 `give`, `__go_native`, `member` 때문에
+  실패했고, 변경 후 둘 다 통과한다.
 - 실행의 work 디렉터리 테스트(GN-14)는 `workOf`와 `runIn`을 부르고 recipe의 텍스트를 읽었을 뿐, work 디렉터리 없이 실행의
   script를 돌린 테스트는 없었다. 새 테스트는 추적 파일로 자기 checkout을 만들고, 그 안에서 `--work` 없이
   `scripts/e2e.mts`를 돌리며, 그 checkout의 `git status --porcelain --ignored --untracked-files=all`이 실행 전후에 같지

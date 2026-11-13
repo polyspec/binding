@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- More texts of the generator that the relay of the end-to-end check shows with the contract of json, each dead
+  code, which the lints deny. The enum `ReadAs` of the PHP, Python, Node and WASM hosts had every variant and
+  the read every arm, while the in cases of json construct no `Units`; a host now has the variants that an in case of
+  its contract constructs, with their arms (GN-6x). PHP wrote the struct `PhpMaking` for a contract whose only alias
+  is a value class of another repository, which the members of its owner make; it is now written for an alias of the
+  contract itself (U-7). Python reads the object of a `PyNative` only where an out row gives a native value back, so
+  without such a row the field was never read; the struct then carries an allow of `dead_code` with its reason,
+  because the field keeps the object for the core that holds the Native (GN-6u). The Go crate wrote the helper `give`
+  and declared the function `__go_native` of package binding for every contract with an alias, while only an out row
+  that gives a native value back calls them; they are now written for such a row. The Node helper `units` was kept in
+  every crate whose host has a variable of that name, because a helper counts as used where its name is a word of the
+  code; it is now `string_units`. The message of the kind of `failure_error` of a library without kinds named a
+  member in words, which kept the Node and WASM helper `member`; it now names a call. Verified by `make test-ts`: the
+  test of the variants failed for `Units` and the test of the uncalled functions for `give`, `__go_native` and
+  `member`, and both pass with the change.
 - The tests of the work directory of a run (GN-14) called `workOf` and `runIn` and read the text of the recipe, and none
   ran the script of the run without a work directory. A new test makes a checkout of its own from the tracked files,
   runs `scripts/e2e.mts` in it without `--work`, and fails unless `git status --porcelain --ignored
