@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b0f1f4d4effb64b5630f8dbaa36eb30b812c46278924a383d64bf9755c47b18c -->
+<!-- source-sha256: d1a4eb319d27bc48e8968baeb07c14c440010f1ccc91d3e23d53a79f21cea9f8 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
+  `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
+  feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는
+  이름을 `#[cfg(feature = "panic-test")]` 아래의 `use` 줄에 쓰고, 다른 코드가 쓰는 이름은 조건 없는 줄에 둔다(GN-5,
+  GN-4). Python, PHP, Go, WASM crate에는 그런 import가 없었다. `make test-ts`로 검증했다. 새 시험은 계약 10개의 생성
+  crate 47개를 feature의 항목 없이 읽으며, shapes의 Node crate의 `ClassInstance`와 `FromNapiValue`, functions의 Node
+  crate의 `ClassInstance`로 실패했다(393개 중 392개 통과). 변경 뒤에는 393개가 모두 통과한다.
 - 시험의 디렉터리를 벗어나는 경로의 case 값(빈 경로, 절대 경로, `..` 부분)은 Go target 전체를 거부했고, Python, Node, PHP는 그 이유로
   실패하는 case 시험을 썼다. 이제 Go도 생성기가 쓰지 못하는 다른 case와 같이 그 실패하는 시험을 쓰므로, target의 나머지 시험은 쓰인다(G-4,
   GN-6y, GN-13e). `make test-ts`로 확인했다.

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- For a contract with a class that has a write place and no member that takes a class as an argument, the generated
+  Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
+  poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of
+  the workspace deny. The generator now writes a name that only that entry point uses in a `use` line under
+  `#[cfg(feature = "panic-test")]`, and a name that other code uses stays in the unconditional line (GN-5, GN-4). The
+  Python, PHP, Go and WASM crates had no such import. Verified by `make test-ts`: the new test reads the 47 generated
+  crates of 10 contracts without the items of a feature and failed with `ClassInstance` and `FromNapiValue` of the
+  Node crate of shapes and `ClassInstance` of that of functions (392 of 393 passed); with the change 393 of 393 pass.
 - A case value of a path that would leave the directory of its test (an empty path, an absolute path, a part `..`)
   refused the whole Go target, while Python, Node and PHP wrote a test of the case that fails with the reason. Go now
   writes that failing test too, as for every case that the generator does not write, so the other tests of the target
