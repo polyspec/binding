@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
+  safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
+  277 of 277 pass.
 - The same integer key of a `keyed_map` gave two results: Node and WASM refused a number key that is no safe integer
   as `invalid_argument_type`, and PHP, Python and Go took any key of the range of i64. A key of a listed `int` is now
   a safe integer in every target, and a key outside is kind `invalid_number` (GN-12a); a key of a kind that the

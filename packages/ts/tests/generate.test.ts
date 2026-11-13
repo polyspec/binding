@@ -442,7 +442,8 @@ test('Go: a tuple parameter is read part by part, a Tuple<N> of different part t
   assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
-  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), in_uint, in_bool\)\?/);
+  // GN-12a: a uint part is a safe integer, as at every place of the contract.
+  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), \|input\| in_safe_uint\(input, "text"\), in_bool\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
