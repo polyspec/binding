@@ -121,7 +121,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-65** 실패 주입점(`faults`, G-5)을 가진 코어는 manifest의 `[dev-dependencies]`에 자기 자신을 `fault-test`와 함께
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
-- **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 class unit이거나
+- **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 origin `generated`인 class unit이거나
   그 `optional`인 모든 parameter는 `core`(`&`, `&mut`, `value`)를 갖고, 다른 parameter는 갖지 않는다. 코어가 빌림을 받는
   자리는 class의 인스턴스뿐이고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의

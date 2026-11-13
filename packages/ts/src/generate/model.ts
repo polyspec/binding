@@ -383,6 +383,9 @@ export function collectModel(
       if (parameter.rest === true) throw new Unsupported(`${where}: a rest parameter is not generated yet`);
       const type = parameter.type;
       if (parameter.core !== undefined && typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: the borrow of an optional class is not generated yet`);
+      // GN-6h, CK-67: a class parameter names the borrow of the core; no default stands for it.
+      const classUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
+      if (classUnit?.kind === 'class' && classUnit.origin === 'generated' && parameter.core === undefined) throw new Unsupported(`${where}: a class parameter names the borrow that the core takes in core (GN-6h)`);
       const recordUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
       if (recordUnit?.kind === 'record') {
         // U-2 {empty: "object"}: a record parameter that is left out is the record with every field left out, which
@@ -740,7 +743,7 @@ export function collectModel(
 
 // B-5c: how the core takes a class parameter. The contract does not name the borrow of a parameter yet, so every class
 // parameter is borrowed shared, a read place; a contract that names `&mut` makes it a write place here.
-export const paramBorrow = (parameter: Parameter): '&' | '&mut' | 'value' => parameter.core ?? '&';
+export const paramBorrow = (parameter: Parameter): '&' | '&mut' | 'value' | undefined => parameter.core;
 
 const WRITE_RECEIVERS: ReadonlySet<string> = new Set(['&mut self', 'self']);
 const receiverOfMember = (member: Member): string | undefined => (typeof member.core === 'object' ? member.core.receiver : undefined);
@@ -823,7 +826,7 @@ function assignLocks(contract: Contract, units: Map<string, Unit>, objects: Obje
     const members = unit.members ?? [];
     const id = unit.id;
     const takenAs = (borrows: string[], waiting: boolean): boolean =>
-      allMembers.some((m) => (!waiting || waits(m)) && (m.parameters ?? []).some((p) => names(p.type, id) && borrows.includes(paramBorrow(p))));
+      allMembers.some((m) => (!waiting || waits(m)) && (m.parameters ?? []).some((p) => names(p.type, id) && borrows.includes(paramBorrow(p) ?? 'value')));
     const writes = members.some((m) => WRITE_RECEIVERS.has(receiverOfMember(m) ?? '')) || takenAs(['&mut'], false);
     const comesIn = fns.some((fn) => fn.args.some((a) => names(a.type, id))) || callbacks.some((c) => c.members.some((m) => names(m.returns, id)));
     // A member reaches language code when the type of a parameter or the class of its receiver carries it.

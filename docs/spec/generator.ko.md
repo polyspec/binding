@@ -182,7 +182,7 @@
   쥔다. 한 호출의 읽기 쪽 자리들이 같은 인스턴스이면 잠금 하나를 함께 쓰고(`Arc::ptr_eq`), 한 호출이 같은 인스턴스를 쓰기
   쪽 자리와 다른 자리에 함께 받으면 kind `busy`로 실패한다. 코어에 같은 값의 `&mut`와 다른 빌림을 함께 줄 수 없기
   때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받고, `core`가 `value`인 parameter는 읽기
-  guard 아래 값의 복제를 받으므로 그 class는 `Clone`이다. 타입이 class이거나 class의 `optional`인 parameter는 코어가 받는
+  guard 아래 값의 복제를 받으므로 그 class는 `Clone`이다. 타입이 generated class이거나 그 `optional`인 parameter는 코어가 받는
   빌림을 `core`에 적고(`&`, `&mut`, `value`), 적지 않은 parameter는 이름을 대어 거부한다(G-4). 기본값은 아무도 적지 않은 빌림을
   주장하게 되고, 호출만으로는 틀린 빌림을 찾지 못하기 때문이다. 모든 바인딩 crate는 빌림을 적은 parameter를 가진 member마다 단언
   `const _: () = { let _: fn(<receiver>, <param>, ...) -> _ = <core path>; };`을 둔다. receiver는 그 class 코어 타입의

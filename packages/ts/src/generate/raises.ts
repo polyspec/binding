@@ -39,8 +39,8 @@ function borrowAssertions(model: Model): string {
     const receiver = fn.receiver === undefined ? [] : [`${fn.receiver === '&mut self' ? '&mut ' : '&'}${fn.unit.core_type ?? '_'}`];
     const params = fn.params.map((p) => {
       if (p.core === undefined) return '_';
-      const prefix: Record<ReturnType<typeof paramBorrow>, string> = { '&': '&', '&mut': '&mut ', value: '' };
-      return `${prefix[paramBorrow(p)]}${coreOf(p.type)}`;
+      const prefix: Record<NonNullable<ReturnType<typeof paramBorrow>>, string> = { '&': '&', '&mut': '&mut ', value: '' };
+      return `${prefix[p.core]}${coreOf(p.type)}`;
     });
     return [`const _: () = {\n    let _: fn(${[...receiver, ...params].join(', ')}) -> _ = ${fn.corePath};\n};`];
   });

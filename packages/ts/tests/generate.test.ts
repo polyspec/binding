@@ -1448,7 +1448,7 @@ test('a case value that the generator does not write fails the test of its case 
   assert.match(node, /assert\.fail\('the case no_kind of classes\.show: a case value of token is \{"kind": <value kind>, "value": \.\.\.\}, not "a" \(G-5\)'\);/);
   // G-4: a value that no test can make, the placeholder of a class without a factory, refuses the target by name.
   const gate = tokenClasses();
-  gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0].type = { unit: 'gate' };
+  gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0] = { ...gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0], type: { unit: 'gate' }, core: '&' };
   assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
 });
 
