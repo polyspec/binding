@@ -122,7 +122,10 @@ the design ids are those of the binding design.
   and wasm-bindgen expand to unsafe code, and each unsafe block of the generated code carries an allow with its reason.
   An exception of one crate is an attribute of its source with its reason (`#![allow(<lint>, reason = "...")]`),
   because Cargo applies the workspace table to every member alike. The generated
-  code holds only the helper functions it uses, because the lints deny dead code.
+  code holds only the helper functions it uses, because the lints deny dead code. A helper of the Go C ABI that only
+  the entry points of a test feature (`panic-test`, `fault-test`, `codec-test`) use is compiled under those features
+  alone (`#[cfg(any(feature = ...))]`), because the static library without them has no such entry point and would
+  hold the helper unused.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
