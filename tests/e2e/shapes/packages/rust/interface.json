@@ -574,6 +574,58 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::largest"
+        },
+        {
+          "id": "shapes.stride_count",
+          "name": [
+            "stride",
+            "count"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "stride"
+              ],
+              "type": {
+                "unit": "stride"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::stride_count"
+        },
+        {
+          "id": "shapes.offset",
+          "name": [
+            "offset"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "end"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "int",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::offset"
         }
       ]
     },
@@ -675,6 +727,38 @@
             "empty"
           ],
           "type": "bool",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "stride",
+      "name": [
+        "stride"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Stride",
+      "fields": [
+        {
+          "name": [
+            "ends"
+          ],
+          "type": {
+            "tuple": [
+              "uint",
+              "uint"
+            ]
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "step"
+          ],
+          "type": "uint",
           "required": true
         }
       ]
@@ -916,6 +1000,16 @@
       "member": "shapes.largest",
       "file": "contracts/cases.json",
       "group": "largest"
+    },
+    {
+      "member": "shapes.stride_count",
+      "file": "contracts/cases.json",
+      "group": "stride_count"
+    },
+    {
+      "member": "shapes.offset",
+      "file": "contracts/cases.json",
+      "group": "offset"
     }
   ]
 }

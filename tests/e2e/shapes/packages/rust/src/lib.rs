@@ -234,6 +234,33 @@ pub fn largest(values: &[u32]) -> u32 {
     values.iter().copied().fold(0, u32::max)
 }
 
+/// A span and the step that walks it (GN-6ac: a record whose fields the core holds as [usize; 2] and u32).
+pub struct Stride {
+    /// The start and the end.
+    pub ends: [usize; 2],
+    /// The width of a step; none of 0.
+    pub step: u32,
+}
+
+/// The number of whole steps in the span of a stride, 0 for a step of 0 (GN-6ac: a record parameter).
+#[must_use]
+pub fn stride_count(stride: &Stride) -> usize {
+    let width = stride.ends[1].saturating_sub(stride.ends[0]);
+    let Ok(step) = usize::try_from(stride.step) else { return 0 };
+    if step == 0 {
+        0
+    } else {
+        width / step
+    }
+}
+
+/// The offset from a start to an end, negative when the end is before the start (GN-6ac: parameters of u8 and an
+/// isize result).
+#[must_use]
+pub fn offset(start: u8, end: u8) -> isize {
+    isize::from(end) - isize::from(start)
+}
+
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
 /// the largest.
 #[must_use]

@@ -167,8 +167,10 @@
   읽으며, 이것은 Rust tuple, 배열, 그 둘의 참조에서 각 부분의 참조를 준다. `usize`나 `isize`인 정수 결과는 assertion
   `const _: () = assert!(usize::BITS <= 64);`(`isize`도 같다) 뒤에 `as`로 넓힌다. assertion은 그보다 넓은 target에서 빌드를
   실패시키고, 표준 라이브러리는 둘 어느 것에도 `From`을 구현하지 않기 때문이다. 넓힌 값은 각 언어에서 u64나 i64처럼 그 계약
-  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go는 아직
-  바꾸지 않는다(구현되지 않음): Go 바인딩은 표의 타입을 넘기므로 더 좁은 타입의 코어는 거기서 컴파일되지 않는다.
+  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go는 아직 바꾸지 않는다(구현되지 않음): Go 바인딩은
+  표의 타입을 넘기므로 더 좁은 타입의 코어는 거기서 컴파일되지 않는다. GN-6ad의 컴파일 시험은 이 꼴들을 덮는다: `[usize; 2]`인
+  tuple parameter, `u32`와 `u8` parameter, `[u32; 2]`인 tuple 결과, struct literal이 `[usize; 2]`와 `u32` field를 받는
+  record parameter, `usize`와 `isize` 결과.
   이유: 코어는 index나 길이의 `usize`처럼 자기 코드가 필요로 하는 정수 타입을 유지하고, 계약은 값의 범위만 적는다. 코어의
   signature가 대상을 정하는 trait는 계약에 코어 타입 없이 바꾸므로, 값을 가진 어떤 코어에도 계약은 같다.
 - **GN-6ad** 항목이 좁혀지는(GN-6ac) list parameter, 곧 정수나 정수를 가진 tuple의 list는 표의 타입으로 된 지역 `Vec`으로

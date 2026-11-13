@@ -1217,7 +1217,9 @@ test('the generated calls of the core compile against the core of tests/e2e/shap
   // The bodies of the WASM entry points of the members below, as the generator writes them, with the core functions of
   // the fixture's own source. An input conversion `let x: T = in_...;` becomes the parameter x: T, so each body runs
   // on the values of the table's types; the stand-ins of binding_core and of the language are the few items they name.
-  const members = ['span_length', 'spans_total', 'span_width', 'span_at', 'width_sum', 'largest'];
+  const members = ['span_length', 'spans_total', 'span_width', 'span_at', 'width_sum', 'largest', 'stride_count', 'offset'];
+  // The record that stride_count takes, which the entry point builds as a struct literal of its fields.
+  const structs = ['Stride'];
   const wasm = text(shaped(), 'packages/ts/wasm/generated/lib.rs');
   const entries = [...wasm.matchAll(/pub fn (\w+)\([^)]*\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| \{\n([\s\S]*?)\n\s*\}\)\n\s*\.map_err\(throw\)/g)];
   const calls = members.map((name) => {
@@ -1237,7 +1239,11 @@ test('the generated calls of the core compile against the core of tests/e2e/shap
     const found = new RegExp(`(?:///[^\\n]*\\n)*#\\[must_use\\]\\npub (?:const )?fn ${name}\\([\\s\\S]*?\\n\\}\\n`).exec(core);
     assert.ok(found !== null, `no core function ${name}`);
     return found[0];
-  }).join('\n');
+  }).concat(structs.map((name) => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*pub struct ${name} \\{[\\s\\S]*?\\n\\}\\n`).exec(core);
+    assert.ok(found !== null, `no core struct ${name}`);
+    return found[0];
+  })).join('\n');
   const stand = `
 pub enum NumberType {
     Uint,
@@ -1256,6 +1262,10 @@ fn binding_error(error: BindingError) -> BindingError {
 
 fn out_uint(value: impl WideUint) -> Result<Out, BindingError> {
     Ok(value.widen_uint())
+}
+
+fn out_int(value: impl WideInt) -> Result<Out, BindingError> {
+    Ok(value.widen_int().unsigned_abs())
 }
 
 fn out_tuple(items: &[Out]) -> Result<Out, BindingError> {

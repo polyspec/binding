@@ -207,8 +207,10 @@ the design ids are those of the binding design.
   `const _: () = assert!(usize::BITS <= 64);` (and the same for `isize`), which fails the build for a target where it
   is wider, because the standard library implements `From` for neither; the widened value then leaves by the rules of a
   result of its contract type in each language, as a u64 or i64 does. A list parameter is passed as GN-6ad states.
-  Go does not convert yet (not implemented): a Go
-  binding passes the type of the table, so a core of a narrower type does not compile there.
+  Go does not convert yet (not implemented): a Go binding passes the type of the table, so a core of a narrower type
+  does not compile there. The compile test of GN-6ad covers these forms: a tuple parameter as `[usize; 2]`, `u32` and
+  `u8` parameters, a tuple result of `[u32; 2]`, a record parameter whose struct literal takes `[usize; 2]` and `u32`
+  fields, and `usize` and `isize` results.
   Why: the core keeps the integer type that its own code needs, such as `usize` for an index or a length, and the
   contract states only the range of the value. A trait whose target the core's signature chooses converts without a
   core type in the contract, so the contract stays the same for every core that holds the value.

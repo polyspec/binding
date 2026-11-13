@@ -19,8 +19,11 @@
   array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
   after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
   not convert yet. `tests/e2e/shapes` has
-  `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
-  by `npm test` in `packages/ts`.
+  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
+  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
+  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
+  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
+  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
 - A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
   generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
   a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM

@@ -16,8 +16,11 @@
   `invalid_number`이므로, 코어 `u32`와 wasm32의 `usize`에 대해 2^32를 거부한다. tuple은 Rust tuple이나 배열로 들어간다.
   tuple 결과는 Rust tuple이나 배열에서 `partsN`으로 읽고, `usize`와 `isize`는 `const _: () = assert!(usize::BITS <= 64);`
   뒤에 `as`로 넓힌다(GN-6ac). list parameter는 GN-6ad대로 넘기며, Go는 아직
-  바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`와 `u32`
-  parameter에 `[u32; 2]` 결과를 가진 `shapes.span_at`을 갖는다. `packages/ts`의 `npm test`로 확인했다.
+  바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`, `u32` parameter에 `[u32; 2]` 결과를 가진
+  `shapes.span_at`, 코어 struct가 `ends: [usize; 2]`와 `step: u32`를 가진 record `stride`를 받는 `shapes.stride_count`,
+  `u8` parameter에 `isize` 결과를 가진 `shapes.offset`을 갖는다. 2^32인 step과 256인 start는 kind `invalid_number`다.
+  GN-6ad의 컴파일 시험은 그들의 생성된 WASM 진입점을 코어와 함께 host와 wasm32에 대해 컴파일하며, 이 변경 전의 생성기에서는
+  실패한다. `packages/ts`의 `npm test`로 확인했다.
 - 기본값이 `{literal: null}`인 `optional` 타입의 case field를 거부해서("a field default of a case is not generated yet"),
   template AST처럼 case에서 그런 field를 빼는 variant는 어떤 target도 생성하지 못했다. 이제 그런 field는 빠질 수 있고 빠지면
   null이다: Python은 기본값 `None`인 dataclass field, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 선택적으로
