@@ -423,7 +423,11 @@ the design ids are those of the binding design.
   the arginfo declares no type, the stub declares `mixed` and states the contract type in `@param`. The record fields
   follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
   extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
-  the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
+  the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. Each category
+  class has the public constructor `__construct(string $message, string $kind, ?int $status = null, ?int $errno =
+  null)`, which every error unit inherits, so that PHP code makes an error with its kind as Python, Node and WASM code
+  does (GN-7a); without it a kind could be set only in the scope of the class that declares it, which is no public
+  API. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
   enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
   `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
@@ -726,9 +730,8 @@ the design ids are those of the binding design.
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
   none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
   <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
-  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node and WASM by the constructor of the class with the
-  message and the kind; PHP by the constructor with the message, and then sets `kind` in the scope of the class of
-  its category, which declares it, because no constructor of the PHP classes takes a kind; Go by
+  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, PHP and WASM by the constructor of the class with the
+  message and the kind (GN-10); Go by
   `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct of the unit with no property
   value. The generated test of each language makes the fixture
   from one implementation that binding writes into the test module, so a repository writes no fixture code: a call

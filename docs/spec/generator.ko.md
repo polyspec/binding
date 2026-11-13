@@ -345,7 +345,10 @@
   받는다(T-8). 엔진이 arginfo로 인자를 세고 이름을 확인한다(G-7). arginfo가 타입을 적지 않으므로 stub은 `mixed`를 적고 계약
   타입은 `@param`에 적는다. record field는 parameter 뒤의 이름 있는 parameter다. category 클래스는 module 시작 때
   `ClassBuilder`로 등록하고, 엔진의 class table에서 찾은 E-2 클래스를 상속하며, 클래스 자신의 객체 handler를 유지하므로 오류는
-  호출의 file, line, trace를 갖는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. enum은 backed enum이다(T-6).
+  호출의 file, line, trace를 갖는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. 모든 category 클래스는 공개 생성자 `__construct(string $message,
+  string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든 오류 unit이 이를 상속한다. 그래서 PHP 코드는
+  Python·Node·WASM 코드처럼 kind를 가진 오류를 만든다(GN-7a). 이 생성자가 없으면 kind는 그것을 선언한 클래스의 scope에서만
+  적을 수 있는데, 그것은 공개 API가 아니다. 확장이 일으키는 오류의 객체는 생성자 없이 만든다(B-4). enum은 backed enum이다(T-6).
   ext-php-rs의 `php_function`과 `php_module` 펼침이 `Option::map_or`와 `Result::unwrap_or`를 부르므로 함수와 module 진입은
   그 allow 하나를 가진 한 module에 있다. `keyed_map<T>{key}`는 순서대로의 array다(T-2). int key는 정수 key이고, 계약이 정수를
   적지 않고 텍스트를 적으면 그 십진 텍스트다(PHP는 십진 문자열 key를 int로 바꾸기 때문이다). 문자열 key는 UTF-8이고 텍스트가
@@ -596,9 +599,8 @@
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
   답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
-  unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·WASM은
-  메시지와 kind를 받는 그 클래스의 생성자로 만든다. PHP는 메시지를 받는 생성자로 만든 뒤, kind를 받는 PHP 클래스 생성자가
-  없으므로 `kind`를 선언한 category 클래스의 scope에서 `kind`를 적는다. Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
+  unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·PHP·WASM은
+  메시지와 kind를 받는 그 클래스의 생성자로 만든다(GN-10). Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
   `Raised<Unit>(kind, message)`로 만든다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
