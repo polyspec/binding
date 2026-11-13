@@ -821,17 +821,23 @@ export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) =
       positional.push(skipped && ctx.lang !== 'node' ? name(arg, text) : text);
     }
   }
-  while (ctx.lang === 'node' && positional.at(-1) === 'undefined') positional.pop();
-  if (extra !== undefined) positional.push(extra);
+  // GN-6i: an argument of JavaScript has only its place, so undefined stays where an argument follows it, and only
+  // the undefined arguments at the end of the call are missing arguments.
+  const ended = (args: string[]): string => {
+    const kept = [...args];
+    while (ctx.lang === 'node' && extra === undefined && kept.at(-1) === 'undefined') kept.pop();
+    return kept.join(', ');
+  };
   const fields = fn.args.filter((a) => a.field).flatMap((a) => {
     const text = value(a);
     return text === undefined ? [] : [{ arg: a, text }];
   });
-  if (fn.record === undefined) return positional.join(', ');
+  if (extra !== undefined) positional.push(extra);
+  if (fn.record === undefined) return ended(positional);
   if (ctx.lang === 'node') {
     const object = fields.map((f) => `${langName('node', f.arg.name, 'variable')}: ${f.text}`).join(', ');
     // U-2 {empty: "object"}: a record without a field that is given is left out, when it may be.
-    if (object === '' && fn.record.param.default !== undefined) return positional.join(', ');
+    if (object === '' && fn.record.param.default !== undefined) return ended(positional);
     return [...positional, object === '' ? '{}' : `{ ${object} }`].join(', ');
   }
   return [...positional, ...fields.map((f) => name(f.arg, f.text))].join(', ');

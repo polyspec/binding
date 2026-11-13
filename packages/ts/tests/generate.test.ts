@@ -2528,6 +2528,20 @@ test('a default of an optional type is one Option, None when it is left out or n
   assert.doesNotMatch(python, /def test_u2_pad_fill_takes_none_as_a_value/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('U-2: pad without fill is the call with its default'/);
   assert.doesNotMatch(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /U-2: pad takes null for fill as a value/);
+  // GN-6i: a parameter with a default that the options record follows is left out by undefined in its place in Node
+  // and WASM, by keywords in Python, by named arguments in PHP and by nil in Go.
+  for (const file of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const js = text(out, file);
+    assert.match(js, /test\('U-2: pad without side is the call with its default', \(\) => \{\n\s+assert\.deepStrictEqual\(outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', undefined, \{ side: 'left' \}\)\)\);/);
+    assert.match(js, /pkg\.pad\('ab', undefined, \{ end: null \}\)/);
+    assert.match(js, /test\('GN-13e: pad an_end', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.pad\('ab', undefined, \{ end: '!' \}\)\), ordered\('ab!'\)\);/);
+    assert.doesNotMatch(js, /pkg\.pad\('[^']*', \{/);
+    // A trailing parameter that is left out is still a missing argument.
+    assert.match(js, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/);
+  }
+  assert.match(python, /result = pkg\.pad\("ab", end="!"\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Shapes\\pad\("ab", end: "!"\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: ptr\("!"\)\}\)/);
   // GN-15e: in Go the optional type keeps its one pointer.
   const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
   assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);

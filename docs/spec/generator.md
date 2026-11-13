@@ -578,7 +578,14 @@ the design ids are those of the binding design.
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
-  with named arguments skips and the extension cannot tell the two apart. A record parameter with the default
+  with named arguments skips and the extension cannot tell the two apart. A parameter with a default that another
+  parameter or the options record follows is left out in the middle of a call, and each language has one form of
+  that call, which the declarations allow and the generated tests write (GN-13d, GN-13e): Python gives every later
+  argument as a keyword, and its declaration `name: T = <default>` takes it; PHP gives every later argument as a
+  named argument, and its stub `mixed $name = <default>` takes it; Node and WASM give `undefined` in the place of
+  the parameter, because an argument of JavaScript has only its place, and the declaration `name?: T` takes it, so
+  an options record is never read in the place of a parameter before it; Go gives nil, the pointer of GN-15e. A
+  record parameter with the default
   `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,

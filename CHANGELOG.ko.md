@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6630c3cea9034429c07a6a8894faa7ead04b6999aa2c0634ec69266c82436503 -->
+<!-- source-sha256: e001cd32d28ac288c8bec69f38ba057224b44ae2771456ac3b4cd8fd7684b137 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 Node와 WASM 테스트는 호출의 가운데에서 기본값이 있는 parameter를 생략할 때 그 인자를 빼 버렸고, 그래서 options
+  record가 그 자리에 섰다: `pkg.pad('ab', { end: '!' })`는 record를 `fill`로 주었고, `tests/e2e/shapes`의 `pad` 테스트 셋이
+  두 target 각각에서 kind `invalid_argument_type`으로 실패했다. 이 작업 이전 커밋의 테스트도 같은 호출을 썼다. 이제
+  GN-6i가 언어마다 그런 호출의 한 가지 꼴을 적는다: Python은 keyword, PHP는 이름 있는 인자, Node와 WASM은 그 자리의
+  `undefined`, Go는 nil이며, 각 언어의 선언이 그 꼴을 받는다. Node와 WASM 테스트는 `pkg.pad('ab', undefined, { end: '!' })`로
+  쓰고 호출 끝의 `undefined` 인자만 뺀다(U-2, GN-6i, GN-13d, GN-13e). `make test-ts`로 확인했다: 테스트가 호출
+  `pkg.pad('ab', { side: 'left' })` 때문에 실패했고, 397개 중 397개가 통과한다.
 - Go는 이미 포인터인 타입의 `optional`을 두 번째 포인터로 썼다: `optional<keyed_map<T>>`는 `**KeyedMap[T]`,
   `optional<map<T>>`는 `**Map[T]`, class의 `optional`은 `**<Class>`였고, 그런 타입의 기본값이 있는 parameter나 field도
   두 번째 포인터를 받았다. 이제 nil이 그 타입의 값이 아닌 포인터는 두 번째 포인터를 받지 않는다. 그 nil이 없는 값이고

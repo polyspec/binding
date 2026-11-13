@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 50f5ae458cdd481dd6d646abc5943a001082a673a7a7ce50850ea0bfb14c61d0 -->
+<!-- source-sha256: 5c359ce2bc1785fb8d1a28de727c6b0356e65bb9bbfd2bbd77a54afba05e0dc3 -->
 # 생성기
 
 [English](generator.md)
@@ -466,7 +466,13 @@
   않는다. 값이 없다는 것이 무엇인지는 코어가 정한다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값이 있고 뒤에 다른 parameter나 options
+  record가 오는 parameter는 호출의 가운데에서 생략되며, 언어마다 그 호출의 꼴은 하나다. 선언이 그 꼴을 받고 생성된
+  테스트가 그 꼴로 쓴다(GN-13d, GN-13e). Python은 그 뒤의 인자를 모두 keyword로 주고 선언 `name: T = <기본값>`이 그것을
+  받는다. PHP는 그 뒤의 인자를 모두 이름 있는 인자로 주고 stub `mixed $name = <기본값>`이 그것을 받는다. Node와 WASM은
+  그 parameter의 자리에 `undefined`를 준다. JavaScript의 인자에는 자리만 있기 때문이며 선언 `name?: T`가 그것을 받는다.
+  그래서 options record를 그 앞 parameter의 자리에서 읽는 일은 없다. Go는 GN-15e의 포인터인 nil을 준다. 기본값
+  `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
   빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):

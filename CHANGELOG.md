@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The generated Node and WASM tests left a parameter with a default out of the middle of a call by dropping it, so
+  the options record stood in its place: `pkg.pad('ab', { end: '!' })` gave the record as `fill`, and three tests of
+  `pad` of `tests/e2e/shapes` failed in each of the two targets with kind `invalid_argument_type`; the tests of the
+  commit before this work wrote the same calls. GN-6i now states the one form of such a call in each language:
+  keywords in Python, named arguments in PHP, `undefined` in the place in Node and WASM, and nil in Go, each of which
+  its declaration takes. The tests of Node and WASM write `pkg.pad('ab', undefined, { end: '!' })` and drop only the
+  `undefined` arguments at the end of a call (U-2, GN-6i, GN-13d, GN-13e). Verified by `make test-ts`: the test failed
+  with the call `pkg.pad('ab', { side: 'left' })`, and 397 of 397 pass.
 - Go wrote an `optional` of a type that is already a pointer with a second pointer: `optional<keyed_map<T>>` was
   `**KeyedMap[T]`, `optional<map<T>>` was `**Map[T]`, and an `optional` of a class was `**<Class>`; a parameter or a
   field of such a type with a default got the second pointer too. A pointer whose nil is no value of its type now
