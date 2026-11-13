@@ -74,15 +74,18 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   형태로 쓴 레포 이름이다(N-2: 약어 낱말은 PHP·Node에서 첫 글자만 대문자, Python·Go에서 모두 대문자이므로 `HttpCookieValueError`와
   `HTTPCookieValueError`. 레포 이름의 약어 낱말은 아래 binding의 표다). PHP 클래스는 `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
   덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). 변형과 binding kind는 한 번만
-  선언한다.
+  선언한다. `kinds`·`raises`·`in_raises`의 variant는 Rust 경로이거나 중첩 경로 `<바깥>/<안쪽>`이고, `errors.code`는 코어 오류
+  타입과 kinds의 code enum으로 가는 투영을 적는다(`{error, path}`, generator GN-7b). 그것이 코어의 variant, 타입, 함수를
+  가리키는지는 생성된 crate를 컴파일러가 판정한다(I-2).
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
 - **CK-12** record parameter(T-4): member는 record를 많아야 하나, 마지막 parameter로 받는다. PHP와 Python에서 record field
   이름(변환과 예외 뒤)은 member의 다른 parameter 이름과 다르다.
 - **CK-13** Go 이름(E-7, P-2): 오류 unit의 Go 이름은 category 오류 타입(`ValueError`, `TypeError`, `IoError`, `StoreError`,
-  `BusyError`, `InternalError`)이 아니다. 한 Go 패키지(module) 안에서 타입 이름, `functions` unit의 함수, `New<Unit>` 생성자는
-  서로 다르다. host unit은 세지 않는다. 그 Go 코드는 별도 패키지이기 때문이다(L-1).
+  `BusyError`, `InternalError`)이 아니다. 한 Go 패키지(module) 안에서 타입 이름, `functions` unit의 함수, `New<Unit>` 생성자,
+  static member의 함수 `<Class><Member>`, 다른 module이 unit에 닿는 함수 `<Class>Handle`, `<Class>FromHandle`,
+  `Dispatch<Callback>`(GN-15a)은 서로 다르다. host unit은 세지 않는다. 그 Go 코드는 별도 패키지이기 때문이다(L-1).
 - **CK-14** module(L-1): module의 첫 마디는 손으로 쓰는 Go 코드의 폴더인 `host`나 `tests`가 아니고, Go 바인딩의 C ABI 층 폴더인 `internal`도 아니다(GN-15). 빈 module은 패키지의 루트다(P-2).
 - **CK-15** WASM(Q-4): `wasm`이 target이면, parameter·반환·yields에 `path`가 있거나(record·variant 안 포함) wait가
   `blocking_io`·`process_wait`인 member는 자신이나 unit에 `wasm`이 없는 `only`와 그 규칙 id를 갖는다.
@@ -90,7 +93,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   같은 unit의 다른 member의 Python 이름이 아니고 Python의 예약어도 아니다. 그래야 GN-6m의 awaitable을 생성할 수 있다.
 - **CK-17** callback(U-3, T-3): `async_allowed`와 `errors`는 callback member만 갖고, 모든 callback member는 `async_allowed`를
   적고, trait 메서드와 receiver를 `core: {path, receiver}`에 receiver `&self`나 `&mut self`로 적는다. 생성된 struct가 그
-  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리킨다. 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌
+  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리키며, callback member가 자기 오류
+  unit을 recognize하는 계약은 recognize한 kind의 코어 오류를 만드는 코어 함수를 `errors.recognized`에 적는다(generator GN-6d). 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌
   member가 있으면 같은 이름의 callback member는 `async_allowed: true`다.
 
 - **CK-18** 패키지 이름(P-1): 코어 crate는 `polyspec-<library>`, Composer `polyspec/<library>`, PHP namespace
@@ -117,6 +121,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-65** 실패 주입점(`faults`, G-5)을 가진 코어는 manifest의 `[dev-dependencies]`에 자기 자신을 `fault-test`와 함께
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
+- **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 origin `generated`인 class unit이거나
+  그 `optional`인 모든 parameter는 `core`(`&`, `&mut`, `value`)를 갖고, 다른 parameter는 갖지 않는다. 코어가 빌림을 받는
+  자리는 class의 인스턴스뿐이고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-68** 언어 코드에 닿는 member의 state machine(generator GN-6ab, c6 6.2): parameter의 타입이나 receiver의 class가
+  언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
+  적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
+  binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

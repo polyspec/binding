@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -21,6 +21,7 @@ export function wasmTests(model: Model): string {
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
+    errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.
     variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
@@ -114,6 +115,13 @@ test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
         out.push(`
 test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+});`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
       if (arg.default !== undefined) {

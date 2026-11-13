@@ -109,7 +109,8 @@ const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 // scaffold writes the thin packages from the package and name items alone (the schema, CK-1, and the names, CK-18), so
 // no other finding stops it, such as a unit that is still todo (CK-2); check and generate report those. It does not ask
 // Cargo for the workspace either: a binding manifest that an earlier scaffold wrote, which this one rewrites, may no
-// longer resolve (the core crate was renamed), and that must not stop the rewrite.
+// longer resolve (the core crate was renamed), and that must not stop the rewrite. Only the go.mod of a contract with the
+// target go needs the contracts of other libraries, which scaffold reads below (GN-15f).
 const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath));
 // G-5: an integer of a case file outside the safe integers is read as a bigint from its token, so it keeps its value
 // (an int64 such as 9223372036854775807); a number with a fraction or an exponent stays a number.
@@ -164,7 +165,28 @@ if (typeof version === 'object' && version.workspace === true) {
 }
 if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 // G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles));
+// GN-15f: go.mod requires the Go module of each library whose records the contract names, so scaffold of a contract
+// with the target go reads the contracts of the libraries it names: the contract of a path dependency of the core is
+// the interface.json of that path, which needs no Cargo, and one of any other dependency is found through Cargo, as
+// generate finds it.
+function scaffolded(): Map<string, unknown> {
+  const found = new Map<string, unknown>();
+  if (!checked.targets.includes('go')) return found;
+  let others = false;
+  for (const library of libraries(contract)) {
+    const spec = manifest.dependencies?.[`polyspec-${library}`];
+    const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
+    if (typeof path === 'string') {
+      const file = join(root, checked.core.path, path, 'interface.json');
+      if (!existsSync(file)) fail(`${file}: the contract of ${library}, a path dependency of the core, is not there, so scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
+      found.set(library, JSON.parse(readFileSync(file, 'utf8')));
+    }
+    else others = true;
+  }
+  if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
+  return found;
+}
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>);
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.

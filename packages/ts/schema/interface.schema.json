@@ -167,6 +167,11 @@
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$"
     },
+    "variantPath": {
+      "description": "A variant of E-1: a Rust path, or `<outer>/<inner>` for a variant that holds a value of another enum, whose pattern is `Outer(Inner { .. })` (GN-7b).",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(/[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*)?$"
+    },
     "word": {
       "oneOf": [
         {
@@ -708,7 +713,7 @@
             ],
             "properties": {
               "variant": {
-                "$ref": "#/$defs/rustPath"
+                "$ref": "#/$defs/variantPath"
               },
               "category": {
                 "$ref": "#/$defs/category"
@@ -766,6 +771,27 @@
               }
             ]
           }
+        },
+        "code": {
+          "description": "The core error of a struct that holds a code enum whose variants `kinds` names: `error` is the error type that the core paths return, `path` the projection fn(&E) -> &Code (or Code) (GN-7b).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "error",
+            "path"
+          ],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/rustPath"
+            },
+            "path": {
+              "$ref": "#/$defs/rustPath"
+            }
+          }
+        },
+        "recognized": {
+          "description": "The core function fn(<kind value>, &str) -> E that makes the core error of a kind that a callback raised as an instance of a recognized error unit, with its message (U-3, GN-6d).",
+          "$ref": "#/$defs/rustPath"
         },
         "binding": {
           "description": "Class overrides of the kinds of BindingError (E-1a, E-2).",
@@ -1177,6 +1203,14 @@
         "default_core": {
           "$ref": "#/$defs/rustPath"
         },
+        "core": {
+          "description": "The borrow of a class instance that the core takes (GN-6h, CK-67); absent, &.",
+          "enum": [
+            "&",
+            "&mut",
+            "value"
+          ]
+        },
         "rest": {
           "const": true
         },
@@ -1360,7 +1394,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/rustPath"
+            "$ref": "#/$defs/variantPath"
           }
         },
         "wait": {
@@ -1393,6 +1427,10 @@
                 "result": {
                   "description": "Whether the core path returns a Result (E-1c). Absent, it does when raises names a variant or a parameter is a callback or a function.",
                   "type": "boolean"
+                },
+                "machine": {
+                  "description": "Whether the core path of a member with wait async_driver that reaches language code returns a state machine without I/O, binding_core::machine::Machine, in place of a future (GN-6ab, CK-68).",
+                  "const": true
                 }
               }
             },
@@ -1596,7 +1634,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/rustPath"
+            "$ref": "#/$defs/variantPath"
           }
         },
         "thread": {

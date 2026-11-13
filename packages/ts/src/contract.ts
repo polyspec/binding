@@ -38,6 +38,8 @@ export interface Parameter {
   required?: true;
   default?: Default;
   default_core?: string;
+  // GN-6h: the borrow of a class instance that the core takes; absent, &.
+  core?: '&' | '&mut' | 'value';
   rest?: true;
   only?: Only;
 }
@@ -66,7 +68,7 @@ export interface Member {
   raises?: string[];
   wait?: Wait;
   // result (E-1c): whether the core path returns a Result; absent, the default of coreResult below.
-  core?: { path: string; receiver?: string; result?: boolean } | string;
+  core?: { path: string; receiver?: string; result?: boolean; machine?: boolean } | string;
   type?: Type;
   value?: unknown;
   writable?: boolean;
@@ -139,6 +141,10 @@ export interface Errors {
   classes: Partial<Record<Category, Partial<Record<Lang, string>>>>;
   fixed: { lang: Lang; class: string }[];
   kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; kinds?: string[] }[];
+  // GN-7b: the core error of a struct that holds the code enum of the kinds, and the projection to that code.
+  code?: { error: string; path: string };
+  // U-3, GN-6d: the core function that makes the core error of a recognized kind with its message.
+  recognized?: string;
   binding: { kind: string; class: string }[];
   wrapped: { library: string; unit: string; property: Name; forward?: string; drop?: { reason: string } }[];
 }

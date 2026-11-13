@@ -306,6 +306,11 @@ describe('CK-13 Go names', () => {
       member(c, 'forms.parse').name = ['new', 'session'];
       unit(c, 'forms').module = 'session';
     }));
+  test('a function with the name of the function that makes an instance of a handle (GN-15a)', () =>
+    fails('CK-13', '/units/', (c) => {
+      member(c, 'forms.parse').name = ['session', 'from', 'handle'];
+      unit(c, 'forms').module = 'session';
+    }));
   test('a Go naming exception that makes a name collide', () =>
     fails('CK-13', '/units/', (c) => {
       c.naming.exceptions.push({ lang: 'go', unit: 'memory_store', name: 'Session', reason: 'S1' });
@@ -350,6 +355,8 @@ describe('CK-17 callbacks', () => {
     fails('CK-17', `${at('store')}/members/0`, (c) => { delete member(c, 'store.read').async_allowed; }));
   test('recognize names a class', () =>
     fails('CK-17', `${at('store')}/members/0/errors/recognize/0`, (c) => { member(c, 'store.read').errors.recognize[0].unit = 'session'; }));
+  test('a callback member that recognizes an error unit of its own, in a contract without errors.recognized (GN-6d)', () =>
+    fails('CK-17', `${at('store')}/members/0/errors/recognize/0`, (c) => { delete c.errors.recognized; }));
   test('a generated implementation that waits, behind a callback member that is not async_allowed', () =>
     fails('CK-17', `${at('store')}/members/0`, (c) => { member(c, 'store.read').async_allowed = false; }));
 });
@@ -536,6 +543,40 @@ describe('CK-8 the kinds of an alias (U-7, E-5)', () => {
     fails('CK-8', '/units/', (c) => alias(c, ['sample::Error::Missing'])));
   test('in_raises of a unit that is no value alias', () =>
     fails('CK-8', `${at('value')}/in_raises`, (c) => { unit(c, 'value').in_raises = ['sample::Error::TooLarge']; }));
+});
+
+describe('CK-67 the borrow of a class parameter', () => {
+  test('a borrow of a parameter whose type is no class', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => { member(c, 'forms.parse').parameters[0].core = '&mut'; }));
+  test('a class parameter that names no borrow', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/1/core`, (c) => {
+      member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { unit: 'session' }, required: true });
+    }));
+  test('an optional class parameter that names no borrow', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/1/core`, (c) => {
+      member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { optional: { unit: 'session' } }, required: true });
+    }));
+  test('a class parameter that names its borrow is accepted', () => {
+    assert.deepEqual(findings((c) => { member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { unit: 'session' }, required: true, core: '&mut' }); }), []);
+  });
+  test('a borrow of a list of a class', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => {
+      const p = member(c, 'forms.parse').parameters[0];
+      p.type = { list: { unit: 'session' } };
+      p.core = 'value';
+    }));
+});
+
+describe('CK-68 the state machine of a member that reaches language code', () => {
+  test('a member with async_driver that reaches language code without machine', () =>
+    fails('CK-68', `${at('session')}/members/2/core`, (c) => { member(c, 'session.load').wait = 'async_driver'; }));
+  test('machine on a member that does not reach language code', () =>
+    fails('CK-68', `${at('forms')}/members/0/core/machine`, (c) => { member(c, 'forms.parse').core.machine = true; }));
+  test('machine on a member that does not wait with async_driver', () =>
+    fails('CK-68', `${at('session')}/members/2/core/machine`, (c) => { member(c, 'session.load').core.machine = true; }));
+  test('a member with async_driver that reaches language code and names machine is accepted', () => {
+    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; }), []);
+  });
 });
 
 describe('CK-21 the build of the core and exclusive members', () => {

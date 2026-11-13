@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
@@ -330,7 +330,8 @@ fn in_keyed_map<'env, T>(
     for entry in entries {
         let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, expected))?;
         let (tag, key) = match key.get_type().map_err(internal)? {
-            ValueType::Number => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?)),
+            // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
+            ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
             _ => return Err(type_error(subject, expected)),
         };
@@ -508,6 +509,10 @@ const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => ru
 
 const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
 
+// GN-6m, GN-6q: a member with wait blocking_io runs its core call on the libuv pool, unless it reaches language code,
+// which only the JavaScript thread may call; then the call runs on that thread and the entry still returns a promise.
+const pooled = (fn: Fn): boolean => waitsIo(fn) && fn.reaches !== true;
+
 function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   const jsName = memberName('node', fn);
@@ -542,13 +547,37 @@ function entryRust(model: Model, fn: Fn): string {
   lines.push(...locks(model, fn));
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
-  if (waitsAsync(fn)) {
+  if (fn.machine === true) {
+    // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
+    // calls on the JavaScript thread and gives the promise of its next wait, whose future runs on the tokio runtime of
+    // napi, or its converted result.
+    const done = fn.fallible ? `let result = result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));
+        Driven::new(env, advancing(move |env| {
+            let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
+            if let Some(output) = output {
+                machine.give(output);
+            }
+            match machine.advance() {
+                binding_core::machine::Next::Wait(io) => {
+                    let given = std::sync::Arc::clone(&given);
+                    let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
+                    Ok((false, promise))
+                }
+                binding_core::machine::Next::Done(result) => {
+                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                }
+            }
+        }))`);
+  } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        driving(env, ${futureOf(model, fn, body)}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
-  } else if (waitsIo(fn)) {
+    lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+  } else if (pooled(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
     const faults = model.faults.length > 0;
@@ -556,7 +585,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${work}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+    lines.push(`        waiting(env, move || ${work}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -568,7 +597,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!awaits(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn) && fn.machine !== true) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -636,6 +665,46 @@ where
 }
 `;
 
+// GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
+// advances.
+const MACHINE = `
+/// GN-6ab: one advance of the state machine of a call: whether it ended, and its result or the promise of its wait.
+type Advance = Box<dyn for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail>>;
+
+/// GN-6ab: gives a closure the type of an advance, so that its result borrows the environment of its call.
+fn advancing<F>(advance: F) -> F
+where
+    F: for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail> + 'static,
+{
+    advance
+}
+
+/// GN-6ab: the state machine of a call, which the JavaScript entry advances until it ends. Each advance makes the calls
+/// of the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+#[napi]
+pub struct Driven {
+    advance: Advance,
+}
+
+impl Driven {
+    fn new<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+    }
+}
+
+#[napi]
+impl Driven {
+    #[napi]
+    pub fn advance<'env>(&mut self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let (ended, value) = (self.advance)(env)?;
+            out_tuple(env, vec![out_bool(env, ended)?, value])
+        })
+        .map_err(|fail| throw(env, fail))
+    }
+}
+`;
+
 // GN-6n: the future of a member with wait async_driver, on the tokio runtime of napi. A panic of a poll is a failure of
 // kind internal (B-7), and the result or the failure is converted on the JavaScript thread.
 const DRIVING = `
@@ -666,7 +735,7 @@ where
 
 // G-5, GN-6m: the arming of a member that waits is taken on the JavaScript thread and installed where the work runs.
 function waitingFaults(model: Model): string {
-  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(waitsIo)) return '';
+  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(pooled)) return '';
   return `
 /// G-5, GN-6m: the arming that a test armed for a member that waits, which its work installs on the libuv pool.
 #[cfg(feature = "fault-test")]
@@ -720,9 +789,37 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+/// is.
+fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
+    let Thrown::Js(js) = &error else {
+        return thrown(error);
+    };
+    if js.status != napi::Status::PendingException {
+        return thrown(error);
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return thrown(error);
+    }
+    let core = recognized_kind(env, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    if let Some(core) = core {
+        return binding_core::Failure::Kind(core);
+    }
+    // SAFETY: the exception that this took is thrown again on the same thread, so the caller throws the same object.
+    if unsafe { napi::sys::napi_throw(env.raw(), exception) } != napi::sys::Status::napi_ok {
+        return thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback could not be thrown again") })));
+    }
+    thrown(error)
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
@@ -749,8 +846,29 @@ ${checks}
 
 impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+    // SAFETY: the value is the exception that a callback threw, a value of env.
+    let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
+    let registered = CLASSES.get()?;
+    for index in classes {
+        let class = registered.get(*index)?.borrow_back(env).ok()?;
+        if value.instanceof(class).ok()? {
+            let object: Object<'_> = value.coerce_to_object().ok()?;
+            let kind: String = object.get_named_property("kind").ok()?;
+            let message: String = object.get_named_property("message").ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
 export function traitParam(model: Model, type: Type): string {
@@ -817,11 +935,24 @@ function objectRust(model: Model, object: ObjectClass): string {
 pub mod class_${rustField(object.unit.name)} {
     use super::*;
 
-    #[napi]
+    #[napi${object.cleanup === undefined ? '' : '(custom_finalize)'}]
     pub struct ${struct} {
         pub(crate) inner: ${heldType(object)},
     }
-
+${object.cleanup === undefined ? '' : `
+    /// GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning, and dropping the value
+    /// releases its resource.
+    impl ObjectFinalize for ${struct} {
+        fn finalize(self, env: Env) -> napi::Result<()> {
+            if self.inner.taken() {
+                return Ok(());
+            }
+            let process: Object<'_> = env.get_global()?.get_named_property("process")?;
+            let emit: Function<'_, FnArgs<(&str, &str)>, ()> = process.get_named_property("emitWarning")?;
+            emit.apply(process, FnArgs::from((${rustString(cleanupWarning(jsClass, memberName('node', object.cleanup)))}, "ResourceWarning")))
+        }
+    }
+`}
     #[napi]
     impl ${struct} {${object.members.map((fn) => functionRust(model, fn).replaceAll('\n', '\n    ')).join('')}}
 }
@@ -890,7 +1021,7 @@ function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const classIndex = (k: Model['kinds'][number]): number =>
     k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${classIndex(k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${classIndex(k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -898,7 +1029,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -910,15 +1041,16 @@ ${arms}
   // The closure outlives the core error, so a text or bytes that the error lends is copied.
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    if (typeof type === 'object' && 'list' in type) return `${call}.into_iter().map(|item| String::from(AsRef::<str>::as_ref(&item))).collect::<Vec<String>>()`;
     const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
     if (from === undefined) return call;
     return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;
   };
   const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
 /// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
-fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Properties {
-${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, `${property.corePath}(error)`)};`).join('\n')}
-    Box::new(move |env, object| {
+fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Result<Properties, Fail> {
+${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`))};`).join('\n')}
+    Ok(Box::new(move |env, object| {
 ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         let property = match ${convertOut(model, property.returns, 'value')} {
             Ok(property) => property,
@@ -926,17 +1058,20 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         };
         read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
         Ok(())
-    })
+    }))
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `match ${rustField(k.unit.unit.name)}_properties(&error) {
+            Ok(properties) => Some(Box::new(properties)),
+            Err(fail) => return fail,
+        }`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
-    let properties = match error {
+    let properties = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     Fail { properties, ..library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) }
@@ -945,13 +1080,14 @@ ${propertyArms}
 }
 
 // The names that the addon imports from napi's bindgen_prelude; the others are of the crate root.
-const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ToNapiValue', 'Uint8Array']);
+const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ObjectFinalize', 'ToNapiValue', 'Uint8Array']);
 
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -965,7 +1101,7 @@ function libRust(model: Model): string {
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
-  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
+  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
@@ -1086,7 +1222,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${waitingFaults(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
+${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
@@ -1204,7 +1340,9 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
+    const called = fn.machine === true ? `drive(${call(passed.join(', '))})` : call(passed.join(', '));
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${called});` : `  return ${called};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
@@ -1281,7 +1419,17 @@ ${classes}${units === '' ? '' : `\n${units}`}
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
 
-// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
+// promise of each of its waits, which this function awaits.
+async function drive(driven) {
+  for (;;) {
+    const [ended, value] = driven.advance();
+    if (ended) return value;
+    await value;
+  }
+}
+
+` : ''}// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
     return Array.from(value);

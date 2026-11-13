@@ -20,6 +20,7 @@ import {
   type Unit,
   kindsOf,
 } from './contract.ts';
+import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
@@ -1038,6 +1039,9 @@ class Checker {
       declare(unit.module, typeName, path);
       const constructor = (unit.members ?? []).some((m) => m.kind === 'constructor');
       if (unit.kind === 'class' && unit.constructible !== false && constructor) declare(unit.module, `New${typeName}`, path);
+      // GN-15a: the functions through which another module reaches a class or a callback.
+      if (unit.kind === 'class') for (const name of [`${typeName}Handle`, `${typeName}FromHandle`]) declare(unit.module, name, path);
+      if (unit.kind === 'interface' && unit.origin === 'callback') declare(unit.module, `Dispatch${typeName}`, path);
       // T-5: a static member is the function <Class><Member> of the package.
       for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
         if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
@@ -1737,6 +1741,27 @@ class Checker {
         this.report('CK-21', `${path}/exclusive`, `only a member with the receiver &self of a generated class is exclusive (U-6)`);
       }
     }
+    // CK-67, GN-6h: only an instance of a class is a place whose borrow the core takes, and every such place names it.
+    for (const { member, unit: owner, path } of this.members.values()) {
+      for (const [i, parameter] of (member.parameters ?? []).entries()) {
+        const type = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+        const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.unit(type.unit) : undefined;
+        const place = unit?.kind === 'class' && unit.origin === 'generated' && owner.origin !== 'callback';
+        const at = `${path}/parameters/${i}/core`;
+        if (parameter.core !== undefined && !place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is no class or optional of a class, so the core takes no borrow of it (GN-6h)`);
+        if (parameter.core === undefined && place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is a class parameter, which names the borrow that the core takes in core (GN-6h)`);
+      }
+    }
+    // CK-68, GN-6ab: a member with async_driver that reaches language code drives a state machine of its core, and
+    // binding reads no Rust source to tell a machine from a future.
+    const carrying = carriers(this.contract.units);
+    for (const { member, unit, path } of this.members.values()) {
+      const reaches = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (member.kind === 'method' && carrying.classes.has(unit.id));
+      const needs = member.wait === 'async_driver' && reaches;
+      const machine = typeof member.core === 'object' && member.core.machine === true;
+      if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
+      if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
+    }
   }
 
   // ---- CK-17: callbacks (U-3, T-3) ----
@@ -1757,6 +1782,8 @@ class Checker {
         const refPath = `${path}/errors/recognize/${i}`;
         if (ref.library === undefined || ref.library === this.contract.library) {
           if (this.unit(ref.unit)?.kind !== 'error') this.report('CK-17', refPath, `${ref.unit} is not an error unit`);
+          // GN-6d: the core error of a recognized kind is made by the function that the contract names.
+          else if (this.contract.errors.recognized === undefined) this.report('CK-17', refPath, `${member.id} recognizes ${ref.unit}, but errors.recognized names no function that makes the core error of its kind (GN-6d)`);
         } else {
           const dependency = this.dependency(ref.library, refPath, 'CK-17');
           if (dependency !== null && dependency.units.find((u) => u.id === ref.unit)?.kind !== 'error') {

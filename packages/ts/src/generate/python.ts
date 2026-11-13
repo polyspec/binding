@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -88,17 +88,33 @@ fn in_bool(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
     }
 }
 
-/// B-2: an int that is not a bool, in the range of the contract type; any other value is kind invalid_number.
+/// B-2, GN-12a: an int that is not a bool, 0 to 2^53 - 1 for the contract type uint; any other value is kind
+/// invalid_number.
 fn in_uint(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
     }
-    value.extract::<u64>().map_err(|_out_of_range| invalid())
+    match value.extract::<u64>() {
+        Ok(integer) if integer <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(invalid()),
+    }
 }
 
-/// B-2: as in_uint for the contract type int.
+/// B-2, GN-12a: as in_uint, a safe integer for the contract type int.
 fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
+    let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
+    if !value.is_exact_instance_of::<PyInt>() {
+        return Err(invalid());
+    }
+    match value.extract::<i64>() {
+        Ok(integer) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(invalid()),
+    }
+}
+
+/// B-2, T-1: as in_int, the range of i64 for the contract type int64.
+fn in_int64(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
@@ -231,7 +247,8 @@ fn in_keyed_map<'py, T>(
     let Ok(dict) = value.cast::<PyDict>() else { return Err(binding_error(py, type_error(subject, "dict"))) };
     let mut map = binding_core::KeyedMap::new();
     for (key, value) in dict.iter() {
-        let (tag, key) = if key.is_exact_instance_of::<PyInt>() {
+        // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+        let (tag, key) = if key.is_exact_instance_of::<PyInt>() && kinds.contains(&0) {
             (0, binding_core::Key::Int(in_int(py, &key, subject)?))
         } else if let Ok(bytes) = key.cast_exact::<PyBytes>() {
             (1, binding_core::Key::Bytes(bytes.as_bytes().to_vec()))
@@ -301,7 +318,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
@@ -598,7 +615,9 @@ function awaitedMethod(fn: Fn, name: string): string {
 const AWAITED = `
 /// GN-6m: an awaitable that runs a member that waits in a thread of asyncio, so that the event loop does not block.
 fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-    let all = PyTuple::new(py, std::iter::once(member).chain(args.iter()))?;
+    let mut all = vec![member];
+    all.extend(args.iter());
+    let all = PyTuple::new(py, all)?;
     py.import("asyncio")?.getattr("to_thread")?.call(all, kwargs)
 }
 `;
@@ -624,7 +643,25 @@ const _: () = {
 ` : ''}
 #[pymethods]
 impl ${struct} {${members}}
-
+${object.cleanup === undefined ? '' : `
+/// GN-6p, B-10: an object finalized without its cleanup call warns with ResourceWarning, and dropping the value releases
+/// its resource; an exception that is being raised is kept across the warning.
+impl Drop for ${struct} {
+    fn drop(&mut self) {
+        if !self.inner.taken() {
+            Python::attach(|py| {
+                let raising = PyErr::take(py);
+                if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {
+                    error.write_unraisable(py, None);
+                }
+                if let Some(raising) = raising {
+                    raising.restore(py);
+                }
+            });
+        }
+    }
+}
+`}
 ${givesOut ? `
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
     Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
@@ -654,7 +691,8 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
 // arguments out and the return in, and an exception of the language code, or a failure of the binding in the callback,
-// goes to the core as a Raised that the generated caller throws again unchanged.
+// goes to the core as a Raised that the generated caller throws again unchanged. GN-6q: each call takes the GIL on the
+// thread on which the core calls it, so a callback with thread owner has no check of the thread.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = rustType(model, { unit: cb.unit.id });
@@ -667,18 +705,26 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
     const returned = m.returns === 'none' ? 'Ok(())' : `${convertIn(model, m.returns, '&returned', rustString(`${pyName}.${method}() returns`))}`;
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params.map((p) => `, ${p}`).join('')}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, ${failure}> {
-        Python::attach(|py| {${cb.owner ? `
-            if std::thread::current().id() != self.owner {
-                return Err(thrown(py, binding_error(py, BindingError::WrongThread { subject: String::from(${rustString(`${pyName}.${method}()`)}) })));
-            }` : ''}
+        Python::attach(|py| {
             let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {
                 let returned = self.object.bind(py).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                 ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
             };
-            call().map_err(|error| thrown(py, error))
+            call().map_err(|error| ${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)}(py, error))
         })
     }`;
   }).join('\n');
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+fn ${recognizedFn(cb, m)}(py: Python<'_>, error: PyErr) -> ${failure} {
+    let core = recognized_kind(py, &error, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(py, error),
+    }
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     return `    if !value.hasattr(${rustString(method)})? || !value.getattr(${rustString(method)})?.is_callable() {
@@ -688,19 +734,38 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   return `
 /// U-3: ${pyName}, a callback that Python code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct} {
-    object: Py<PyAny>,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+    object: Py<PyAny>,
 }
 
 /// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback).
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${struct}> {
 ${checks}
-    Ok(${struct} { object: value.clone().unbind()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+    Ok(${struct} { object: value.clone().unbind() })
 }
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the error classes (GN-6d).
+fn recognized_kind(py: Python<'_>, error: &PyErr, classes: &[&str]) -> Option<(String, String)> {
+    let value = error.value(py);
+    let module = errors(py).ok()?;
+    for name in classes {
+        let class = module.getattr(*name).ok()?;
+        if value.is_instance(&class).ok()? {
+            let kind = value.getattr("kind").ok()?.extract::<String>().ok()?;
+            let message = value.str().ok()?.to_string();
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
 function traitParam(model: Model, type: Type): string {
@@ -775,7 +840,7 @@ ${arms}
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -783,7 +848,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -795,20 +860,20 @@ ${arms}
 /// I-3: the properties of ${unitClass(u)}, read from the core error.
 fn ${rustField(u.unit.name)}_properties(py: Python<'_>, raised: &PyErr, error: &${model.coreError}) -> PyResult<()> {
     let object = raised.value(py);
-${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}(error);
+${errorProperties(u).map(({ property }) => `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(py, ${failure}))`)};
     object.setattr(${rustString(`_${langName('python', property.member.name, 'variable')}`)}, ${convertOut(model, property.returns, 'value')}?)?;`).join('\n')}
     Ok(())
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     let raised = library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error));
-    let written = match error {
+    let written = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     match written {
@@ -835,7 +900,8 @@ function libRust(model: Model, layout: PythonLayout): string {
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
-  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
+  const recognizes = model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
+  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
@@ -916,7 +982,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
+${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]

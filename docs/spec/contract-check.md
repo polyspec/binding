@@ -87,7 +87,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   acronym words of a repository name are binding's table, below), and a PHP class is in the namespace of
   `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
-  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once.
+  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once. A variant
+  of `kinds`, `raises` and `in_raises` is a Rust path or the nested path `<outer>/<inner>`, and `errors.code` names
+  the core error type and its projection to the code enum of the kinds (`{error, path}`, generator GN-7b); whether
+  they name a variant, a type and a function of the core is judged by the compiler on the generated crate (I-2).
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row
@@ -96,7 +99,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   record's field names, after conversion and exceptions, differ from the member's other parameter names.
 - **CK-13** Go names (E-7, P-2): an error unit's Go name is not a category error type (`ValueError`, `TypeError`,
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
-  `functions` units and the `New<Unit>` constructors are distinct. Host units are not counted, because their Go code is
+  `functions` units, the `New<Unit>` constructors, the functions `<Class><Member>` of static members, and the functions
+  `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` that another module reaches a unit through (GN-15a)
+  are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
 - **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`, the folders of hand-written Go code,
   nor `internal`, the folder of the C ABI layer of the Go binding (GN-15). The empty module is the root of the package
@@ -110,7 +115,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-17** Callbacks (U-3, T-3): only callback members have `async_allowed` and `errors`, and every callback member
   states `async_allowed` and names its trait method and receiver in `core: {path, receiver}` with the receiver `&self`
   or `&mut self`, because the generated struct implements the trait and binding reads no Rust source; `recognize`
-  names error units; a generated class of this contract that implements a callback
+  names error units, and a contract whose callback member recognizes an error unit of its own names in
+  `errors.recognized` the core function that makes the core error of a recognized kind (generator GN-6d); a generated class of this contract that implements a callback
   of this contract with a member whose wait is not `none` makes the callback member of the same name
   `async_allowed: true`.
 
@@ -141,6 +147,15 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise
   (GN-5).
+- **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is on every
+  parameter of a member, other than a member of a callback interface, whose type is a class unit of this contract with the
+  origin `generated` or an `optional` of one, and on no other parameter, because only an instance of a class is a place whose borrow the
+  core takes, and binding reads no Rust source to find it.
+- **CK-68** The state machine of a member that reaches language code (generator GN-6ab, c6 6.2): a member with `wait:
+  async_driver` that reaches language code, when the type of a parameter or the class of its receiver carries language
+  code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
+  the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
+  source to tell them apart.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

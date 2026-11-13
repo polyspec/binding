@@ -25,6 +25,8 @@ export interface Context {
   // How the generated test makes a value of a case of a variant (T-9) from its fields in contract order: the result
   // form of the case as a record, when the language gives none of its own.
   variantNew?: (variant: Variant, kase: VariantCase, fields: string[]) => string;
+  // GN-13: how the generated test makes an instance of an error unit with a kind and a message, as language code does.
+  errorNew?: (unit: Unit, kind: string, message: string) => string;
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
   // members are missing, or every member raises the exception `raise` names, or returns a value of no contract type.
   callbackNew: (unit: Unit, how: CallbackHow) => string;
@@ -821,6 +823,14 @@ export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: s
   return kind === undefined ? undefined : { kind, value: literals[ctx.lang][kind] ?? '' };
 }
 
+// GN-12a: a keyed_map parameter whose contract lists int keys, given the key 2^53, which is no safe integer.
+export function unsafeKeyMap(model: Model, ctx: Context, type: Type): string | undefined {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  if (typeof base !== 'object' || !('keyed_map' in base) || !base.key.includes('int')) return undefined;
+  const value = placeholder(model, ctx, base.keyed_map);
+  return { python: `{2**53: ${value}}`, node: `new Map([[2 ** 53, ${value}]])`, php: `[2 ** 53 => ${value}]` }[ctx.lang];
+}
+
 // U-3: the first parameter of a member that is a callback, for the tests of K-2.
 // G-5 callback fixture: the value of a callback parameter in a case, {"callback": {<callback member id>: [<row>]},
 // "calls": [{"member", "args"}]}. A row is {"args": {...}} with "result" (absent for a return of none) and "once".
@@ -829,7 +839,7 @@ export interface Fixture {
   unit: Unit;
   // The rows of each member of the callback unit, by its position in the unit: the arguments in parameter order, the
   // result and whether the row is used once, each a case value.
-  rows: { member: number; args: unknown[]; result: unknown; once: boolean }[];
+  rows: { member: number; args: unknown[]; result: unknown; once: boolean; raise?: { unit: Unit; kind: string } }[];
   // The calls that the core makes in order, when the case names them.
   calls?: { member: number; args: unknown[] }[];
 }
@@ -864,9 +874,12 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     for (const [memberId, list] of Object.entries(value.callback)) {
       const member = position(memberId);
       for (const row of list as Record<string, unknown>[]) {
-        if (row['raise'] !== undefined) throw new Unsupported(`${where}: a raise row of a callback fixture is not generated yet`);
         if (row['async'] === true) throw new Unsupported(`${where}: an async row of a callback fixture is not generated yet`);
-        rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true });
+        // GN-13: a raise row throws an instance of its error unit with its kind, which the member recognizes (U-3).
+        const raise = row['raise'] as { error: string; kind: string } | undefined;
+        const raised = raise === undefined ? undefined : model.errorUnits.find((u) => u.unit.id === raise.error)?.unit;
+        if (raise !== undefined && raised === undefined) throw new Unsupported(`${where}: the raise row names ${raise.error}, which is no error unit that is generated (GN-13)`);
+        rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true, ...(raise === undefined || raised === undefined ? {} : { raise: { unit: raised, kind: raise.kind } }) });
       }
     }
     const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
@@ -890,7 +903,10 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Fixture): { m
     rows: fixture.rows.map((row) => {
       const returns = members[row.member]?.returns ?? 'none';
       const result = row.result === null || returns === 'none' ? none : fromJson(model, ctx, returns, row.result);
-      return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once)];
+      const raise = row.raise;
+      if (raise !== undefined && ctx.errorNew === undefined) throw new Unsupported(`a raise row of ${fixture.unit.id} is not generated for ${ctx.target ?? ctx.lang} yet`);
+      const raised = raise === undefined || ctx.errorNew === undefined ? none : ctx.errorNew(raise.unit, raise.kind, `G-5: ${raise.kind}`);
+      return [text(name(row.member)), list(argsOf(row.member, row.args)), result, flag(row.once), raised];
     }),
     calls: fixture.calls?.map((call) => [text(name(call.member)), list(argsOf(call.member, call.args))]),
   };
