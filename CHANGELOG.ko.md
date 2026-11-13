@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 53f768bebc9107334ff93576e835ea57e997b6fce24867be5608de8606080023 -->
+<!-- source-sha256: bf3dc48423a3058d843b4818252441957ac5f6ee68a8fdeb21e575f40723b8a5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `wait: process_wait`인 member의 Python `a<name>`은 `<name>`이 끝나기 전에 loop가 닫히면 `RuntimeError`가 자기
+  thread를 벗어나게 했다. `loop.call_soon_threadsafe`가 거기서 그것을 내고 아무것도 잡지 않았기 때문이다. 이제
+  thread는 `loop.is_closed()`가 참일 때에만 그 실패를 잡고, 아무것도 기다리지 않는 결과를 버린다. 그 thread는 여전히
+  interpreter가 기다리는 thread다(GN-6m). 그런 member마다 생성된 Python 시험은 호출의 thread가 시작하기 전에 loop를
+  닫고, 어떤 예외도 thread를 벗어나지 않았음을 요구한다. `tests/e2e/classes`의 함수 `classes.outlast`는 새것이다. 그
+  코어는 인자의 프로그램을 `-c "exit <code>"`로 시작하고 기다리므로, `process_wait`인 member가 실제로 다른 프로세스를
+  기다린다. 그 case는 `/bin/sh`에 code 3과 0을 주고, 없는 프로그램을 주며 이것은 kind `missing`이다. `make test-ts`로
+  검증했다. `process_wait`의 시험은 변경 전에 실패했고 437개 중 437개가 통과한다. awaitable의 소스를 고정된 Python에서
+  곧바로 돌아오는 member로 생성된 시험의 순서대로 실행했다. catch가 없으면 `threading.excepthook`이 `RuntimeError:
+  Event loop is closed`를 받았고, 있으면 아무것도 받지 않았다. 생성된 시험과 새 코어 함수는 아직 실행하지 않았다.
+  `classes`의 end-to-end 검사가 그것을 실행한다.
 - `tests/e2e/kept`은 end-to-end 검사의 새 계약이다. 그 data의 object와 reference는 Python, Node, Go, WASM에서
   `core_type` 없는 값 class `Bag`과 `Boxed`의 instance이고 PHP에서 `stdClass`와 reference다. 두 위치의 object와
   reference, 서로를 담은 reference와 object, 두 class의 constructor와 property의 case를 갖는다. 생성된 Go 시험은 case

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5d1bd45c8ff830850382e7fd9cc46d547d7a6c8af5ca6b743308fff0549d58af -->
+<!-- source-sha256: 2b78779dedc5720579e3b703811fcd76a43e93583906e49525bc9c3cd162d227 -->
 # 생성기
 
 [English](generator.md)
@@ -660,7 +660,12 @@
   - Python: `a<name>`은 `<name>`을 자기 thread(`threading.Thread`)에서 돌리고, 그 thread는 결과나 예외를
     `loop.call_soon_threadsafe`로 실행 중인 loop의 future에 준다. `asyncio.to_thread`를 쓰지 않는다. 프로그램의 모든
     `to_thread`가 기본 executor의 thread를 함께 쓰며, 프로세스만큼 긴 기다림은 그 하나를 붙잡기 때문이다. 취소된 future는
-    결과를 받지 않는다.
+    결과를 받지 않는다. `<name>`이 끝나기 전에 loop가 닫혔으면 `call_soon_threadsafe`는 그 thread에서 `RuntimeError`를
+    낸다. thread는 `loop.is_closed()`가 참일 때에만 그 실패를 잡고 결과나 예외를 버린다. 닫힌 loop의 future를 기다리는
+    것이 없기 때문이다. 다른 예외는 thread를 떠난다. 그 thread는 daemon thread가 아니므로 interpreter는 끝날 때 코어
+    호출을 기다리고, 코어가 도는 동안 끝나지 않는다. 그런 member마다 생성된 시험은 loop가 닫힐 때까지 호출의 thread가
+    시작하지 못하게 한 뒤 그것을 시작하고 join하며, 어떤 예외도 thread를 벗어나지 않았음을 요구한다
+    (`threading.excepthook`).
   - Node: 코어 호출은 자기 thread(`std::thread`)에서 돌고, 그 결과나 오류는 JavaScript thread에서 promise를
     정한다(`Env::create_deferred`). libuv pool을 쓰지 않는다. 그 thread는 프로그램의 파일 시스템 호출과 DNS 호출이 함께
     쓰기 때문이다. 호출의 panic은 kind `internal`로 promise를 reject한다(B-7).

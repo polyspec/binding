@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- Python `a<name>` of a member with `wait: process_wait` let a `RuntimeError` escape its thread when the loop was
+  closed before `<name>` ended, because `loop.call_soon_threadsafe` raises it there and nothing caught it. The
+  thread now catches that failure only while `loop.is_closed()` holds and drops the result, which nothing awaits;
+  it stays a thread that the interpreter waits for (GN-6m). Each such member has a generated Python test that closes
+  the loop before the thread of the call starts and requires that no exception escaped a thread. The function
+  `classes.outlast` of `tests/e2e/classes` is new: its core starts the program of its argument with `-c "exit
+  <code>"` and waits for it, so a member with `process_wait` really waits for another process; its cases give
+  `/bin/sh` with the codes 3 and 0 and a program that does not exist, which is kind `missing`. Verified by `make
+  test-ts`: the test of `process_wait` failed before the change, and 437 of 437 pass. The source of the awaitable
+  ran on the pinned Python with a member that returns at once, in the order of the generated test: without the
+  catch `threading.excepthook` received `RuntimeError: Event loop is closed`, with it nothing. The generated test and
+  the new core function are not run yet: the end-to-end check of `classes` runs them.
 - `tests/e2e/kept` is a new contract of the end-to-end check: data whose objects and references are instances of
   the value classes `Bag` and `Boxed` without `core_type` on Python, Node, Go and WASM and `stdClass` and references
   on PHP, with cases of an object and of a reference at two places, of a reference and an object that hold each

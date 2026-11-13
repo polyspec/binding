@@ -331,6 +331,31 @@
       }
     }
   ],
+  "outlast": [
+    {
+      "id": "the_exit_status_of_a_child_is_awaited",
+      "shell": "/bin/sh",
+      "code": 3,
+      "result": 3
+    },
+    {
+      "id": "a_child_that_exits_with_zero_is_awaited",
+      "shell": "/bin/sh",
+      "code": 0,
+      "result": 0
+    },
+    {
+      "id": "a_shell_that_is_no_program_is_missing",
+      "shell": "/nonexistent/polyspec-shell",
+      "code": 0,
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for /nonexistent/polyspec-shell"
+      }
+    }
+  ],
   "fetch": [
     {
       "id": "a_name_is_fetched",

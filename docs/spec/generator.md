@@ -807,7 +807,13 @@ the design ids are those of the binding design.
   - Python: `a<name>` runs `<name>` on a thread of its own (`threading.Thread`), which gives its result or its
     exception to a future of the running loop through `loop.call_soon_threadsafe`, and not in `asyncio.to_thread`,
     because every `to_thread` of the program shares the threads of the default executor, and a wait that lasts as long
-    as a process would hold one of them. A future that was cancelled takes no result.
+    as a process would hold one of them. A future that was cancelled takes no result. When the loop was closed
+    before `<name>` ended, `call_soon_threadsafe` raises `RuntimeError` in that thread: the thread catches that
+    failure only while `loop.is_closed()` holds and drops the result or the exception, because nothing awaits the
+    future of a closed loop; any other exception leaves the thread. The thread is no daemon thread, so the
+    interpreter waits for the call of the core at its end and never ends while the core runs. The generated test of
+    each such member keeps the thread of the call from starting until its loop is closed, then starts and joins it,
+    and requires that no exception escaped a thread (`threading.excepthook`).
   - Node: the core call runs on a thread of its own (`std::thread`), and its result or error settles the promise on
     the JavaScript thread (`Env::create_deferred`), and not on the libuv pool, whose threads the file system and DNS
     calls of the program share. A panic of the call rejects the promise with kind `internal` (B-7).

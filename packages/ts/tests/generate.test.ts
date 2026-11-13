@@ -4107,7 +4107,7 @@ test('a member with wait process_wait passes the ProcessWait token and waits on 
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: targets as Inputs['targets'] & string[] });
   };
   // Every member of the contract that waits in a blocking call of its core.
-  const waits = ['classes.read', 'gate.enter_slowly', 'classes.attend', 'gate.enter_after'];
+  const waits = ['classes.read', 'gate.enter_slowly', 'classes.attend', 'classes.outlast', 'gate.enter_after'];
   const token = 'binding_core::ProcessWait::for_generated_call()';
   const out = classes(['php', 'python', 'node', 'go']);
   // PHP and Go wait on the calling thread.
@@ -4121,7 +4121,18 @@ test('a member with wait process_wait passes the ProcessWait token and waits on 
   assert.match(python, /fn aread<'py>\([^\n]+\n {4}awaited_apart\(py, wrap_pyfunction!\(read, py\)\?\.into_any\(\), args, kwargs\)/);
   assert.match(python, /fn member_aenter_slowly<'py>\([^\n]+\n {8}awaited_apart\(slf\.py\(\), /);
   assert.match(python, /\nfn awaited_apart<'py>\([\s\S]*?threading\.Thread\(target=run\)\.start\(\)\n {4}return await future\n"#;/);
-  assert.match(python, /loop\.call_soon_threadsafe\(settle, result, None\)/);
+  // A loop that was closed before the thread ended takes no result: the thread catches exactly that failure of
+  // call_soon_threadsafe, so no exception escapes it, and it stays a thread that the interpreter waits for.
+  assert.match(python, /\n {4}def give\(result, error\):\n {8}try:\n {12}loop\.call_soon_threadsafe\(settle, result, error\)\n {8}except RuntimeError:\n {12}if not loop\.is_closed\(\):\n {16}raise\n/);
+  assert.match(python, /except BaseException as error:\n {12}give\(None, error\)\n {8}else:\n {12}give\(result, None\)\n/);
+  assert.doesNotMatch(python, /daemon/);
+  // The generated test closes the loop before it starts the thread of the call, and requires that no exception
+  // escaped a thread.
+  const pythonTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pythonTests, /\n {4}def test_gn6m_attend_drops_its_result_when_its_loop_is_closed\(self\) -> None:\n[\s\S]*?task = loop\.create_task\(pkg\.aattend\("a"\)\)\n {12}loop\.call_soon\(loop\.stop\)\n {12}loop\.run_forever\(\)\n {12}task\.cancel\(\)\n {12}loop\.run_until_complete\(asyncio\.gather\(task, return_exceptions=True\)\)\n {12}loop\.close\(\)\n {12}for thread in started:\n {16}thread_class\.start\(thread\)\n {16}thread\.join\(\)\n {8}self\.assertEqual\(len\(started\), 1\)\n {8}self\.assertEqual\(escaped, \[\]\)\n/);
+  assert.match(pythonTests, /def test_gn6m_gate_enter_after_drops_its_result_when_its_loop_is_closed\(self\)/);
+  assert.match(pythonTests, /\nimport threading\n/);
+  assert.match(pythonTests, /\nimport unittest\.mock\n/);
   // Node: the work runs on a thread of its own, and the JavaScript thread settles the promise.
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.ok(node.includes(`waiting_apart(env, move || `) && node.includes(`polyspec_classes::read(${token}, `));

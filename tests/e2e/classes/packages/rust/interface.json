@@ -249,6 +249,45 @@
           "core": "polyspec_classes::attend"
         },
         {
+          "id": "classes.outlast",
+          "name": [
+            "outlast"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "GN-6m"
+          },
+          "parameters": [
+            {
+              "name": [
+                "shell"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "code"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "process_wait",
+          "core": "polyspec_classes::outlast"
+        },
+        {
           "id": "classes.fetch",
           "name": [
             "fetch"
@@ -1090,6 +1129,11 @@
       "member": "classes.attend",
       "file": "contracts/cases.json",
       "group": "attend"
+    },
+    {
+      "member": "classes.outlast",
+      "file": "contracts/cases.json",
+      "group": "outlast"
     },
     {
       "member": "classes.fetch",
