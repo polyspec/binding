@@ -1168,7 +1168,7 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   assert.match(lib, /\.call1\(\(out_text\(py, [a-z0-9_]+\)\?, out_list\(py, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
-  for (const target of ['php', 'wasm', 'go']) {
+  for (const target of ['wasm', 'go']) {
     assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target as Lang] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
   }
 });
@@ -1199,6 +1199,31 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
   assert.match(tests, /assert\.equal\(addon\(\)\.__threadTest\(\(\) => null\), 'wrong_thread'\);/);
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
+});
+
+test('PHP holds a function as a Native, a Closure that a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6o)', () => {
+  const { contract, caseFiles } = shapes();
+  withFunction(contract);
+  contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
+  (caseFiles.get('contracts/cases.json') as any).apply = [
+    { id: 'the_function_converts_the_value', convert: { function: [{ args: { 0: 'a', 1: [1] }, result: 'A' }] }, value: 'a', result: 'A' },
+  ];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = in_function\(/);
+  assert.match(lib, /fn in_function\(value: &Zval, subject: &str\) -> Result<Native, Fail> \{/);
+  assert.match(lib, /if let Err\(error\) = native_thread\(&native, "convert"\) \{\n\s+return Err\(thrown_elsewhere\(error\)\);/);
+  assert.match(lib, /let returned = function\.try_call\(vec!\[&arg0, &arg1\]\)/);
+  assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
+  assert.match(lib, /let module = module\.request_shutdown_function\(release_native\);/);
+  assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Shapes\\\\Internal\\\\threadTest"\)\]/);
+  assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n\s+let module = module\.function\(wrap_function!\(thread_test\)\);/);
+  assert.match(String(trackedPackages(contract, '0.0.0').get('packages/php-ext/Cargo.toml')), /\nthread-test = \[\]\n/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function apply\(\\Closure \$convert, string \$value\): string/);
+  const tests = [...out].filter(([path]) => path.endsWith('GeneratedTest.php')).map(([, body]) => String(body)).join('');
+  assert.match(tests, /\$function0 = new class\(\[\['call', \['a', \[1\]\], 'A', false\]\]\)/);
+  assert.ok(tests.includes('apply($function0->call(...), '), tests);
+  assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
