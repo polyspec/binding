@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 566dee63748e09cae851cf1b1f275809c536f74404befd57b8b03ccb55a3cee9 -->
+<!-- source-sha256: 35db50164a368d1209eb720598fe65410b42de2680a82907fe3b090ba0bf8419 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -40,3 +40,5 @@
 | B2.130 | case가 다섯 target에서 다른 라이브러리의 실패 주입 지점을 장전한다(G-5, GN-5). 생성기는 그것을 "the point <point> of another library is not armed yet"로 거부했다. 그 지점은 crate의 진입점을 통해 member의 장전으로 장전하며, crate의 `fault-test`가 그 라이브러리의 코어를 적는다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/samples.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 의존 라이브러리의 지점을 장전하는 case가 있는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
 | B2.131 | 다른 레포의 값 alias의 행이 owner의 class를 이름한다(GN-6ar, GN-6k). 생성기는 constructor로 만드는 `out` 행을 "a <target> make by a member is not generated yet"로 거부했고 class의 `in` 행을 읽지 않았다. Python과 Node는 owner의 package로 인스턴스를 만들고 읽으며, WASM, Go, PHP는 그 행을 이름을 대고 거부한다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/alias_shared.ts`, `alias_python.ts`, `alias_node.ts`, `alias_wasm.ts`, `alias_php.ts`, `go_rust.ts`, `packages.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 그런 alias를 주고받는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
 | B2.132 | case가 다섯 target에서 `map<T>`를 `[key, value]`의 배열로 준다(G-5, CK-64). 생성기는 그 배열을 객체로 읽어 생성된 시험이 엉뚱한 이유로 실패했고, 검사는 그 항목을 판단하지 않았다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/samples.ts`, `packages/ts/src/generate/tests_go.ts`, `packages/ts/src/check.ts`, `packages/ts/tests/`, `CHANGELOG.md`(.ko) | `make test-ts` | [v] |
+| B2.133 | parameter가 `keeps: true`로 코어가 그 callback을 갖는다고 적는다(GN-6aa, CK-90). 계약에 그런 항목이 없어 Node는 코어가 갖는 record에 호출의 lifetime을 적었다. schema와 `binding check`가 그 속성을 받고, Node는 그것을 이름을 대고 거부한다 | `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `packages/ts/schema/interface.schema.json`, `packages/ts/src/check.ts`, `packages/ts/src/generate/index.ts`, `packages/ts/tests/`, `CHANGELOG.md`(.ko) | `make test-ts` | [v] |
+| B2.134 | Node가 `keeps: true`가 있는 parameter를 생성한다(GN-6aa, GN-6u). 다른 타입 안의 callback의 wrapper가 JavaScript 객체를 owner 스레드의 `Native`로 갖고, box와 record는 `'static`이며, end-to-end check의 계약이 다섯 target에서 그런 callback을 갖는다 | `packages/ts/src/generate/node.ts`, `tests/e2e/`의 계약, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그 계약의 `make e2e`, 그 기록이 `evidence: true` | [ ] |

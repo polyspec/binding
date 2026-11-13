@@ -116,6 +116,16 @@ export function generate(inputs: Inputs): Files {
       }
     }
   }
+  // GN-6aa: Node writes 'env for a callback inside another type and has no wrapper that outlives the environment of the
+  // call, so a parameter whose callback the core keeps is refused by name; the other targets write 'static for it.
+  for (const target of targets.filter((t) => t === 'node')) {
+    const forTarget = membersFor(model, target);
+    for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
+      for (const parameter of (fn.member.parameters ?? []).filter((p) => p.keeps === true)) {
+        refusals.refuse(`${fn.member.id}.${parameter.name.join('_')}: a callback that the core keeps is not generated yet for ${target} (GN-6aa)`);
+      }
+    }
+  }
   // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
   for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
     const forTarget = membersFor(model, target);

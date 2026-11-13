@@ -531,7 +531,18 @@ the design ids are those of the binding design.
   where it names the type: `'env` in Node, whose callback lives in the environment of the call, and `'static` in the
   other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
   parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
-  Node, PHP and WASM give on the native lifetime as GN-6z states.
+  Node, PHP and WASM give on the native lifetime as GN-6z states. The contract states it on the parameter whose value
+  the core keeps, with `keeps: true` (U-2): the parameter is a callback unit, or a record, a list or an `optional`
+  that holds one, and `binding check` reports the attribute at any other parameter (CK-90). The contract has to
+  state it, because the lifetime is no part of the path in `core_type` and the generator reads no Rust: for a
+  parameter with `keeps` the generator writes `'static` where it names the box and the core type of the record
+  (`polyspec_x::Options<'static>`) in every target, and for a parameter without it the lifetime of the call. The
+  compiler judges the core (I-2): a core that keeps the value of a parameter without `keeps` does not compile in
+  Node, whose box lasts for `'env`. Python, PHP, WASM and Go write `'static` for every callback inside another type,
+  so `keeps` changes no text of their crates. Not generated yet (G-4): Node refuses a parameter with `keeps: true` by
+  name, because the wrapper of a callback inside another type holds the JavaScript object for the environment of the
+  call and none holds it as a `Native` of its owner thread (GN-6u); and no run shows yet that the wrappers of PHP and
+  WASM outlive their call, which a contract of the end-to-end check that keeps such a callback has to show.
 - **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations

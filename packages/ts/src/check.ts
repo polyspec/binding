@@ -202,6 +202,7 @@ class Checker {
     this.waitingMembers();
     this.constructibleClasses();
     this.keptClassTargets();
+    this.keptCallbacks();
     this.variantCores();
     this.cleanupCases();
     this.callbacks();
@@ -1202,6 +1203,42 @@ class Checker {
       const missing = (unit.only?.targets ?? this.contract.targets).filter((target) => !generated.includes(target)).join(', ');
       if (missing === '') continue;
       this.report('CK-78', unit.only === undefined ? path : `${path}/only`, `${unit.id}: a class without core_type is not generated for ${missing}, so the unit names only without ${missing} and a reason (GN-6af, Q-4)`);
+    }
+  }
+
+  // ---- CK-90: a parameter whose callback the core keeps (generator GN-6aa) ----
+
+  keptCallbacks(): void {
+    // Whether a type holds a callback unit, of this contract or of another repository: the unit itself, or a record, a
+    // list, an optional, a map or a tuple that holds one. A unit of a contract that the check was not given is no
+    // finding here: CK-9 reports it.
+    const holds = (type: Type, seen: Set<string>): boolean => {
+      if (typeof type === 'string' || 'function' in type || 'passthrough' in type) return false;
+      if ('list' in type) return holds(type.list, seen);
+      if ('optional' in type) return holds(type.optional, seen);
+      if ('map' in type) return holds(type.map, seen);
+      if ('keyed_map' in type) return holds(type.keyed_map, seen);
+      if ('tuple' in type) return type.tuple.some((part) => holds(part, seen));
+      if (!('unit' in type)) return false;
+      if (type.library !== undefined && type.library !== this.contract.library) {
+        const raw = this.dependencies.get(type.library);
+        if (raw === undefined || validate(raw) !== true) return true;
+        const unit = (raw as Contract).units.find((u) => u.id === type.unit);
+        return unit === undefined || unit.origin === 'callback';
+      }
+      const unit = this.units.get(type.unit)?.value;
+      if (unit === undefined || seen.has(unit.id)) return false;
+      if (unit.origin === 'callback') return true;
+      seen.add(unit.id);
+      return unit.kind === 'record' && (unit.fields ?? []).some((field) => holds(field.type, seen));
+    };
+    for (const { value: unit, path } of this.units.values()) {
+      (unit.members ?? []).forEach((member, m) => {
+        (member.parameters ?? []).forEach((parameter, p) => {
+          if (parameter.keeps !== true || holds(parameter.type, new Set())) return;
+          this.report('CK-90', `${path}/members/${m}/parameters/${p}/keeps`, `${member.id}.${convert(parameter.name, 'python', 'variable')}: keeps names a parameter whose type holds a callback unit, and ${JSON.stringify(parameter.type)} holds none (GN-6aa)`);
+        });
+      });
     }
   }
 

@@ -845,6 +845,41 @@ describe('CK-78 a class without core_type on a target that does not generate it 
   });
 });
 
+describe('CK-90 a parameter whose callback the core keeps (GN-6aa)', () => {
+  const judged = (change: (c: any, d: any) => void): Finding[] => findings(change).filter((f) => f.check === 'CK-90');
+  const path = (c: any, id: string, parameter: number): string => {
+    const index = unitIndex(c, id.split('.')[0] as string);
+    return `/units/${index}/members/${c.units[index].members.findIndex((m: any) => m.id === id)}/parameters/${parameter}/keeps`;
+  };
+  test('keeps at a parameter that holds no callback', () => {
+    assert.deepEqual(judged((c) => { member(c, 'forms.parse').parameters[0].keeps = true; }), [{
+      check: 'CK-90',
+      path: path(contract(), 'forms.parse', 0),
+      message: 'forms.parse.body: keeps names a parameter whose type holds a callback unit, and "bytes" holds none (GN-6aa)',
+    }]);
+  });
+  test('keeps at a parameter that holds only a function', () => {
+    const type = { function: { parameters: ['text'], returns: 'text' } };
+    assert.deepEqual(judged((c) => { Object.assign(member(c, 'forms.parse').parameters[0], { type, keeps: true }); }).map((f) => f.message), [
+      `forms.parse.body: keeps names a parameter whose type holds a callback unit, and ${JSON.stringify(type)} holds none (GN-6aa)`,
+    ]);
+  });
+  test('keeps at a callback unit, at a list and an optional of it, and at a callback of another repository is accepted', () => {
+    assert.deepEqual(judged((c) => { member(c, 'session.new').parameters[0].keeps = true; }), []);
+    assert.deepEqual(judged((c) => { Object.assign(member(c, 'session.new').parameters[0], { type: { list: { optional: { unit: 'store' } } }, keeps: true }); }), []);
+    assert.deepEqual(judged((c) => { Object.assign(member(c, 'forms.parse').parameters[0], { type: { unit: 'dep_reader', library: 'forms-dep' }, keeps: true }); }), []);
+  });
+  test('keeps at a record that holds a callback in a field is accepted, and at a record without one is reported', () => {
+    assert.deepEqual(judged((c) => { member(c, 'session.new').parameters[1].keeps = true; }).map((f) => f.message), [
+      'session.new.options: keeps names a parameter whose type holds a callback unit, and {"unit":"session_options"} holds none (GN-6aa)',
+    ]);
+    assert.deepEqual(judged((c) => {
+      unit(c, 'session_options').fields.push({ name: ['backup'], type: { optional: { unit: 'store' } }, default: { literal: null } });
+      member(c, 'session.new').parameters[1].keeps = true;
+    }), []);
+  });
+});
+
 describe('CK-75 the core enum of a variant', () => {
   const figure = (): any => ({
     id: 'figure', name: ['figure'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'sample::Figure',

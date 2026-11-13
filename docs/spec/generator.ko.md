@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9368bce255227d1547f61a190c9f892e9980b79a4d4ed43c38227b7e06bc8b40 -->
+<!-- source-sha256: 439baae98df66cb83ac2ca5e90121200eb760adaeb7872beab88413765aac2d6 -->
 # 생성기
 
 [English](generator.md)
@@ -428,7 +428,16 @@
   호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
   record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
   뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6z대로 native 수명 위에서
-  그것을 준다.
+  그것을 준다. 계약은 코어가 값을 갖는 parameter에 `keeps: true`로 그것을 적는다(U-2). 그 parameter는 callback unit이거나
+  그것을 담은 record, list, `optional`이며, `binding check`는 다른 parameter의 그 속성을 보고한다(CK-90). 계약이 적어야 하는
+  이유는 lifetime이 `core_type`의 경로에 없고 생성기가 Rust를 읽지 않기 때문이다. `keeps`가 있는 parameter에 대해 생성기는
+  모든 target에서 box와 record의 코어 타입을 적는 곳에 `'static`을 적고(`polyspec_x::Options<'static>`), 없는 parameter에는
+  호출의 lifetime을 적는다. 코어는 컴파일러가 판단한다(I-2). `keeps`가 없는 parameter의 값을 갖는 코어는 box가 `'env` 동안인
+  Node에서 컴파일되지 않는다. Python, PHP, WASM, Go는 다른 타입 안의 모든 callback에 `'static`을 적으므로 `keeps`는 그
+  crate의 text를 바꾸지 않는다. 아직 생성하지 않는 것(G-4): Node는 `keeps: true`가 있는 parameter를 이름을 대고 거부한다.
+  다른 타입 안의 callback의 wrapper가 JavaScript 객체를 호출의 환경 동안 갖고, owner 스레드의 `Native`(GN-6u)로 갖는
+  wrapper가 없기 때문이다. 또 PHP와 WASM의 wrapper가 호출보다 오래 사는지를 보인 실행이 아직 없으며, 그런 callback을 갖는
+  end-to-end check의 계약이 그것을 보여야 한다.
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는

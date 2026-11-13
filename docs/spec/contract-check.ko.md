@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 44a107be88bd28c9f3badb73a44d9feee0e48cd193b07a7457e38ffc81b148b6 -->
+<!-- source-sha256: ed3ade12fed20fc40cb774d3ccfefc169e5d73f0d2e362e5d576238bf193a08f -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -204,6 +204,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   생성기의 현재 상태가 아니므로, 두 origin 어느 쪽의 class도 PHP를 적지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
   보고한다.
+- **CK-90** 코어가 callback을 갖는 parameter(생성기 GN-6aa): parameter는 타입이 이 계약이나 다른 레포의 callback unit을
+  담을 때에만 `keeps: true`를 적는다. 그 unit 자체이거나 그것을 담은 record, list, `optional`, map이며 서로 안에 있어도
+  된다. 다른 parameter의 `keeps`는 member와 parameter를 적어 보고한다. 함수 타입에는 `keeps`가 필요 없다. 코어는 모든
+  함수를 가질 수 있기 때문이다(생성기 GN-6z). 그래서 함수만 담은 parameter의 `keeps`도 보고한다. 이유: 그 속성은 생성기가
+  callback에 적는 lifetime을 바꾸며, callback이 없는 parameter에서는 아무것의 lifetime도 아닌 것을 적게 되고, 읽는 사람은
+  그것을 member의 규칙으로 받아들인다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

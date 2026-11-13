@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 37ef117596a2c5e4389f530eb26c6a77eaf38eba9ceabe8c237370bd9508bde1 -->
+<!-- source-sha256: 18be032f8a9c80941a86e878144d580e0062c15b4af5f7d81aeb75ade193bb87 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약은 코어가 record field, list, `optional`의 callback을 호출 뒤에도 갖는다는 것을 적을 수 없었다. 그래서 그런
+  callback에 호출의 lifetime `'env`를 적는 Node는 `Options<'static>`을 받는 코어에 `polyspec_x::Options<'env>`를 적었고 그
+  crate는 컴파일되지 않았다. 이제 parameter는 `keeps: true`를 적고(GN-6aa), `binding check`는 타입이 callback unit을 담지
+  않은 parameter의 그 속성을 보고한다(CK-90, 행 B2.133). Python, PHP, WASM, Go는 그런 callback 모두에 `'static`을
+  적으므로 그 속성은 그 crate의 text를 바꾸지 않는다. Node는 wrapper가 JavaScript 객체를 `Native`로 가질 때까지
+  `keeps: true`가 있는 parameter를 "<member>.<parameter>: a callback that the core keeps is not generated yet for node
+  (GN-6aa)"로 이름을 대고 거부한다. `packages/ts`의 `npm test`로 검증했다. CK-90의 시험과 그 거부의 시험은 변경 전에
+  실패했다. 실행하지 않은 것: 생성된 crate의 build, 그리고 PHP나 WASM에서 그런 callback을 갖는 실행.
 - `map<T>`를 `[key, value]`의 배열로 주는 case를 객체로 읽었다. 그래서 생성된 시험은 "a case value of the type text is a
   text or {"ill_formed": "<text>"}, not [<key>, <value>]"로 실패했고, `binding check`는 그 항목을 판단하지 않았다. JSON의
   객체는 정수인 key를 다른 key보다 먼저 주므로, 그런 map의 순서는 배열만 지킨다. 이제 case는 다섯 target에서 `map<T>`를

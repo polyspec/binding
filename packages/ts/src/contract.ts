@@ -41,6 +41,8 @@ export interface Parameter {
   // GN-6h: the borrow of a class instance that the core takes; absent, &.
   core?: '&' | '&mut' | 'value';
   rest?: true;
+  // GN-6aa, CK-90: the core keeps the callback that the parameter holds after the call.
+  keeps?: true;
   only?: Only;
 }
 

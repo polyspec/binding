@@ -239,6 +239,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   generates no such class: that is the rule of the target and no state of the generator, so a class of either origin
   never names PHP. The finding names the unit and each such target. Why: the generator refuses the
   unit for such a target, and a contract error is reported by the check before the generator runs.
+- **CK-90** A parameter whose callback the core keeps (generator GN-6aa): a parameter names `keeps: true` only when
+  its type holds a callback unit of this contract or of another repository: the unit itself, or a record, a list, an
+  `optional` or a map that holds one, also inside one another. `keeps` at any other parameter is reported with the
+  member and the parameter. A function type needs no `keeps`, because the core may keep every function (generator
+  GN-6z), so `keeps` at a parameter that holds only functions is reported too. Why: the attribute changes the lifetime
+  that the generator writes for the callback, and at a parameter without a callback it would state a lifetime of
+  nothing, which a reader takes for a rule of the member.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

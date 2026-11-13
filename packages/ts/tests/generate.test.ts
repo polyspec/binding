@@ -6919,6 +6919,21 @@ test('Go reads the list of the handles of a buffer exactly when the Rust crate w
   assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
 });
 
+test('a parameter whose callback the core keeps is refused by name in Node and changes no text of the other targets (GN-6aa, CK-90)', () => {
+  const kept = (targets: Lang[], keeps: boolean): Map<string, string | Buffer> => {
+    const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const seek = sample.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
+    if (keeps) seek.parameters[0].keeps = true;
+    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets });
+  };
+  // Node writes 'env for the box and the record, and has no wrapper that outlives the environment of the call.
+  assert.throws(() => kept(['node'], true), /sample\.seek\.search: a callback that the core keeps is not generated yet for node \(GN-6aa\)/);
+  // Python, PHP, WASM and Go write 'static for every callback inside another type.
+  for (const target of ['python', 'php', 'wasm', 'go'] as const) {
+    assert.deepEqual([...kept([target], true)].map(([path, file]) => [path, String(file)]), [...kept([target], false)].map(([path, file]) => [path, String(file)]), target);
+  }
+});
+
 test('a Go test gives an optional callback as a pointer to its interface, not to the struct of the fixture (U-3, GN-6aa)', () => {
   const tests = text(sampleWith(() => undefined, ['go']), 'packages/go/zz_generated_test.go');
   assert.match(tests, /Maybe\(ptr\[Lookup\]\(fixture0\), "a"\)/);

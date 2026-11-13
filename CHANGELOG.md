@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A contract could not state that a core keeps a callback of a record field, a list or an `optional` after the
+  call, so Node, which writes the lifetime `'env` of the call for such a callback, wrote
+  `polyspec_x::Options<'env>` for a core that takes `Options<'static>`, and its crate did not compile. A parameter
+  now names `keeps: true` (GN-6aa), and `binding check` reports the attribute at a parameter whose type holds no
+  callback unit (CK-90, row B2.133). Python, PHP, WASM and Go write `'static` for every such callback, so the
+  attribute changes no text of their crates; Node refuses a parameter with `keeps: true` by name, as "<member>.<parameter>:
+  a callback that the core keeps is not generated yet for node (GN-6aa)", until its wrapper holds the JavaScript
+  object as a `Native`. Verified by `npm test` in `packages/ts`: the tests of CK-90 and of the refusal failed before
+  the change. Not run: a build of a generated crate, and a run that keeps such a callback in PHP or WASM.
 - A case that gives a `map<T>` as an array of `[key, value]` was read as an object, so its generated test failed
   with "a case value of the type text is a text or {"ill_formed": "<text>"}, not [<key>, <value>]", and `binding
   check` did not judge its items. An object of JSON gives a key that is an integer before its other keys, so only the

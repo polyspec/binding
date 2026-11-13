@@ -1219,6 +1219,10 @@
         "rest": {
           "const": true
         },
+        "keeps": {
+          "description": "The core keeps the callback that the parameter holds after the call (GN-6aa, CK-90).",
+          "const": true
+        },
         "only": {
           "$ref": "#/$defs/only"
         }
