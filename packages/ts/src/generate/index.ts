@@ -86,23 +86,27 @@ export function generate(inputs: Inputs): Files {
   if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
   const refusals = new Refusals();
   const model = modelOf(inputs, refusals);
-  // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
-  // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and
-  // text keys (a Map compares a Uint8Array key by identity, GN-12).
-  const hasKeyed = (type: unknown): boolean => /"(keyed_map|map)"/.test(JSON.stringify(type));
-  const whole = (type: Type): Type => (typeof type === 'object' && 'optional' in type ? type.optional : type);
+  // T-2, GN-12: map<T> and keyed_map<T> are taken at every place of a type in every target. Node and WASM, where a
+  // keyed map is a Map, refuse byte string keys, which a Map compares by identity.
+  const bytesKeyed = (type: Type): boolean => {
+    if (typeof type === 'string' || 'unit' in type) return false;
+    if ('keyed_map' in type) return type.key.includes('bytes') || bytesKeyed(type.keyed_map);
+    if ('map' in type) return bytesKeyed(type.map);
+    if ('list' in type) return bytesKeyed(type.list);
+    if ('optional' in type) return bytesKeyed(type.optional);
+    if ('tuple' in type) return type.tuple.some(bytesKeyed);
+    if ('function' in type) return [...type.function.parameters, type.function.returns].some(bytesKeyed);
+    return false;
+  };
   const keyedPlaces = [
-    ...model.functions.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type, top: !a.field })), { id: fn.member.id, type: fn.returns, top: true }]),
-    ...model.objects.flatMap((o) => o.members.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type, top: !a.field })), { id: fn.member.id, type: fn.returns, top: true }])),
-    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => ({ id: unit.id, type: f.type, top: false }))),
-  ].filter((place) => hasKeyed(place.type));
+    ...model.functions.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type })), { id: fn.member.id, type: fn.returns }]),
+    ...model.objects.flatMap((o) => o.members.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type })), { id: fn.member.id, type: fn.returns }])),
+    ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => ({ id: unit.id, type: f.type }))),
+    ...model.variants.flatMap((v) => v.cases.flatMap((kase) => (kase.unit.fields ?? []).map((f) => ({ id: v.unit.id, type: f.type })))),
+  ].filter((place) => bytesKeyed(place.type));
   const js = targets.filter((target) => target === 'node' || target === 'wasm');
   for (const place of js.length === 0 ? [] : keyedPlaces) {
-    const base = whole(place.type);
-    const inner = typeof base === 'object' && 'keyed_map' in base ? base.keyed_map : typeof base === 'object' && 'map' in base ? base.map : undefined;
-    const isWhole = place.top && inner !== undefined && !hasKeyed(inner);
-    if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
-    else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
+    refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
   // GN-6z: Go does not generate a function type.
   for (const target of targets.filter((t) => t === 'go')) {

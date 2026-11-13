@@ -415,10 +415,17 @@ the design ids are those of the binding design.
   with kind `internal`, because the lock of tokio does not poison and the panic may have left the value half changed
   (P-2). The locks are those of `polyspec-binding-core` with the feature `lock`, which the manifests of the Python,
   Node and PHP binding crates turn on.
-- **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
-  (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
-  loaded), Node and WASM take and give a plain object, which the declarations write by its fields. Each binding crate depends
-  on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
+- **GN-6c** A unit of another repository (T-3) is the unit of the package of that repository in every target: the
+  package of this contract exports no name of it, a caller and a generated test take it from the package of its
+  repository, and the package of this contract needs that package when it loads. A record: Python imports the class
+  from that package (which the `pyproject.toml` lists as a dependency), and a generated test imports the module of
+  that package as `foreign_<library>` and names the class there; PHP finds the class in the class table by its name
+  in the namespace of that repository (its extension is loaded before), and a test names that class; Go imports the
+  struct of the package of the Go module of that repository (GN-15f); Node and WASM take and give a plain object,
+  which the declarations write by its fields, so they import nothing. Each binding crate depends on that repository's
+  crate with the core's own dependency line, which `binding scaffold` copies. Why: a second class of the record in
+  the package of this contract would be another type, which a function of the repository of the record refuses, so
+  one value could not pass through both packages.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
@@ -629,7 +636,14 @@ the design ids are those of the binding design.
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
-  with named arguments skips and the extension cannot tell the two apart. A record parameter with the default
+  with named arguments skips and the extension cannot tell the two apart. A parameter with a default that another
+  parameter or the options record follows is left out in the middle of a call, and each language has one form of
+  that call, which the declarations allow and the generated tests write (GN-13d, GN-13e): Python gives every later
+  argument as a keyword, and its declaration `name: T = <default>` takes it; PHP gives every later argument as a
+  named argument, and its stub `mixed $name = <default>` takes it; Node and WASM give `undefined` in the place of
+  the parameter, because an argument of JavaScript has only its place, and the declaration `name?: T` takes it, so
+  an options record is never read in the place of a parameter before it; Go gives nil, the pointer of GN-15e. A
+  record parameter with the default
   `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
   record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
   then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
@@ -807,11 +821,14 @@ the design ids are those of the binding design.
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
   `map<T>` is a `Map` whose keys are strings, and `keyed_map<T>{key}` a `Map` whose keys are safe integers or strings
-  of the listed kinds (T-2): the entry passes the entries of a `Map` to the addon, which judges each key (a number key
-  that is no safe integer is kind `invalid_number` (GN-12a), any other key or value is kind `invalid_argument_type`), and makes a `Map` of the entries that the addon gives back. Because the
-  entry does it, such a map is a whole parameter or return, or an optional one; one inside another type, and byte
-  string keys, which a `Map` compares by identity, are refused by name (G-4), so nothing is left out silently; the
-  generator takes them when a contract needs them.
+  of the listed kinds (T-2), at every place of a type: a parameter, a return, a field of a record or of a case of a
+  variant, and an item of a list, a tuple, an optional or another map. The addon reads the `Map` where it judges the
+  value: a value that is no `Map` (an array of pairs, a plain object) is kind `invalid_argument_type`, it takes the
+  entries in the order of the `Map` and judges each key (a number key that is no safe integer is kind
+  `invalid_number` (GN-12a), any other key or value is kind `invalid_argument_type`), and it gives a new `Map` of the
+  entries of the core in their order. The entry hands such a value on as it is. Why: the value is converted where
+  its type is known, so a map inside another type follows the rule of a whole one. Byte string keys, which a `Map`
+  compares by identity, are refused by name at every place (G-4).
 
 - **GN-12a** Every target (T-1, CK-64): an `int` value that the binding takes, as an argument, an item of a list, a
   tuple, a map or an optional, or a field of a record, is a safe integer, −(2^53 − 1) to 2^53 − 1, and a `uint` value is
@@ -1111,7 +1128,12 @@ the design ids are those of the binding design.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
-  already means no value (GN-6i).
+  already means no value (GN-6i). A Go type that is a pointer whose nil is no value of the type takes no second
+  pointer, as an `optional` and as a parameter or field with a default: a `map<T>` (`*Map[T]`), a `keyed_map<T>`
+  (`*KeyedMap[T]`), an instance of a class (`*<Class>`) and a value class of another repository (GN-6x). Its nil is
+  the missing value, and the C ABI writes the tag of an absent value for it, so `optional<keyed_map<T>>` is
+  `*KeyedMap[T]`. An `optional` of an `optional` keeps its second pointer, because the nil of the inner pointer is a
+  value of the outer type.
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through

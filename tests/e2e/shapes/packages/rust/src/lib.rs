@@ -2,7 +2,7 @@
 //! parameter and a record field that the caller may leave out (U-2, T-4), also of an optional type and of an enum, and kinds that are thrown as the classes of
 //! error units (E-2).
 
-use binding_core::Kinds;
+use binding_core::{Key, KeyedMap, Kinds, OrderedMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -416,6 +416,94 @@ impl Buffer {
         }
         self.size()
     }
+}
+
+/// The counts of words and their labels (GN-12: a record that holds a map and a keyed map).
+pub struct Tally {
+    /// How often each word occurs, in the order of its first occurrence.
+    pub counts: OrderedMap<u64>,
+    /// Each word by the number of its first occurrence, and the first word by the key `first`.
+    pub labels: KeyedMap<String>,
+}
+
+/// The sums of the counts of each key, in the order of its first occurrence.
+fn summed<'a>(entries: impl Iterator<Item = (&'a str, u64)>) -> OrderedMap<u64> {
+    let mut sums = OrderedMap::new();
+    for (key, count) in entries {
+        let sum = match sums.get(key) {
+            Some(held) => u64::saturating_add(*held, count),
+            None => count,
+        };
+        let _replaced: Option<u64> = sums.insert(key.to_owned(), sum);
+    }
+    sums
+}
+
+/// The tally of words (GN-12: a map and a keyed map that leave in a record).
+#[must_use]
+pub fn tally_of(words: &[String]) -> Tally {
+    let counts = summed(words.iter().map(|word| (word.as_str(), 1)));
+    let mut labels = KeyedMap::new();
+    let mut number: i64 = 0;
+    for (word, _count) in counts.iter() {
+        let _replaced: Option<String> = labels.insert(Key::Int(number), word.to_owned());
+        number = number.saturating_add(1);
+    }
+    if let Some(first) = words.first() {
+        let _replaced: Option<String> =
+            labels.insert(Key::Text(String::from("first")), first.clone());
+    }
+    Tally { counts, labels }
+}
+
+/// The counts of a tally together with the number of its labels (GN-12: a map and a keyed map that enter in a record).
+#[must_use]
+pub fn tally_total(tally: &Tally) -> u64 {
+    tally
+        .counts
+        .iter()
+        .map(|(_word, count)| *count)
+        .fold(widen(tally.labels.len()), u64::saturating_add)
+}
+
+/// The maps of a list as one, the counts of a key added (GN-12: a map that enters in a list).
+#[must_use]
+pub fn merged(maps: &[OrderedMap<u64>]) -> OrderedMap<u64> {
+    summed(
+        maps.iter()
+            .flat_map(|map| map.iter().map(|(key, count)| (key, *count))),
+    )
+}
+
+/// A map of each entry of a map (GN-12: a map that leaves in a list).
+#[must_use]
+pub fn split_counts(counts: &OrderedMap<u64>) -> Vec<OrderedMap<u64>> {
+    counts
+        .iter()
+        .map(|(key, count)| summed(std::iter::once((key, *count))))
+        .collect()
+}
+
+/// The maps of a map with each count twice (GN-12: a map in a map, both ways).
+#[must_use]
+pub fn doubled(groups: &OrderedMap<OrderedMap<u64>>) -> OrderedMap<OrderedMap<u64>> {
+    let mut twice = OrderedMap::new();
+    for (name, group) in groups.iter() {
+        let group = summed(
+            group
+                .iter()
+                .map(|(key, count)| (key, count.saturating_mul(2))),
+        );
+        let _replaced: Option<OrderedMap<u64>> = twice.insert(name.to_owned(), group);
+    }
+    twice
+}
+
+/// The keyed maps of a list and its absences in the opposite order (GN-12: a keyed map in an optional in a list, both
+/// ways).
+#[must_use]
+pub fn present(maps: &[Option<KeyedMap<String>>]) -> Vec<Option<KeyedMap<String>>> {
+    maps.iter().rev().cloned().collect()
 }
 
 #[cfg(test)]

@@ -3,11 +3,11 @@
 // has exited (HR-87); a run never writes into the checkout because no directory was named.
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { runIn, workOf } from '../../../scripts/e2e-work.mts';
 
@@ -111,4 +111,47 @@ test('make e2e gives --work only for a WORK that is named, so an empty one is no
   const script = readFileSync(join(root, 'scripts/e2e.mts'), 'utf8');
   assert.match(script, /workOf\(args\.get\('--work'\)\)/);
   assert.doesNotMatch(script, /resolve\(workArg\)/);
+});
+
+test('a run of scripts/e2e.mts without --work leaves its checkout as git status --ignored had it, and no directory of its own (GN-14, HR-87)', async () => {
+  // The checkout of the test: the tracked files of this working tree, committed in a repository of the test. Its
+  // var/tools holds only an npm that installs nothing, so the script of the tree of the commit starts and fails when it
+  // loads the generator, whose packages are not installed: the run has written the tree of the commit by then.
+  const checkout = mkdtempSync(join(tmpdir(), 'binding-checkout-'));
+  const temporary = mkdtempSync(join(tmpdir(), 'binding-tmp-'));
+  try {
+    const tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter((path) => path !== '');
+    assert.ok(tracked.includes('scripts/e2e.mts'), 'git ls-files named no script of the run');
+    for (const path of tracked.filter((file) => existsSync(join(root, file)))) {
+      mkdirSync(dirname(join(checkout, path)), { recursive: true });
+      copyFileSync(join(root, path), join(checkout, path));
+    }
+    const git = (argv: string[]): string => execFileSync('git', ['-C', checkout, '-c', 'user.name=test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', ...argv], { encoding: 'utf8' });
+    git(['init', '--quiet']);
+    git(['add', '--all']);
+    git(['commit', '--quiet', '--message', 'the tree of the test']);
+    mkdirSync(join(checkout, 'var/tools/bin'), { recursive: true });
+    writeFileSync(join(checkout, 'var/tools/bin/npm'), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(checkout, 'var/tools/bin/npm'), 0o755);
+    const status = (): string => git(['status', '--porcelain', '--ignored', '--untracked-files=all']);
+    const before = status();
+    assert.match(before, /^!! var\/tools\/bin\/npm$/m);
+    // The run as make e2e starts it without WORK: in the checkout, with no --work. Its own directory is made under the
+    // temporary directory of the test, which is empty before the run and after it.
+    const run = spawn(process.execPath, [join(checkout, 'scripts/e2e.mts'), '--binding', 'HEAD', '--repo', 'tests/e2e/variants'], { cwd: checkout, env: { ...process.env, TMPDIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let printed = '';
+    for (const stream of [run.stdout, run.stderr]) stream.setEncoding('utf8').on('data', (chunk: string) => (printed += chunk));
+    const [code] = (await once(run, 'close')) as [number | null];
+    // The script of the tree ran, from a directory of the run outside the checkout, and failed for the packages.
+    assert.match(printed, /== binding: the tree of the commit [0-9a-f]{40}\n/);
+    const from = /imported from (\S+)\/binding\/packages\/ts\/src\/check\.ts/.exec(printed)?.[1];
+    assert.ok(from !== undefined, printed);
+    assert.ok(inside(temporary, dirname(from)) && !inside(checkout, dirname(from)), from);
+    assert.notEqual(code, 0, printed);
+    assert.equal(status(), before);
+    assert.deepEqual(readdirSync(temporary), []);
+  } finally {
+    rmSync(checkout, { recursive: true, force: true });
+    rmSync(temporary, { recursive: true, force: true });
+  }
 });

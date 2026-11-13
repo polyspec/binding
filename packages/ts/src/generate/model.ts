@@ -949,6 +949,9 @@ export function collectModel(
   const visit = (type: Type): void => {
     if (typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
+    // T-2: a record that is the value of a map or of a keyed map leaves in its result form too.
+    if ('map' in type) return visit(type.map);
+    if ('keyed_map' in type) return visit(type.keyed_map);
     if ('optional' in type) return visit(type.optional);
     if ('tuple' in type) return type.tuple.forEach(visit);
     if ('unit' in type && type.library === undefined) {

@@ -103,6 +103,28 @@
   longer reads the tracked packages. A failure of `generate` that a contract or a case file causes is a refused target
   with its sentence and no stack trace, so it does not stop another target (GN-1c). Verified by `make test-ts`: the
   three new tests and the changed test of GN-15f failed before the change (4 of 396), and 396 of 396 pass with it.
+- More texts of the generator that the relay of the end-to-end check shows with the contract of json, each dead
+  code, which the lints deny. The enum `ReadAs` of the PHP, Python, Node and WASM hosts had every variant and
+  the read every arm, while the in cases of json construct no `Units`; a host now has the variants that an in case of
+  its contract constructs, with their arms (GN-6x). PHP wrote the struct `PhpMaking` for a contract whose only alias
+  is a value class of another repository, which the members of its owner make; it is now written for an alias of the
+  contract itself (U-7). Python reads the object of a `PyNative` only where an out row gives a native value back, so
+  without such a row the field was never read; the struct then carries an allow of `dead_code` with its reason,
+  because the field keeps the object for the core that holds the Native (GN-6u). The Go crate wrote the helper `give`
+  and declared the function `__go_native` of package binding for every contract with an alias, while only an out row
+  that gives a native value back calls them; they are now written for such a row. The Node helper `units` was kept in
+  every crate whose host has a variable of that name, because a helper counts as used where its name is a word of the
+  code; it is now `string_units`. The message of the kind of `failure_error` of a library without kinds named a
+  member in words, which kept the Node and WASM helper `member`; it now names a call. Verified by `make test-ts`: the
+  test of the variants failed for `Units` and the test of the uncalled functions for `give`, `__go_native` and
+  `member`, and both pass with the change.
+- The tests of the work directory of a run (GN-14) called `workOf` and `runIn` and read the text of the recipe, and none
+  ran the script of the run without a work directory. A new test makes a checkout of its own from the tracked files,
+  runs `scripts/e2e.mts` in it without `--work`, and fails unless `git status --porcelain --ignored
+  --untracked-files=all` of that checkout is the same after the run as before it and the temporary directory of the
+  run is empty. Verified by `make test-ts`: 414 of 414 pass, and the same steps on a copy whose `workOf` gives the
+  directory of the caller for no name left the 195 files of the tree of the commit in the checkout, which the
+  comparison of the test fails.
 - The helpers `handle_count` and `handle_position` of the PHP, Python, Node and WASM crates matched the result of
   `try_from` by hand under an allow of `clippy::manual_unwrap_or`, whose reason named `unwrap_or` disallowed; R-1
   disallows that family for `Option` only, and the generated code calls `Result::unwrap_or` elsewhere. The eight
@@ -124,6 +146,50 @@
   numbers of a value class and of its out row as bare literals, which are `i32` for `out_uint(…, impl WideUint)`;
   they are now `u64` literals (GN-15c). Found by the end-to-end run of relay with the contract of json. Verified by
   `make test-ts`: each of the three new tests failed for its text, and 412 of 412 pass with the change.
+- The generated Node and WASM tests left a parameter with a default out of the middle of a call by dropping it, so
+  the options record stood in its place: `pkg.pad('ab', { end: '!' })` gave the record as `fill`, and three tests of
+  `pad` of `tests/e2e/shapes` failed in each of the two targets with kind `invalid_argument_type`; the tests of the
+  commit before this work wrote the same calls. GN-6i now states the one form of such a call in each language:
+  keywords in Python, named arguments in PHP, `undefined` in the place in Node and WASM, and nil in Go, each of which
+  its declaration takes. The tests of Node and WASM write `pkg.pad('ab', undefined, { end: '!' })` and drop only the
+  `undefined` arguments at the end of a call (U-2, GN-6i, GN-13d, GN-13e). Verified by `make test-ts`: the test failed
+  with the call `pkg.pad('ab', { side: 'left' })`, and 397 of 397 pass.
+- Go wrote an `optional` of a type that is already a pointer with a second pointer: `optional<keyed_map<T>>` was
+  `**KeyedMap[T]`, `optional<map<T>>` was `**Map[T]`, and an `optional` of a class was `**<Class>`; a parameter or a
+  field of such a type with a default got the second pointer too. A pointer whose nil is no value of its type now
+  takes no second pointer: its nil is the missing value, for which the C ABI writes the tag of an absent value. This
+  holds for a `map<T>`, a `keyed_map<T>`, an instance of a class and a value class of another repository; an
+  `optional` of an `optional` keeps its second pointer (GN-15e). Verified by `make test-ts`: the test of the Go
+  binding of `tests/e2e/shapes` failed with `[]**KeyedMap[string]` of `Present` and now requires that the binding and
+  its tests hold no `**`, and 397 of 397 pass.
+- The first cases with a map of `tests/e2e/shapes` showed two defects. The Node addon read the global `Array` as an
+  object, which napi refuses for a function, so every call with a map failed with kind `internal`; it now reads it
+  without that check. The Go tests wrote a map value as a function literal on one line, which gofmt breaks when its
+  body is longer than a line, so `gofmt -l` named `zz_generated_test.go`; a map value is now a call of the helper
+  `mapWith` or `keyedWith` for each entry (T-2, GN-12, GN-13f). Verified by `make test-ts`: 397 of 397 pass.
+- A record that a member gives only as the value of a `map<T>` or a `keyed_map<T>` got no result form: the walk
+  that collects the records with a result form did not enter a map, so the Python, Node, PHP and WASM crates called a
+  conversion `out_<record>` that they did not hold. The walk now enters a map and a keyed map (T-2, T-4, GN-6a).
+  Verified by `make test-ts`: the new test failed with the missing `out_text_measure` of the Python crate, and 397 of
+  397 pass.
+- The generated Python and PHP tests of a contract that names a record of another repository named the record in
+  the package of the contract itself (`pkg.Point`, `\Polyspec\Plot\Point`), where no such class exists, so the tests
+  of `tests/e2e/plot` failed in Python with `module 'polyspec.plot' has no attribute 'Point'`. The rule of GN-6c now
+  states for every target that a unit of another repository is the unit of the package of that repository: the Python
+  test imports the module of that package as `foreign_<library>` and the PHP test names the class of the namespace of
+  that repository, as the Go test names the struct of the Go module of that repository and the Node and WASM tests
+  give a plain object (T-3, GN-6c). The WASM crate of a contract without a list, a tuple or a map, such as
+  `tests/e2e/points` and `tests/e2e/plot`, used `Array::of4` for the arguments of the constructor of a failure and
+  did not import `js_sys::Array`; the crate now imports it always (GN-18). Verified by `make test-ts`: the two new
+  tests failed for these reasons, and 396 of 396 pass.
+- A `map<T>` or a `keyed_map<T>` inside another type (a field of a record, an item of a list, of an optional or of
+  another map) was refused by name for Node and WASM, because the JavaScript entry turned a `Map` into its entries and
+  so took one only as a whole parameter or return. The addon and the WASM module now read the `Map` where they judge
+  the value and build the `Map` that they give back, so both targets take a map at every place of a type, and the
+  entries hand the value on as it is (T-2, GN-12, GN-18). A value that is no `Map` stays kind `invalid_argument_type`,
+  and byte string keys stay refused by name, now at every place. `tests/e2e/shapes` has the record `tally` and the
+  members `tally_of`, `tally_total`, `merged`, `split_counts`, `doubled` and `present` with their cases: a map in a
+  record, in a list, in an optional and in a map, both ways. Verified by `make test-ts`: 394 of 394 pass.
 - A helper of a generated crate that is an `async fn` was kept in every crate: `usedHelpers` read the name of a
   helper after `fn` or `trait` at the start of its item only, so `async fn caught` of the WASM crate had no name and
   counted as used, and a WASM crate without a member with `wait: async_driver` (variants, sample) had dead code,

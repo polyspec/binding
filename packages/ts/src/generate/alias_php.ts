@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, ownedNatives } from './alias_shared.ts';
+import { container, outArms, ownedNatives, readAsVariants } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
@@ -104,7 +104,10 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
 // making is a cycle; an object and a reference have an identity, so a handle that comes again is the same object or
 // reference, a cycle included. A field is generated only when an out row makes that form.
 export function phpMaking(model: Model): string {
-  const makes = model.aliases.flatMap((a) => (a.unit.out ?? []).map((row) => row.make?.php));
+  // A value class of another repository is made by the members of its owner, without the making of an alias.
+  const own = model.aliases.filter((a) => a.owner === undefined);
+  if (own.length === 0) return '';
+  const makes = own.flatMap((a) => (a.unit.out ?? []).map((row) => row.make?.php));
   const forms = new Set(makes.map((form) => (typeof form === 'object' && 'keyed_map' in form ? 'keyed_map' : form)).filter((form) => typeof form === 'string'));
   const fields = [
     ['list', 'map', 'keyed_map'].some((form) => forms.has(form)) ? '    entered: BTreeSet<u64>,' : '',
@@ -215,6 +218,10 @@ function readAs(kase: ReadCase): string {
 // GN-6x: the description of an instance of each value class of another repository by its in row, and of the values
 // that its read members give, which the host owns because the calls made them.
 function valueClassesPhpHost(model: Model): string {
+  return readAsVariants(valueClassesPhpHostAll(model));
+}
+
+function valueClassesPhpHostAll(model: Model): string {
   const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
     const row = classIn(alias, 'php');
     const own = ownerName(alias, alias.unit);
@@ -366,8 +373,11 @@ impl PhpHost<'_> {
         };
         let content = php_method(&object, read, vec![]).map_err(php_thrown)?;
         match read_as {
+            /*Units{*/
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
             ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(php_units(&content, read)?))),
+            /*}Units*/
+            /*TextOr{*/
             ReadAs::TextOr(units) => {
                 // B2.89: null names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
                 // so only such a text crosses as an array of integers; any other text is its string, UTF-8 bytes.
@@ -377,7 +387,10 @@ impl PhpHost<'_> {
                 }
                 self.describe_owned(content)
             }
+            /*}TextOr*/
+            /*Content{*/
             ReadAs::Content => self.describe_owned(content),
+            /*}Content*/
         }
     }
 }
@@ -395,12 +408,18 @@ fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
 /// GN-6x: how the read member of an in case gives the content of an instance.
 #[derive(Clone, Copy)]
 enum ReadAs {
+    /*Content{*/
     /// The content, described by the rules of the language.
     Content,
+    /*}Content*/
+    /*Units{*/
     /// The UTF-16 code units of a text of the kind text16 (B2.81).
     Units,
+    /*}Units*/
+    /*TextOr{*/
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str),
+    /*}TextOr*/
 }
 `;
 }

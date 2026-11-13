@@ -463,3 +463,14 @@ fn take_thrown(raised: &binding_core::Raised) -> Option<Thrown> {
     THROWN.with_borrow_mut(|map| map.remove(&thrown.key))
 }
 `;
+
+// GN-6x: the enum ReadAs of a host has the variants that an in case of the contract constructs, and the match of the
+// read has their arms: a variant that no case constructs is dead code, which the lints deny. The text of a host marks
+// the arm and the variant of each name, and a name that the text constructs nowhere else is left out with them.
+export function readAsVariants(host: string): string {
+  return ['Content', 'Units', 'TextOr'].reduce((text, variant) => {
+    const marked = new RegExp(`[ \\t]*/\\*${variant}\\{\\*/\\n([\\s\\S]*?\\n)[ \\t]*/\\*\\}${variant}\\*/\\n`, 'g');
+    const constructed = text.replace(marked, '').includes(`ReadAs::${variant}`);
+    return text.replace(marked, constructed ? '$1' : '');
+  }, host);
+}

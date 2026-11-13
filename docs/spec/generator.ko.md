@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 01ae2e5ab9919914b796923a55c87d8426887b310c2b1c07e7f2738a7a511c92 -->
+<!-- source-sha256: 314bbc1805d521adee4fae27e37b3aae8648d5a6a9c1801e919b648ec394d003 -->
 # 생성기
 
 [English](generator.md)
@@ -332,9 +332,15 @@
   자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을
   수 있기 때문이다(P-2). 잠금은 `polyspec-binding-core`의 feature `lock`에 있으며 Python·Node·PHP 바인딩 crate의 manifest가
   그것을 켠다.
-- **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
-  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node와 WASM은 plain object를 주고받으며 선언은 field로 적는다. 바인딩
-  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
+- **GN-6c** 다른 레포의 unit(T-3)은 모든 target에서 그 레포 패키지의 unit이다: 이 계약의 패키지는 그 이름을 내보내지 않고,
+  호출자와 생성된 테스트는 그 unit을 그 레포의 패키지에서 가져오며, 이 계약의 패키지는 로드될 때 그 패키지를 필요로 한다.
+  record의 경우: Python은 그 패키지에서 클래스를 import하고(`pyproject.toml`이 의존으로 적는다), 생성된 테스트는 그 패키지의
+  모듈을 `foreign_<library>`로 import해 거기서 클래스를 부른다. PHP는 그 레포의 namespace에 있는 이름으로 class table에서
+  클래스를 찾고(그 확장이 먼저 로드되어 있다), 테스트는 그 클래스를 부른다. Go는 그 레포의 Go 모듈 패키지의 struct를
+  import한다(GN-15f). Node와 WASM은 plain object를 주고받으며 선언은 field로 적으므로 아무것도 import하지 않는다. 바인딩
+  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다. 이유: 이 계약의
+  패키지에 그 record의 두 번째 클래스가 있으면 그것은 다른 타입이고, record를 가진 레포의 함수가 그것을 거부하므로, 한
+  값이 두 패키지를 함께 지날 수 없다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
@@ -506,7 +512,13 @@
   않는다. 값이 없다는 것이 무엇인지는 코어가 정한다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값이 있고 뒤에 다른 parameter나 options
+  record가 오는 parameter는 호출의 가운데에서 생략되며, 언어마다 그 호출의 꼴은 하나다. 선언이 그 꼴을 받고 생성된
+  테스트가 그 꼴로 쓴다(GN-13d, GN-13e). Python은 그 뒤의 인자를 모두 keyword로 주고 선언 `name: T = <기본값>`이 그것을
+  받는다. PHP는 그 뒤의 인자를 모두 이름 있는 인자로 주고 stub `mixed $name = <기본값>`이 그것을 받는다. Node와 WASM은
+  그 parameter의 자리에 `undefined`를 준다. JavaScript의 인자에는 자리만 있기 때문이며 선언 `name?: T`가 그것을 받는다.
+  그래서 options record를 그 앞 parameter의 자리에서 읽는 일은 없다. Go는 GN-15e의 포인터인 nil을 준다. 기본값
+  `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
   빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
@@ -654,11 +666,14 @@
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
   만든 그 클래스의 인스턴스이며 addon이 던진다(B-4). ESM 진입점은 CommonJS 진입점을 다시 내보내므로 둘은 클래스를 함께 쓴다.
-  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2):
-  진입점이 `Map`의 항목을 addon에 넘기고 addon이 key마다 판정하며(안전 정수가 아닌 number key는 kind `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), addon이
-  돌려준 항목으로 진입점이 `Map`을 만든다. 진입점이 하는 일이므로 그런 map은 parameter나 반환 전체(또는 그 optional)여야 하고,
-  다른 타입 안의 것과 `Map`이 정체성으로 비교하는 바이트 문자열 key는 이름으로 거부하므로(G-4) 조용히 빠지는 것이 없다. 계약이
-  그것을 요구하면 그때 생성기가 받는다.
+  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2).
+  타입의 모든 자리에서 그렇다: parameter, 반환, record의 field나 variant의 case의 field, 그리고 list, tuple, optional,
+  다른 map의 항목. addon은 값을 판정하는 자리에서 `Map`을 읽는다: `Map`이 아닌 값(쌍의 배열, 일반 객체)은 kind
+  `invalid_argument_type`이고, addon은 `Map`의 순서대로 항목을 받아 key마다 판정하며(안전 정수가 아닌 number key는 kind
+  `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), 코어가 준 항목으로 그 순서의 새 `Map`을
+  만들어 돌려준다. 진입점은 그런 값을 그대로 넘긴다. 이유: 값은 타입을 아는 자리에서 변환되므로, 다른 타입 안의 map도
+  전체가 map인 값과 같은 규칙을 따른다. `Map`이 정체성으로 비교하는 바이트 문자열 key는 모든 자리에서 이름으로
+  거부한다(G-4).
 
 - **GN-12a** 모든 target(T-1, CK-64): 바인딩이 인자, list·tuple·map·optional의 항목, record의 field로 받는 `int` 값은
   안전 정수 −(2^53 − 1)~2^53 − 1이고 `uint` 값은 0~2^53 − 1이다. 그 범위 밖의 정수는 Node와 WASM처럼 PHP, Python, Go에서도
@@ -913,7 +928,11 @@
   그 struct로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
-  `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i).
+  `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이
+  아닌 포인터인 Go 타입은 `optional`일 때도, 기본값이 있는 parameter나 field일 때도 두 번째 포인터를 받지 않는다:
+  `map<T>`(`*Map[T]`), `keyed_map<T>`(`*KeyedMap[T]`), class의 인스턴스(`*<Class>`), 다른 레포의 value class(GN-6x)가
+  그렇다. 그 nil이 없는 값이고 C ABI는 그 nil에 값이 없다는 태그를 쓰므로 `optional<keyed_map<T>>`는 `*KeyedMap[T]`다.
+  `optional`의 `optional`은 두 번째 포인터를 그대로 둔다. 안쪽 포인터의 nil이 바깥 타입의 값이기 때문이다.
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
   `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
   `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. unit 타입 field가 있는 다른 레포의 record와, 패키지

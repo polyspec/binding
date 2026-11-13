@@ -108,8 +108,14 @@ export function pythonTests(model: Model, module: string): string {
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
       return `type(${pyString(langName('python', unit.name, 'class'))}, (), {${members}})()`;
     },
-    recordNew: (unit, fields) =>
-      `${ref(unit)}${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
+    // T-3, GN-6c: a record of another repository is the class of the package of that repository, which the test
+    // imports; the package of this contract exports no name of it.
+    recordNew: (unit, fields) => {
+      const library = model.foreignRecords.find((r) => r.unit === unit)?.library;
+      if (library !== undefined) foreignModules.add(library);
+      const owner = library === undefined ? ref(unit) : `foreign_${library.replaceAll('-', '_')}.`;
+      return `${owner}${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`;
+    },
     // GN-6x: a static member of a value class of another repository, through the module of the owner's package.
     foreignValue: (library, unit, member) => {
       foreignModules.add(library);
