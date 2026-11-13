@@ -935,6 +935,8 @@ ${constants}
 
 export function wasm(model: Model, files: Files): void {
   // G-4: a record of another repository (T-3), a callback unit (U-3) and a value alias (U-7) are not generated for WASM yet.
+  const foreignAlias = model.aliases.find((a) => a.library !== undefined);
+  if (foreignAlias !== undefined) throw new Unsupported(`${foreignAlias.library ?? ''}.${foreignAlias.unit.id}: a value alias of another repository is not generated for WASM yet`);
   const [alias] = model.aliases;
   if (alias !== undefined) throw new Unsupported(`${alias.unit.id}: a value alias is not generated for WASM yet`);
   const [foreign] = model.foreignRecords;

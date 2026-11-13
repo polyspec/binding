@@ -1,10 +1,10 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -63,6 +63,12 @@ export function nodeTests(model: Model): string {
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
+  const exactClass = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : langName('node', unit.unit.name, 'class');
+  };
   const out: string[] = [];
   let usesFixture = false;
   let usesErrno = false;
@@ -155,7 +161,6 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const raised = raisedClass(model, kase.raises);
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
@@ -180,8 +185,8 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
       out.push(`
 test('B-4: ${name} ${kase.id}', () => {${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
-    error.constructor === pkg.${raised.exact} &&
-    error instanceof pkg.${raised.category} &&
+    error.constructor === pkg.${exactClass(kase.raises)} &&
+    error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
@@ -202,11 +207,11 @@ test('K-2: ${name} refuses a callback without its members', () => {
 test('K-2: ${name} lets the exception of a callback through', () => {
   const raised = new Error('raised by the callback');
   assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
-});
+});${judgesCallbackResult(model, cbUnit) ? `
 
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
-});`);
+});` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`

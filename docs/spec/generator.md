@@ -13,16 +13,17 @@ the design ids are those of the binding design.
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
-  records (as parameters and in their result form, also of another repository), enums, constants and error classes,
-  and for Python, Node and PHP the type `source` of a parameter (GN-6j), the defaults of parameters and record fields
-  (GN-6i) and error units without members (GN-7a).
+  records (as parameters and in their result form, also of another repository), value aliases (also of another
+  repository, GN-6k), enums, constants, error classes and error units (GN-7a),
+  and for Python, Node and PHP the type `source` of a parameter (GN-6j) and the defaults of parameters and record fields
+  (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, the members of an error unit, a wait other than `none`, a default
+  recognizing callback, a function type, a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a dependency kind, the
+  `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit and a record of
-  another repository (T-3, U-3), and the type `source`, a default and an error unit; WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit, a record of
+  another repository and a value alias of another repository (T-3, U-3, GN-6k), and the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -187,6 +188,18 @@ the design ids are those of the binding design.
   built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
   handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound.
+- **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
+  (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
+  and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
+  owner's contract. The two core functions of the owner are the only conversion (P-1). The conversions are named
+  `in_<library>_<alias>` and `out_<library>_<alias>`, so that the aliases of two libraries with one name do not meet.
+  A failure of `in` is a variant of the owner's error enum: its kind, status and errno are the owner's (`Kinds`), and
+  its class is this repository's class of the category that the owner's E-1 gives the variant (E-2), chosen by a
+  match over the owner's kinds without a wildcard, so a variant that the owner's contract lacks does not compile
+  (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again unchanged.
+  The binding crate depends on the owner's crate, and the Python package on the owner's package (GN-6c). An alias
+  whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name, as is an
+  `out` row by a member (GN-6e) and the targets Go and WASM (G-4).
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
@@ -241,13 +254,22 @@ the design ids are those of the binding design.
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
-- **GN-7a** An error unit without members (E-2) is a library class that extends the class of its `parent`, or the
-  class of its `category` when it names no parent; the classes are written parents first (P-4), a `final` unit is a
-  final class in PHP, and a cycle of parents is refused by name. A row of `errors.kinds` with `class: <error unit id>`
-  is thrown as that class in place of the class of its category; the kind, the status and the errno stay those of
-  `binding_core::Kinds`, and in PHP the private properties stay those of the category class, read and written in its
-  scope. Refused by name (G-4): an error unit with members (E-3), an error unit in a module other than the root, and a
-  `class` that names no error unit.
+- **GN-7a** An error unit (E-2) is a class of Python, Node and PHP that extends the class of its `parent`, or the
+  library class of its category when it has none; a parent is declared and registered before the units that extend it
+  (P-4), a `final` unit is a final class in PHP, and a cycle of parents is refused by name. A kind whose row of `errors.kinds` names the unit in `class` is an instance of that class, with the kind, status
+  and errno of GN-7; a row with `source` (E-1b (b)) is a variant of the core error of this repository and is generated as
+  any other row. A member of the unit is a read-only property (I-3): its `core.path` names a function of the core error
+  with the receiver `&self`, which the generated code calls with the error that the core returned, by a second match
+  without a wildcard. The property is a `@property` over a private attribute in Python, a read-only own property of the
+  instance in Node, as `kind`, `status` and `errno` are, and a method over a private property of the declaring class in
+  PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The type of a
+  property is bool, int, int64, uint, float, text or bytes, or an optional of one. The Node addon keeps the class
+  after the six classes of the categories, and the PHP extension reads and writes `kind`, `status` and `errno` in the
+  scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
+  the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
+  of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
+  `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
+  an error unit in a module other than the root, and an error unit for Go or WASM are refused by name (G-4).
 - **GN-7b** The Go and WASM crates hold, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
   core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
@@ -411,7 +433,9 @@ the design ids are those of the binding design.
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
   that takes a callback has the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
-  and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
+  and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's
+  core judges every value (B-1), so a refused result has the alias's kind and this test is not generated; its other
+  arguments are placeholders whose lists have one item.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
@@ -496,7 +520,8 @@ the design ids are those of the binding design.
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
   [--add-targets go,wasm]` (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
-  the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP;
+  the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP, and `tests/e2e/consumer` is one that names the
+  value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
   `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding

@@ -1,0 +1,19 @@
+# A sample repository for the end-to-end check of binding: a library that takes and gives the value alias of another
+# repository, tests/e2e/sample (T-3, U-7 (a')).
+[workspace]
+resolver = "2"
+members = ["packages/rust"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.99.0"
+
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

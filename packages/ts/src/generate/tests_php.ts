@@ -2,10 +2,10 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -32,6 +32,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
+  const exactClass = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : `\\${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
+  };
   const methods: string[] = [];
   let usesFixture = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -144,7 +150,6 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const raised = raisedClass(model, kase.raises);
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
       // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
@@ -197,8 +202,8 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         try {
             ${call};
             self::fail('no error');
-        } catch (\\${layout.namespace}\\${raised.category} $error) {
-            self::assertSame(\\${layout.namespace}\\${raised.exact}::class, $error::class);
+        } catch (${cls(kase.raises.category)} $error) {
+            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
@@ -232,7 +237,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } catch (\\LogicException $error) {
             self::assertSame($raised, $error);
         }
-    }
+    }${judgesCallbackResult(model, cbUnit) ? `
 
     public function testK2${name}RefusesACallbackResultOfAnotherType(): void
     {
@@ -242,7 +247,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } catch (\\Throwable $error) {
             self::assertContains($error->kind(), ['invalid_argument_type', 'invalid_number', 'invalid_text']);
         }
-    }`);
+    }` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       // GN-6g: PHP gives Stringable to a class that has __toString.

@@ -1,9 +1,9 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -64,6 +64,12 @@ export function pythonTests(model: Model, module: string): string {
       `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
+  const exactClass = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : langName('python', unit.unit.name, 'class');
+  };
   const out: string[] = [];
   let usesFixture = false;
   let usesErrno = false;
@@ -165,7 +171,6 @@ export function pythonTests(model: Model, module: string): string {
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const raised = raisedClass(model, kase.raises);
       const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => (kase.receiver === undefined ? undefined : caseValue(model, ctx, arg, kase.receiver.args)));
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
@@ -188,10 +193,10 @@ export function pythonTests(model: Model, module: string): string {
       usesErrno ||= errno !== null && 'symbol' in errno;
       out.push(`
     def test_b4_${name}_${kase.id}(self) -> None:${before}${arming}
-        with self.assertRaises(pkg.${raised.category}) as caught:
+        with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), receiver) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
-        self.assertIs(type(error), pkg.${raised.exact})
+        self.assertIs(type(error), pkg.${exactClass(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
@@ -213,12 +218,12 @@ export function pythonTests(model: Model, module: string): string {
         raised = LookupError("raised by the callback")
         with self.assertRaises(LookupError) as caught:
             ${with_({ raise: 'raised' })}
-        self.assertIs(caught.exception, raised)
+        self.assertIs(caught.exception, raised)${judgesCallbackResult(model, cbUnit) ? `
 
     def test_k2_${name}_refuses_a_callback_result_of_another_type(self) -> None:
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
             ${with_({ returns: 'wrong' })}
-        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
+        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`

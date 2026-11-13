@@ -1,0 +1,383 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "consumer",
+  "core": {
+    "crate": "polyspec-consumer",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/consumer",
+      "namespace": "Polyspec\\Consumer"
+    },
+    "python": {
+      "package": "polyspec-consumer",
+      "module": "polyspec.consumer"
+    },
+    "node": {
+      "package": "@polyspec/consumer",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Consumer\\ConsumerValueError",
+        "python": "ConsumerValueError",
+        "node": "ConsumerValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Consumer\\ConsumerTypeError",
+        "python": "ConsumerTypeError",
+        "node": "ConsumerTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Consumer\\ConsumerIoError",
+        "python": "ConsumerIoError",
+        "node": "ConsumerIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Consumer\\ConsumerStoreError",
+        "python": "ConsumerStoreError",
+        "node": "ConsumerStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Consumer\\ConsumerBusyError",
+        "python": "ConsumerBusyError",
+        "node": "ConsumerBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Consumer\\ConsumerInternalError",
+        "python": "ConsumerInternalError",
+        "node": "ConsumerInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_consumer::Error::Absent",
+        "category": "value",
+        "class": "absent_error"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "holder",
+      "name": [
+        "holder"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_consumer::Holder",
+      "thread": "owner",
+      "members": [
+        {
+          "id": "holder.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": {
+              "unit": "data",
+              "library": "sample"
+            }
+          },
+          "optional_reason": "U-3",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_consumer::Holder::get",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "holder.set",
+          "name": [
+            "set"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data",
+                "library": "sample"
+              },
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_consumer::Holder::set",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "consumer",
+      "name": [
+        "consumer"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "consumer.measure",
+          "name": [
+            "measure"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data",
+                "library": "sample"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::measure"
+        },
+        {
+          "id": "consumer.pair",
+          "name": [
+            "pair"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data",
+                "library": "sample"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "data",
+            "library": "sample"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::pair"
+        },
+        {
+          "id": "consumer.fetch",
+          "name": [
+            "fetch"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "holder"
+              ],
+              "type": {
+                "unit": "holder"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "data",
+            "library": "sample"
+          },
+          "raises": [
+            "polyspec_consumer::Error::Absent"
+          ],
+          "wait": "none",
+          "core": "polyspec_consumer::fetch"
+        },
+        {
+          "id": "consumer.copy",
+          "name": [
+            "copy"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "holder"
+              ],
+              "type": {
+                "unit": "holder"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "source"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "target"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::copy"
+        }
+      ]
+    },
+    {
+      "id": "absent_error",
+      "name": [
+        "absent",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": [
+        {
+          "id": "absent_error.key",
+          "name": [
+            "key"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "text",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_consumer::Error::key",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "absent_error.length",
+          "name": [
+            "length"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "uint"
+          },
+          "optional_reason": "E-2",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_consumer::Error::length",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "consumer.measure",
+      "file": "contracts/cases.json",
+      "group": "measure"
+    },
+    {
+      "member": "consumer.pair",
+      "file": "contracts/cases.json",
+      "group": "pair"
+    },
+    {
+      "member": "consumer.fetch",
+      "file": "contracts/cases.json",
+      "group": "fetch"
+    },
+    {
+      "member": "consumer.copy",
+      "file": "contracts/cases.json",
+      "group": "copy"
+    }
+  ]
+}

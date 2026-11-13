@@ -1,0 +1,75 @@
+{
+  "measure": [
+    {
+      "id": "a_list_of_two",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "null"
+          },
+          {
+            "kind": "bool",
+            "value": true
+          }
+        ]
+      },
+      "result": 2
+    }
+  ],
+  "pair": [
+    {
+      "id": "a_text_twice",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "text",
+            "value": "x"
+          },
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      }
+    }
+  ],
+  "fetch": [
+    {
+      "id": "a_key_without_data_is_absent",
+      "holder": {
+        "callback": {
+          "holder.get": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": null
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "holder.get",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "absent",
+        "status": null,
+        "category": "value",
+        "message": "the holder has no a"
+      }
+    }
+  ],
+  "copy": []
+}

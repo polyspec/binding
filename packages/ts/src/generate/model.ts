@@ -41,6 +41,10 @@ export interface ValueAlias {
   coreOut: string;
   // U-7: the E-1 variants that the in function can give (in_raises).
   inRaises: string[];
+  // T-3, U-7 (a'): the library that owns the alias, when it is another repository's, with the error enum of its `in`
+  // function and the category that the owner's E-1 gives each variant.
+  library?: string;
+  error?: { path: string; kinds: { variant: string; category: Category }[] };
 }
 
 export interface Fn {
@@ -118,8 +122,6 @@ export const BASE: Readonly<Record<Category, Readonly<Record<'php' | 'python' | 
 };
 
 export interface ErrorClass {
-  // E-2: an error unit, which extends the class of its parent or of its category; absent for a category class.
-  unit?: Unit;
   category: Category;
   // The simple name in the language of the emitter (E-2: <Library><Category>Error in the class form of the language).
   name: string;
@@ -131,9 +133,39 @@ export interface CoreKind {
   variant: string;
   category: Category;
   className: string;
-  // E-2: the error unit that the row's `class` names, whose class the kind is thrown as.
-  unit?: string;
+  // E-2: the error unit that the row names in `class`, whose class the kind has in place of the class of its category.
+  unit?: ErrorUnit;
 }
+
+// I-3: a property of an error unit, which the generated code reads from the core error by the core path of the member.
+export interface ErrorProperty {
+  member: Member;
+  corePath: string;
+  returns: Type;
+}
+
+// E-2: an error unit. Its class extends the class of its parent, or of its category when it has none.
+export interface ErrorUnit {
+  unit: Unit;
+  category: Category;
+  parent?: ErrorUnit;
+  // The properties that the unit declares itself; errorProperties adds those of its parents.
+  properties: ErrorProperty[];
+}
+
+// The properties of an error unit with those of its parents, each with the unit that declares it, parents first.
+export const errorProperties = (unit: ErrorUnit): { owner: ErrorUnit; property: ErrorProperty }[] => [
+  ...(unit.parent === undefined ? [] : errorProperties(unit.parent)),
+  ...unit.properties.map((property) => ({ owner: unit, property })),
+];
+
+// B-4: the kind text of a variant of the core error, the snake_case of its last segment (CK-22).
+export const kindText = (variant: string): string =>
+  variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+
+// E-2: the error unit of the kind of a contract case, when the row of the kind names one in `class`.
+export const errorUnitOfKind = (model: Model, kind: string): ErrorUnit | undefined =>
+  model.kinds.find((k) => k.unit !== undefined && kindText(k.variant) === kind)?.unit;
 
 export interface Model {
   contract: Contract;
@@ -155,6 +187,8 @@ export interface Model {
   callbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
+  // E-2: the error units, a parent before the units that extend it (P-4).
+  errorUnits: ErrorUnit[];
   coreError: string | undefined;
   kinds: CoreKind[];
   // G-5: the fault injection points of the core that the contract names.
@@ -196,6 +230,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
+    // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
+    if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
     if (unit === undefined) throw new Unsupported(`${where}: ${type.library} has no unit ${type.unit} (T-3)`);
   }
   throw new Unsupported(`${where}: the type ${JSON.stringify(type)} is not generated yet`);
@@ -219,7 +255,7 @@ export function buildModel(
   const objects: ObjectClass[] = [];
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
-  const errorUnits: Unit[] = [];
+  const errorUnits: ErrorUnit[] = [];
   const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
@@ -360,11 +396,26 @@ export function buildModel(
       continue;
     }
     if (unit.kind === 'error' && unit.origin === 'generated') {
-      // E-2: an error unit has the members of a class unit; when the binding reads a property from the core error is
-      // not decided, so a unit with members is refused.
-      if ((unit.members ?? []).length > 0) throw new Unsupported(`${unit.id}: the members of an error unit are not generated yet (E-2, E-3)`);
+      // E-2, I-3: an error unit is a class of its category with read-only properties, which the core error gives.
+      if (unit.category === undefined) throw new Unsupported(`${unit.id}: an error unit without a category (U-1)`);
       if (unit.module !== '') throw new Unsupported(`${unit.id}: an error unit in the module ${unit.module} is not generated yet`);
-      errorUnits.push(unit);
+      if (unit.abstract === true || unit.implements !== undefined || unit.cleanup !== undefined) throw new Unsupported(`${unit.id}: abstract, implements and cleanup of an error unit are not generated yet`);
+      const properties = (unit.members ?? []).map((member): ErrorProperty => {
+        if (member.kind !== 'property') throw new Unsupported(`${member.id}: a ${member.kind} of an error unit is not generated yet`);
+        if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
+        if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+        if (member.writable === true) throw new Unsupported(`${member.id}: a writable property is not generated yet`);
+        if (typeof member.core !== 'object' || member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a property of an error unit names a function of the core error with the receiver &self`);
+        if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a property takes no parameter`);
+        if ((member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: a property of an error unit that raises is not generated yet`);
+        const returns = member.returns ?? 'none';
+        const base = typeof returns === 'object' && 'optional' in returns ? returns.optional : returns;
+        if (typeof base !== 'string' || !['bool', 'int', 'int64', 'uint', 'float', 'text', 'bytes'].includes(base)) {
+          throw new Unsupported(`${member.id}: a property of an error unit of type ${JSON.stringify(returns)} is not generated yet`);
+        }
+        return { member, corePath: member.core.path, returns };
+      });
+      errorUnits.push({ unit, category: unit.category, properties });
       continue;
     }
     if (unit.kind !== 'functions' || unit.origin !== 'generated') {
@@ -392,21 +443,35 @@ export function buildModel(
     const names = Object.fromEntries(Object.entries(row).map(([lang, value]) => [lang, simple(value)]));
     return { category, name: simple(name), names };
   });
-  // E-2, P-4: the classes of the error units follow the category classes, a parent before the units that extend it.
-  for (const unit of inheritanceOrder(errorUnits)) {
-    const names = Object.fromEntries((['php', 'python', 'node'] as const).map((lang) => [lang, convert(unit.name, lang, 'class')]));
-    classes.push({ unit, category: unit.category as Category, name: convert(unit.name, 'node', 'class'), names });
-  }
   const className = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
+  // P-4: a parent comes before the units that extend it. The contract check refuses a cycle (CK-6).
+  for (const unit of errorUnits) {
+    if (unit.unit.parent === undefined) continue;
+    const parent = errorUnits.find((u) => u.unit.id === unit.unit.parent);
+    if (parent === undefined || parent.category !== unit.category) throw new Unsupported(`${unit.unit.id}: the parent ${unit.unit.parent} is not an error unit of category ${unit.category} (E-2)`);
+    unit.parent = parent;
+  }
+  const depth = (unit: ErrorUnit, seen = 0): number => {
+    if (seen > errorUnits.length) throw new Unsupported(`${unit.unit.id}: the parents form a cycle (P-4)`);
+    return unit.parent === undefined ? 0 : 1 + depth(unit.parent, seen + 1);
+  };
+  const depths = new Map(errorUnits.map((u) => [u, depth(u)]));
+  errorUnits.sort((a, b) => (depths.get(a) ?? 0) - (depths.get(b) ?? 0));
+  for (const unit of errorUnits) {
+    const names = errorProperties(unit).map((p) => p.property.member.name.join('_'));
+    const twice = names.find((n, i) => names.indexOf(n) !== i) ?? ['kind', 'status', 'errno', 'message'].find((n) => names.includes(n));
+    if (twice !== undefined) throw new Unsupported(`${unit.unit.id}: the property ${twice} is declared twice (E-3 names kind, status and errno)`);
+  }
   const kinds: CoreKind[] = contract.errors.kinds.map((row) => {
+    // E-1b (a): a row of another library, whose variant holds the error of that library, is not generated yet. A row
+    // with `source` is a variant of this crate (E-1b (b)) and is generated as any other.
     if (row.library !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a dependency kind is not generated yet`);
+      throw new Unsupported(`${row.variant}: a kind of another library (E-1b (a)) is not generated yet`);
     }
     if (row.class === undefined) return { variant: row.variant, category: row.category, className: className(row.category) };
-    // E-2: the row's class is an error unit of the kind's category (CK-10), whose class the kind is thrown as.
-    const override = classes.find((c) => c.unit?.id === row.class);
-    if (override === undefined) throw new Unsupported(`${row.variant}: the class ${row.class} is no error unit that is generated`);
-    return { variant: row.variant, category: row.category, className: override.name, unit: row.class };
+    const unit = errorUnits.find((u) => u.unit.id === row.class);
+    if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
+    return { variant: row.variant, category: row.category, className: className(row.category), unit };
   });
   if (contract.errors.binding.length > 0) throw new Unsupported('errors.binding overrides are not generated yet');
   const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
@@ -453,9 +518,39 @@ export function buildModel(
     const field = (unit.fields ?? []).find((f) => f.default !== undefined);
     if (field !== undefined) throw new Unsupported(`${unit.id}.${field.name.join('_')}: a field default of a record with the result form is not generated yet (T-4)`);
   }
+  // T-3, U-7 (a'): the value aliases of other repositories that a type of this contract names, in the order they are
+  // first named. A failure of the owner's `in` is of the owner's error enum, whose categories the owner's E-1 gives.
+  const eachType = (type: Type, found: (unit: Unit, library: string) => void): void => {
+    if (typeof type === 'string') return;
+    if ('list' in type) return eachType(type.list, found);
+    if ('map' in type) return eachType(type.map, found);
+    if ('keyed_map' in type) return eachType(type.keyed_map, found);
+    if ('optional' in type) return eachType(type.optional, found);
+    if ('tuple' in type) return type.tuple.forEach((part) => eachType(part, found));
+    if ('unit' in type && type.library !== undefined) {
+      const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
+      if (unit !== undefined) found(unit, type.library);
+    }
+  };
+  const foreignAlias = (unit: Unit, library: string): void => {
+    if (unit.kind !== 'alias' || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
+    const rows = foreign.get(library)?.errors.kinds ?? [];
+    const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);
+    if (dependent !== undefined) throw new Unsupported(`${library}.${unit.id}: a value alias whose owner forwards the kind ${dependent.variant} of another library is not generated yet`);
+    const paths = new Set(rows.map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
+    const [path] = [...paths];
+    if (path === undefined || paths.size > 1) throw new Unsupported(`${library}.${unit.id}: the kinds of ${library} name ${paths.size} error enums; a value alias is generated for one`);
+    // U-7: the cases of in_raises and the entry point of codec-test belong to the binding of the owner (GN-5).
+    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error: { path, kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
+  };
+  for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
+    for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
+  }
+  for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
+  for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -710,7 +805,7 @@ export const libraryOf = (type: Type): string | undefined => (typeof type === 'o
 
 // The Rust name of the conversion helpers of a record: in_<name> and out_<name>; a record of another repository is
 // prefixed with its library, so that two libraries' records of one name do not meet.
-export const recordFn = (unit: Unit, library?: string): string =>
+export const recordFn = (unit: { name: Name }, library?: string): string =>
   library === undefined ? rustField(unit.name) : `${library.replaceAll('-', '_')}_${rustField(unit.name)}`;
 
 const RUST_KEYWORDS = new Set([
@@ -815,8 +910,7 @@ export function membersFor(model: Model, lang: Lang): Model {
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
   const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
-  const kindName = (k: CoreKind): string => (k.unit === undefined ? nameOf(k.category) : (classes.find((c) => c.unit?.id === k.unit)?.name ?? ''));
-  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: kindName(k) })) };
+  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
 }
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
@@ -859,7 +953,7 @@ export function resolveNamedTypes(contract: Contract): Contract {
 // U-7: the value alias of a type, when the type is one.
 export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
   const unit = unitOf(model, type);
-  return libraryOf(type) === undefined ? model.aliases.find((a) => a.unit === unit) : undefined;
+  return unit === undefined ? undefined : model.aliases.find((a) => a.unit === unit && a.library === libraryOf(type));
 };
 
 // U-2, T-4: the declared default of a parameter or a field, with the forms that are generated; any other is refused by
@@ -903,38 +997,8 @@ function defaultArg(model: Model, type: Type, variable: string): string {
   return `${variable}.as_ref()`;
 }
 
-// P-4: the error units in the order of their inheritance, a parent before the units that name it; the contract order
-// otherwise. A cycle is an error of the contract.
-function inheritanceOrder(units: Unit[]): Unit[] {
-  const ordered: Unit[] = [];
-  const left = [...units];
-  while (left.length > 0) {
-    const at = left.findIndex((u) => u.parent === undefined || ordered.some((o) => o.id === u.parent));
-    const next = left[at];
-    if (next === undefined) throw new Unsupported(`${left[0]?.id ?? ''}: the parents of the error units make a cycle, or name a unit that is not generated (P-4)`);
-    left.splice(at, 1);
-    ordered.push(next);
-  }
-  return ordered;
-}
-
-// E-2: the class that an error class extends in the language of the emitter: the class of its parent unit, or of its
-// category; undefined for a category class, which extends the base class of the language.
-export function parentClass(model: Model, error: ErrorClass): ErrorClass | undefined {
-  if (error.unit === undefined) return undefined;
-  const parent = error.unit.parent;
-  return parent === undefined ? model.classes.find((c) => c.unit === undefined && c.category === error.category) : model.classes.find((c) => c.unit?.id === parent);
-}
-
-// E-2: the index of the class of a kind in the classes of the model.
-export const kindClass = (model: Model, kind: CoreKind): number =>
-  model.classes.findIndex((c) => (kind.unit === undefined ? c.unit === undefined && c.category === kind.category : c.unit?.id === kind.unit));
-
 // The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2).
 export const argType = (model: Model, arg: Arg): string => (arg.default === undefined ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
-
-// K-1, B-4: the kind text of a variant of the core error, its name in snake_case (CK-22 reads the cases the same way).
-export const kindText = (variant: string): string => variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
 
 // G-5: the name that a case gives a fault injection point of this contract, <library>.<id> with the library in
 // snake_case.
@@ -998,3 +1062,15 @@ export function aliasKindsRust(model: Model): string {
     alias.inRaises.map((variant) => `#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&${model.coreError ?? '()'}) -> bool = |error| matches!(error, ${variant} { .. });`));
   return asserts.length === 0 ? '' : `\n/// U-7, I-2: the kinds of in_raises are variants of the error of the alias's in function.\n${asserts.join('\n')}\n`;
 }
+
+// The Rust name of the conversions of a value alias, in_<name> and out_<name>: another repository's is prefixed with its
+// library, as its records are (recordFn).
+export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit, alias.library);
+
+// U-7 (a'): the Rust name of the function that turns a failure of the `in` of a library's alias into the language error.
+export const aliasFailureFn = (alias: ValueAlias): string =>
+  alias.library === undefined ? 'failure_error' : `${alias.library.replaceAll('-', '_')}_failure_error`;
+
+// The value aliases of other repositories, one per library: the first of each names the library's error enum.
+export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
+  model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);

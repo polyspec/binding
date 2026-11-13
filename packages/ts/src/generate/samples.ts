@@ -218,14 +218,6 @@ export function caseValue(model: Model, ctx: Context, arg: Arg, args: ReadonlyMa
   return fromJson(model, ctx, arg.type, args.get(arg) ?? null);
 }
 
-// E-2, B-4: the class that a failure of a case is an instance of: the error unit of its kind's row, or the class of its
-// category; and the class of the category, which that class extends.
-export function raisedClass(model: Model, raises: { kind: string; category: string }): { exact: string; category: string } {
-  const category = model.classes.find((c) => c.unit === undefined && c.category === raises.category)?.name ?? '';
-  const kind = model.kinds.find((k) => kindText(k.variant) === raises.kind && k.category === raises.category);
-  return { exact: kind?.className ?? category, category };
-}
-
 // Whether the language compares two results of the type by their values: a class instance holds a core value, which
 // only its members show, and a return of none shows nothing.
 function comparable(model: Model, type: Type): boolean {
@@ -517,6 +509,21 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Fixture): { m
 
 export function callbackArg(model: Model, fn: Fn): Arg | undefined {
   return fn.args.find((a) => unitOf(model, a.type)?.origin === 'callback');
+}
+
+// K-2: whether a result of another type is a failure of the binding. A member that returns a value alias gives every
+// value to the alias's core, which judges it (B-1), so the kind of a refused result is the alias's, not the binding's.
+export function judgesCallbackResult(model: Model, callback: Unit): boolean {
+  const namesAlias = (type: Type): boolean => {
+    if (typeof type === 'string') return false;
+    if ('list' in type) return namesAlias(type.list);
+    if ('map' in type) return namesAlias(type.map);
+    if ('keyed_map' in type) return namesAlias(type.keyed_map);
+    if ('optional' in type) return namesAlias(type.optional);
+    if ('tuple' in type) return type.tuple.some(namesAlias);
+    return unitOf(model, type)?.kind === 'alias';
+  };
+  return !(callback.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
 }
 
 // G-5: the key of a keyed map in a case: a text, {"int": n} or {"hex": "<lower-case hex>"} for a byte string.

@@ -95,6 +95,6 @@ export function refuseForOthers(model: Model, targets: readonly string[]): void 
       if (arg.default !== undefined) throw new Unsupported(`${name}: a default is not generated for ${others.join(', ')} yet (U-2, T-4)`);
     }
   }
-  const unit = model.classes.find((c) => c.unit !== undefined)?.unit;
+  const unit = model.errorUnits[0]?.unit;
   if (unit !== undefined) throw new Unsupported(`${unit.id}: an error unit is not generated for ${others.join(', ')} yet (E-2, E-7)`);
 }

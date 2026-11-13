@@ -4,7 +4,7 @@
 // object, so a handle that comes again is made again; a handle inside its own making is a cycle that only a reference
 // can hold, which the out rows give as the kind reference.
 
-import { type Model, type ValueAlias, langName, rustField } from './model.ts';
+import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
@@ -81,22 +81,22 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'native':
       return 'native_object(handle)';
     default:
-      throw new Error(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
+      throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
 }
 
 export function aliasPhp(model: Model, alias: ValueAlias): string {
-  const name = rustField(alias.unit.name);
+  const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('php', alias.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   const arms = outArms(alias, 'php', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
     let mut host = PhpHost { held: Vec::new() };
     let described = host.describe(value)?;
-    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| failure_error(failure))
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
 
 /// U-7: a core value of ${label} leaves as the PHP values of its out rows.
@@ -309,3 +309,32 @@ fn raised(error: Thrown) -> binding_core::Raised {
     binding_core::Raised::from_generated(binding_core::Handle::new(handle))
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
+
+// U-7 (a'): the failure of the `in` of a value alias of another repository. Its kind, status and errno are the owner's;
+// its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
+// wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
+export function foreignFailurePhp(model: Model): string {
+  return foreignAliasLibraries(model).map((alias) => {
+    const library = (alias.library ?? '').replaceAll('-', '_');
+    const error = alias.error ?? { path: '', kinds: [] };
+    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
+    return `
+/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+fn ${library}_error(error: ${error.path}) -> Fail {
+    let class: usize = match error {
+${arms}
+    };
+    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+
+fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+    match failure {
+        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
+        binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
+    }
+}
+`;
+  }).join('');
+}
