@@ -140,6 +140,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise
   (GN-5).
+- **CK-66** The awaitable of Python (GN-6m): in a contract with the target `python`, the Python name `a<name>` of a
+  member with a wait other than `none` is the Python name of no other member of its unit.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

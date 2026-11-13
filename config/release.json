@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "repositoryUrl": "https://github.com/polyspec/binding",
+  "changelog": "CHANGELOG.md",
+  "changelogTranslations": [
+    "CHANGELOG.ko.md"
+  ],
+  "packages": [
+    {
+      "kind": "npm",
+      "directory": "packages/ts",
+      "name": "@polyspec/binding",
+      "product": "binding",
+      "runtime": "ts"
+    }
+  ],
+  "manifests": {
+    "packages/ts/package.json": "archive",
+    "packages/core/rust/Cargo.toml": "git-tag"
+  },
+  "notReleased": {
+    "package.json": "the private root of the checkout (@polyspec/binding-tools): @polyspec/kit, which installs the tools of the checkout",
+    "config/phpunit/composer.json": "the Composer project of the PHPUnit that make install-tools installs into var/tools/phpunit for the end-to-end check"
+  },
+  "goModules": {},
+  "annotatedTags": true,
+  "packageFiles": [
+    "package.json",
+    "composer.json",
+    "Cargo.toml",
+    "pyproject.toml",
+    "go.mod",
+    "VERSION"
+  ],
+  "writtenFiles": [
+    ".mise/locks/**"
+  ],
+  "fixtures": [
+    "tests/e2e/**",
+    "packages/ts/tests/fixtures/**"
+  ]
+}

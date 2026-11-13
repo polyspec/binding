@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -358,6 +358,23 @@
   attribute(`#[pyo3(name = ...)]`, `#[getter(...)]`, `#[php(name = ...)]`)다. 그래서 member의 이름이 lint가 메서드에
   판정하는 이름 규칙(`self`를 받는 `from_*`, std trait 메서드의 이름)에 걸리지 않는다. hook은 언어가 부르는 이름을
   유지한다(N-4). T-1 scalar의 field는 WASM 변환에 값으로 넘긴다. `Copy` 값의 borrow는 필요 없기 때문이다.
+- **GN-6m** `wait: blocking_io`인 member(B-5 (a))는 코어 함수에 receiver 다음 첫 인자로
+  `binding_core::Io::for_generated_call()`을 넘기고(I-2 (4)), 언어마다 자기 꼴로 기다린다:
+  - PHP는 호출 스레드에서 코어를 부르고, 코어가 돌아올 때까지 그 스레드가 막힌다.
+  - Python: `<name>`은 GIL을 쥔 채 인자를 바꾸고 코어 호출을 `py.detach`에서 돌린다. 그래서 코어가 기다리는 동안 다른
+    Python 스레드가 돈다. 객체나 module은 `a<name>`도 가진다. 이것은 같은 인자로 `<name>`을 `asyncio.to_thread`에서 돌리는
+    awaitable이라서 이벤트 루프를 막지 않는다. 그 인자는 그 스레드에서 `<name>`이 돌 때 판정된다(CK-66이 이 이름을 다른
+    member와 떼어 둔다).
+  - Node는 `Promise`를 돌려준다. 진입점은 JavaScript 스레드에서 인자를 바꾸고 자리의 잠금과 fault 장전을 가져온 뒤, 코어
+    호출을 libuv 풀에서 돌리고(`ScopedTask`의 `Env::spawn`), 결과나 오류를 JavaScript 스레드에서 바꾼다. 호출의 panic은
+    kind `internal`로 promise를 거부한다(B-7). 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
+  - Go는 cgo 호출로 작업을 코어에 넘기고 곧바로 돌아오며, 호출 goroutine은 그 작업의 완료 channel에서 기다린다. 코어는
+    export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
+    `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
+  - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
+  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate는 이름을 대고 거부한다.
+  코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없기 때문이다. `process_wait`와
+  `async_driver`도 이름을 대고 거부한다(G-4).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
