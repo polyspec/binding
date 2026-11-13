@@ -696,6 +696,7 @@ test('an out row of a value alias makes an instance by a factory of a class of t
     ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
   ] as const) {
     assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
+    assert.match(text(out, path), /\nfn out_tag\(/, path);
   }
   // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
   row.kind = 'bool';

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- An `out` row of a value alias whose `make` names a member was refused, so a value whose language form is an
+  instance of a class of the contract had no binding. A row by a constructor or static member of a generated class
+  whose one parameter is the content of the kind and which cannot fail now calls its core path on that content, and
+  the value leaves as an instance of the class; any other member is refused by name (GN-6e). Verified by `npm test`
+  in `packages/ts`.
 - An `out` row of a value alias whose `make` is `{"keyed_map": {"key": [...]}}` was refused as a form that is not
   generated, so a value alias that gives a map of keys that are no sequence as a keyed map had no binding in any
   language. The row is now made as a map whose keys, of the kinds it lists, are made by the rows of the alias as its

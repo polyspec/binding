@@ -77,7 +77,7 @@ export function aliasNode(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const label = langName('node', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
+  const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {

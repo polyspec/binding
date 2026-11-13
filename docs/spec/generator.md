@@ -240,7 +240,10 @@ the design ids are those of the binding design.
   `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
   element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
   Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
-  built-in forms (a form by a member is refused by name, G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
+  built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
+  parameter is the content of the kind (bool, int, int64, float, text or bytes) and which cannot fail is called on that
+  content by its core path, and its value leaves as an instance of the class; any other member, and a member in an
+  alias of another repository, is refused by name (G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
   map, each key of the kinds it lists made by the rows as its items are (T-2); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
   handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
