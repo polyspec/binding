@@ -1168,7 +1168,7 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   assert.match(lib, /\.call1\(\(out_text\(py, [a-z0-9_]+\)\?, out_list\(py, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
-  for (const target of ['wasm', 'go']) {
+  for (const target of ['go']) {
     assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target as Lang] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
   }
 });
@@ -1224,6 +1224,25 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false\]\]\)/);
   assert.ok(tests.includes('apply($function0->call(...), '), tests);
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
+});
+
+test('WASM holds a function as a Native of the table of its one thread (T-2, GN-6m, GN-6o)', () => {
+  const { contract, caseFiles } = shapes();
+  withFunction(contract);
+  contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
+  (caseFiles.get('contracts/cases.json') as any).apply = [
+    { id: 'the_function_converts_the_value', convert: { function: [{ args: { 0: 'a', 1: [1] }, result: 'A' }] }, value: 'a', result: 'A' },
+  ];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = in_function\(/);
+  assert.match(lib, /fn in_function\(value: &JsValue, subject: &str\) -> Result<Native, Fail> \{\n    if !value\.is_function\(\) \{/);
+  assert.match(lib, /let function: Function = native_object\(&native\)\.map_err\(Thrown::Binding\)\?\.dyn_into::<Function>\(\)/);
+  assert.match(lib, /struct WasmNative \{\n    key: u64,\n\}/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
+  const tests = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
+  assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);
 });
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
