@@ -145,3 +145,22 @@ export function closure(params: string[], body: string): string {
 // An optional value as Option<&T>, whether the Rust code holds the Option or a reference to it (T-1: a return is read
 // in either form).
 export const optionRef = (value: string): string => (value.startsWith('&') ? `${value.slice(1)}.as_ref()` : `${value}.as_ref()`);
+
+// GN-13e: the deepest nesting of the brackets of a Python expression, outside its string literals.
+export function bracketDepth(expr: string): number {
+  let depth = 0;
+  let most = 0;
+  let quote = '';
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i] ?? '';
+    if (quote !== '') {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if ('([{'.includes(c)) most = Math.max(most, (depth += 1));
+    else if (')]}'.includes(c)) depth -= 1;
+  }
+  return most;
+}

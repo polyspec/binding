@@ -1580,7 +1580,8 @@ test('a Python case value deeper than the parser takes is made step by step in l
   };
   assert.ok(Math.max(...py.split('\n').map(nesting)) <= 60, 'no line of the Python tests nests its brackets deeper than 60');
   // The value is whole: 300 calls of Token.list and the null inside them.
-  assert.equal(py.match(/pkg\.Token\.list\(/g)?.length, 300);
+  const body = py.slice(py.indexOf('def _deep_0():'), py.indexOf('\n\n', py.indexOf('def _deep_0():')));
+  assert.equal(body.match(/pkg\.Token\.list\(/g)?.length, 300);
   assert.match(py, /\n {4}step_0 = [^\n]*pkg\.Token\.none\(\)/);
   assert.match(py, /def test_gn13e_show_deep\(self\) -> None:\n[^\n]*pkg\.show\(_deep_0\(\)\)/);
 });

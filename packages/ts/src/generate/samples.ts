@@ -31,6 +31,17 @@ export interface Context {
   target?: 'wasm';
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
+  // GN-13e: the steps that make a deep case value in local variables (Python), at the depth of the values in making.
+  steps?: Steps | undefined;
+}
+
+// GN-13e: bind gives a value that reaches the bound of nesting a local variable and returns its name; done ends the
+// whole value, in a function of the module when a step was bound; drop forgets the steps of a value that failed.
+export interface Steps {
+  depth: number;
+  bind: (expr: string) => string;
+  done: (expr: string) => string;
+  drop: () => void;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -77,7 +88,22 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
 // and a tuple a tuple in Python.
+// GN-13e: the expression of a case value in the language; where the language binds a deep value step by step (Python),
+// each value is given to the steps, and the whole value to their end.
 export function fromJson(model: Model, ctx: Context, type: Type, value: unknown, out = false): string {
+  const steps = ctx.steps;
+  if (steps === undefined) return valueForm(model, ctx, type, value, out);
+  steps.depth += 1;
+  try {
+    const expr = valueForm(model, ctx, type, value, out);
+    return steps.depth === 1 ? steps.done(expr) : steps.bind(expr);
+  } finally {
+    steps.depth -= 1;
+    if (steps.depth === 0) steps.drop();
+  }
+}
+
+function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: boolean): string {
   const none = ctx.lang === 'python' ? 'None' : 'null';
   if (value === null) return none;
   if (typeof type === 'string') {
@@ -642,6 +668,9 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
 export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
   // A row of a callback fixture that is not generated yet refuses the target (G-4), as the emitters read the fixtures.
   const fixed = new Set(fixturesOf(model, fn, kase.id, kase.args).map((fixture) => fixture.arg));
+  // The probe writes no steps of a deep value (GN-13e), which the test of the case writes when it makes the value.
+  const steps = ctx.steps;
+  ctx.steps = undefined;
   try {
     receiver(kase.receiver);
     for (const arg of fn.args) if (!fixed.has(arg)) caseValue(model, ctx, arg, kase.args);
@@ -649,6 +678,8 @@ export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: stri
   } catch (error) {
     if (!(error instanceof Unsupported)) throw error;
     return `the case ${kase.id} of ${fn.member.id}: ${error.message}`;
+  } finally {
+    ctx.steps = steps;
   }
 }
 

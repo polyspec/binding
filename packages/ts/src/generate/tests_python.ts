@@ -5,7 +5,7 @@ import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf 
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
-import { pyHeader, pyString } from './text.ts';
+import { bracketDepth, pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**64'],
@@ -103,12 +103,49 @@ export function pythonTests(model: Model, module: string): string {
   const helpers: string[] = [];
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => {
     if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
-    const built = madeLines(model, madeForm, receiver);
+    const built = steps.apart(() => madeLines(model, madeForm, receiver));
     const helper = `_made_${helpers.length}`;
     helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
     return `${helper}()`;
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
+  // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a
+  // function of the module, which the next step takes; the values inside a function of an instance value are its own.
+  const DEEP = 50;
+  let pending: string[] = [];
+  let deepFunctions = 0;
+  const steps = {
+    depth: 0,
+    bind: (expr: string): string => {
+      if (bracketDepth(expr) <= DEEP) return expr;
+      const name = `step_${pending.length}`;
+      pending.push(`${name} = ${expr}`);
+      return name;
+    },
+    done: (expr: string): string => {
+      const last = steps.bind(expr);
+      if (pending.length === 0) return last;
+      const helper = `_deep_${deepFunctions++}`;
+      helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${pending.map((line) => `    ${line}\n`).join('')}    return ${last}\n`);
+      pending = [];
+      return `${helper}()`;
+    },
+    drop: (): void => {
+      pending = [];
+    },
+    apart: <T>(make: () => T): T => {
+      const [depth, kept] = [steps.depth, pending];
+      steps.depth = 0;
+      pending = [];
+      try {
+        return make();
+      } finally {
+        steps.depth = depth;
+        pending = kept;
+      }
+    },
+  };
+  ctx.steps = steps;
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
   const madeForm: MadeForm = {
     ctx,

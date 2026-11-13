@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A Python case value nested deeper than the parser of Python takes, such as `array_past_limit` of `value.array` of
+  json, gave a test module that did not import ("too many nested parentheses"). A case value whose brackets would nest
+  more than 50 deep is now made step by step in the local variables of a function of the test module, which the test
+  calls, so the case stays whole (GN-13e). Verified by `npm test` in `packages/ts`.
 - A case whose id holds a character that no identifier takes, such as `document-order` of json, gave the PHP method
   `testGn13eparseDocument-order` and the Python method `test_gn13e_parse_document-order`, so PHPUnit and unittest
   could not read the generated tests. The name of the test of a case now holds the words of its id, split at every
