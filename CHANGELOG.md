@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A case that armed a fault injection point of another library (`<library>.<id>`) ran against a binding crate whose
+  `fault-test` turned on the feature of its own core alone, so the point of the other core was not compiled and the
+  case could not arm it, and `binding check` did not report the manifest. `binding scaffold` now reads the libraries
+  of the points that the case files arm, names `polyspec-<library>/fault-test` of each in `fault-test` with the
+  dependency on that core, stops with the name of a library that the core does not depend on, and `binding check`
+  compares the manifests with that (GN-5, CK-19). The end-to-end run builds each binding crate with the features of
+  its manifest. Verified by `npm test` in `packages/ts`.
 - A contract whose `core.features.wasm` named a feature of platform I/O (`fs`, `blocking-io`, `process`, `net`) passed
   the contract check, and its WASM build failed later or built I/O that a browser does not have. `binding check` now
   reports it (CK-63), and the form of those features in a core is a row of the specification (GN-4b). Verified by

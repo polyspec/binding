@@ -18,7 +18,7 @@ import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { hostRequirements, trackedPackages } from './generate/packages.ts';
+import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -151,7 +151,8 @@ if (typeof version === 'object' && version.workspace === true) {
   version = workspace.workspace?.package?.version;
 }
 if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})));
+// G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles));
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.

@@ -575,6 +575,30 @@ test('a binding crate builds the core with the features of its target only (I-1)
   }
 });
 
+test('a binding crate turns on fault-test of the core of another library whose point a case arms (G-5)', () => {
+  const { root } = fixtureCopy(() => {});
+  try {
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n`);
+    const casesPath = join(root, 'contracts/cases.json');
+    const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
+    cases.split[0].faults = [{ point: 'forms_dep.internal', kind: 'internal' }];
+    writeFileSync(casesPath, JSON.stringify(cases));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    const python = readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8');
+    assert.match(python, /\nfault-test = \["polyspec-forms-dep\/fault-test"\]\n/);
+    assert.match(python, /\npolyspec-forms-dep = \{ path = "\.\.\/\.\.\/dep" \}/);
+    // A point of a library that the core does not depend on is named.
+    cases.split[0].faults = [{ point: 'other_lib.internal', kind: 'internal' }];
+    writeFileSync(casesPath, JSON.stringify(cases));
+    const refused = spawnSync(process.execPath, [cli, 'scaffold', '--root', root], { encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /a case arms a fault injection point of other_lib/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('scaffold rewrites its packages after the core crate was renamed, without asking Cargo', () => {
   const { root } = fixtureCopy((c) => {
     // A type of another repository, for which check and generate ask Cargo for that repository's contract.

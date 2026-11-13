@@ -59,11 +59,13 @@ export function namedLibraries(contract: Contract): string[] {
 // depth counts the directories that the binding crate sits below the level of the core: a relative path climbs as many
 // more (L-2a: a native crate one; the WASM crate packages/ts/wasm one, two in native; the Go crate packages/go/internal/
 // ffi two).
-function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number): string[] {
-  return namedLibraries(contract).map((library) => {
+// G-5: also the cores of the other libraries whose fault injection points a case arms (armed), whose feature fault-test
+// the binding crate turns on.
+function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number, armed: string[]): string[] {
+  return [...new Set([...namedLibraries(contract), ...armed])].sort().map((library) => {
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
-    if (spec === undefined) throw new Error(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names (T-3)`);
+    if (spec === undefined) throw new Error(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names or whose fault injection points a case arms (T-3, G-5)`);
     const deeper = depth > 0 && typeof spec === 'object' && spec !== null && typeof (spec as { path?: unknown }).path === 'string' && !(spec as { path: string }).path.startsWith('/')
       ? { ...(spec as Record<string, unknown>), path: `${'../'.repeat(depth)}${(spec as { path: string }).path}` }
       : spec;
@@ -78,19 +80,21 @@ function coreFeatures(contract: Contract, suffix: string): string {
   return features === undefined ? '' : `, default-features = false, features = [${features.map((f) => JSON.stringify(f)).join(', ')}]`;
 }
 
-// GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature of the core whose
-// fault injection points the contract names (G-5); codec-test adds the entry points that run the in function of a
+// GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature fault-test of the core
+// when the contract names fault injection points, and of each core of another library whose points a case arms (G-5);
+// codec-test adds the entry points that run the in function of a
 // value alias with in_raises alone (U-7). WASM has fault-test, and Go has neither yet.
-function testFeatures(contract: Contract, suffix: string): string {
+function testFeatures(contract: Contract, suffix: string, armed: string[]): string {
   if (suffix === 'go') return '';
-  const faults = (contract.faults ?? []).length > 0 ? `fault-test = ["${contract.core.crate}/fault-test"]\n` : '';
+  const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
+  const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
   const codec = suffix !== 'wasm' && contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
   return `${faults}${codec}`;
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
 // staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm). libExtra: lines of [lib] after its type.
-function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+function manifest(contract: Contract, version: string, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -106,7 +110,7 @@ crate-type = ["${crate?.type ?? 'cdylib'}"]${libExtra}
 
 [features]
 panic-test = []
-${testFeatures(contract, suffix)}
+${testFeatures(contract, suffix, armed)}
 [dependencies]
 ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
 ${bindingCore(suffix)}
@@ -162,9 +166,20 @@ export function placed(contract: Contract, files: Files): Files {
 
 export const extensionName = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
-export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map()): Files {
+// G-5: a library in a point name is in snake_case, as the library name of its crate is (pointLibrary of check.ts).
+const pointName = (library: string): string => library.replaceAll('-', '_');
+
+// armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
+// (casePointLibraries).
+export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = []): Files {
   const files: Files = new Map();
-  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0);
+  // G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
+  const armed = [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
+    const crate = [...coreDependencies.keys()].find((name) => name.startsWith('polyspec-') && pointName(name.slice('polyspec-'.length)) === prefix);
+    if (crate === undefined) throw new Error(`a case arms a fault injection point of ${prefix}, whose crate ${contract.core.path}/Cargo.toml does not depend on (G-5)`);
+    return crate.slice('polyspec-'.length);
+  });
+  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed);
   // L-2a: the WASM crate is wasm/ of the Node package, native/wasm/ of a host Node package.
   const wasmDepth = isHost(contract, 'node') ? 2 : 1;
   // L-2a: a host package's language manifest is the host's, which check only reads (hostRequirements).
@@ -173,7 +188,7 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   };
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
     files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
@@ -195,7 +210,7 @@ python-source = "generated/python"
   }
   if (contract.targets.includes('node')) {
     const npm = (contract.packages['node'] as { package: string }).package;
-    files.set('packages/ts/Cargo.toml', manifest(contract, version, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
+    files.set('packages/ts/Cargo.toml', manifest(contract, version, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       ...foreignOf('node'),
       'napi = { version = "=3.16.2", default-features = false, features = ["napi8"] }',
       'napi-derive = "=3.7.1"',
@@ -209,8 +224,8 @@ python-source = "generated/python"
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
-    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, 'wasm', `${extensionName(contract)}_wasm`, [
-      ...foreignCrates(contract, coreDependencies, wasmDepth),
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, armed, 'wasm', `${extensionName(contract)}_wasm`, [
+      ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
     ], '', false, { type: 'cdylib', core: `${'../'.repeat(wasmDepth + 1)}rust` }));
@@ -220,7 +235,7 @@ python-source = "generated/python"
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false'));
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
       ['non_snake_case', 'G-7: a parameter is named as the PHP named argument, in camelCase'],
@@ -242,7 +257,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2), '', false, { type: 'staticlib', core: '../../../rust' })
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' })
       // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
       .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
@@ -372,4 +387,23 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     out.push({ path, item: `require.${extension}`, want: '*', found: (t) => json(t)['require']?.[extension] });
   }
   return out;
+}
+
+// G-5: the libraries, in the snake_case of a point name (<library>.<id>), of the fault injection points that the cases of
+// a contract arm, read from its case files (K-1). A file or a group that is not there names none; CK-22 reports it.
+export function casePointLibraries(contract: Contract, caseFiles: Map<string, unknown>): string[] {
+  const found = new Set<string>();
+  for (const row of contract.cases) {
+    const document = caseFiles.get(row.file);
+    const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
+    for (const kase of Array.isArray(group) ? group : []) {
+      const faults = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['faults'] : undefined;
+      for (const fault of Array.isArray(faults) ? faults : []) {
+        const point = typeof fault === 'object' && fault !== null ? (fault as Record<string, unknown>)['point'] : undefined;
+        const prefix = typeof point === 'string' && point.includes('.') ? point.slice(0, point.indexOf('.')) : undefined;
+        if (prefix !== undefined) found.add(prefix);
+      }
+    }
+  }
+  return [...found].sort();
 }

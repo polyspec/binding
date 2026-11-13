@@ -121,7 +121,12 @@
   인스턴스를 받아 쓰기 guard를 얻고 panic한다.
   Python·Node·PHP crate는 계약의 alias에 `in_raises`가 있으면 `codec-test`를, 계약에 `faults`가 있으면
   `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
-  `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. WASM crate는 계약에 `faults`가 있으면
+  `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. case는 다른 라이브러리의
+  지점(`<library>.<id>`, G-5)을 장전할 수 있다. 그러면 각 바인딩 crate의 그 feature는 그런 라이브러리마다
+  `polyspec-<library>/fault-test`도 적고, crate는 코어가 하듯이 그 코어에 의존한다(T-3). Cargo feature는 직접 의존의
+  feature만 켜기 때문이며, 계약의 코어가 그것을 적을 필요는 없다. `binding scaffold`는 case 파일의 지점에서 라이브러리를
+  읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
+  비교한다(CK-19). WASM crate는 계약에 `faults`가 있으면
   `fault-test`를 갖고, 그 시험은 wasm-bindgen이 쓰는 모듈로 두 진입점에 닿는다. WASM에는 `codec-test`가 아직 없고 Go에는 둘 다
   아직 없다. `in_raises`를 가진 계약에 Go나 WASM이 있거나, `faults`를 가진 계약에 Go가 있으면 이름을 대고 거부한다(G-4).
 

@@ -313,10 +313,17 @@ function checkCases(contract: Contract, copy: string): string[] {
   return [...files];
 }
 
-// GN-5: the test features of the Python, Node and PHP binding crates of a contract: panic-test, fault-test when the
-// contract names fault injection points (G-5), codec-test when an alias has in_raises (U-7).
-const testFeatures = (contract: Contract): string =>
-  ['panic-test', ...((contract.faults ?? []).length > 0 ? ['fault-test'] : []), ...(contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? ['codec-test'] : [])].join(',');
+// GN-5: the test features of a binding crate are the features of its manifest, which binding scaffold of the run
+// wrote: panic-test, fault-test when the contract names fault injection points or a case arms one of another library
+// (G-5), codec-test when an alias has in_raises (U-7).
+const crateDirs: Record<Lang, string> = { python: 'packages/python', node: 'packages/ts', php: 'packages/php-ext', go: 'packages/go/internal/ffi', wasm: 'packages/ts/wasm' };
+const testFeatures = (p: Prepared, t: Lang): string => {
+  const manifestPath = at(p, `${crateDirs[t]}/Cargo.toml`);
+  const table = /\n\[features\]\n([\s\S]*?)(?:\n\[|$)/.exec(readFileSync(manifestPath, 'utf8'))?.[1] ?? '';
+  const features = [...table.matchAll(/^([a-z][a-z0-9-]*) = /gm)].map((m) => m[1] ?? '').filter((name) => name !== 'default');
+  if (!features.includes('panic-test')) throw new Error(`${manifestPath} has no feature panic-test (GN-5)`);
+  return features.join(',');
+};
 
 const extensionOf = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
 
@@ -479,12 +486,9 @@ stepOf(targets, `lint the core${mains.length === 1 ? '' : 's'}`, () => {
   for (const p of mains) run('cargo', ['clippy', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', p.contract.core.crate, '--all-targets', ...((p.contract.faults ?? []).length > 0 ? ['--features', 'fault-test'] : []), '--', '-D', 'warnings']);
 });
 for (const t of targets) if (!failed(t)) lintOf(t, `cargo clippy of the core${mains.length === 1 ? '' : 's'}`);
-// G-5: the WASM crate has the feature fault-test when the contract has fault injection points, and no codec-test.
-const wasmFeatures = (c: Contract): string => ['panic-test', ...((c.faults ?? []).length > 0 ? ['fault-test'] : [])].join(',');
-const lintFeatures = (t: Lang, c: Contract): string => (t === 'go' ? 'panic-test,codec-test' : t === 'wasm' ? wasmFeatures(c) : testFeatures(c));
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'}`, () => {
-    for (const p of mainsOf(t)) run('cargo', ['clippy', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-${crateSuffix[t]}`, '--all-targets', '--features', lintFeatures(t, p.contract), '--', '-D', 'warnings']);
+    for (const p of mainsOf(t)) run('cargo', ['clippy', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-${crateSuffix[t]}`, '--all-targets', '--features', testFeatures(p, t), '--', '-D', 'warnings']);
   })) lintOf(t, `cargo clippy of the ${t} binding crate${mainsOf(t).length === 1 ? '' : 's'} with ${mainsOf(t).length === 1 ? 'its' : 'their'} test features`);
 }
 
@@ -533,7 +537,7 @@ if (targets.includes('python')) {
     rmSync(wheels, { recursive: true, force: true });
     for (const p of copiesOf('python')) {
       // The wheel is built for the Python of the venv, the one of mise.toml, and installed from the local directory alone.
-      run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(p.contract), '--out', wheels], { cwd: packageDir(p, 'python') });
+      run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(p, 'python'), '--out', wheels], { cwd: packageDir(p, 'python') });
       const python = p.contract.packages['python'] as { package: string };
       const prefix = `${python.package.replaceAll('-', '_')}-`;
       const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
@@ -558,7 +562,7 @@ if (targets.includes('wasm')) {
       const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(at(p, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
       const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
       if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', wasmFeatures(p.contract)]);
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', testFeatures(p, 'wasm')]);
       const glue = `${p.contract.library.replaceAll('-', '_')}_wasm`;
       run(wasmBindgen, ['--target', 'web', '--out-dir', at(p, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib(p.contract, 'wasm')}.wasm`)]);
     }
@@ -579,7 +583,7 @@ if (targets.includes('node') || targets.includes('wasm')) {
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
     const packed = mains.filter((p) => p.contract.targets.includes('node') || p.contract.targets.includes('wasm'));
     for (const p of packed) {
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-node`, '--features', testFeatures(p.contract)]);
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-node`, '--features', testFeatures(p, 'node')]);
       const npm = (p.contract.packages['node'] as { package: string }).package;
       const platformDir = join(work, `node-platform-${p.contract.library}`);
       rmSync(platformDir, { recursive: true, force: true });
@@ -637,7 +641,7 @@ if (targets.includes('php')) {
   const extensions: string[] = [];
   stepOf(['php'], 'build the extensions', () => {
     for (const p of copiesOf('php')) {
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p.contract)]);
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p, 'php')]);
       extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)}`);
     }
   });
@@ -680,7 +684,7 @@ if (targets.includes('go')) {
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);
     stepOf(['go'], `build the static library${of} with the test features`, () => {
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', testFeatures(p, 'go')]);
       if (goCases && i === 0) {
         mkdirSync(join(goModule, 'tests'), { recursive: true });
         copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));

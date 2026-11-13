@@ -148,7 +148,12 @@ the design ids are those of the binding design.
   B-5c test, which takes an instance, takes its write guard and panics.
   A Python, Node or PHP crate has `codec-test` when an alias of the contract has `in_raises`, and
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
-  `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A WASM crate has `fault-test` when the contract has `faults`, and its tests reach the two entry
+  `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
+  library (`<library>.<id>`, G-5): then the feature of each binding crate also names `polyspec-<library>/fault-test`
+  of each such library, and the crate depends on that core as the core does (T-3), because a Cargo feature turns on a
+  feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
+  libraries from the points of the case files, a point of a library that the core does not depend on stops it with
+  its name, and `binding check` compares the manifests with them (CK-19). A WASM crate has `fault-test` when the contract has `faults`, and its tests reach the two entry
   points through the module that wasm-bindgen writes; it has no `codec-test` yet, and Go has neither of the two yet: a
   contract with `in_raises` and Go or WASM, or with `faults` and Go, is refused by name (G-4).
 
