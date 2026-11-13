@@ -382,9 +382,7 @@ the design ids are those of the binding design.
   `text`. Any other `make` is refused by name (G-4). Python, Node and PHP take and give it so; WASM takes and gives it
   as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go takes it as the Go type of the
   owner's class, whose `by` and `read` members the answers of the host questions of GN-15c call, and gives it by the
-  exported functions of the owner's Go package that the `out` rows name. Not implemented (defect 80, row B2.80): the
-  generator refuses it for Go by name, because the call of GN-15c has no description, read and making of an instance
-  yet.
+  exported functions of the owner's Go package that the `out` rows name, as GN-15c states.
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
@@ -694,7 +692,19 @@ the design ids are those of the binding design.
   module of the class makes the instance by that number, because `internal/binding` does not import that package. A
   member of another module that gives such a value is refused by name, because only the package of the class makes
   its instance. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in` function of an alias of
-  this repository alone.
+  this repository alone. A value class of another repository (GN-6x) is the pointer to the Go type of the owner's class
+  in the package of its module, which `internal/binding` imports. Package binding describes an instance by the `in` row
+  of the class for Go: it calls the `by` member and writes node 11 with the kind of the case whose `is` the result is
+  and a handle; the question read (op 2) of that handle calls the `read` member of the case and describes its result
+  by these rules, and an instance of a class of the owner whose `iterate` member yields `{key, value}` is a map of the
+  entries of that iteration. An error that a member of the owner returns is node 12 with the call and its index, so
+  the Go function returns that error unchanged, as it returns the error of a callback (U-3). A core value of the class
+  leaves as node 11 of the result with the number of the value class and the number of its Go `out` row, followed by
+  the content of the kind of the row: nothing for `null`, a bool, the literal of a number, a text, the items, or the
+  entries of a map; package binding calls the exported function of the owner that the row names on that content, a map
+  as an instance of the map class that its constructor makes and its insert method fills, and an error of that
+  function is the error of the call. A Go value of another type is described by the rules above, so the owner's `in`
+  function judges it.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that

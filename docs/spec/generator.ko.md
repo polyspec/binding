@@ -310,9 +310,7 @@
   순서대로 넣고, key는 kind `text`의 행으로 만든다. 그 밖의 `make`는 이름으로 거절한다(G-4). Python,
   Node, PHP는 이렇게 주고받는다. WASM은 owner의 WASM 패키지의 JavaScript class로 Node와 같이
   주고받는다(GN-18b). Go는 owner class의 Go 타입으로 받으며, GN-15c의 host 질문에 대한 답이 그
-  `by`와 `read` member를 부른다. 줄 때는 `out` 행이 적은 owner Go 패키지의 export 함수로 만든다.
-  구현되지 않음(결함 80, 행 B2.80): GN-15c의 호출에는 아직 인스턴스의 묘사, read, 만들기가 없으므로 생성기는
-  Go에서 이를 이름으로 거절한다.
+  `by`와 `read` member를 부른다. 줄 때는 GN-15c대로 `out` 행이 적은 owner Go 패키지의 export 함수로 만든다.
 - **GN-6f** class의 kind `iterate` member(N-4)는 `&self`로 코어를 불러, 빌린 항목이나 `yields: {key, value}`면 빌린 key와
   value의 iterator를 받는다. 바인딩은 순회가 시작될 때 모든 항목을 변환한다(class 값의 snapshot, 값 타입은 값으로, class는
   코어 값의 복사로). Python은 `__iter__`로 항목을 주거나, dict처럼 `__iter__`로 key를, `items()`로 쌍을 준다. Node는 class를
@@ -578,6 +576,16 @@
   member로 값을 만드는 행(GN-6e)은 class의 인스턴스를 준다. C ABI는 계약 안 class의 번호와 값의 handle을 적고, class의
   module 패키지가 그 번호로 인스턴스를 만든다. `internal/binding`은 그 패키지를 import하지 않기 때문이다. 그런 값을
   주는 다른 module의 member는 이름으로 거부한다. 그 class의 패키지만 인스턴스를 만들기 때문이다. `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
+  다른 레포의 값 class(GN-6x)는 그 module 패키지에 있는 owner class의 Go 타입의 포인터이며, `internal/binding`이 그
+  패키지를 import한다. 패키지 binding은 인스턴스를 그 class의 Go `in` 행으로 묘사한다: `by` member를 부르고, 결과가
+  `is`인 case의 kind와 handle을 담은 node 11을 쓴다. 그 handle에 대한 질문 read(op 2)는 case의 `read` member를 불러
+  그 결과를 이 규칙대로 묘사하고, `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
+  map이다. owner의 member가 돌려준 오류는 call과 그 index를 담은 node 12이므로, Go 함수는 callback의 오류처럼(U-3) 그
+  오류를 그대로 돌려준다. class의 코어 값은 값 class의 번호와 그 Go `out` 행의 번호를 담은 결과의 node 11로 나가고,
+  그 뒤에 행 kind의 내용이 온다: `null`은 없음, bool, 수의 literal, text, 항목들, map의 entry들. 패키지 binding은 행이
+  이름하는 owner의 export 함수를 그 내용으로 부르며, map은 constructor로 만들고 insert method로 채운 map class의
+  인스턴스로 준다. 그 함수의 오류는 호출의 오류다. 다른 타입의 Go 값은 위 규칙대로 묘사하므로 owner의 `in` 함수가
+  판정한다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
