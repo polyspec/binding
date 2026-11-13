@@ -2073,7 +2073,7 @@ test('a member with wait blocking_io that reaches language code runs where its l
   // Node: the call runs synchronously on the JavaScript thread, and the entry still returns a Promise.
   const node = text(out, 'packages/ts/generated/lib.rs');
   const entry = node.slice(node.indexOf('pub fn resolve_slowly<'), node.indexOf('\n}\n', node.indexOf('pub fn resolve_slowly<')));
-  assert.match(entry, /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut lookup, &key\)/);
+  assert.match(entry, /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
   assert.doesNotMatch(entry, /waiting\(env/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.resolveSlowly\(/);

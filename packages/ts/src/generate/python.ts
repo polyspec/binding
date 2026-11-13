@@ -642,7 +642,8 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
 // arguments out and the return in, and an exception of the language code, or a failure of the binding in the callback,
-// goes to the core as a Raised that the generated caller throws again unchanged.
+// goes to the core as a Raised that the generated caller throws again unchanged. GN-6q: each call takes the GIL on the
+// thread on which the core calls it, so a callback with thread owner has no check of the thread.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = rustType(model, { unit: cb.unit.id });
@@ -655,10 +656,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
     const returned = m.returns === 'none' ? 'Ok(())' : `${convertIn(model, m.returns, '&returned', rustString(`${pyName}.${method}() returns`))}`;
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params.map((p) => `, ${p}`).join('')}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, ${failure}> {
-        Python::attach(|py| {${cb.owner ? `
-            if std::thread::current().id() != self.owner {
-                return Err(thrown(py, binding_error(py, BindingError::WrongThread { subject: String::from(${rustString(`${pyName}.${method}()`)}) })));
-            }` : ''}
+        Python::attach(|py| {
             let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {
                 let returned = self.object.bind(py).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                 ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
@@ -676,13 +674,13 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   return `
 /// U-3: ${pyName}, a callback that Python code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct} {
-    object: Py<PyAny>,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+    object: Py<PyAny>,
 }
 
 /// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback).
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${struct}> {
 ${checks}
-    Ok(${struct} { object: value.clone().unbind()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+    Ok(${struct} { object: value.clone().unbind() })
 }
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
