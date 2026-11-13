@@ -760,9 +760,10 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.match(sync.find((f) => f.check === 'CK-22')?.message ?? '', /is async, which store\.read does not allow/);
   });
   // forms.parse with one more parameter, and one case of it that gives the parameter the value.
-  const withParam = (parameter: object, key: string, value: unknown): Finding[] => {
+  const withParam = (parameter: object, key: string, value: unknown, change?: (c: any) => void): Finding[] => {
     const c = contract();
     member(c, 'forms.parse').parameters.push({ ...parameter, required: true });
+    change?.(c);
     const files = new Map<string, Record<string, unknown[]>>();
     for (const kase of c.cases) {
       const document = files.get(kase.file) ?? {};
@@ -778,6 +779,12 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
     assert.match(found[0]?.message ?? '', /store\.write is no member of store/);
     assert.match(withParam(stores, 'stores', ['a']).map((f) => f.message).join('\n'), /stores\[0\] is not \{"callback"/);
+    // An instance of a class that implements the interface is an instance value (GN-13f).
+    const constructible = (c: any): void => {
+      unit(c, 'memory_store').members.push({ id: 'memory_store.new', name: ['new'], kind: 'constructor', visibility: 'public', wait: 'none', parameters: [], returns: 'self', raises: [], core: 'sample::MemoryStore::new' });
+    };
+    assert.deepEqual(withParam(stores, 'stores', [{ new: 'memory_store.new' }], constructible).filter((f) => f.check === 'CK-22' && f.path === parseCases()), []);
+    assert.match(withParam(stores, 'stores', [{ new: 'session.new', args: {} }]).map((f) => f.message).join('\n'), /stores\[0\] is an instance value of session, which does not implement store/);
   });
   test('a case gives a function as its rows, whose args are the positions of its parameters (G-5, GN-13)', () => {
     const takes = (parameters: unknown[]): object => ({ name: ['convert'], type: { function: { parameters, returns: 'text', async_allowed: false } } });

@@ -164,9 +164,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   in `args` exactly the parameters of their member, and whose rows have no key but `args`, `result`, `raise`, `once`
   and `async`; a row with a `result` and a `raise`, a `raise` of an error unit that the member does not recognize
   (U-3), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the
-  language (a class, a callback, a function, a host value), which a row cannot give, are reported. A member that
-  raises and takes a function type, or a callback interface inside another type, is reported as waiting for that case
-  form (GN-13a), because a case cannot give it yet; it is not left out.
+  language (a class, a callback, a function, a host value), which a row cannot give, are reported. The same holds at
+  every other place of a callback interface: a field of a record, an item of a list and an `optional`, where an
+  instance value (GN-13f) of a class of the contract that `implements` the interface may stand for the fixture. A
+  value of a function type is `{"function": [<row>]}`, whose rows have no key but `args`, `result` and `once` and
+  give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an object of the
+  language has no row.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public unit, member, parameter or field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

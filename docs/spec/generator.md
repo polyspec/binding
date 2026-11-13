@@ -566,7 +566,9 @@ the design ids are those of the binding design.
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
   core that swallows the exception still fails, and the calls to be those of `calls`, in order, when the case names
-  them. `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
+  them. A callback inside another type (a field of a record, an item of a list, an `optional`) is given as the same
+  fixture, and a function as `{"function": [<row>]}`, whose `args` are the positions of its parameters (`"0"`, `"1"`,
+  ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4

@@ -1192,9 +1192,7 @@ class Checker {
   // gives. A case that arms fault injection points (G-5) fills only the kinds that its points fill, so an input rule
   // keeps its input case. A kind of the category internal needs no case of each member (X-1): the match that maps the
   // error enum is one for every member, so one case that arms <library>.internal checks it for the enum. The kinds
-  // of a value alias's in function have their cases in the group of the alias (U-7). A case cannot give a function,
-  // or a callback inside another type, yet, so a member that takes one and raises is reported as such until G-5 has
-  // that case form (GN-13a); it is not left out, which would drop its tests without a word.
+  // of a value alias's in function have their cases in the group of the alias (U-7).
   caseKinds(files: ReadonlyMap<string, unknown>): void {
     const raised = new Map<string, Set<string>>();
     const aliasRaised = new Map<string, Set<string>>();
@@ -1253,16 +1251,12 @@ class Checker {
     for (const { member, unit, path } of this.members.values()) {
       const kinds = raised.get(member.id);
       if (kinds === undefined || unit.origin === 'callback' || unit.origin === 'host') continue;
-      // A callback that is a parameter itself is the fixture of a case (G-5); any other place of language code waits.
-      const code = (member.parameters ?? []).some((p) => this.takesCode(p.type) && this.callbackOf(p.type) === undefined);
       for (const [r, variant] of (member.raises ?? []).entries()) {
         const row = rows.get(variant);
         // X-1: a kind of the category internal has the one case of its enum, below.
         if (row?.category === undefined || row.category === 'internal') continue;
         for (const kind of kindsOf(row)) {
-          if (code) {
-            this.report('CK-22', `${path}/raises/${r}`, `${member.id} raises the kind ${kind}, but a case cannot give the function, or the callback inside another type, that ${member.id} takes yet (G-5, GN-13a)`);
-          } else if (!kinds.has(kind)) {
+          if (!kinds.has(kind)) {
             this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}${row.category === 'io' ? ', by an input or by a fault injection point of faults that fills it' : ''} (K-1, B-4)`);
           }
         }
@@ -1532,64 +1526,134 @@ class Checker {
     return unit?.origin === 'callback' ? unit : undefined;
   }
 
-  // G-5: the callback fixture of a case. A callback parameter of the member is {"callback": {<callback member id>:
-  // [<row>]}, "calls": [{"member", "args"}]}; a row is {"args": {<parameter>: <value>}} with "result", or "raise"
-  // {"error", "kind"} of a class that the member recognizes, and "once" and "async".
+  // G-5: the values of language code in a case: a callback fixture at each place of a callback type, the parameter
+  // itself, a field of a record, an item of a list or an optional, and a function value at each place of a function
+  // type. A callback fixture is {"callback": {<callback member id>: [<row>]}, "calls": [{"member", "args"}]}; a row is
+  // {"args": {<parameter>: <value>}} with "result", or "raise" {"error", "kind"} of a class that the member
+  // recognizes, and "once" and "async". A function value is {"function": [<row>]}, a row {"args": {"0": <value>, ...}}
+  // by the positions of the parameters, with "result" and "once".
   caseFixtures(memberId: string, group: unknown[], path: string): void {
     const member = this.members.get(memberId)?.member;
     const snake = (name: Name): string => convert(name, 'python', 'variable');
-    for (const parameter of member?.parameters ?? []) {
-      const unit = this.callbackOf(parameter.type);
-      if (unit === undefined) continue;
-      const members = new Map((unit.members ?? []).map((m) => [m.id, m]));
-      for (const kase of group) {
-        const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
-        const where = `the case ${String(record['id'])} of ${memberId}`;
-        const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
-        const value = record[snake(parameter.name)];
-        const fixture = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
-        const rows = fixture?.['callback'];
-        if (fixture === undefined || typeof rows !== 'object' || rows === null || Array.isArray(rows)) {
-          report(`${snake(parameter.name)} is not {"callback": {<member of ${unit.id}>: [<row>]}}`);
-          continue;
+    for (const kase of group) {
+      const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
+      const where = `the case ${String(record['id'])} of ${memberId}`;
+      const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
+      for (const parameter of member?.parameters ?? []) {
+        const key = snake(parameter.name);
+        if (!this.takesCode(parameter.type) || (!Object.hasOwn(record, key) && parameter.default !== undefined)) continue;
+        this.codeValue(parameter.type, record[key], key, report);
+      }
+    }
+  }
+
+  // G-5: a value at a place of the type that may hold language code.
+  codeValue(type: Type, value: unknown, what: string, report: (message: string) => void): void {
+    if (typeof type === 'string') return;
+    if ('optional' in type) {
+      if (value !== null) this.codeValue(type.optional, value, what, report);
+      return;
+    }
+    if ('list' in type) {
+      if (!Array.isArray(value)) return report(`${what} is not a list`);
+      for (const [k, item] of value.entries()) this.codeValue(type.list, item, `${what}[${k}]`, report);
+      return;
+    }
+    if ('function' in type) return this.functionValue(type.function.parameters, value, what, report);
+    if (!('unit' in type) || type.library !== undefined) return;
+    const unit = this.units.get(type.unit)?.value;
+    if (unit?.origin === 'callback') {
+      // An instance of a class of this contract that implements the interface is given as an instance value (GN-13f).
+      const instance = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+      const id = instance?.['new'] ?? instance?.['from'];
+      if (typeof id === 'string') {
+        const made = this.members.get(id);
+        const returns = made?.member.returns;
+        const at = returns === undefined || returns === 'self' ? made?.unit.id : typeof returns === 'object' && 'unit' in returns && returns.library === undefined ? returns.unit : undefined;
+        const implementer = at === undefined ? undefined : this.units.get(at)?.value;
+        if (implementer === undefined || !(implementer.implements ?? []).some((ref) => ref.library === undefined && ref.unit === unit.id)) {
+          return report(`${what} is an instance value of ${String(at)}, which does not implement ${unit.id}`);
         }
-        for (const key of Object.keys(fixture)) if (key !== 'callback' && key !== 'calls') report(`a callback value has no key ${key}`);
-        const args = (owner: string, given: unknown, what: string): void => {
-          const found = members.get(owner);
-          if (found === undefined) return report(`${owner} is no member of ${unit.id}`);
-          if ((found.parameters ?? []).some((p) => this.nativeArgument(p.type))) return report(`${owner} takes an object of the language, which a row cannot give`);
-          const names = (found.parameters ?? []).map((p) => snake(p.name));
-          const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
-          if (keys === undefined || keys.length !== names.length || names.some((n) => !keys.includes(n))) report(`the args of ${what} are not the parameters ${names.join(', ')} of ${owner}`);
-        };
-        for (const [owner, list] of Object.entries(rows as Record<string, unknown>)) {
-          if (!Array.isArray(list)) {
-            report(`the rows of ${owner} are not a list`);
-            continue;
-          }
-          for (const [r, item] of list.entries()) {
-            const row = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
-            const what = `row ${r} of ${owner}`;
-            args(owner, row['args'], what);
-            for (const key of Object.keys(row)) if (!['args', 'result', 'raise', 'once', 'async'].includes(key)) report(`${what} has no key ${key}`);
-            if (row['result'] !== undefined && row['raise'] !== undefined) report(`${what} has a result and a raise`);
-            const found = members.get(owner);
-            if (row['async'] === true && found?.async_allowed !== true) report(`${what} is async, which ${owner} does not allow`);
-            const raise = row['raise'];
-            if (raise !== undefined) {
-              const error = typeof raise === 'object' && raise !== null ? (raise as Record<string, unknown>)['error'] : undefined;
-              const recognized = (found?.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error);
-              if (!recognized) report(`${what} raises ${String(error)}, which ${owner} does not recognize (U-3)`);
-            }
-          }
-        }
-        const calls = fixture['calls'];
-        if (calls !== undefined && !Array.isArray(calls)) report('calls is not a list');
-        for (const [c, item] of (Array.isArray(calls) ? calls : []).entries()) {
-          const call = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
-          args(String(call['member']), call['args'], `call ${c}`);
+        if (instance?.['from'] === undefined) return this.instanceValue(implementer.id, value, report, what);
+        return report(`${what} is an instance of ${implementer.id} made by new, not read from a result`);
+      }
+      return this.callbackValue(unit, value, what, report);
+    }
+    if (unit?.kind === 'record') {
+      const fields = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+      if (fields === undefined) return;
+      for (const field of unit.fields ?? []) {
+        const key = convert(field.name, 'python', 'variable');
+        if (this.takesCode(field.type) && Object.hasOwn(fields, key)) this.codeValue(field.type, fields[key], `${what}.${key}`, report);
+      }
+    }
+  }
+
+  // G-5: a function value, {"function": [<row>]}.
+  functionValue(parameters: readonly Type[], value: unknown, what: string, report: (message: string) => void): void {
+    const form = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    const rows = form?.['function'];
+    if (form === undefined || !Array.isArray(rows) || Object.keys(form).length !== 1) return report(`${what} is not {"function": [<row>]}`);
+    const positions = parameters.map((_p, i) => String(i));
+    for (const [r, item] of rows.entries()) {
+      const row = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      const at = `row ${r} of ${what}`;
+      for (const key of Object.keys(row)) if (!['args', 'result', 'once'].includes(key)) report(`${at} has no key ${key}`);
+      if (parameters.some((p) => this.nativeArgument(p))) {
+        report(`${at}: the function takes an object of the language, which a row cannot give`);
+        continue;
+      }
+      const given = row['args'];
+      const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
+      if (keys === undefined || keys.length !== positions.length || positions.some((n) => !keys.includes(n))) report(`the args of ${at} are not the positions ${positions.join(', ')} of its parameters`);
+    }
+  }
+
+  // G-5: a callback fixture of the callback interface `unit`.
+  callbackValue(unit: Unit, value: unknown, what: string, report: (message: string) => void): void {
+    const snake = (name: Name): string => convert(name, 'python', 'variable');
+    const members = new Map((unit.members ?? []).map((m) => [m.id, m]));
+    const fixture = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+    const rows = fixture?.['callback'];
+    if (fixture === undefined || typeof rows !== 'object' || rows === null || Array.isArray(rows)) {
+      report(`${what} is not {"callback": {<member of ${unit.id}>: [<row>]}}`);
+      return;
+    }
+    for (const key of Object.keys(fixture)) if (key !== 'callback' && key !== 'calls') report(`a callback value has no key ${key}`);
+    const args = (owner: string, given: unknown, at: string): void => {
+      const found = members.get(owner);
+      if (found === undefined) return report(`${owner} is no member of ${unit.id}`);
+      if ((found.parameters ?? []).some((p) => this.nativeArgument(p.type))) return report(`${owner} takes an object of the language, which a row cannot give`);
+      const names = (found.parameters ?? []).map((p) => snake(p.name));
+      const keys = typeof given === 'object' && given !== null && !Array.isArray(given) ? Object.keys(given) : undefined;
+      if (keys === undefined || keys.length !== names.length || names.some((n) => !keys.includes(n))) report(`the args of ${at} are not the parameters ${names.join(', ')} of ${owner}`);
+    };
+    for (const [owner, list] of Object.entries(rows as Record<string, unknown>)) {
+      if (!Array.isArray(list)) {
+        report(`the rows of ${owner} are not a list`);
+        continue;
+      }
+      for (const [r, item] of list.entries()) {
+        const row = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
+        const at = `row ${r} of ${owner}`;
+        args(owner, row['args'], at);
+        for (const key of Object.keys(row)) if (!['args', 'result', 'raise', 'once', 'async'].includes(key)) report(`${at} has no key ${key}`);
+        if (row['result'] !== undefined && row['raise'] !== undefined) report(`${at} has a result and a raise`);
+        const found = members.get(owner);
+        if (row['async'] === true && found?.async_allowed !== true) report(`${at} is async, which ${owner} does not allow`);
+        const raise = row['raise'];
+        if (raise !== undefined) {
+          const error = typeof raise === 'object' && raise !== null ? (raise as Record<string, unknown>)['error'] : undefined;
+          const recognized = (found?.errors?.recognize ?? []).some((ref) => ref.library === undefined && ref.unit === error);
+          if (!recognized) report(`${at} raises ${String(error)}, which ${owner} does not recognize (U-3)`);
         }
       }
+    }
+    const calls = fixture['calls'];
+    if (calls !== undefined && !Array.isArray(calls)) report('calls is not a list');
+    for (const [c, item] of (Array.isArray(calls) ? calls : []).entries()) {
+      const call = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
+      args(String(call['member']), call['args'], `call ${c}`);
     }
   }
 
@@ -1610,12 +1674,16 @@ class Checker {
     return false;
   }
 
-  takesCode(type: Type): boolean {
+  takesCode(type: Type, seen: ReadonlySet<string> = new Set()): boolean {
     if (typeof type === 'string') return false;
     if ('function' in type) return true;
-    if ('optional' in type) return this.takesCode(type.optional);
-    if ('list' in type) return this.takesCode(type.list);
-    if ('unit' in type && type.library === undefined) return this.units.get(type.unit)?.value.origin === 'callback';
+    if ('optional' in type) return this.takesCode(type.optional, seen);
+    if ('list' in type) return this.takesCode(type.list, seen);
+    if ('unit' in type && type.library === undefined && !seen.has(type.unit)) {
+      const unit = this.units.get(type.unit)?.value;
+      if (unit?.origin === 'callback') return true;
+      if (unit?.kind === 'record') return (unit.fields ?? []).some((f) => this.takesCode(f.type, new Set([...seen, type.unit])));
+    }
     return false;
   }
 

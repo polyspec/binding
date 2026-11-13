@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
+  form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
+  positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value
+  of a class that implements the interface; `binding check` judges each as it judges a fixture (CK-22, GN-13). The
+  generator still refuses a function type and a callback inside another type by name (GN-13a). Verified by `npm test`
+  in `packages/ts`.
 - A call of `then` in an instance value that fails stopped the test as a failure of its preparation, so a kind that
   only an instance after a failed call reaches, such as a failure that a body gives again, had no case. A call of
   `then` may name `"raises": {"kind": <kind>}`, a kind of its member's `raises`, which `binding check` judges and every
