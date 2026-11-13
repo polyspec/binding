@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 97d643c315235b563cac753b086e5c50020d7e26ff534e8aff90b6cce9b25f1d -->
+<!-- source-sha256: c51bb0a3065b6775cf9ce62cc554c056e9e07979fcc65865e3321cde8b95c3cf -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -31,6 +31,27 @@
   crate와 Python 시험의 시험은 통과한다. 모든 target으로 sample을 생성하는 시험은 Node, Go, WASM의 거부로 아직 실패한다.
   sample의 `make e2e`로도 검증했다. Python crate는 clippy를 통과하고 생성된 시험 88개가 unittest에서 통과하며,
   `store.transaction`의 case 다섯이 그 안에 있다. 그 실행은 Node, Go, WASM을 거부로 실패한 target으로 이름한다.
+- 이름이 `text`, `list`이거나 helper의 다른 단어인 unit이 있는 계약의 생성된 Go crate는 컴파일되지 않았다. 변환
+  `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`의 이름을 가졌기 때문이다. Go crate의 helper는 이제
+  GN-4c가 적는 대로 방향을 끝에 적는다: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`, `key_out`,
+  `no_form_out`, `passed_out`. Go crate의 어떤 함수도 member의 이름을 갖지 않는다: 진입점은
+  `<prefix>_<module>_<member>`다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`, `callable`,
+  `text`가 있는 sample의 Go crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는 이름의 다른
+  함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_text`의 정의 둘을 찾았다.
+- Go 바인딩은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그것을 생성한다:
+  parameter는 Go `func(<parameters>) (any, error)`이고 결과는 `any`다. `func`는 호출의 callback으로 들어가 export
+  `<prefix>__go_callback`으로 member의 goroutine과 스레드에서 돌고, class 인자는 각각 새 인스턴스다. package
+  `binding`은 `func`가 돌려준 것을 mutex 뒤의 table에 수인 handle로 쥐고, static library는 버려진 `Passthrough`의
+  값을 export `<prefix>__go_release_passed`로 지우며, handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  member는 `func`가 돌려준 error 값을 돌려주고, `func`의 panic은 static library의 frame을 지나 unwind하지 않도록
+  dispatch가 recover하며, member가 같은 값으로 panic한다. Go 시험은 함수 fixture를 `func`로 쓴다. `result`를 적은
+  step은 호출이 다른 값을 돌려주면 error를 돌려주고, 표시 `"awaits": true`는 아무것도 바꾸지 않는다. Go 시험은 또
+  `raises: "callback"` case, `after`의 호출, nil `func`와 `func`의 error와 panic의 시험을 쓰며, `after`나 `raises:
+  "callback"`이 있는 case를 더는 거부하지 않는다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Go crate, package,
+  시험의 시험 2개는 통과한다. 모든 target으로 sample을 생성하는 시험 20개는 아직 Python, Node, WASM의 거부로 실패한다.
+  `tests/e2e/sample`의 `make e2e`로 검증했다: Go는 `go test`에서 생성된 시험 61개를 통과하고(`store.transaction`의
+  case 다섯 개 포함) clippy, `gofmt -l`, `go vet`이 깨끗하며, PHP는 88개를 통과한다. Python, Node, WASM은 거기서 그
+  거부로 실패한다.
 - `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
   않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
   정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:

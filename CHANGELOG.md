@@ -35,6 +35,29 @@
   the sample for every target still fail with the refusal of Node, Go and WASM. Also verified by `make e2e` of the
   sample, where the Python crate passes clippy and the 88 generated tests pass on unittest, the five cases of
   `store.transaction` among them; that run names Node, Go and WASM as failed by their refusal.
+- The generated Go crate of a contract with a unit named `text`, `list` or another word of a helper did not compile:
+  the conversion `in_<unit>` or `out_<unit>` had the name of the helper `in_<word>` or `out_<word>`. The helpers of
+  the Go crate now state their direction last, as GN-4c states: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`,
+  `key_out`, `no_form_out`, `passed_out`. No function of the Go crate has the name of a member: an entry point is
+  `<prefix>_<module>_<member>`. Verified by `npm test` in `packages/ts`, whose test generates the Go crate of the
+  sample with the enums `default`, `callable` and `text` and requires one definition of each conversion and no other
+  function named `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_text`.
+- The Go binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates them: the parameter is a Go `func(<parameters>) (any, error)` and the result is `any`; the `func` enters
+  as a callback of the call and runs through the export `<prefix>__go_callback` on the goroutine and the thread of
+  the member, with each class argument as a new instance; package `binding` holds what the `func` returned in a
+  table behind a mutex under a handle that is a count, the static library removes the value of a dropped
+  `Passthrough` through the export `<prefix>__go_release_passed`, and a result whose handle names no value is kind
+  `internal`; the member returns the error value that the `func` returned, and a panic of the `func`, which the
+  dispatch recovers so that it does not unwind through the frames of the static library, is the panic of the member
+  with the same value. The Go test writes a function fixture as a `func`, whose step that names `result`
+  returns an error when its call returned another value and whose marker `"awaits": true` changes nothing, the case
+  with `raises: "callback"`, the calls of `after`, and the tests of a nil `func`, of the error and of the panic of a
+  `func`, and no longer refuses a case with `after` or `raises: "callback"` (GN-6ae, CK-22). Verified by `npm test`
+  in `packages/ts`, whose two tests of the Go crate, package and test pass; 20 tests that generate the sample for
+  every target still fail with the refusal of Python, Node and WASM. Verified by `make e2e` of `tests/e2e/sample`,
+  where Go passes 61 generated tests on `go test`, the five cases of `store.transaction` among them, with clippy,
+  `gofmt -l` and `go vet` clean, and PHP passes 88; Python, Node and WASM fail there by their refusal.
 - The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
   helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
   `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to

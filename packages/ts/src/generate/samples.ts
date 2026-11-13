@@ -624,7 +624,7 @@ export const isInstanceValue = (value: unknown): boolean =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && (typeof (value as Record<string, unknown>)['new'] === 'string' || typeof (value as Record<string, unknown>)['from'] === 'string');
 
 // Every member of the model by its id: the functions and the members of the class units.
-const memberById = (model: Model, id: string): Fn | undefined =>
+export const memberById = (model: Model, id: string): Fn | undefined =>
   [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.member.id === id);
 
 // The type that the steps of a pick reach from a type, or a reason.
@@ -745,7 +745,7 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
 }
 
 // The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
-function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
+export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | undefined {
   const args = new Map<Arg, unknown>();
   for (const arg of fn.args) {
     const snake = langName('python', arg.name, 'variable');

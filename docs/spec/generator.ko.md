@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d3f8cbcbf21310e36252dcf7a6888445c02da5458554b85dbcced56d801d8192 -->
+<!-- source-sha256: 0b859a89b050cb13a45f1446425e74ffc1e1db1d4657e128805dea0d2db71bbb -->
 # 생성기
 
 [English](generator.md)
@@ -126,8 +126,10 @@
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
   이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
-  바꾸기 때문이다. 아직 적용하지 않은 것(G-4): Node, WASM, Go의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름하고,
-  그 함수 진입은 이 규칙으로 검사하지 않았다. PHP와 Python의 crate는 이 규칙을 적용한다.
+  바꾸기 때문이다. Go crate의 함수나 member의 진입은 C symbol `polyspec_<library>_<module>_<member>`(B-8)이고,
+  Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. 아직 적용하지
+  않은 것(G-4): Node, WASM의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름하고, 그 함수 진입은 이 규칙으로 검사하지
+  않았다. PHP, Python, Go의 crate는 이 규칙을 적용한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -656,6 +658,21 @@
     놓는다. loop가 없으면 coroutine을 닫아 Python이 기다리지 않은 coroutine을 경고하지 않게 하고, 호출은 kind
     `invalid_callback`으로 실패한다. 두 coroutine 함수는 crate가 처음 필요할 때 자기 소스로 만드는 module이다. Rust
     코드는 `async def`를 쓰지 못하기 때문이다.
+  - Go: parameter는 생성된 signature의 Go `func`, 곧 `func(<parameters>) (any, error)`이고, 결과 `passthrough`는
+    `any`다. Go의 method에는 type parameter가 없기 때문이다. nil `func`는 kind `invalid_callback`이다. 함수는 호출의
+    callback(GN-15b)으로, 곧 호출의 handle(`cgo.Handle`)과 그 안의 index로 들어가고, C ABI의 closure는 모든 Go
+    callback의 trampoline인 export `<prefix>__go_callback`으로 그것을 부른다. 함수는 member의 goroutine에서, 그
+    스레드에서 돈다: goroutine은 C ABI 호출 동안 그 스레드를 쥐고, `machine::drive`는 machine의 각 call을 거기서 하며
+    (GN-6ab), Go는 export된 함수를 그것을 부른 스레드에서 돌리므로, 어떤 `Passthrough`도 그것을 만든 스레드를 떠나지
+    않는다. 함수의 dispatch는 각 인자를 풀고(class 인자는 closure가 쓴 handle을 감싼 새 인스턴스다, GN-15a), 함수를
+    부르고, 함수가 돌려준 것을 package `binding`의 table에 쥔다: mutex 뒤에서 handle에서 값으로 가는 map이고, 그
+    `Passthrough`가 끝날 때까지 garbage collector가 값에 닿을 수 있게 하며, handle은 table의 수다. closure는 그
+    handle의 `Passthrough`를 만든다. 그 release 함수는 export `<prefix>__go_release_passed`로 값을 지우며, 어느
+    스레드에서든 그렇게 한다. Go 값은 스레드에 묶이지 않기 때문이다. 결과 `passthrough`는 그 handle로 C ABI를 건너고,
+    member는 값을 table에서 꺼낸다. 함수가 돌려준 `error`는 호출이 index로 쥐고 U-3의 `Raised`가 되므로(GN-15b),
+    member는 같은 error 값을 돌려준다. 함수의 panic은 dispatch에서 recover한다. C ABI의 frame을 지나 unwind하는
+    panic은 코어의 destructor, 곧 그 guard와 machine의 것을 건너뛰기 때문이다: 호출은 panic의 값을 `Raised`로 쥐고,
+    코어는 error일 때처럼 끝나며, member는 C ABI 호출이 돌아온 뒤 같은 값으로 panic한다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
     driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
     WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
@@ -674,12 +691,20 @@
     step은 기다리는 member의 호출을 기다리고(Python은 `await <인자>.a<name>(...)`), 그 case의 Python 시험은 event
     loop에서 `a<name>`을 부른다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은 fixture가 보통 함수이고 driver가 그 값을
     곧바로 settle한다. 표시가 있는 case는 다섯 target에서 돌고 각 target에서 같은 결과, 예외, `after`를 요구한다.
-  아직 생성하지 않는 것(G-4): Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
+  아직 생성하지 않는 것(G-4): Node, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
-  PHP와 Python은 그 member를 생성한다. PHP와 Python 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"`
-  case의 시험, `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직
-  쓰지 않는다. Python의 함수 fixture는 시험 module의 함수다. lambda는 문장을 갖지 못하기 때문이다. Python 시험은 또
+  PHP, Python, Go는 그 member를 생성한다. PHP와 Python 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"`
+  case의 시험, `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다.
+  Python의 함수 fixture는 시험 module의 함수다. lambda는 문장을 갖지 못하기 때문이다. Python 시험은 또
   awaitable을 돌려주는 함수를 받은 `<name>`이 `a<name>`을 이름하는 message의 kind `invalid_callback`일 것을 요구한다.
+  Go 시험은 함수 fixture를 각 단계가 그 error를
+  돌려주는 `func`로 쓰고, `result`를 적은 단계는 호출이 다른 값을 돌려주면 그 member를 이름하는 error를 돌려준다.
+  `"awaits": true`가 있는 fixture도 같은 `func`다. Go 시험은 `raises: "callback"` case의 시험(그 `func`는 시험이 쥔 error 값을 돌려주고 시험은 바로 그
+  값을 요구한다), `after`의 호출, 그리고 함수 타입의 parameter마다 nil `func`가 kind `invalid_callback`이라는 시험,
+  member가 `func`가 돌려준 error 값을 돌려준다는 시험, member가 `func`의 panic 값으로 panic한다는 시험을 쓴다.
+  package `binding`은 그 table의 handle을 다시 주지 않는다는 것과 handle이 값을 가리키지 않는 결과가 kind
+  `internal`이라는 것을 시험한다. 오류 unit을 던지는 함수 fixture는 그 Go 시험을 이름을 대고 실패시킨다. 아직 어떤
+  함수도 오류를 인식하지 않기 때문이다. Node, WASM의 시험은 아직 그것을 쓰지 않는다.
   end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class

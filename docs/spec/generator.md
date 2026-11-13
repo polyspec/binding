@@ -157,9 +157,11 @@ the design ids are those of the binding design.
   `loop_function_<name>`. The members of a class are functions of its `impl` block, which holds no helper. The
   entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
   where the attribute already gives the name of the language, while a module would change every path from an entry
-  to a helper and the form in which each framework registers the entry. Not applied yet (G-4): the crates of Node,
-  WASM and Go name their helpers `in_<word>` and `out_<word>`, and their entries of functions are not checked
-  against this rule; the crates of PHP and Python apply the rule.
+  to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
+  crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
+  family is `polyspec_`, with which no helper starts. Not applied yet (G-4): the crates of Node and WASM name
+  their helpers `in_<word>` and `out_<word>`, and their entries of functions are not checked against this rule;
+  the crates of PHP, Python and Go apply the rule.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -790,6 +792,24 @@ the design ids are those of the binding design.
     GIL; without a loop a coroutine is closed, so that Python does not warn that it was never awaited, and the call
     fails with kind `invalid_callback`. The two coroutine functions are a module that the crate makes from its own
     source when it first needs one, because Rust code writes no `async def`.
+  - Go: the parameter is a Go `func` of the generated signature, `func(<parameters>) (any, error)`, and the result
+    `passthrough` is `any`, because a method of Go has no type parameter. A nil `func` is kind `invalid_callback`. The
+    function enters as a callback of the call (GN-15b), the handle of the call (`cgo.Handle`) and its index in it, and
+    the closure of the C ABI calls it through the export `<prefix>__go_callback`, the trampoline of every Go
+    callback. It runs on the goroutine of the member, on its thread: the goroutine holds its thread for the call of
+    the C ABI, `machine::drive` makes each call of the machine there (GN-6ab), and Go runs an exported function on the
+    thread that calls it, so no `Passthrough` leaves the thread that made it. The dispatch of the function decodes
+    each argument, a class argument as a new instance around the handle that the closure wrote (GN-15a), calls the
+    function and holds what it returned in the table of package `binding`: a map from a handle to the value behind a
+    mutex, which keeps the value reachable for the garbage collector until its `Passthrough` ends, and whose handle
+    is a count of the table. The closure makes the `Passthrough` of that handle; its release function removes the
+    value through the export `<prefix>__go_release_passed`, on any thread, because a Go value is bound to no thread.
+    A result `passthrough` crosses the C ABI as its handle, and the member takes the value out of the table. An
+    `error` that the function returns is kept by the call under its index and is the `Raised` of U-3 (GN-15b), so the
+    member returns the same error value. A panic of the function is recovered in the dispatch, because a panic that
+    unwinds through the frames of the C ABI skips the destructors of the core, its guards and its machine: the call
+    keeps the value of the panic as the `Raised`, the core ends as for an error, and the member panics with the same
+    value after the call of the C ABI returned.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
     the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
@@ -813,14 +833,21 @@ the design ids are those of the binding design.
     loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
     settles at once: a case with the marker runs on the five targets and requires the same result, exception and
     `after` on each.
-  Not generated yet (G-4): Node, Go and WASM refuse a member with a parameter of a function type or a result
+  Not generated yet (G-4): Node and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP and Python generate the member. The PHP and Python tests write the function fixture, the test of a case
-  with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a value
-  that is no callable is kind `invalid_callback`; the test of another target does not yet. A Python function fixture
+  yet"; PHP, Python and Go generate the member. The PHP and Python tests write the function fixture, the test of a
+  case with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a
+  value that is no callable is kind `invalid_callback`. A Python function fixture
   is a function of the test module, because a lambda holds no statement, and the Python test also requires that
   `<name>` given a function that returns an awaitable is kind `invalid_callback` with a message that names
-  `a<name>`. The contract of the end-to-end sample
+  `a<name>`. The Go test writes the function fixture as a `func` whose steps return their
+  error, and a step that names `result` returns an error that names its member when the call returned another value;
+  a fixture with `"awaits": true` is the same `func`; it writes the test of a case with `raises: "callback"`, whose `func` returns the error value that the test holds and
+  which requires that same value, the calls of `after`, and for each parameter of a function type a test that a nil
+  `func` is kind `invalid_callback`, a test that the member returns the error value that the `func` returned, and a
+  test that the member panics with the value of a panic of the `func`; package `binding` tests that a handle of its
+  table is not given again and that a result whose handle names no value is kind `internal`. A function fixture that
+  raises an error unit fails its Go test by name, because no function recognizes an error yet. The test of Node and WASM does not write them yet. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns

@@ -180,8 +180,8 @@ const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
 });
 const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
 // GN-4c: the name of a helper of the generated crate at a path, given as `in_<word>` or `out_<word>`: the crates of
-// Python and PHP name it `<word>_in` and `<word>_out`, and the crates of Node, WASM and Go do not apply the rule yet.
-const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
+// Python, PHP and Go name it `<word>_in` and `<word>_out`, and the crates of Node and WASM do not apply the rule yet.
+const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext|go)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
 // The case files of the sample of the end-to-end check (tests/e2e/sample).
 const sampleCases = (): Map<string, unknown> =>
   new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
@@ -412,7 +412,7 @@ test('Go: map<T> is an ordered Map, and every target generates map<T> (T-2, G-4)
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^type Map\[T any\] = binding\.Map\[T\]$/m);
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /\(\*Map\[\[\]string\], error\)/);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /out_map\(output, result, \|output, item\| out_list\(/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /map_out\(output, result, \|output, item\| list_out\(/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_map_test.go'), /func TestT2TheEncodingKeepsTheOrderOfAMap/);
 });
 
@@ -426,8 +426,8 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   member.returns = 'latin1';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(rust, /fn in_latin1\(input: &mut &\[u8\], subject: &str\)[^]*TextCause::AboveLatin1/);
-  assert.match(rust, /fn out_latin1\([^]*char::from\(\*byte\)/);
+  assert.match(rust, /fn latin1_in\(input: &mut &\[u8\], subject: &str\)[^]*TextCause::AboveLatin1/);
+  assert.match(rust, /fn latin1_out\([^]*char::from\(\*byte\)/);
   assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__echo_latin1\(/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextAboveU00FF\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\u0100"/);
@@ -446,9 +446,9 @@ test('Go: a tuple parameter is read part by part, a Tuple<N> of different part t
   assert.match(go, /^func SplitWords\(text_ Tuple3\[string, uint64, bool\], options Options\)/m);
   assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
+  assert.match(rust, /fn tuple3_in<'a, T0, T1, T2>\(/);
   // GN-12a: a uint part is a safe integer, as at every place of the contract.
-  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), \|input\| in_safe_uint\(input, "text"\), in_bool\)\?/);
+  assert.match(rust, /tuple3_in\(&mut input, \|input\| text_in\(input, "text"\), \|input\| safe_uint_in\(input, "text"\), bool_in\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
@@ -470,7 +470,7 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^type KeyedMap\[T any\] = binding\.KeyedMap\[T\]$/m);
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^func TextKey\(value string\) Key \{ return binding\.TextKey\(value\) \}$/m);
-  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /in_keyed_map\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /keyed_map_in\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
 });
@@ -884,16 +884,16 @@ test('Go: an optional output is an Option of a reference to the value of the cor
   // An optional property of an error unit (absent_error.length, of the form of machine_error.expected of fsm).
   const { contract: consumer, caseFiles, foreign } = consumerSample();
   const ffi = text(generate({ contract: consumer, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }), 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(ffi, /\nfn out_optional<T>\(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce\(&mut Vec<u8>, T\)\) \{/);
-  assert.match(ffi, /out_optional\(output, polyspec_consumer::Error::length\(&error\)\.as_ref\(\), out_uint\);/);
+  assert.match(ffi, /\nfn optional_out<T>\(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce\(&mut Vec<u8>, T\)\) \{/);
+  assert.match(ffi, /optional_out\(output, polyspec_consumer::Error::length\(&error\)\.as_ref\(\), uint_out\);/);
   // An optional uint and an optional text field of a record that leaves the C ABI.
   const { contract } = load();
   contract.units[0].members[0].returns = { unit: 'options' };
   unitOf(contract, 'options').fields.push({ name: ['label'], type: { optional: 'text' }, required: true, reason: 'S-1' });
   contract.cases = [];
   const sample = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() }), 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(sample, /out_optional\(output, value\.max_words\.as_ref\(\), out_uint\);/);
-  assert.match(sample, /out_optional\(output, value\.label\.as_ref\(\), out_text\);/);
+  assert.match(sample, /optional_out\(output, value\.max_words\.as_ref\(\), uint_out\);/);
+  assert.match(sample, /optional_out\(output, value\.label\.as_ref\(\), text_out\);/);
 });
 
 test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6k)', () => {
@@ -1010,7 +1010,7 @@ test('a property of an error unit that raises raises in place of the error, and 
   assert.match(wasm, /out_text\(match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\)/);
   assert.match(wasm, /\("trace", out_list\(polyspec_consumer::Error::trace\(&error\), /);
   const goRust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(goRust, /out_text\(output, match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\);/);
+  assert.match(goRust, /text_out\(output, match polyspec_consumer::Error::key\(&error\) \{ Ok\(value\) => value, Err\(failure\) => return core_error\(failure\) \}\);/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func \(e \*AbsentError\) Trace\(\) \[\]string \{ return e\.pTrace \}/);
 });
 
@@ -1522,7 +1522,7 @@ test('an integer key of a keyed_map outside the safe integers is kind invalid_nu
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
   const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
-  const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'in_keyed_map');
+  const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'keyed_map_in');
   assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n(?:\s+\/\/[^\n]*\n)?\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
   assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(9007199254740992\)[\s\S]{0,400}?"invalid_number"/);
 });
@@ -1541,10 +1541,10 @@ test('an int or a uint outside the safe integers is kind invalid_number in every
     assert.doesNotMatch(rustFn(lib, 'int64_in'), safe, `${path}: int64_in takes the range of i64`);
   }
   const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(rustFn(ffi, 'in_safe_int'), safe, 'the Go C ABI refuses an int outside the safe integers');
-  assert.match(rustFn(ffi, 'in_safe_uint'), safe, 'the Go C ABI refuses a uint above 2^53 - 1');
-  assert.match(ffi, /in_list\(input, \|input\| in_safe_uint\(input, /, 'an item of a list of uint is in the range');
-  assert.doesNotMatch(rustFn(ffi, 'in_int'), safe, 'an int64, a handle and a length take the range of their word');
+  assert.match(rustFn(ffi, 'safe_int_in'), safe, 'the Go C ABI refuses an int outside the safe integers');
+  assert.match(rustFn(ffi, 'safe_uint_in'), safe, 'the Go C ABI refuses a uint above 2^53 - 1');
+  assert.match(ffi, /list_in\(input, \|input\| safe_uint_in\(input, /, 'an item of a list of uint is in the range');
+  assert.doesNotMatch(rustFn(ffi, 'int_in'), safe, 'an int64, a handle and a length take the range of their word');
   assert.match(
     text(out, 'packages/python/generated/tests/test_generated.py'),
     /def test_b2_buffer_from_end_count_refuses_what_is_not_int\(self\) -> None:\n\s+for bad in \[[^\n]*2\*\*53, -\(2\*\*53\)/,
@@ -2948,7 +2948,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(go, made);
   // GN-15: a helper that only an entry point of a test feature uses carries the feature, so the build without it has
   // no dead code.
-  assert.match(go, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
+  assert.match(go, /\n#\[cfg\(feature = "fault-test"\)\]\nfn list_out</);
   assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
   // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
@@ -3002,9 +3002,9 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  // PHP and Python generate the member.
-  for (const target of ['php', 'python']) assert.doesNotThrow(() => sample(scoped, [target]), target);
-  for (const [target, name] of [['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+  // PHP, Python and Go generate the member.
+  for (const target of ['php', 'python', 'go']) assert.doesNotThrow(() => sample(scoped, [target]), target);
+  for (const [target, name] of [['node', 'Node'], ['wasm', 'WASM']]) {
     assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
@@ -3021,9 +3021,9 @@ test('a Go helper that only the entry points of a test feature use is compiled u
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
   // out_list writes the points that a fault-test entry point gives back, and no member of the sample gives a list.
-  assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
+  assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn list_out</);
   // A helper of the members is compiled in every form.
-  assert.match(lib, /\nfn in_text\(/);
+  assert.match(lib, /\nfn text_in\(/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
@@ -3143,6 +3143,70 @@ test('the PHP test writes a function fixture, the exception of raises callback a
   assert.match(tests, /public function testGn6aeStoreTransactionWorkRefusesWhatIsNoCallable\(\): void\n {4}\{\n {8}try \{\n {12}new \\Polyspec\\Sample\\Store\(\)->transaction\(1\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleTypeError \$error\) \{\n {12}self::assertSame\('invalid_callback', \$error->kind\(\)\);/);
 });
 
+test('Go takes a func as a callback of the call, holds its value in the table of package binding and returns it unchanged (GN-6ae)', () => {
+  const out = scopedSample(['go']);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  // The func enters as the call and its index in it, and a nil func is kind invalid_callback.
+  assert.match(lib, /let work = go_function\(&mut input, "work"\)\?;/);
+  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  // The closure writes each argument, a class argument as the handle of a new instance, and calls the func through
+  // the trampoline of the callbacks; what the func returned is the Passthrough of its handle in the table of Go, and
+  // an error of the func is a Raised.
+  assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let mut args = Vec::new\(\);\n\s+\{\n\s+let output = &mut args;\n\s+out_scope\(output, arg0\);\n\s+\}\n\s+called\(work, &args\)\.map_err\(binding_core::Failure::from\)\n\s+\};/);
+  assert.match(lib, /fn called\(function: \(u64, u64\), args: &\[u8\]\) -> Result<binding_core::Passthrough, Raised> \{\n {4}let \(call, callback\) = function;\n {4}let \(status, bytes\) = go_callback\(call, callback, 0, args\);\n {4}if status != 0 \{\n {8}return Err\(raised_by_go\(call, &bytes\)\);\n {4}\}/);
+  assert.match(lib, /Ok\(handle\) => Ok\(binding_core::Passthrough::from_generated\(Handle::new\(handle\), release_passed\)\),/);
+  assert.match(lib, /fn polyspec_sample__go_release_passed\(handle: u64\);/);
+  assert.match(lib, /fn release_passed\(handle: Handle\) \{\n[^\n]*\n {4}unsafe \{ polyspec_sample__go_release_passed\(handle\.raw\(\)\) \};\n\}/);
+  // The machine takes a clone of the value of the instance and the closure, and Go settles an awaited value at once.
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  // A result passthrough crosses the C ABI as its handle; no helper has a name of the form out_<unit>.
+  assert.match(lib, /fn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{\n {4}uint_out\(output, value\.into_handle\(\)\.raw\(\)\);\n\}/);
+  assert.match(lib, /\n\s+passed_out\(output, result\);\n/);
+  // A class that only a function takes has no conversion in (T-5).
+  assert.doesNotMatch(lib, /\bfn in_scope\b/);
+  // The declarations: a func of the scope that returns any value and an error, and the member returns any value.
+  const pkg = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(pkg, /func \(this \*Store\) Transaction\(work func\(\*Scope\) \(any, error\)\) \(any, error\) \{/);
+  // The func is a callback of the call: its dispatch decodes the class argument as a new instance and calls it.
+  assert.match(pkg, /\tcall := binding\.NewCall\(\)\n\tdefer call\.Close\(\)\n\tenc := binding\.NewWriter\(\)\n\tenc\.Uint\(this\.handle\(\)\)\n\tif work == nil \{\n\t\tenc\.Tag\(false\)\n\t\} else \{\n\t\tenc\.Tag\(true\)\n\t\tcall\.Callback\(enc, binding\.Function\(func\(dec \*binding\.Reader\) \(any, error\) \{\n\t\t\tvar arg0 \*Scope\n\t\t\targ0 = newScope\(dec\.Uint\(\)\)\n\t\t\tif err := dec\.Finish\(\); err != nil \{\n\t\t\t\treturn nil, err\n\t\t\t\}\n\t\t\treturn work\(arg0\)\n\t\t\}\)\)\n\t\}\n/);
+  assert.match(pkg, /\tvar value0 any\n\tvalue0 = dec\.Passed\(\)\n/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  // B-3: the table keeps each value under a handle that is a count, behind a mutex.
+  assert.match(binding, /type passedTable struct \{\n\tmutex {2}sync\.Mutex\n\tvalues map\[uint64\]any\n\tnext {3}uint64\n\}/);
+  assert.match(binding, /func pass\(value any\) uint64 \{\n\tpassed\.mutex\.Lock\(\)\n\tdefer passed\.mutex\.Unlock\(\)\n\tpassed\.next\+\+\n\tpassed\.values\[passed\.next\] = value\n\treturn passed\.next\n\}/);
+  assert.match(binding, /\/\/export polyspec_sample__go_release_passed\nfunc polyspec_sample__go_release_passed\(handle C\.uint64_t\) \{\n\ttakePassed\(uint64\(handle\)\)\n\}/);
+  // A result whose handle names no value is kind internal.
+  assert.match(binding, /func \(r \*Reader\) Passed\(\) any \{\n\thandle := r\.Uint\(\)\n\tif r\.failed \{\n\t\treturn nil\n\t\}\n\tvalue, ok := takePassed\(handle\)\n\tif !ok \{\n\t\tr\.failed = true\n\t\tif r\.problem == "" \{\n\t\t\tr\.problem = "GN-6ae: the value of the passthrough is gone"\n\t\t\}\n\t\}\n\treturn value\n\}/);
+  // The dispatch of a func holds what it returned, and recovers its panic, which the member panics with again.
+  assert.match(binding, /func Function\(run func\(dec \*Reader\) \(any, error\)\) Callback \{\n\treturn func\(_ \*Call, _ uint32, dec \*Reader, enc \*Writer\) \(err error\) \{\n\t\tdefer func\(\) \{\n\t\t\tif value := recover\(\); value != nil \{\n\t\t\t\terr = &panicked\{value: value\}\n\t\t\t\}\n\t\t\}\(\)\n\t\tvalue, err := run\(dec\)\n\t\tif err != nil \{\n\t\t\treturn err\n\t\t\}\n\t\tenc\.Uint\(pass\(value\)\)\n\t\treturn nil\n\t\}\n\}/);
+  assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
+  // The trampoline of the callbacks is exported for a contract whose only Go code is a func.
+  assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);
+  // The tests of the table: a handle is never given again, and a handle that names no value is kind internal.
+  const table = text(out, 'packages/go/internal/binding/zz_generated_passed_test.go');
+  assert.match(table, /func TestGN6aeAHandleOfThePassthroughTableIsNeverGivenAgain\(t \*testing\.T\) \{/);
+  assert.match(table, /func TestGN6aeAResultWhoseHandleNamesNoValueIsKindInternal\(t \*testing\.T\) \{/);
+});
+
+test('the Go test writes a function fixture as a func, the error of raises callback and the calls of after (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['go']), 'packages/go/zz_generated_test.go');
+  // A step calls a method on the argument at its position and returns its error; the func returns its result, a value
+  // of GN-13, and after observes the receiver.
+  assert.match(tests, /func TestGN13eStoreTransactionTheEntriesOfAFunctionThatReturnsAreCommitted\(t \*testing\.T\) \{\n\tmade0, failure1 := NewStore\(\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", failure1\)\n\t\}\n\tfunction2 := func\(arg0 \*Scope\) \(any, error\) \{\n\t\tif err := arg0\.Put\("a", "1"\); err != nil \{\n\t\t\treturn nil, err\n\t\t\}\n\t\t\{\n\t\t\tvalue0, err := arg0\.Get\("a"\)\n\t\t\tif err != nil \{\n\t\t\t\treturn nil, err\n\t\t\t\}\n\t\t\tif want := \(\*string\)\(ptr\("1"\)\); !reflect\.DeepEqual\(value0, want\) \{\n\t\t\t\treturn nil, fmt\.Errorf\("GN-6ae: scope\.get returned %#v, not %#v", value0, want\)\n\t\t\t\}\n\t\t\}\n\t\treturn "done", nil\n\t\}\n\tvalue0, err := made0\.Transaction\(function2\)\n\tif err != nil \{\n\t\tt\.Fatalf\("GN-13e: %v", err\)\n\t\}\n\tif want := \(any\)\("done"\); !reflect\.DeepEqual\(value0, want\) \{\n\t\tt\.Fatalf\("GN-13e: %#v is not %#v", value0, want\)\n\t\}\n\t\{\n\t\tvalue0, err := made0\.Get\("a"\)\n\t\tif err != nil \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %v", err\)\n\t\t\}\n\t\tif want := \(\*string\)\(ptr\("1"\)\); !reflect\.DeepEqual\(value0, want\) \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %#v is not %#v", value0, want\)\n\t\t\}\n\t\}\n\}/);
+  // An argument of a function type of a step is again a function fixture, a func of the func.
+  assert.match(tests, /\n\t\tfunction\d+ := func\(arg0 \*Scope\) \(any, error\) \{\n(?:\t\t\t[^\n]*\n)*?\t\t\tif err := arg0\.Put\("b", "2"\); err != nil \{\n\t\t\t\treturn nil, err\n\t\t\t\}\n(?:\t\t\t[^\n]*\n)*?\t\t\treturn nil, nil\n\t\t\}\n\t\tif _, err := arg0\.Nested\(function\d+\); err != nil \{\n\t\t\treturn nil, err\n\t\t\}\n(?:\t\t[^\n]*\n)*?\t\treturn int64\(2\), nil\n\t\}\n/);
+  // A fixture with awaits is the same func: Go has no awaitable, and the driver settles its value at once.
+  assert.match(tests, /func TestGN13eStoreTransactionTheEntriesOfAFunctionThatAwaitsAreCommitted\(t \*testing\.T\) \{\n(?:[^\n]*\n)*?\t\treturn "awaited", nil\n\t\}\n\tvalue0, err := made\d+\.Transaction\(function\d+\)\n/);
+  assert.match(tests, /func TestGN6aeStoreTransactionTheEntriesOfAnAwaitableThatRaisesAreDropped\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the function of the case"\)\n/);
+  // raises "callback": the func returns the error that the test holds, the caller gets the same error value, and
+  // after observes the receiver after the failed call.
+  assert.match(tests, /func TestGN6aeStoreTransactionTheEntriesOfAFunctionThatRaisesAreDropped\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the function of the case"\)\n(?:[^\n]*\n)*?\t\treturn nil, raised\n\t\}\n\t_, err := made\d+\.Transaction\(function\d+\)\n\tif err != raised \{\n\t\tt\.Fatalf\("GN-6ae: %#v is not the error of the function", err\)\n\t\}\n\t\{\n\t\tvalue0, err := made\d+\.Get\("a"\)\n\t\tif err != nil \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %v", err\)\n\t\t\}\n\t\tif want := \(\*string\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
+  // A nil func is kind invalid_callback.
+  assert.match(tests, /func TestGN6aeStoreTransactionRefusesANilWork\(t \*testing\.T\) \{\n(?:[^\n]*\n)*?\t_, err := made\d+\.Transaction\(nil\)\n\tif failure, ok := err\.\(\*liberrors\.SampleTypeError\); !ok \|\| failure\.Kind\(\) != "invalid_callback" \{/);
+  // A panic of the func ends the core as an error does, and the member panics with the same value.
+  assert.match(tests, /func TestGN6aeStoreTransactionPanicsWithThePanicOfWork\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the function of the case"\)\n(?:[^\n]*\n)*?\tdefer func\(\) \{\n\t\tif value := recover\(\); value != any\(raised\) \{\n\t\t\tt\.Fatalf\("GN-6ae: %#v is not the panic of the function", value\)\n\t\t\}\n\t\}\(\)\n\t_, err := made\d+\.Transaction\(func\(_ \*Scope\) \(any, error\) \{ panic\(raised\) \}\)\n\tt\.Fatalf\("GN-6ae: the call returned %v", err\)\n\}/);
+});
+
 test('a test generator that does not write after and raises callback refuses the cases that name them (GN-6ae, G-4)', async () => {
   const { refuseScopedCases } = await import('../src/generate/samples.ts');
   const model = (cases: unknown[]): any => ({ cases: new Map([['store.transaction', cases]]) });
@@ -3177,7 +3241,7 @@ const helperNamed = (contract: any): void => {
 // attribute, which another form of the crate may define again, is not counted.
 const functionNames = (lib: string): Map<string, number> => {
   const names = new Map<string, number>();
-  for (const [, attributes, name] of lib.matchAll(/^((?:(?:#\[|\/\/\/)[^\n]*\n)*)(?:pub )?fn ([a-z0-9_]+)/gm)) {
+  for (const [, attributes, name] of lib.matchAll(/^((?:(?:#\[|\/\/\/)[^\n]*\n)*)(?:pub )?(?:unsafe )?(?:extern "C" )?fn ([a-z0-9_]+)/gm)) {
     if (!/^#\[cfg\(/m.test(attributes ?? '')) names.set(name ?? '', (names.get(name ?? '') ?? 0) + 1);
   }
   return names;
@@ -3207,6 +3271,20 @@ test('no helper of a generated Python crate has a name of the conversions of a u
   assert.match(lib, /\nfn default_in<'py, T>\(/);
   assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
   assert.match(lib, /\nfn text_in\(/);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
+  const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
+  assert.deepEqual(others, []);
+});
+
+test('no helper of the generated Go crate has a name of the conversions of a unit, in_<unit> and out_<unit> (GN-4c)', () => {
+  const lib = text(scopedSample(['go'], helperNamed), 'packages/go/internal/ffi/generated/lib.rs');
+  const names = functionNames(lib);
+  // The conversions of the units named default, callable and text are defined once each, beside the helper of a text.
+  for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, name);
+  assert.match(lib, /\nfn in_text\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_sample::Text, Fail> \{/);
+  assert.match(lib, /\nfn text_in\(input: &mut &\[u8\], subject: &str\) -> Result<String, Fail> \{/);
+  assert.match(lib, /\nfn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{/);
+  // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
   const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
@@ -3306,4 +3384,9 @@ test('a function of a functions unit and a helper of a generated crate share no 
   assert.equal(python.get('recognized_kind'), undefined);
   assert.equal(python.get('kind_of_recognized'), 1);
   assert.equal(php.get('kind_of_recognized'), 1);
+  // Go: the entry of a function is its C symbol, polyspec_<library>_<function>, and no helper starts with polyspec_.
+  const go = functionNames(text(scopedSample(['go'], helperNamedFunctions(['pass', 'guard', 'raised', 'held', 'lock', 'taken', 'thrown', 'called'])), 'packages/go/internal/ffi/generated/lib.rs'));
+  for (const name of ['guard', 'held', 'lock', 'taken', 'thrown', 'called', 'polyspec_sample_pass', 'polyspec_sample_guard', 'polyspec_sample_raised', 'polyspec_sample_held', 'polyspec_sample_join']) assert.equal(go.get(name), 1, `Go ${name}`);
+  assert.deepEqual([...go].filter(([, count]) => count > 1).map(([name]) => name), []);
+  assert.deepEqual([...go.keys()].filter((name) => /^polyspec_/.test(name) && !/^polyspec_sample_/.test(name)), []);
 });
