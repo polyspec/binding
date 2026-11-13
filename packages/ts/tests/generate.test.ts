@@ -1174,7 +1174,7 @@ test('a tuple enters as the sequence of exactly its parts in each language (T-1,
   assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func SpanLength\(span \[2\]uint64\) \(uint64, error\)/m);
 });
 
-test('a value enters the core in its own integer and tuple type and leaves it from that type (T-1, GN-6u)', () => {
+test('a value enters the core in its own integer and tuple type and leaves it from that type (T-1, GN-6ac)', () => {
   const out = shaped();
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const rust = text(out, path);
@@ -1191,7 +1191,7 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
     // A tuple result is read by partsN, from a Rust tuple or an array; a usize widens after the assertion of its width.
     assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
     assert.match(rust, /impl<T> Parts2<T, T> for \[T; 2\]/, path);
-    assert.match(rust, /const _: \(\) = assert!\(usize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6u"\)\]\nimpl WideUint for usize \{/, path);
+    assert.match(rust, /const _: \(\) = assert!\(usize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6ac"\)\]\nimpl WideUint for usize \{/, path);
     // A helper that no member uses is not generated.
     assert.doesNotMatch(rust, /fn parts1</, path);
   }

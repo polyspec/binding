@@ -147,7 +147,7 @@
   unit으로 묶는다(`let (): () = …`): 그 자리에서 다른 것을 돌려주는 코어는 `Result`를 포함해 컴파일되지 않으므로 그 `Err`가
   버려지지 않고(E-1c), unit 패턴은 lint가 거부하는 쓰지 않는 변수를 남기지 않는다. 정수 반환(uint, int,
   int64)은 더 좁은 Rust 정수여도 되며 생성 코드가 `From`으로 넓힌다(정수와 그 참조에 대한 trait `WideUint`, `WideInt`.
-  `usize`와 `isize`는 GN-6u대로 넓힌다). parameter는 표의 타입으로 바꾼 뒤 코어 자신의 타입으로 바꾼다(GN-6u). Rust 키워드인 계약 이름은 raw identifier(`r#type`)다.
+  `usize`와 `isize`는 GN-6ac대로 넓힌다). parameter는 표의 타입으로 바꾼 뒤 코어 자신의 타입으로 바꾼다(GN-6ac). Rust 키워드인 계약 이름은 raw identifier(`r#type`)다.
 - **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
@@ -157,7 +157,7 @@
   항목 수가 다른 열은 kind `invalid_argument_type`이다. tuple은 입력의 모든 자리에서 받는다: parameter, list의 항목, record
   parameter의 field, `optional`의 안. 코어는 tuple parameter를 참조로 받는다(T-1). Go는 GN-16대로 tuple을 받는다.
   이유: tuple은 각 언어에서 그 열로 나가므로, 한 호출이 돌려준 값이 그대로 다른 호출에 들어간다.
-- **GN-6u** 값은 코어 자신의 Rust 타입으로 코어에 들어가고 그 타입에서 나오며, 계약은 그 타입을 적지 않는다(T-1).
+- **GN-6ac** 값은 코어 자신의 Rust 타입으로 코어에 들어가고 그 타입에서 나오며, 계약은 그 타입을 적지 않는다(T-1).
   parameter, field, 항목, tuple 부분의 정수는 먼저 표의 타입(`uint`는 u64, `int`와 `int64`는 i64)으로 바뀐 뒤 생성 crate의
   trait `IntoCore<T>`를 거쳐 코어에 주어지고, 값을 받는 자리(코어 호출이나 struct literal의 field)가 `T`를 정한다.
   `IntoCore`는 정수를 `TryFrom`으로 코어가 받는 정수(`uint`는 u8, u16, u32, usize, `int`는 i8, i16, i32, isize)로 좁히고,

@@ -11,7 +11,7 @@
   target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
   `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
   array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
-  after `const _: () = assert!(usize::BITS <= 64);` (GN-6u). A list parameter keeps the element type of the table,
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter keeps the element type of the table,
   so a core that takes `&[usize]` does not compile yet (defect 78), and Go does not convert yet. `tests/e2e/shapes` has
   `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
   by `npm test` in `packages/ts`.

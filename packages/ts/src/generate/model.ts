@@ -1461,7 +1461,7 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
 export const leftOut = (field: { type: Type; default?: Default }): boolean =>
   typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;
 
-// GN-6u: whether a value of the type enters the core through IntoCore, which takes the core's own integer and tuple
+// GN-6ac: whether a value of the type enters the core through IntoCore, which takes the core's own integer and tuple
 // forms: a type of numbers, bools, texts, lists, optionals and tuples that holds an integer or a tuple.
 export function narrows(type: Type): boolean {
   const plain = (t: Type): boolean => (typeof t === 'string' ? ['uint', 'int', 'int64', 'float', 'bool', 'text'].includes(t) : 'list' in t ? plain(t.list) : 'optional' in t ? plain(t.optional) : 'tuple' in t ? t.tuple.every(plain) : false);
@@ -1469,15 +1469,15 @@ export function narrows(type: Type): boolean {
   return plain(type) && holds(type);
 }
 
-// GN-6u: an argument enters through IntoCore when its type narrows and holds no list, because the core borrows a list
+// GN-6ac: an argument enters through IntoCore when its type narrows and holds no list, because the core borrows a list
 // as a slice, whose element type a reference does not infer (defect 78: a narrower element of a list parameter).
 export const narrowsArg = (type: Type): boolean => narrows(type) && !JSON.stringify(type).includes('"list"');
 
-// GN-6u: the let that gives a converted value the core's own type, which the place that takes it infers.
+// GN-6ac: the let that gives a converted value the core's own type, which the place that takes it infers.
 export const narrowed = (variable: string, subject: string, failed: string): string =>
   `let ${variable} = IntoCore::into_core(${variable}, ${subject}).map_err(${failed})?;`;
 
-// GN-6u: a tuple that leaves the core, which holds it as a Rust tuple or, when its parts have one type, as an array:
+// GN-6ac: a tuple that leaves the core, which holds it as a Rust tuple or, when its parts have one type, as an array:
 // partsN gives a reference to each part of either, which part converts, and made takes the converted parts.
 export const tupleOut = (parts: Type[], value: string, part: (type: Type, name: string, index: number) => string, made: (converted: string[]) => string): string => {
   const names = parts.map((_, i) => `part_${i}`);

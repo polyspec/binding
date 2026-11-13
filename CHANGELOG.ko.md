@@ -10,7 +10,7 @@
   부분은 코어 호출이 대상을 정하는 `IntoCore`를 거쳐 코어에 들어간다: 정수는 `TryFrom`으로 좁히고 코어 타입 밖의 값은 kind
   `invalid_number`이므로, 코어 `u32`와 wasm32의 `usize`에 대해 2^32를 거부한다. tuple은 Rust tuple이나 배열로 들어간다.
   tuple 결과는 Rust tuple이나 배열에서 `partsN`으로 읽고, `usize`와 `isize`는 `const _: () = assert!(usize::BITS <= 64);`
-  뒤에 `as`로 넓힌다(GN-6u). list parameter는 표의 원소 타입을 유지하므로 `&[usize]`를 받는 코어는 아직 컴파일되지
+  뒤에 `as`로 넓힌다(GN-6ac). list parameter는 표의 원소 타입을 유지하므로 `&[usize]`를 받는 코어는 아직 컴파일되지
   않으며(결함 78), Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`와 `u32`
   parameter에 `[u32; 2]` 결과를 가진 `shapes.span_at`을 갖는다. `packages/ts`의 `npm test`로 확인했다.
 - 기본값이 `{literal: null}`인 `optional` 타입의 case field를 거부해서("a field default of a case is not generated yet"),
