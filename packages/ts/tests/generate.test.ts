@@ -1149,6 +1149,45 @@ test('an internal unit is generated in every target and marked as no public API 
   assert.doesNotMatch(text(shaped(), 'packages/ts/generated/index.d.ts'), /@internal/);
 });
 
+// Host units of shapes in the form of a host package: a class, its options record and a functions unit whose function
+// takes the class and a generated class (U-1, L-2a).
+const hosted = (contract: any): void => {
+  contract.units.push(
+    { id: 'app', name: ['app'], module: '', kind: 'class', visibility: 'public', origin: 'host', constructible: false, final: true, members: [] },
+    {
+      id: 'app_options', name: ['app', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'host',
+      fields: [{ name: ['around'], type: { optional: { passthrough: 'Request' } }, default: { literal: null }, reason: 'GN-6o' }],
+    },
+    {
+      id: 'host', name: ['host'], module: '', kind: 'functions', visibility: 'public', origin: 'host',
+      members: [{
+        id: 'host.serve', name: ['serve'], kind: 'function', visibility: 'public',
+        parameters: [
+          { name: ['app'], type: { unit: 'app' }, required: true },
+          { name: ['buffer'], type: { unit: 'buffer' }, required: true },
+          { name: ['options'], type: { unit: 'app_options' }, default: { empty: 'object' } },
+        ],
+        returns: 'none', raises: [], wait: 'none', only: { targets: ['node'], reason: 'GN-6o' },
+      }],
+    },
+  );
+};
+
+test('the generator writes nothing of a host unit in any target (GN-6o, I-1)', () => {
+  const plain = shaped();
+  const out = shaped(hosted);
+  // The host units add no file and change no byte of the generated ones.
+  assert.deepEqual([...out.keys()], [...plain.keys()]);
+  for (const [path, content] of out) assert.equal(String(content), String(plain.get(path)), path);
+});
+
+test('a generated unit that names a host unit in a type is refused by its name (GN-6o, G-4)', () => {
+  assert.throws(() => shaped((c) => {
+    hosted(c);
+    member(c, 'shapes.length').parameters.push({ name: ['app'], type: { unit: 'app' }, required: true });
+  }), /shapes\.length\.app: a host unit app in a type of a generated unit is not generated \(GN-6o\)/);
+});
+
 test('an internal member of a public unit is refused by its name (GN-6n, G-4)', () => {
   assert.throws(() => shaped((c) => { member(c, 'shapes.length').visibility = 'internal'; }), /shapes\.length: an internal member of a public unit is not generated yet \(GN-6n\)/);
 });
