@@ -1682,6 +1682,9 @@ test('a contract without fault injection points has no item of them (G-5)', () =
   const out = sampleWith((c, cases) => {
     delete c.faults;
     cases.measure = [];
+    // The tally of a counter arms faults too, in its own case and in a call of then of settle (GN-13f).
+    cases.counter_tally = cases.counter_tally.filter((kase: any) => kase.faults === undefined);
+    cases.counter_settle = cases.counter_settle.filter((kase: any) => kase.receiver === undefined);
   });
   for (const path of LIBS) assert.doesNotMatch(text(out, path), /with_faults|fault::|fault-test/, path);
   assert.throws(() => sampleWith((c) => { delete c.faults; }), /arms faults, but the contract names no fault injection point/);

@@ -45,6 +45,9 @@ pub mod fault {
     /// The invariant of `Counter::draw`.
     #[doc(hidden)]
     pub const DRAW: &str = "sample.draw";
+    /// The read of the total of `Counter::tally`.
+    #[doc(hidden)]
+    pub const TALLY: &str = "sample.tally";
 }
 
 impl Error {
@@ -355,13 +358,16 @@ pub fn size(value: &Data) -> u64 {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Counter {
     total: u64,
+    /// The failure of a tally, which every later settle gives again (GN-13f: a kind that a failure of an earlier call
+    /// leaves for a later call to give).
+    failure: Option<Error>,
 }
 
 impl Counter {
     /// A counter that starts at a total.
     #[must_use]
     pub fn new(start: u64) -> Self {
-        Self { total: start }
+        Self { total: start, failure: None }
     }
 
     /// The total.
@@ -393,6 +399,77 @@ impl Counter {
         }
         self.total = self.total.saturating_add(other.total);
         Ok(self.total)
+    }
+
+    /// Reads the total and gives it (G-5: the read is a fault injection point).
+    ///
+    /// # Errors
+    ///
+    /// Kind `unreadable` when the read fails; the counter keeps that failure for `settle`.
+    pub fn tally(&mut self) -> Result<u64, Error> {
+        if let Some(binding_core::fault::Injected::Io { errno }) = binding_core::fault::point!(fault::TALLY) {
+            let failure = Error::Unreadable { errno };
+            self.failure = Some(failure.clone());
+            return Err(failure);
+        }
+        Ok(self.total)
+    }
+
+    /// The total of a counter whose tallies did not fail.
+    ///
+    /// # Errors
+    ///
+    /// The failure of an earlier tally, kind `unreadable` with its errno.
+    pub fn settle(&self) -> Result<u64, Error> {
+        match &self.failure {
+            Some(failure) => Err(failure.clone()),
+            None => Ok(self.total),
+        }
+    }
+}
+
+/// A shelf of a count, whose slips read the count until the shelf is cleared (GN-13f: a kind that an instance reaches
+/// only after a call of the instance that it was made from).
+#[derive(Debug, Clone, Default)]
+pub struct Shelf {
+    count: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+}
+
+impl Shelf {
+    /// A shelf that holds a count.
+    #[must_use]
+    pub fn new(count: u64) -> Self {
+        Self { count: std::sync::Arc::new(std::sync::Mutex::new(Some(count))) }
+    }
+
+    /// A slip that reads the count of this shelf.
+    #[must_use]
+    pub fn slip(&self) -> Slip {
+        Slip { count: std::sync::Arc::clone(&self.count) }
+    }
+
+    /// Removes the count, which every slip of the shelf then misses.
+    pub fn clear(&mut self) {
+        let mut count = self.count.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *count = None;
+    }
+}
+
+/// A slip of a shelf, which reads the count of that shelf.
+#[derive(Debug, Clone)]
+pub struct Slip {
+    count: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+}
+
+impl Slip {
+    /// The count of the shelf.
+    ///
+    /// # Errors
+    ///
+    /// Kind `missing` when the shelf was cleared.
+    pub fn read(&self) -> Result<u64, Error> {
+        let count = self.count.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        count.ok_or_else(|| Error::Missing { key: String::from("slip") })
     }
 }
 

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `then` 호출의 두 꼴(GN-13f)에는 단위 시험만 있어서, 어느 꼴의 생성된 시험이 target에서 통과하는지를 보인 실행이
+  없었다. end-to-end sample `tests/e2e/sample`이 이제 둘을 모두 담는다. `counter.tally`는 fault `sample.tally`를 장전하고
+  그 실패 `unreadable`을 `counter.settle`에 남기며, settle의 case는 `then`의 호출에서 그 fault를 장전한다. 그리고
+  `shelf.slip`이 만든 slip의 `slip.read`는 `"on": "receiver"`를 가진 호출 `shelf.clear` 뒤에 `missing`으로 실패한다.
+  fault 주입점이 없는 계약의 시험은 tally의 case 가운데 fault를 장전하는 것을 뺀다.
+
 - 앞선 호출의 실패가 뒤의 호출이 내도록 남기는 kind와, 인스턴스를 꺼낸 인스턴스의 호출 뒤에만 닿는 kind에는 case
   꼴이 없었다. 그래서 그런 kind를 내는 계약은 CK-22를 통과할 수 없었다. case의 장전은 자기 호출에만 걸리고, `then`의
   모든 호출은 인스턴스 자신에 불렸기 때문이다. 이제 `then`의 호출은 `faults`를 가질 수 있다. 그것은 그 호출 바로 앞에서

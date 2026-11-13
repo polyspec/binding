@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The two forms of a call of `then` (GN-13f) had only unit tests, so no run showed that the generated tests of
+  either form pass in a target. The end-to-end sample `tests/e2e/sample` now holds both: `counter.tally` arms the fault
+  `sample.tally` and leaves its failure `unreadable` for `counter.settle`, whose case arms the fault in a call of
+  `then`, and `slip.read` of a slip that `shelf.slip` made fails with `missing` after the call `shelf.clear` with
+  `"on": "receiver"`. The test of a contract without fault injection points leaves out the cases of the tally that
+  arm faults.
+
 - A kind that a failure of an earlier call leaves for a later call to give, and a kind that an instance reaches only
   after a call of the instance it was picked from, had no case form, so a contract that gives them could not pass
   CK-22: the arming of a case holds for its own call alone, and every call of `then` ran on the instance itself. A

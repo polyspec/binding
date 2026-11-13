@@ -159,6 +159,18 @@
       ],
       "reason": "X-1",
       "place": "polyspec_sample::Counter::draw"
+    },
+    {
+      "id": "tally",
+      "core": "polyspec_sample::fault::TALLY",
+      "inject": [
+        "io"
+      ],
+      "fills": [
+        "unreadable"
+      ],
+      "reason": "G-5",
+      "place": "polyspec_sample::Counter::tally"
     }
   ],
   "units": [
@@ -1061,6 +1073,42 @@
             "path": "polyspec_sample::Counter::draw",
             "receiver": "&mut self"
           }
+        },
+        {
+          "id": "counter.tally",
+          "name": [
+            "tally"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Unreadable"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::tally",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "counter.settle",
+          "name": [
+            "settle"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Unreadable"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::settle",
+            "receiver": "&self"
+          }
         }
       ]
     },
@@ -1159,6 +1207,107 @@
           "wait": "none",
           "core": {
             "path": "polyspec_sample::Ledger::known",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "shelf",
+      "name": [
+        "shelf"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Shelf",
+      "final": true,
+      "members": [
+        {
+          "id": "shelf.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Shelf::new"
+        },
+        {
+          "id": "shelf.slip",
+          "name": [
+            "slip"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "slip"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Shelf::slip",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "shelf.clear",
+          "name": [
+            "clear"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Shelf::clear",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "slip",
+      "name": [
+        "slip"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Slip",
+      "final": true,
+      "constructible": false,
+      "members": [
+        {
+          "id": "slip.read",
+          "name": [
+            "read"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Slip::read",
             "receiver": "&self"
           }
         }
@@ -1267,6 +1416,36 @@
       "member": "ledger.known",
       "file": "contracts/cases.json",
       "group": "ledger_known"
+    },
+    {
+      "member": "counter.tally",
+      "file": "contracts/cases.json",
+      "group": "counter_tally"
+    },
+    {
+      "member": "counter.settle",
+      "file": "contracts/cases.json",
+      "group": "counter_settle"
+    },
+    {
+      "member": "shelf.new",
+      "file": "contracts/cases.json",
+      "group": "shelf_new"
+    },
+    {
+      "member": "shelf.slip",
+      "file": "contracts/cases.json",
+      "group": "shelf_slip"
+    },
+    {
+      "member": "shelf.clear",
+      "file": "contracts/cases.json",
+      "group": "shelf_clear"
+    },
+    {
+      "member": "slip.read",
+      "file": "contracts/cases.json",
+      "group": "slip_read"
     },
     {
       "member": "sample.measure",

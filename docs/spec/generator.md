@@ -871,7 +871,8 @@ the design ids are those of the binding design.
 
 - **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`,
   which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
-  the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
+  the first among them the two forms of a call of `then` (GN-13f: the tally of a counter that arms its own fault and
+  leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
