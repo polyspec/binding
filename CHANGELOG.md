@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- No generated test ran a member with a parameter of a function type, and the contract of the end-to-end sample held
+  no such member. The PHP test now writes the function of a function fixture, whose steps call methods on its
+  arguments and which returns its result or throws; a case with `raises: "callback"` requires the same exception
+  object; the calls of `after` observe the receiver after the call; and a value that is no callable is required to be
+  kind `invalid_callback`. A case gives a value `passthrough` as a value of GN-13. The contract of `tests/e2e/sample`
+  now holds `store` (`new`, `get`, `transaction`) and `scope` (`put`, `get`, `nested`) with three cases of
+  `store.transaction`: a commit, a rollback after the function raises, and a nested scope (GN-6ae, CK-22). Python,
+  Node, Go and WASM still refuse these members, so `npm test` in `packages/ts` fails 21 tests that generate the
+  sample for those targets, each with that refusal, and the end-to-end check of the sample names those targets as
+  failed, until each target generates the members.
 - `binding_core::Passthrough` was `Send`, so a core could move it to another thread, where its drop would call the
   release function of a table that is bound to the thread of the language code, and the value would stay in the
   table. A `Passthrough` is now not `Send` (GN-6ae). `docs/core-api.md` now holds `Passthrough`, `Step::Await`,

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 93bd50c6f00a80c4b6584a241ff7cec5ee8d4284ea56b1e0f8ad6f363d52c7eb -->
+<!-- source-sha256: 5fbc3f62dd4910f22434af5dbcd46ae3b1ee329049f0425d78fdc3391090bad0 -->
 # 생성기
 
 [English](generator.md)
@@ -641,8 +641,10 @@
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
   아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
-  PHP는 그 member를 생성한다. 어느 시험 생성기도 아직 함수 fixture, `raises: "callback"`, `after`를 쓰지 않으며,
-  end-to-end sample의 계약은 모든 target이 생성할 때까지 `store`와 `scope`를 갖지 않는다. 그 코어는 그것을 가진다.
+  PHP는 그 member를 생성한다. PHP 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case의 시험,
+  `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직 쓰지 않는다.
+  end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
+  생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class
   `scope`의 `put`과 `get`은 대기 중인 항목을 쓰고 읽고 `nested`는 안쪽 `scope`의 함수를 받는다. 그 case는 commit하고,
   던진 뒤 rollback하고, 중첩한다. 이유: transaction은 코어가 열고 언어 코드에 넘기고 그 코드가 돌아온 뒤 닫는 범위이므로,

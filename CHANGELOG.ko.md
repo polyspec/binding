@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 5658e79b477eb1960387f50750efd587782eeb6e7f6059f162dc2095100ceee8 -->
+<!-- source-sha256: a8e5b44c4e873882c25530791e1ab4cc0be0b4b53aa560a8c5799ae54c0e2b16 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 시험은 함수 타입의 parameter가 있는 member를 실행하지 않았고, end-to-end sample의 계약에는 그런 member가
+  없었다. PHP 시험은 이제 함수 fixture의 함수를 쓴다. 그 step은 인자의 method를 호출하고, 함수는 결과를 돌려주거나
+  던진다. `raises: "callback"` case는 같은 예외 객체를 요구하고, `after`의 호출은 호출 뒤의 receiver를 관찰하며, callable이
+  아닌 값은 kind `invalid_callback`이어야 한다. case는 `passthrough` 값을 GN-13의 값으로 준다. `tests/e2e/sample`의
+  계약은 이제 `store`(`new`, `get`, `transaction`)와 `scope`(`put`, `get`, `nested`)를 가지며, `store.transaction`의
+  case는 셋이다. commit, 함수가 던진 뒤의 rollback, 중첩된 scope다(GN-6ae, CK-22). Python, Node, Go, WASM은 아직 이
+  member를 거부하므로, `packages/ts`의 `npm test`는 그 target으로 sample을 생성하는 시험 21개가 그 거부로 실패하고,
+  sample의 end-to-end 검사는 그 target을 실패로 이름한다. 각 target이 그 member를 생성할 때까지 그렇다.
 - `binding_core::Passthrough`는 `Send`였으므로 코어가 그것을 다른 스레드로 옮길 수 있었고, 거기서 버려지면 언어 코드의
   스레드에 묶인 table의 release 함수가 불려 값이 table에 남았다. `Passthrough`는 이제 `Send`가 아니다(GN-6ae).
   `docs/core-api.md`는 이제 crate에는 있고 문서에는 없던 `Passthrough`, `Step::Await`, `Machine::settle`,

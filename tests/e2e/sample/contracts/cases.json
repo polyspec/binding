@@ -341,6 +341,156 @@
   ],
   "checked": [],
   "touch": [],
+  "store_new": [
+    {
+      "id": "a_store_starts_empty"
+    }
+  ],
+  "store_get": [
+    {
+      "id": "a_key_that_was_not_committed_has_no_value",
+      "key": "a",
+      "result": null
+    }
+  ],
+  "store_transaction": [
+    {
+      "id": "the_entries_of_a_function_that_returns_are_committed",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              }
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_function_that_raises_are_dropped",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback",
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_nested_scope_are_committed_with_those_of_its_scope",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "value": 2
+          }
+        }
+      },
+      "result": {
+        "kind": "int",
+        "value": 2
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "b"
+          },
+          "result": "2"
+        }
+      ]
+    }
+  ],
+  "scope_put": [],
+  "scope_get": [],
+  "scope_nested": [],
   "data_in": [
     {
       "id": "bytes_that_are_no_text_are_not_data",

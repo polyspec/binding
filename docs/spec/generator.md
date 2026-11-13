@@ -772,9 +772,11 @@ the design ids are those of the binding design.
     nested scope.
   Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP generates the member. No test generator writes a function fixture, `raises: "callback"` or `after` yet,
-  and the contract of the end-to-end sample does not hold `store` and `scope` until every target generates them; its
-  core holds them.
+  yet"; PHP generates the member. The PHP test writes the function fixture, the test of a case with `raises:
+  "callback"`, which requires the same exception object, the calls of `after`, and a test that a value that is no
+  callable is kind `invalid_callback`; the test of another target does not yet. The contract of the end-to-end sample
+  holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
+  until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
   `passthrough`, and the class `scope`, whose `put` and `get` write and read the pending entries and whose `nested`
   takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. Why: a transaction is a

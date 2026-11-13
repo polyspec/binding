@@ -1273,6 +1273,210 @@
           }
         }
       ]
+    },
+    {
+      "id": "store",
+      "name": [
+        "store"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Store",
+      "final": true,
+      "members": [
+        {
+          "id": "store.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Store::new"
+        },
+        {
+          "id": "store.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Store::get",
+            "receiver": "&self"
+          },
+          "optional_reason": "T-5"
+        },
+        {
+          "id": "store.transaction",
+          "name": [
+            "transaction"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::transaction",
+            "receiver": "&self",
+            "machine": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "scope",
+      "name": [
+        "scope"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Scope",
+      "final": true,
+      "constructible": false,
+      "members": [
+        {
+          "id": "scope.put",
+          "name": [
+            "put"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Scope::put",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "scope.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Scope::get",
+            "receiver": "&self"
+          },
+          "optional_reason": "T-5"
+        },
+        {
+          "id": "scope.nested",
+          "name": [
+            "nested"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Scope::nested",
+            "receiver": "&self",
+            "machine": true
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -1402,6 +1606,36 @@
       "member": "sample.touch",
       "file": "contracts/cases.json",
       "group": "touch"
+    },
+    {
+      "member": "store.new",
+      "file": "contracts/cases.json",
+      "group": "store_new"
+    },
+    {
+      "member": "store.get",
+      "file": "contracts/cases.json",
+      "group": "store_get"
+    },
+    {
+      "member": "store.transaction",
+      "file": "contracts/cases.json",
+      "group": "store_transaction"
+    },
+    {
+      "member": "scope.put",
+      "file": "contracts/cases.json",
+      "group": "scope_put"
+    },
+    {
+      "member": "scope.get",
+      "file": "contracts/cases.json",
+      "group": "scope_get"
+    },
+    {
+      "member": "scope.nested",
+      "file": "contracts/cases.json",
+      "group": "scope_nested"
     },
     {
       "alias": "data",
