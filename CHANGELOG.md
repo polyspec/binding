@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A float case value that JSON writes as an integer, such as `0`, `100` and `1e20` of `value.from_float` of json, was
+  written as an integer in Python and PHP, which refuse an integer for a float (kind `invalid_argument_type`), and a
+  negative zero lost its sign in every language. A float is now a float literal in Python and PHP (`0.0`, `1e+20`),
+  and a negative zero is `-0.0`, or `-0` in Node and WASM (B-2, G-5). Verified by `npm test` in `packages/ts`.
 - A case whose result is `null` of an optional of a class, such as `get_absent` of `ordered_map.get` of json, failed
   its test with "a class has no case value form". The result `null` of an optional now has a case form whatever the
   optional holds, and each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, Go

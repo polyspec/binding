@@ -138,6 +138,14 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
     // them as a bigint (cli.ts), whose decimal token every language writes.
     if (type === 'int64' && ctx.lang === 'node' && (out || typeof value === 'bigint')) return `${String(value)}n`;
+    // B-2, G-5: a float is a float literal in Python and PHP, which refuse an integer there, also where JSON writes an
+    // integer; a negative zero keeps its sign, and an integer of 1e16 or more is written with its exponent, as Python
+    // writes it.
+    if (type === 'float' && typeof value === 'number') {
+      if (Object.is(value, -0)) return ctx.lang === 'node' ? '-0' : '-0.0';
+      if (ctx.lang === 'node' || !Number.isInteger(value)) return String(value);
+      return Math.abs(value) >= 1e16 ? value.toExponential() : `${String(value)}.0`;
+    }
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
