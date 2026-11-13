@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- binding had no document check: no `make docs-check`, no `config/documents.json` and no checklist, so a broken link,
+  a Korean twin without the revision of its source or a checklist row of a wrong form went unnoticed. `make docs-check`
+  now runs the document check of the installed `@polyspec/kit` on every Markdown document, the changelogs and the
+  checklist `docs/plans/execution/checklist.md` that `config/checklist.json` declares, and `make documents-stamp`
+  writes the `source-sha256` of a reviewed Korean twin (B1.1, B1.2). Verified by `make docs-check`.
 - A Go case value of a class that was not an instance value, such as `{"kind": "text", "value": "a"}` of a `Value` of
   json, refused the whole Go target with "a case value of the class value is an instance value". Go now writes it as
   the other targets do: a class of origin value by the make member of the kind, another class by its constructor and
