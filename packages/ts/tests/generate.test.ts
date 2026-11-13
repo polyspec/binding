@@ -4385,3 +4385,83 @@ test('PHP makes a stdClass and a reference with their identity, and a case value
   assert.match(String(trackedPackages(sample, '0.0.0', new Map(), [], new Map(), ['php']).get('packages/php-ext/Cargo.toml')), /\npanic-test = \[\]\ncase-test = \[\]\n/);
   assert.doesNotMatch(String(trackedPackages(sample, '0.0.0').get('packages/php-ext/Cargo.toml')), /case-test/);
 });
+
+// The lines of a generated crate that a build without a feature compiles: each item under `#[cfg(feature = "...")]`
+// or `#[cfg(any(feature = ...))]` is left out, from its attributes to the line that closes it at its own indentation.
+const withoutFeatures = (code: string): string => {
+  const lines = code.split('\n');
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (!/^\s*#\[cfg\((any\()?feature = /.test(line)) {
+      kept.push(line);
+      continue;
+    }
+    const indent = /^\s*/.exec(line)?.[0] ?? '';
+    // The attributes and the comments above the item belong to it, as do the attributes below this one.
+    while (/^\s*(#\[|\/\/)/.test(kept.at(-1) ?? '') && (/^\s*/.exec(kept.at(-1) ?? '')?.[0] ?? '') === indent) kept.pop();
+    i += 1;
+    while (/^\s*(#\[|\/\/)/.test(lines[i] ?? '')) i += 1;
+    // An item of one line ends with `;` or closes its own braces; any other ends at the closing line of its indentation.
+    const first = lines[i] ?? '';
+    if (/;$/.test(first) && !/\{$/.test(first)) continue;
+    if (/\}[;,)]*$/.test(first) && first.startsWith(indent) && !/[{(]$/.test(first)) continue;
+    while (i < lines.length && !/^[})\]]+[;,]?$/.test((lines[i] ?? '').slice(indent.length)) ) i += 1;
+    assert.ok(i < lines.length, `the item under ${line.trim()} has no closing line`);
+  }
+  return kept.join('\n');
+};
+
+// The names that the `use` lines of Rust code bring into scope, without the glob imports and the `as _` imports.
+const importedNames = (code: string): string[] =>
+  [...code.matchAll(/^\s*(?:pub )?use ([^;]+);$/gm)].flatMap((m) => {
+    const path = m[1] ?? '';
+    const brace = /\{(.*)\}$/.exec(path);
+    const leaves = brace === null ? [path] : (brace[1] ?? '').split(',').map((leaf) => leaf.trim()).filter((leaf) => leaf !== '');
+    return leaves.map((leaf) => (/ as (\w+)$/.exec(leaf)?.[1] ?? leaf.split('::').at(-1) ?? '')).filter((name) => name !== '*' && name !== '_' && name !== 'self');
+  });
+
+// A trait is used by its name or by a call of one of its methods, which does not write its name.
+const TRAIT_METHODS: Record<string, RegExp> = {
+  IntoZval: /\.(into_zval|set_zval)\(/,
+  FromZval: /\b\w+::from_zval\(/,
+  JsObjectValue: /\.(get|set)_named_property/,
+  JsValue: /\.(is_array|is_typedarray|to_unknown|raw)\(/,
+  JsCast: /\.(dyn_ref|dyn_into|unchecked_into|unchecked_ref)\b/,
+};
+
+test('a crate without a feature uses every name that it imports: an import whose only users are entry points of a test feature is under that feature (GN-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const own = (library: string): Map<string, string | Buffer> =>
+    generate({ contract: read(`${library}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${library.replaceAll('-', '_')}`, caseFiles: new Map([['contracts/cases.json', read(`${library}/contracts/cases.json`)]]) });
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    fixture: () => generate({ ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }),
+    sample: () => sampleWith(() => undefined),
+    // The contract of shapes has classes with a write place and passes no class as an argument.
+    shapes: () => shaped(),
+    variants: () => variants(),
+    classes: () => own('classes'),
+    functions: () => own('functions'),
+    points: () => own('points'),
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    plot: () => generate({ ...plotSample(), version: '0.0.0', coreLib: 'polyspec_plot' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  const unused: string[] = [];
+  let crates = 0;
+  for (const [name, make] of Object.entries(inputs)) {
+    const out = make();
+    for (const path of [...out.keys()].filter((p) => p.endsWith('/lib.rs'))) {
+      crates += 1;
+      const plain = withoutFeatures(text(out, path));
+      const body = plain.replace(/^\s*(?:pub )?use [^;]+;$/gm, '').replace(/^\s*\/\/.*$/gm, '');
+      for (const imported of new Set(importedNames(plain))) {
+        // A path that names the item in full (`ext_php_rs::convert::FromZval`) does not use the import.
+        const named = new RegExp(`(?<!::)\\b${imported}\\b`).test(body);
+        if (!named && TRAIT_METHODS[imported]?.test(body) !== true) unused.push(`${name} ${path}: ${imported}`);
+      }
+    }
+  }
+  assert.ok(crates >= 20, `the test read ${String(crates)} crates`);
+  assert.deepEqual(unused, []);
+});
