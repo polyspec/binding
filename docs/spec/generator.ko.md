@@ -117,7 +117,7 @@
   |---|---|---|---|---|---|
   | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`. WASM은 `__aliasIn<Alias>` |
-  | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
+  | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft`, `errnoOf` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다.
@@ -307,7 +307,10 @@
   그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback 안에서 다시 들어온
   진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.
-  `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
+  `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. PHP 확장에는 `Internal\errnoOf(symbol)`도 있다. 이것은
+  확장이 실행되는 기계에서 errno 기호가 갖는 값을, fault를 장전하는 표(`binding_core::fault::errno`)에서 읽어 주고,
+  그 기계에 없는 기호에는 kind `internal`을 준다. PHP에는 그 기계의 errno 기호 표가 없으므로, Python과 Node가 그 값을
+  언어에서 읽듯이 PHP 시험은 그 값을 바인딩에서 읽는다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
   동기 작업에만 설치된다.
 - **GN-8** 모든 진입점은 본문을 `catch_unwind`로 실행한다. panic은 프레임워크의 panic 오류가 아니라 internal category
   클래스의 kind `internal`로 호출자에게 도달한다(B-7).
@@ -630,7 +633,7 @@
   만들고, 그 member에 fault를 장전하고(`_arm_faults`), 곧바로 member를 부르고, 기대한 실패 뒤에 `_fault_left`가
   비었는지 확인한다. 호출이 닿지 않은 fault가 있으면 시험이 실패한다. case `raises`의 `errno`는 실패의 errno와
   비교한다. 수는 그대로, 기호는 그 언어가 그 기계에서 주는 값(Python `errno.<기호>`, Node
-  `os.constants.errno.<기호>`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. `in_raises`를 가진 값 alias에는
+  `os.constants.errno.<기호>`, Go `syscall.<기호>`, PHP는 GN-8a의 `Internal\errnoOf("<기호>")`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. `in_raises`를 가진 값 alias에는
   feature `codec-test`에서 그 `in` 함수만 실행하는 진입점이 있다. alias의 case마다(CK-22) 그 case의 `value`로 그것을
   불러 kind의 category 클래스와 kind를 확인한다. parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
@@ -640,8 +643,8 @@
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
-  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
-  errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
+  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, fault 주입점이 없는
+  계약의 PHP 시험의 errno 기호(`Internal\errnoOf`는 feature `fault-test`의 진입점이고(GN-8a), 그런 계약에는 그 feature가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
   GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
   시험은 아직 실패를 장전하지 않는다), map·record field·callback 반환 안의 alias를 받는 member의 시험, 릴리스 빌드에 시험
   feature가 없다는 검사(`cargo tree`의 해석된 feature와 설치한 패키지의 export 목록). 이 검사 중 Go 부분은 e2e에

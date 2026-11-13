@@ -145,7 +145,7 @@ the design ids are those of the binding design.
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
-  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
+  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft`, `errnoOf` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
@@ -376,7 +376,11 @@ the design ids are those of the binding design.
   conversion of its arguments too, does not see the arming around it. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
-  gives the names of the points whose fault did not fire. A member that waits is not generated yet (GN-1), so the
+  gives the names of the points whose fault did not fire. The PHP extension also has `Internal\errnoOf(symbol)`, the
+  value of an errno symbol on the machine that the extension runs on, read from the table that arms the faults
+  (`binding_core::fault::errno`), and kind `internal` for a symbol that the machine does not have: PHP has no table of
+  the errno symbols of its machine, so its test reads the value from the binding, as Python and Node read it from
+  their language. A member that waits is not generated yet (GN-1), so the
   arming is installed for synchronous work only.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
@@ -768,7 +772,8 @@ the design ids are those of the binding design.
   as local values first, arms the faults for the member (`_arm_faults`), calls the member at once, and requires
   `_fault_left` to be empty after the expected failure, so a fault that the call never reached fails the test. The
   `errno` of a case's `raises` is compared with the failure's errno: a number as it is, a symbol as the value that
-  the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`), and no errno when
+  the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`, Go `syscall.<symbol>`, PHP
+  `Internal\errnoOf("<symbol>")` of GN-8a), and no errno when
   the case names none. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
   `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the class of the
   kind's category and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
@@ -783,7 +788,8 @@ the design ids are those of the binding design.
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
   kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
-  test, because PHP has no table of the errno symbols of its machine; a value of the language by its kind
+  test of a contract without fault injection points, because `Internal\errnoOf` is an entry point of the feature
+  `fault-test` (GN-8a), which such a contract does not have; a value of the language by its kind
   (`{"host": ...}`), whose kinds have no closed table; and a value of a value type of another kind than those of
   GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
   GN-13e arms no faults yet; the test of a member that takes an alias inside a map, a record field or the
