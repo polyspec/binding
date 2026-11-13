@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, type ObjectClass, Unsupported, borrowedItem, coreCallArgs, langName, memberName, objectUnit, rustField, rustType, rustVariant, takesObject, unitOf } from './model.ts';
+import { type Fn, type Model, type ObjectClass, type Refusals, Unsupported, borrowedItem, coreCallArgs, langName, memberName, objectUnit, rustField, rustType, rustVariant, takesObject, unitOf } from './model.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
@@ -933,21 +933,24 @@ ${constants}
 `;
 }
 
-export function wasm(model: Model, files: Files): void {
-  // G-4: a record of another repository (T-3), a callback unit (U-3) and a value alias (U-7) are not generated for WASM yet.
-  const foreignAlias = model.aliases.find((a) => a.library !== undefined);
-  if (foreignAlias !== undefined) throw new Unsupported(`${foreignAlias.library ?? ''}.${foreignAlias.unit.id}: a value alias of another repository is not generated for WASM yet`);
-  const [alias] = model.aliases;
-  if (alias !== undefined) throw new Unsupported(`${alias.unit.id}: a value alias is not generated for WASM yet`);
-  const [foreign] = model.foreignRecords;
-  if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
-  const [callback] = model.callbacks;
-  if (callback !== undefined) throw new Unsupported(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
+// G-4: a value alias (U-7), a record of another repository (T-3), a callback unit (U-3), a member with the receiver
+// &mut self (GN-18a) and a host Node package (L-2a) are not generated for WASM yet; each is refused by name.
+export function refuseForWasm(model: Model, refusals: Refusals): void {
+  for (const alias of model.aliases) {
+    refusals.refuse(alias.library !== undefined ? `${alias.library}.${alias.unit.id}: a value alias of another repository is not generated for WASM yet` : `${alias.unit.id}: a value alias is not generated for WASM yet`);
+  }
+  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
+  for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
   // GN-18a: a table shares the value of an instance with the call that reads it, so the core cannot write it.
-  const writer = model.objects.flatMap((o) => o.members).find((m) => m.receiver === '&mut self');
-  if (writer !== undefined) throw new Unsupported(`${writer.member.id}: the receiver &mut self is not generated for WASM yet (B-5c, GN-18a)`);
+  for (const writer of model.objects.flatMap((o) => o.members).filter((m) => m.receiver === '&mut self')) {
+    refusals.refuse(`${writer.member.id}: the receiver &mut self is not generated for WASM yet (B-5c, GN-18a)`);
+  }
   // L-2a: a host Node package keeps its binding crate in native/, where the WASM crate has no place yet.
-  if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) throw new Unsupported('the WASM binding of a host Node package is not generated yet (L-2a)');
+  if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) refusals.refuse('the WASM binding of a host Node package is not generated yet (L-2a)');
+}
+
+// The WASM generated files of a model that refuseForWasm refused nothing of.
+export function wasm(model: Model, files: Files): void {
   files.set(`${ROOT}/lib.rs`, libRust(model));
   files.set(`${ROOT}/index.mjs`, indexMjs(model));
   files.set(`${ROOT}/index.d.ts`, indexDts(model));

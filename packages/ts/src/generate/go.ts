@@ -9,7 +9,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type Constant, type Fn, type Model, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Constant, type Fn, type Model, type Refusals, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { extensionName } from './packages.ts';
 import { goCodecTest, goMapTest, goTests, goPanicTest } from './tests_go.ts';
 import { raisesAssertions } from './raises.ts';
@@ -1443,16 +1443,18 @@ ${echo.latin1 ? wrap(`${prefix(model)}__echo_latin1`, 'text string', ['enc.Text(
 }
 
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate.
+// G-4: a class unit (T-5), a value alias and a record of another repository (T-3) and a callback unit (U-3) are not
+// generated for Go yet; each is refused by name.
+export function refuseForGo(model: Model, refusals: Refusals): void {
+  for (const object of model.objects) refusals.refuse(`${object.unit.id}: a class unit is not generated for Go yet`);
+  for (const alias of model.aliases.filter((a) => a.library !== undefined)) refusals.refuse(`${alias.library ?? ''}.${alias.unit.id}: a value alias of another repository is not generated for Go yet`);
+  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
+  for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for Go yet`);
+}
+
+// The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
+// model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
-  // G-4: a class unit (T-5) and a record of another repository (T-3) are not generated for Go yet.
-  const [object] = model.objects;
-  if (object !== undefined) throw new Unsupported(`${object.unit.id}: a class unit is not generated for Go yet`);
-  const foreignAlias = model.aliases.find((a) => a.library !== undefined);
-  if (foreignAlias !== undefined) throw new Unsupported(`${foreignAlias.library ?? ''}.${foreignAlias.unit.id}: a value alias of another repository is not generated for Go yet`);
-  const [foreign] = model.foreignRecords;
-  if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet`);
-  const [callback] = model.callbacks;
-  if (callback !== undefined) throw new Unsupported(`${callback.unit.id}: a callback unit is not generated for Go yet`);
   const modules = [...new Set([...model.functions.map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module)])];
   for (const module of modules) {
     files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module));

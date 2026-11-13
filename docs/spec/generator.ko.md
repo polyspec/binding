@@ -16,6 +16,15 @@
   recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit, 다른 레포의 record, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
+- **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 아무것도 쓰지 않고
+  실패한다(G-4). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
+  검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
+  쓰는 동안에만 찾는 거부(그 변환이 받지 않는 타입)는 계약의 거부가 없을 때 이름하며, 생성이 실패하기 전에 모든 target을
+  내보내므로 한 target의 거부가 다른 target의 거부를 가리지 않는다. 이유: 첫 거부에서 멈추는 생성기는 결함을 하나씩만
+  보이므로, 계약을 고치려면 거부된 항목 수만큼 실행해야 한다.
+- **GN-1b** 계약의 일부 target의 생성(`targets`를 준 `generate`)은 그 target에 모든 target의 생성이 쓰는 것과 같은 파일을
+  쓰고, 그 target의 거부만 검사한다. 계약의 거부는 모든 target의 거부다. 이유: 생성기가 거부하는 한 target이 다른 target의
+  생성을 막지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.

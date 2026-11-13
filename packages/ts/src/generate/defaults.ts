@@ -3,7 +3,7 @@
 // to equal the constant of the core that default_core names.
 
 import type { Type } from '../contract.ts';
-import { type Arg, type Fn, type Model, Unsupported } from './model.ts';
+import { type Arg, type Fn, type Model, type Refusals, Unsupported } from './model.ts';
 import { rustString } from './text.ts';
 
 // Every argument of the model that has a default, with the member that takes it; a field of a record once per member.
@@ -84,17 +84,16 @@ const hasSource = (type: Type): boolean => JSON.stringify(type).includes('"sourc
 
 // G-4: Go and WASM generate none of a source, a default and an error unit yet; a contract with one of them and such a
 // target is refused by the name of the item.
-export function refuseForOthers(model: Model, targets: readonly string[]): void {
+export function refuseForOthers(model: Model, targets: readonly string[], refusals: Refusals): void {
   const others = targets.filter((t) => t === 'go' || t === 'wasm');
   if (others.length === 0) return;
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   for (const fn of fns) {
     for (const arg of fn.args) {
       const name = `${fn.member.id}.${arg.name.join('_')}`;
-      if (hasSource(arg.type)) throw new Unsupported(`${name}: the type source is not generated for ${others.join(', ')} yet (T-1)`);
-      if (arg.default !== undefined) throw new Unsupported(`${name}: a default is not generated for ${others.join(', ')} yet (U-2, T-4)`);
+      if (hasSource(arg.type)) refusals.refuse(`${name}: the type source is not generated for ${others.join(', ')} yet (T-1)`);
+      if (arg.default !== undefined) refusals.refuse(`${name}: a default is not generated for ${others.join(', ')} yet (U-2, T-4)`);
     }
   }
-  const unit = model.errorUnits[0]?.unit;
-  if (unit !== undefined) throw new Unsupported(`${unit.id}: an error unit is not generated for ${others.join(', ')} yet (E-2, E-7)`);
+  for (const { unit } of model.errorUnits) refusals.refuse(`${unit.id}: an error unit is not generated for ${others.join(', ')} yet (E-2, E-7)`);
 }

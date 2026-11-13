@@ -1308,3 +1308,60 @@ test('a binding crate has the test features that its contract needs (GN-5)', () 
   delete sample.units.find((u: any) => u.id === 'data').in_raises;
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\n\n\[dependencies\]/);
 });
+
+test('the generator reads the whole contract and names every refused item before it fails (G-4, P-4)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const functions = sample.units.find((u: any) => u.id === 'sample');
+  // Refused items in a unit of functions, in a class, in a callback interface and among the kinds of the core error.
+  functions.members.find((m: any) => m.id === 'sample.count').native = { python: 'count' };
+  functions.members.find((m: any) => m.id === 'sample.join').wait = 'thread';
+  sample.units.find((u: any) => u.id === 'tag').members.find((m: any) => m.id === 'tag.name').writable = true;
+  sample.units.find((u: any) => u.id === 'lookup').members[0].async_allowed = true;
+  sample.errors.kinds.push({ variant: 'polyspec_sample::Error::Other', library: 'other' });
+  sample.errors.binding.push({ kind: 'value' });
+  const error = (() => {
+    try {
+      generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+    } catch (caught) {
+      return caught as Error & { refusals?: string[] };
+    }
+    return undefined;
+  })();
+  assert.ok(error !== undefined && error.constructor.name === 'Unsupported', 'the contract is refused');
+  for (const message of [
+    /sample\.count: native is not generated yet/,
+    /sample\.join: wait thread is not generated yet/,
+    /tag\.name: a writable property is not generated yet/,
+    /lookup\.find: an async callback is not generated yet/,
+    /polyspec_sample::Error::Other: a kind of another library \(E-1b \(a\)\) is not generated yet/,
+    /errors\.binding overrides are not generated yet/,
+  ]) assert.match(error.message, message);
+  assert.equal(error.refusals?.length, 6, error.message);
+});
+
+test('the refusals of each target are named together, and a target generates alone what the whole generation writes for it (G-4, GN-1b)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = sampleCases();
+  const whole = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  const parts = new Map<string, string | Buffer>();
+  for (const target of sample.targets) {
+    for (const [path, text] of generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: [target] })) parts.set(path, text);
+  }
+  assert.deepEqual([...parts.keys()].sort(), [...whole.keys()]);
+  for (const [path, text] of whole) assert.ok(String(parts.get(path)) === String(text), path);
+  // Go and WASM refuse the classes, the callback interface and the value alias, each by name, and Python alone is
+  // generated from the same contract.
+  const five = { ...sample, targets: [...sample.targets, 'go', 'wasm'], packages: { ...sample.packages, go: { module: 'github.com/polyspec/sample/packages/go' } } };
+  for (const row of Object.values(five.errors.classes) as any[]) row.wasm = row.node;
+  assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
+  assert.throws(() => generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), (error: Error) => {
+    for (const message of [/tag: a class unit is not generated for Go yet/, /counter: a class unit is not generated for Go yet/, /ledger: a class unit is not generated for Go yet/, /lookup: a callback unit is not generated for Go yet/]) assert.match(error.message, message);
+    assert.doesNotMatch(error.message, /WASM/);
+    return true;
+  });
+  assert.throws(() => generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }), (error: Error) => {
+    for (const message of [/data: a value alias is not generated for WASM yet/, /lookup: a callback unit is not generated for WASM yet/]) assert.match(error.message, message);
+    assert.doesNotMatch(error.message, /for Go/);
+    return true;
+  });
+});

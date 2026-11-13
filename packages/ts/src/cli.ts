@@ -218,8 +218,8 @@ let files: ReturnType<typeof generate>;
 try {
   files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> });
 } catch (error) {
-  // G-4: an item that the generator cannot generate yet is named, and nothing is written.
-  if (error instanceof Unsupported) usage(`not generated (G-4): ${error.message}`);
+  // G-4: every item that the generator cannot generate yet is named, one line each, and nothing is written.
+  if (error instanceof Unsupported) usage(`not generated (G-4), ${error.refusals.length} item${error.refusals.length === 1 ? '' : 's'}:\n${error.refusals.map((line) => `  ${line}\n`).join('')}`);
   throw error;
 }
 const out = resolve(options.get('--out') ?? root);

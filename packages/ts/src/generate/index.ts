@@ -1,11 +1,11 @@
 // generate(): every generated file of a repository from its checked contract, as relative paths and texts. The result
 // depends only on its inputs: the contract, the case files, the core version and binding itself (I-5).
 
-import type { Contract, Type } from '../contract.ts';
+import type { Contract, Lang, Type } from '../contract.ts';
 import { refuseForOthers } from './defaults.ts';
-import { go } from './go.ts';
-import { buildModel, forLanguage, membersFor, Unsupported } from './model.ts';
-import { wasm } from './wasm.ts';
+import { go, refuseForGo } from './go.ts';
+import { collectModel, forLanguage, membersFor, Refusals } from './model.ts';
+import { refuseForWasm, wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
 import { python } from './python.ts';
@@ -22,6 +22,8 @@ export interface Inputs {
   caseFiles: ReadonlyMap<string, unknown>;
   // The contracts of the libraries that the contract names, read from the packages Cargo resolved (T-3).
   foreign?: ReadonlyMap<string, Contract>;
+  // The targets of the contract to generate, all of them by default (GN-1b).
+  targets?: readonly Lang[];
 }
 
 // The directories that binding owns and writes whole (L-1); the tracked thin packages around them are written by
@@ -40,7 +42,16 @@ export const generatedDirs = (contract: Contract): string[] => {
 export const goModuleDir = (contract: Contract): string => place(contract, 'packages/go');
 export const isGoGenerated = (path: string): boolean => /(^|\/)zz_generated_[^/]*\.go$/.test(path);
 
+// G-4: generate() reads the whole contract and fails with every refusal (Unsupported.refusals) before anything is
+// written: an item of the contract that is not supported, then an item that a target of the generation does not take,
+// each by name; an item is named with the first reason that its checks find. Only a model without a refusal is
+// emitted, and a refusal that a target finds while it writes its files fails that target, after every other target
+// wrote its own. `targets` generates the files of those targets of the contract alone (GN-1b), the same files that
+// the whole generation writes for them; the refusals of the other targets are not checked.
 export function generate(inputs: Inputs): Files {
+  const targets = inputs.targets ?? inputs.contract.targets;
+  const notDeclared = targets.filter((target) => !inputs.contract.targets.includes(target));
+  if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
   const cases = new Map<string, unknown[]>();
   const aliasCases = new Map<string, unknown[]>();
   for (const kase of inputs.contract.cases) {
@@ -52,8 +63,9 @@ export function generate(inputs: Inputs): Files {
     const id = kase.member ?? kase.alias;
     into.set(id, [...(into.get(id) ?? []), ...group]);
   }
-  const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign, aliasCases);
-  refuseForOthers(model, inputs.contract.targets);
+  const refusals = new Refusals();
+  const model = collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals);
+  refuseForOthers(model, targets, refusals);
   // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
   // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and
   // text keys (a Map compares a Uint8Array key by identity, GN-12).
@@ -64,28 +76,31 @@ export function generate(inputs: Inputs): Files {
     ...model.objects.flatMap((o) => o.members.flatMap((fn) => [...fn.args.map((a) => ({ id: fn.member.id, type: a.type, top: !a.field })), { id: fn.member.id, type: fn.returns, top: true }])),
     ...model.records.flatMap((unit) => (unit.fields ?? []).map((f) => ({ id: unit.id, type: f.type, top: false }))),
   ].filter((place) => hasKeyed(place.type));
-  for (const place of keyedPlaces) {
-    const js = inputs.contract.targets.filter((target) => target === 'node' || target === 'wasm');
-    if (js.length === 0) continue;
+  const js = targets.filter((target) => target === 'node' || target === 'wasm');
+  for (const place of js.length === 0 ? [] : keyedPlaces) {
     const base = whole(place.type);
     const inner = typeof base === 'object' && 'keyed_map' in base ? base.keyed_map : typeof base === 'object' && 'map' in base ? base.map : undefined;
     const isWhole = place.top && inner !== undefined && !hasKeyed(inner);
-    if (!isWhole) throw new Unsupported(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
-    if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) throw new Unsupported(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
+    if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
+    else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
   // G-5, U-7: the entry points of the features fault-test and codec-test of an alias are generated for Python, Node
   // and PHP so far; a contract with fault injection points or the kinds of an alias and another target is refused by
   // name (G-4).
-  const untested = inputs.contract.targets.filter((target) => target === 'go' || target === 'wasm');
-  if (untested.length > 0 && model.faults.length > 0) throw new Unsupported(`faults: the entry points of the feature fault-test are not generated for ${untested.join(', ')} yet (G-5)`);
-  const withKinds = model.aliases.find((alias) => alias.inRaises.length > 0);
-  if (untested.length > 0 && withKinds !== undefined) throw new Unsupported(`${withKinds.unit.id}: the entry point of in_raises (codec-test) is not generated for ${untested.join(', ')} yet (U-7)`);
+  const untested = targets.filter((target) => target === 'go' || target === 'wasm');
+  if (untested.length > 0 && model.faults.length > 0) refusals.refuse(`faults: the entry points of the feature fault-test are not generated for ${untested.join(', ')} yet (G-5)`);
+  for (const alias of untested.length > 0 ? model.aliases.filter((a) => a.inRaises.length > 0) : []) {
+    refusals.refuse(`${alias.unit.id}: the entry point of in_raises (codec-test) is not generated for ${untested.join(', ')} yet (U-7)`);
+  }
+  if (targets.includes('go')) refuseForGo(membersFor(model, 'go'), refusals);
+  if (targets.includes('wasm')) refuseForWasm(forLanguage(model, 'wasm'), refusals);
+  refusals.fail();
   const files: Files = new Map();
-  const targets = inputs.contract.targets;
-  if (targets.includes('python')) python(forLanguage(model, 'python'), files);
-  if (targets.includes('node')) node(forLanguage(model, 'node'), files);
-  if (targets.includes('php')) php(forLanguage(model, 'php'), files);
-  if (targets.includes('go')) go(membersFor(model, 'go'), files);
-  if (targets.includes('wasm')) wasm(forLanguage(model, 'wasm'), files);
+  if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));
+  if (targets.includes('node')) refusals.attempt(() => node(forLanguage(model, 'node'), files));
+  if (targets.includes('php')) refusals.attempt(() => php(forLanguage(model, 'php'), files));
+  if (targets.includes('go')) refusals.attempt(() => go(membersFor(model, 'go'), files));
+  if (targets.includes('wasm')) refusals.attempt(() => wasm(forLanguage(model, 'wasm'), files));
+  refusals.fail();
   return new Map([...placed(inputs.contract, files).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
