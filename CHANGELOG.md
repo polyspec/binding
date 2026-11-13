@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The same integer key of a `keyed_map` gave two results: Node and WASM refused a number key that is no safe integer
+  as `invalid_argument_type`, and PHP, Python and Go took any key of the range of i64. A key of a listed `int` is now
+  a safe integer in every target, and a key outside is kind `invalid_number` (GN-12a); a key of a kind that the
+  contract does not list stays `invalid_argument_type`, and that kind is judged first. The generated tests give the
+  key 2^53 in every target (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 269 pass; the 7 failures are the
+  tests of GN-6m (wait `blocking_io`), which this change does not touch.
 - PHP and Python took an `int` argument of the range of i64 and the Go C ABI any `int64`, so a contract case with
   9223372036854775807 for an `int` gave `invalid_number` in Node and the error of the core in PHP and Python. An `int`
   is now a safe integer and a `uint` 0 to 2^53 - 1 in every target and at every place that the binding takes (an

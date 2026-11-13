@@ -1100,7 +1100,7 @@ const unitOf = (contract: any, id: string): any => contract.units.find((u: any) 
 
 // The Rust function `name` of a generated crate, from its line to the closing brace of its body.
 const rustFn = (code: string, name: string): string => {
-  const start = code.indexOf(`\nfn ${name}(`);
+  const start = code.search(new RegExp(`\\nfn ${name}[(<]`));
   return start < 0 ? '' : code.slice(start, code.indexOf('\n}\n', start) + 3);
 };
 
@@ -1124,12 +1124,14 @@ test('an integer key of a keyed_map outside the safe integers is kind invalid_nu
     assert.match(text(out, path), /new Map\(\[\[2 \*\* 53, [^\n]*error\.kind === 'invalid_number'/, path);
   }
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\[2 \*\* 53 => [^\n]*;\n\s+self::fail\('no error'\);\n\s+\} catch \([^\n]*ValueError \$error\) \{\n\s+self::assertSame\('invalid_number', \$error->kind\(\)\);/);
+  // Go refuses the list of tuples that the member returns (a Go array has one element type), as in the test of T-2.
+  contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
   const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
   const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'in_keyed_map');
-  assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
+  assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n(?:\s+\/\/[^\n]*\n)?\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
   assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(1 << 53\)[\s\S]{0,400}?"invalid_number"/);
 });
 

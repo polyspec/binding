@@ -416,6 +416,10 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
       // T-2: a key of a kind that the contract does not list is kind invalid_argument_type.
       const keyedType = base;
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
+      if (keyedType.key.includes('int')) {
+        // GN-12a: an int key outside the safe integers is kind invalid_number.
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(1 << 53), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
         single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(${key}, ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));

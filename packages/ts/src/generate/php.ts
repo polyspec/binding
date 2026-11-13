@@ -295,7 +295,9 @@ fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, it
     while let Some((key, value)) = entries.next_zval() {
         let key = if let Some(integer) = key.long() {
             match (kinds.contains(&0), kinds.contains(&2)) {
-                (true, _) => binding_core::Key::Int(integer),
+                // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+                (true, _) if integer.unsigned_abs() <= 9_007_199_254_740_991 => binding_core::Key::Int(integer),
+                (true, _) => return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
                 (false, true) => binding_core::Key::Text(integer.to_string()),
                 (false, false) => return Err(type_error(subject, expected)),
             }

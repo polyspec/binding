@@ -266,6 +266,10 @@ fn in_keyed_map<'a, T>(
         if !kinds.contains(&tag) {
             return Err(type_error(subject, expected));
         }
+        // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+        if matches!(key, binding_core::Key::Int(integer) if integer.unsigned_abs() > 9_007_199_254_740_991) {
+            return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int }));
+        }
         let value = item(input)?;
         if map.insert(key, value).is_some() {
             return Err(malformed());

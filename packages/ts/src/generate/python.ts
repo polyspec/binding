@@ -113,7 +113,7 @@ fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i
     }
 }
 
-/// B-2, T-1: as in_int, the range of i64 for the contract type int64 and for an integer key of a keyed_map (GN-11).
+/// B-2, T-1: as in_int, the range of i64 for the contract type int64.
 fn in_int64(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
     if !value.is_exact_instance_of::<PyInt>() {
@@ -241,8 +241,9 @@ fn in_keyed_map<'py, T>(
     let Ok(dict) = value.cast::<PyDict>() else { return Err(binding_error(py, type_error(subject, "dict"))) };
     let mut map = binding_core::KeyedMap::new();
     for (key, value) in dict.iter() {
-        let (tag, key) = if key.is_exact_instance_of::<PyInt>() {
-            (0, binding_core::Key::Int(in_int64(py, &key, subject)?))
+        // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+        let (tag, key) = if key.is_exact_instance_of::<PyInt>() && kinds.contains(&0) {
+            (0, binding_core::Key::Int(in_int(py, &key, subject)?))
         } else if let Ok(bytes) = key.cast_exact::<PyBytes>() {
             (1, binding_core::Key::Bytes(bytes.as_bytes().to_vec()))
         } else if key.is_exact_instance_of::<PyString>() {
