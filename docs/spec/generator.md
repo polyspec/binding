@@ -865,7 +865,11 @@ the design ids are those of the binding design.
   GN-16 for every enum parameter or field, U-2 (a call without an argument with a default gives the call with its
   default), U-7 (a kind of an alias through the member), K-2 (a nil callback, and the error of a callback is the error
   of the call), B-4 for every contract case that raises (the exact type of E-2 and E-7, `errors.As` of its category,
-  the kind, the status and the errno), GN-13e for every case that does not raise, and N-4 for a stringify. The cases
+  the kind, the status and the errno), GN-13e for every case that does not raise, and N-4 for a stringify. A case
+  value of a class is written as in the other targets: an instance value (GN-13f), the call of the make member of a
+  class of origin value, or the pairs that fill another class (U-1, GN-13), each a local of the test; a case whose
+  receiver, argument or result is not written has a test that fails with the reason, and the other tests are written
+  (GN-13e). The cases
   that arm faults are `zz_generated_fault_test.go` with the build tag `polyspec_fault_test`, and they lock the
   goroutine to its thread, because the arming is of the thread; the poison tests of B-5c are
   `zz_generated_held_test.go` with the build tag `polyspec_panic_test`. The end-to-end check runs `go test` with the

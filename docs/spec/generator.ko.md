@@ -707,7 +707,9 @@
   실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53, `int` key의 `keyed_map` parameter마다 key 2^53이 kind `invalid_number`인 B-2(GN-12a), text parameter·field마다 B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, U-2(기본값이 있는 인자를
   뺀 호출은 기본값을 준 호출과 같다), U-7(member를 거친 alias의 kind), K-2(nil callback, callback의 오류가 호출의 오류다),
   raise하는 contract case마다 B-4(E-2와 E-7의 정확한 타입, 그 category의 `errors.As`, kind, status, errno), raise하지 않는
-  case마다 GN-13e, stringify마다 N-4. 실패를 장전하는 case는 build tag `polyspec_fault_test`가 붙은
+  case마다 GN-13e, stringify마다 N-4. class의 case 값은 다른 target과 같이 쓴다: instance 값(GN-13f), origin value인
+  class의 make member 호출, 또는 다른 class를 채우는 쌍(U-1, GN-13)이며 각각 시험의 지역 변수다. receiver, 인자, 결과를
+  쓰지 못하는 case는 그 이유로 실패하는 시험을 가지고, 다른 시험은 쓰인다(GN-13e). 실패를 장전하는 case는 build tag `polyspec_fault_test`가 붙은
   `zz_generated_fault_test.go`이며, 장전이 스레드의 것이므로 goroutine을 스레드에 묶는다. B-5c의 poison 시험은 build tag
   `polyspec_panic_test`가 붙은 `zz_generated_held_test.go`다. 끝에서 끝까지 확인은 crate의 시험 feature마다 tag
   `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
