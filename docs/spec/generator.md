@@ -16,14 +16,14 @@ the design ids are those of the binding design.
   records (as parameters and in their result form, also of another repository), value aliases (also of another
   repository, GN-6k), enums, constants, error classes and error units (GN-7a),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i).
+  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o) and a class unit with
+  `cleanup` (GN-6p).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
-  that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, and a class or a callback unit of another module (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  record of another repository and modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -481,6 +481,34 @@ the design ids are those of the binding design.
   A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
   Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
   thread of a runtime, while the caller of each language waits in the form that its language has.
+- **GN-6o** A method whose core receiver is `self` consumes the core value of its object (E-1a, B-5c). Its receiver is a
+  write place, and the generated code takes the value out of the lock of the class (`take` of `binding_core::Exclusive`
+  or `Shared`), so the lock holds no value after the call, also when the core fails, because the core owns the value
+  from the call on. Every later place of that object, as the receiver or as a parameter, fails with kind `consumed` of
+  category `type` (E-1a), before any argument reaches the core. A member that waits takes the value on the calling
+  thread and moves it into its work or its future (GN-6m, GN-6n). G-5 generates for each such member a test that calls
+  it and then another member of the same object, which fails with kind `consumed`. PHP, Python and Node generate it;
+  Go and WASM refuse such a member by name until their wrapper takes the value (G-4). Why: a value that the core owns
+  after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
+- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o); another
+  member is refused by name. The binding crate asserts at compile time that the core type of such a unit implements
+  `binding_core::Cleanup` and that the core type of every other class unit does not (an ambiguous trait implementation,
+  which fails to compile when the type implements it), so that a resource that needs a cleanup call is not missing
+  from the contract. When an object whose value was not consumed is destroyed, its destructor drops the core value,
+  whose `Drop` releases the resource, and warns that the cleanup call was not made, with the message
+  `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)`:
+  - PHP raises `E_WARNING` when the object is freed;
+  - Python warns with `ResourceWarning` when the object is finalized;
+  - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
+  Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
+  generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
+  drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
+  member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
+  under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process. Node has no test of the absent
+  warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
+  reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
+  names the call that the caller left out.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
@@ -495,7 +523,7 @@ the design ids are those of the binding design.
   (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
   directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
-  is a Go keyword or a name of the generated body takes a trailing `_`.
+  is a Go keyword, a name of the generated body or the package name of a module of the contract takes a trailing `_`.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
@@ -503,8 +531,12 @@ the design ids are those of the binding design.
   `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
-  panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
-  module is refused by name (its handle and dispatch are unexported). A to_json is `MarshalJSON` of `json.Marshaler`,
+  panics with the error of the core because `fmt.Stringer` has no error result. A member of another module reaches a
+  class or a callback unit through functions of its package whose first parameter is `binding.Token` of
+  `internal/binding`, a type that only the packages of the Go module can name: `<Class>Handle` gives the handle of an
+  instance, `<Class>FromHandle` makes the instance of a handle, and `Dispatch<Callback>` gives the dispatch of a Go
+  value of the callback. A package has them only for a unit that another module names, and CK-13 counts their names.
+  Modules whose packages would import each other are refused by name, because Go refuses an import cycle. A to_json is `MarshalJSON` of `json.Marshaler`,
   which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
   `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
   error alone. A member that returns `never` has no result before its `error`.
@@ -599,7 +631,7 @@ the design ids are those of the binding design.
   and each place of a call takes its guard for the call, so a member with the receiver `&mut self` writes the value
   and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
   class unit with
-  `cleanup` (B-10) is refused by name, as for every target (GN-1).
+  `cleanup` (B-10) and a method with the receiver `self` are refused by name (GN-6o, GN-6p).
 - **GN-18b** WASM, a value alias with `core: {in, out}` (U-7), also of another repository (GN-6k): the value is taken
   and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
   rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16

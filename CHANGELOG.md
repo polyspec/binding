@@ -49,6 +49,19 @@
   `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
   conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
   reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
+- A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
+  self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
+  binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
+  which leaves the object kind `consumed`, GN-6o), assert that the core type of a unit with `cleanup` implements
+  `binding_core::Cleanup` and that of another class unit does not, and warn when an object is destroyed without its
+  cleanup call: `E_WARNING`, `ResourceWarning`, or `process.emitWarning` of type `ResourceWarning` (GN-6p, B-10). The
+  generated tests require kind `consumed` after the call and the warning. Go and WASM refuse such members and units by
+  name. Verified by `make check`.
+- The end-to-end check of `tests/e2e/classes` at 8d9ed8c failed for Python, because `a<name>` built its tuple of
+  arguments from a chained iterator, which `PyTuple::new` does not take (it needs an exact size), and for Node and
+  WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
+  clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
+  (GN-6m, GN-6n). Verified by `make e2e` of `tests/e2e/classes`.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
   runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,
@@ -64,6 +77,14 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
+  class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
+  through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first
+  parameter `binding.Token` only the packages of the Go module can name; a package has them only for a unit that
+  another module names, CK-13 counts their names, a parameter that has the name of a package of the contract takes a
+  trailing `_`, a test calls a constructor of another module by its package, and modules whose packages would import
+  each other are refused by name (GN-15a). Verified by `npm test` in `packages/ts` and `gofmt` and `go vet` of the
+  generated packages of the sample with its class and its callback in two other modules.
 - The generator refused the Go binding of a value alias whose Go `out` row makes the value by a member, such as
   `"go": "tag.new"`, with "a Go make by a member (tag.new) is not generated yet (U-7)". Go now gives such a value as
   the instance of the class: the C ABI writes the number of the class in the contract and the handle of the value,

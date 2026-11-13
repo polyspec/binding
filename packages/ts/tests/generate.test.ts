@@ -1941,10 +1941,28 @@ test('the refusals of each target are named together, and a target generates alo
   const five = sample;
   assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
-  // A member of a class in another module is refused by name in Go, whose handle of the class is unexported.
+  // GN-15a: a member of another module reaches a class and a callback through the functions of their packages that
+  // take binding.Token, and its test makes an instance by the constructor of that package.
   const moved = JSON.parse(JSON.stringify(five));
   moved.units.find((u: any) => u.id === 'tag').module = 'tags';
-  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /tag: a class unit of the module tags in the module \(the root\) is not generated for Go yet/);
+  moved.units.find((u: any) => u.id === 'lookup').module = 'lookups';
+  const split = generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] });
+  const root = text(split, 'packages/go/zz_generated_sample.go');
+  assert.match(root, /\tenc\.Uint\(tags\.TagHandle\(binding\.Token\{\}, tag\)\)\n/);
+  assert.match(root, /= tags\.TagFromHandle\(binding\.Token\{\}, dec\.Uint\(\)\)\n/);
+  assert.match(root, /call\.Callback\(enc, lookups\.DispatchLookup\(binding\.Token\{\}, [a-z]+\)\)/);
+  const tags = text(split, 'packages/go/tags/zz_generated_tags.go');
+  assert.match(tags, /\nfunc TagHandle\(_ binding\.Token, this \*Tag\) uint64 \{\n\treturn this\.handle\(\)\n\}\n/);
+  assert.match(tags, /\nfunc TagFromHandle\(_ binding\.Token, handle uint64\) \*Tag \{\n\treturn newTag\(handle\)\n\}\n/);
+  assert.match(text(split, 'packages/go/lookups/zz_generated_lookups.go'), /\nfunc DispatchLookup\(_ binding\.Token, object Lookup\) binding\.Callback \{\n\treturn dispatchLookup\(object\)\n\}\n/);
+  assert.match(text(split, 'packages/go/internal/binding/zz_generated_binding.go'), /\ntype Token struct\{\}\n/);
+  assert.match(text(split, 'packages/go/zz_generated_test.go'), /Join\(\[\]\*tags\.Tag\{\}\)/);
+  assert.doesNotMatch(text(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), 'packages/go/zz_generated_sample.go'), /FromHandle|TagHandle/);
+  // Packages that would import each other are refused by name.
+  const cycle = JSON.parse(JSON.stringify(moved));
+  const tag = cycle.units.find((u: any) => u.id === 'tag');
+  tag.members.push({ ...tag.members.find((m: any) => m.id === 'tag.name'), id: 'tag.counter', name: ['counter'], returns: { unit: 'counter' } });
+  assert.throws(() => generate({ contract: cycle, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /the Go packages of the modules \(the root\) and tags import each other, which Go refuses \(GN-15a\)/);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }).has('packages/go/zz_generated_sample.go'));
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }).has('packages/ts/wasm/generated/lib.rs'));
 });
@@ -2066,6 +2084,43 @@ test('an error unit in a module is the class of the namespace or the module of i
   // Node and WASM: the entries export the class by its name.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
+});
+
+test('a receiver self takes the value of its object, and a class with cleanup warns when it is destroyed without it (GN-6o, GN-6p, B-10)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  const warning = 'Lease was destroyed without release(), so its destructor released it (B-10)';
+  for (const [lang, path] of [['php', 'packages/php-ext/generated/lib.rs'], ['python', 'packages/python/generated/lib.rs'], ['node', 'packages/ts/generated/lib.rs']] as const) {
+    const lib = text(out, path);
+    // GN-6o: the place of the receiver self takes the value out of the lock, and the core consumes it.
+    assert.match(lib, /\.take\("Lease"\)/, lang);
+    assert.match(lib, /polyspec_classes::Lease::release\(receiver\)/, lang);
+    // GN-6p: the core type of a unit with cleanup implements Cleanup, and that of another class unit does not.
+    assert.match(lib, /cleanup::<polyspec_classes::Lease>/, lang);
+    assert.match(lib, /<polyspec_classes::Gate as NotCleanup<_>>::not_cleanup/, lang);
+    assert.doesNotMatch(lib, /<polyspec_classes::Lease as NotCleanup<_>>/, lang);
+    assert.ok(lib.includes(warning), `${lang} warns in its destructor`);
+  }
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /PyResourceWarning/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /emitWarning/);
+  // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /'warning'/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /consumed/);
+  // Go and WASM refuse the unit and the receiver self by name; a cleanup that is not a method with the receiver self is
+  // refused.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.only?.reason === 'GN-6p') delete member.only;
+  };
+  assert.throws(() => classes(everywhere, ['go']), /lease: a class unit with cleanup is not generated for Go yet \(GN-6p\)/);
+  assert.throws(() => classes(everywhere, ['wasm']), /lease\.release: a method with the receiver self is not generated for WASM yet \(GN-6o\)/);
+  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self \(GN-6p\)/);
 });
 
 test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {

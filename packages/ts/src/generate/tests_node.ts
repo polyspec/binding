@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf, awaits } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
@@ -366,6 +366,46 @@ test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', t
   assert.deepEqual(addon().__faultLeft(armed), []);`}
 });`);
   }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    usesOutcome = true;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    out.push(`
+test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.member.name, 'callable')} consumes its object', () => {
+  const held = ${made(sample)};
+  outcome(() => ${invoke(fn, args, 'held')});
+  assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
+});`);
+  }
+  // GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning; the test turns on gc() and
+  // awaits the warning event of the process.
+  let usesGc = false;
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    usesGc = true;
+    const label = langName('node', object.unit.name, 'class');
+    out.push(`
+test('B-10: ${label} warns when it is destroyed without ${memberName('node', cleanup)}()', async () => {
+  const warned = new Promise((resolve) => {
+    const listener = (warning) => {
+      if (warning.name !== 'ResourceWarning') return;
+      process.off('warning', listener);
+      resolve(warning);
+    };
+    process.on('warning', listener);
+  });
+  (() => {
+    ${made(sample)};
+  })();
+  gc();
+  const warning = await warned;
+  assert.equal(warning.message, ${jsString(cleanupWarning(label, memberName('node', cleanup)))});
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesAddon = true;
@@ -381,11 +421,11 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}
+${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

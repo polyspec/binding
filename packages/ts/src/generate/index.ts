@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, Refusals, waitsAsync } from './model.ts';
+import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -89,11 +89,16 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
-  if (targets.includes('go')) refuseForGo(membersFor(model, 'go'), refusals);
+  if (targets.includes('go')) {
+    refuseForGo(membersFor(model, 'go'), refusals);
+    refuseConsumers(membersFor(model, 'go'), 'Go', refusals);
+  }
   // GN-6n: WASM has no Promise form of a member with wait async_driver yet.
   if (targets.includes('wasm')) {
     const forWasm = membersFor(model, 'wasm');
     for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)].filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for WASM yet (GN-6n)`);
+    // GN-6o, GN-6p: nor a method with the receiver self, nor the finalizer of a class unit with cleanup.
+    refuseConsumers(forWasm, 'WASM', refusals);
   }
   refusals.fail();
   const files: Files = new Map();

@@ -41,6 +41,17 @@
 - 코어가 참조로 주는 클래스 결과(`Value::members`의 `&OrderedMap`, `Value::items`와 `Value::get`의 `&Value` 항목)는 컴파일되지
   않았다. `out_<class>`가 값을 소유한 형태로 받았기 때문이다(E0308, E0631). 이제 변환은 `impl CoreForm<T>`를 받아 소유한 값은
   그대로 두고 빌린 값은 복제하며, optional이나 list가 더하는 참조 뒤의 값도 같다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
+- 코어 receiver가 `self`인 method와 `cleanup`이 있는 class unit은 모든 target이 거부했다("a receiver self is not
+  generated yet", "cleanup is not generated yet"). 그래서 닫는 호출이 소비하는 자원에는 binding이 없었다. 이제 PHP·Python·
+  Node는 class의 잠금에서 값을 꺼내고(`Exclusive`와 `Shared`의 `take`, 객체는 그 뒤 kind `consumed`다, GN-6o), `cleanup`이
+  있는 unit의 코어 타입은 `binding_core::Cleanup`을 구현하고 다른 class unit의 것은 구현하지 않는다는 것을 단언하며,
+  객체가 정리 호출 없이 사라지면 경고한다. 경고는 `E_WARNING`, `ResourceWarning`, type `ResourceWarning`인
+  `process.emitWarning`이다(GN-6p, B-10). 생성 시험은 호출 뒤의 kind `consumed`와 경고를 요구한다. Go와 WASM은 그런
+  member와 unit을 이름을 대고 거부한다. `make check`로 확인했다.
+- 8d9ed8c에서 `tests/e2e/classes`의 end-to-end 검사가 Python에서 실패했다. `a<name>`이 인자 tuple을 이어 붙인
+  iterator로 만들었는데, `PyTuple::new`는 크기가 정확한 것만 받기 때문이다. Node와 WASM에서도 실패했다. 기다리는 member의
+  결과 변환이 함수를 부르기만 하는 closure였고, clippy가 이것을 거부하기 때문이다(`redundant_closure`). 이제 Python은
+  vector로 tuple을 만들고, Node는 함수 자체를 넘긴다(GN-6m, GN-6n). `tests/e2e/classes`의 `make e2e`로 확인했다.
 - `wait: async_driver`인 member는 모든 target이 거부했다("wait async_driver is not generated yet"). 그래서 tokio 위의
   코어가 가진 `async fn` member에는 binding이 없었다. 이제 생성기는 그런 member의 future를 tokio runtime에서 돌린다
   (GN-6n). PHP는 `binding_core::driver::block_on`에서 막히고, Python은 그것을 `py.detach`에서 돌리며 `a<name>`을 더하고,
@@ -55,6 +66,13 @@
   `ScopedTask`로 libuv 풀에서 돌리는 `Promise`를 돌려주고, 그 진입은 async 함수라서 모든 실패가 promise를 거부한다.
   Go는 그런 member를 이름을 대고 거부하고, 기다리는 constructor·property·iterate·hook도 이름을 대고 거부한다. CK-16은
   Python의 예약어인 awaitable 이름도 보고한다. `make test-ts`로 확인했다.
+- 생성기는 다른 module의 class·callback unit을 이름하는 member의 Go 바인딩을 "a class unit of the module tags in the
+  module (the root) is not generated for Go yet"로 거부했다. 이제 Go는 그런 unit에 그 module 패키지의 `<Class>Handle`,
+  `<Class>FromHandle`, `Dispatch<Callback>`으로 닿는다. 그 첫 parameter `binding.Token`은 Go module의 패키지만
+  이름할 수 있다. 패키지는 다른 module이 이름하는 unit에만 그 함수를 두고, CK-13은 그 이름을 세며, 계약의 패키지
+  이름과 같은 parameter는 끝에 `_`를 붙이고, 시험은 다른 module의 생성자를 패키지 이름으로 부르며, 패키지가 서로
+  import하게 될 module은 이름으로 거부한다(GN-15a). `packages/ts`의 `npm test`와, class와 callback을 다른 두
+  module에 둔 sample의 생성 패키지의 `gofmt`, `go vet`으로 확인했다.
 - 생성기는 Go `out` 행이 `"go": "tag.new"`처럼 member로 값을 만드는 값 alias의 Go 바인딩을 "a Go make by a member
   (tag.new) is not generated yet (U-7)"로 거부했다. 이제 Go는 그런 값을 class의 인스턴스로 준다. C ABI는 계약 안
   class의 번호와 값의 handle을 적고, `internal/binding`의 `Reader.ValueWith`가 그것을 읽으며, class 패키지의
