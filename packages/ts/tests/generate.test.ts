@@ -1614,3 +1614,17 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
 });
+
+test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {
+  const out = shaped((c) => { unitOf(c, 'utf8_error').module = 'errors'; });
+  // PHP: the class is in the namespace of its module, and the extension registers it by that name.
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /namespace Polyspec\\Shapes\\Errors \{\n    \/\*\* The errors of the unit utf8_error \(E-2\)\. \*\/\n    final class Utf8Error extends \\Polyspec\\Shapes\\ParseError/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /ClassBuilder::new\("Polyspec\\\\Shapes\\\\Errors\\\\Utf8Error"\)/);
+  // Python: <root>.errors gives the class of <root>._errors, and <root> re-exports it.
+  const pkg = 'packages/python/generated/python/polyspec/shapes';
+  assert.match(text(out, `${pkg}/errors.py`), /from \._errors import Utf8Error as Utf8Error\n\n__all__ = \["Utf8Error"\]/);
+  assert.match(text(out, `${pkg}/__init__.py`), /from \.errors import \*  # noqa: F403/);
+  // Node and WASM: the entries export the class by its name.
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
+});
