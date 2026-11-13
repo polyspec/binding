@@ -1639,6 +1639,29 @@ test('the Rust files of the thin packages are in the form that rustfmt gives the
   }
 });
 
+test('the Rust files of the thin packages are unchanged by rustfmt with its defaults and with the settings of a repository (GN-3a)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  // The toolchain of rust-toolchain.toml, outside any checkout, so that no rustfmt.toml is read but the settings given.
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-fmt-'));
+  try {
+    const settings = ['', 'max_width=120,use_small_heuristics=Max'];
+    let checked = 0;
+    for (const [path, body] of trackedPackages(contract, '0.0.0')) {
+      if (!path.endsWith('.rs')) continue;
+      for (const config of settings) {
+        const run = spawnSync('rustfmt', ['--edition', '2021', '--emit', 'stdout', ...(config === '' ? [] : ['--config', config])], { input: String(body), encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+        assert.equal(run.status, 0, `rustfmt of ${path}: ${run.stderr}`);
+        assert.equal(run.stdout, String(body), `${path} is not in the form that rustfmt gives it with ${config === '' ? 'its defaults' : config}`);
+        checked += 1;
+      }
+    }
+    assert.ok(checked >= 8, `${checked} files were formatted`);
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
+});
+
 test('every case that does not raise runs and compares its result in every target (GN-13e)', () => {
   const { contract, caseFiles } = load();
   const cases = caseFiles.get('contracts/cases.json') as any;
