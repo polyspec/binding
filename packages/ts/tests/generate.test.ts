@@ -970,13 +970,21 @@ test('a value class of another repository converts through the core of its owner
     // An instance of the owner's class is described by its in row, without opening it, and read by its read members.
     assert.match(lib, /HostValue::Value \{/, path);
     assert.doesNotMatch(lib, /no value class is read/, path);
-    // B2.81: a text leaves as its UTF-16 code units, made by from_units, and enters as the units that string_units gives,
-    // so a text with an unpaired surrogate keeps its units in every target.
+    // B2.81: a text with an unpaired surrogate leaves as its UTF-16 code units, made by from_units, and any other text as
+    // its text.
     assert.match(lib, /OutValue::Text16\(value\) =>/, path);
     assert.match(lib, /OutValue::Text\(value\) =>/, path);
-    assert.match(lib, /ValueKind::Text16/, path);
+    // B2.89: a string enters by one call of string_text as the text of the language, and only the none of a text with
+    // an unpaired surrogate reads the code units that string_units gives.
+    assert.match(lib, /"string" => \(ValueKind::Text, Some\(\("string_?[tT]ext", (?:true, )?ReadAs::TextOr\("string_?[uU]nits"(?:, true)?\)\)\)\),/, path);
+    assert.doesNotMatch(lib, /ValueKind::Text16/, path);
+    assert.match(lib, /ReadAs::TextOr\(units(?:, call)?\) => \{/, path);
     assert.match(lib, /HostValue::Text\(HostText::Utf16\(/, path);
+    assert.match(lib, /HostValue::Text\(HostText::Bytes\(/, path);
   }
+  // B2.89: Python takes a str without a surrogate as its UTF-8 bytes, and WASM a string that isWellFormed.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /if let Ok\(text\) = value\.cast::<PyString>\(\)\?\.to_str\(\) \{\n\s*return Ok\(HostValue::Text\(HostText::Bytes\(text\.as_bytes\(\)\.to_vec\(\)\)\)\);/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /if text\.is_well_formed\(\) \{\n\s*return Ok\(HostValue::Text\(HostText::Bytes\(String::from\(text\)\.into_bytes\(\)\)\)\);/);
 });
 
 test('Go describes, reads and makes a value class of another repository through the call of GN-15c (T-3, U-1, GN-6x, GN-15c)', () => {
@@ -1005,8 +1013,7 @@ test('Go describes, reads and makes a value class of another repository through 
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
   assert.match(binding, /"github\.com\/polyspec\/owner\/packages\/go"/);
   assert.match(binding, /case \*owner\.Value:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tkind, err := found\.Kind\(\)/);
-  assert.match(binding, /case "object":\n\t\t\tc\.describeValue\(enc, 9, func\(\) \(any, error\) \{ return found\.Members\(\) \}\)/);
-  assert.match(binding, /case "null":\n\t\t\tc\.describeValue\(enc, 0, nil\)/);
+  assert.match(binding, /case "object":\n\t\t\tc\.describeValue\(enc, 9, func\(\) \(any, error\) \{ return found\.Members\(\) \}, nil\)/);
   assert.match(binding, /case \*owner\.OrderedMap:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tentries, err := found\.Entries\(\)/);
   assert.match(binding, /case op == 2 && held\.read != nil:/);
   assert.match(binding, /value, err = owner\.ValueNull\(\)/);
@@ -1015,12 +1022,15 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(binding, /entries, failed := owner\.NewOrderedMap\(\)/);
   assert.match(binding, /entries\.Insert\(key, item\)/);
   assert.match(binding, /value, err = owner\.ValueObject\(entries\)/);
-  // B2.81: the in case of a string is the kind text16, whose read gives code units as node 13, and the out row of the
-  // kind text16 makes the instance from code units.
-  assert.match(binding, /case "string":\n\t\t\tc\.describeValue\(enc, 11, func\(\) \(any, error\) \{ return found\.StringUnits\(\) \}\)/);
-  assert.match(binding, /\} else if held\.units \{\n(?:\t\t\t\/\/[^\n]*\n)*\t\t\tunits := reflect\.ValueOf\(content\)\n\t\t\tenc\.bytes = append\(enc\.bytes, 13\)/);
+  // B2.89: the in case of a string is the kind text, whose read gives a text or, for a text with an unpaired surrogate,
+  // a nil pointer, on which the units member gives the code units as node 13; the out row of the kind text16 makes the
+  // instance from code units (B2.81).
+  assert.match(binding, /case "string":\n\t\t\tc\.describeValue\(enc, 6, func\(\) \(any, error\) \{ return found\.StringText\(\) \}, func\(\) \(any, error\) \{ return found\.StringUnits\(\) \}\)/);
+  assert.match(binding, /case "null":\n\t\tc\.describeValue\(enc, 0, nil, nil\)|case "null":\n\t\t\tc\.describeValue\(enc, 0, nil, nil\)/);
+  assert.match(binding, /if text, _ := content\.\(\*string\); text != nil \{\n\t+content = \*text\n\t+\} else \{\n\t+content, err = held\.units\(\)\n\t+coded = true\n/);
+  assert.match(binding, /\} else if coded \{\n(?:\t\t\t\/\/[^\n]*\n)*\t\t\tunits := reflect\.ValueOf\(content\)\n\t\t\tenc\.bytes = append\(enc\.bytes, 13\)/);
   assert.match(binding, /units\[at\] = r\.Uint\(\)\n\t\t\}\n\t\tvalue, err = owner\.ValueFromUnits\(units\)/);
-  assert.match(lib, /\[11\] => ValueKind::Text16,/);
+  assert.match(lib, /\[6\] => ValueKind::Text,/);
   assert.match(lib, /\[13\] => \{\n(?:\s*\/\/[^\n]*\n)*\s*let len = in_uint\(input\)\?;/);
   assert.match(lib, /HostValue::Text\(HostText::Utf16\(units\)\)/);
   assert.match(lib, /OutValue::Text16\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 4\);\n\s*out_list\(output, value, \|output, unit\| out_uint\(output, u64::from\(unit\)\)\);/);

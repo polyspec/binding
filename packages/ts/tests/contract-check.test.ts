@@ -191,12 +191,34 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/1/make/node`, (c) => { unit(c, 'value').out[1].make.node = 'value.items'; }));
   // GN-6x: a text with an unpaired surrogate is the kind text16, which a member of a class makes from code units; the
   // string of PHP and Go cannot hold it, so no built-in form makes it.
-  // GN-6x, P-3: a value class makes a text by a text row and a text with an unpaired surrogate by a text16 row, and reads
-  // every string by one case of the kind text16; a Unicode text is the same value as its UTF-16 code units.
-  test('a text row that comes back by the case of the kind text16', () => {
-    const owner = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+  // GN-6x, P-3, B2.89: a value class makes a text by a text row and a text with an unpaired surrogate by a text16 row,
+  // and reads a string by one case of the kind text whose read gives an optional text and whose units member gives the
+  // UTF-16 code units of a text with an unpaired surrogate; that case is the case of both kinds.
+  const owner = (change: (unit: any) => void = () => {}): Finding[] => {
+    const parsed = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+    change(parsed.units.find((u: any) => u.id === 'value'));
     // The fixture holds no case files (CK-22); the round trip is CK-8.
-    assert.deepEqual(checkContract(owner).filter((f) => f.check === 'CK-8'), []);
+    return checkContract(parsed).filter((f) => f.check === 'CK-8' || f.check === 'CK-1');
+  };
+  const strings = (value: any): any[] => value.in.map((row: any) => row.cases.find((c: any) => c.is === 'string'));
+  test('a text row and a text16 row that come back by the case of the kind text with units', () => {
+    assert.deepEqual(owner(), []);
+  });
+  test('a text row whose string case is the kind text16, which reads every text as its code units', () => {
+    const result = owner((value) => { for (const kase of strings(value)) { kase.kind = 'text16'; kase.read = 'value.string_units'; delete kase.units; } });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /has 0 cases of kind text\b/.test(f.message)), JSON.stringify(result, null, 2));
+  });
+  test('units on a case of another kind than text', () => {
+    const result = owner((value) => { for (const row of value.in) Object.assign(row.cases.find((c: any) => c.is === 'number'), { units: 'value.string_units' }); });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/3\/units$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units whose read gives no optional text', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.read = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/read$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units that gives no list of uint', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.units = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/units$/.test(f.path)), JSON.stringify(result, null, 2));
   });
   test('a text16 row that comes back by the case of the kind text', () =>
     fails('CK-8', `${at('value')}/out/0/make`, (c) => {
