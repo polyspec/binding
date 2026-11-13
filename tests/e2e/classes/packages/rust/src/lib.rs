@@ -1,7 +1,7 @@
 //! A library for the end-to-end check of binding: a class unit with a constructor, a static member, methods, a
 //! property, an iteration and the hooks of N-4 (T-5, U-2), without a unit that the WASM generator refuses.
 
-use binding_core::Kinds;
+use binding_core::{Failure, Kinds};
 use std::fmt;
 
 /// The errors of the library.
@@ -200,6 +200,59 @@ impl Lease {
     #[must_use]
     pub fn release(self) -> String {
         format!("the lease of {} is released", self.tag)
+    }
+}
+
+/// Who leads a guest to a seat, which language code implements (U-3).
+pub trait Guide {
+    /// The guest that the guide leads for a name.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the implementation.
+    fn lead(&mut self, tag: &str) -> Result<String, Failure<Error>>;
+}
+
+/// An usher, whose guide is language code that the core calls while the call waits (GN-6q): calls of one usher only
+/// read it, so they run at the same time (GN-6h).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Usher {
+    name: String,
+}
+
+impl Usher {
+    /// An usher with a name.
+    #[must_use]
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+        }
+    }
+
+    /// The name of the usher.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Whom the usher seats: the guest that the guide leads, asked as a blocking I/O call would be (B-5 (a): the
+    /// token of wait blocking_io).
+    ///
+    /// # Errors
+    ///
+    /// Kind `missing` when the guide leads nobody, and the failure of the guide.
+    pub fn seat(
+        &self,
+        _io: binding_core::Io,
+        guide: &mut dyn Guide,
+    ) -> Result<String, Failure<Error>> {
+        let guest = guide.lead(&self.name)?;
+        if guest.is_empty() {
+            return Err(Failure::Kind(Error::Missing {
+                key: String::from("guest"),
+            }));
+        }
+        Ok(format!("{} seats {guest}", self.name))
     }
 }
 

@@ -191,7 +191,8 @@
             "targets": [
               "php",
               "python",
-              "node"
+              "node",
+              "go"
             ],
             "reason": "GN-6m"
           },
@@ -633,7 +634,8 @@
             "targets": [
               "php",
               "python",
-              "node"
+              "node",
+              "go"
             ],
             "reason": "GN-6m"
           },
@@ -737,6 +739,139 @@
           "core": {
             "path": "polyspec_classes::Lease::release",
             "receiver": "self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "guide",
+      "name": [
+        "guide"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "callback",
+      "core": "polyspec_classes::Guide",
+      "thread": "owner",
+      "only": {
+        "targets": [
+          "php",
+          "python",
+          "node",
+          "go"
+        ],
+        "reason": "GN-6q"
+      },
+      "members": [
+        {
+          "id": "guide.lead",
+          "name": [
+            "lead"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tag"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "async_allowed": false,
+          "core": {
+            "path": "polyspec_classes::Guide::lead",
+            "receiver": "&mut self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "usher",
+      "name": [
+        "usher"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Usher",
+      "final": true,
+      "members": [
+        {
+          "id": "usher.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::Usher::new"
+        },
+        {
+          "id": "usher.name",
+          "name": [
+            "name"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Usher::name",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "usher.seat",
+          "name": [
+            "seat"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "GN-6q"
+          },
+          "parameters": [
+            {
+              "name": [
+                "guide"
+              ],
+              "type": {
+                "unit": "guide"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_classes::Usher::seat",
+            "receiver": "&self"
           }
         }
       ]
@@ -859,6 +994,21 @@
       "member": "gate.enter_later",
       "file": "contracts/cases.json",
       "group": "gate_enter_later"
+    },
+    {
+      "member": "usher.new",
+      "file": "contracts/cases.json",
+      "group": "usher_new"
+    },
+    {
+      "member": "usher.name",
+      "file": "contracts/cases.json",
+      "group": "usher_name"
+    },
+    {
+      "member": "usher.seat",
+      "file": "contracts/cases.json",
+      "group": "usher_seat"
     }
   ]
 }

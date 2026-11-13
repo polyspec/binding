@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b3aa05d72090f7d076530bd89e7496b92490215c2d7d6b4d315a3ebfdb676458 -->
+<!-- source-sha256: df25459d1a9b98f63cf2b6ca464ae205504df1951f4a8f809c81b39d13709a9c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `wait: blocking_io`인 Go member를 이름을 대고 거부했다. 이제 Go가 그것을 생성한다. member의 cgo 호출이 호출
+  goroutine의 OS 스레드에서 코어를 부르고 코어가 돌아올 때 돌아오며, C ABI의 진입점은 기다리는 동안 자기 자리의 lock을
+  쥐고, 그 member는 기다리지 않는 member의 꼴을 갖는다(GN-6m). 언어 코드에 닿는 member는 그 스레드에서 callback을
+  부른다(GN-6q). `tests/e2e/classes`의 member `classes.read`와 `gate.enter_slowly`가 Go를 적고, callback `guide`를 받는
+  class `usher`는 언어 코드에 닿는 `blocking_io` member다. 그 레포의 `cases_test.go`는 두 goroutine에서 usher 하나를
+  부른다. 첫 호출의 guide가 그 호출을 코어 안에 붙잡아 둔 동안 둘째 호출을 하고, 두 결과를 모두 요구한다.
+  `make test-ts`로 검증했다. GN-6m과 GN-6q의 시험은 변경 전에 그 거부로 실패했다. 다섯 target의 증거는
+  `tests/e2e/classes`의 end-to-end 검사다.
 - `binding check`가 통과시킨 계약 오류를 `binding generate`가 거부로 처음 보고했다. 이제 계약 검사가 그 가운데 셋을
   보고한다. CK-69: host unit이 아닌 unit의 `constructor`, `property`, `iterate`, hook(`stringify`, `to_json`,
   `primitive`)이 `none`이 아닌 `wait`를 적으면 finding이고, 그 member와 wait, 그 자리에서 기다릴 수 있는 member를

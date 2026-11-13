@@ -3961,12 +3961,15 @@ test('a member with wait blocking_io that reaches language code runs where its l
   // Node and PHP keep the check of a callback with thread owner.
   assert.match(node, /BindingError::WrongThread/);
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
-  // Go refuses a member with blocking_io by name; a member with async_driver that reaches language code is refused.
+  // A member with async_driver that reaches language code is refused without machine.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
   };
-  assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  const goSample = sample(everywhere, ['go']);
+  // Go: the core calls the callback in the cgo call of the member, on the thread of the calling goroutine.
+  assert.match(text(goSample, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
+  assert.match(text(goSample, 'packages/go/zz_generated_sample.go'), /\nfunc ResolveSlowly\(lookup Lookup, key string\) \(string, error\) \{/);
   const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
   assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code names machine: true in its core \(GN-6ab, CK-68\)/);
 });
@@ -4063,13 +4066,24 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(tests, /await pkg\.read\('a'\)/);
   assert.match(tests, /await assert\.rejects\(/);
-  // WASM has no member that waits (only, Q-4); Go names it as not generated yet.
+  // WASM has no member that waits (only, Q-4).
   assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\(/);
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
   };
-  assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  // Go: the cgo call of the member calls the core on the thread of the calling goroutine and returns its result; the
+  // member has the form of a member that does not wait.
+  const go = classes(everywhere, ['go']);
+  const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.ok(goLib.includes(`polyspec_classes::read(${token}, `), 'Go passes the token to read');
+  // GN-6h: the entry point holds the read guard of the receiver across the core call, and the class is in Shared.
+  assert.match(goLib, /let receiver = held\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+let receiver = &\*receiver;\n[^\n]*polyspec_classes::Gate::enter_slowly\(receiver, binding_core::Io::for_generated_call\(\)\)/);
+  assert.match(goLib, /static TABLE_GATE: Mutex<Table<binding_core::Shared<polyspec_classes::Gate>>>/);
+  const goPackage = text(go, 'packages/go/zz_generated_classes.go');
+  assert.match(goPackage, /\nfunc Read\(name string\) \(string, error\) \{/);
+  assert.match(goPackage, /\nfunc \(this \*Gate\) EnterSlowly\(\) \(string, error\) \{/);
+  assert.doesNotMatch(goPackage, /context\.Context/);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
 });

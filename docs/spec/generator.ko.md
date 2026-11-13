@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
+<!-- source-sha256: 45f0a871d050bd14fa0cddf58a9a362ca72ae412f294ac024b36ccebc2083696 -->
 # 생성기
 
 [English](generator.md)
@@ -12,7 +12,7 @@
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
-  parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
+  parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o)와 `cleanup`이 있는 class unit(GN-6p)에 대해, Python·Node·PHP·Go는 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
   callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
   Go는 variant unit과 interface를 구현하는 class를 GN-6v와 GN-6w대로 생성한다.
@@ -638,9 +638,15 @@
     호출을 libuv 풀에서 돌리고(`ScopedTask`의 `Env::spawn`), 결과나 오류를 JavaScript 스레드에서 바꾼다. 호출의 panic은
     kind `internal`로 promise를 거부한다(B-7). member의 JavaScript 진입은 async 함수다. 그래서 인자의 실패를 포함한 모든
     실패가 promise를 거부하고, 호출 자리에서 던져지는 실패는 없다. 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
-  - Go는 cgo 호출로 작업을 코어에 넘기고 곧바로 돌아오며, 호출 goroutine은 그 작업의 완료 channel에서 기다린다. 코어는
-    export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
-    `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
+  - Go는 member의 cgo 호출 안에서, 호출 goroutine의 OS 스레드에서 코어를 부르고, 코어가 돌아올 때 호출이 돌아온다(B-8).
+    Go runtime은 cgo 호출을 막는 호출로 다룬다. goroutine은 호출이 돌아올 때까지 자기 스레드를 쥐고, runtime은 다른
+    goroutine을 다른 스레드에서 돌린다. 그래서 기다리는 호출은 OS 스레드 하나를 쥐고 다른 goroutine을 멈추지 않는다.
+    C ABI의 진입점은 코어를 부르기 전에 그 스레드에서 자기 자리의 lock을 잡고 결과를 변환할 때까지 쥔다(GN-6h).
+    receiver가 `&self`이고 기다리는 member의 class는 `Shared`에 담기므로 두 goroutine이 한 객체 안에서 동시에 기다리고,
+    어떤 호출이 그 객체 안에서 기다리는 동안 그 객체의 쓰기 자리가 필요한 호출은 kind `busy`로 실패한다. Go에는 함수의
+    꼴이 하나뿐이므로 그 member는 기다리지 않는 member와 같은 이름과 결과를 갖고, 기다리면 안 되는 호출자는 goroutine을
+    띄운다. 어떤 호출도 취소되지 않는다. token `Io`는 취소를 지니지 않고 타입 `cancel`은 생성하지 않으므로(GN-13)
+    그 member는 `context.Context`를 받지 않는다.
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
@@ -712,7 +718,10 @@
     실패로 정해지는 promise를 돌려준다. JavaScript entry는 async function이고 선언은 GN-6m대로 `Promise<T>`를 적는다. 그래서
     member의 언어 꼴은 언어 코드에 닿는지에 따라 달라지지 않는다. 코어가 I/O를 기다리는 동안 JavaScript 스레드도 기다린다.
     각 코어의 spec은 그런 member에 대해 이 비용을 적는다.
-  - Go는 `blocking_io`인 member를 이름을 대고 거부하고(GN-6m), WASM에는 그런 member가 없다(GN-6m).
+  - Go는 GN-6m대로 호출 goroutine의 스레드에서 코어를 부르고, 코어는 그 스레드에서 export `<prefix>__go_callback`으로
+    callback을 부른다(GN-15b). 그 스레드는 callback을 넘긴 스레드이므로 `thread: owner`인 callback은 기다리지 않는
+    호출에서처럼 자기 스레드에서 불린다. 다른 goroutine을 기다리는 callback은 돌아올 때까지 자기 호출의 lock을 쥔다.
+  - WASM에는 그런 member가 없다(GN-6m).
   Node에서 다른 스레드를 쓰지 않는 이유: napi의 callback 객체는 JavaScript 스레드에서만 유효하다. callback 호출마다
   thread-safe function으로 그 스레드에 넘기고 답을 기다리는 pool 스레드는 호출 내내 libuv pool의 스레드 하나를 잡고, JavaScript
   스레드가 그 pool을 기다리면 끝나지 않는다. 호출마다 언어 코드에 닿는지 판단하는 코어(`core.reaches`)가 있으면 닿지 않는

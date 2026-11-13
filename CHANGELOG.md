@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A Go member with `wait: blocking_io` was refused by name. Go now generates it: the cgo call of the member calls
+  the core on the OS thread of the calling goroutine and returns when the core returns, the entry point of the C ABI
+  holds the locks of its places across the wait, and the member has the form of a member that does not wait (GN-6m);
+  a member that reaches language code calls its callback on that thread (GN-6q). The members `classes.read` and
+  `gate.enter_slowly` of `tests/e2e/classes` name Go, and the class `usher` with the callback `guide` is a member with
+  `blocking_io` that reaches language code; `cases_test.go` of that repository calls one usher from two goroutines,
+  the second while the guide of the first holds its call inside the core, and requires both results. Verified by
+  `make test-ts`: the tests of GN-6m and GN-6q failed with the refusal before the change. The end-to-end check of
+  `tests/e2e/classes` is the evidence of the five targets.
 - A contract error that `binding check` passed was first reported by `binding generate` as a refusal. The contract
   check now reports three of them. CK-69: a `constructor`, a `property`, an `iterate` or a hook (`stringify`,
   `to_json`, `primitive`) of a unit that is no host unit with a `wait` other than `none` is a finding that names the

@@ -18,8 +18,8 @@ the design ids are those of the binding design.
   repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
   interfaces of this contract that a class implements (GN-6w),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
-  `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
+  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o) and a class unit with
+  `cleanup` (GN-6p), and for Python, Node, PHP and Go a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
   callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, an abstract class, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
@@ -784,9 +784,16 @@ the design ids are those of the binding design.
     `internal` (B-7). The JavaScript entry of the member is an async function, so that every failure, also one of the
     arguments, rejects the promise and none is thrown at the call. The declarations name `Promise<T>`, and the
     generated tests await the call.
-  - Go hands the work to the core in a cgo call that returns at once; the calling goroutine waits on the completion
-    channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
-    thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
+  - Go calls the core in the cgo call of the member, on the OS thread of the calling goroutine, and the call returns
+    when the core returns (B-8). The Go runtime treats a cgo call as a blocking call: the goroutine keeps its thread
+    until the call returns, and the runtime runs the other goroutines on other threads, so a call that waits holds one
+    OS thread and stops no other goroutine. The entry point of the C ABI takes the locks of its places on that thread
+    before the core call and holds them until the result is converted (GN-6h): the class of a member with the receiver
+    `&self` that waits is held in `Shared`, so two goroutines wait in one object at the same time, and a call that
+    needs a write place of that object while a call waits in it fails with kind `busy`. Go has one form of a function,
+    so the member has the name and the results of a member that does not wait, and its caller starts a goroutine where
+    it must not wait. No call is cancelled: the token `Io` carries no cancellation, and the type `cancel` is not
+    generated (GN-13), so the member takes no `context.Context`.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
@@ -865,7 +872,11 @@ the design ids are those of the binding design.
     entry is an async function, and the declarations name `Promise<T>`, as GN-6m states, so the language form of the
     member does not depend on whether it reaches language code. The JavaScript thread waits while the core waits for
     I/O; the specification of each core states this cost for such a member.
-  - Go refuses a member with `blocking_io` by name (GN-6m), and WASM has no such member (GN-6m).
+  - Go calls the core on the thread of the calling goroutine, as GN-6m states, and the core calls a callback through
+    the export `<prefix>__go_callback` on that thread (GN-15b), which is the thread that gave the callback, so a
+    callback with `thread: owner` is called on its thread as in a call that does not wait. A callback that waits for
+    another goroutine holds the locks of its call until it returns.
+  - WASM has no such member (GN-6m).
   Why not another thread of Node: a callback object of napi is valid only on the JavaScript thread, and a pool thread
   that hands each callback call to that thread through a thread-safe function and waits for its answer holds a thread
   of the libuv pool for the whole call, and it never ends when the JavaScript thread waits for that pool. A core that

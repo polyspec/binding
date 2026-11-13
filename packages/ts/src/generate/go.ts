@@ -2278,8 +2278,6 @@ import (
 // G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
 // that a member names.
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
-  for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // GN-6n: so does a Go member with wait async_driver.
   for (const fn of callablesOf(model).filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for Go yet (GN-6n)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.

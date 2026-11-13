@@ -423,5 +423,85 @@
         "message": "the gate of a is closed"
       }
     }
+  ],
+  "usher_new": [
+    {
+      "id": "an_usher_holds_its_name",
+      "name": "a"
+    }
+  ],
+  "usher_name": [
+    {
+      "id": "the_name_of_an_usher",
+      "name": "a",
+      "result": "a"
+    }
+  ],
+  "usher_seat": [
+    {
+      "id": "an_usher_seats_whom_its_guide_leads",
+      "receiver": {
+        "new": "usher.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "guide": {
+        "callback": {
+          "guide.lead": [
+            {
+              "args": {
+                "tag": "a"
+              },
+              "result": "b"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "guide.lead",
+            "args": {
+              "tag": "a"
+            }
+          }
+        ]
+      },
+      "result": "a seats b"
+    },
+    {
+      "id": "a_guide_that_leads_nobody_is_missing",
+      "receiver": {
+        "new": "usher.new",
+        "args": {
+          "name": "a"
+        }
+      },
+      "guide": {
+        "callback": {
+          "guide.lead": [
+            {
+              "args": {
+                "tag": "a"
+              },
+              "result": ""
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "guide.lead",
+            "args": {
+              "tag": "a"
+            }
+          }
+        ]
+      },
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for guest"
+      }
+    }
   ]
 }
