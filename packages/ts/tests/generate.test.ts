@@ -1736,10 +1736,28 @@ test('the refusals of each target are named together, and a target generates alo
   const five = sample;
   assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
-  // A member of a class in another module is refused by name in Go, whose handle of the class is unexported.
+  // GN-15a: a member of another module reaches a class and a callback through the functions of their packages that
+  // take binding.Token, and its test makes an instance by the constructor of that package.
   const moved = JSON.parse(JSON.stringify(five));
   moved.units.find((u: any) => u.id === 'tag').module = 'tags';
-  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /tag: a class unit of the module tags in the module \(the root\) is not generated for Go yet/);
+  moved.units.find((u: any) => u.id === 'lookup').module = 'lookups';
+  const split = generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] });
+  const root = text(split, 'packages/go/zz_generated_sample.go');
+  assert.match(root, /\tenc\.Uint\(tags\.TagHandle\(binding\.Token\{\}, tag\)\)\n/);
+  assert.match(root, /= tags\.TagFromHandle\(binding\.Token\{\}, dec\.Uint\(\)\)\n/);
+  assert.match(root, /call\.Callback\(enc, lookups\.DispatchLookup\(binding\.Token\{\}, [a-z]+\)\)/);
+  const tags = text(split, 'packages/go/tags/zz_generated_tags.go');
+  assert.match(tags, /\nfunc TagHandle\(_ binding\.Token, this \*Tag\) uint64 \{\n\treturn this\.handle\(\)\n\}\n/);
+  assert.match(tags, /\nfunc TagFromHandle\(_ binding\.Token, handle uint64\) \*Tag \{\n\treturn newTag\(handle\)\n\}\n/);
+  assert.match(text(split, 'packages/go/lookups/zz_generated_lookups.go'), /\nfunc DispatchLookup\(_ binding\.Token, object Lookup\) binding\.Callback \{\n\treturn dispatchLookup\(object\)\n\}\n/);
+  assert.match(text(split, 'packages/go/internal/binding/zz_generated_binding.go'), /\ntype Token struct\{\}\n/);
+  assert.match(text(split, 'packages/go/zz_generated_test.go'), /tags\.NewTag\("a"\)/);
+  assert.doesNotMatch(text(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), 'packages/go/zz_generated_sample.go'), /FromHandle|TagHandle/);
+  // Packages that would import each other are refused by name.
+  const cycle = JSON.parse(JSON.stringify(moved));
+  const tag = cycle.units.find((u: any) => u.id === 'tag');
+  tag.members.push({ ...tag.members.find((m: any) => m.id === 'tag.name'), id: 'tag.counter', name: ['counter'], returns: { unit: 'counter' } });
+  assert.throws(() => generate({ contract: cycle, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /the Go packages of the modules \(the root\) and tags import each other, which Go refuses \(GN-15a\)/);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }).has('packages/go/zz_generated_sample.go'));
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }).has('packages/ts/wasm/generated/lib.rs'));
 });

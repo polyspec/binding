@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record와 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -392,7 +392,11 @@
   `New<Class>`(`constructible`이 false이면 없음), static member는 함수 `<Class><Member>`(CK-13), method와 property는
   호출이 끝날 때까지 receiver를 살려 두는(`runtime.KeepAlive`) `*<Class>`의 method다. iterate는 C ABI가 모은 항목에 대한
   `iter.Seq[T]`나 `iter.Seq2[K, V]`를 돌려주고, stringify는 `String()`이며 `fmt.Stringer`에 오류 결과가 없으므로 코어의
-  오류로 panic한다. 다른 module의 class·callback unit은 이름으로 거부한다(handle과 dispatch가 내보내지 않은 것이다).
+  오류로 panic한다. 다른 module의 member는 class·callback unit에 그 패키지의 함수로 닿는다. 그 함수의 첫 parameter는
+  Go module의 패키지만 이름할 수 있는 `internal/binding`의 `binding.Token`이다. `<Class>Handle`은 인스턴스의 handle을
+  주고, `<Class>FromHandle`은 handle의 인스턴스를 만들고, `Dispatch<Callback>`은 callback Go 값의 dispatch를 준다.
+  패키지는 다른 module이 이름하는 unit에만 그 함수를 두고, CK-13은 그 이름을 센다. 패키지가 서로 import하게 될
+  module은 이름으로 거부한다. Go가 import cycle을 거부하기 때문이다.
   to_json은 `json.Marshaler`의 `MarshalJSON`이다. 코어가 준 값을 `encoding/json`으로 marshal하고 코어의 오류를 돌려주므로
   인스턴스의 `json.Marshal`은 코어가 정한 JSON 꼴을 준다. `never`를 돌려주는 to_json은 오류만 돌려준다. `never`를
   돌려주는 member는 `error` 앞에 결과가 없다.

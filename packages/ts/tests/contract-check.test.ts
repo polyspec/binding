@@ -306,6 +306,11 @@ describe('CK-13 Go names', () => {
       member(c, 'forms.parse').name = ['new', 'session'];
       unit(c, 'forms').module = 'session';
     }));
+  test('a function with the name of the function that makes an instance of a handle (GN-15a)', () =>
+    fails('CK-13', '/units/', (c) => {
+      member(c, 'forms.parse').name = ['session', 'from', 'handle'];
+      unit(c, 'forms').module = 'session';
+    }));
   test('a Go naming exception that makes a name collide', () =>
     fails('CK-13', '/units/', (c) => {
       c.naming.exceptions.push({ lang: 'go', unit: 'memory_store', name: 'Session', reason: 'S1' });
