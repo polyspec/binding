@@ -4,8 +4,9 @@
 // constants), U-2 (a call without an argument with a default is the call with its default), U-7 (a kind of an alias
 // comes up through a member), B-4 (every contract case that raises: the exact error type of E-2 and E-7, the kind, the
 // status and the errno), GN-13e (every case that does not raise, with its result), K-2 (a nil callback, the error of a
-// callback), N-4 (the text of a stringify) and B-5c (a poisoned instance, an instance at two places). The cases that
-// arm faults (G-5) have the build tag polyspec_fault_test and the poison tests polyspec_panic_test.
+// callback), N-4 (the text of a stringify), B-5c (a poisoned instance, an instance at two places) and GN-6ae (a nil
+// func, the error and the panic of a func, the function fixture of a case, raises "callback" and the calls of after).
+// The cases that arm faults (G-5) have the build tag polyspec_fault_test and the poison tests polyspec_panic_test.
 //
 // What the Go types decide is no test: B-2 and T-7 (a uint64 holds no -1, NaN or fraction, a []byte no other type),
 // except the range of an int and a uint (GN-12a), which B-2 tests with 2^53 and -2^53,
@@ -24,8 +25,8 @@ import {
   objectUnit, places, pointName, unitOf,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
-  raisingCases, refuseScopedCases, resultCases, sampleReceiver, stringCases,
+  type After, type Fixture, type RaisingCase, type Receiver, FIXTURE_RAISED, aliasCases, argsOf, callbackCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf,
+  isInstanceValue, memberById, pairsReceiver, raisesException, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
 interface Values {
@@ -38,9 +39,17 @@ interface Values {
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
 class Body {
   lines: string[] = [];
-  private count = 0;
+  // The count of the locals of a test, which the bodies of its funcs share, so that no local has the name of another.
+  private readonly counter: { next: number };
+  constructor(counter: { next: number } = { next: 0 }) {
+    this.counter = counter;
+  }
   fresh(prefix = 'made'): string {
-    return `${prefix}${this.count++}`;
+    return `${prefix}${this.counter.next++}`;
+  }
+  // GN-6ae: the statements of a block inside the test: the body of a func, or the block of a call of after.
+  child(): Body {
+    return new Body(this.counter);
   }
   // A call whose results are bound to locals and whose error fails the test.
   bind(call: string, results: number, rule: string): string[] {
@@ -118,6 +127,9 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (type === 'source') return typeof json === 'string' ? `[]byte(${goString(json)})` : hexBytes(json, type);
     throw new Unsupported(`no Go case value of the type ${type}`);
   }
+  // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
+  if ('function' in type) return functionValue(v, b, type.function, json);
+  if ('passthrough' in type) return aliasValue(undefined, json, 'a passthrough');
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
@@ -169,7 +181,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(unit: Unit, json: unknown, where: string): string {
+function aliasValue(unit: Unit | undefined, json: unknown, where: string): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
@@ -199,17 +211,47 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasValue(unit, item, where)).join(', ')}}`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = held as [unknown, unknown][];
-    const keyed = (unit.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
+    const keyed = (unit?.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
     if (keyed) return `func() *binding.KeyedMap[any] { m := &binding.KeyedMap[any]{}; ${entries.map(([key, item]) => `m.Set(${goKey(key)}, ${aliasValue(unit, item, where)}); `).join('')}return m }()`;
     return `map[string]any{${entries.map(([key, item]) => `${goString(String(key))}: ${aliasValue(unit, item, where)}`).join(', ')}}`;
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated for Go yet (GN-13)`);
 }
 
+// GN-6ae: the head of a func literal of a function type, its parameters named by `name`.
+const funcHead = (v: Values, parts: Type[], name: (index: number) => string): string =>
+  `func(${parts.map((part, i) => `${name(i)} ${typeName(v, part)}`).join(', ')}) (any, error)`;
+
+// GN-6ae: the func of a function fixture, {"function": {"calls": [<step>], "result" | "raise"}} (CK-22 has judged the
+// form), as a local of the body: each step calls a method on the argument at its position and returns its error, and
+// the func then returns its result, a value of GN-13, or the error `raised` that the test holds. An argument of a
+// function type of a step is a func inside the func.
+function functionValue(v: Values, b: Body, type: Extract<Type, { function: unknown }>['function'], json: unknown): string {
+  const fixture = (json as { function?: Record<string, unknown> } | null)?.function;
+  if (typeof fixture !== 'object' || fixture === null) throw new Unsupported(`a case value of a function type is a function fixture, not ${JSON.stringify(json)} (GN-6ae)`);
+  const inner = b.child();
+  for (const step of Array.isArray(fixture['calls']) ? (fixture['calls'] as Record<string, unknown>[]) : []) {
+    const fn = memberById(v.model, String(step['call']));
+    const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
+    if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${JSON.stringify(step['args'])}, which are not the parameters of a member (GN-6ae)`);
+    const call = invoke(v, fn, callArgs(v, inner, fn, (arg) => caseValue(v, inner, arg, args)), `arg${Number(step['on'])}`);
+    inner.lines.push(`if ${'_, '.repeat(goResultCount(fn))}err := ${call}; err != nil {`, '\treturn nil, err', '}');
+  }
+  const raise = fixture['raise'];
+  if (raise === undefined) inner.lines.push(`return ${value(v, inner, type.returns, fixture['result'] ?? null)}, nil`);
+  else if (raise === 'exception') inner.lines.push('return nil, raised');
+  else throw new Unsupported(`a function fixture raises the error unit ${String((raise as { error?: unknown }).error)}, which is not generated for Go yet (GN-6ae, GN-13)`);
+  const name = b.fresh('function');
+  b.lines.push(`${name} := ${funcHead(v, type.parameters, (i) => `arg${i}`)} {`, ...inner.lines.map((line) => `\t${line}`), '}');
+  return name;
+}
+
 // A value of the type that the binding converts without failing; rich: a list has one item, so that a member that
 // calls a callback per item calls it (K-2).
 function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")' } as Record<string, string>)[type] ?? '0';
+  // GN-6ae: a func that returns no value.
+  if ('function' in type) return `${funcHead(v, type.function.parameters, () => '_')} { return nil, nil }`;
   if ('list' in type) return rich ? `${typeName(v, type)}{${placeholder(v, b, type.list, rich)}}` : 'nil';
   if ('optional' in type || 'map' in type || 'keyed_map' in type) return 'nil';
   if ('tuple' in type) return `${typeName(v, type)}{}`;
@@ -339,6 +381,35 @@ const indent = (lines: string[], depth: number): string => lines.map((l) => (l =
 
 // GN-13e: a name of a test holds the words of a text, capitalized and joined, as the id of a case.
 const testName = casePascal;
+
+// GN-6ae (CK-22): the calls of after of a case, each in a block of its own on the receiver of the case, with the
+// result that the case names.
+function afterLines(v: Values, b: Body, fn: Fn, id: string, after: After[] | undefined, receiver: string): string[] {
+  return (after ?? []).flatMap((call) => {
+    const a = b.child();
+    try {
+      const args = callArgs(v, a, call.fn, (arg) => caseValue(v, a, arg, call.args));
+      const parts = call.fn.returns === 'none' || call.fn.returns === 'never' ? [] : typeof call.fn.returns === 'object' && 'tuple' in call.fn.returns ? call.fn.returns.tuple : [call.fn.returns];
+      const expects = call.result !== undefined && parts.length > 0;
+      const absent = call.result === null && typeof call.fn.returns === 'object' && 'optional' in call.fn.returns;
+      const reason = expects && !absent ? comparableResult(v.model, call.fn.returns) : undefined;
+      if (reason !== undefined) throw new Unsupported(reason);
+      const compared = !expects ? [] : parts.flatMap((type, i) => {
+        const given = parts.length === 1 ? call.result : (call.result as unknown[] | null)?.[i];
+        return [`if want := (${typeName(v, type)})(${value(v, a, type, given ?? null)}); !reflect.DeepEqual(value${i}, want) {`, `\tt.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`, '}'];
+      });
+      const lines = [...a.lines, callLine(call.fn, invoke(v, call.fn, args, receiver), expects ? parts.map((_, i) => `value${i}`) : undefined), 'if err != nil {', '\tt.Fatalf("GN-6ae: after: %v", err)', '}', ...compared];
+      return ['{', ...lines.map((line) => `\t${line}`), '}'];
+    } catch (error) {
+      if (!(error instanceof Unsupported)) throw error;
+      return [`t.Fatal(${goString(`the case ${id} of ${fn.member.id}: after ${call.fn.member.id}: ${error.message}`)})`];
+    }
+  });
+}
+
+// GN-6ae: the error that a function fixture of the case returns, which the test holds before its funcs.
+const raisedLine = (args: ReadonlyMap<Arg, unknown>): string[] =>
+  ([...args.values()].some(raisesException) ? [`raised := errors.New(${goString(FIXTURE_RAISED)})`] : []);
 
 // G-5: the fixture of a callback, which answers the calls of the core by the rows of a case.
 function fixtureLines(v: Values, b: Body, fixture: Fixture, name: string): string {
@@ -473,6 +544,30 @@ func TestK2${label}LetsTheErrorOf${testName(argName)}Through(t *testing.T) {
 ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), 'if err != raised {', '\tt.Fatalf("K-2: %#v is not the error of the callback", err)', '}'], 1)}
 }`);
     }
+    // GN-6ae: a nil func is kind invalid_callback; the error that a func returns is the error of the call, the same
+    // value; and a panic of a func is the panic of the call, with the same value.
+    if (typeof arg.type === 'object' && 'function' in arg.type) {
+      const head = funcHead(v, arg.type.function.parameters, () => '_');
+      single('GN-6ae', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_callback', 'GN-6ae'));
+      const ends = (end: string): { lines: string[]; call: string } => {
+        const b = new Body();
+        const receiver = sample === undefined ? '' : made(v, b, sample);
+        const args = callArgs(v, b, fn, (a) => (a === arg ? `${head} { ${end} }` : a.default === undefined ? placeholder(v, b, a.type) : undefined));
+        return { lines: b.lines, call: callLine(fn, invoke(v, fn, args, receiver)) };
+      };
+      const returned = ends('return nil, raised');
+      out.main.push(`
+func TestGN6ae${label}ReturnsTheErrorOf${testName(argName)}(t *testing.T) {
+	raised := errors.New(${goString(FIXTURE_RAISED)})
+${indent([...returned.lines, returned.call, 'if err != raised {', '\tt.Fatalf("GN-6ae: %#v is not the error of the function", err)', '}'], 1)}
+}`);
+      const panicked = ends('panic(raised)');
+      out.main.push(`
+func TestGN6ae${label}PanicsWithThePanicOf${testName(argName)}(t *testing.T) {
+	raised := errors.New(${goString(FIXTURE_RAISED)})
+${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value != any(raised) {', '\t\tt.Fatalf("GN-6ae: %#v is not the panic of the function", value)', '\t}', '}()', panicked.call, 't.Fatalf("GN-6ae: the call returned %v", err)'], 1)}
+}`);
+    }
   }
   // U-2: the call that leaves an argument with a default out is the call that gives the default.
   const count = fn.special === undefined ? goResultCount(fn) : 0;
@@ -517,15 +612,38 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
       continue;
     }
     const { receiver, args } = call;
-    const lines = [...b.lines];
+    const lines = [...raisedLine(kase.args), ...b.lines];
     if (kase.faults !== undefined) {
       lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
       lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(kase.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
     }
-    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b));
+    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
     (kase.faults === undefined ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
+${indent(lines, 1)}
+}`);
+  }
+  // GN-6ae: a case whose function fixture returns the error that the test holds gets the same error value.
+  for (const kase of callbackCases(model, fn)) {
+    const b = new Body();
+    const call = written(fn, kase.id, () => {
+      const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
+      return { receiver, args: callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args)) };
+    });
+    const lines = typeof call === 'string'
+      ? [`t.Fatal(${goString(call)})`]
+      : [
+        `raised := errors.New(${goString(FIXTURE_RAISED)})`,
+        ...b.lines,
+        callLine(fn, invoke(v, fn, call.args, call.receiver)),
+        'if err != raised {',
+        '\tt.Fatalf("GN-6ae: %#v is not the error of the function", err)',
+        '}',
+        ...afterLines(v, b, fn, kase.id, kase.after, call.receiver),
+      ];
+    out.main.push(`
+func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
 }`);
   }
@@ -570,7 +688,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       }
     }
     const lines = refused === undefined
-      ? [...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b)]
+      ? [...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...afterLines(v, b, fn, kase.id, kase.after, receiver)]
       : [`t.Fatal(${goString(refused)})`];
     out.main.push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
@@ -778,7 +896,6 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
 
 export function goTestFiles(model: Model, module: string): [string, string][] {
   checkCaseNames(model, casePascal, false);
-  refuseScopedCases(model, 'Go');
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
@@ -824,6 +941,49 @@ func TestB7APanicIsKindInternal(t *testing.T) {
 	failure, ok := err.(*${internal})
 	if !ok || failure.Kind() != "internal" {
 		t.Fatalf("B-7: %#v", err)
+	}
+}
+`;
+}
+
+// GN-6ae, B-3: a handle of the table of the passthroughs is a count that is never given again, and a result whose
+// handle names no value is kind internal.
+export function goPassedTest(internal: string): string {
+  return `${goHeader()}
+
+package binding
+
+import "testing"
+
+func TestGN6aeAHandleOfThePassthroughTableIsNeverGivenAgain(t *testing.T) {
+	first := pass("a")
+	if value, ok := takePassed(first); !ok || value != "a" {
+		t.Fatalf("GN-6ae: the value of the handle is %#v, %v", value, ok)
+	}
+	second := pass("b")
+	if second == first {
+		t.Fatalf("GN-6ae: the handle %d was given again", second)
+	}
+	if value, ok := takePassed(first); ok {
+		t.Fatalf("GN-6ae: the handle of a value that left names %#v", value)
+	}
+	if value, ok := takePassed(second); !ok || value != "b" {
+		t.Fatalf("GN-6ae: the value of the handle is %#v, %v", value, ok)
+	}
+}
+
+func TestGN6aeAResultWhoseHandleNamesNoValueIsKindInternal(t *testing.T) {
+	handle := pass(nil)
+	takePassed(handle)
+	enc := NewWriter()
+	enc.Uint(handle)
+	dec := NewReader(enc.Done())
+	if value := dec.Passed(); value != nil {
+		t.Fatalf("GN-6ae: %#v", value)
+	}
+	failure, ok := dec.Finish().(*${internal})
+	if !ok || failure.Kind() != "internal" {
+		t.Fatalf("GN-6ae: %#v", dec.Finish())
 	}
 }
 `;

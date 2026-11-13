@@ -756,6 +756,24 @@ the design ids are those of the binding design.
     `Raised` of U-3, so `failure_error` throws the same object again. The table of the values is a thread-local map
     from a handle to a `Zval`; the release function takes the value out of the table and ends it after the table is
     released, because the destructor of a PHP value may run PHP code that enters the binding again.
+  - Go: the parameter is a Go `func` of the generated signature, `func(<parameters>) (any, error)`, and the result
+    `passthrough` is `any`, because a method of Go has no type parameter. A nil `func` is kind `invalid_callback`. The
+    function enters as a callback of the call (GN-15b), the handle of the call (`cgo.Handle`) and its index in it, and
+    the closure of the C ABI calls it through the export `<prefix>__go_callback`, the trampoline of every Go
+    callback. It runs on the goroutine of the member, on its thread: the goroutine holds its thread for the call of
+    the C ABI, `machine::drive` makes each call of the machine there (GN-6ab), and Go runs an exported function on the
+    thread that calls it, so no `Passthrough` leaves the thread that made it. The dispatch of the function decodes
+    each argument, a class argument as a new instance around the handle that the closure wrote (GN-15a), calls the
+    function and holds what it returned in the table of package `binding`: a map from a handle to the value behind a
+    mutex, which keeps the value reachable for the garbage collector until its `Passthrough` ends, and whose handle
+    is a count of the table. The closure makes the `Passthrough` of that handle; its release function removes the
+    value through the export `<prefix>__go_release_passed`, on any thread, because a Go value is bound to no thread.
+    A result `passthrough` crosses the C ABI as its handle, and the member takes the value out of the table. An
+    `error` that the function returns is kept by the call under its index and is the `Raised` of U-3 (GN-15b), so the
+    member returns the same error value. A panic of the function is recovered in the dispatch, because a panic that
+    unwinds through the frames of the C ABI skips the destructors of the core, its guards and its machine: the call
+    keeps the value of the panic as the `Raised`, the core ends as for an error, and the member panics with the same
+    value after the call of the C ABI returned.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
     the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
@@ -771,11 +789,18 @@ the design ids are those of the binding design.
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope.
-  Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
+  Not generated yet (G-4): Python, Node and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP generates the member. The PHP test writes the function fixture, the test of a case with `raises:
+  yet"; PHP and Go generate the member. The PHP test writes the function fixture, the test of a case with `raises:
   "callback"`, which requires the same exception object, the calls of `after`, and a test that a value that is no
-  callable is kind `invalid_callback`; the test of another target does not yet. The contract of the end-to-end sample
+  callable is kind `invalid_callback`. The Go test writes the function fixture as a `func` whose steps return their
+  error, the test of a case with `raises: "callback"`, whose `func` returns the error value that the test holds and
+  which requires that same value, the calls of `after`, and for each parameter of a function type a test that a nil
+  `func` is kind `invalid_callback`, a test that the member returns the error value that the `func` returned, and a
+  test that the member panics with the value of a panic of the `func`; package `binding` tests that a handle of its
+  table is not given again and that a result whose handle names no value is kind `internal`. A function fixture that
+  raises an error unit fails its Go test by name, because no function recognizes an error yet. The test of Python,
+  Node and WASM does not write them yet. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns

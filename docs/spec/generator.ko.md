@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 16e9f90ef80a44b22927aa6c16166c19c6cf9dbee2e00d0be00379c07fa90ca4 -->
+<!-- source-sha256: 19c0608072e2ec17dc0da2ee627d652f29232945db2cde2560ead17fb59e482c -->
 # 생성기
 
 [English](generator.md)
@@ -628,6 +628,21 @@
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
     다시 던진다. 값의 table은 handle에서 `Zval`로 가는 thread-local map이다. release 함수는 값을 table에서 꺼내고 table을
     놓은 뒤에 값을 끝낸다. PHP 값의 destructor가 binding으로 다시 들어오는 PHP 코드를 돌릴 수 있기 때문이다.
+  - Go: parameter는 생성된 signature의 Go `func`, 곧 `func(<parameters>) (any, error)`이고, 결과 `passthrough`는
+    `any`다. Go의 method에는 type parameter가 없기 때문이다. nil `func`는 kind `invalid_callback`이다. 함수는 호출의
+    callback(GN-15b)으로, 곧 호출의 handle(`cgo.Handle`)과 그 안의 index로 들어가고, C ABI의 closure는 모든 Go
+    callback의 trampoline인 export `<prefix>__go_callback`으로 그것을 부른다. 함수는 member의 goroutine에서, 그
+    스레드에서 돈다: goroutine은 C ABI 호출 동안 그 스레드를 쥐고, `machine::drive`는 machine의 각 call을 거기서 하며
+    (GN-6ab), Go는 export된 함수를 그것을 부른 스레드에서 돌리므로, 어떤 `Passthrough`도 그것을 만든 스레드를 떠나지
+    않는다. 함수의 dispatch는 각 인자를 풀고(class 인자는 closure가 쓴 handle을 감싼 새 인스턴스다, GN-15a), 함수를
+    부르고, 함수가 돌려준 것을 package `binding`의 table에 쥔다: mutex 뒤에서 handle에서 값으로 가는 map이고, 그
+    `Passthrough`가 끝날 때까지 garbage collector가 값에 닿을 수 있게 하며, handle은 table의 수다. closure는 그
+    handle의 `Passthrough`를 만든다. 그 release 함수는 export `<prefix>__go_release_passed`로 값을 지우며, 어느
+    스레드에서든 그렇게 한다. Go 값은 스레드에 묶이지 않기 때문이다. 결과 `passthrough`는 그 handle로 C ABI를 건너고,
+    member는 값을 table에서 꺼낸다. 함수가 돌려준 `error`는 호출이 index로 쥐고 U-3의 `Raised`가 되므로(GN-15b),
+    member는 같은 error 값을 돌려준다. 함수의 panic은 dispatch에서 recover한다. C ABI의 frame을 지나 unwind하는
+    panic은 코어의 destructor, 곧 그 guard와 machine의 것을 건너뛰기 때문이다: 호출은 panic의 값을 `Raised`로 쥐고,
+    코어는 error일 때처럼 끝나며, member는 C ABI 호출이 돌아온 뒤 같은 값으로 panic한다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
     driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
     WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
@@ -640,10 +655,16 @@
     {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
-  아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
+  아직 생성하지 않는 것(G-4): Python, Node, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
-  PHP는 그 member를 생성한다. PHP 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case의 시험,
-  `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직 쓰지 않는다.
+  PHP와 Go는 그 member를 생성한다. PHP 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case의 시험,
+  `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. Go 시험은 함수 fixture를 각 단계가 그 error를
+  돌려주는 `func`로 쓰고, `raises: "callback"` case의 시험(그 `func`는 시험이 쥔 error 값을 돌려주고 시험은 바로 그
+  값을 요구한다), `after`의 호출, 그리고 함수 타입의 parameter마다 nil `func`가 kind `invalid_callback`이라는 시험,
+  member가 `func`가 돌려준 error 값을 돌려준다는 시험, member가 `func`의 panic 값으로 panic한다는 시험을 쓴다.
+  package `binding`은 그 table의 handle을 다시 주지 않는다는 것과 handle이 값을 가리키지 않는 결과가 kind
+  `internal`이라는 것을 시험한다. 오류 unit을 던지는 함수 fixture는 그 Go 시험을 이름을 대고 실패시킨다. 아직 어떤
+  함수도 오류를 인식하지 않기 때문이다. Python, Node, WASM의 시험은 아직 그것을 쓰지 않는다.
   end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class

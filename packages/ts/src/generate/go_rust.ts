@@ -50,8 +50,15 @@ const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
 
-// Whether the model calls back into Go: a callback unit, or the walk of a value alias.
-export const callsBack = (model: Model): boolean => model.callbacks.length > 0 || model.aliases.length > 0;
+// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a model has such a member.
+const passesFn = (fn: Fn): boolean => fn.params.some((p) => typeof p.type === 'object' && 'function' in p.type) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+export const passes = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passesFn);
+
+// Whether the core runs Go code through the trampoline of the callbacks: a callback unit (U-3), or a func (GN-6ae).
+export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || passes(model);
+
+// Whether the model calls back into Go: Go code that the core runs, or the walk of a value alias.
+export const callsBack = (model: Model): boolean => runsGo(model) || model.aliases.length > 0;
 
 // ---- conversions ----
 
@@ -103,6 +110,8 @@ export function convertOut(model: Model, type: Type, value: string): string {
   // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
   if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
+  // GN-6ae: a result passthrough crosses the C ABI as the handle of its value in the table of package binding.
+  if ('passthrough' in type) return `passed_out(output, ${value})`;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
   const unit = unitOf(model, type);
@@ -619,6 +628,11 @@ function argumentLines(model: Model, fn: Fn): string[] {
       lines.push(`        let ${variable} = held_${plainName(object.unit)}(in_uint(&mut input)?, ${subject})?;`);
       continue;
     }
+    // GN-6ae: a function parameter is the closure that the machine of the member calls.
+    if (typeof parameter.type === 'object' && 'function' in parameter.type) {
+      lines.push(...functionClosure(model, parameter.type.function.parameters, variable, subject));
+      continue;
+    }
     const arg = fn.args.find((a: Arg) => !a.field && a.name === parameter.name);
     if (arg?.default !== undefined) {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
@@ -629,6 +643,72 @@ function argumentLines(model: Model, fn: Fn): string[] {
   lines.push('        finish_input(input)?;');
   lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel));
   return lines;
+}
+
+// GN-6ae: the lines that make the closure of a function parameter from a Go func, which entered as a callback of the
+// call. Each call of the closure writes the arguments, a class argument as the handle of a new instance, and runs the
+// func through the trampoline of the callbacks; what the func returned is a Passthrough, and its error a Raised.
+function functionClosure(model: Model, parts: Type[], name: string, subject: string): string[] {
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return [
+    `        let ${name} = go_function(&mut input, ${subject})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...(parts.length === 0 ? ['            let args = Vec::new();'] : [
+      '            let mut args = Vec::new();',
+      '            {',
+      '                let output = &mut args;',
+      ...parts.map((part, i) => `                ${convertOut(model, part, `arg${i}`)};`),
+      '            }',
+    ]),
+    `            called(${name}, &args).map_err(binding_core::Failure::from)`,
+    '        };',
+  ];
+}
+
+// GN-6ae: the func of a function parameter as the closure reads it, its call through the trampoline of the callbacks,
+// and the Passthrough of the value that package binding holds in its table: its release function, and the result
+// that crosses the C ABI as its handle. A name of the form in_<word> or out_<word> is the conversion of a unit.
+function passingRust(model: Model): string {
+  if (!passes(model)) return '';
+  return `
+/// GN-6ae: a func enters as the call and its index in it, as a callback does (GN-15b); a nil func is kind
+/// invalid_callback.
+fn go_function(input: &mut &[u8], subject: &str) -> Result<(u64, u64), Fail> {
+    if !read_tag(input)? {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    let call = in_uint(input)?;
+    let callback = in_uint(input)?;
+    Ok((call, callback))
+}
+
+/// GN-6ae: calls a func of Go code with the encoded arguments, on the thread of the call. What the func returned is
+/// the Passthrough of the handle under which package binding holds it; the error that the func returned, which the
+/// call keeps, or its panic, is a Raised.
+fn called(function: (u64, u64), args: &[u8]) -> Result<binding_core::Passthrough, Raised> {
+    let (call, callback) = function;
+    let (status, bytes) = go_callback(call, callback, 0, args);
+    if status != 0 {
+        return Err(raised_by_go(call, &bytes));
+    }
+    let mut input: &[u8] = &bytes;
+    match in_uint(&mut input).and_then(|handle| finish_input(input).map(|()| handle)) {
+        Ok(handle) => Ok(binding_core::Passthrough::from_generated(Handle::new(handle), release_passed)),
+        Err(fail) => Err(thrown(Thrown::Binding(fail))),
+    }
+}
+
+/// GN-6ae: removes the value of a Passthrough that the core dropped from the table of package binding.
+fn release_passed(handle: Handle) {
+    // SAFETY: the export takes the handle by value and keeps no pointer.
+    unsafe { ${prefix(model)}__go_release_passed(handle.raw()) };
+}
+
+/// GN-6ae: a result passthrough leaves as its handle; Go takes the value out of the table of package binding.
+fn passed_out(output: &mut Vec<u8>, value: binding_core::Passthrough) {
+    out_uint(output, value.into_handle().raw());
+}
+`;
 }
 
 // The core call of a member, the receiver first.
@@ -836,7 +916,7 @@ impl HostValues for GoHost {
     }
 }
 `;
-  const callbackCall = model.callbacks.length === 0 ? '' : `
+  const callbackCall = !runsGo(model) ? '' : `
 /// U-3: calls the member of a Go callback with the encoded arguments: 0 and the encoded result, or 1 and the index of
 /// the error that the Go method returned.
 fn go_callback(call: u64, callback: u64, member: u32, args: &[u8]) -> (i32, Vec<u8>) {
@@ -856,9 +936,11 @@ fn raised_by_go(call: u64, bytes: &[u8]) -> Raised {
 }
 `;
   return `
-extern "C" {${model.callbacks.length === 0 ? '' : `
+extern "C" {${!runsGo(model) ? '' : `
     /// U-3: the function that package binding exports to run a member of a Go callback.
-    fn ${p}__go_callback(call: u64, callback: u64, member: u32, args: *const u8, len: usize, result: *mut Buffer) -> i32;`}${model.aliases.length === 0 ? '' : `
+    fn ${p}__go_callback(call: u64, callback: u64, member: u32, args: *const u8, len: usize, result: *mut Buffer) -> i32;`}${!passes(model) ? '' : `
+    /// GN-6ae: the function that package binding exports to remove a value from its table of passthroughs.
+    fn ${p}__go_release_passed(handle: u64);`}${model.aliases.length === 0 ? '' : `
     /// U-7: the function that package binding exports to describe a child of a Go value.
     fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;`}
 }
@@ -878,7 +960,7 @@ pub unsafe extern "C" fn ${p}__alloc(len: usize, result: *mut Buffer) {
 
 /// U-3: what went wrong in a call back into Go: the error that a Go method returned, which the call keeps, or a
 /// failure of the binding there; the core carries it as a Raised.
-enum Thrown {${model.callbacks.length === 0 ? '' : `
+enum Thrown {${!runsGo(model) ? '' : `
     Go { call: u64, index: u64 },`}
     Binding(Fail),
 }
@@ -896,13 +978,13 @@ fn thrown(error: Thrown) -> Raised {
 /// U-3: the failure of a Raised: the Go error, which the caller gets back unchanged, or the failure of the binding.
 fn raised_fail(raised: &Raised) -> Fail {
     match lock(&THROWN).remove(&raised.handle().raw()) {
-${model.callbacks.length === 0 ? '' : `        Some(Thrown::Go { call, index }) => Fail { raised: Some((call, index)), ..binding_error(BindingError::Internal { detail: String::from("U-3: the error of a callback") }) },
+${!runsGo(model) ? '' : `        Some(Thrown::Go { call, index }) => Fail { raised: Some((call, index)), ..binding_error(BindingError::Internal { detail: String::from("U-3: the error of a callback") }) },
 `}        Some(Thrown::Binding(fail)) => fail,
         None => binding_error(BindingError::Internal { detail: String::from("U-3: the error of the callback is gone") }),
     }
 }
 
-${failureFn}${hosts}${callbackCall}`;
+${failureFn}${hosts}${callbackCall}${passingRust(model)}`;
 }
 
 // ---- value aliases (U-7) ----
@@ -1258,7 +1340,7 @@ export function libRust(model: Model): string {
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(all) ? ', NumberType' : ''}${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
 ${/Borrow</.test(all) ? 'use std::borrow::Borrow;\n' : ''}${usesMap ? 'use std::collections::BTreeMap;\n' : ''}use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-${model.objects.length > 0 ? 'use std::sync::Arc;\n' : ''}${model.callbacks.length > 0 || model.aliases.length > 0 ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}${usesMutex ? 'use std::sync::{Mutex, MutexGuard};\n' : ''}
+${model.objects.length > 0 ? 'use std::sync::Arc;\n' : ''}${callsBack(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}${usesMutex ? 'use std::sync::{Mutex, MutexGuard};\n' : ''}
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
 

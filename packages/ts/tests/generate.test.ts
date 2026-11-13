@@ -2998,7 +2998,7 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  for (const [target, name] of [['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+  for (const [target, name] of [['python', 'Python'], ['node', 'Node'], ['wasm', 'WASM']]) {
     assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
@@ -3134,6 +3134,67 @@ test('the PHP test writes a function fixture, the exception of raises callback a
   assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAFunctionThatRaisesAreDropped\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n {8}try \{\n {12}\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); throw self::\$raised; \}\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\LogicException \$error\) \{\n {12}self::assertSame\(self::\$raised, \$error\);\n {8}\}\n {8}self::assertSame\(self::same\(null\), self::same\(\$receiver->get\("a"\)\)\);\n {4}\}/);
   // A value that is no callable is kind invalid_callback.
   assert.match(tests, /public function testGn6aeStoreTransactionWorkRefusesWhatIsNoCallable\(\): void\n {4}\{\n {8}try \{\n {12}new \\Polyspec\\Sample\\Store\(\)->transaction\(1\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleTypeError \$error\) \{\n {12}self::assertSame\('invalid_callback', \$error->kind\(\)\);/);
+});
+
+test('Go takes a func as a callback of the call, holds its value in the table of package binding and returns it unchanged (GN-6ae)', () => {
+  const out = scopedSample(['go']);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  // The func enters as the call and its index in it, and a nil func is kind invalid_callback.
+  assert.match(lib, /let work = go_function\(&mut input, "work"\)\?;/);
+  assert.match(lib, /fn go_function\(input: &mut &\[u8\], subject: &str\) -> Result<\(u64, u64\), Fail> \{\n {4}if !read_tag\(input\)\? \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  // The closure writes each argument, a class argument as the handle of a new instance, and calls the func through
+  // the trampoline of the callbacks; what the func returned is the Passthrough of its handle in the table of Go, and
+  // an error of the func is a Raised.
+  assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let mut args = Vec::new\(\);\n\s+\{\n\s+let output = &mut args;\n\s+out_scope\(output, arg0\);\n\s+\}\n\s+called\(work, &args\)\.map_err\(binding_core::Failure::from\)\n\s+\};/);
+  assert.match(lib, /fn called\(function: \(u64, u64\), args: &\[u8\]\) -> Result<binding_core::Passthrough, Raised> \{\n {4}let \(call, callback\) = function;\n {4}let \(status, bytes\) = go_callback\(call, callback, 0, args\);\n {4}if status != 0 \{\n {8}return Err\(raised_by_go\(call, &bytes\)\);\n {4}\}/);
+  assert.match(lib, /Ok\(handle\) => Ok\(binding_core::Passthrough::from_generated\(Handle::new\(handle\), release_passed\)\),/);
+  assert.match(lib, /fn polyspec_sample__go_release_passed\(handle: u64\);/);
+  assert.match(lib, /fn release_passed\(handle: Handle\) \{\n[^\n]*\n {4}unsafe \{ polyspec_sample__go_release_passed\(handle\.raw\(\)\) \};\n\}/);
+  // The machine takes a clone of the value of the instance and the closure, and Go settles an awaited value at once.
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  // A result passthrough crosses the C ABI as its handle; no helper has a name of the form out_<unit>.
+  assert.match(lib, /fn passed_out\(output: &mut Vec<u8>, value: binding_core::Passthrough\) \{\n {4}out_uint\(output, value\.into_handle\(\)\.raw\(\)\);\n\}/);
+  assert.match(lib, /\n\s+passed_out\(output, result\);\n/);
+  // A class that only a function takes has no conversion in (T-5).
+  assert.doesNotMatch(lib, /\bfn in_scope\b/);
+  // The declarations: a func of the scope that returns any value and an error, and the member returns any value.
+  const pkg = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(pkg, /func \(this \*Store\) Transaction\(work func\(\*Scope\) \(any, error\)\) \(any, error\) \{/);
+  // The func is a callback of the call: its dispatch decodes the class argument as a new instance and calls it.
+  assert.match(pkg, /\tcall := binding\.NewCall\(\)\n\tdefer call\.Close\(\)\n\tenc := binding\.NewWriter\(\)\n\tenc\.Uint\(this\.handle\(\)\)\n\tif work == nil \{\n\t\tenc\.Tag\(false\)\n\t\} else \{\n\t\tenc\.Tag\(true\)\n\t\tcall\.Callback\(enc, binding\.Function\(func\(dec \*binding\.Reader\) \(any, error\) \{\n\t\t\tvar arg0 \*Scope\n\t\t\targ0 = newScope\(dec\.Uint\(\)\)\n\t\t\tif err := dec\.Finish\(\); err != nil \{\n\t\t\t\treturn nil, err\n\t\t\t\}\n\t\t\treturn work\(arg0\)\n\t\t\}\)\)\n\t\}\n/);
+  assert.match(pkg, /\tvar value0 any\n\tvalue0 = dec\.Passed\(\)\n/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  // B-3: the table keeps each value under a handle that is a count, behind a mutex.
+  assert.match(binding, /type passedTable struct \{\n\tmutex {2}sync\.Mutex\n\tvalues map\[uint64\]any\n\tnext {3}uint64\n\}/);
+  assert.match(binding, /func pass\(value any\) uint64 \{\n\tpassed\.mutex\.Lock\(\)\n\tdefer passed\.mutex\.Unlock\(\)\n\tpassed\.next\+\+\n\tpassed\.values\[passed\.next\] = value\n\treturn passed\.next\n\}/);
+  assert.match(binding, /\/\/export polyspec_sample__go_release_passed\nfunc polyspec_sample__go_release_passed\(handle C\.uint64_t\) \{\n\ttakePassed\(uint64\(handle\)\)\n\}/);
+  // A result whose handle names no value is kind internal.
+  assert.match(binding, /func \(r \*Reader\) Passed\(\) any \{\n\thandle := r\.Uint\(\)\n\tif r\.failed \{\n\t\treturn nil\n\t\}\n\tvalue, ok := takePassed\(handle\)\n\tif !ok \{\n\t\tr\.failed = true\n\t\tif r\.problem == "" \{\n\t\t\tr\.problem = "GN-6ae: the value of the passthrough is gone"\n\t\t\}\n\t\}\n\treturn value\n\}/);
+  // The dispatch of a func holds what it returned, and recovers its panic, which the member panics with again.
+  assert.match(binding, /func Function\(run func\(dec \*Reader\) \(any, error\)\) Callback \{\n\treturn func\(_ \*Call, _ uint32, dec \*Reader, enc \*Writer\) \(err error\) \{\n\t\tdefer func\(\) \{\n\t\t\tif value := recover\(\); value != nil \{\n\t\t\t\terr = &panicked\{value: value\}\n\t\t\t\}\n\t\t\}\(\)\n\t\tvalue, err := run\(dec\)\n\t\tif err != nil \{\n\t\t\treturn err\n\t\t\}\n\t\tenc\.Uint\(pass\(value\)\)\n\t\treturn nil\n\t\}\n\}/);
+  assert.match(binding, /\tif p, ok := c\.raised\[index\]\.\(\*panicked\); ok \{\n\t\tpanic\(p\.value\)\n\t\}\n\treturn c\.raised\[index\]\n/);
+  // The trampoline of the callbacks is exported for a contract whose only Go code is a func.
+  assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);
+  // The tests of the table: a handle is never given again, and a handle that names no value is kind internal.
+  const table = text(out, 'packages/go/internal/binding/zz_generated_passed_test.go');
+  assert.match(table, /func TestGN6aeAHandleOfThePassthroughTableIsNeverGivenAgain\(t \*testing\.T\) \{/);
+  assert.match(table, /func TestGN6aeAResultWhoseHandleNamesNoValueIsKindInternal\(t \*testing\.T\) \{/);
+});
+
+test('the Go test writes a function fixture as a func, the error of raises callback and the calls of after (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['go']), 'packages/go/zz_generated_test.go');
+  // A step calls a method on the argument at its position and returns its error; the func returns its result, a value
+  // of GN-13, and after observes the receiver.
+  assert.match(tests, /func TestGN13eStoreTransactionTheEntriesOfAFunctionThatReturnsAreCommitted\(t \*testing\.T\) \{\n\tmade0, failure1 := NewStore\(\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", failure1\)\n\t\}\n\tfunction2 := func\(arg0 \*Scope\) \(any, error\) \{\n\t\tif err := arg0\.Put\("a", "1"\); err != nil \{\n\t\t\treturn nil, err\n\t\t\}\n\t\tif _, err := arg0\.Get\("a"\); err != nil \{\n\t\t\treturn nil, err\n\t\t\}\n\t\treturn "done", nil\n\t\}\n\tvalue0, err := made0\.Transaction\(function2\)\n\tif err != nil \{\n\t\tt\.Fatalf\("GN-13e: %v", err\)\n\t\}\n\tif want := \(any\)\("done"\); !reflect\.DeepEqual\(value0, want\) \{\n\t\tt\.Fatalf\("GN-13e: %#v is not %#v", value0, want\)\n\t\}\n\t\{\n\t\tvalue0, err := made0\.Get\("a"\)\n\t\tif err != nil \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %v", err\)\n\t\t\}\n\t\tif want := \(\*string\)\(ptr\("1"\)\); !reflect\.DeepEqual\(value0, want\) \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %#v is not %#v", value0, want\)\n\t\t\}\n\t\}\n\}/);
+  // An argument of a function type of a step is again a function fixture, a func of the func.
+  assert.match(tests, /\n\t\tfunction\d+ := func\(arg0 \*Scope\) \(any, error\) \{\n\t\t\tif err := arg0\.Put\("b", "2"\); err != nil \{\n\t\t\t\treturn nil, err\n\t\t\t\}\n\t\t\treturn nil, nil\n\t\t\}\n\t\tif _, err := arg0\.Nested\(function\d+\); err != nil \{\n\t\t\treturn nil, err\n\t\t\}\n\t\treturn int64\(2\), nil\n\t\}\n/);
+  // raises "callback": the func returns the error that the test holds, the caller gets the same error value, and
+  // after observes the receiver after the failed call.
+  assert.match(tests, /func TestGN6aeStoreTransactionTheEntriesOfAFunctionThatRaisesAreDropped\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the function of the case"\)\n(?:[^\n]*\n)*?\t\treturn nil, raised\n\t\}\n\t_, err := made\d+\.Transaction\(function\d+\)\n\tif err != raised \{\n\t\tt\.Fatalf\("GN-6ae: %#v is not the error of the function", err\)\n\t\}\n\t\{\n\t\tvalue0, err := made\d+\.Get\("a"\)\n\t\tif err != nil \{\n\t\t\tt\.Fatalf\("GN-6ae: after: %v", err\)\n\t\t\}\n\t\tif want := \(\*string\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
+  // A nil func is kind invalid_callback.
+  assert.match(tests, /func TestGN6aeStoreTransactionRefusesANilWork\(t \*testing\.T\) \{\n(?:[^\n]*\n)*?\t_, err := made\d+\.Transaction\(nil\)\n\tif failure, ok := err\.\(\*liberrors\.SampleTypeError\); !ok \|\| failure\.Kind\(\) != "invalid_callback" \{/);
+  // A panic of the func ends the core as an error does, and the member panics with the same value.
+  assert.match(tests, /func TestGN6aeStoreTransactionPanicsWithThePanicOfWork\(t \*testing\.T\) \{\n\traised := errors\.New\("raised by the function of the case"\)\n(?:[^\n]*\n)*?\tdefer func\(\) \{\n\t\tif value := recover\(\); value != any\(raised\) \{\n\t\t\tt\.Fatalf\("GN-6ae: %#v is not the panic of the function", value\)\n\t\t\}\n\t\}\(\)\n\t_, err := made\d+\.Transaction\(func\(_ \*Scope\) \(any, error\) \{ panic\(raised\) \}\)\n\tt\.Fatalf\("GN-6ae: the call returned %v", err\)\n\}/);
 });
 
 test('a test generator that does not write after and raises callback refuses the cases that name them (GN-6ae, G-4)', async () => {

@@ -5,6 +5,19 @@
 
 ## Unreleased
 
+- The Go binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates them: the parameter is a Go `func(<parameters>) (any, error)` and the result is `any`; the `func` enters
+  as a callback of the call and runs through the export `<prefix>__go_callback` on the goroutine and the thread of
+  the member, with each class argument as a new instance; package `binding` holds what the `func` returned in a
+  table behind a mutex under a handle that is a count, the static library removes the value of a dropped
+  `Passthrough` through the export `<prefix>__go_release_passed`, and a result whose handle names no value is kind
+  `internal`; the member returns the error value that the `func` returned, and a panic of the `func`, which the
+  dispatch recovers so that it does not unwind through the frames of the static library, is the panic of the member
+  with the same value. The Go test writes a function fixture as a `func`, the case with `raises: "callback"`, the
+  calls of `after`, and the tests of a nil `func`, of the error and of the panic of a `func`, and no longer refuses a
+  case with `after` or `raises: "callback"` (GN-6ae). Verified by `npm test` in `packages/ts`, whose two tests of the
+  Go crate, package and test pass; 20 tests that generate the sample for every target still fail with the refusal of
+  Python, Node and WASM.
 - The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
   word once their target generates a function parameter, because only the PHP test writes them. Each of those test
   generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>

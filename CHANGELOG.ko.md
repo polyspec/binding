@@ -1,11 +1,21 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2a0879c37d10cd0010de3281bfe4474a3fe5e2c70f4458b84b5656fb3ad156c9 -->
+<!-- source-sha256: da44078662cb915399609b57ca981ed05a8b897abbce60538158e94ff9cd64f1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Go 바인딩은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그것을 생성한다:
+  parameter는 Go `func(<parameters>) (any, error)`이고 결과는 `any`다. `func`는 호출의 callback으로 들어가 export
+  `<prefix>__go_callback`으로 member의 goroutine과 스레드에서 돌고, class 인자는 각각 새 인스턴스다. package
+  `binding`은 `func`가 돌려준 것을 mutex 뒤의 table에 수인 handle로 쥐고, static library는 버려진 `Passthrough`의
+  값을 export `<prefix>__go_release_passed`로 지우며, handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  member는 `func`가 돌려준 error 값을 돌려주고, `func`의 panic은 static library의 frame을 지나 unwind하지 않도록
+  dispatch가 recover하며, member가 같은 값으로 panic한다. Go 시험은 함수 fixture를 `func`로 쓰고, `raises:
+  "callback"` case, `after`의 호출, nil `func`와 `func`의 error와 panic의 시험을 쓰며, `after`나 `raises:
+  "callback"`이 있는 case를 더는 거부하지 않는다(GN-6ae). `packages/ts`의 `npm test`로 검증했고 Go crate, package,
+  시험의 시험 2개는 통과한다. 모든 target으로 sample을 생성하는 시험 20개는 아직 Python, Node, WASM의 거부로 실패한다.
 - Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
   case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
   때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,
