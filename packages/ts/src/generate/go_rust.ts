@@ -12,7 +12,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf, DRIVEN, drivenCall, waitsAsync,
+  takesObject, unitOf, cleanupAsserts, DRIVEN, drivenCall, waitsAsync,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
   errorMatched,
   recognizedFn,
@@ -605,12 +605,19 @@ const _: () = {
     sync::<${object.unit.core_type ?? ''}>();
 };
 ` : ''}
-/// T-5: releases the value of an instance of ${goClass} that the Go runtime found unreachable (runtime.AddCleanup).
+/// T-5: releases the value of an instance of ${goClass} that the Go runtime found unreachable (runtime.AddCleanup).${object.cleanup === undefined ? `
 #[no_mangle]
 pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) {
     let released = lock(&${tableName(object.unit)}).values.remove(&handle);
     drop(released);
-}
+}` : `
+/// GN-6p, B-10: the answer is 1 when the cleanup call did not consume the value, so that this release dropped it and
+/// Go warns.
+#[no_mangle]
+pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) -> i32 {
+    let released = lock(&${tableName(object.unit)}).values.remove(&handle);
+    i32::from(released.is_some_and(|held| !held.taken()))
+}`}
 `;
 }
 
@@ -1598,7 +1605,7 @@ struct Fail {
 fn binding_error(error: BindingError) -> Fail {
     Fail { category: error.category(), message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno(), class: 0, properties: Vec::new(), raised: None }
 }
-${coreErrorRust(model)}${raisesAssertions(model)}${aliasKindsRust(model)}
+${coreErrorRust(model)}${raisesAssertions(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}
 /// B-7, B-8: a panic of the call reaches Go as kind internal and never crosses the C ABI.
 fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {
     match catch_unwind(AssertUnwindSafe(body)) {

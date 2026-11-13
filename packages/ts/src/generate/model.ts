@@ -1448,15 +1448,6 @@ impl<T: ?Sized + binding_core::Cleanup> NotCleanup<u8> for T {}
 `;
 }
 
-// GN-6o, GN-6p: a target whose wrapper does not take the value yet refuses a method with the receiver self, and a
-// class unit with cleanup that has a member for it, by name (G-4).
-export function refuseConsumers(model: Model, target: string, refusals: Refusals): void {
-  for (const object of model.objects) {
-    if (object.unit.cleanup !== undefined && object.members.length > 0) refusals.refuse(`${object.unit.id}: a class unit with cleanup is not generated for ${target} yet (GN-6p)`);
-    for (const fn of object.members.filter((m) => m.receiver === 'self')) refusals.refuse(`${fn.member.id}: a method with the receiver self is not generated for ${target} yet (GN-6o)`);
-  }
-}
-
 // GN-6p: the message of the warning of an object destroyed without its cleanup call (B-10).
 export const cleanupWarning = (className: string, cleanupName: string): string =>
   `${className} was destroyed without ${cleanupName}(), so its destructor released it (B-10)`;

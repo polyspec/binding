@@ -526,14 +526,6 @@
           ],
           "kind": "method",
           "visibility": "public",
-          "only": {
-            "targets": [
-              "php",
-              "python",
-              "node"
-            ],
-            "reason": "GN-6p"
-          },
           "parameters": [],
           "returns": {
             "unit": "lease"
@@ -703,14 +695,6 @@
           ],
           "kind": "method",
           "visibility": "public",
-          "only": {
-            "targets": [
-              "php",
-              "python",
-              "node"
-            ],
-            "reason": "GN-6p"
-          },
           "parameters": [],
           "returns": "text",
           "raises": [],
@@ -727,14 +711,6 @@
           ],
           "kind": "method",
           "visibility": "public",
-          "only": {
-            "targets": [
-              "php",
-              "python",
-              "node"
-            ],
-            "reason": "GN-6p"
-          },
           "parameters": [],
           "returns": "text",
           "raises": [],

@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2e5c5b379ad1806951241b5ca7bc33aea12d81e19a818af146bb5a114f57c0ba -->
+<!-- source-sha256: eff820ce0774e670ed1e0f7b9c7d291b5dd18a90ec682b0c7fc8ab4fe0f504f4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Go와 WASM은 receiver가 `self`인 method와 `cleanup`이 있는 class unit을 이름을 대고 거부했다. 이제 둘 다 PHP, Python,
+  Node처럼 생성한다. receiver의 자리가 class의 table이 handle 아래에 둔 lock에서 값을 꺼내고, 그 객체의 뒤 자리는 kind
+  `consumed`이며, binding crate는 `binding_core::Cleanup`을 단언한다(GN-6o, GN-6p). 정리 호출 없이 수거된 객체는 B-10의
+  메시지로 경고한다. Go에서는 `runtime.AddCleanup`의 함수가 표준 logger의 `log.Print`로, WASM에서는
+  `FinalizationRegistry`의 callback이 type `ResourceWarning`의 `process.emitWarning`으로, 그것이 없는 host에서는
+  `console.warn`으로 경고한다. 정리 member가 명시적 해제이고 두 번째 member는 생성하지 않는다. 인스턴스의 Go `Ref`는
+  pointer를 갖는다. pointer가 없는 객체의 cleanup은 그 할당 block의 모든 객체가 닿을 수 없을 때에만 돌기 때문이다.
+  G-5는 두 target에 kind `consumed`의 시험과 B-10 시험을 생성한다. `tests/e2e/classes`의 `lease`의 member가 다섯
+  target을 적는다. `make test-ts`로 검증했다. GN-6o와 GN-6p의 시험은 변경 전에 네 거부로 실패했다.
 - `wait: async_driver`인 Go member를 이름을 대고 거부했다. 이제 Go가 PHP처럼 그것을 생성한다. member의 cgo 호출이
   호출 goroutine의 OS 스레드에서 `binding_core::driver::block_on`으로 future를 돌리고, 진입점은 결과를 변환할 때까지
   자기 자리의 guard를 쥐며, `machine`이 있는 member는 그 스레드에서 `binding_core::machine::drive`가 돌린다. runtime은

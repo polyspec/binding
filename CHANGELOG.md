@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- Go and WASM refused a method with the receiver `self` and a class unit with `cleanup` by name. Both now generate
+  them as PHP, Python and Node do: the place of the receiver takes the value out of the lock that the table of the
+  class keeps under the handle, a later place of that object is kind `consumed`, and the binding crate asserts
+  `binding_core::Cleanup` (GN-6o, GN-6p). An object collected without its cleanup call warns with the message of
+  B-10: the function of `runtime.AddCleanup` in Go through `log.Print` of the standard logger, and the callback of the
+  `FinalizationRegistry` in WASM through `process.emitWarning` with the type `ResourceWarning`, or `console.warn` in a
+  host without it; the cleanup member is the explicit release, and no second member is generated. The Go `Ref` of an
+  instance holds a pointer, because the cleanup of an object without one runs only when every object of its
+  allocation block is unreachable. G-5 generates the test of kind `consumed` and the B-10 test for both targets. The
+  members of `lease` of `tests/e2e/classes` name the five targets. Verified by `make test-ts`: the test of GN-6o and
+  GN-6p failed with the four refusals before the change.
 - A Go member with `wait: async_driver` was refused by name. Go now generates it as PHP does: the cgo call of the
   member runs the future in `binding_core::driver::block_on` on the OS thread of the calling goroutine, the entry
   point holds the guards of its places until the result is converted, and a member with `machine` is driven by

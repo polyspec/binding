@@ -3749,24 +3749,49 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   // GN-6p: PHP puts the name of the running function before the message of a warning.
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertCount\(1, \$warnings\);\n {8}self::assertSame\(E_WARNING, \$warnings\[0\]\[0\]\);\n {8}self::assertStringEndsWith\("Lease was destroyed without release\(\), so its destructor released it \(B-10\)", \$warnings\[0\]\[1\]\);/);
   // B-5c: the Go poison entry point reaches each of its classes through a helper that the C ABI defines.
-  const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  const goOut = classes(() => undefined, ['go']);
+  const goLib = text(goOut, 'packages/go/internal/ffi/generated/lib.rs');
   for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
-  // The poison entry point takes the instances of the classes that Go makes: Go makes neither Gate nor Lease here, so
-  // the C ABI and the Go package have no poison entry point.
-  assert.doesNotMatch(goLib, /held_lease|panic_test_held/);
-  assert.doesNotMatch(text(classes(() => undefined, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /PanicTestHeld/);
+  // Go: the receiver self takes the value, the crate asserts Cleanup, and the release of the handle answers whether the
+  // value was still held, for which the function of runtime.AddCleanup warns through the standard logger.
+  assert.match(goLib, /\.take\("Lease"\)/);
+  assert.match(goLib, /polyspec_classes::Lease::release\(receiver\)/);
+  assert.match(goLib, /cleanup::<polyspec_classes::Lease>/);
+  assert.match(goLib, /<polyspec_classes::Gate as NotCleanup<_>>::not_cleanup/);
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_lease\(handle: u64\) -> i32 \{\n {4}let released = lock\(&TABLE_LEASE\)\.values\.remove\(&handle\);\n {4}i32::from\(released\.is_some_and\(\|held\| !held\.taken\(\)\)\)\n\}/);
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_gate\(handle: u64\) \{/);
+  const goBinding = text(goOut, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(goBinding, /int32_t polyspec_classes__release_lease\(uint64_t handle\);/);
+  assert.match(goBinding, /void polyspec_classes__release_gate\(uint64_t handle\);/);
+  assert.ok(goBinding.includes(`func ReleaseLease(handle uint64) {\n\tif C.polyspec_classes__release_lease(C.uint64_t(handle)) != 0 {\n\t\tlog.Print("Lease was destroyed without Release(), so its destructor released it (B-10)")\n\t}\n}`), 'Go warns in the function of runtime.AddCleanup');
+  assert.match(goBinding, /\n\t"log"\n/);
+  assert.match(text(goOut, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Lease\) Release\(\) \(string, error\) \{/);
+  const goTests = text(goOut, 'packages/go/zz_generated_test.go');
+  assert.ok(goTests.includes(`func TestGN6oLeaseReleaseConsumesItsObject(t *testing.T) {`), 'Go tests the consumed object');
+  assert.match(goTests, /failure\.Kind\(\) != "consumed"/);
+  assert.ok(goTests.includes(`func TestB10LeaseWarnsWithoutRelease(t *testing.T) {`), 'Go tests the warning');
+  assert.match(goTests, /log\.SetOutput\(warned\)\n[\s\S]*?runtime\.GC\(\)\n\tif got := strings\.TrimSuffix\(<-warned, "\\n"\); !strings\.HasSuffix\(got, "Lease was destroyed without Release\(\), so its destructor released it \(B-10\)"\) \{/);
+  // WASM: the same in the module, and the callback of the FinalizationRegistry warns as Node does, or with console.warn.
+  const wasmOut = classes(() => undefined, ['wasm']);
+  const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasmLib, /\.take\("Lease"\)/);
+  assert.match(wasmLib, /polyspec_classes::Lease::release\(receiver\)/);
+  assert.match(wasmLib, /cleanup::<polyspec_classes::Lease>/);
+  assert.match(wasmLib, /pub fn class_lease_free\(this: u32\) -> bool \{\n\s+TABLE_LEASE\.with\(\|table\| table\.borrow_mut\(\)\.remove\(this\)\)\.is_some_and\(\|held\| !held\.taken\(\)\)\n\s*\}/);
+  const wasmEntry = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
+  assert.ok(wasmEntry.includes(`released.register(this, [glue.__Lease_free, this.#handle, 'Lease was destroyed without release(), so its destructor released it (B-10)']);`), 'WASM registers the warning of Lease');
+  assert.match(wasmEntry, /if \(enter\(ClassesInternalError, \(\) => free\(handle\)\) === true\) warn\(warning\);/);
+  assert.match(wasmEntry, /typeof globalThis\.process\?\.emitWarning === 'function' \? globalThis\.process\.emitWarning\(message, 'ResourceWarning'\) : console\.warn\(message\)/);
+  const wasmTests = text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasmTests, /test\('GN-6o: Lease\.release consumes its object'/);
+  assert.match(wasmTests, /error\.kind === 'consumed'/);
+  assert.match(wasmTests, /test\('B-10: Lease warns when it is destroyed without release\(\)', async \(\) => \{/);
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /'warning'/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /consumed/);
-  // Go and WASM refuse the unit and the receiver self by name; a cleanup that is not a method with the receiver self is
-  // refused.
-  const everywhere = (contract: any): void => {
-    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.only?.reason === 'GN-6p') delete member.only;
-  };
-  assert.throws(() => classes(everywhere, ['go']), /lease: a class unit with cleanup is not generated for Go yet \(GN-6p\)/);
-  assert.throws(() => classes(everywhere, ['wasm']), /lease\.release: a method with the receiver self is not generated for WASM yet \(GN-6o\)/);
+  // A cleanup that is not a method with the receiver self is refused.
   assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self \(GN-6p\)/);
 });
 

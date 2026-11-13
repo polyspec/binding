@@ -1,7 +1,7 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip } from './model.ts';
+import { type Fn, type Model, awaits, cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip } from './model.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
@@ -383,6 +383,45 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    out.push(`
+test('GN-6o: ${langName('wasm', fn.unit.name, 'class')}.${langName('wasm', fn.member.name, 'callable')} consumes its object', () => {
+  const held = ${made(sample)};
+  outcome(() => ${invoke(fn, args, 'held')});
+  assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
+});`);
+  }
+  // GN-6p, B-10: an instance collected without its cleanup call warns as the Node binding does; the test turns on gc()
+  // and awaits the warning event of the process.
+  let usesGc = false;
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    usesGc = true;
+    const label = langName('wasm', object.unit.name, 'class');
+    out.push(`
+test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cleanup)}()', async () => {
+  const warned = new Promise((resolve) => {
+    const listener = (warning) => {
+      if (warning.name !== 'ResourceWarning') return;
+      process.off('warning', listener);
+      resolve(warning);
+    };
+    process.on('warning', listener);
+  });
+  (() => {
+    ${made(sample)};
+  })();
+  gc();
+  const warning = await warned;
+  assert.equal(warning.message, ${jsString(cleanupWarning(label, memberName('wasm', cleanup)))});
+});`);
+  }
   // GN-6n: a test that calls a member that waits is an async function, as for Node.
   // Only a call of such a member is written `(await ...)`; the import of the glue of a case is awaited in any test.
   // A block may hold several tests, each of which is judged alone.
@@ -391,10 +430,10 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
 ${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

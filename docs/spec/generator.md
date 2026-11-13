@@ -18,7 +18,7 @@ the design ids are those of the binding design.
   repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
   interfaces of this contract that a class implements (GN-6w),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o) and a class unit with
+  fields (GN-6i), a method with the receiver `self` (GN-6o) and a class unit with
   `cleanup` (GN-6p), and for Python, Node, PHP and Go a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
   callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
@@ -837,8 +837,9 @@ the design ids are those of the binding design.
   from the call on. Every later place of that object, as the receiver or as a parameter, fails with kind `consumed` of
   category `type` (E-1a), before any argument reaches the core. A member that waits takes the value on the calling
   thread and moves it into its work or its future (GN-6m, GN-6n). G-5 generates for each such member a test that calls
-  it and then another member of the same object, which fails with kind `consumed`. PHP, Python and Node generate it;
-  Go and WASM refuse such a member by name until their wrapper takes the value (G-4). Why: a value that the core owns
+  it and then another member of the same object, which fails with kind `consumed`. Every target generates it: in Go
+  and WASM the table of the class keeps the emptied lock under the handle of the object until the object is
+  collected, so a later place of that handle is kind `consumed`. Why: a value that the core owns
   after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
 - **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o); another
   member is refused by name. The binding crate asserts at compile time that the core type of such a unit implements
@@ -853,12 +854,23 @@ the design ids are those of the binding design.
     raised while it runs (the object may be a temporary of the failed call) and sets it again after the warning, because
     a warning call with an exception set fails;
   - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
-  Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
-  generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
+  - Go: the function that `runtime.AddCleanup` runs when the struct is collected (GN-15a) releases the value through
+    `<prefix>__release_<class>`, which answers whether the lock still held its value, and then warns with `log.Print`
+    of the standard logger, whose output a program sets with `log.SetOutput`. Go collects an object at a time that the
+    program does not choose, and a program may end before it, so the cleanup member is the explicit release of the
+    class; no second member such as `Close` is generated.
+  - WASM: the callback of the `FinalizationRegistry` of the ES module (GN-18a) drops the value through
+    `__<Class>_free`, which answers whether the lock still held its value, and then warns with `process.emitWarning`
+    and the type `ResourceWarning` where the host has that function (Node), as the Node binding does, and with
+    `console.warn` where it has not (a browser). An engine may never run the callback, so the cleanup member is the
+    explicit release there too.
+  G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
   drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
   member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
   under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
-  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process. Node has no test of the absent
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process, and WASM does the same with
+  the `gc()` of its test run; Go sets the output of the standard logger to a writer that sends each message to a
+  channel, calls `runtime.GC()` and receives the warning from the channel. Node, WASM and Go have no test of the absent
   warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
   reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
   names the call that the caller left out.
@@ -1016,7 +1028,9 @@ the design ids are those of the binding design.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
-  through `<prefix>__release_<class>` when Go collects the struct. A constructor is `New<Class>` (none when
+  through `<prefix>__release_<class>` when Go collects the struct; the reference holds a pointer, because the cleanup
+  of an object without one, which shares its allocation block with other small objects, runs only when every object
+  of the block is unreachable. A constructor is `New<Class>` (none when
   `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
@@ -1154,7 +1168,7 @@ the design ids are those of the binding design.
   and each place of a call takes its guard for the call, so a member with the receiver `&mut self` writes the value
   and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
   class unit with
-  `cleanup` (B-10) and a method with the receiver `self` are refused by name (GN-6o, GN-6p).
+  `cleanup` (B-10) and a method with the receiver `self` are generated as GN-6o and GN-6p state.
 - **GN-18b** WASM, a value alias with `core: {in, out}` (U-7), also of another repository (GN-6k): the value is taken
   and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
   rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16
@@ -1319,8 +1333,7 @@ the design ids are those of the binding design.
   member and the value of a case of the alias alike; Go (the argument of a kind that the Go type of the parameter does not
   hold, such as a text for an `int64`) is generated by the Go generator and refused by name until then; Python, Node
   and WASM have no such case yet.
-- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; B-10 in Go and WASM, which refuse a class unit
-  with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
+- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, an `async` row, a function value

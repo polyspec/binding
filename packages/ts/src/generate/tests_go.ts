@@ -22,7 +22,7 @@ import {
   goPackage, goParam, goResultCount, goString, goTupleArray, goType,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
   objectUnit, places, pointName, pointed, unitOf, variantOf,
   nativeRoundTrip,
 } from './model.ts';
@@ -440,6 +440,8 @@ interface Out {
   fault: string[];
   held: string[];
   callbacks: Set<CallbackUnit>;
+  // GN-6p: a B-10 test reads the warnings of the standard logger.
+  warns?: boolean;
 }
 
 const labelOf = (fn: Fn): string => {
@@ -823,6 +825,59 @@ func sameFailure(a, b error) bool {
 }
 `;
 
+// GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives. GN-6p, B-10: an object
+// that the runtime collects without its cleanup call warns through the standard logger; the test gives the logger a
+// writer that sends each message to a channel, runs a collection and receives the warning, so no time orders them.
+function consumerTests(v: Values, out: Out, objects: ObjectClass[]): void {
+  const model = v.model;
+  const types = Object.fromEntries(goErrorTypes(model.contract));
+  for (const object of objects) {
+    const name = goName(object.unit.name);
+    for (const fn of object.members.filter((m) => m.receiver === 'self')) {
+      const sample = sampleReceiver(model, fn);
+      if (sample === undefined) continue;
+      const b = new Body();
+      const held = made(v, b, sample);
+      const call = (): string => invoke(v, fn, callArgs(v, b, fn, (a) => (a.default === undefined ? placeholder(v, b, a.type) : undefined)), held);
+      const blanks = Array.from({ length: goResultCount(fn) + 1 }, () => '_').join(', ');
+      b.lines.push(`${blanks} = ${call()}`, callLine(fn, call()), ...expectKind(types['type'] ?? '', 'consumed', 'GN-6o'));
+      out.main.push(`
+func TestGN6o${name}${goMemberName(fn)}ConsumesItsObject(t *testing.T) {
+${indent(b.lines, 1)}
+}`);
+    }
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    const b = new Body();
+    const held = made(v, b, sample);
+    out.warns = true;
+    out.main.push(`
+func TestB10${name}WarnsWithout${goMemberName(cleanup)}(t *testing.T) {
+	warned := make(warnings, 1)
+	log.SetOutput(warned)
+	defer log.SetOutput(os.Stderr)
+	func() {
+${indent([...b.lines, `_ = ${held}`], 2)}
+	}()
+	runtime.GC()
+	if got := strings.TrimSuffix(<-warned, "\\n"); !strings.HasSuffix(got, ${goString(cleanupWarning(name, goMemberName(cleanup)))}) {
+		t.Fatalf("B-10: %q", got)
+	}
+}`);
+  }
+}
+
+const WARNINGS = `
+// warnings is the output of the standard logger in a B-10 test: it sends each message to the test.
+type warnings chan string
+
+func (w warnings) Write(message []byte) (int, error) {
+	w <- string(message)
+	return len(message), nil
+}
+`;
+
 // GN-6y: the directory of a test, in which a case resolves its relative paths; t.TempDir removes it at the end of the
 // test.
 const CASE_PATH = `
@@ -848,7 +903,7 @@ func ptr[T any](value T) *T { return &value }
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'math', 'path/filepath', 'reflect', 'runtime', 'sync', 'syscall'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'strings', 'sync', 'syscall'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   const own = [
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
@@ -867,6 +922,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
+  consumerTests(v, out, model.objects.filter((o) => o.unit.module === module));
   // GN-6u: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
   // comparable, so the test checks the count of the live handles of the Natives.
   const roundTrip = nativeRoundTrip(model.contract, 'go');
@@ -904,6 +960,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
+    ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
