@@ -95,6 +95,79 @@
       "result": "1"
     }
   ],
+  "resolve_driven": [
+    {
+      "id": "a_key_with_a_value_is_found_after_its_read",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "result": "1"
+    },
+    {
+      "id": "a_key_without_a_value_is_missing",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": null
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for a"
+      }
+    },
+    {
+      "id": "an_empty_key_fails_its_read_before_the_lookup",
+      "lookup": {
+        "callback": {
+          "lookup.find": []
+        },
+        "calls": []
+      },
+      "key": "",
+      "raises": {
+        "kind": "unreadable",
+        "status": null,
+        "category": "io",
+        "message": "the text could not be read"
+      }
+    }
+  ],
   "count": [],
   "shout": [],
   "tag_new": [

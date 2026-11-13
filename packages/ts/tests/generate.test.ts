@@ -2299,39 +2299,41 @@ test('a member with wait blocking_io that reaches language code runs where its l
 });
 
 test('a member with wait async_driver that reaches language code drives the state machine of its core (GN-6ab)', () => {
-  const sample = (change: (contract: any) => void, targets?: string[]): Map<string, string | Buffer> => {
+  const sample = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
     const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
     change(contract);
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
   };
-  const machine = (contract: any): void => {
-    const m = member(contract, 'sample.resolve_slowly');
-    m.wait = 'async_driver';
-    m.core = { path: 'polyspec_sample::resolve_slowly', machine: true };
-  };
-  const out = sample(machine);
+  const out = sample();
+  const wait = String.raw`binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_driven", async move \{ io\.await \}\)\)\)`;
+  // The machine owns its arguments, so the core takes each by value.
+  const made = /let mut machine = polyspec_sample::resolve_driven\(lookup, key\);/;
   // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(php, /let mut machine = polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\);/);
-  assert.match(php, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\.map_err\(binding_error\)\?/);
-  assert.doesNotMatch(php, /binding_core::Io::for_generated_call\(\), &mut \{ lookup \}/);
+  assert.match(php, made);
+  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\)\)\.map_err\(binding_error\)\?`));
   // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
-  assert.match(python, /binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?/);
-  assert.match(python, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, made);
+  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| ${wait}\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?`));
+  assert.match(python, /#\[pyfunction\(name = "aresolve_driven", signature = \(\*args, \*\*kwargs\)\)\]/);
   // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);/);
+  assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);/);
   assert.match(node, /Driven::new\(env, advancing\(move \|env\| \{/);
   assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
   assert.match(node, /pub struct Driven \{/);
   assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env\) -> napi::Result<Unknown<'env>> \{/);
   const cjs = text(out, 'packages/ts/generated/index.cjs');
   assert.match(cjs, /async function drive\(driven\) \{\n  for \(;;\) \{\n    const \[ended, value\] = driven\.advance\(\);\n    if \(ended\) return value;\n    await value;\n  \}\n\}/);
-  assert.match(cjs, /return drive\(addon\.resolveSlowly\(args\[0\], args\[1\]\)\);/);
-  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
-  // Go refuses it with every member with async_driver; a method with machine is refused by name.
-  assert.throws(() => sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), /sample\.resolve_slowly: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  assert.match(cjs, /return drive\(addon\.resolveDriven\(args\[0\], args\[1\]\)\);/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
+  // Go: the call of the C ABI drives the machine, and each call of the Go callback goes through cgo.
+  const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, made);
+  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\)\)\.map_err\(binding_error\)\?`));
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
+  // A method with machine is refused by name.
   assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);
 });
 

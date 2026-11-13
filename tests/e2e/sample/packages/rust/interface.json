@@ -286,6 +286,52 @@
           "core": "polyspec_sample::resolve_slowly"
         },
         {
+          "id": "sample.resolve_driven",
+          "name": [
+            "resolve",
+            "driven"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "GN-6n"
+          },
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing",
+            "polyspec_sample::Error::Unreadable"
+          ],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::resolve_driven",
+            "machine": true
+          }
+        },
+        {
           "id": "sample.count",
           "name": [
             "count"
@@ -1226,6 +1272,11 @@
       "member": "sample.resolve_slowly",
       "file": "contracts/cases.json",
       "group": "resolve_slowly"
+    },
+    {
+      "member": "sample.resolve_driven",
+      "file": "contracts/cases.json",
+      "group": "resolve_driven"
     },
     {
       "member": "sample.count",
