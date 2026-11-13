@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- 생성된 테스트 둘이 생성기 때문에 `tests/e2e/sample`의 `make e2e`에서 실패했다. Node 테스트 파일은 load되지 않았는데,
+  기다리는 block의 첫 테스트만 async 함수였고 K-2 테스트 `resolveSlowly lets the exception of a callback through`는
+  보통 함수에서 `await`를 썼기 때문이다. 또 호출을 기대하지 않는 fixture의 Go 테스트는 nil인 calls를 빈 slice와
+  `reflect.DeepEqual`로 비교했는데, 그것은 둘을 구별한다. 이제 Node block의 각 테스트는 기다릴 때 async이고, 호출을
+  기대하지 않는 Go fixture는 calls의 길이 0을 요구한다(GN-6m, G-5). `packages/ts`의 `npm test`와 sample의 `make
+  e2e`로 확인했다.
 - end-to-end sample에는 transaction의 코어가 없어서 어떤 case도 GN-6ae가 생성하는 것을 보일 수 없었다. 이제 sample
   코어에는 clone들이 한 상태를 나누는 handle `Store`와 `Scope`가 있고, `Store::transaction`과 `Scope::nested`의 state
   machine `Scoped`는 I/O future로 scope를 시작하고, driver의 스레드에서 함수를 부르고, `Step::Await`로 함수의 값을

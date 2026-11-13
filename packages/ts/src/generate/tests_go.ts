@@ -346,7 +346,9 @@ function fixtureChecks(fixtures: { fixture: Fixture; name: string }[], v: Values
     const lines = [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}'];
     if (fixture.calls !== undefined) {
       const calls = fixture.calls.map((call) => `{${[goString(langName('go', members[call.member]?.name ?? [], 'callable')), ...(members[call.member]?.parameters ?? []).map((p, i) => typed(p.type, value(v, b, p.type, call.args[i] ?? null)))].join(', ')}}`);
-      lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${name}.calls, want) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${name}.calls, want)`, '}');
+      // reflect.DeepEqual tells a nil slice from an empty one, so no expected call is read as the length 0.
+      if (calls.length === 0) lines.push(`if len(${name}.calls) != 0 {`, `\tt.Fatalf("G-5: the calls %v are not none", ${name}.calls)`, '}');
+      else lines.push(`if want := [][]any{${calls.join(', ')}}; !reflect.DeepEqual(${name}.calls, want) {`, `\tt.Fatalf("G-5: the calls %v are not %v", ${name}.calls, want)`, '}');
     }
     return lines;
   });

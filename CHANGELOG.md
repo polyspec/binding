@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Two generated tests failed in `make e2e` of `tests/e2e/sample` for a reason of the generator: the Node test file
+  did not load, because only the first test of a block that awaits was an async function, and the K-2 test
+  `resolveSlowly lets the exception of a callback through` used `await` in a plain function; and the Go test of a
+  fixture that expects no call compared its nil calls with an empty slice by `reflect.DeepEqual`, which tells them
+  apart. Each test of a Node block is now async when it awaits, and a Go fixture that expects no call requires the
+  length 0 of its calls (GN-6m, G-5). Verified by `npm test` in `packages/ts` and by `make e2e` of the sample.
 - The end-to-end sample had no core for a transaction, so no case could show what GN-6ae generates. The sample core
   now has `Store` and `Scope`, handles whose clones share one state, with `Store::transaction` and `Scope::nested`,
   whose state machine `Scoped` begins the scope by an I/O future, calls its function on the thread of the driver,

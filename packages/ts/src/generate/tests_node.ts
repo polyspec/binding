@@ -425,7 +425,8 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
-  const blocks = out.map(awaitedTest);
+  // GN-6m: a block may hold several tests, each of which awaits when its call does.
+  const blocks = out.map((block) => block.split(/(?=\ntest\()/).map(awaitedTest).join(''));
   usesOutcome = blocks.some((block) => block.includes('outcome('));
   const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
