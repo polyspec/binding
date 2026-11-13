@@ -429,8 +429,8 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     }
     if (base === 'int' || base === 'uint') {
       // GN-12a: an int or a uint outside the safe integers is kind invalid_number.
-      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('1 << 53'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
-      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-(1 << 53)'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
     }
     if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-3'));
     if (base === 'latin1') {
@@ -443,7 +443,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
       if (keyedType.key.includes('int')) {
         // GN-12a: an int key outside the safe integers is kind invalid_number.
-        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(1 << 53), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
       }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
@@ -766,6 +766,8 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
     ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
+    // GN-15f: the packages of other repositories whose records the tests name.
+    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path]) => `"${path}"`),
   ];
   return goImportBlock(std, own);
 }

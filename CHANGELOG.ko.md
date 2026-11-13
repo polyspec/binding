@@ -57,6 +57,27 @@
 - 코어가 참조로 주는 클래스 결과(`Value::members`의 `&OrderedMap`, `Value::items`와 `Value::get`의 `&Value` 항목)는 컴파일되지
   않았다. `out_<class>`가 값을 소유한 형태로 받았기 때문이다(E0308, E0631). 이제 변환은 `impl CoreForm<T>`를 받아 소유한 값은
   그대로 두고 빌린 값은 복제하며, optional이나 list가 더하는 참조 뒤의 값도 같다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
+- `make e2e`가 `go test -json`을 그 `build-output` 사건 없이 읽었다. 그래서 link에 실패한 Go 패키지는 linker 출력 없이
+  "go test failed the packages …"로만 적혔다. 이제 `scripts/go-test-events.mts`가 사건을 읽고, 각 빌드의 출력을 찍고 원인에
+  그것을 적는다(GN-14a).
+- B-2의 Go 시험은 안전한 정수보다 큰 정수를 `1 << 53`으로 적었는데, gofmt는 그것이 여러 인자 가운데 하나일 때
+  `1<<53`으로 바꾼다. 그래서 `tests/e2e/points` Go module의 `gofmt -l`이 `zz_generated_test.go`를
+  (`Shift(1 << 53, Point{X: 0, Y: 0})`) 이름했다. 이제 시험은 어느 자리에서든 gofmt가 그대로 두는 수
+  `9007199254740992`를 적는다. `packages/ts`의 `npm test`와 tests/e2e 모든 레포의 생성된 Go module의 `gofmt -l`로
+  확인했다.
+- 생성기는 다른 레포의 record를 이름하는 계약의 Go 바인딩을 "a record of another repository is not generated for Go
+  yet (GN-15f)"로 거부해서, `tests/e2e/points`의 record `point`를 받고 주는 `tests/e2e/plot`에는 Go 바인딩이 없었다.
+  이제 Go는 그 레포 Go module의 struct `points.Point`를 이름하고 패키지와 시험이 그것을 import하며, C ABI는
+  `in_points_point`와 `out_points_point`로 변환한다. target go가 있는 계약의 `binding scaffold`는 코어의 path 의존
+  계약을 Cargo 없이 그 경로에서, 다른 의존 계약은 Cargo로 읽고, 계약이 record를 이름하는 라이브러리마다 `go.mod`에 그
+  Go module의 `require` 줄을 적는다. 버전은 의존 줄의 정확한 버전이나 tag이고, path 의존은 `v0.0.0`과 그 Go module로
+  가는 `replace` 줄이다. branch, commit, 버전 범위는 이름으로 거부한다. end-to-end 실행은 그런 의존의 Go 정적
+  라이브러리를 레포의 것 옆에 빌드한다(GN-15f, GN-14). `packages/ts`의 `npm test`와, points와 plot의 생성된 Go
+  module의 `gofmt`, `go vet`으로 확인했다.
+- class unit이 없는 계약의 Go C ABI는 인스턴스 표의 helper `insert`를 남겼다. helper 정리가 값 alias의 map 호출
+  `made.insert(`를 그 helper의 호출로 보았기 때문이다. 그래서 `polyspec-consumer-go`의 `cargo clippy`가 "cannot find
+  type `Table`"과 "cannot find type `Arc`"로 실패했다. 이제 helper는 나가는 인스턴스만 이름하는 `insert_held`다.
+  `packages/ts`의 `npm test`와 `tests/e2e/consumer` Go crate의 `cargo clippy`로 확인했다.
 - class unit `lease`(GN-6p)를 넣은 뒤 `tests/e2e/classes`의 e2e가 세 target에서 실패했다. Python: 실패한 호출이 임시 값으로
   남긴 `Lease`가 그 호출의 `TypeError`가 설정된 채 경고해서 호출이 `SystemError`로 끝났다. 이제 소멸자는 그 예외를 맡아
   두었다가 경고 뒤에 다시 설정한다. PHP: PHP가 메시지 앞에 실행 중인 함수를 붙이므로 경고는 `<function>(): Lease was
