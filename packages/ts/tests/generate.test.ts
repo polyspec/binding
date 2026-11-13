@@ -765,6 +765,13 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   assert.match(pkg, /= dec\.ValueWith\(aliasInstance\)/);
   assert.match(pkg, /\nfunc aliasInstance\(class uint64, handle uint64\) any \{\n\tswitch class \{\n\tcase 0:\n\t\treturn newTag\(handle\)\n\t\}\n\treturn nil\n\}\n/);
   assert.match(text(go, 'packages/go/internal/binding/zz_generated_binding.go'), /\n\tcase 10:\n\t\tclass, handle := r\.Uint\(\), r\.Uint\(\)\n/);
+  // Only the package of the class makes its instance, so a member of another module that gives the value is refused.
+  const moved = structuredClone(sample);
+  moved.units.find((u: any) => u.id === 'tag').module = 'tags';
+  const owner = moved.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => !JSON.stringify(m).includes('"unit":"tag"'));
+  moved.cases = [];
+  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), /tag: a class whose instance an out row of the alias data makes of the module tags in the module \(the root\) is not generated for Go yet/);
   row.make.go = 'text';
   // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
   row.kind = 'bool';
