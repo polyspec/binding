@@ -901,8 +901,8 @@ the design ids are those of the binding design.
   for python (maturin builds the wheel for the Python of a venv of that Python, into which the wheel is installed from
   its local directory alone), npm of `mise.toml` and the package of the Node addon for node, the wasm-bindgen CLI of `mise.toml` of the release
   of the crate and the Rust target `wasm32-unknown-unknown` of `rust-toolchain.toml` for wasm, the PHP of `.php-version`
-  (its minor is compared, because the PHP of the machine is wrapped as it is) and the PHPUnit of `config/phpunit` for php,
-  and Go of `mise.toml` with `llvm-nm` of the component `llvm-tools` for go (BD-10 (d)); the check itself runs on the
+  (its minor is compared, because the PHP of the machine is wrapped as it is) the PHPUnit of `config/phpunit` and `llvm-nm` of the component
+  `llvm-tools` for php (GN-8a), and Go of `mise.toml` with that `llvm-nm` for go (BD-10 (d)); the check itself runs on the
   Node.js of `mise.toml`, and every command of the run uses the Rust toolchain of `rust-toolchain.toml` of the checkout
   (`RUSTUP_TOOLCHAIN`), because rustup otherwise reads the toolchain file of the directory of a command, and a command
   that runs in a copy would build with the toolchain of the copy or the default of the machine. When a tool is missing, the check fails before it copies anything and names the target, the
