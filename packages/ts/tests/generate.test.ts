@@ -1606,6 +1606,27 @@ test('a case value of a class that is no value class is the pairs that fill it (
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.count\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.none\(\)\); return made0; \}\)\(\)\)/);
 });
 
+test('a Go case value of a class is made as in the other targets, and a case that is not written fails by name (U-1, GN-13, GN-13f)', () => {
+  // A class of origin value is made by the make member of the kind, and another class by its constructor and the
+  // inserts of its pairs, each a local of the test.
+  const { contract, caseFiles } = tokenMapClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
+  cases.count = [{ id: 'one', members: [['k', { kind: 'null' }]], result: 1 }];
+  const go = text(generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(go, /func TestGN13eShowAWord\(t \*testing\.T\) \{\n\tmade0, failure1 := TokenWord\("a"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", failure1\)\n\t\}\n\tvalue0, err := Show\(made0\)/);
+  assert.match(go, /made0, failure1 := TokenNone\(\)\n[^]*?made2, failure3 := TokenFlag\(true\)\n[^]*?made4, failure5 := TokenList\(\[\]\*Token\{made0, made2\}\)\n[^]*?Show\(made4\)/);
+  assert.match(go, /made0, failure1 := NewTokenMap\(\)\n[^]*?made2, failure3 := TokenWord\("k"\)\n[^]*?made4, failure5 := TokenWord\("v"\)\n[^]*?failure6 := made0\.Insert\(made2, made4\)\n[^]*?made7, failure8 := TokenOfMap\(made0\)\n[^]*?Show\(made7\)/);
+  assert.match(go, /func TestGN13eCountOne\(t \*testing\.T\) \{\n\tmade0, failure1 := NewTokenMap\(\)\n[^]*?TokenNone\(\)\n[^]*?made0\.Insert\(made2, made4\)\n[^]*?Count\(made0\)/);
+  // G-4, GN-13e: a kind whose member takes more than one value is not written, so its case fails by name and the other
+  // tests of the target are written.
+  const plain = text(generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(plain, /func TestGN13eShowAMap\(t \*testing\.T\) \{\n\tt\.Fatal\("the case a_map of classes\.show: the kind map of token is made by token\.pair, which takes more than one value, so a case value of it is not written \(U-1, G-5\)"\)\n\}/);
+  assert.match(plain, /func TestGN13eShowAWord\(t \*testing\.T\) \{/);
+});
+
 test('the test of a case holds the words of its id, and two ids that give one name refuse the target (GN-13e)', () => {
   const withIds = (ids: string[]): { contract: any; caseFiles: Map<string, unknown> } => {
     const fixture = tokenClasses();
