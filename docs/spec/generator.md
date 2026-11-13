@@ -638,11 +638,15 @@ the design ids are those of the binding design.
   before the directory of the directive.
   A release carries the Go module, because Go fetches a module as the source of a tag. From the commit of the tag
   `vX.Y.Z` the release tooling writes the files of `binding generate` for the target go, builds the crate
-  `polyspec-<repository>-go` for each platform with the release profile and without a feature, and creates one
+  `polyspec-<repository>-go` for each platform with the release profile and without a feature, removes the debug
+  sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
+  the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
+  sections of the Rust standard library), and creates one
   commit whose parent is that commit and whose tree adds, below the directory of the Go module, those generated
   files and the library of each platform. It tags that commit `<directory of the Go module>/vX.Y.Z`
   (`packages/go/vX.Y.Z`), the tag that Go reads for a module in a subdirectory of its repository. It creates no
-  commit and no tag when the library of a platform is missing or holds a test entry point (GN-13b). No branch holds
+  commit and no tag when the library of a platform is missing, holds a test entry point (GN-13b) or holds a debug
+  section. No branch holds
   the commit, and no such commit or tag is made by hand. A consumer needs the line `require <module> vX.Y.Z` alone:
   no `CGO_LDFLAGS` and no `replace`, and its `go.sum` pins the module with its libraries. A build for another
   platform compiles no file that names a directory, so its link fails with the library that is not found.
@@ -1067,7 +1071,9 @@ the design ids are those of the binding design.
   the run puts them in the installed package where the copy has them.
 - **GN-14f** The released form of the Go module (GN-15g): after the Go tests, the run builds the static library of
   each contract of the repository, and of each dependency whose Go module its `go.mod` requires, with the release
-  profile and without a feature, and makes for each a Git repository in the work directory that stands for the
+  profile and without a feature, removes its debug sections with `llvm-strip --strip-debug` of `llvm-tools` and
+  fails when `llvm-size -A` still names a debug section in it, and makes for each a Git repository in the work
+  directory that stands for the
   remote: one commit whose tree is the Go module at its place with the library of the platform of the run in
   `internal/ffi/lib/<platform>`, and the tag `<directory of the Go module>/<version>`, where the version is `v` and
   the version of the core, and for a dependency the version that the `go.mod` requires. Git reads

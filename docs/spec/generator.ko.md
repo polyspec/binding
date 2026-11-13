@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a6ade277d6a00a14483c9fc29a4e7255c982ce5694cc3ff0446b5ec4a262d8f3 -->
+<!-- source-sha256: 4915bd2fee84709022528068f1074e4235dad3a42f00e8f22360391ce7552bba -->
 # 생성기
 
 [English](generator.md)
@@ -535,9 +535,11 @@
   지시문의 디렉터리보다 먼저 찾는다.
   Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. release 도구는 tag `vX.Y.Z`의 commit에서 target go의
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이 빌드하고,
+  레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
+  떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
   라이브러리를 더한다. 도구는 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
-  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담으면(GN-13b) 도구는
+  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담으면 도구는
   commit도 tag도 만들지 않는다. 어느 branch도 그 commit을 담지 않으며, 그 commit과 tag를 손으로 만들지 않는다. 소비자는
   `require <module> vX.Y.Z` 한 줄만 필요하다. `CGO_LDFLAGS`도 `replace`도 없고, 소비자의 `go.sum`이 모듈을 라이브러리와
   함께 고정한다. 다른 플랫폼의 빌드는 디렉터리를 가리키는 파일을 컴파일하지 않으므로, 그 링크는 찾지 못한 라이브러리로
@@ -871,7 +873,8 @@
   L-2a)에서 scaffold, 검사, 생성, 빌드, 시험을 받고, 실행 기록은 계약의 경로를 적는다. host Node 패키지의 생성 시험은
   옆의 생성 진입점을 import하므로, 실행은 그 시험을 설치된 패키지 안의 사본과 같은 자리에 둔다.
 - **GN-14f** Go 모듈의 release 형태(GN-15g): Go 시험 뒤에 실행은 레포의 각 계약과, 그 `go.mod`가 Go 모듈을 require하는
-  각 의존 레포의 정적 라이브러리를 release profile로 feature 없이 빌드하고, 각각에 대해 remote를 대신하는 Git 레포를 work
+  각 의존 레포의 정적 라이브러리를 release profile로 feature 없이 빌드하고, `llvm-tools`의 `llvm-strip --strip-debug`로
+  debug section을 떼고, `llvm-size -A`가 그 안에 debug section을 여전히 적으면 실패하며, 각각에 대해 remote를 대신하는 Git 레포를 work
   디렉터리에 만든다. commit 하나의 tree는 제자리의 Go 모듈과 `internal/ffi/lib/<platform>`에 둔 실행 플랫폼의
   라이브러리이고, tag는 `<Go 모듈 디렉터리>/<version>`이다. version은 `v`와 코어의 version이고, 의존 레포는 `go.mod`가
   require하는 version이다. Git은 `https://github.com/<owner>/`를 이 레포들의 디렉터리로 읽는다(실행의 설정 파일의
