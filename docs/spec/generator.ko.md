@@ -499,5 +499,6 @@
   실패시킨다. WASM 시험은 Node 단계가 pack하고 설치한 npm 패키지 안에서 돌므로, 그 단계의 실패는 wasm의 원인이기도 하다. 모든
   runner를 센다: `node --test`와 PHPUnit의 JUnit 기록, `go test -json`의 사건, unittest의 요약. 시험이 없거나, 실패했거나,
   건너뛴 시험이 있는 실행은 그 target을 실패시킨다. 실행은 target마다 lint, 수를 단 시험, 실패의 원인을 한 줄에 하나씩 적고
-  끝나며, 실패한 target이 있으면 실패한다. 이유: 첫 실패에서 멈추는 실행은 다른 target이 통과하는지를 감추고, 그러면 한
+  끝나며, 실패한 target이 있으면 실패한다. 실패한 `binding check`, `scaffold`, `generate`의 원인은 그 finding이나 거부를 하나씩
+  이름한다. 이유: 첫 실패에서 멈추는 실행은 다른 target이 통과하는지를 감추고, 그러면 한
   target의 거부가 모든 target의 실패로 읽힌다.

@@ -140,6 +140,18 @@ function run(command: string, argv: string[], options: ExecFileSyncOptions = {})
   execFileSync(command, argv, { stdio: 'inherit', ...options, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...options.env } });
 }
 
+// Runs a command of the binding CLI of the commit; its stderr is printed, and a failure carries the lines that name its
+// findings or refusals, with the paths of the copy made relative, so the cause of a target states them (GN-14c).
+function runBinding(argv: string[], copyDir: string): void {
+  process.stdout.write(`$ ${process.execPath} ${cli} ${argv.join(' ')}\n`);
+  const ran = spawnSync(process.execPath, [cli, ...argv], { encoding: 'utf8', env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target } });
+  process.stdout.write(ran.stdout);
+  process.stdout.write(ran.stderr);
+  if (ran.status === 0) return;
+  const lines = ran.stderr.split('\n').map((line) => line.trim().replaceAll(`${copyDir}/`, '')).filter((line) => line !== '' && !line.startsWith('usage:'));
+  throw new Error(`binding ${argv[0] ?? ''} (status ${String(ran.status)}): ${lines.join('; ')}`);
+}
+
 function step(name: string): void {
   process.stdout.write(`\n== ${name}\n`);
 }
@@ -258,7 +270,7 @@ impl binding_core::Kinds for Error {
     writeFileSync(contractPath, `${JSON.stringify(written, null, 2)}\n`);
     process.stdout.write('change: the error classes are <Library><Category>Error in the class form of each language (E-2, N-2)\n');
   }
-  run(process.execPath, [cli, 'scaffold', '--root', copy]);
+  runBinding(['scaffold', '--root', copy], copy);
   process.stdout.write('change: the tracked binding packages that binding scaffold writes (L-2)\n');
 
   step(`${library}: the core builds without the generator`);
@@ -290,7 +302,7 @@ impl binding_core::Kinds for Error {
     run('cargo', ['update', '--manifest-path', join(copy, 'Cargo.toml'), '-p', 'polyspec-binding-core', '--precise', head, '--quiet']);
     if (readFileSync(join(copy, 'Cargo.lock'), 'utf8') !== lockText) process.stdout.write('change: Cargo.lock pins polyspec-binding-core at the commit of this binding (CK-20)\n');
   }
-  run(process.execPath, [cli, 'check', join(copy, 'packages/rust/interface.json')]);
+  runBinding(['check', join(copy, 'packages/rust/interface.json')], copy);
 
   step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
   const caseFiles = conformCases(contract, copy);
@@ -497,7 +509,7 @@ process.on('exit', (code) => {
 // The steps of a repository that every target needs; a failure fails every target with its cause.
 const prepared = (checkout: string): Prepared | undefined => {
   let found: Prepared | undefined;
-  stepOf(targets, `${checkout}: copy, the changes the repository needs, the core, the contract check and the cases`, () => {
+  stepOf(targets, `${relative(binding, resolve(checkout)).startsWith('..') ? resolve(checkout) : relative(binding, resolve(checkout))}: copy, the changes the repository needs, the core, the contract check and the cases`, () => {
     found = prepare(checkout);
   });
   return found;
@@ -519,7 +531,7 @@ const generateOf = (t: Lang, preparedCopy: Prepared | undefined): void => {
     process.stdout.write(generated.stdout);
     process.stdout.write(generated.stderr);
     if (generated.status !== 0) {
-      const refusals = generated.stderr.split('\n').filter((line) => line.startsWith('  ')).map((line) => line.trim());
+      const refusals = generated.stderr.split('\n').filter((line) => line.startsWith('  ')).map((line) => line.trim().replaceAll(`${preparedCopy.copy}/`, ''));
       throw new Error(refusals.length > 0 ? refusals.join('; ') : generated.stderr.split('\n')[0] ?? `status ${String(generated.status)}`);
     }
   });

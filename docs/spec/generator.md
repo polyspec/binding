@@ -611,5 +611,5 @@ the design ids are those of the binding design.
   of wasm too. Every runner is counted: the JUnit log of `node --test` and of PHPUnit, the events of `go test -json` and
   the summary of unittest; a run with no test, a failed test or a skipped test fails its target. The run ends with each
   target, its lint, its tests with their counts and the causes of its failure, one line each, and fails when a target
-  failed. Why: a run that stops at the first failure hides whether the other targets pass, and a refusal of one target
+  failed; the cause of a failed `binding check`, `scaffold` or `generate` names each of its findings or refusals. Why: a run that stops at the first failure hides whether the other targets pass, and a refusal of one target
   then reads as a failure of all.
