@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The generator document states what the type `cancel` is on each target (GN-6aq): the core takes a
+  `binding_core::Cancel`, and the language value is an `AbortSignal` in Node and WASM, a future in Python, the first
+  parameter `ctx context.Context` in Go and the generated class `Cancellation` in PHP. The rule is marked as not
+  implemented: the generator still refuses a member that takes the type by name.
 - A generated interface unit was refused by name (`connection: a generated interface unit is not generated yet`), and
   with it each class that `implements` it and each parameter typed by it. A generated interface without members is
   now generated for PHP, Python, Node, Go and WASM (GN-6ap): `core_type` names the type that the core takes, the core

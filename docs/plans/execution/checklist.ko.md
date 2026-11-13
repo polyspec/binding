@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 954474335ff44cb3293517d3ab8655fcf6ed9d487c280af79dd21a8c9bd577dd -->
+<!-- source-sha256: 8b3eab01771536358947be8a091602720798f5b416dac7c2c31af560047210c8 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -26,3 +26,4 @@
 | B2.92 | Node addon의 플랫폼 패키지는 release가 pack하는 manifest에만 적힌다(GN-3b, GN-3c). scaffold는 source `package.json`의 `optionalDependencies`에 `<npm package>-<platform>`을 자기 version으로 썼고 `binding check`는 host `package.json`에 그것을 요구했다. 그래서 npm workspace의 lock은 그 version의 release 전에 그것을 가질 수 없었고 `npm ci`가 manifest를 거부했다. source manifest는 그것을 적지 않고, release가 pack하는 manifest에 자기 version으로 그것을 쓰며, end-to-end 검사는 플랫폼 패키지와 패키지를 두 archive로 설치한다 | `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `packages/ts/src/generate/packages.ts`, `packages/ts/src/check.ts`, `scripts/e2e.mts`, `packages/ts/tests/`, `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/classes`, 그 기록이 `evidence: true`이고 target node가 통과 | [~] |
 | B2.101 | `tests/e2e/functions`의 계약은 다섯 target을 적는다(BD-27). 그 계약은 `go`를 적지 않아서 생성기가 그 member의 Go 꼴을 요청받지 않고, 버퍼의 Go reader를 C ABI와 비교하는 unit 테스트가 그 계약을 빼며, 그 계약에 대해서는 미실행이다 | `tests/e2e/functions/packages/rust/interface.json`, `packages/ts/tests/generate.test.ts` | `make test-ts`; `make e2e REPO=tests/e2e/functions`, 그 기록이 `evidence: true` | [ ] |
 | B2.110 | member 없는 generated interface unit을 다섯 target에 대해 생성한다(GN-6ap): interface의 언어 선언, 그것을 구현하는 계약의 class, 그리고 그것으로 type된 parameter. 그 parameter는 구현 class의 instance를 받아 그 값의 `From`을 core에 준다. `binding check`는 그 unit과 그것이 놓인 자리를 판정한다(CK-77) | `packages/ts/src/generate/`, `packages/ts/src/check.ts`, `docs/spec/generator.md`(.ko), `docs/spec/contract-check.md`(.ko), `tests/e2e/classes/` | `make test-ts`; `make e2e REPO=tests/e2e/classes`, 그 기록이 `evidence: true` | [~] |
+| B2.111 | 타입 `cancel`을 다섯 target에 대해 생성한다(GN-6aq): core는 `binding_core::Cancel`을 받고, binding은 그 trigger를 `AbortSignal`(Node, WASM), future(Python), 첫 parameter `ctx context.Context`(Go), 생성된 class `Cancellation`(PHP)에 묶는다. 생성된 테스트는 case 값 `fired`와 `open`을 준다 | `packages/ts/src/generate/`, `docs/spec/generator.md`(.ko), `tests/e2e/`의 계약 | `make test-ts`; `make e2e REPO=tests/e2e/classes`, 그 기록이 `evidence: true` | [ ] |

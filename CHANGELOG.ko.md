@@ -1,11 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: fbf6ea32bd272060ba8e16660c8fc11a420b3bfd2367bd6f63cfb0d2c617d327 -->
+<!-- source-sha256: b10c1b60505d835bde6c6eb6ccbe21d48102f28cd183654adb9c64f379ed91ae -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- generator 문서가 타입 `cancel`이 각 target에서 무엇인지 말한다(GN-6aq): core는 `binding_core::Cancel`을 받고, 언어
+  값은 Node와 WASM에서 `AbortSignal`, Python에서 future, Go에서 첫 parameter `ctx context.Context`, PHP에서 생성된
+  class `Cancellation`이다. 이 규칙은 구현되지 않음으로 표시되어 있다: 생성기는 이 타입을 받는 member를 여전히
+  이름으로 거절한다.
 - generated interface unit은 이름으로 거절되었고(`connection: a generated interface unit is not generated yet`), 그것을
   `implements`하는 class와 그것으로 type된 parameter도 함께 거절되었다. member 없는 generated interface를 이제 PHP,
   Python, Node, Go, WASM에 대해 생성한다(GN-6ap): `core_type`은 core가 받는 타입을 이름하고, core는 각 구현 class의

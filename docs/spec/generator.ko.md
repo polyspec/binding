@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: cf2c20e63abd1238a012c0b27991a179877c1455acf9d901afb4c17130e522a2 -->
+<!-- source-sha256: 12949bc2c0c1b70805e87b3c71028001f120a44f2ed3109c9df888b1acb1ec4d -->
 # 생성기
 
 [English](generator.md)
@@ -360,6 +360,35 @@
   class의 instance를 쓴다. 이름으로 거절하며 아직 생성하지 않는 것: member를 선언하는 generated interface, 다른
   레포의 generated interface. 이유: 여러 handle 가운데 하나 위에서 도는 core는 그것들에 대해 한 타입을 받고,
   호출자는 가진 instance를 스스로 변환하지 않고 넘긴다.
+- **GN-6aq** 타입 `cancel`(T-1)이나 그것의 `optional`인 parameter는 언어의 취소를 받고, core는
+  `binding_core::Cancel`을 값으로 받는다(`optional`이면 그것의 `Option`). 생성 코드는 `binding_core::cancel_pair()`의
+  쌍을 만들어 `Cancel`을 core에 주고 `CancelTrigger`를 언어 값에 묶는다. 그래서 trigger는 언어 값이 발화할 때
+  발화하고 다른 때에는 발화하지 않는다: 호출 뒤에도 `Cancel`을 갖는 core(그것을 지니는 handle)는 언어 값이 사는
+  동안 취소될 수 있고, 발화하지 않고 버려진 언어 값은 trigger를 버리며 이는 아무것도 취소하지 않는다. 호출 전에
+  이미 발화한 언어 값은 core를 부르기 전에 trigger를 발화시킨다. 그 밖의 값은 `InvalidArgumentType`이다. 이 타입은
+  parameter에만 있고, 다른 자리에서는 이름으로 거절한다. 언어 값은 T-1의 것이다:
+  - Node와 WASM: `AbortSignal`. binding은 `aborted`를 읽고, 아니면 `once`로 `abort`의 listener를 더하며 그것이
+    signal의 thread에서 trigger를 발화시킨다. signal은 자기 thread에 속하므로, 다른 thread는 owner thread가
+    `AbortController`의 `abort()`를 부르게 하여 취소한다.
+  - Python: future, 곧 `cancelled()`와 `add_done_callback`을 가진 객체(`asyncio.Future`,
+    `concurrent.futures.Future`). binding은 `cancelled()`를 읽고, 아니면 done callback을 더하며 그것은 future가
+    취소되었을 때 trigger를 발화시키고 결과를 가졌을 때에는 발화시키지 않는다. 다른 thread는
+    `concurrent.futures.Future`를 `cancel()`로, `asyncio.Future`를 `loop.call_soon_threadsafe(future.cancel)`로
+    취소한다.
+  - Go: `context.Context`, member의 첫 parameter `ctx`(`optional`은 nil `ctx`). binding은 `ctx.Err()`를 읽고, 아니면
+    `context.AfterFunc`를 등록하며 그것이 context가 시작하는 goroutine에서 trigger를 발화시킨다. 기다리거나
+    polling하는 goroutine은 없다. trigger의 handle은 그것을 쥔 Go 값이 도달 불가능해질 때 놓인다
+    (`runtime.AddCleanup`).
+  - PHP: root namespace의 생성된 final class `Cancellation`. `__construct()`, 멱등인 `cancel(): void`,
+    `isCancelled(): bool`을 갖는다. 한 PHP process는 core 호출이 도는 동안 언어 코드를 실행하지 않으므로 `cancel()`은
+    호출 사이에 불린다: signal handler(`pcntl_async_signals`), core의 callback, 또는 다른 process와 공유하는 상태를
+    호출 전에 읽어 그 상태가 그렇다고 할 때 `cancel()`을 부르는 host 코드가 부른다. binding은 그런 상태를 모르며,
+    그것이 필요한 레포가 그 host 코드를 쓴다(GN-6ag).
+  case에서 이 타입의 값은 `{"cancel": "fired"}`이거나 `{"cancel": "open"}`이다(GN-13, CK-22): 생성된 테스트는 이미
+  발화한 언어 값이나 발화하지 않는 언어 값을 만들어 넘긴다. 이유: 호출자만이, 자기 언어가 이미 가진 취소로
+  취소하고, core는 한 타입으로 그것을 관찰한다.
+  구현되지 않음: 생성기는 이 타입을 받는 member를 모든 target에 대해 이름으로 거절한다(`the type cancel is not
+  generated yet`).
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
@@ -1013,8 +1042,7 @@
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지
   않는다. 타입 `cancel`의 값은 호출 전에 발동한
-  취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 이 타입은 아직 생성되지 않으므로
-  그것을 받는 member는 이름을 대고 거부한다(G-4). 끝에서 끝까지 확인은 case를 뺀
+  취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 생성된 테스트는 GN-6aq가 말하는 대로 그것을 준다. 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫

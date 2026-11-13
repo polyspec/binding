@@ -447,6 +447,35 @@ the design ids are those of the binding design.
   implementing class that has a factory. Refused by name, not generated yet: a generated interface that declares
   members, and a generated interface of another repository. Why: a core that runs on one of several handles takes one
   type for them, and a caller passes the instance it has without a conversion of its own.
+- **GN-6aq** A parameter of the type `cancel` (T-1), or of an `optional` of it, takes the cancellation of the
+  language, and the core takes a `binding_core::Cancel` by value (an `Option` of it for an `optional`). The generated
+  code makes the pair of `binding_core::cancel_pair()`, gives the core the `Cancel`, and binds the `CancelTrigger` to
+  the language value, so that the trigger fires when the language value fires and at no other time: a core that keeps
+  the `Cancel` after the call (a handle that carries it) is cancelled for as long as the language value lives, and a
+  language value that is dropped without firing drops the trigger, which cancels nothing. A language value that has
+  fired before the call fires the trigger before the core is called. Any other value is `InvalidArgumentType`. The
+  type is a parameter only; at any other place it is refused by name. The language values are those of T-1:
+  - Node and WASM: an `AbortSignal`. The binding reads `aborted` and otherwise adds a listener of `abort` with
+    `once`, which fires the trigger on the thread of the signal. Another thread cancels by having the owner thread
+    call `abort()` of the `AbortController`, because a signal belongs to its thread.
+  - Python: a future, an object with `cancelled()` and `add_done_callback` (`asyncio.Future`,
+    `concurrent.futures.Future`). The binding reads `cancelled()` and otherwise adds a done callback, which fires the
+    trigger when the future is cancelled and not when it has a result. Another thread cancels a
+    `concurrent.futures.Future` by `cancel()`, and an `asyncio.Future` by `loop.call_soon_threadsafe(future.cancel)`.
+  - Go: a `context.Context`, the first parameter `ctx` of the member (an `optional` is a nil `ctx`). The binding reads
+    `ctx.Err()` and otherwise registers `context.AfterFunc`, which fires the trigger on the goroutine that the
+    context starts; no goroutine waits or polls. The handle of the trigger is released when the Go value that keeps
+    it is unreachable (`runtime.AddCleanup`).
+  - PHP: the generated final class `Cancellation` of the root namespace, with `__construct()`, `cancel(): void`,
+    which is idempotent, and `isCancelled(): bool`. One PHP process runs no language code while a core call runs, so
+    `cancel()` is called between calls: by a signal handler (`pcntl_async_signals`), by a callback of the core, or by
+    host code that reads a state shared with another process before a call and calls `cancel()` when that state says
+    so. The binding knows no such state; the repository that needs it writes that host code (GN-6ag).
+  In a case a value of the type is `{"cancel": "fired"}` or `{"cancel": "open"}` (GN-13, CK-22): the generated test
+  makes a language value that has fired, or one that never fires, and passes it. Why: the caller alone cancels, by
+  the cancellation that its language already has, and the core observes it through one type.
+  Not implemented: the generator refuses a member that takes the type by name (`the type cancel is not generated
+  yet`) for every target.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -1240,8 +1269,7 @@ the design ids are those of the binding design.
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
   refusal of the target by name, and the generator ends with no exception that names no item.
   A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
-  `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
-  refused by name (G-4).
+  `{"cancel": "open"}`, one that does not fire (CK-22), which the generated test gives as GN-6aq states.
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
   every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
   that array of `[key, value]`. The members of a
