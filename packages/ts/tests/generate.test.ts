@@ -556,6 +556,50 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   assert.equal(host.get('packages/php/native/build.rs'), PHP_BUILD);
 });
 
+test('every scaffolded manifest carries the licence of the core, and a core without one is a finding (GN-3f, CK-71)', () => {
+  const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  contract.targets = ['php', 'python', 'node', 'go', 'wasm'];
+  const out = trackedPackages(contract, '0.0.0', new Map(), [], new Map(), [], 'Apache-2.0');
+  for (const crate of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/ts/wasm/Cargo.toml', 'packages/php-ext/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
+    assert.match(String(out.get(crate)), /\n\[package\]\n(?:[^[]*\n)?license = "Apache-2\.0"\n/, crate);
+  }
+  assert.match(String(out.get('packages/python/pyproject.toml')), /\n\[project\]\n(?:[^[]*\n)?license = "Apache-2\.0"\n/);
+  assert.equal(JSON.parse(String(out.get('packages/ts/package.json'))).license, 'Apache-2.0');
+  assert.equal(JSON.parse(String(out.get('packages/php-ext/composer.json'))).license, 'Apache-2.0');
+  // No manifest names a licence that the core does not name.
+  for (const [path, body] of trackedPackages(contract, '0.0.0')) assert.doesNotMatch(body, /licen[cs]e|MIT/i, path);
+
+  const { root, contract: path } = fixtureCopy(() => {});
+  try {
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    const named = readFileSync(manifest, 'utf8');
+    assert.match(named, /\nlicense = "MIT"\n/);
+    const check = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', path], { encoding: 'utf8' });
+    // The licence of the core itself.
+    writeFileSync(manifest, named.replace('license = "MIT"', 'license = "Apache-2.0"'));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/php-ext/composer.json'), 'utf8')).license, 'Apache-2.0');
+    assert.match(readFileSync(join(root, 'packages/python/Cargo.toml'), 'utf8'), /\nlicense = "Apache-2\.0"\n/);
+    assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
+    // The licence of the workspace, which the core inherits.
+    writeFileSync(manifest, named.replace('license = "MIT"', 'license.workspace = true'));
+    writeFileSync(join(root, 'Cargo.toml'), '[workspace]\nmembers = ["packages/rust"]\n\n[workspace.package]\nlicense = "BSD-3-Clause"\n');
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal(JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')).license, 'BSD-3-Clause');
+    assert.doesNotMatch(String(check().stderr), /CK-71|CK-19/);
+    // A core without a licence: scaffold writes no licence, and check names the core manifest.
+    writeFileSync(manifest, named.replace('license = "MIT"\n', ''));
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    assert.equal('license' in JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')), false);
+    const missing = check();
+    assert.equal(missing.status, 1);
+    assert.match(String(missing.stderr), /packages\/rust\/Cargo\.toml: CK-71 the core polyspec-sample names no license, which every manifest of its binding packages carries \(GN-3f\)\n/);
+    assert.doesNotMatch(String(missing.stderr), /CK-19/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
   contract.targets.push('wasm');
