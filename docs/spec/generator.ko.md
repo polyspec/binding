@@ -128,8 +128,9 @@
   manifest의 `package.license`이며, 코어가 `license.workspace = true`를 적으면 root manifest의 `workspace.package.license`다.
   바인딩 crate의 Cargo manifest는 그것을 `license`로, `pyproject.toml`은 `project.license`로, `package.json`과
   `composer.json`은 `license`로 갖는다. `go.mod`에는 그런 항목이 없다. licence를 적지 않은 코어는 `binding check`의
-  finding이며(CK-71), 그때 `scaffold`는 그 항목 없이 manifest를 쓴다. host 패키지(GN-3b)의 manifest는 손으로 쓰므로 비교하지
-  않는다. 이유: 바인딩 package는 다른 언어로 된 코어이므로 코어의 licence를 갖고, binding이 스스로 적은 licence는 레포가
+  finding이며(CK-71), 그때 `scaffold`는 그 항목 없이 manifest를 쓴다. host 패키지(GN-3b)의 손으로 쓴 manifest도 같은 licence를 적으며, `check`는 그것을 host manifest의
+  항목으로 읽는다(CK-19). host의 `pyproject.toml`의 `project.license`, host의 `package.json`과 host 라이브러리의
+  `composer.json`의 `license`다. 이유: 바인딩 package는 다른 언어로 된 코어이므로 코어의 licence를 갖고, binding이 스스로 적은 licence는 레포가
   고르지 않은 조건을 말하게 된다.
 - **GN-3g** 생성된 PHP 확장은 그 `composer.json`의 `php-ext.extension-name`(GN-3c), 곧 `polyspec_<library>`라는 이름으로
   등록된다. 그 module은 `ModuleBuilder::name`으로 자기 이름을 적는다. ext-php-rs 0.16.4의 `#[php_module]`은 module을 crate

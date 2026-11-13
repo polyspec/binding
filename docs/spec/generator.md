@@ -165,7 +165,9 @@ the design ids are those of the binding design.
   names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
   `project.license`, and `package.json` and `composer.json` as `license`; `go.mod` has no such field. A core that
   names no licence is a finding of `binding check` (CK-71), and `scaffold` then writes the manifests without the
-  field. The manifest of a host package (GN-3b) is hand-written and is not compared. Why: a binding package is the
+  field. The hand-written manifest of a host package (GN-3b) names the same licence, which `check` reads as an item of
+  the host's manifest (CK-19): `project.license` of the host's `pyproject.toml`, and `license` of the host's
+  `package.json` and of the host library's `composer.json`. Why: a binding package is the
   core in another language, so it has the licence of the core, and a licence that binding wrote by itself would state
   terms that the repository did not choose.
 - **GN-3g** The generated PHP extension registers under the name `php-ext.extension-name` of its `composer.json`

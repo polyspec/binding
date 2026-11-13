@@ -705,6 +705,10 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
+    // GN-3f: the host's manifest names the licence of the core.
+    assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 project\.license is missing, not "MIT"/);
+    assert.match(missing.stderr, /ts\/package\.json: CK-19 license is missing, not "MIT"/);
+    assert.match(missing.stderr, /php\/composer\.json: CK-19 license is missing, not "MIT"/);
     // GN-3c: the release writes the platform packages into the packed manifest; the source manifest does not name them.
     assert.doesNotMatch(missing.stderr, /optionalDependencies/);
     // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
@@ -712,22 +716,25 @@ test('a host package holds its native module in one form per language (L-2a)', (
     assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.binaryName is missing, not "sample"/);
     assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.targets is missing, not \["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"\]/);
     const pyproject = (module: string): string =>
-      `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
+      `[build-system]\nbuild-backend = "maturin"\n\n[project]\nlicense = "MIT"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
     // GN-3b: the host names its files and the fields of a release; the release writes the platform packages (GN-3c).
     const hostNpm = (targets: string[]): string => JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
+      license: 'Apache-2.0',
       type: 'module',
       files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
       napi: { binaryName: 'sample', targets },
     });
     writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
-    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', require: { 'ext-polyspec_sample': '*' } }));
+    writeFileSync(join(root, 'packages/php/composer.json'), JSON.stringify({ name: 'polyspec/sample-host', license: 'MIT', require: { 'ext-polyspec_sample': '*' } }));
     const wrongModule = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 license is "Apache-2\.0", not "MIT"/);
+    assert.doesNotMatch(wrongModule.stderr, /(pyproject\.toml|composer\.json): CK-19 (project\.)?license/);
     assert.match(wrongModule.stderr, /CK-19 tool\.maturin\.module-name is "polyspec\.sample\._native", not "polyspec\.sample\._binding\._native"/);
     assert.match(wrongModule.stderr, /ts\/package\.json: CK-19 napi\.targets is \["x86_64-unknown-linux-gnu","aarch64-apple-darwin"\], not \[/);
-    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']));
+    writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin']).replace('Apache-2.0', 'MIT'));
     // The extension of a host PHP package is written by scaffold, so check compares it whole (GN-3b, GN-3c).
     const nativeComposer = join(root, 'packages/php/native/composer.json');
     const scaffolded = readFileSync(nativeComposer, 'utf8');
