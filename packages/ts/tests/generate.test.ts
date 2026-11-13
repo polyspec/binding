@@ -3504,3 +3504,26 @@ test('the entry point of a function member of a Node or WASM crate does not take
   // No helper of either crate has a name that starts with entry_.
   assert.doesNotMatch(text(scopedSample(['node', 'wasm']), 'packages/ts/generated/lib.rs').replaceAll(/\npub fn entry_[a-z0-9_]+</g, ''), /\bfn entry_/);
 });
+
+test('a Node crate whose only language code is a function parameter has no variant of an exception that nothing makes (GN-6ae)', () => {
+  // The sample without its callback units and its value alias: no callback and no walk of a value gives a napi error.
+  const alone = (contract: any): void => {
+    const gone = new Set<string>(contract.units.filter((u: any) => u.origin === 'callback' || u.kind === 'alias').map((u: any) => u.id));
+    const names = (value: unknown): boolean => [...gone].some((id) => JSON.stringify(value).includes(`"unit":"${id}"`));
+    contract.units = contract.units.filter((u: any) => !gone.has(u.id));
+    const kept = new Set<string>();
+    for (const unit of contract.units) {
+      unit.members = (unit.members ?? []).filter((m: any) => !names(m));
+      for (const m of unit.members) kept.add(m.id);
+    }
+    contract.cases = contract.cases.filter((k: any) => k.member !== undefined && kept.has(k.member));
+  };
+  const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
+  assert.match(lib, /let work = function_in\(env, work, "work"\)\?;/);
+  assert.doesNotMatch(lib, /CbLookup|describe\(/);
+  // Every variant of Thrown that the crate names is made somewhere in it.
+  const variants = [...(/enum Thrown \{\n([\s\S]*?)\n\}/.exec(lib)?.[1] ?? '').matchAll(/^ {4}([A-Z][a-z]+)\(/gm)].map((found) => found[1] ?? '');
+  assert.deepEqual(variants, ['Binding', 'Held']);
+  for (const variant of variants) assert.match(lib, new RegExp(`(?:Err|raised|thrown)\\(Thrown::${variant}\\(|map_err\\(Thrown::${variant}\\)`), variant);
+  assert.doesNotMatch(lib, /Thrown::Js/);
+});

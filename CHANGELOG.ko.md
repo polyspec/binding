@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bae0e33cddd3d8b16f59b54efedc526dc0fbc755b12a111aa601856376159ca4 -->
+<!-- source-sha256: ffb12a9f1bcf72e31396da16a85c09de5866dd72280f02c464da8273be4f546a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- callback unit도 value alias도 없이 함수 parameter만 언어 코드인 계약의 Node crate는 crate 안에서 아무도 만들지 않는
+  variant `Thrown::Js`를 가졌다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 이제 그 variant와 그 arm은
+  callback unit이나 value alias가 있는 계약에만 쓴다(GN-6ae). `packages/ts`의 `npm test`로 검증했다. 그 시험은 callback
+  unit과 alias를 뺀 sample을 생성하고 crate가 이름하는 모든 variant를 crate가 만들 것을 요구하며, 변경 전에는 `Js`를
+  찾았다. `tests/e2e`의 어떤 계약도 이 형태가 아니므로 end-to-end 실행은 그것을 컴파일하지 않는다.
 - `default`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 Node와 WASM 생성 crate는 함수
   `in_<word>`나 `out_<word>`를 두 번 정의했고, `guard`, `pass`, `called`, `throw`, `internal`이라는 이름의 function
   member는 crate의 helper 이름을 가졌다. Node crate에서는 두 번째 정의이고, WASM crate에서는 export의 모듈 안에서

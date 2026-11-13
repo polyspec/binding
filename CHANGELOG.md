@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Node crate of a contract whose only language code is a function parameter, with no callback unit and no value
+  alias, held the variant `Thrown::Js` that nothing in the crate makes, which is dead code and fails the build with
+  `-D warnings`. The variant and its arm are now written only for a contract with a callback unit or a value alias
+  (GN-6ae). Verified by `npm test` in `packages/ts`, whose test generates the sample without its callback units and
+  its alias and requires that the crate makes every variant that it names; before the change it found `Js`. No
+  contract of `tests/e2e` has this form, so no end-to-end run compiles it.
 - The generated Node and WASM crates of a contract with a unit named `default`, `text`, `list` or another word of a
   helper defined the function `in_<word>` or `out_<word>` twice, and a function member named `guard`, `pass`,
   `called`, `throw` or `internal` took the name of a helper of the crate: a second definition in the Node crate, and

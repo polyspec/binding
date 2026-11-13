@@ -1153,10 +1153,13 @@ function failureRust(model: Model): string {
   if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const passing = passesAny(model);
+  // U-3, U-7: a callback and the walk of a value give an error of napi; a function of a machine gives none, because
+  // its exception is held (GN-6ae), so a crate without them has no variant that nothing makes.
+  const napiError = model.callbacks.length > 0 || model.aliases.length > 0;
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
-enum Thrown {
-    Js(napi::Error),
+enum Thrown {${napiError ? `
+    Js(napi::Error),` : ''}
     Binding(Fail),${passing ? `
     /// GN-6ae: an exception of a function of a machine, taken out of the environment and held until the member ends.
     Held(Owned),` : ''}
@@ -1181,8 +1184,8 @@ fn thrown(error: Thrown) -> ${failure} {
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
-        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
-            Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
+        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {${napiError ? `
+            Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },` : ''}
             Some(Thrown::Binding(fail)) => fail,${passing ? `
             Some(Thrown::Held(exception)) => thrown_again(&exception),` : ''}
             None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
