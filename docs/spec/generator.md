@@ -16,7 +16,7 @@ the design ids are those of the binding design.
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
   repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
-  interfaces of this contract that a class implements (GN-6w),
+  interfaces of this contract that a class implements (GN-6w), the generated interfaces without members (GN-6ap),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
@@ -422,6 +422,31 @@ the design ids are those of the binding design.
   source, so the contract names the function that makes the core error; the properties of the instance do not reach
   the core, because an instance that language code makes has none (GN-7a). A recognized error unit of another
   library is refused by name (G-4).
+- **GN-6ap** An interface unit of origin `generated` (U-1) is an interface that the core never calls: it names the
+  classes of the contract that one parameter takes. Its `core_type` is the Rust type that the core takes at a
+  parameter typed by the interface, and for the core type `C` of each class of the contract that `implements` it, an
+  implementing class, the core has `impl From<&C> for <core_type>`; whether the core type is an enum of the
+  implementing classes or a box of a trait object is behind that `From`, so the contract states only the type and the
+  generated crate does not compile when a `From` is missing. A value typed by the interface enters as a parameter of
+  a function or of a member of a class, also in an `optional`; at any other place (a return, a field, a list, a
+  member of a callback) the type is refused by name. The binding finds the implementing class whose instance the
+  language value is, in contract order, reads the value of that instance as a class value inside another type is
+  read (GN-6h: read, cloned and released), and gives the core `<core_type as From<&C>>::from` of it; the core type of
+  an implementing class is therefore `Clone`, and the parameter names no `core` borrow, because the core takes the
+  value. Any other language value is `InvalidArgumentType`, whose `expected` is the language name of the interface.
+  The declarations name the interface: PHP an interface that the extension registers, which the entry and the stub of
+  each implementing class name with `implements`; Python a class of `abc.ABC` in the types module, with which the
+  package registers each implementing class (`<Interface>.register(<Class>)`) and which the stub of the class has as
+  its base, because a `Protocol` without a member accepts every value; Node and WASM `export interface <Interface>`
+  in the declaration file, which each implementing class names with `implements`; Go an interface with one
+  unexported method, so no other package implements it, which the pointer to each implementing class has and `var _
+  <Interface> = (*<Class>)(nil)` asserts, and the method gives the position of the class among the implementing
+  classes and the handle of the value, which the call encodes. In Go an implementing class is in the module of the
+  interface, and another module is refused by name for Go alone. In a case an argument at such a parameter is an
+  instance value (GN-13f) of an implementing class, and a test that needs any value takes an instance of the first
+  implementing class that has a factory. Refused by name, not generated yet: a generated interface that declares
+  members, and a generated interface of another repository. Why: a core that runs on one of several handles takes one
+  type for them, and a caller passes the instance it has without a conversion of its own.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.

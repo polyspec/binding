@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: efa4984cc38497d67d1317b169ab6272ddc9ec34cddc121e16d24b2b261d6fa5 -->
+<!-- source-sha256: cc4d342e6d4dd6f0783f20ebed3a57d3a366578cbf6b59667cc0d5839e8ceaed -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -148,6 +148,12 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-77** generated interface(generator GN-6ap): origin이 `generated`인 interface unit은 `core_type`을 이름하고
+  `core`를 선언하지 않으며, 이 계약의 class 하나 이상이 그것을 `implements`한다. 그런 class는 origin이 `generated`이고
+  `core_type`을 갖는다. 그 interface나 그것의 `optional`로 type된 parameter는 `core` 빌림을 이름하지 않고, 어떤 반환,
+  field, `yields`, callback interface의 member도 그 interface를 이름하지 않는다. binding은 구현 class의 instance를 호출에
+  들어올 때에만 `core_type`으로 변환하기 때문이다. case에서 그런 parameter의 argument는 그 interface를 구현하는
+  class의 instance 값(GN-13f)이거나, `optional`에서는 `null`이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

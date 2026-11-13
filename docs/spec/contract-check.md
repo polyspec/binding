@@ -171,6 +171,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
   the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
   source to tell them apart.
+- **CK-77** A generated interface (generator GN-6ap): an interface unit of origin `generated` names `core_type`,
+  declares no `core`, and at least one class of this contract `implements` it; each such class has the origin
+  `generated` and a `core_type`. A parameter typed by the interface, or by an `optional` of it, names no `core`
+  borrow, and no return, field, `yields` or member of a callback interface names the interface, because the binding
+  converts an instance of an implementing class to the `core_type` only as it enters a call. In a case an argument at
+  such a parameter is an instance value (GN-13f) of a class that implements the interface, or `null` in an `optional`.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
