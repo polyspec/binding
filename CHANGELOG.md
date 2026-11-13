@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- `tests/e2e/consumer` had no runner of its contract cases for WASM, so the end-to-end run checked the value alias of
+  another repository and the callback on WASM by the generated tests alone, while Node ran the contract cases too.
+  `tests/e2e/consumer/cases.wasm.test.mjs` runs the same cases through the subpath `./wasm`. Verified by `make e2e` of
+  `tests/e2e/consumer` with `DEPS=tests/e2e/sample`.
 - The generator refused the WASM binding of a contract with a value alias (U-7), with a value alias of another
   repository, with an alias that has `in_raises`, or with a callback unit (U-3), so `tests/e2e/sample` and
   `tests/e2e/consumer` failed on WASM before anything was built. The WASM module now describes a JavaScript value as the
