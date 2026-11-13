@@ -248,8 +248,10 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
       const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
       const errno = expectedErrno(kase);
-      // PHP has no table of the errno symbols of its machine, and where a test reads their values is not decided.
-      if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
+      // GN-8a: PHP has no table of the errno symbols of its machine, so the test reads the value of a symbol from the
+      // extension, whose entry point is of the feature fault-test.
+      if (errno !== null && 'symbol' in errno && model.faults.length === 0) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is read through Internal\\errnoOf of the feature fault-test, which a contract without fault injection points does not have (GN-8a)`);
+      const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
       methods.push(`
     public function testB4${name}${id}(): void
     {${receiverMade.lines}${before}${arming}
@@ -261,7 +263,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
-            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${String(errno.value)}, $error->errno());`}
+            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}
     }`);
     }

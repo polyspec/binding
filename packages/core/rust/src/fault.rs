@@ -67,7 +67,7 @@ pub fn reach(name: &'static str) -> Option<Injected> {
 }
 
 #[cfg(feature = "fault-test")]
-pub use armed::{arm, left, take, ArmError, Armed, Around};
+pub use armed::{arm, errno, left, take, ArmError, Armed, Around};
 
 #[cfg(feature = "fault-test")]
 mod armed {
@@ -281,6 +281,16 @@ mod armed {
             }
         })?;
         Ok(armed.left())
+    }
+
+    /// The value of an errno symbol on the target, from the table that [`arm`] reads, which a test of a language
+    /// without such a table compares with the errno of a failure (GN-8a).
+    ///
+    /// # Errors
+    ///
+    /// The target has no errno of this symbol, or no errno at all.
+    pub fn errno(symbol: &str) -> Result<i32, ArmError> {
+        errno_of(symbol).ok_or_else(|| ArmError::Errno(symbol.to_owned()))
     }
 
     fn form(detail: impl Into<String>) -> ArmError {

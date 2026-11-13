@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The PHP test of a case whose `raises` names an errno symbol, such as `EIO`, was refused ("the errno symbol EIO is
+  not compared in PHP yet"), because PHP has no table of the errno symbols of its machine. `binding_core::fault::errno`
+  gives the value of a symbol from the table that arms the faults, the PHP extension gives it with the feature
+  `fault-test` as `Internal\errnoOf`, and the PHP test compares the errno of the failure with it, as Python, Node and Go
+  compare it with the value of their language (GN-8a). A PHP test of such a case in a contract without fault injection
+  points is refused by name, because the contract has no feature `fault-test`. The cases of the tally of the sample
+  name `EIO` again.
+
 - The two forms of a call of `then` (GN-13f) had only unit tests, so no run showed that the generated tests of
   either form pass in a target. The end-to-end sample `tests/e2e/sample` now holds both: `counter.tally` arms the fault
   `sample.tally` and leaves its failure `unreadable` for `counter.settle`, whose case arms the fault in a call of

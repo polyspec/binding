@@ -154,14 +154,16 @@
       "faults": [
         {
           "point": "sample.tally",
-          "kind": "io"
+          "kind": "io",
+          "errno": "EIO"
         }
       ],
       "raises": {
         "kind": "unreadable",
         "status": null,
         "category": "io",
-        "message": "the text could not be read"
+        "message": "the text could not be read",
+        "errno": "EIO"
       }
     }
   ],
@@ -184,7 +186,8 @@
             "faults": [
               {
                 "point": "sample.tally",
-                "kind": "io"
+                "kind": "io",
+                "errno": "EIO"
               }
             ],
             "raises": {
@@ -197,7 +200,8 @@
         "kind": "unreadable",
         "status": null,
         "category": "io",
-        "message": "the text could not be read"
+        "message": "the text could not be read",
+        "errno": "EIO"
       }
     }
   ],

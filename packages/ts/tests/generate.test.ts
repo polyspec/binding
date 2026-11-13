@@ -1704,7 +1704,7 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
   // table that arms the faults, with the other entry points of the feature fault-test.
   assert.match(text(out, phpTests), /self::assertSame\(\\Polyspec\\Sample\\Internal\\errnoOf\("ENOSPC"\), \$error->errno\(\)\);/);
   const phpLib = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(phpLib, /#\[cfg\(feature = "fault-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| \{\n {8}binding_core::fault::errno\(&symbol\)/);
+  assert.match(phpLib, /#\[cfg\(feature = "fault-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\errnoOf"\)\]\npub fn errno_of\(symbol: String\) -> Result<i64, PhpException> \{\n {4}guard\(\|\| binding_core::fault::errno\(&symbol\)\.map\(i64::from\)/);
   assert.match(phpLib, /\.function\(wrap_function!\(fault_left\)\)\.function\(wrap_function!\(errno_of\)\);/);
   // A contract without fault injection points has no feature fault-test, so its PHP test cannot read the value.
   const withoutPoints = (c: any, cases: any): void => {
