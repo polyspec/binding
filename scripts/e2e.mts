@@ -636,8 +636,32 @@ if (targets.includes('go')) {
   if (unformatted !== '') throw new Error(`gofmt would change:\n${unformatted}`);
   run(goTool, ['vet', './...'], { cwd: goModule, env: goEnv });
   record('go', 'lint', 'gofmt -l and go vet');
-  run(goTool, ['test', '-count=1', './...'], { cwd: goModule, env: goEnv });
-  record('go', 'test', `the generated tests${caseRunners && existsSync(join(e2e, 'cases_test.go')) ? ' and the contract cases' : ''} on go test`);
+  // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
+  // skipped, as the JUnit log of PHPUnit does. No test that ran fails the target, as for the other targets, and a skipped
+  // test fails it too and is named, because a skipped test verifies nothing.
+  process.stdout.write(`$ ${goTool} test -json -count=1 ./...\n`);
+  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
+  const counts = { pass: [] as string[], fail: [] as string[], skip: [] as string[] };
+  const packageFailures: string[] = [];
+  for (const line of goTest.stdout.split('\n')) {
+    if (!line.startsWith('{')) {
+      if (line !== '') process.stdout.write(`${line}\n`);
+      continue;
+    }
+    const event = JSON.parse(line) as { Action: string; Package?: string; Test?: string; Output?: string };
+    if (event.Action === 'output' && event.Output !== undefined) process.stdout.write(event.Output);
+    const name = `${event.Package ?? ''}.${event.Test ?? ''}`;
+    if (event.Test !== undefined && (event.Action === 'pass' || event.Action === 'fail' || event.Action === 'skip')) counts[event.Action].push(name);
+    if (event.Test === undefined && event.Action === 'fail') packageFailures.push(event.Package ?? '');
+  }
+  process.stderr.write(goTest.stderr);
+  process.stdout.write(`go test: ${counts.pass.length} passed, ${counts.fail.length} failed, ${counts.skip.length} skipped\n`);
+  for (const name of counts.skip) process.stdout.write(`skipped (a failure, GN-14a): ${name}\n`);
+  const total = counts.pass.length + counts.fail.length + counts.skip.length;
+  if (goTest.status !== 0 || counts.fail.length > 0 || packageFailures.length > 0) throw new Error(`go test failed: ${counts.fail.length} tests${packageFailures.length > 0 ? `, the packages ${packageFailures.join(', ')}` : ''} (status ${String(goTest.status)})`);
+  if (total === 0) throw new Error(`go test ran no test of ${goModule}`);
+  if (counts.skip.length > 0) throw new Error(`go test skipped ${counts.skip.length} test${counts.skip.length === 1 ? '' : 's'}, which verify nothing: ${counts.skip.join(', ')}`);
+  record('go', 'test', `${counts.pass.length} ${caseRunners && existsSync(join(e2e, 'cases_test.go')) ? 'generated tests and contract cases' : 'generated tests'} on go test`);
 }
 
 step('declarations');

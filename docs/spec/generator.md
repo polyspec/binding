@@ -584,7 +584,9 @@ the design ids are those of the binding design.
   verified while the run would look passed, and a result of a tool that the checkout does not pin cannot be repeated.
   The run ends with what it did for each target, a lint apart from the tests: the lint of the workspace on the host, `php
   -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
-  counts as a test only when its JUnit log names a test, and a target for which no test ran fails the run. On macOS the PHP extension links only when the linker leaves the PHP symbols to the
+  counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
+  that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
+  test is named and fails the run, because it verifies nothing. On macOS the PHP extension links only when the linker leaves the PHP symbols to the
   load (`-undefined dynamic_lookup`); until the PHP binding crate has the `build.rs` of BD-9, that setting is not in a
   tracked file and a run on macOS gives it by hand, which the report of the run states.
 - **GN-14b** A run checks one commit of binding: `BINDING`, `HEAD` by default. The check writes the tree of that commit

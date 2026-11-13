@@ -475,7 +475,9 @@
   runner의 설정이 필요한 시험(GN-18a의 collector 등)은 확인이 그 설정을 주며 설정이 없으면 실패한다. 이유: 돌지 않은 target은
   검증되지 않았는데 결과는 통과로 보이고, checkout이 고정하지 않은 도구의 결과는 되풀이할 수 없다. 실행은 target마다 한 일을
   lint와 시험으로 갈라 적고 끝난다. host에서의 workspace lint, `php -l`, `gofmt -l`, `go vet`, `llvm-nm`, `tsc`는 코드를 읽을
-  뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. macOS에서 PHP
+  뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, `go test`는 `-json`으로 실행해 그 사건에서
+  통과·실패·건너뜀 시험을 세며, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. 건너뛴 Go 시험은 이름을 적고 실행을
+  실패시킨다. 아무것도 검증하지 않기 때문이다. macOS에서 PHP
   확장은 링커가 PHP 기호를 로드 때로 남겨야(`-undefined dynamic_lookup`) 링크된다. PHP 바인딩 crate가 BD-9의 `build.rs`를
   갖기 전까지 그 설정은 추적 파일에 없고, macOS의 실행은 그것을 손으로 주며 실행 보고가 그 사실을 적는다.
 - **GN-14b** 실행은 binding의 commit 하나를 확인한다: `BINDING`, 기본은 `HEAD`. 확인은 그 commit의 tree를 `git archive`로
