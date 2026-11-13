@@ -88,12 +88,11 @@ function coreFeatures(contract: Contract, suffix: string): string {
 // GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature fault-test of the core
 // when the contract names fault injection points, and of each core of another library whose points a case arms (G-5);
 // codec-test adds the entry points that run the in function of a
-// value alias with in_raises alone (U-7). Go has neither yet.
+// value alias with in_raises alone (U-7); the Go crate has it always, for its round-trip entry points (GW-4, T-2).
 function testFeatures(contract: Contract, suffix: string, armed: string[]): string {
-  if (suffix === 'go') return '';
   const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
   const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
-  const codec = contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
+  const codec = suffix === 'go' || contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
   return `${faults}${codec}`;
 }
 
@@ -262,9 +261,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' })
-      // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
-      .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));

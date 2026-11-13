@@ -1038,6 +1038,11 @@ class Checker {
       declare(unit.module, typeName, path);
       const constructor = (unit.members ?? []).some((m) => m.kind === 'constructor');
       if (unit.kind === 'class' && unit.constructible !== false && constructor) declare(unit.module, `New${typeName}`, path);
+      // T-5: a static member is the function <Class><Member> of the package.
+      for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
+        if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
+        declare(unit.module, `${typeName}${this.langName('go', unit, member.name, 'callable', member)}`, `${path}${pointer('members', m)}`);
+      }
     }
   }
 

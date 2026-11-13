@@ -667,11 +667,14 @@ if (targets.includes('php')) {
 }
 
 if (targets.includes('go')) {
-  const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test,polyspec_codec_test', CASES: cases ?? '' };
+  // GN-5: the build tags of go test are the test features of the crate, polyspec_<feature>, each with _ for -.
+  const goTags = (p: Prepared): string => testFeatures(p, 'go').split(',').map((feature) => `polyspec_${feature.replaceAll('-', '_')}`).join(',');
+  const goEnvOf = (p: Prepared): Record<string, string> => ({ CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: `-tags=${goTags(p)}`, CASES: cases ?? '' });
   const goCases = caseRunners && existsSync(join(e2e, 'cases_test.go'));
   for (const [i, p] of mainsOf('go').entries()) {
     const goModule = at(p, 'packages/go');
     const crate = p.contract.core.crate;
+    const goEnv = goEnvOf(p);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
     // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
     if (stepOf(['go'], `llvm-nm: the static library${of} without features holds no test entry point`, () => {
@@ -679,7 +682,7 @@ if (targets.includes('go')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
+      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_)/.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);

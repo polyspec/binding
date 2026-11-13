@@ -78,22 +78,3 @@ export function defaultCaseValue(model: Model, arg: Arg): { value: unknown } | u
   const found = declaredValue(model, arg);
   return found === undefined ? undefined : { value: found.value };
 }
-
-// Whether a type names a source anywhere (T-1).
-const hasSource = (type: Type): boolean => JSON.stringify(type).includes('"source"');
-
-// G-4: Go generates none of a source, a default and an error unit yet; a contract with one of them and the target Go is
-// refused by the name of the item.
-export function refuseForOthers(model: Model, targets: readonly string[], refusals: Refusals): void {
-  const others = targets.filter((t) => t === 'go');
-  if (others.length === 0) return;
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
-  for (const fn of fns) {
-    for (const arg of fn.args) {
-      const name = `${fn.member.id}.${arg.name.join('_')}`;
-      if (hasSource(arg.type)) refusals.refuse(`${name}: the type source is not generated for ${others.join(', ')} yet (T-1)`);
-      if (arg.default !== undefined) refusals.refuse(`${name}: a default is not generated for ${others.join(', ')} yet (U-2, T-4)`);
-    }
-  }
-  for (const { unit } of model.errorUnits) refusals.refuse(`${unit.id}: an error unit is not generated for ${others.join(', ')} yet (E-2, E-7)`);
-}

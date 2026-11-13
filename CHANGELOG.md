@@ -13,6 +13,18 @@
   under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
   now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
   `classes.join` and `tag.same`. Verified by `npm test` in `packages/ts`.
+- The generator refused the Go binding of a contract with a class unit, a callback unit, a value alias (also of
+  another repository), a value alias with `in_raises`, a `source` parameter, a parameter or field with a default, an
+  error unit, or fault injection points, so `tests/e2e/classes`, `tests/e2e/shapes`, `tests/e2e/sample` and
+  `tests/e2e/consumer` failed on Go before anything was built. Go now generates each of them: a class as a struct over a handle of a locked table with `New<Class>`, static functions
+  `<Class><Member>`, methods, an iterator and `String()` (GN-15a); a callback as an interface whose error comes back as
+  the same value (GN-15b); a value alias as `any` that the core reads through questions to Go (GN-15c); an error unit
+  as a struct that embeds its parent (GN-15d); a `source` as `[]byte` and a default as a nil pointer (GN-15e); and the
+  entry points of `fault-test`, of `codec-test` for an alias and of the poison test. The generated Go tests are in the
+  package itself and cover U-2, U-7, K-2, B-4 with the exact error unit, GN-13e, N-4 and B-5c, the cases that arm faults
+  with the build tag `polyspec_fault_test` (GN-13b). `binding check` names a static member of a class among the names
+  of its Go package (CK-13), and the end-to-end check runs `go test` with a tag for each test feature of the crate and
+  finds every test entry point in a library built without features. Verified by `npm test` in `packages/ts`.
 - `binding scaffold` wrote an allow attribute wider than 70 columns with each argument on a line of its own, the form of
   the defaults of rustfmt, so `cargo fmt --check` of a repository with `use_small_heuristics = "Max"` and `max_width =
   120` failed on the `src/lib.rs` of each binding crate, which those settings join into one line. An allow attribute
