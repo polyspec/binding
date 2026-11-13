@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Node crate of a contract with a class that is only the argument of a function parameter (the `scope` of
+  `store.transaction`) wrote the conversion in of that class, `in_<class>`, which nothing calls: dead code that fails
+  the build with `-D warnings`. The argument of a function parameter leaves to language code and never comes in, so
+  the check of the classes that come in no longer reads a function type (T-5, GN-6ae). Found by the first compile of
+  the generated crates of the sample. Verified by `npm test` in `packages/ts`, whose test found `fn in_scope` in the
+  Node crate of the sample before the change.
 - The generated Node crate of a contract with a value alias and a member that takes a function parameter defined the
   function `raised` twice, once for the walk of a value and once for the exception of a function, which does not
   compile (E0428). The walk of a value now keeps an error of napi through `js_raised`, which holds a pending

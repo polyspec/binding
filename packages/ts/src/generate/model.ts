@@ -1021,7 +1021,9 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+    // class that a function type names does not come in by it.
+    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   const place = (arg: Arg): boolean => !arg.field && heldParam(model, arg.type) !== undefined;
@@ -1315,7 +1317,9 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+    // class that a function type names does not come in by it.
+    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));

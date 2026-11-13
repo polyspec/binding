@@ -3552,3 +3552,14 @@ test('the Node and WASM crates of the sample define each function once and name 
   assert.match(wasm, /pub struct Driven \{\n\s+advance: Advance,\n\s+\}/);
   assert.match(wasm, /type Advance = Box<dyn FnMut\(JsValue\) -> Result<\(u32, JsValue\), Fail>>;/);
 });
+
+test('a class that only a function parameter takes as its argument has no conversion in (T-5, GN-6ae)', () => {
+  // The argument of a function parameter leaves to language code and never comes in, so a conversion in of its class
+  // is dead code, which fails the build with -D warnings.
+  const out = scopedSample(['php', 'node', 'wasm']);
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /\nfn out_scope[(<]/, path);
+    assert.doesNotMatch(text(out, path), /\nfn in_scope[(<]/, path);
+    assert.match(text(out, path), /\nfn in_tag[(<]/, path);
+  }
+});

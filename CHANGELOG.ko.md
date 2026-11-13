@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 35811d25f792f8b9820aecc0bd0b518ce066c13d15aa8919858f364ed7c355c8 -->
+<!-- source-sha256: bbb4ab6205d406646d37d328eefe7920e0d22a0ef25b115bddf1471ebda33e21 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 함수 parameter의 argument로만 쓰이는 class(`store.transaction`의 `scope`)가 있는 계약의 Node crate는 그 class의 들어오는
+  변환 `in_<class>`를 썼고 아무도 그것을 호출하지 않는다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 함수
+  parameter의 argument는 언어 코드로 나가고 들어오지 않으므로, 들어오는 class를 찾는 검사는 이제 함수 타입을 읽지
+  않는다(T-5, GN-6ae). sample의 생성 crate를 처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은
+  변경 전에 sample의 Node crate에서 `fn in_scope`를 찾았다.
 - value alias와 함수 parameter를 받는 member가 함께 있는 계약의 Node 생성 crate는 함수 `raised`를 두 번 정의했다. 하나는
   값의 walk를 위한 것이고 하나는 함수의 예외를 위한 것이며, 이는 컴파일되지 않는다(E0428). 이제 값의 walk는 napi의
   error를 `js_raised`로 보관한다. `js_raised`는 pending 예외를 그대로 보관하고 다른 error는 binding의 실패로 보관하며,
