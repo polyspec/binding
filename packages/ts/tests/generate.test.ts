@@ -4075,3 +4075,20 @@ test('the Python crate of a contract without a class uses the RefCell that it im
   assert.match(lib, /static RAISING: RefCell<Vec<Vec<u64>>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
   assert.doesNotMatch(lib, /std::cell::RefCell[<:]/);
 });
+
+test('the WASM crate of a contract without a class or a list imports the Array of its error, and holds no helper of a wait that nothing calls (GN-18)', () => {
+  // The plot has no list, so nothing but the error of the crate names Array, and the consumer has no member that
+  // waits, so nothing calls caught, an async fn, which the lints deny as dead code.
+  const plot = plotSample();
+  const plotLib = text(generate({ contract: plot.contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles: plot.caseFiles, foreign: plot.foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(plotLib, /\bArray::of4\(/);
+  assert.match(plotLib, /\nuse js_sys::\{[^}]*\bArray\b[^}]*\};\n/);
+  const consumer = consumerSample();
+  const consumerLib = text(generate({ contract: consumer.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: consumer.caseFiles, foreign: consumer.foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.doesNotMatch(consumerLib, /\bcaught\(/);
+  assert.doesNotMatch(consumerLib, /\bfn caught\b/);
+  // The sample has members that wait, whose entries call it.
+  const sampleLib = text(scopedSample(['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(sampleLib, /\nasync fn caught</);
+  assert.match(sampleLib, /\bcaught\(/);
+});

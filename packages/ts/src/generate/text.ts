@@ -59,7 +59,7 @@ export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) =>
 export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}, modules: Readonly<Record<string, string>> = {}): string {
   // GN-4c: an item of the root has no module; an item of the block of a module is named from outside by its path.
   const parse = (text: string, module: string): { item: string; name: string; module: string }[] =>
-    text.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '').map((item) => ({ item, module, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
+    text.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '').map((item) => ({ item, module, name: /^(?:\/\/\/[^\n]*\n)*(?:async )?(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
   const named = [...parse(block, ''), ...Object.entries(modules).flatMap(([module, text]) => parse(text, module))];
   const paths = Object.keys(modules);
   const outside = paths.length === 0 ? '' : `(?<!\\b(?:${paths.join('|')})::)`;
@@ -100,7 +100,7 @@ export function usedHelpers(block: string, code: string, gated: Readonly<Record<
   const inModules = paths.map((path) => {
     const items = named.flatMap(({ module }, index) => (module === path && kept[index] !== undefined ? [kept[index] ?? ''] : []));
     if (items.length === 0) return '';
-    const body = items.map((item) => item.replace(/^((?:(?:\/\/\/|#\[)[^\n]*\n)*)fn /, '$1pub(super) fn ').split('\n').map((line) => (line === '' ? '' : `    ${line}`)).join('\n')).join('\n\n');
+    const body = items.map((item) => item.replace(/^((?:(?:\/\/\/|#\[)[^\n]*\n)*)((?:async )?fn )/, '$1pub(super) $2').split('\n').map((line) => (line === '' ? '' : `    ${line}`)).join('\n')).join('\n\n');
     return `\n/// GN-4c: the conversions of the units of another library, which the code names by the path of this module.\nmod ${path} {\n    use super::*;\n\n${body}\n}\n`;
   }).join('');
   return `${root}${inModules}`;

@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The WASM crates of `tests/e2e/plot` and `tests/e2e/consumer` did not compile, which their first `make e2e` on WASM
+  showed. The crate imported `Array` only where a function or a helper named it, while the error of every crate
+  calls `Array::of4`, so the crate of the plot, which has no list, failed with `cannot find type Array`. The helper
+  `caught`, an `async fn`, was read as an item without a name and kept in every crate, so the crate of the consumer,
+  which has no member that waits, failed with `function caught is never used`. The crate now always imports `Array`,
+  and a helper that starts with `async fn` is kept only where the code names it. Verified by `npm test` in
+  `packages/ts`, whose test generates the two crates. The crates were not compiled again for this change.
 - The scope of the `Raised` values of the Python crate named `std::cell::RefCell` by its path, while the crate
   imports `RefCell` wherever its text names it, so the crate of a contract without a class held an unused import,
   which the lints deny: `make e2e` of `tests/e2e/consumer` failed at the lint of the Python crate with

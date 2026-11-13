@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 36c4adaccd5587e229aa03f5f53ee2d4341d58f975d2e731235c16cfa0374e96 -->
+<!-- source-sha256: 95696a2afcda2e9fc60385ff4495dcd7ee10763becdc5b966f2340ead819983f -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/plot`과 `tests/e2e/consumer`의 WASM crate는 컴파일되지 않았고, WASM에서의 첫 `make e2e`가 그것을 보였다.
+  crate는 함수나 helper가 `Array`를 이름할 때만 그것을 import했는데, 모든 crate의 오류는 `Array::of4`를 부른다. 그래서
+  list가 없는 plot의 crate는 `cannot find type Array`로 실패했다. `async fn`인 helper `caught`는 이름 없는 항목으로
+  읽혀 모든 crate에 남았다. 그래서 기다리는 member가 없는 consumer의 crate는 `function caught is never used`로
+  실패했다. 이제 crate는 `Array`를 항상 import하고, `async fn`으로 시작하는 helper는 코드가 이름하는 곳에만 남는다.
+  `packages/ts`의 `npm test`로 검증했다. 그 테스트는 두 crate를 생성한다. 이 변경에 대해 crate를 다시 컴파일하지 않았다.
 - Python crate의 `Raised` 값의 scope는 `std::cell::RefCell`을 경로로 이름했는데, crate는 본문이 `RefCell`을 이름하는
   곳마다 그것을 import한다. 그래서 class가 없는 계약의 crate는 쓰지 않는 import를 가졌고 lint가 그것을 거부했다.
   `tests/e2e/consumer`의 `make e2e`가 Python crate의 lint에서 `unused import: std::cell::RefCell`로 실패했다. 이제 scope는
