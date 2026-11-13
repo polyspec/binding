@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- WASM refused every member with `wait: async_driver` ("wait async_driver is not generated for WASM yet"), a member
+  with `machine` (GN-6ab) with them, so such a contract generated no WASM module. WASM now returns a promise of
+  `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the future on the thread of the module,
+  in a browser as in Node, and no tokio runtime is used; the WASM crate depends on `wasm-bindgen-futures` 0.4.80, the
+  release of its `wasm-bindgen` 0.2.130 and `js-sys` 0.3.107, and not on the driver of binding_core (GN-6n). A member
+  with `machine` returns a `Driven` object whose `advance()` makes the calls of the machine on that thread and gives
+  `[false, promise]` for a wait or `[true, result]`, which the ES entry `drive` awaits and then frees (GN-6ab). The
+  ES entry of such a member is an async function, its declaration a `Promise`, and its generated tests await it.
+  `tests/e2e/classes` has `classes.settle`, whose future is pending once and needs no tokio runtime, and a unit test
+  compiles its generated WASM entry with its core with rustc for the host and for wasm32. Verified by `npm test` in
+  `packages/ts`.
 - A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
   or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
   the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind

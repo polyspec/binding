@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- WASM은 `wait: async_driver`인 모든 member와 `machine`인 member(GN-6ab)를 거부해서("wait async_driver is not generated
+  for WASM yet"), 그런 계약은 WASM 모듈을 생성하지 못했다. 이제 WASM은 `wasm_bindgen_futures::future_to_promise`의
+  promise를 돌려준다: 브라우저에서도 Node에서도 JavaScript의 event loop가 모듈의 스레드에서 future를 poll하며 tokio
+  runtime은 쓰지 않는다. WASM crate는 자기 `wasm-bindgen` 0.2.130과 `js-sys` 0.3.107의 release인 `wasm-bindgen-futures`
+  0.4.80에 의존하고 binding_core의 driver에는 의존하지 않는다(GN-6n). `machine`인 member는 `Driven` 객체를 돌려주며, 그
+  `advance()`는 그 스레드에서 machine의 call을 하고 기다림에는 `[false, promise]`를, 끝에는 `[true, result]`를 준다. ES
+  진입의 `drive`가 그것을 기다린 뒤 해제한다(GN-6ab). 그런 member의 ES 진입은 async 함수이고 선언은 `Promise`이며, 생성된
+  시험은 그것을 await한다. `tests/e2e/classes`는 future가 한 번 pending이고 tokio runtime이 필요 없는 `classes.settle`을
+  갖고, 단위 시험은 그 생성된 WASM 진입을 코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로
+  확인했다.
 - list parameter를 표의 타입으로 된 `Vec`으로 코어에 줘서, `&[usize]`, `&[u32]`나 더 좁은 정수의 tuple slice를 빌리는 코어는
   컴파일되지 않았다. 이제 그런 list는 `IntoCore`를 거쳐 코어 항목 타입의 `Vec`으로 들어가고, 코어 호출은 `&values[..]`를
   받는다. 코어 타입 밖의 항목은 kind `invalid_number`다(GN-6ad). Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `&[usize]`를

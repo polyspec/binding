@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -534,11 +534,42 @@ function functionRust(model: Model, fn: Fn): string {
   // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2
   // core.receiver).
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
+  const core = `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`;
   // G-5: the core call runs with the faults that a test armed for the member (GN-8a).
-  const call = armedCall(model, fn, `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`);
+  const call = armedCall(model, fn, core);
   // E-1c: a member that takes a callback fails with a Failure: a kind, or the exception that the callback threw.
   const failed = fn.failure ? 'failure_error' : 'core_error';
-  if (fn.fallible && fn.returns === 'none') {
+  if (fn.machine === true) {
+    // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
+    // calls on the JavaScript thread and gives the promise of its next wait, whose future the event loop polls, or its
+    // converted result.
+    const done = fn.fallible ? `let result = result.map_err(${failed})?;\n                    ` : '';
+    const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())');
+    lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
+        let given = Rc::new(RefCell::new(None));
+        Ok(JsValue::from(Driven::new(move || {
+            let output = given.borrow_mut().take();
+            if let Some(output) = output {
+                machine.give(output);
+            }
+            match machine.advance() {
+                binding_core::machine::Next::Wait(io) => {
+                    let given = Rc::clone(&given);
+                    let promise = awaited(${wait}, |()| Ok(JsValue::UNDEFINED))?;
+                    Ok((false, promise))
+                }
+                binding_core::machine::Next::Done(result) => {
+                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                }
+            }
+        })))`);
+  } else if (waitsAsync(fn)) {
+    // GN-6n: the future owns the converted arguments and the guards; the event loop of JavaScript polls it, and its
+    // result is converted when it ends.
+    const body = fn.fallible ? `${core}.await.map_err(${failed})` : `Ok(${core}.await)`;
+    const give = convertOut(model, fn.returns, 'result');
+    lines.push(`        awaited(${futureOf(model, fn, body)}, ${closure([/\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+  } else if (fn.fallible && fn.returns === 'none') {
     // A fallible member that returns nothing gives its error alone (E-1c).
     lines.push(`        if let Err(error) = ${call} {\n            return Err(${failed}(error));\n        }`);
   } else if (fn.fallible) {
@@ -549,7 +580,7 @@ function functionRust(model: Model, fn: Fn): string {
     lines.push(`        let result = ${call};`);
   }
   // T-5: the constructor gives the handle of the new value, which the instance under construction keeps.
-  lines.push(fn.kind === 'constructor' ? `        insert_${plainName(fn.unit)}(result)` : `        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn)) lines.push(fn.kind === 'constructor' ? `        insert_${plainName(fn.unit)}(result)` : `        ${convertOut(model, fn.returns, 'result')}`);
   return withFaults(model, fn, `
 /// ${docPath(fn.corePath)} (contract member ${fn.member.id}).
 #[wasm_bindgen(js_name = ${rustString(jsName)})]
@@ -900,10 +931,80 @@ ${propertyArms}
 `;
 }
 
+// GN-6n: the promise of the future of a member with wait async_driver, which the event loop of JavaScript polls
+// (wasm-bindgen-futures); no tokio runtime runs in a WebAssembly module.
+const AWAITED = `
+/// GN-6n: the promise of a future of a member with wait async_driver, which the event loop of JavaScript polls: its
+/// result is converted when it ends, and its failure rejects the promise.
+fn awaited<F, O>(future: F, give: impl FnOnce(O) -> Result<JsValue, Fail> + 'static) -> Result<JsValue, Fail>
+where
+    F: std::future::Future<Output = Result<O, Fail>> + 'static,
+    O: 'static,
+{
+    let promise = wasm_bindgen_futures::future_to_promise(async move { caught(future).await.and_then(give).map_err(throw) });
+    Ok(promise.into())
+}
+
+/// GN-6n, B-7: the output of a future, or kind internal for a panic of a poll where the module unwinds; a module built
+/// with panic=abort traps instead (GN-18).
+fn caught<F, O>(future: F) -> impl std::future::Future<Output = Result<O, Fail>>
+where
+    F: std::future::Future<Output = Result<O, Fail>>,
+{
+    async move {
+        let mut future = std::pin::pin!(future);
+        std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+            Ok(poll) => poll,
+            Err(payload) => {
+                let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
+                    (Some(text), _) => (*text).to_owned(),
+                    (None, Some(text)) => text.clone(),
+                    (None, None) => String::from("a panic without a message"),
+                };
+                std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
+            }
+        })
+        .await
+    }
+}
+`;
+
+// GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the ES module
+// advances.
+const MACHINE = `
+/// GN-6ab: the state machine of a call, which the ES module advances until it ends. Each advance makes the calls of
+/// the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+#[wasm_bindgen]
+pub struct Driven {
+    advance: Box<dyn FnMut() -> Result<(bool, JsValue), Fail>>,
+}
+
+impl Driven {
+    fn new(advance: impl FnMut() -> Result<(bool, JsValue), Fail> + 'static) -> Self {
+        Self { advance: Box::new(advance) }
+    }
+}
+
+#[wasm_bindgen]
+impl Driven {
+    /// GN-6ab: one advance of the state machine: whether it ended, and its result or the promise of its wait.
+    pub fn advance(&mut self) -> Result<JsValue, JsValue> {
+        guard(|| {
+            let (ended, value) = (self.advance)()?;
+            out_tuple(&[out_bool(ended)?, value])
+        })
+        .map_err(throw)
+    }
+}
+`;
+
+// GN-6ab: whether a member of the model drives a state machine.
+const drivesMachine = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true);
+
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
-  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
+  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), drivesMachine(model) ? MACHINE : ''].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
   const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
@@ -913,7 +1014,7 @@ function libRust(model: Model): string {
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
@@ -930,7 +1031,7 @@ use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 ${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
-${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
+${model.objects.length === 0 && !drivesMachine(model) ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::${cast ? '{JsCast, JsValue}' : 'JsValue'};
 
 // U-5: the constants of the contract are the constants of the core.
@@ -1153,15 +1254,18 @@ export class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return typeof p.type === 'object' && 'list' in p.type ? `toList(args[${i}])` : `args[${i}]`;
     });
-    const call = `enter(${internal}, () => glue.${exported}(${[...(fn.receiver === undefined ? [] : ['this.#handle']), ...passed].join(', ')}))`;
+    const entered = `enter(${internal}, () => glue.${exported}(${[...(fn.receiver === undefined ? [] : ['this.#handle']), ...passed].join(', ')}))`;
+    // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
+    const call = fn.machine === true ? `drive(${internal}, ${entered})` : entered;
     lines.push(`  ${wrap(keyedType(fn.returns) ? `fromEntries(${call})` : call)};`);
     return lines.join('\n');
   };
   const indent = (text: string, by: string): string => text.split('\n').map((line) => `${by}${line}`).join('\n');
   const fns = model.functions.map((fn) => {
     const name = langName('wasm', fn.member.name, 'callable');
+    // GN-6n: the entry of a member that waits is an async function, so a failure is a rejection.
     return `
-export function ${name}(...args) {
+export ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
 ${checked(fn, `${name}()`, name, (call) => `return ${call}`)}
 }`;
   }).join('\n');
@@ -1197,7 +1301,7 @@ ${indent(checked(constructor, `new ${cls}()`, exportName(constructor), (call) =>
     return ${direct};
   }`;
       return `
-  ${fn.kind === 'static' ? 'static ' : ''}${name}(...args) {
+  ${fn.kind === 'static' ? 'static ' : ''}${awaits(fn) ? 'async ' : ''}${name}(...args) {
 ${indent(checked(fn, `${cls}.${name}()`, exported, (call) => `return ${call}`), '  ')}
   }`;
     });
@@ -1235,11 +1339,26 @@ const released = new FinalizationRegistry(([free, handle]) => {
 });
 `;
   const constants = model.constants.map((c) => `export const ${langName('wasm', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
+  const driving = !drivesMachine(model) ? '' : `
+// GN-6ab: advances the state machine of a call until it ends: the module makes its calls on this thread and gives the
+// promise of each of its waits, which this function awaits; the machine is freed at its end.
+async function drive(Internal, driven) {
+  try {
+    for (;;) {
+      const [ended, value] = enter(Internal, () => driven.advance());
+      if (ended) return value;
+      await value;
+    }
+  } finally {
+    driven.free();
+  }
+}
+`;
   return `${header('//')}
 import load, * as glue from './${glue}.js';
 import { ${model.objects.length === 0 ? 'enter' : 'broken, enter'} } from './state.mjs';
 ${classes}${units}
-${objectState}${objects === '' ? '' : `${objects}\n`}
+${objectState}${objects === '' ? '' : `${objects}\n`}${driving}
 // GW-5: the import loads the WebAssembly module (top-level await), so no export runs before it is ready. A file: URL
 // is read from the file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
 const url = new URL('./${glue}_bg.wasm', import.meta.url);
@@ -1346,21 +1465,23 @@ ${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('wasm', f.name, 'va
 /** T-9. */
 export type ${langName('wasm', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('wasm', kase.unit.name, 'class')).join(' | ')};`).join('\n');
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
-  const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
+  // GN-6n: a member that waits returns a promise of its result.
+  const returned = (fn: Fn): string => (awaits(fn) ? `Promise<${tsType(model, fn.returns, false)}>` : tsType(model, fn.returns, false));
+  const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${returned(fn)};`).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
       const name = memberName('wasm', fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${returned(fn)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'iterate') {
         const yields = fn.yields ?? { value: 'none' };
         const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
         return `  [Symbol.iterator](): IterableIterator<${item}>;`;
       }
-      return `  ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+      return `  ${name}(${params(fn)}): ${returned(fn)};`;
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
