@@ -17,6 +17,11 @@
   with the build tag `polyspec_fault_test` (GN-13b). `binding check` names a static member of a class among the names
   of its Go package (CK-13), and the end-to-end check runs `go test` with a tag for each test feature of the crate and
   finds every test entry point in a library built without features. Verified by `npm test` in `packages/ts`.
+- `binding scaffold` wrote an allow attribute wider than 70 columns with each argument on a line of its own, the form of
+  the defaults of rustfmt, so `cargo fmt --check` of a repository with `use_small_heuristics = "Max"` and `max_width =
+  120` failed on the `src/lib.rs` of each binding crate, which those settings join into one line. An allow attribute
+  is now one line of at most 80 columns, which both forms keep, and a reason that does not fit is the comment above it;
+  the reason of the Node addon names its rule id (GN-3a, GN-4).
 - The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module

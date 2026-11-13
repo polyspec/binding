@@ -13,11 +13,16 @@ import { type Files, header } from './text.ts';
 const bindingCore = (_suffix: string): string =>
   `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock'].map((f) => JSON.stringify(f)).join(', ')}] }`;
 
-// GN-3a: an allow attribute in the form that rustfmt gives it: on one line while its arguments fit the width of a
-// function-like attribute (attr_fn_like_width, 70), and else each argument on a line of its own.
+// GN-3a: an allow attribute in a form that rustfmt keeps with its defaults and with the settings of a repository
+// (use_small_heuristics = "Max", a wider max_width): on one line of at most 80 columns, which is narrower than the
+// width of a function-like attribute of either. A reason that does not fit is the comment above the attribute, which
+// then names its rule id alone.
 function allow(lint: string, reason: string): string {
-  const args = [lint, `reason = ${JSON.stringify(reason)}`];
-  return args.join(', ').length <= 70 ? `#![allow(${args.join(', ')})]` : `#![allow(\n${args.map((a) => `    ${a}`).join(',\n')}\n)]`;
+  const whole = `#![allow(${lint}, reason = ${JSON.stringify(reason)})]`;
+  if (whole.length <= 80) return whole;
+  const id = /^[A-Za-z]+-[0-9]+[a-z]?/.exec(reason)?.[0];
+  if (id === undefined) throw new Error(`internal: the reason of ${lint} names no rule id: ${reason}`);
+  return `// ${reason}\n#![allow(${lint}, reason = ${JSON.stringify(id)})]`;
 }
 
 function entry(what: string, allows: [string, string][]): string {
@@ -215,7 +220,7 @@ python-source = "generated/python"
       'napi-derive = "=3.7.1"',
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
-    files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'napi: a value is cast to its type after its type was checked']]));
+    files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'GN-4: napi casts a value to its type after its type was checked']]));
     languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
   }
   if (contract.targets.includes('wasm')) {

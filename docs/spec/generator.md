@@ -65,9 +65,10 @@ the design ids are those of the binding design.
   them), the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
   needs beside the crate, and a file of the crate that does not depend on the contract (the `build.rs` of Node and of
   PHP, which the manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. Each Rust
-  file is in the form that rustfmt gives it, so `cargo fmt --all --check` of the repository passes: an allow attribute
-  is on one line while its arguments fit `attr_fn_like_width` (70 characters) and else has each argument on a line of
-  its own. A core at
+  file is in a form that rustfmt keeps with its defaults and with the settings of a repository (`use_small_heuristics =
+  "Max"`, a wider `max_width`), so `cargo fmt --all --check` of the repository passes whatever its `rustfmt.toml`
+  holds of these: an allow attribute is one line of at most 80 columns, narrower than the width of a function-like
+  attribute of either, and a reason that does not fit is the comment above it, the attribute naming its rule id alone. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
   `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
   `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the

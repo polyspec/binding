@@ -48,8 +48,9 @@
   갖고 `generated/lib.rs`를 include하는 진입 `src/lib.rs`(include된 파일은 그 속성을 가질 수 없다), 언어의 manifest
   (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
   가리키는 Node와 PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
-  rustfmt가 주는 꼴이므로 레포의 `cargo fmt --all --check`가 통과한다: allow 속성은 그 인자가 `attr_fn_like_width`(70자)에
-  들어가면 한 줄이고, 아니면 인자마다 한 줄이다. 코어가
+  rustfmt가 기본 설정에서도 레포의 설정(`use_small_heuristics = "Max"`, 더 넓은 `max_width`)에서도 그대로 두는 꼴이므로,
+  레포의 `rustfmt.toml`이 이 값을 어떻게 적든 `cargo fmt --all --check`가 통과한다: allow 속성은 80칸 이하의 한 줄이며 이는 두
+  설정의 함수꼴 속성 폭보다 좁다. 한 줄에 들어가지 않는 이유는 속성 위의 주석이 되고, 속성은 규칙 id만 적는다. 코어가
   `packages/<component>/rust`이면(L-1) 바인딩 package와 생성 디렉터리는 `packages/<component>/<python|ts|php-ext>`이고,
   `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다.
   `scaffold`는 `--out`이 있으면 그 아래에 쓰고, 아직 `todo`인 unit(CK-2)이 있어도 멈추지 않는다. 얇은 package는 패키지·이름
