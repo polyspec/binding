@@ -24,7 +24,7 @@ import {
   objectUnit, places, pointName, unitOf, variantOf,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, implementerInstance, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -139,6 +139,9 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   const alias = aliasOf(v.model, type);
   if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
+  // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
+  const callback = callbackOf(v.model, type);
+  if (callback !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, callback.unit, json));
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
     // GN-13f, U-1, GN-13: an instance value, the call of the make member of a class of origin value, or the pairs that

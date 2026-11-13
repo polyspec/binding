@@ -571,6 +571,19 @@ ${variants.map((v) => `\t${pad(v.id, width)} ${name} = ${goString(v.value)}`).jo
 `;
 }
 
+// GN-6w: the pointer to a class that implements callback interfaces has their methods, which the compiler checks.
+function goImplements(scope: GoScope, object: ObjectClass): string {
+  const name = goName(object.unit.name);
+  return (object.unit.implements ?? []).map((ref) => {
+    const callback = scope.model.callbacks.find((c) => c.unit.id === ref.unit);
+    if (callback === undefined) throw new Unsupported(`${object.unit.id}: implements ${ref.unit}, which is no callback interface of this contract (U-1)`);
+    return `
+// ${name} implements ${goName(callback.unit.name)} (GN-6w): an instance stands where the callback is taken.
+var _ ${goUnitName(scope, callback.unit)} = (*${name})(nil)
+`;
+  }).join('');
+}
+
 // T-9, GN-6v: the name of a variant for its encode and decode functions, which are unexported, so a package of another
 // module does not reach them.
 function variantPackage(scope: GoScope, variant: Variant): string {
@@ -793,7 +806,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...model.constants.filter((c) => c.module === module).map(goConstant),
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
-    ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
+    ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f)), goImplements(scope, o)]),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
   ].join('');
@@ -2059,8 +2072,6 @@ ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'st
 // G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
 // that a member names.
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  // GN-6w: Go declares no class that implements an interface yet; it is refused by its name.
-  for (const object of model.objects.filter((o) => (o.unit.implements ?? []).length > 0)) refusals.refuse(`${object.unit.id}: a class that implements an interface is not generated for Go yet (GN-6w)`);
   // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // GN-6n: so does a Go member with wait async_driver.

@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- 생성기는 callback interface를 구현하는 class가 있는 계약의 Go 바인딩을 "a class that implements an interface is not
+  generated for Go yet (GN-6w)"로 거부해서, `tail`을 구현하는 `tests/e2e/variants`의 class `ribbon`에는 Go 바인딩이 없었다.
+  이제 Go는 class가 선언하지 않은 interface member마다 C ABI로 trait 메서드를 부르는 메서드를 class의 포인터에 주고,
+  `var _ Tail = (*Ribbon)(nil)`로 단언하며, callback 자리에 있는 case의 인스턴스 값을 그 factory가 만드는 인스턴스로
+  적는다(GN-6w, GN-13f). 그런 인스턴스 값의 class를 찾는 일은 이제 case 샘플의 함수 하나 `implementerInstance`이며, Go 시험과
+  다른 target이 함께 쓴다. `packages/ts`의 `npm test`와 `tests/e2e/variants`의 생성된 Go module의 `gofmt`로 확인했다.
 - 생성기는 variant unit이 있는 계약의 Go 바인딩을 "a variant unit is not generated for Go yet (GN-6v)"로 거부해서
   `tests/e2e/variants`에는 Go 바인딩이 없었다. 이제 Go는 variant를 module 패키지의 interface로 선언하고 그 유일한 method는
   unexported이며, 각 case를 그 interface를 구현하는 field들의 struct로 선언한다. 패키지의 함수 `encode<Variant>`와

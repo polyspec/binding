@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The generator refused the Go binding of a contract with a class that implements a callback interface, with "a class
+  that implements an interface is not generated for Go yet (GN-6w)", so the class `ribbon` of `tests/e2e/variants`,
+  which implements `tail`, had no Go binding. Go now gives the pointer to the class the method of each member of the
+  interface that the class does not declare, which calls the trait method through the C ABI, asserts
+  `var _ Tail = (*Ribbon)(nil)`, and writes the instance value of a case at the place of the callback as the instance
+  that its factory makes (GN-6w, GN-13f). The search for the class of such an instance value is now one function of
+  the case samples, `implementerInstance`, which the Go tests and the other targets share. Verified by `npm test` in
+  `packages/ts` and `gofmt` of the generated Go module of `tests/e2e/variants`.
 - The generator refused the Go binding of a contract with a variant unit, with "a variant unit is not generated for Go
   yet (GN-6v)", so `tests/e2e/variants` had no Go binding. Go now declares the variant as an interface of the package
   of its module, whose one method is unexported, and each case as a struct of its fields that implements it; the
