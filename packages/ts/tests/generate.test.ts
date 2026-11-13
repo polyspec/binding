@@ -4529,3 +4529,68 @@ test('a Node or WASM test passes undefined in the place of an argument left out 
     assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/, path);
   }
 });
+
+test('a PHP crate has the helper thrown only where a callback or a function keeps what the PHP code threw (U-3, GN-6z)', () => {
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    fixture: () => generate({ ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }),
+    sample: () => sampleWith(() => undefined),
+    shapes: () => shaped(),
+    variants: () => variants(),
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  const defined: string[] = [];
+  const unused: string[] = [];
+  for (const [name, make] of Object.entries(inputs)) {
+    const php = text(make(), 'packages/php-ext/generated/lib.rs');
+    assert.ok(php.length > 0, name);
+    if (!/\nfn thrown<E>\(/.test(php)) continue;
+    defined.push(name);
+    if (!/(?<!fn )\bthrown\b(?!<E>)[(),]/.test(php.replace(/^\s*\/\/.*$/gm, ''))) unused.push(name);
+  }
+  // A contract with a callback has the helper, and one with a value alias and no callback has none.
+  assert.ok(defined.includes('sample') && defined.includes('variants'), defined.join(', '));
+  assert.deepEqual(unused, []);
+});
+
+test('the assertion of the borrows of a member names the Io token of wait blocking_io and the receiver self as the core takes them (GN-6h, GN-6m, GN-6o, I-2)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const member = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  // The core of a member with wait blocking_io takes the token first after its receiver (GN-6m).
+  member('classes.shout').wait = 'blocking_io';
+  member('tag.same').wait = 'blocking_io';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node'] });
+  for (const crate of LIBS) {
+    const lib = text(out, crate);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(_, &polyspec_classes::Tag) -> _ = polyspec_classes::shout;\n};'), `${crate} asserts the borrow of shout after the token`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(&polyspec_classes::Tag, _, &polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the borrows of same around the token`);
+  }
+  // The receiver self is the value of the class, not a borrow of it (GN-6o).
+  const taken = read('packages/rust/interface.json');
+  const same = taken.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'tag.same');
+  same.core = { path: typeof same.core === 'string' ? same.core : same.core.path, receiver: 'self' };
+  const consumed = generate({ contract: taken, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node'] });
+  for (const crate of LIBS) {
+    assert.ok(text(consumed, crate).includes('const _: () = {\n    let _: fn(polyspec_classes::Tag, &polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the receiver self of same as a value`);
+  }
+});
+
+test('a Node or WASM member with machine binds the borrow of the guard of a class parameter before its core makes the machine (GN-6ab, GN-6h)', () => {
+  const made = (targets: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const m = contract.units.flatMap((u: any) => u.members ?? []).find((x: any) => x.id === 'sample.resolve_slowly');
+    m.wait = 'async_driver';
+    m.core = { path: 'polyspec_sample::resolve_slowly', machine: true };
+    delete m.only;
+    m.parameters.push({ name: ['tag'], type: { unit: 'tag' }, required: true, core: '&' });
+    // The cases of the member name no tag, so the member is generated without them.
+    contract.cases = contract.cases.filter((c: any) => c.member !== 'sample.resolve_slowly');
+    return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
+  };
+  // The core is called at once, on the thread of the entry, so the entry borrows the guard as a member without a wait does.
+  const node = text(made(['node']), 'packages/ts/generated/lib.rs');
+  assert.match(node, /let tag = tag\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
+  const wasm = text(made(['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
+});

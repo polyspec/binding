@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: da278c3cda0738603057eb57b58f0c7a52fe9a2b496fb5fee80b7aacdc0d7e57 -->
+<!-- source-sha256: 0f5e4e89590fd39c962da45adba67ca57adbee17f51305d5ae1f80435d3afadc -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e`의 어느 계약도 드러내지 않는 생성기의 텍스트 세 가지. PHP는 실패하는 member나 value alias가 있는 모든
+  계약에 helper `thrown`을 썼는데, 그것을 부르는 것은 callback이나 함수 타입뿐이다. 그래서 alias가 있고 callback이 없는
+  계약(relay fixture)의 crate에 죽은 코드가 있었고, lint가 이를 deny한다. 이제 PHP는 Node처럼 `keepsThrown`이 성립할
+  때에만 그것을 쓴다(U-3, GN-6z). member의 borrow 단언(GN-6h, I-2)은 함수 포인터 타입에서 `wait: blocking_io`의 `Io`
+  토큰을 빼고 receiver `self`를 `&`로 썼다. 그래서 올바른 코어가 그 단언과 컴파일되지 않았다. 이제 단언은 receiver
+  뒤에 토큰 자리의 `_`를 두고, receiver `self`를 class의 값으로 쓴다(GN-6m, GN-6o). `machine`과 class 매개변수를 가진
+  Node 또는 WASM member는 코어에 매개변수의 guard를 주었다. 진입점이 guard의 borrow를 machine에는 없는 future에
+  맡겼기 때문이다. 이제 진입점은 코어가 machine을 만들기 전에 borrow를 바인딩한다(GN-6ab). `make test-ts`로 검증:
+  새 테스트 세 개가 각자의 텍스트 때문에 실패했고, 변경 후 409개 중 409개가 통과한다.
 - `WORK` 없는 `make e2e`는 스크립트에 빈 `--work`를 주었고, 스크립트는 그것을 checkout의 루트로 해석했다. 그래서 실행이
   commit의 트리, 레포의 복사본, 빌드 디렉터리를 checkout 안에 썼다. `DEPS`가 있으면 그 빈 값이 `--dep`을 디렉터리로
   받기도 했다. 이제 `WORK`는 선택이다. recipe는 이름이 주어진 디렉터리에만 `--work`를 주고, 그것이 없는 실행은

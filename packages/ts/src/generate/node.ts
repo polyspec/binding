@@ -594,7 +594,8 @@ function entryRust(model: Model, fn: Fn): string {
     }
   }
   // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
-  const moved = waitsAsync(fn) || pooled(fn);
+  // GN-6ab: the core of a member with machine is called at once on this thread, so the entry binds the borrows.
+  const moved = (waitsAsync(fn) && fn.machine !== true) || pooled(fn);
   lines.push(...locks(model, fn, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;

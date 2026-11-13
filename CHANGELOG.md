@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Three texts of the generator that no contract of `tests/e2e` shows. PHP wrote the helper `thrown` for every contract
+  with a failing member or a value alias, while only a callback or a function type calls it, so the crate of a
+  contract with an alias and no callback (the relay fixture) had dead code, which the lints deny; PHP now writes it
+  where `keepsThrown` holds, as Node does (U-3, GN-6z). The assertion of the borrows of a member (GN-6h, I-2) left the
+  `Io` token of `wait: blocking_io` out of the type of the function pointer and wrote the receiver `self` as `&`, so a
+  correct core did not compile against it; the assertion now has `_` for the token after the receiver and the value
+  of the class for the receiver `self` (GN-6m, GN-6o). A Node or WASM member with `machine` and a class parameter gave
+  the core the guard of the parameter, because the entry left the borrow of the guard to a future that a machine does
+  not have; the entry now binds the borrow before its core makes the machine (GN-6ab). Verified by `make test-ts`:
+  each of the three new tests failed for its text, and 409 of 409 pass with the change.
 - `make e2e` without `WORK` gave the script an empty `--work`, which it resolved to the root of the checkout, so the
   run wrote the tree of the commit, the copies of the repositories and the build directory into the checkout; with
   `DEPS` the empty value also took `--dep` as the directory. `WORK` is now optional: the recipe gives `--work` only for
