@@ -6,7 +6,10 @@ use binding_core::Kinds;
 use std::fmt;
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
-#[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
+#[allow(
+    clippy::as_conversions,
+    reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless"
+)]
 const fn widen(length: usize) -> u64 {
     length as u64
 }
@@ -95,7 +98,9 @@ pub fn length(source: &[u8]) -> Result<u64, Error> {
     }
     match std::str::from_utf8(source) {
         Ok(text) => Ok(widen(text.chars().count())),
-        Err(error) => Err(Error::NotUtf8 { offset: error.valid_up_to() }),
+        Err(error) => Err(Error::NotUtf8 {
+            offset: error.valid_up_to(),
+        }),
     }
 }
 
@@ -116,7 +121,10 @@ pub fn repeat(text: &str, times: Option<u64>, separator: Option<&str>) -> Result
         Some(separator) => separator,
         None => DEFAULT_SEPARATOR,
     };
-    Ok((0..times).map(|_index| text).collect::<Vec<_>>().join(separator))
+    Ok((0..times)
+        .map(|_index| text)
+        .collect::<Vec<_>>()
+        .join(separator))
 }
 
 /// The options of `frame` (T-4: a record whose fields the caller may leave out).
@@ -137,7 +145,11 @@ pub fn frame(text: &str, options: &FrameOptions) -> String {
         Some(upper) => upper,
         None => DEFAULT_UPPER,
     };
-    let body = if upper { text.to_uppercase() } else { text.to_owned() };
+    let body = if upper {
+        text.to_uppercase()
+    } else {
+        text.to_owned()
+    };
     let mut count = widen(body.chars().count());
     let width = match options.width {
         Some(width) => width,
@@ -187,7 +199,10 @@ pub struct Measure {
 /// The measure of a text.
 #[must_use]
 pub fn measure(text: &str) -> Measure {
-    Measure { length: widen(text.chars().count()), empty: text.is_empty() }
+    Measure {
+        length: widen(text.chars().count()),
+        empty: text.is_empty(),
+    }
 }
 
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
@@ -235,14 +250,17 @@ impl Buffer {
     /// A buffer that starts with the bytes of a source.
     #[must_use]
     pub fn new(start: &[u8]) -> Self {
-        Self { bytes: start.to_vec() }
+        Self {
+            bytes: start.to_vec(),
+        }
     }
 
     /// The last `count` bytes, or all of them when there are fewer (the member `from_end`, a method whose name the
     /// lints of the generated code take as any name).
     #[must_use]
     pub fn last(&self, count: u64) -> Vec<u8> {
-        let keep = usize::try_from(count).map_or(self.bytes.len(), |count| count.min(self.bytes.len()));
+        let keep =
+            usize::try_from(count).map_or(self.bytes.len(), |count| count.min(self.bytes.len()));
         self.bytes[self.bytes.len() - keep..].to_vec()
     }
 
@@ -267,20 +285,65 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, frame, length, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, WrapOptions};
+    use super::{
+        checksum, frame, length, repeat, reversed, total, wrap, Buffer, Error, FrameOptions,
+        WrapOptions,
+    };
 
     #[test]
     fn none_is_the_default() {
-        assert_eq!(repeat("a", None, None), repeat("a", Some(super::DEFAULT_TIMES), Some(super::DEFAULT_SEPARATOR)));
+        assert_eq!(
+            repeat("a", None, None),
+            repeat(
+                "a",
+                Some(super::DEFAULT_TIMES),
+                Some(super::DEFAULT_SEPARATOR)
+            )
+        );
         assert_eq!(repeat("a", Some(2), Some("-")), Ok(String::from("a-a")));
-        assert_eq!(repeat("a", Some(1001), None), Err(Error::TooMany { times: 1001 }));
-        let plain = FrameOptions { prefix: String::from(">"), upper: None, width: None };
+        assert_eq!(
+            repeat("a", Some(1001), None),
+            Err(Error::TooMany { times: 1001 })
+        );
+        let plain = FrameOptions {
+            prefix: String::from(">"),
+            upper: None,
+            width: None,
+        };
         assert_eq!(frame("a", &plain), ">a");
-        assert_eq!(frame("a", &FrameOptions { upper: Some(super::DEFAULT_UPPER), ..plain.clone() }), ">a");
-        assert_eq!(frame("a", &FrameOptions { upper: Some(true), width: Some(3), ..plain }), ">A  ");
+        assert_eq!(
+            frame(
+                "a",
+                &FrameOptions {
+                    upper: Some(super::DEFAULT_UPPER),
+                    ..plain.clone()
+                }
+            ),
+            ">a"
+        );
+        assert_eq!(
+            frame(
+                "a",
+                &FrameOptions {
+                    upper: Some(true),
+                    width: Some(3),
+                    ..plain
+                }
+            ),
+            ">A  "
+        );
         assert_eq!(total(None), total(Some(&[])));
         assert_eq!(wrap("a", &WrapOptions::default()), "[a]");
-        assert_eq!(wrap("a", &WrapOptions { left: Some(String::from("<")), right: None }), "<a]");
+        assert_eq!(
+            wrap(
+                "a",
+                &WrapOptions {
+                    left: Some(String::from("<")),
+                    right: None
+                }
+            ),
+            "<a]"
+        );
     }
 
     #[test]

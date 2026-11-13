@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Rust cores of the repositories of the end-to-end check (`tests/e2e/*/packages/rust`) were in no checked form,
+  because `fmt-rust` read `binding_core` alone. `make fmt-e2e`, a target of `lint-rust` and of the `rust` job of CI,
+  checks them with the defaults of rustfmt, and the four cores are in that form now.
+
 - The PHP test of a case whose `raises` names an errno symbol, such as `EIO`, was refused ("the errno symbol EIO is
   not compared in PHP yet"), because PHP has no table of the errno symbols of its machine. `binding_core::fault::errno`
   gives the value of a symbol from the table that arms the faults, the PHP extension gives it with the feature

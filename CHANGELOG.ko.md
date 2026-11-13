@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- end-to-end 검사의 레포의 Rust 코어(`tests/e2e/*/packages/rust`)는 확인된 형식이 없었다. `fmt-rust`가
+  `binding_core`만 읽었기 때문이다. `lint-rust`와 CI의 `rust` job의 대상인 `make fmt-e2e`가 rustfmt의 기본값으로 그것을
+  확인하며, 네 코어는 이제 그 형식이다.
+
 - `raises`가 `EIO` 같은 errno 기호를 적는 case의 PHP 시험은 거부되었다("the errno symbol EIO is not compared in PHP
   yet"). PHP에는 그 기계의 errno 기호 표가 없기 때문이다. `binding_core::fault::errno`가 fault를 장전하는 표에서 기호의
   값을 주고, PHP 확장은 feature `fault-test`에서 그것을 `Internal\errnoOf`로 주며, PHP 시험은 Python, Node, Go가 자기
