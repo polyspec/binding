@@ -811,7 +811,7 @@ test('a language object that a core may keep enters as a Native, which each targ
     const lib = text(out, path);
     assert.match(lib, /struct OwnedNative \{\n    owner: usize,\n    generation: u64,\n    key: u64,\n\}/, path);
     assert.match(lib, new RegExp(`values: BTreeMap<u64, ${reference.replace(/[<>]/g, (c) => `\\${c}`)}>,`), path);
-    assert.match(lib, /impl Drop for OwnedNative \{\n    fn drop\(&mut self\) \{\n        let Ok\(mut owners\) = OWNERS\.lock\(\) else \{\n            return;\n        \};\n        match owners\.get_mut\(self\.owner\) \{\n            Some\(owner\) if owner\.generation == self\.generation => owner\.released\.push\(self\.key\),\n            _other => return,\n        \}\n        drop\(owners\);\n        release_queue\(\);/, path);
+    assert.match(lib, /impl Drop for OwnedNative \{\n    fn drop\(&mut self\) \{\n        let Ok\(mut owners\) = OWNERS\.lock\(\) else \{\n            return;\n        \};\n        match owners\.get_mut\(self\.owner\) \{\n            Some\(owner\) if owner\.generation == self\.generation => (?:owner\.released\.push\(self\.key\),|\{\n\s+owner\.released\.push\(self\.key\);\n\s+wake\(owner\);\n\s+\})\n            _other => return,\n        \}\n        drop\(owners\);\n        release_queue\(\);/, path);
     assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/, path);
     assert.match(lib, /owner\.generation = owner\.generation\.saturating_add\(1\);/, path);
     assert.match(lib, /OutValue::Native\(native\) => native_object\(/, path);

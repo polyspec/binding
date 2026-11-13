@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Node에서 다른 스레드가 drop한 `Native`는 그 owner의 다음 진입점에서야 해제되어, 더 부르지 않는 프로그램은 env가 끝날
+  때까지 참조를 가졌다. 이제 owner는 표를 만들 때 unref한 threadsafe function을 만든다. 다른 스레드의 drop은 owner들의 lock
+  안에서 그것을 부르고, 그 함수는 owner 스레드에서 대기열을 비운다. env cleanup hook은 generation을 올린 뒤 같은 lock 안에서
+  그것을 abort하므로, 이전 generation의 drop은 아무것도 부르지 않는다(GN-6u).
 - `Raised`는 handle만 가져서, 코어가 `Raised`를 돌려주지 않고 버리면 그 아래의 예외가 바인딩의 표에 남았고, 다른 스레드에서
   난 바인딩의 실패도 그 표에 남았다. 이제 `Raised`는 `Native`를 갖고(`Raised::from_generated(Native)`, `native()`), 그 마지막
   drop이 항목을 지운다(GN-6u). Python, Go, WASM은 drop에서 지우고, Node와 PHP는 던진 스레드에서 곧바로 지우거나, 다른

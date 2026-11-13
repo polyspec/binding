@@ -398,7 +398,7 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 // GN-6u, GN-6z: the Natives of Node, which a value alias and a function type hold: the owner table, the env that
 // releases its references and the call of a function on the owner thread.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
-export const NODE_NATIVE = (`${ownedNatives('napi::UnknownRef<false>', 'release_references(references);')}
+export const NODE_NATIVE = (`${ownedNatives('napi::UnknownRef<false>', 'release_references(references);', true)}
 thread_local! {
     /// GN-6u: the env of the table of this thread, which releases its references.
     static NATIVE_ENV: std::cell::Cell<napi::sys::napi_env> = const { std::cell::Cell::new(std::ptr::null_mut()) };
@@ -413,6 +413,46 @@ fn release_references(references: Vec<napi::UnknownRef<false>>) {
     }
 }
 
+/// GN-6u: the threadsafe function of the owner of this thread, without a JavaScript function, which does not keep the
+/// event loop alive.
+fn owner_waker(env: &Env) -> napi::Result<Waker> {
+    let text = "polyspec-release";
+    let length = isize::try_from(text.len()).map_err(|error| napi::Error::from_reason(error.to_string()))?;
+    let mut name = std::ptr::null_mut();
+    // SAFETY: the env is the live env of this thread and the text is UTF-8 of the length given.
+    let status = unsafe { napi::sys::napi_create_string_utf8(env.raw(), text.as_ptr().cast(), length, &raw mut name) };
+    if status != napi::sys::Status::napi_ok {
+        return Err(napi::Error::from_reason("GN-6u: the name of the threadsafe function"));
+    }
+    let mut waker = std::ptr::null_mut();
+    // SAFETY: the env is the live env of this thread; the function has no JavaScript function, so napi calls
+    // release_on_owner, and the queue has no limit and one thread, the owner.
+    let status = unsafe {
+        napi::sys::napi_create_threadsafe_function(
+            env.raw(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            name,
+            0,
+            1,
+            std::ptr::null_mut(),
+            None,
+            std::ptr::null_mut(),
+            Some(release_on_owner),
+            &raw mut waker,
+        )
+    };
+    if status != napi::sys::Status::napi_ok {
+        return Err(napi::Error::from_reason("GN-6u: the threadsafe function of the owner"));
+    }
+    // SAFETY: the function was made on this thread, in this env.
+    let status = unsafe { napi::sys::napi_unref_threadsafe_function(env.raw(), waker) };
+    if status != napi::sys::Status::napi_ok {
+        return Err(napi::Error::from_reason("GN-6u: the unref of the threadsafe function"));
+    }
+    Ok(Waker(waker))
+}
+
 /// GN-6u: a JavaScript value that a core may keep, as a Native of the table of this thread; the cleanup hook of the
 /// env is registered with the table.
 fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
@@ -420,6 +460,13 @@ fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
         let Some((owner, generation)) = native_owner() else {
             return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned"));
         };
+        // The function is made before the cleanup hook is added, so the hook, which napi runs in the reverse order of
+        // the hooks, aborts it before napi finalizes it.
+        let waker = owner_waker(env)?;
+        match OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
+            Some(found) => found.waker = waker,
+            None => return Err(napi::Error::from_reason("GN-6u: the table of the owners is poisoned")),
+        }
         env.add_env_cleanup_hook((), |()| clean_up_native())?;
         NATIVE_ENV.set(env.raw());
         OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));

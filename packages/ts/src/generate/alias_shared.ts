@@ -106,15 +106,56 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
 // one. A drop queues the key for its owner and releases the queue of its own thread; every entry point releases it
 // too (`release_queue` in `guard`), and the cleanup of the owner releases the table and raises its generation.
 // `reference` is the Rust type of the reference, and `release` the statement that releases the Vec `references`.
-export function ownedNatives(reference: string, release: string): string {
-  return `
-/// GN-6u: the owner of the language references of one thread: the generation of its table, which its cleanup raises,
-/// and the keys of its Natives that were dropped, which the owner thread releases.
-struct Owner {
-    generation: u64,
-    released: Vec<u64>,
+// `wakes` (Node) gives the owner a threadsafe function, which a drop on another thread calls to empty the queue on the
+// owner thread, and which the cleanup aborts under the lock of the owners.
+// GN-6u: the threadsafe function of a Node owner. A drop on another thread calls it, under the lock of the owners and
+// for the generation of the function, so a call never reaches a function that the cleanup aborted.
+const NODE_WAKER = `
+/// GN-6u: the threadsafe function of an owner, or null before its table.
+struct Waker(napi::sys::napi_threadsafe_function);
+
+// SAFETY: napi allows napi_call_threadsafe_function from any thread, and the lock of the owners orders every call
+// before the abort of the cleanup, which runs on the owner thread.
+unsafe impl Send for Waker {}
+
+/// GN-6u: wakes the owner thread to empty its queue, after a drop on another thread.
+fn wake(owner: &Owner) {
+    if owner.waker.0.is_null() || owner.thread == std::thread::current().id() {
+        return;
+    }
+    // SAFETY: the function is alive while the generation of its owner is, which the caller checked under the lock of
+    // the owners; a full or closing queue only gives its status, and the next entry point empties the queue.
+    let _status: napi::sys::napi_status = unsafe { napi::sys::napi_call_threadsafe_function(owner.waker.0, std::ptr::null_mut(), napi::sys::ThreadsafeFunctionCallMode::nonblocking) };
 }
 
+/// GN-6u: the cleanup of the owner aborts its threadsafe function, which no later drop calls.
+fn abort_waker(owner: &mut Owner) {
+    let waker = std::mem::replace(&mut owner.waker, Waker(std::ptr::null_mut()));
+    if waker.0.is_null() {
+        return;
+    }
+    // SAFETY: the env cleanup hook runs on the owner thread before napi finalizes the function, which the owner made
+    // before it added the hook.
+    let _status: napi::sys::napi_status = unsafe { napi::sys::napi_release_threadsafe_function(waker.0, napi::sys::ThreadsafeFunctionReleaseMode::abort) };
+}
+
+/// GN-6u: the call of the threadsafe function on the owner thread, which empties the release queue.
+extern "C" fn release_on_owner(_env: napi::sys::napi_env, _function: napi::sys::napi_value, _context: *mut std::ffi::c_void, _data: *mut std::ffi::c_void) {
+    release_queue();
+}
+`;
+
+export function ownedNatives(reference: string, release: string, wakes = false): string {
+  return `
+/// GN-6u: the owner of the language references of one thread: the generation of its table, which its cleanup raises,
+/// and the keys of its Natives that were dropped, which the owner thread releases.${wakes ? ' The owner also keeps its\n/// thread and the threadsafe function that wakes it.' : ''}
+struct Owner {
+    generation: u64,
+    released: Vec<u64>,${wakes ? `
+    thread: std::thread::ThreadId,
+    waker: Waker,` : ''}
+}
+${wakes ? NODE_WAKER : ''}
 /// GN-6u: the owners, under the index that their Natives name.
 static OWNERS: Mutex<Vec<Owner>> = Mutex::new(Vec::new());
 
@@ -149,7 +190,10 @@ impl Drop for OwnedNative {
             return;
         };
         match owners.get_mut(self.owner) {
-            Some(owner) if owner.generation == self.generation => owner.released.push(self.key),
+            Some(owner) if owner.generation == self.generation => ${wakes ? `{
+                owner.released.push(self.key);
+                wake(owner);
+            }` : 'owner.released.push(self.key),'}
             _other => return,
         }
         drop(owners);
@@ -163,7 +207,7 @@ fn native_owner() -> Option<(usize, u64)> {
     let owner = match OWNER.get() {
         Some(owner) => owner,
         None => {
-            owners.push(Owner { generation: 0, released: Vec::new() });
+            owners.push(Owner { generation: 0, released: Vec::new()${wakes ? ', thread: std::thread::current().id(), waker: Waker(std::ptr::null_mut())' : ''} });
             let owner = owners.len() - 1;
             OWNER.set(Some(owner));
             owner
@@ -213,7 +257,8 @@ fn clean_up_native() {
     };
     if let Some(owner) = OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
         owner.generation = owner.generation.saturating_add(1);
-        owner.released.clear();
+        owner.released.clear();${wakes ? `
+        abort_waker(owner);` : ''}
     }
     let taken = OWNED.try_with(|owned| owned.try_borrow_mut().ok().and_then(|mut owned| owned.take()));
     if let Ok(Some(owned)) = taken {

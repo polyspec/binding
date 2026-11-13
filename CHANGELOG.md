@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- In Node, a `Native` dropped on another thread was released only at the next entry point of its owner, so a
+  program that made no further call kept the reference until the env ended. The owner now makes an unref threadsafe
+  function with its table, which a drop on another thread calls under the lock of the owners, and which empties the
+  queue on the owner thread; the env cleanup hook aborts it under the same lock after it raises the generation, so a
+  drop of an older generation calls nothing (GN-6u).
 - A `Raised` held a bare handle, so the exception under it stayed in the table of the binding when the core dropped
   the `Raised` instead of returning it, and a failure of the binding on another thread stayed in its own table. A
   `Raised` now holds a `Native` (`Raised::from_generated(Native)`, `native()`), whose last drop removes the entry
