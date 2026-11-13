@@ -1267,7 +1267,7 @@ test('an integer key of a keyed_map outside the safe integers is kind invalid_nu
   const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
   const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'in_keyed_map');
   assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n(?:\s+\/\/[^\n]*\n)?\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
-  assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(1 << 53\)[\s\S]{0,400}?"invalid_number"/);
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(9007199254740992\)[\s\S]{0,400}?"invalid_number"/);
 });
 
 test('an int or a uint outside the safe integers is kind invalid_number in every target, and an int64 takes the range of i64 (GN-12a, GN-13, GN-13b)', () => {
@@ -1294,9 +1294,9 @@ test('an int or a uint outside the safe integers is kind invalid_number in every
   );
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB2BufferFromEnd\w*RefusesWhatIsNotint\(\): void\n\s+\{\n\s+foreach \(\[[^\n]*2 \*\* 53, -\(2 \*\* 53\)/);
   const goTest = text(out, 'packages/go/zz_generated_test.go');
-  assert.match(goTest, /func TestB2BufferFromEndRefusesCountAboveTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(1 << 53\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
-  assert.match(goTest, /func TestB2BufferFromEndRefusesCountBelowTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(-\(1 << 53\)\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
-  assert.match(goTest, /func TestB2TotalRefusesNumbersAboveTheSafeIntegers\(t \*testing\.T\) \{\n\t[^\n]*Total\(ptr\(\[\]uint64\{1 << 53\}\)\)/, 'an item of a list of uint');
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountAboveTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(9007199254740992\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountBelowTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(-9007199254740992\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2TotalRefusesNumbersAboveTheSafeIntegers\(t \*testing\.T\) \{\n\t[^\n]*Total\(ptr\(\[\]uint64\{9007199254740992\}\)\)/, 'an item of a list of uint');
   assert.doesNotMatch(goTest, /func TestB2\w*Negate/, 'an int64 takes the range of i64');
 });
 

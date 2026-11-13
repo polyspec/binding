@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
+  is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
+  (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any
+  place. Verified by `npm test` in `packages/ts` and `gofmt -l` of the generated Go modules of every repository of
+  tests/e2e.
 - The generator refused the Go binding of a contract that names a record of another repository, with "a record of
   another repository is not generated for Go yet (GN-15f)", so `tests/e2e/plot`, which takes and gives the record
   `point` of `tests/e2e/points`, had no Go binding. Go now names the struct `points.Point` of the Go module of that
