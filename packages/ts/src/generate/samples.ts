@@ -194,8 +194,11 @@ export class CaseRefused extends Error {}
 // GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
 // test of the case fails with.
 export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+  // GN-6m: a property of a value class without core_type gives the value that the language gave its constructor, so
+  // the value is written as an argument is, not by the out rows of its alias.
+  const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
-    return { text: fromJson(model, ctx, fn.returns, value, true) };
+    return { text: fromJson(model, ctx, fn.returns, value, !kept) };
   } catch (error) {
     return { refused: `${fn.member.id}: ${error instanceof Error ? error.message : String(error)} (GN-13e)` };
   }

@@ -8,8 +8,9 @@
 - The generated tests of Python, Node and WASM held no test of a value class without `core_type` (GN-6m): its
   constructor and its properties were absent from the members that the tests call, so their cases ran in no target.
   They now have the tests of the members of a class (GN-13): B-4 for each case that raises, GN-13e for each other
-  case, with a property read on an instance that the constructor makes from the case's keys, and the tests of their
-  parameters, G-7 among them. A primitive (N-4, `valueOf` of Node and WASM) has a test for each case that does not
+  case, with a property read on an instance that the constructor makes from the case's keys and compared with the
+  value written as the argument was, since the property gives the value of the language that the constructor was
+  given (an int of Node stays a number), and the tests of their parameters, G-7 among them. A primitive (N-4, `valueOf` of Node and WASM) has a test for each case that does not
   raise, which compares `Number(instance)` with the case's `result` by `assert.strictEqual`, or takes the number form
   alone when the case gives no `result`; before, its cases ran nowhere. A case float `-0` is written as a negative
   zero (`-0`, `-0.0`); before, it was written as `0`. The test that an explicit null is refused is not written for a
