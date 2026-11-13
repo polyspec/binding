@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+- 다른 레포 값 class의 문자열은 정수 list로 코어에 들어왔다. json의 in case가 모든 문자열을 `value.string_units`로
+  읽었으므로 문자열마다 UTF-16 code unit이 언어의 경계를 건넜고, WASM은 내장 문자열을 unit 하나씩, Python은 UTF-32
+  인코딩으로 읽었다. 이제 kind `text`의 case는 `uint`의 list를 주는 member인 `units`를 적을 수 있다. 그 `read`는
+  optional `text`를 주고, 생성 코드는 그것을 언어의 text로 받으며, 없음, 곧 짝 없는 surrogate를 가진 text일 때만
+  `units`로 code unit을 읽는다. 그런 case는 CK-8 왕복에서 kind `text16`의 case이기도 하며, 이것이 `text` 행이 kind
+  `text16`의 case로 돌아와도 된다는 규칙을 대신한다. Python은 surrogate 없는 `str`을, WASM은 `isWellFormed`인
+  string을 UTF-8 byte로 받는다. Red: `make test-ts`가 318개 중 7개 실패했다(`units`의 CK-8 시험과 다섯 target의 값
+  class 시험). Green: 318개 모두 통과한다(B2.89).
 - 짝 없는 surrogate가 있는 text는 코어를 나갈 형태가 없었다. `binding_core::OutValue`는 text를 Rust `String`으로만
   담았으므로 json의 `out` 함수는 `polyspec_json::Value`가 담는 문자열 `"\ud800"`을 줄 수 없었고, 값 class는 문자열을
   text를 주는 member로 읽었는데 json은 그런 문자열에 그것을 거절한다. `OutValue::Text16(Vec<u16>)`과 kind `text16`은

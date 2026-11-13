@@ -560,6 +560,24 @@ class Checker {
     }
   }
 
+  // GN-6x, B2.89: a case of the kind text of a class with by may name units, a member that gives the UTF-16 code units
+  // of a text as a list of uint; its read then gives an optional text, none for a text with an unpaired surrogate.
+  unitsCase(kase: InRow['cases'][number], read: Member | undefined, by: boolean, path: string): void {
+    if (kase.kind !== 'text' || !by) {
+      this.report('CK-8', `${path}/units`, `only a case of the kind text of a row with by names units, not a case of the kind ${kase.kind} (GN-6x)`);
+      return;
+    }
+    const units = this.publicMember(kase.units ?? '', `${path}/units`, 'units');
+    const returns = units?.returns;
+    if (units !== undefined && !(typeof returns === 'object' && returns !== null && 'list' in returns && returns.list === 'uint')) {
+      this.report('CK-8', `${path}/units`, `units ${kase.units ?? ''} gives no list of uint, the UTF-16 code units of a text (GN-6x)`);
+    }
+    const text = read?.returns;
+    if (read !== undefined && !(typeof text === 'object' && text !== null && 'optional' in text && text.optional === 'text')) {
+      this.report('CK-8', `${path}/read`, `read ${kase.read ?? ''} of a case with units gives no optional text, whose none names a text with an unpaired surrogate (GN-6x)`);
+    }
+  }
+
   publicMember(id: string, path: string, what: string, kinds?: readonly string[]): Member | undefined {
     const located = this.members.get(id);
     if (located === undefined) {
@@ -683,7 +701,8 @@ class Checker {
         if (!isBuiltin && (kase.read === undefined || kase.read === 'builtin')) {
           this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a value unit type names its read member');
         }
-        if (kase.read !== undefined && kase.read !== 'builtin') this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read');
+        const read = kase.read !== undefined && kase.read !== 'builtin' ? this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read') : undefined;
+        if (kase.units !== undefined) this.unitsCase(kase, read, row.by !== undefined, `${rowPath}/cases/${c}`);
       }
     }
     const byKind = new Map<string, Located<OutRow>[]>();
@@ -761,11 +780,9 @@ class Checker {
   roundTrip(row: OutRow, path: string, into: InRow, lang: Lang, made: string, form: string | undefined, siblings: readonly OutRow[]): void {
     let chosen: string | undefined;
     if (into.by !== undefined) {
-      // GN-6x, P-3: a Unicode text is the same value as its UTF-16 code units, so a text row comes back by the case of the
-      // kind text16 when the row has no case of its own kind; no other pair of kinds is the same value.
-      const own = into.cases.filter((c) => c.kind === row.kind);
-      const units = row.kind === 'text' && own.length === 0 ? into.cases.filter((c) => c.kind === 'text16') : [];
-      const matching = units.length > 0 ? units : own;
+      // GN-6x, P-3, B2.89: a case of the kind text with units reads a text with an unpaired surrogate as its UTF-16 code
+      // units, so it is also the case of the kind text16.
+      const matching = into.cases.filter((c) => c.kind === row.kind || (row.kind === 'text16' && c.kind === 'text' && c.units !== undefined));
       if (matching.length !== 1) {
         this.report('CK-8', path, `${lang} ${made} has ${matching.length} cases of kind ${row.kind}; its by value cannot name one (P-3)`);
         return;

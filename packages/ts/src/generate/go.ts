@@ -1315,7 +1315,8 @@ type held struct {
 	value   reflect.Value
 	keys    []reflect.Value
 	read    func() (any, error)
-	units   bool
+	units   func() (any, error)
+	coded   bool
 	entries [][2]reflect.Value
 }`}
 
@@ -1439,9 +1440,20 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 		c.describe(enc, held.entries[index][1])
 	case op == 2 && held.read != nil:
 		content, err := held.read()
+		coded := held.coded
+		if err == nil && held.units != nil {
+			// B2.89: a text, or a nil pointer for a text with an unpaired surrogate, whose UTF-16 code units the units
+			// member gives, so only such a text crosses as a list of integers.
+			if text, _ := content.(*string); text != nil {
+				content = *text
+			} else {
+				content, err = held.units()
+				coded = true
+			}
+		}
 		if err != nil {
 			c.raiseIn(enc, err)
-		} else if held.units {
+		} else if coded {
 			// B2.81: node 13, the UTF-16 code units of a text of the kind text16, which the read member gives as a
 			// slice of unsigned integers.
 			units := reflect.ValueOf(content)
@@ -1563,8 +1575,9 @@ function goValueClassCall(model: Model): string {
     const arms = row.cases.map((kase) => {
       const kind = GO_VALUE_KINDS.indexOf(kase.kind);
       const read = kase.read === undefined ? 'nil' : `func() (any, error) { return ${ownerCall(owner, alias.unit, kase.read, '', 'found')} }`;
+      const units = kase.units === undefined ? 'nil' : `func() (any, error) { return ${ownerCall(owner, alias.unit, kase.units, '', 'found')} }`;
       return `		case ${goString(kase.is)}:
-			c.describeValue(enc, ${kind}, ${read})`;
+			c.describeValue(enc, ${kind}, ${read}, ${units})`;
     });
     const own = seen.has(type) ? [] : [`	case *${type}:
 		if found == nil {
@@ -1619,9 +1632,9 @@ ${cases.join('\n')}
 
 // describeValue writes node 11: an instance of a value class of another repository, the number of the kind of its in
 // case and the handle under which the question read calls the read member of the case (GN-6x).
-func (c *Call) describeValue(enc *Writer, kind byte, read func() (any, error)) {
+func (c *Call) describeValue(enc *Writer, kind byte, read, units func() (any, error)) {
 	enc.bytes = append(enc.bytes, 11, kind)
-	enc.Uint(c.hold(held{read: read, units: kind == ${GO_VALUE_KINDS.indexOf('Text16')}}))
+	enc.Uint(c.hold(held{read: read, units: units, coded: kind == ${GO_VALUE_KINDS.indexOf('Text16')}}))
 }
 
 // raiseIn writes node 12: the error that a member of the owner of a value class returned, which the call keeps under

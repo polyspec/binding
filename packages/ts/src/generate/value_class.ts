@@ -25,6 +25,8 @@ export interface ReadCase {
   kind: string;
   // The member that gives the content; none for a kind without content.
   read?: Member;
+  // B2.89: for a case of the kind text, the member that gives the UTF-16 code units of a text for which read gives none.
+  units?: Member;
 }
 
 // A generated class of the owner whose `iterate` member yields `{key, value}`: an instance is described as a map of the
@@ -100,7 +102,12 @@ export function classIn(alias: ValueAlias, lang: Lang): ClassIn {
       if (iterate === undefined) throw new Unsupported(`${where}: the read member ${read.id} gives ${unit.id}, which yields no {key, value} (GN-6x)`);
       if (!maps.some((m) => m.unit === unit)) maps.push({ unit, iterate });
     }
-    return { is: kase.is, kind, read };
+    if (kase.units === undefined) return { is: kase.is, kind, read };
+    const units = locate(owner, kase.units, where).member;
+    if (kind !== 'Text' || !uintList(units.returns)) {
+      throw new Unsupported(`${where}: the ${lang} units member ${units.id} of the kind ${kase.kind} gives no list of uint of a text (GN-6x)`);
+    }
+    return { is: kase.is, kind, read, units };
   });
   return { type: row[lang] ?? '', by, cases, maps };
 }

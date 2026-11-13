@@ -6,7 +6,7 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
-import { classIn, classMakes } from './value_class.ts';
+import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { rustString } from './text.ts';
 import type { Member, Unit } from '../contract.ts';
 
@@ -162,6 +162,14 @@ ${arms.join('\n')}
 `;
 }
 
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), or the content.
+function readAs(kase: ReadCase): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  return `ReadAs::TextOr(${rustString(access(kase.units).name)}, ${String(access(kase.units).call)})`;
+}
+
 // GN-6x: the description of an instance of each value class of another repository by its in row, and of an instance of
 // a class of its owner that a read member gives, as a map of the entries of its iteration.
 function valueClassesHost(model: Model): string {
@@ -170,7 +178,7 @@ function valueClassesHost(model: Model): string {
     const row = classIn(alias, 'python');
     const by = access(row.by);
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(access(kase.read).name)}, ${String(access(kase.read).call)}, ${String(kase.kind === 'Text16')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(access(kase.read).name)}, ${String(access(kase.read).call)}, ${readAs(kase)}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const maps = row.maps.map((map) => `        if value.is_instance(&${ownerClass(alias, map.unit)})? {
@@ -207,16 +215,36 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((object.clone(), *read)),
             _ => None,
         };
-        let Some((object, (name, call, units))) = held else {
+        let Some((object, (name, call, read_as))) = held else {
             return Err(binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }));
         };
         let content = if call { object.call_method0(name)? } else { object.getattr(name)? };
-        if units {
+        match read_as {
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
-            return Ok(HostValue::Text(HostText::Utf16(content.extract::<Vec<u16>>()?)));
+            ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(content.extract::<Vec<u16>>()?))),
+            ReadAs::TextOr(units, units_call) => {
+                // B2.89: a text as its UTF-8 bytes; none names a text with an unpaired surrogate, whose UTF-16 code
+                // units the member units gives, so only such a text crosses as a list of integers.
+                if content.is_none() {
+                    let units = if units_call { object.call_method0(units)? } else { object.getattr(units)? };
+                    return Ok(HostValue::Text(HostText::Utf16(units.extract::<Vec<u16>>()?)));
+                }
+                Ok(HostValue::Text(HostText::Bytes(content.cast::<PyString>()?.to_str()?.as_bytes().to_vec())))
+            }
+            ReadAs::Content => self.describe(&content),
         }
-        self.describe(&content)
     }
+}
+
+/// GN-6x: how the read member of an in case gives the content of an instance.
+#[derive(Clone, Copy)]
+enum ReadAs {
+    /// The content, described by the rules of the language.
+    Content,
+    /// The UTF-16 code units of a text of the kind text16 (B2.81).
+    Units,
+    /// A text, or none for a text whose UTF-16 code units the named member gives (B2.89).
+    TextOr(&'static str, bool),
 }
 `;
 }
@@ -225,7 +253,7 @@ ${checks.join('\n')}
 export function pythonHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return PYTHON_HOST;
   return PYTHON_HOST
-    .replace('    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n', '    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n    Value(Bound<\'py, PyAny>, Option<(&\'static str, bool, bool)>),\n')
+    .replace('    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n', '    Entries(Vec<(Bound<\'py, PyAny>, Bound<\'py, PyAny>)>),\n    Value(Bound<\'py, PyAny>, Option<(&\'static str, bool, ReadAs)>),\n')
     .replace('        if value.is_none() {\n', '        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }\n        if value.is_none() {\n')
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         let py = self.py;
@@ -310,6 +338,10 @@ impl<'py> PyHost<'py> {
             return Ok(HostValue::Float(value.extract::<f64>()?));
         }
         if value.is_exact_instance_of::<PyString>() {
+            // B2.89: a str without a surrogate as its UTF-8 bytes, which CPython keeps with the str.
+            if let Ok(text) = value.cast::<PyString>()?.to_str() {
+                return Ok(HostValue::Text(HostText::Bytes(text.as_bytes().to_vec())));
+            }
             // B-3: the code points, unpaired surrogates included.
             let encoded = value.call_method1("encode", ("utf-32-le", "surrogatepass"))?;
             let bytes: Vec<u8> = encoded.extract()?;

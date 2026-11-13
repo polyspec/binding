@@ -6,7 +6,7 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
-import { classIn, classMakes } from './value_class.ts';
+import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import type { Member, Unit } from '../contract.ts';
 import { rustString } from './text.ts';
 
@@ -172,6 +172,14 @@ ${arms.join('\n')}
 `;
 }
 
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), or the content.
+function readAs(kase: ReadCase): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  return `ReadAs::TextOr(${rustString(langName('php', kase.units.name, 'callable'))})`;
+}
+
 // GN-6x: the description of an instance of each value class of another repository by its in row, and of the values
 // that its read members give, which the host owns because the calls made them.
 function valueClassesPhpHost(model: Model): string {
@@ -179,7 +187,7 @@ function valueClassesPhpHost(model: Model): string {
     const row = classIn(alias, 'php');
     const own = ownerName(alias, alias.unit);
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('php', kase.read.name, 'callable'))}, ${String(kase.kind === 'Text16')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('php', kase.read.name, 'callable'))}, ${readAs(kase)}))`;
       return `            ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     return [`    if php_instance(value, ${rustString(own)}) {
@@ -271,7 +279,7 @@ fn php_thrown(error: Thrown) -> Fail {
 
 /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance of
 /// a class of its owner that a read member gives, as a map of the pairs of its iterator.
-fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, bool)>)>, owned: &mut Vec<Vec<(Zval, Zval)>>) -> Result<Option<HostValue>, Fail> {
+fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<(&'static str, ReadAs)>)>, owned: &mut Vec<Vec<(Zval, Zval)>>) -> Result<Option<HostValue>, Fail> {
 ${checks.join('\n')}
     Ok(None)
 }
@@ -321,22 +329,46 @@ impl PhpHost<'_> {
             Some((object, Some(read))) => Some((object.shallow_clone(), *read)),
             _ => None,
         };
-        let Some((object, (read, units))) = held else {
+        let Some((object, (read, read_as))) = held else {
             return Err(binding_error(BindingError::Internal { detail: String::from("B-1: no such value") }));
         };
         let content = php_method(&object, read, vec![]).map_err(php_thrown)?;
-        if units {
+        match read_as {
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
-            let Some(array) = content.array() else {
-                return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
-            };
-            let units = array.values().map(|unit| unit.long().and_then(|unit| u16::try_from(unit).ok()))
-                .collect::<Option<Vec<u16>>>()
-                .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))?;
-            return Ok(HostValue::Text(HostText::Utf16(units)));
+            ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(php_units(&content, read)?))),
+            ReadAs::TextOr(units) => {
+                // B2.89: null names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
+                // so only such a text crosses as an array of integers; any other text is its string, UTF-8 bytes.
+                if content.is_null() {
+                    let content = php_method(&object, units, vec![]).map_err(php_thrown)?;
+                    return Ok(HostValue::Text(HostText::Utf16(php_units(&content, units)?)));
+                }
+                self.describe_owned(content)
+            }
+            ReadAs::Content => self.describe_owned(content),
         }
-        self.describe_owned(content)
     }
+}
+
+/// B2.81: the UTF-16 code units that a member gives as an array of integers of 0 to 0xffff.
+fn php_units(content: &Zval, read: &str) -> Result<Vec<u16>, Fail> {
+    let Some(array) = content.array() else {
+        return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array of units") }));
+    };
+    array.values().map(|unit| unit.long().and_then(|unit| u16::try_from(unit).ok()))
+        .collect::<Option<Vec<u16>>>()
+        .ok_or_else(|| binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives a unit that is no integer of 0 to 0xffff") }))
+}
+
+/// GN-6x: how the read member of an in case gives the content of an instance.
+#[derive(Clone, Copy)]
+enum ReadAs {
+    /// The content, described by the rules of the language.
+    Content,
+    /// The UTF-16 code units of a text of the kind text16 (B2.81).
+    Units,
+    /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
+    TextOr(&'static str),
 }
 `;
 }
@@ -345,7 +377,7 @@ impl PhpHost<'_> {
 export function phpHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
   const host = PHP_HOST
-    .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, bool)>)>,\n}")
+    .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
     .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
     .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
     .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")

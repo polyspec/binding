@@ -978,7 +978,7 @@ test('a value class of another repository converts through the core of its owner
     // an unpaired surrogate reads the code units that string_units gives.
     assert.match(lib, /"string" => \(ValueKind::Text, Some\(\("string_?[tT]ext", (?:true, )?ReadAs::TextOr\("string_?[uU]nits"(?:, true)?\)\)\)\),/, path);
     assert.doesNotMatch(lib, /ValueKind::Text16/, path);
-    assert.match(lib, /ReadAs::TextOr\(units(?:, call)?\) => \{/, path);
+    assert.match(lib, /ReadAs::TextOr\(units(?:, units_call)?\) => (?:match [^{\n]*)?\{/, path);
     assert.match(lib, /HostValue::Text\(HostText::Utf16\(/, path);
     assert.match(lib, /HostValue::Text\(HostText::Bytes\(/, path);
   }

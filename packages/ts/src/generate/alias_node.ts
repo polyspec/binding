@@ -6,7 +6,7 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
-import { classIn, classMakes } from './value_class.ts';
+import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import type { Member, Unit } from '../contract.ts';
 
@@ -173,6 +173,14 @@ ${arms.join('\n')}
 `;
 }
 
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), or the content.
+function readAs(kase: ReadCase): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  return `ReadAs::TextOr(${rustString(langName('node', kase.units.name, 'callable'))}, ${String(kase.units.kind !== 'property')})`;
+}
+
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesNodeHost(model: Model): string {
   const classes = foreignClasses(model);
@@ -180,7 +188,7 @@ function valueClassesNodeHost(model: Model): string {
     const row = classIn(alias, 'node');
     const label = langName('node', alias.unit.name, 'class');
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('node', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${String(kase.kind === 'Text16')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('node', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${readAs(kase)}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const by = row.by.kind === 'property'
@@ -238,27 +246,53 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((*object, *read)),
             _ => None,
         };
-        let Some((object, (name, call, units))) = held else {
+        let Some((object, (name, call, read_as))) = held else {
             return Err(napi::Error::from_reason("B-1: no such value"));
         };
-        if units {
+        let content = js_member(object, name, call)?;
+        match read_as {
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
-            let units: Vec<u32> = if call {
-                object.get_named_property::<Function<'env, (), Vec<u32>>>(name)?.apply(object, ())?
-            } else {
-                object.get_named_property(name)?
-            };
-            let units = units.into_iter().map(u16::try_from).collect::<Result<Vec<u16>, _>>()
-                .map_err(|_overflow| napi::Error::from_reason(format!("GN-6x: {name} gives a unit above 0xffff")))?;
-            return Ok(HostValue::Text(HostText::Utf16(units)));
+            ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(js_units(content, name)?))),
+            ReadAs::TextOr(units, units_call) => match content.get_type()? {
+                // B2.89: none names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
+                // so only such a text crosses as a list of numbers; any other text crosses as its UTF-8 bytes.
+                ValueType::Null | ValueType::Undefined => Ok(HostValue::Text(HostText::Utf16(js_units(js_member(object, units, units_call)?, units)?))),
+                ValueType::String => {
+                    let text: String = unsafe { content.cast() }?;
+                    Ok(HostValue::Text(HostText::Bytes(text.into_bytes())))
+                }
+                _ => Err(napi::Error::from_reason(format!("GN-6x: {name} gives no text and no null"))),
+            },
+            ReadAs::Content => self.describe(content),
         }
-        let content: Unknown<'env> = if call {
-            object.get_named_property::<Function<'env, (), Unknown<'env>>>(name)?.apply(object, ())?
-        } else {
-            object.get_named_property(name)?
-        };
-        self.describe(content)
     }
+}
+
+/// GN-6x: the value of a member of an instance, a property or the result of a method without arguments.
+fn js_member<'env>(object: Object<'env>, name: &str, call: bool) -> napi::Result<Unknown<'env>> {
+    if call {
+        object.get_named_property::<Function<'env, (), Unknown<'env>>>(name)?.apply(object, ())
+    } else {
+        object.get_named_property(name)
+    }
+}
+
+/// B2.81: the UTF-16 code units that a member gives as an array of numbers of 0 to 0xffff.
+fn js_units(content: Unknown<'_>, name: &str) -> napi::Result<Vec<u16>> {
+    let units: Vec<u32> = unsafe { content.cast() }?;
+    units.into_iter().map(u16::try_from).collect::<Result<Vec<u16>, _>>()
+        .map_err(|_overflow| napi::Error::from_reason(format!("GN-6x: {name} gives a unit above 0xffff")))
+}
+
+/// GN-6x: how the read member of an in case gives the content of an instance.
+#[derive(Clone, Copy)]
+enum ReadAs {
+    /// The content, described by the rules of the language.
+    Content,
+    /// The UTF-16 code units of a text of the kind text16 (B2.81).
+    Units,
+    /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
+    TextOr(&'static str, bool),
 }
 `;
 }
@@ -267,7 +301,7 @@ ${checks.join('\n')}
 export function nodeHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return NODE_HOST;
   const host = NODE_HOST
-    .replace("    Properties(Object<'env>, Object<'env>),\n", "    Properties(Object<'env>, Object<'env>),\n    Value(Object<'env>, Option<(&'static str, bool, bool)>),\n")
+    .replace("    Properties(Object<'env>, Object<'env>),\n", "    Properties(Object<'env>, Object<'env>),\n    Value(Object<'env>, Option<(&'static str, bool, ReadAs)>),\n")
     .replace("        let object: Object<'env> = unsafe { value.cast() }?;\n        if value.is_array()? {", "        let object: Object<'env> = unsafe { value.cast() }?;\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }\n        if value.is_array()? {")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         self.read_value(value).map_err(|error| raised(Thrown::Js(error)))

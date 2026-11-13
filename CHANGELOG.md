@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A string of a value class of another repository entered a core as a list of integers: the in case of json read every
+  string by `value.string_units`, so each string crossed the boundary of the language as its UTF-16 code units, and
+  WASM read a built-in string unit by unit and Python by an encoding to UTF-32. A case of the kind `text` may now name
+  `units`, a member that gives a list of `uint`; its `read` gives an optional `text`, which the generated code takes
+  as the text of the language, and only its none, a text with an unpaired surrogate, reads the code units by `units`.
+  Such a case is also the case of the kind `text16` in the round trip of CK-8, which replaces the rule that let a
+  `text` row come back by a case of the kind `text16`. Python takes a `str` without a surrogate and WASM a string that
+  `isWellFormed` as UTF-8 bytes. Red: `make test-ts` failed 7 of 318 (the CK-8 tests of `units` and the value class
+  tests of the five targets); Green: 318 of 318 pass (B2.89).
 - A text with an unpaired surrogate had no form in which it leaves a core: `binding_core::OutValue` held a text only as
   a Rust `String`, so the `out` function of json could not give the string `"\ud800"` that `polyspec_json::Value`
   holds, and a value class read a string by a member that gives a text, which json refuses for such a string.

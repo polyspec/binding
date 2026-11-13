@@ -1060,6 +1060,10 @@
                     "const": "builtin"
                   }
                 ]
+              },
+              "units": {
+                "description": "B2.89: a public member that gives the UTF-16 code units of a text as a list of uint, read when the read member of a case of the kind text gives none (GN-6x).",
+                "$ref": "#/$defs/id"
               }
             }
           }

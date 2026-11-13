@@ -8,7 +8,7 @@
 import { type Model, type ValueAlias, langName, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
 import { foreignClasses } from './alias_node.ts';
-import { classIn, classMakes } from './value_class.ts';
+import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import type { Member, Unit } from '../contract.ts';
 
@@ -163,6 +163,14 @@ ${arms.join('\n')}
 `;
 }
 
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), or the content.
+function readAs(kase: ReadCase): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  return `ReadAs::TextOr(${rustString(langName('wasm', kase.units.name, 'callable'))}, ${String(kase.units.kind !== 'property')})`;
+}
+
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesWasmHost(model: Model): string {
   const classes = foreignClasses(model);
@@ -170,7 +178,7 @@ function valueClassesWasmHost(model: Model): string {
     const row = classIn(alias, 'wasm');
     const label = langName('wasm', alias.unit.name, 'class');
     const arms = row.cases.map((kase) => {
-      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('wasm', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${String(kase.kind === 'Text16')}))`;
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('wasm', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}, ${readAs(kase)}))`;
       return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     const byName = `&JsValue::from_str(${rustString(langName('wasm', row.by.name, 'callable'))})`;
@@ -242,19 +250,50 @@ ${checks.join('\n')}
             Some(Held::Value(object, Some(read))) => Some((object.clone(), *read)),
             _ => None,
         };
-        let Some((object, (name, call, units))) = held else {
+        let Some((object, (name, call, read_as))) = held else {
             return Err(JsValue::from_str("B-1: no such value"));
         };
-        let content = Reflect::get(&object, &JsValue::from_str(name))?;
-        let content = if call { content.dyn_into::<Function>()?.call0(&object)? } else { content };
-        if units {
+        let content = js_member(&object, name, call)?;
+        match read_as {
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
-            let units = js_sys::Array::from(&content).iter().map(|unit| js_unit(&unit)).collect::<Option<Vec<u16>>>()
-                .ok_or_else(|| JsValue::from_str(&format!("GN-6x: {name} gives a unit that is no integer of 0 to 0xffff")))?;
-            return Ok(HostValue::Text(HostText::Utf16(units)));
+            ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(js_units(&content, name)?))),
+            ReadAs::TextOr(units, units_call) => {
+                // B2.89: null names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
+                // so only such a text crosses as a list of numbers; any other text crosses as its UTF-8 bytes.
+                if content.is_null() || content.is_undefined() {
+                    return Ok(HostValue::Text(HostText::Utf16(js_units(&js_member(&object, units, units_call)?, units)?)));
+                }
+                let Some(text) = content.as_string() else {
+                    return Err(JsValue::from_str(&format!("GN-6x: {name} gives no text and no null")));
+                };
+                Ok(HostValue::Text(HostText::Bytes(text.into_bytes())))
+            }
+            ReadAs::Content => self.describe(&content),
         }
-        self.describe(&content)
     }
+}
+
+/// GN-6x: the value of a member of an instance, a property or the result of a method without arguments.
+fn js_member(object: &JsValue, name: &str, call: bool) -> Result<JsValue, JsValue> {
+    let content = Reflect::get(object, &JsValue::from_str(name))?;
+    if call { content.dyn_into::<Function>()?.call0(object) } else { Ok(content) }
+}
+
+/// B2.81: the UTF-16 code units that a member gives as an array of numbers of 0 to 0xffff.
+fn js_units(content: &JsValue, name: &str) -> Result<Vec<u16>, JsValue> {
+    js_sys::Array::from(content).iter().map(|unit| js_unit(&unit)).collect::<Option<Vec<u16>>>()
+        .ok_or_else(|| JsValue::from_str(&format!("GN-6x: {name} gives a unit that is no integer of 0 to 0xffff")))
+}
+
+/// GN-6x: how the read member of an in case gives the content of an instance.
+#[derive(Clone, Copy)]
+enum ReadAs {
+    /// The content, described by the rules of the language.
+    Content,
+    /// The UTF-16 code units of a text of the kind text16 (B2.81).
+    Units,
+    /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
+    TextOr(&'static str, bool),
 }
 
 /// B2.81: a JavaScript number that is a UTF-16 code unit, an integer of 0 to 0xffff.
@@ -274,7 +313,7 @@ fn js_unit(unit: &JsValue) -> Option<u16> {
 export function wasmHost(model: Model): string {
   if (!model.aliases.some((a) => a.owner !== undefined)) return WASM_HOST;
   const host = WASM_HOST
-    .replace("    Properties(JsValue, Array),\n}", "    Properties(JsValue, Array),\n    Value(JsValue, Option<(&'static str, bool, bool)>),\n}")
+    .replace("    Properties(JsValue, Array),\n}", "    Properties(JsValue, Array),\n    Value(JsValue, Option<(&'static str, bool, ReadAs)>),\n}")
     .replace("    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n", "    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }\n")
     .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
         self.read_value(value).map_err(js_raised)
@@ -388,6 +427,10 @@ impl JsHost {
             return Ok(HostValue::UntypedNumber(number));
         }
         if let Some(text) = value.dyn_ref::<JsString>() {
+            // B2.89: a string that isWellFormed crosses as its UTF-8 bytes; any other as its UTF-16 units.
+            if text.is_well_formed() {
+                return Ok(HostValue::Text(HostText::Bytes(String::from(text).into_bytes())));
+            }
             return Ok(HostValue::Text(HostText::Utf16(text.iter().collect())));
         }
         if let Some(bigint) = value.dyn_ref::<js_sys::BigInt>() {

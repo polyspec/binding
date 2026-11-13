@@ -92,7 +92,7 @@ export interface OutRow {
 
 export interface InRow extends Partial<Record<Lang, string>> {
   by?: string;
-  cases: { is?: string; when?: When; kind: string; read?: string }[];
+  cases: { is?: string; when?: When; kind: string; read?: string; units?: string }[];
 }
 
 export interface Unit {
