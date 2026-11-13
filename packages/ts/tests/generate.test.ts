@@ -1923,6 +1923,15 @@ test('PHP reads the value of an enum case of the owner of a value class from the
   assert.match(lib, /Some\(case\) => match case\.get_properties\(\)\.map_err\(php_failed\)\?\.get\("value"\)\.map\(Zval::dereference\)\.and_then\(Zval::string\) \{/);
 });
 
+test('PHP describes the array that the read member of a list case gives as a list (GN-6x, B2.147)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  // The walk of the owner reads the kind that the case names, so the items of value.items cross as HostValue::List.
+  assert.match(lib, /"array" => \(ValueKind::List, Some\(\("items", ReadAs::Items\)\)\),/);
+  assert.match(lib, /ReadAs::Items => self\.describe_items\(content, read\),/);
+  assert.match(lib, /        Ok\(HostValue::List \{ handle: Handle::new\(HOST_OWNED \| handle_count\(self\.owned\.len\(\) - 1\)\), len \}\)$/m);
+});
+
 test('the make function of a value alias walks the value with a work stack and calls no conversion of the alias (GN-6as, B2.144)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const own = (name: string): Inputs => ({ contract: read(`${name}/packages/rust/interface.json`), caseFiles: new Map([['contracts/cases.json', read(`${name}/contracts/cases.json`)]]), version: '0.0.0', coreLib: `polyspec_${name}` });

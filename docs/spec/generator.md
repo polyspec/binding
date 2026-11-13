@@ -792,7 +792,9 @@ the design ids are those of the binding design.
   the `by` member of the `in` row of its language through the language API of the owner, and describes the instance as
   `HostValue::Value` with the kind of the case whose `is` is the result, without opening it. `HostValues::read` of its
   handle calls the `read` member of that case and describes the result one level at a time: a list as a list, each
-  item again by these rules; an instance of a generated class of the owner whose `iterate` member yields `{key,
+  item again by these rules (in PHP the array that the `read` member of a case of the kind `list` gives, whose keys
+  are 0 to n-1 in order, as `HostValue::List` and not as a PHP array, because the walk of the owner reads the kind
+  that the case names); an instance of a generated class of the owner whose `iterate` member yields `{key,
   value}` as a map of the entries of that iteration, a snapshot taken when the map is described (GN-6f); an instance
   of the value class again as `HostValue::Value`; a text or a bool as the `HostValue` of that kind; and for a case of
   the kind `text16`, whose `read` member gives a list of `uint`, the UTF-16 code units of a text as

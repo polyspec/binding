@@ -646,7 +646,9 @@
   `invalid_argument_type`이다. 생성 코드는 자기 언어의 `in` 행의 `by` member를 owner의 언어
   API로 부르고, 그 결과를 `is`로 가진 case의 kind로 인스턴스를 열지 않고 `HostValue::Value`로 묘사한다.
   그 handle의 `HostValues::read`는 그 case의 `read` member를 부르고 결과를 한 단계씩 묘사한다.
-  list는 list로, 각 항목은 다시 이 규칙으로 묘사한다. `iterate` member가 `{key, value}`를 내는
+  list는 list로, 각 항목은 다시 이 규칙으로 묘사한다(PHP에서 kind가 `list`인 case의 `read` member가 주는, key가
+  순서대로 0부터 n-1인 배열은 PHP 배열이 아니라 `HostValue::List`로 묘사한다. owner의 walk가 case가 적은 kind를
+  읽기 때문이다). `iterate` member가 `{key, value}`를 내는
   owner의 생성 class 인스턴스는 그 iteration의 entry로 이루어진 map으로 묘사하며, map을 묘사할 때
   snapshot을 뜬다(GN-6f). 값 class의 인스턴스는 다시 `HostValue::Value`로, text나 bool은 그
   kind의 `HostValue`로 묘사한다. `read` member가 `uint`의 list를 주는 kind `text16`의 case는 모든 언어에서

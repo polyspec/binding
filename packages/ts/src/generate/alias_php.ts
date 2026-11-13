@@ -211,6 +211,7 @@ ${arms.join('\n')}
 // member gives (B2.89), or the content.
 function readAs(kase: ReadCase): string {
   if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.kind === 'List') return 'ReadAs::Items';
   if (kase.units === undefined) return 'ReadAs::Content';
   return `ReadAs::TextOr(${rustString(langName('php', kase.units.name, 'callable'))})`;
 }
@@ -359,6 +360,24 @@ impl PhpHost<'_> {
         scalar.describe(&value)
     }
 
+    /*Items{*/
+    /// B2.147: the content of a case of the kind list, an array whose keys are 0 to n-1 in order, as a list of its
+    /// values: the walk of the owner reads the kind that the case names, and a PHP array is described as one only here.
+    fn describe_items(&mut self, content: Zval, read: &str) -> Result<HostValue, Fail> {
+        let Some(array) = content.array().filter(|array| array.has_sequential_keys()) else {
+            return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: {read} gives no array that is a list") }));
+        };
+        let mut entries = Vec::new();
+        let mut iterator = array.iter();
+        while let Some((key, item)) = iterator.next_zval() {
+            entries.push((key, item.shallow_clone()));
+        }
+        let len = handle_count(entries.len());
+        self.owned.push(entries);
+        Ok(HostValue::List { handle: Handle::new(HOST_OWNED | handle_count(self.owned.len() - 1)), len })
+    }
+    /*}Items*/
+
     /// GN-6x: the item or the entry of a value that the host owns, its key described as an owned value.
     fn owned_entry(&mut self, handle: Handle, index: u64) -> Result<Option<(HostValue, HostValue)>, binding_core::Raised> {
         if handle.raw() & HOST_OWNED == 0 {
@@ -402,6 +421,9 @@ impl PhpHost<'_> {
             /*Content{*/
             ReadAs::Content => self.describe_owned(content),
             /*}Content*/
+            /*Items{*/
+            ReadAs::Items => self.describe_items(content, read),
+            /*}Items*/
         }
     }
 }
@@ -431,6 +453,10 @@ enum ReadAs {
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str),
     /*}TextOr*/
+    /*Items{*/
+    /// The items of a case of the kind list, an array that is a list (B2.147).
+    Items,
+    /*}Items*/
 }
 `;
 }

@@ -582,7 +582,7 @@ fn take_thrown(raised: &binding_core::Raised) -> Option<Thrown> {
 // read has their arms: a variant that no case constructs is dead code, which the lints deny. The text of a host marks
 // the arm and the variant of each name, and a name that the text constructs nowhere else is left out with them.
 export function readAsVariants(host: string): string {
-  return ['Content', 'Units', 'TextOr', 'Bool', 'Int', 'Float'].reduce((text, variant) => {
+  return ['Content', 'Units', 'TextOr', 'Items', 'Bool', 'Int', 'Float'].reduce((text, variant) => {
     const marked = new RegExp(`[ \\t]*/\\*${variant}\\{\\*/\\n([\\s\\S]*?\\n)[ \\t]*/\\*\\}${variant}\\*/\\n`, 'g');
     const constructed = text.replace(marked, '').includes(`ReadAs::${variant}`);
     return text.replace(marked, constructed ? '$1' : '');

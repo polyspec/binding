@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A PHP member that takes a value class of another repository failed with "value_in: a description that no in row
+  of value gives" for a value with an array: the read member of the case of the kind `list`, `value.items`, gives a
+  PHP array, which the generated host described as a PHP array, while the walk of the owner reads the kind that the
+  case names, a list. The generated test "carry a document of every kind" of `tests/e2e/relay` failed. The host now
+  describes that array as a list of its values (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change.
 - The Go tests of the end-to-end check ran the tests of the repository beside the generated tests: `go test ./...`
   of the Go module read every test file, so `packages/go/tests/cases_test.go` of a repository, which reads the path
   of its case file from `HTTP_MEDIA_TYPE_CASES`, failed three tests with "open : no such file or directory", while

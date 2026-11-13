@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- 다른 레포의 값 class를 받는 PHP member가 배열을 가진 값에서 "value_in: a description that no in row of value gives"로
+  실패했다. kind가 `list`인 case의 read member `value.items`가 PHP 배열을 주는데 생성된 host는 그것을 PHP 배열로
+  묘사했고, owner의 walk는 case가 적은 kind인 list를 읽는다. `tests/e2e/relay`의 생성된 시험 "carry a document of
+  every kind"가 실패했다. 이제 host는 그 배열을 그 값들의 list로 묘사한다(GN-6x). `make test-ts`로 검증했다: 새 시험이
+  변경 전에는 실패했다.
 - end-to-end check의 Go 시험이 생성된 시험 옆에서 레포의 시험도 실행했다. Go module의 `go test ./...`가 모든 시험 파일을
   읽었으므로, case 파일의 경로를 `HTTP_MEDIA_TYPE_CASES`에서 읽는 레포의 `packages/go/tests/cases_test.go`가 시험 3개를
   "open : no such file or directory"로 실패했다. 다른 target은 생성된 시험과 계약 case만 실행한다. 이제 실행의 `go vet`과
