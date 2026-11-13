@@ -25,7 +25,9 @@
   with `raises: "callback"`, the calls of `after`, and the tests of a nil `func`, of the error and of the panic of a
   `func`, and no longer refuses a case with `after` or `raises: "callback"` (GN-6ae, CK-22). Verified by `npm test`
   in `packages/ts`, whose two tests of the Go crate, package and test pass; 20 tests that generate the sample for
-  every target still fail with the refusal of Python, Node and WASM.
+  every target still fail with the refusal of Python, Node and WASM. Verified by `make e2e` of `tests/e2e/sample`,
+  where Go passes 61 generated tests on `go test`, the five cases of `store.transaction` among them, with clippy,
+  `gofmt -l` and `go vet` clean, and PHP passes 88; Python, Node and WASM fail there by their refusal.
 - The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
   helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
   `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to
