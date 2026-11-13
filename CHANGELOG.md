@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- An `out` row of a value alias whose `make` is `{"keyed_map": {"key": [...]}}` was refused as a form that is not
+  generated, so a value alias that gives a map of keys that are no sequence as a keyed map had no binding in any
+  language. The row is now made as a map whose keys, of the kinds it lists, are made by the rows of the alias as its
+  items are (GN-6e). Verified by `npm test` in `packages/ts`.
 - The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
   9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
   refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a

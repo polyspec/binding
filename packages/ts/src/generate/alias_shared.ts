@@ -51,6 +51,8 @@ export function outArms(alias: ValueAlias, lang: Lang, builtin: (form: string, k
     const ofKind = rows.filter((row) => row.kind === kind);
     const form = (row: OutRow): string => {
       const make = row.make[lang];
+      // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
+      if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
       if (make.includes('.')) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
       return builtin(make, kind);
