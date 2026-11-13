@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 001c93c9e1e5506b0be3c23793dbe37a82ed3ea3f056cc245a24a69a6d5c5171 -->
+<!-- source-sha256: af92f2e5dd41606f7d906e8d71823d9a38b6bfe47bc65f9a75ad858e7a7fba7b -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -110,7 +110,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 - **CK-19** 추적하는 바인딩 package(L-2): `binding check`는 바인딩 package의 추적 파일(docs/spec/generator.md
   GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다. host 패키지(L-2a, GN-3b)는 host
-  manifest에서 네이티브 모듈에 필요한 항목만 읽는다.
+  manifest에서 네이티브 모듈에 필요한 항목만 읽는다. Go 모듈에서는 `go.mod`, `internal/ffi/Cargo.toml`,
+  `internal/ffi/src/lib.rs`를 비교한다. 이것이 source tree가 추적하는 파일이다. 생성 파일 `zz_generated_*.go`,
+  `internal/ffi/generated/`, `internal/ffi/lib/`의 정적 라이브러리는 추적 파일이 아니므로 검사가 읽지 않는다. release가
+  Go tag의 commit에 그것들을 더한다(GN-15g).
 - **CK-21** 코어의 빌드, exclusive member, 코어 경로의 결과(I-1, U-6, E-1c): `core.features`는 target만 가리킨다.
   `exclusive`는 generated class의 receiver `&self` member에만 둔다. `core.result`가 `false`인 member는 `raises`가 없고
   callback이나 함수를 담은 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의 실패를 둘
