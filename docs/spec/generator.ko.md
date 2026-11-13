@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
+<!-- source-sha256: d9475c5626cdfc5cb0bc6f19ad234919e4f6fe1b511dff674ba9fbbc330f1506 -->
 # 생성기
 
 [English](generator.md)
@@ -605,11 +605,14 @@
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
   만든 그 클래스의 인스턴스이며 addon이 던진다(B-4). ESM 진입점은 CommonJS 진입점을 다시 내보내므로 둘은 클래스를 함께 쓴다.
-  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2):
-  진입점이 `Map`의 항목을 addon에 넘기고 addon이 key마다 판정하며(안전 정수가 아닌 number key는 kind `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), addon이
-  돌려준 항목으로 진입점이 `Map`을 만든다. 진입점이 하는 일이므로 그런 map은 parameter나 반환 전체(또는 그 optional)여야 하고,
-  다른 타입 안의 것과 `Map`이 정체성으로 비교하는 바이트 문자열 key는 이름으로 거부하므로(G-4) 조용히 빠지는 것이 없다. 계약이
-  그것을 요구하면 그때 생성기가 받는다.
+  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2).
+  타입의 모든 자리에서 그렇다: parameter, 반환, record의 field나 variant의 case의 field, 그리고 list, tuple, optional,
+  다른 map의 항목. addon은 값을 판정하는 자리에서 `Map`을 읽는다: `Map`이 아닌 값(쌍의 배열, 일반 객체)은 kind
+  `invalid_argument_type`이고, addon은 `Map`의 순서대로 항목을 받아 key마다 판정하며(안전 정수가 아닌 number key는 kind
+  `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), 코어가 준 항목으로 그 순서의 새 `Map`을
+  만들어 돌려준다. 진입점은 그런 값을 그대로 넘긴다. 이유: 값은 타입을 아는 자리에서 변환되므로, 다른 타입 안의 map도
+  전체가 map인 값과 같은 규칙을 따른다. `Map`이 정체성으로 비교하는 바이트 문자열 key는 모든 자리에서 이름으로
+  거부한다(G-4).
 
 - **GN-12a** 모든 target(T-1, CK-64): 바인딩이 인자, list·tuple·map·optional의 항목, record의 field로 받는 `int` 값은
   안전 정수 −(2^53 − 1)~2^53 − 1이고 `uint` 값은 0~2^53 − 1이다. 그 범위 밖의 정수는 Node와 WASM처럼 PHP, Python, Go에서도

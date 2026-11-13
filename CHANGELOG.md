@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A `map<T>` or a `keyed_map<T>` inside another type (a field of a record, an item of a list, of an optional or of
+  another map) was refused by name for Node and WASM, because the JavaScript entry turned a `Map` into its entries and
+  so took one only as a whole parameter or return. The addon and the WASM module now read the `Map` where they judge
+  the value and build the `Map` that they give back, so both targets take a map at every place of a type, and the
+  entries hand the value on as it is (T-2, GN-12, GN-18). A value that is no `Map` stays kind `invalid_argument_type`,
+  and byte string keys stay refused by name, now at every place. `tests/e2e/shapes` has the record `tally` and the
+  members `tally_of`, `tally_total`, `merged`, `split_counts`, `doubled` and `present` with their cases: a map in a
+  record, in a list, in an optional and in a map, both ways. Verified by `make test-ts`: 394 of 394 pass.
 - For a contract with a class that has a write place and no member that takes a class as an argument, the generated
   Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
   poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of

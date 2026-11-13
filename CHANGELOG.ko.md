@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d1a4eb319d27bc48e8968baeb07c14c440010f1ccc91d3e23d53a79f21cea9f8 -->
+<!-- source-sha256: 041a88ebeed64edd8f0db39f67dd4d99f311e0a143e8fe3b04a0ac607bec913b -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 타입 안의 `map<T>`나 `keyed_map<T>`(record의 field, list·optional·다른 map의 항목)는 Node와 WASM에서 이름으로
+  거부되었다. JavaScript 진입점이 `Map`을 항목으로 바꾸었으므로 parameter나 반환 전체가 map일 때만 받았기 때문이다. 이제
+  addon과 WASM 모듈이 값을 판정하는 자리에서 `Map`을 읽고 돌려줄 `Map`을 만들므로, 두 target은 타입의 모든 자리에서 map을
+  받고 진입점은 그 값을 그대로 넘긴다(T-2, GN-12, GN-18). `Map`이 아닌 값은 그대로 kind `invalid_argument_type`이고, 바이트
+  문자열 key는 이제 모든 자리에서 이름으로 거부된다. `tests/e2e/shapes`에 record `tally`와 member `tally_of`,
+  `tally_total`, `merged`, `split_counts`, `doubled`, `present`를 case와 함께 추가했다: record, list, optional, map 안의
+  map을 양방향으로 다룬다. `make test-ts`로 확인: 394개 중 394개 통과.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
   `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
   feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는
