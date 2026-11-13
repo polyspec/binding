@@ -1078,6 +1078,34 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
 });
 
+test('a record of another repository is named in the package of its repository in the tests of every target (T-3, GN-6c)', () => {
+  const { contract, caseFiles, foreign } = plotSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });
+  // Python: the class is of the module of its repository, which the test imports; the package of plot exports no Point.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /^import polyspec\.points as foreign_points$/m);
+  assert.match(python, /result = pkg\.mirror\(foreign_points\.Point\(x=1, y=2\)\)\n {8}expected = foreign_points\.Point\(x=2, y=1\)/);
+  assert.doesNotMatch(python, /pkg\.Point\b/);
+  assert.doesNotMatch(text(out, 'packages/python/generated/python/polyspec/plot/__init__.py'), /Point/);
+  // PHP: the class is of the namespace of its repository.
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\\Polyspec\\Plot\\mirror\(new \\Polyspec\\Points\\Point\(x: 1, y: 2\)\)/);
+  assert.doesNotMatch(php, /\\Polyspec\\Plot\\Point\b/);
+  // Node and WASM: a plain object.
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.match(text(out, path), /pkg\.mirror\(\{ x: 1, y: 2 \}\)/, path);
+});
+
+test('WASM: the crate imports Array, which the failure of every contract uses (GN-18, GN-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  // The contract of points uses no list, so nothing but the arguments of the constructor of a failure names Array.
+  const points = text(generate({ contract: read('points/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_points', caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(points, /let args = Array::of4\(/);
+  assert.match(points, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
+  const { contract, caseFiles, foreign } = plotSample();
+  const plot = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(plot, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
+});
+
 test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
   // gofmt writes 1 << 53 as 1<<53 where it is one of several arguments, so the test writes the number itself.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));

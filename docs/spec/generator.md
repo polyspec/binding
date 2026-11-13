@@ -359,10 +359,17 @@ the design ids are those of the binding design.
   with kind `internal`, because the lock of tokio does not poison and the panic may have left the value half changed
   (P-2). The locks are those of `polyspec-binding-core` with the feature `lock`, which the manifests of the Python,
   Node and PHP binding crates turn on.
-- **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
-  (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
-  loaded), Node and WASM take and give a plain object, which the declarations write by its fields. Each binding crate depends
-  on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
+- **GN-6c** A unit of another repository (T-3) is the unit of the package of that repository in every target: the
+  package of this contract exports no name of it, a caller and a generated test take it from the package of its
+  repository, and the package of this contract needs that package when it loads. A record: Python imports the class
+  from that package (which the `pyproject.toml` lists as a dependency), and a generated test imports the module of
+  that package as `foreign_<library>` and names the class there; PHP finds the class in the class table by its name
+  in the namespace of that repository (its extension is loaded before), and a test names that class; Go imports the
+  struct of the package of the Go module of that repository (GN-15f); Node and WASM take and give a plain object,
+  which the declarations write by its fields, so they import nothing. Each binding crate depends on that repository's
+  crate with the core's own dependency line, which `binding scaffold` copies. Why: a second class of the record in
+  the package of this contract would be another type, which a function of the repository of the record refuses, so
+  one value could not pass through both packages.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out

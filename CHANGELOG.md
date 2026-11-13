@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- The generated Python and PHP tests of a contract that names a record of another repository named the record in
+  the package of the contract itself (`pkg.Point`, `\Polyspec\Plot\Point`), where no such class exists, so the tests
+  of `tests/e2e/plot` failed in Python with `module 'polyspec.plot' has no attribute 'Point'`. The rule of GN-6c now
+  states for every target that a unit of another repository is the unit of the package of that repository: the Python
+  test imports the module of that package as `foreign_<library>` and the PHP test names the class of the namespace of
+  that repository, as the Go test names the struct of the Go module of that repository and the Node and WASM tests
+  give a plain object (T-3, GN-6c). The WASM crate of a contract without a list, a tuple or a map, such as
+  `tests/e2e/points` and `tests/e2e/plot`, used `Array::of4` for the arguments of the constructor of a failure and
+  did not import `js_sys::Array`; the crate now imports it always (GN-18). Verified by `make test-ts`: the two new
+  tests failed for these reasons, and 396 of 396 pass.
 - A `map<T>` or a `keyed_map<T>` inside another type (a field of a record, an item of a list, of an optional or of
   another map) was refused by name for Node and WASM, because the JavaScript entry turned a `Map` into its entries and
   so took one only as a whole parameter or return. The addon and the WASM module now read the `Map` where they judge

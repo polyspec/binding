@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d9475c5626cdfc5cb0bc6f19ad234919e4f6fe1b511dff674ba9fbbc330f1506 -->
+<!-- source-sha256: f71434d2bb8e9c653b9aed62dc93fc02a6220b13ee8635fc5e343295e7acf0f9 -->
 # 생성기
 
 [English](generator.md)
@@ -288,9 +288,15 @@
   자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을
   수 있기 때문이다(P-2). 잠금은 `polyspec-binding-core`의 feature `lock`에 있으며 Python·Node·PHP 바인딩 crate의 manifest가
   그것을 켠다.
-- **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
-  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node와 WASM은 plain object를 주고받으며 선언은 field로 적는다. 바인딩
-  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
+- **GN-6c** 다른 레포의 unit(T-3)은 모든 target에서 그 레포 패키지의 unit이다: 이 계약의 패키지는 그 이름을 내보내지 않고,
+  호출자와 생성된 테스트는 그 unit을 그 레포의 패키지에서 가져오며, 이 계약의 패키지는 로드될 때 그 패키지를 필요로 한다.
+  record의 경우: Python은 그 패키지에서 클래스를 import하고(`pyproject.toml`이 의존으로 적는다), 생성된 테스트는 그 패키지의
+  모듈을 `foreign_<library>`로 import해 거기서 클래스를 부른다. PHP는 그 레포의 namespace에 있는 이름으로 class table에서
+  클래스를 찾고(그 확장이 먼저 로드되어 있다), 테스트는 그 클래스를 부른다. Go는 그 레포의 Go 모듈 패키지의 struct를
+  import한다(GN-15f). Node와 WASM은 plain object를 주고받으며 선언은 field로 적으므로 아무것도 import하지 않는다. 바인딩
+  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다. 이유: 이 계약의
+  패키지에 그 record의 두 번째 클래스가 있으면 그것은 다른 타입이고, record를 가진 레포의 함수가 그것을 거부하므로, 한
+  값이 두 패키지를 함께 지날 수 없다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중

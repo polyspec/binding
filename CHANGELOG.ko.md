@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 041a88ebeed64edd8f0db39f67dd4d99f311e0a143e8fe3b04a0ac607bec913b -->
+<!-- source-sha256: 397579f46819353c3c9cb814af411b1d747dd890944345bb7f09337c901e0ac3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 레포의 record를 부르는 계약에서, 생성된 Python·PHP 테스트는 그 record를 계약 자신의 패키지 안의 이름으로
+  불렀다(`pkg.Point`, `\Polyspec\Plot\Point`). 그런 클래스는 없으므로 `tests/e2e/plot`의 Python 테스트는
+  `module 'polyspec.plot' has no attribute 'Point'`로 실패했다. 이제 GN-6c의 규칙은 모든 target에 대해, 다른 레포의 unit은
+  그 레포 패키지의 unit이라고 적는다: Python 테스트는 그 패키지의 모듈을 `foreign_<library>`로 import하고 PHP 테스트는 그
+  레포 namespace의 클래스를 부른다. Go 테스트가 그 레포 Go 모듈의 struct를 부르고 Node·WASM 테스트가 plain object를 주는
+  것과 같다(T-3, GN-6c). list, tuple, map이 없는 계약(`tests/e2e/points`, `tests/e2e/plot`)의 WASM crate는 실패의 생성자
+  인자에 `Array::of4`를 쓰면서 `js_sys::Array`를 import하지 않았다. 이제 crate는 그것을 항상 import한다(GN-18).
+  `make test-ts`로 확인: 새 테스트 둘이 이 이유로 실패했고, 396개 중 396개가 통과한다.
 - 다른 타입 안의 `map<T>`나 `keyed_map<T>`(record의 field, list·optional·다른 map의 항목)는 Node와 WASM에서 이름으로
   거부되었다. JavaScript 진입점이 `Map`을 항목으로 바꾸었으므로 parameter나 반환 전체가 map일 때만 받았기 때문이다. 이제
   addon과 WASM 모듈이 값을 판정하는 자리에서 `Map`을 읽고 돌려줄 `Map`을 만들므로, 두 target은 타입의 모든 자리에서 map을
