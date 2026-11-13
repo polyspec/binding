@@ -808,6 +808,14 @@ const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; for
   };
 };
 
+test('Go: a contract without a class unit has no table of instances in its C ABI (T-5, GN-15a)', () => {
+  // A map insert of the generated code (made.insert) is no call of the helper that keeps an instance in a table.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /made\.insert\(/);
+  assert.doesNotMatch(lib, /Table<|Arc::new/);
+});
+
 test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6k)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
