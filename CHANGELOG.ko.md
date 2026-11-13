@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e0a5bab68d6ab21cc2ff48e46dc2ea54ded6a76811cbb7084636e0ee2b8e1bae -->
+<!-- source-sha256: 857f35b33410a2bb791853bf88de94d81a90dd71b01c23e105d26ad155da3a0d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -11,7 +11,7 @@
   이제 `binding generate`는 Go 모듈의 플랫폼(`linux_amd64`, `linux_arm64`, `darwin_arm64`)마다 지시문
   `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>`을 담은 `internal/binding/zz_generated_link_<platform>.go`와 그것이
   import하는 패키지 `internal/ffi/lib/<platform>`을 쓴다. 명세는 release가 모듈과 각 플랫폼의 라이브러리를 싣는 commit과
-  tag `packages/go/vX.Y.Z`를 적고(GN-15g), CK-19가 비교하는 Go 모듈의 파일을 적는다. checkout은 전과 같이 자기 라이브러리의
+  tag `packages/go/vX.Y.Z`를 적고(GN-15g), musl을 지원하지 않는다고 적고, CK-19가 비교하는 Go 모듈의 파일을 적는다. checkout은 전과 같이 자기 라이브러리의
   디렉터리를 `CGO_LDFLAGS`로 주고 빌드한다. end-to-end 검사에 release 형태의 단계가 생겼다(GN-14f): 실행 플랫폼에 대해 그
   commit과 tag를 work 디렉터리의 레포에 만들고, 그 모듈만 require하는 소비자 모듈이 자기 시험과 받은 모듈의 시험을 읽기
   전용 모듈 cache에서 `CGO_LDFLAGS`와 `replace` 없이 돌린다. 확인: `make test-ts`(시험 309개 통과), 그리고 darwin/arm64에서

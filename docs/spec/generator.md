@@ -622,8 +622,11 @@ the design ids are those of the binding design.
   repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
   Go version and is refused by name. The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
-- **GN-15g** The static library of the Go module (B-8, L-1, K-3): the platforms of a Go module are `linux_amd64`,
-  `linux_arm64` and `darwin_arm64`, the `<GOOS>_<GOARCH>` of the platforms of GN-3c. For each platform
+- **GN-15g** The static library of the Go module (B-8, L-1, K-3): the platforms of a Go module are `linux_amd64`
+  and `linux_arm64`, whose library is built for the GNU C library, and `darwin_arm64`, the `<GOOS>_<GOARCH>` of the
+  platforms of GN-3c. musl is not supported: a build constraint of Go does not tell the C library of a Linux apart,
+  so a consumer on musl compiles the file of its `<GOOS>_<GOARCH>` and its link of the library of the GNU C library
+  fails. For each platform
   `binding generate` writes two files. `internal/binding/zz_generated_link_<platform>.go`, which Go compiles for that
   platform alone by its name, holds the directive `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and imports the
   package `internal/ffi/lib/<platform>`; `internal/ffi/lib/<platform>/zz_generated_lib.go` is the one file of that
@@ -646,7 +649,7 @@ the design ids are those of the binding design.
   A program that imports the Go modules of several libraries (GN-15f) links the static library of each, and each
   holds its own copy of `binding_core` and of the Rust standard library. The end-to-end check builds and tests such
   a program in the released form on the platform of its run (GN-14f), which is the evidence that the copies link in
-  one program.
+  one program. It has run on `darwin_arm64` alone: that the copies link on Linux is not verified yet.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`

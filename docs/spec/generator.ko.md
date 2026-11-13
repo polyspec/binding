@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7d0e37507b59f8b4bd64a113e55caaa4785a2c46ac0e827f5aa5fffb8f85b1d6 -->
+<!-- source-sha256: a6ade277d6a00a14483c9fc29a4e7255c982ce5694cc3ff0446b5ec4a262d8f3 -->
 # 생성기
 
 [English](generator.md)
@@ -521,8 +521,10 @@
   `replace <module> => <path>` 줄을 준다. branch, commit, 버전 범위를 적은 의존 줄에는 Go 버전이 없으므로 이름으로
   거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
-- **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 `linux_amd64`, `linux_arm64`, `darwin_arm64`이며,
-  GN-3c의 플랫폼을 `<GOOS>_<GOARCH>`로 적은 것이다. `binding generate`는 플랫폼마다 파일 둘을 쓴다.
+- **GN-15g** Go 모듈의 정적 라이브러리(B-8, L-1, K-3): Go 모듈의 플랫폼은 라이브러리를 GNU C library용으로
+  빌드하는 `linux_amd64`와 `linux_arm64`, 그리고 `darwin_arm64`이며, GN-3c의 플랫폼을 `<GOOS>_<GOARCH>`로 적은 것이다.
+  musl은 지원하지 않는다. Go의 빌드 제약은 Linux의 C library를 구분하지 않으므로, musl의 소비자는 자기
+  `<GOOS>_<GOARCH>`의 파일을 컴파일하고 GNU C library용 라이브러리의 링크가 실패한다. `binding generate`는 플랫폼마다 파일 둘을 쓴다.
   `internal/binding/zz_generated_link_<platform>.go`는 이름 때문에 Go가 그 플랫폼에서만 컴파일하며, 지시문
   `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>`을 담고 패키지 `internal/ffi/lib/<platform>`을 import한다.
   `internal/ffi/lib/<platform>/zz_generated_lib.go`는 그 패키지의 유일한 파일이다. 플랫폼의 라이브러리는 그 파일 옆의
@@ -542,7 +544,8 @@
   실패한다.
   여러 라이브러리의 Go 모듈을 import하는 프로그램(GN-15f)은 각각의 정적 라이브러리를 링크하고, 각 라이브러리는
   `binding_core`와 Rust 표준 라이브러리의 사본을 따로 담는다. end-to-end 검사가 그런 프로그램을 release 형태로 실행
-  플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다.
+  플랫폼에서 빌드하고 시험하며(GN-14f), 그것이 사본들이 한 프로그램에 링크된다는 증거다. 그 검사는 `darwin_arm64`에서만
+  실행되었다. 사본들이 Linux에서 링크된다는 것은 아직 확인하지 않았다.
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은

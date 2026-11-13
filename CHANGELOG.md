@@ -11,7 +11,7 @@
   `linux_arm64`, `darwin_arm64`), `internal/binding/zz_generated_link_<platform>.go` with the directive
   `#cgo LDFLAGS: -L${SRCDIR}/../ffi/lib/<platform>` and the package `internal/ffi/lib/<platform>` that it imports, and
   the specification states the commit and the tag `packages/go/vX.Y.Z` with which a release carries the module and
-  the library of each platform (GN-15g), and the files of the Go module that CK-19 compares. A checkout builds as
+  the library of each platform (GN-15g), that musl is not supported, and the files of the Go module that CK-19 compares. A checkout builds as
   before, with the directory of its library in `CGO_LDFLAGS`. The end-to-end check has the step of the released form
   (GN-14f): it makes that commit and tag for the platform of the run in a repository of the work directory, and a
   consumer module that requires the module alone runs its test and the tests of the fetched modules from the
