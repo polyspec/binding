@@ -943,6 +943,7 @@ test('an error unit is a class under its parent, and a kind names the class it i
   }
   // I-3: units without a property define none, so the crate holds no helper that nothing calls.
   assert.doesNotMatch(text(out, 'packages/ts/generated/lib.rs'), /fn read_only\(|PropertyAttributes/);
+  assert.doesNotMatch(php, /fn read_unit_property\(|let mut object = match error_object/);
   // B-4: the exact class of a case is the class of its kind.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /self\.assertIs\(type\(error\), pkg\.Utf8Error\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Utf8Error::class, \$error::class\)/);

@@ -852,6 +852,9 @@ fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
   const parentPhpName = (unit: ErrorUnit): string =>
     unit.parent === undefined ? `${layout.namespace}\\${model.classes.find((c) => c.category === unit.category)?.name ?? ''}` : unitPhpName(unit.parent);
   const propertyHandler = (unit: ErrorUnit, property: ErrorProperty): string => `${rustField(unit.unit.name)}_${rustField(property.member.name)}_method`;
+  // Units without a property write and read none, so the helpers of the properties are left out (dead code fails
+  // the build).
+  const withProperties = model.errorUnits.some((u) => errorProperties(u).length > 0);
   const unitProperties = model.errorUnits.length === 0 ? '' : `${model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
 /// I-3: the properties of ${unitPhpName(u)}, read from the core error. Each is written in the scope of the class that
 /// declares it.
@@ -872,7 +875,7 @@ ext_php_rs::zend_fastcall! {
         ext_php_rs::zend::run_handler(AssertUnwindSafe(|| read_unit_property(ex, retval, ${unitIndex(u)}, ${rustString(langName('php', property.member.name, 'variable'))})));
     }
 }
-`)).join('')}
+`)).join('')}${!withProperties ? '' : `
 /// I-3: a property of an error unit, read in the scope of the class that declares it.
 fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, name: &str) {
     let Some(this) = ex.get_self() else { return };
@@ -880,7 +883,7 @@ fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, nam
         *retval = value.shallow_clone();
     }
 }
-
+`}
 /// A library class that is registered already: the parent of an error unit and the scope of its properties.
 fn registered_class(index: usize) -> &'static ClassEntry {
     match CLASSES.get(index).and_then(OnceLock::get) {
@@ -933,7 +936,7 @@ fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
 ${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
     };
-${model.errorUnits.length === 0 ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
+${!withProperties ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
         Ok(object) => object,
         Err(fail) => return fail,
     };
