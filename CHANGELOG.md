@@ -20,7 +20,10 @@
   `Raised` now holds a `Native` (`Raised::from_generated(Native)`, `native()`), whose last drop removes the entry
   (GN-6u): Python, Go and WASM at the drop; Node and PHP on the thread that threw, at once, or, after a drop on another
   thread, when that thread next keeps or throws again an exception, and the end of the thread discards its queue. A
-  failure of the binding on another thread is held by its `Raised` as its `BindingError`.
+  failure of the binding on another thread is held by its `Raised` as its `BindingError`. `Raised::from_generated`
+  takes a `Native` instead of a `Handle` and `handle()` is replaced by `native()`, so the generated code of every
+  repository that depends on binding_core is generated again with this version; code generated before it does not
+  compile against it.
 - No generated test gave a language object through a `native` row and back, so a binding that kept or lost the
   object passed. For a value alias with a `native` out row and a function that takes it and gives it back, each target
   now tests that the object comes back as the same object and that the binding keeps no reference to it (GN-6u):
