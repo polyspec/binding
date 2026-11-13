@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: f8fdc7c3c508ba9d601d5113ed969abf6a27092672145937cb116e116144d6a6 -->
+<!-- source-sha256: ed6d6140940eaf5144cef0bf25c1ba1d5bf69985e1a17d7cc0388e746539ca67 -->
 # binding_core 공개 API
 
 [English](core-api.md)
