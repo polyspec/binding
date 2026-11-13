@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- 다른 레포의 callback unit을 받는 class나 member를 언어 코드에 닿지 않는 것으로 판정했다. 언어 코드를 담는 타입의 계산(GN-6h)이
+  다른 레포의 모든 타입에 false를 돌려주어서, 그런 callback을 받는 wait `blocking_io`나 `async_driver` member가 생성되었고 그
+  class의 lock도 그것을 세지 않았다. 이제 그런 callback unit은 언어 코드를 담으므로, 그 member는 "a member with wait ... that
+  reaches language code is not generated"로 거부되고 lock도 그것을 센다(GN-6s). `make test-ts`로 검증했다: 292 통과.
 - 다른 레포의 callback unit을 parameter로 받는 member(unit의 origin이 `callback`인 `{unit, library}` 타입)는 어떤 target도
   생성되지 않았다. "the type ... is not generated yet"으로 거부되었기 때문이다. 이제 PHP, Python, Node는 언어 객체를 소유 레포의
   코어 trait 구현으로 감싸고, 그 method는 `binding_core::Failure<<소유 레포 오류>>`를 돌려준다. 선언은 소유 패키지의 타입을

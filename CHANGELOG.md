@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A class or a member that took a callback unit of another repository was judged as one that reaches no language
+  code: the computation of the types that carry language code (GN-6h) returned false for every type of another
+  repository, so a member with wait `blocking_io` or `async_driver` that took such a callback was generated, and the
+  lock of its class did not count it. Such a callback unit now carries language code, so that member is refused with
+  "a member with wait ... that reaches language code is not generated" and the lock counts it (GN-6s). Verified by
+  `make test-ts`: 292 pass.
 - A member whose parameter is a callback unit of another repository (a `{unit, library}` type whose unit has origin
   `callback`) generated no target: it was refused with "the type ... is not generated yet". PHP, Python and Node now
   wrap the language object as an implementation of the owner's core trait, whose methods return

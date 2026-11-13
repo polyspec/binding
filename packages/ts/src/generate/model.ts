@@ -371,7 +371,7 @@ export function collectModel(
   };
   // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
   const ownVariants = new Set(contract.errors.kinds.map((row) => row.variant));
-  const carrying = carriers(contract.units);
+  const carrying = carriers(contract.units, foreign);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
@@ -604,7 +604,7 @@ export function collectModel(
       return true;
     }
   }
-  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks));
+  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks, foreign));
   const classes: ErrorClass[] = CATEGORIES.map((category) => {
     const row = contract.errors.classes[category] ?? {};
     // E-7: Go has no class table; its category types have fixed names, so a contract whose only target is Go names none.
@@ -745,7 +745,7 @@ const waits = (member: Member): boolean => member.wait !== undefined && member.w
 
 // GN-6h: the class units that carry language code, the least set that satisfies the two definitions. The set is read
 // from the contract alone, so it also counts members that the generator refuses for another reason.
-export function carriers(units: readonly Unit[]): { classes: Set<string>; carries: (type: Type) => boolean } {
+export function carriers(units: readonly Unit[], foreign: ReadonlyMap<string, Contract> = new Map()): { classes: Set<string>; carries: (type: Type) => boolean } {
   const byId = new Map(units.map((u) => [u.id, u]));
   const found = new Set<string>();
   const carries = (type: Type, seen: Set<string> = new Set()): boolean => {
@@ -756,7 +756,9 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
     if ('map' in type) return carries(type.map, seen);
     if ('keyed_map' in type) return carries(type.keyed_map, seen);
     if ('tuple' in type) return type.tuple.some((part) => carries(part, seen));
-    if (!('unit' in type) || type.library !== undefined) return false;
+    if (!('unit' in type)) return false;
+    // GN-6s: a callback unit of another repository carries language code as one of this repository does.
+    if (type.library !== undefined) return foreign.get(type.library)?.units.find((u) => u.id === type.unit)?.origin === 'callback';
     const unit = byId.get(type.unit);
     if (unit === undefined) return false;
     if (unit.origin === 'callback') return true;
@@ -799,8 +801,8 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
 }
 
 // GN-6h: the lock of each class unit.
-function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[]): void {
-  const carrying = carriers(contract.units);
+function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[], foreign: ReadonlyMap<string, Contract>): void {
+  const carrying = carriers(contract.units, foreign);
   const names = (value: unknown, id: string, seen: Set<string> = new Set()): boolean => {
     if (Array.isArray(value)) return value.some((item) => names(item, id, seen));
     if (typeof value !== 'object' || value === null) return false;
