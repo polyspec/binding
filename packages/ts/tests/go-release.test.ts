@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consumerFiles, goRemote, requiredVersion } from '../../../scripts/go-release.mts';
+import { consumerFiles, debugSections, goRemote, requiredVersion } from '../../../scripts/go-release.mts';
 
 test('the tag of a Go module is its directory in the repository and its version (GN-15g)', () => {
   assert.deepEqual(goRemote('github.com/polyspec/sample/packages/go', 'v0.0.1'), { owner: 'polyspec', repository: 'sample', directory: 'packages/go', tag: 'packages/go/v0.0.1' });
@@ -42,4 +42,25 @@ test('the consumer requires each module at its version and imports every package
     '',
   ].join('\n'));
   assert.deepEqual([...files.keys()], ['go.mod', 'consumer_test.go']);
+});
+
+test('the debug sections that llvm-size names in a static library are found by their names and sizes (GN-15g)', () => {
+  const sizes = [
+    'a.o   (ex /work/libpolyspec_sample_go.a):',
+    'section            size   addr',
+    '__text            1200      0',
+    '__debug_info       340   1200',
+    '__debug_str          0   1540',
+    'Total             1540',
+    '',
+    'b.o   (ex /work/libpolyspec_sample_go.a):',
+    'section            size   addr',
+    '.text              900      0',
+    '.debug_line         77    900',
+    '.zdebug_abbrev      12    977',
+    'Total              989',
+  ].join('\n');
+  // A section of size 0 holds nothing; each other debug section is named once.
+  assert.deepEqual(debugSections(sizes), ['.debug_line', '.zdebug_abbrev', '__debug_info']);
+  assert.deepEqual(debugSections('a.o   (ex x.a):\nsection   size   addr\n__text   12   0\n__eh_frame   8   12\nTotal   20\n'), []);
 });
