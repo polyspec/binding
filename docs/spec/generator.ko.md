@@ -12,9 +12,9 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓴다(GN-6n). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -375,6 +375,18 @@
   기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate는 이름을 대고 거부한다.
   코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없기 때문이다. `process_wait`와
   `async_driver`도 이름을 대고 거부한다(G-4).
+- **GN-6n** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 테스트로 생성하고,
+  각 언어는 그것을 공개 API가 아니라고 표시한다.
+  - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
+  - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
+    module `m`의 이름은 internal 이름만 담은 module `<root>._m`에 있고, 생성 테스트는 그 자리에서 부른다.
+  - Node와 WASM: 그 선언마다 JSDoc에 태그 `@internal`을 둔다. 선언을 `stripInternal`로 만드는 패키지는 그것을 뺀다.
+  - Go: 그 선언마다 doc comment가 문장 `It is internal to <library> (U-1) and is no public API.`로 끝난다. Go에는 한
+    module만 쓰는 export 이름을 나타내는 표시가 없기 때문이다.
+  internal unit의 member는 모두 그 unit과 함께 internal이다. public unit의 internal member는 이름을 대고 거부한다(G-4).
+  그 꼴이 언어마다 다르고 아직 그런 member를 가진 계약이 없기 때문이다. 계약 검사는 internal unit의 이름을 public unit의
+  이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
+  internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

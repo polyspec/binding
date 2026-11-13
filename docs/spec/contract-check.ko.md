@@ -146,7 +146,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
   fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고, 그 행의 키는 `args`, `result`, `once`뿐이며
   `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다.
-- **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
+- **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6n), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
   parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는

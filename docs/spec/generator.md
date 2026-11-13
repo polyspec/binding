@@ -10,7 +10,8 @@ the design ids are those of the binding design.
 ## Scope
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
-  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
+  (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for public and internal units
+  (GN-6n):
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
@@ -21,7 +22,7 @@ the design ids are those of the binding design.
   recognizing callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
-  type `source` outside a parameter) is refused by name
+  type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
   record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
@@ -451,6 +452,21 @@ the design ids are those of the binding design.
   A member that waits and takes a callback or a value of language code, and a constructor, a property or an iterate
   that waits, are refused by name, because the core would reach language code off the thread of the call or the
   language has no awaited form of them; `process_wait` and `async_driver` are refused by name (G-4).
+- **GN-6n** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
+  same conversions, refusals and generated tests, and each language marks it as no public API:
+  - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
+  - Python: its names are in no `__all__`, so `<root>` does not re-export them. The names of the root module are in
+    `<root>._root`, and those of the module `m` in `<root>._m`, a module of the internal names alone; the generated
+    tests call them there.
+  - Node and WASM: the JSDoc of each of its declarations holds the tag `@internal`, which a package that builds its
+    declarations with `stripInternal` leaves out.
+  - Go: the doc comment of each of its declarations ends with the sentence `It is internal to <library> (U-1) and is
+    no public API.`, because Go has no marker of an exported name that only one module uses.
+  Every member of an internal unit is internal with its unit. An internal member of a public unit is refused by name
+  (G-4), because its forms differ by language and no contract has one yet. The contract check judges the names of an
+  internal unit as those of a public one (CK-23), because the generated code declares them. Why: the code of the
+  repository (its hosts, its command tool and its cases) calls an internal unit through the binding as it calls a
+  public one, while a user of a package reads it as no API (U-1, P-3).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
