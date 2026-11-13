@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 89b15f9a267095fdc4fd3ed9dfe00702c88f4c3d4a906d29dc779ed7a3edc5b6 -->
+<!-- source-sha256: a3a1d89c95eaf298c465ae713c702a24638613e5703f2bf6b8c27b0ccfdf489d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- PHP, Python, Node, WASM crate의 helper `handle_count`와 `handle_position`은 `clippy::manual_unwrap_or` allow 아래에서
+  `try_from`의 결과를 손으로 match했고, 그 이유는 `unwrap_or`가 금지라고 했다. R-1은 그 계열을 `Option`에만 금지하고, 생성
+  코드는 다른 곳에서 `Result::unwrap_or`를 부른다. 이제 여덟 helper는 allow 없이 `try_from(value).unwrap_or(MAX)`이고,
+  모든 입력에 같은 값을 준다. `make test-ts`로 검증했다: 새 테스트가 그 allow 때문에 실패했고, 변경 후 413개 중 413개가
+  통과한다.
 - consumer sample의 계약 case "refused by the owner"는 alias에 callable을 주고 kind `unsupported`를 기대했는데, sample의
   코어는 callable을 Native로 받는다(GN-6u). 그래서 그 case는 PHP, Python, Node, WASM에서 실패했다. 이제 그 case는 모든
   target에서 소유자가 거부하는 두 값을 각각 `measure`, `pair`, `fetch`의 callback으로 준다. 하나는 key가 텍스트가 아닌

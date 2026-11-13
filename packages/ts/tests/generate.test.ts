@@ -4526,6 +4526,17 @@ test('the number of the thread of a thrown object is read without a match that c
   }
 });
 
+test('the count and the position of a handle are read by Result::unwrap_or, which R-1 allows, without an allow of manual_unwrap_or (GN-6u, R-1)', () => {
+  const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.ok(lib.includes('fn handle_count(value: usize) -> u64 {\n    u64::try_from(value).unwrap_or(u64::MAX)\n}'), path);
+    // A crate keeps the helper of the position only where its host reads a position.
+    if (lib.includes('fn handle_position(')) assert.ok(lib.includes('fn handle_position(value: u64) -> usize {\n    usize::try_from(value).unwrap_or(usize::MAX)\n}'), path);
+    assert.doesNotMatch(lib, /clippy::manual_unwrap_or\b(?!_)/, path);
+  }
+});
+
 test('the Python crate declares the cfg pyo3_disable_reference_pool that its generated code reads, in its build script (GN-6u)', () => {
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = trackedPackages(contract, '0.0.0');

@@ -681,21 +681,13 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
-#[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_count(value: usize) -> u64 {
-    match u64::try_from(value) {
-        Ok(value) => value,
-        Err(_wide) => u64::MAX,
-    }
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// A u64 of a handle or an index as a position of Rust; one beyond usize finds nothing.
-#[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_position(value: u64) -> usize {
-    match usize::try_from(value) {
-        Ok(value) => value,
-        Err(_wide) => usize::MAX,
-    }
+    usize::try_from(value).unwrap_or(usize::MAX)
 }
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.

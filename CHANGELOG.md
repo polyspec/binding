@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The helpers `handle_count` and `handle_position` of the PHP, Python, Node and WASM crates matched the result of
+  `try_from` by hand under an allow of `clippy::manual_unwrap_or`, whose reason named `unwrap_or` disallowed; R-1
+  disallows that family for `Option` only, and the generated code calls `Result::unwrap_or` elsewhere. The eight
+  helpers are now `try_from(value).unwrap_or(MAX)` without the allow, which gives the same value for every input.
+  Verified by `make test-ts`: the new test failed for the allow, and 413 of 413 pass with the change.
 - The contract case "refused by the owner" of the consumer sample gave the alias a callable and expected kind
   `unsupported`, while the core of the sample takes a callable as a Native (GN-6u), so the case failed on PHP, Python,
   Node and WASM. The case now gives two values that the owner refuses on every target, each through `measure`, `pair`
