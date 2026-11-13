@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A helper of a generated crate that is an `async fn` was kept in every crate: `usedHelpers` read the name of a
+  helper after `fn` or `trait` at the start of its item only, so `async fn caught` of the WASM crate had no name and
+  counted as used, and a WASM crate without a member with `wait: async_driver` (variants, sample) had dead code,
+  which the lints deny. `usedHelpers` now reads the name of an `async fn` too (GN-4, GN-6n). Found by the end-to-end
+  run of variants and of sample ("function `caught` is never used"). Verified by `make test-ts`: the test of `caught`
+  failed for the WASM crate of variants, and 409 of 409 pass with the change.
 - Three texts of the generator that no contract of `tests/e2e` shows. PHP wrote the helper `thrown` for every contract
   with a failing member or a value alias, while only a callback or a function type calls it, so the crate of a
   contract with an alias and no callback (the relay fixture) had dead code, which the lints deny; PHP now writes it

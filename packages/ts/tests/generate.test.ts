@@ -4496,6 +4496,12 @@ test('the WASM future that catches a panic of a poll is an async fn, which clipp
   const wasm = text(e2eOwn('classes'), 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /\nasync fn caught<F, O>\(future: F\) -> Result<O, Fail>\nwhere\n    F: std::future::Future<Output = Result<O, Fail>>,\n\{\n    let mut future = std::pin::pin!\(future\);\n/);
   assert.doesNotMatch(wasm, /fn caught<F, O>\(future: F\) -> impl /);
+  // A crate without a member with wait async_driver has neither helper: an async fn is a helper as a fn is.
+  const plain = text(e2eOwn('variants'), 'packages/ts/wasm/generated/lib.rs');
+  assert.ok(plain.length > 0);
+  assert.doesNotMatch(plain, /fn (?:caught|awaited)</);
+  assert.equal(usedHelpers('\nasync fn later() {}\n\nfn now() {}\n', 'now();'), '\nfn now() {}\n');
+  assert.equal(usedHelpers('\n/// Waits.\nasync fn later() {}\n', 'later().await;'), '\n/// Waits.\nasync fn later() {}\n');
 });
 
 test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {

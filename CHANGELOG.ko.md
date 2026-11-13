@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0f5e4e89590fd39c962da45adba67ca57adbee17f51305d5ae1f80435d3afadc -->
+<!-- source-sha256: cfcd1ae5f568cae9d4a2c29c51e3970e893b1aecca0dccab8c02319a59f00e80 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성 crate의 helper가 `async fn`이면 모든 crate에 남았다. `usedHelpers`는 항목의 처음에서 `fn`이나 `trait` 뒤의
+  이름만 읽었고, 그래서 WASM crate의 `async fn caught`는 이름이 없어 쓰인 것으로 세어졌다. `wait: async_driver`
+  member가 없는 WASM crate(variants, sample)에 죽은 코드가 있었고 lint가 이를 deny한다. 이제 `usedHelpers`는
+  `async fn`의 이름도 읽는다(GN-4, GN-6n). variants와 sample의 end-to-end 실행이 찾았다("function `caught` is never
+  used"). `make test-ts`로 검증: `caught`의 테스트가 variants의 WASM crate 때문에 실패했고, 변경 후 409개 중
+  409개가 통과한다.
 - `tests/e2e`의 어느 계약도 드러내지 않는 생성기의 텍스트 세 가지. PHP는 실패하는 member나 value alias가 있는 모든
   계약에 helper `thrown`을 썼는데, 그것을 부르는 것은 callback이나 함수 타입뿐이다. 그래서 alias가 있고 callback이 없는
   계약(relay fixture)의 crate에 죽은 코드가 있었고, lint가 이를 deny한다. 이제 PHP는 Node처럼 `keepsThrown`이 성립할
