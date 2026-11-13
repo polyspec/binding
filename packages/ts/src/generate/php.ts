@@ -3,7 +3,8 @@
 import type { Name, Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
-import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
+import { PHP_HOST, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpMaking } from './alias_php.ts';
+import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -117,6 +118,7 @@ pub fn fault_left(id: i64) -> Result<Vec<String>, PhpException> {
 `;
 
 const PANIC_TEST = (layout: PhpLayout): string => `/// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\panicTest`)})]
@@ -735,8 +737,8 @@ function failureRust(model: Model): string {
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
-enum Thrown {
-    Php(ZBox<ZendObject>),
+enum Thrown {${model.callbacks.length === 0 ? '' : `
+    Php(ZBox<ZendObject>),`}
     Binding(Fail),
 }
 
@@ -756,11 +758,11 @@ fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
         binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
-            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
+${model.callbacks.length === 0 ? '' : `            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
                 Ok(object) => PhpException::from_message(String::new()).with_object(object),
                 Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
             },
-            Some(Thrown::Binding(fail)) => fail,
+`}            Some(Thrown::Binding(fail)) => fail,
             None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
@@ -817,6 +819,7 @@ function poisonRust(model: Model, layout: PhpLayout): string {
         }`;
   }).join('\n');
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\${POISON_ENTRY.php}`)})]
@@ -880,7 +883,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
-    model.aliases.length > 0 ? PHP_HOST : '',
+    model.aliases.length > 0 ? `${PHP_HOST}${phpMaking(model)}` : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -925,11 +928,13 @@ fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, nam
     }
 }
 `}
-/// A library class that is registered already: the parent of an error unit and the scope of its properties.
+/// A library class that is registered already: the parent of an error unit and the scope of its properties. Startup
+/// registers every library class or fails the start of the module, so the engine's Exception stands only for a class
+/// that was not registered, which no call and no registration meets.
 fn registered_class(index: usize) -> &'static ClassEntry {
     match CLASSES.get(index).and_then(OnceLock::get) {
         Some(Class(class)) => class,
-        None => panic!("B-4: the library class {index} is not registered"),
+        None => ext_php_rs::zend::ce::exception(),
     }
 }
 ${[...new Set(model.errorUnits.map(parentIndex))].map((i) => `
@@ -1055,10 +1060,15 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
+  // GN-13: the case-test entry points of the cases whose value has no PHP form.
+  const caseTests = phpCaseTestEntries(model, phpCaseTests(model), layout.namespace);
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
+  // B-4: the classes of PHP that the library classes extend or implement, found by startup before any registration.
+  const jsonHook = model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json'));
+  const builtins = [...new Set(model.classes.map((c) => phpBase(c.category))), ...(jsonHook ? ['JsonSerializable'] : [])];
   const baseFns = [...new Set(bases)].map((fnName) => {
     const category = model.classes.find((c) => phpBaseFn(c.category) === fnName)?.category ?? 'value';
-    return `fn ${fnName}() -> &'static ClassEntry {\n    builtin_class(${rustString(phpBase(category))})\n}\n`;
+    return `fn ${fnName}() -> &'static ClassEntry {\n    builtin(${builtins.indexOf(phpBase(category))}, ext_php_rs::zend::ce::exception)\n}\n`;
   }).join('\n');
   return `${header('//')}
 // The extension ${layout.extension}. Its functions take the raw values and judge them (T-8); PHP counts the arguments
@@ -1113,8 +1123,8 @@ fn remember(index: usize, class: &'static ClassEntry) {
     }
 }
 
-/// B-4: a class of PHP itself, found in the engine's class table when the module starts; a missing class fails the start.
-fn builtin_class(name: &str) -> &'static ClassEntry {
+/// B-4: a class of PHP itself, found in the engine's class table when the module starts.
+fn builtin_class(name: &str) -> Option<&'static ClassEntry> {
     // SAFETY: at module startup the compiler globals hold the class table, which outlives the module; the lookup copies
     // the name before lowercasing it.
     let found = unsafe {
@@ -1122,16 +1132,27 @@ fn builtin_class(name: &str) -> &'static ClassEntry {
         ext_php_rs::ffi::zend_hash_str_find_ptr_lc(table, name.as_ptr().cast(), name.len())
     };
     // SAFETY: the class table holds class entries.
-    match unsafe { found.cast::<ClassEntry>().as_ref() } {
-        Some(class) => class,
-        None => panic!("B-4: the class {name} is missing"),
+    unsafe { found.cast::<ClassEntry>().as_ref() }
+}
+
+
+/// B-4: the classes of PHP that the library classes extend or implement, in the order of BUILTIN_NAMES.
+static BUILTINS: [OnceLock<Class>; ${builtins.length}] = [${builtins.map(() => 'const { OnceLock::new() }').join(', ')}];
+const BUILTIN_NAMES: [&str; ${builtins.length}] = [${builtins.map((name) => rustString(name)).join(', ')}];
+
+/// B-4: a class of PHP that startup found. The registration that reads it runs only after startup found every one,
+/// so the engine's class that \`absent\` gives stands only for a lookup that did not run, and no registration takes it.
+fn builtin(index: usize, absent: fn() -> &'static ClassEntry) -> &'static ClassEntry {
+    match BUILTINS.get(index).and_then(OnceLock::get) {
+        Some(Class(class)) => class,
+        None => absent(),
     }
 }
 
-${baseFns}${model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json')) ? `
+${baseFns}${jsonHook ? `
 /// N-4: the interface of a class with a JSON hook.
 fn json_serializable() -> &'static ClassEntry {
-    builtin_class("JsonSerializable")
+    builtin(${builtins.indexOf('JsonSerializable')}, ext_php_rs::zend::ce::aggregate)
 }
 ` : ''}
 fn private_property(name: &str) -> ClassProperty {
@@ -1264,7 +1285,16 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
-extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
+extern "C" fn startup(_kind: i32, _module: i32) -> i32 {
+    // B-4: a class of PHP that is missing fails the start of the module, before anything is registered.
+    for (slot, name) in BUILTINS.iter().zip(BUILTIN_NAMES) {
+        match builtin_class(name) {
+            Some(class) => {
+                let _first: Result<(), Class> = slot.set(Class(class));
+            }
+            None => return 1,
+        }
+    }${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
     0
 }
 
@@ -1286,8 +1316,19 @@ pub fn alias_in_${rustField(alias.unit.name)}(value: &Zval) -> Result<(), PhpExc
         Ok(())
     })
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\aliasRound${langName('php', alias.unit.name, 'class')}`)})]
+pub fn alias_round_${rustField(alias.unit.name)}(value: &Zval) -> Result<Zval, PhpException> {
+    guard(|| {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(value, "value")?;
+        out_${rustField(alias.unit.name)}(&value)
+    })
+}
 `).join('')}
-${poisonRust(model, layout)}
+${poisonRust(model, layout)}${caseTests.entries}
     #[php_module]
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
@@ -1302,7 +1343,9 @@ ${poisonRust(model, layout)}
         #[cfg(feature = "fault-test")]
         let module = module.function(wrap_function!(arm_faults)).function(wrap_function!(fault_left));`}${aliasesWithKinds(model).map((alias) => `
         #[cfg(feature = "codec-test")]
-        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));`).join('')}
+        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));
+        #[cfg(feature = "codec-test")]
+        let module = module.function(wrap_function!(alias_round_${rustField(alias.unit.name)}));`).join('')}${caseTests.registers}
         module
     }
 }

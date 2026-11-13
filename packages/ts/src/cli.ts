@@ -16,7 +16,7 @@ import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
-import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
+import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
 
@@ -186,7 +186,7 @@ function scaffolded(): Map<string, unknown> {
   if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
   return found;
 }
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>);
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.

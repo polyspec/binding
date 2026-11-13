@@ -4,8 +4,9 @@
 // object (U-7 (d)). What a JavaScript value is as a HostValue is binding's rule, the same for every alias; which kinds
 // an alias takes is its core's.
 
-import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
-import { container, outArms } from './alias_shared.ts';
+import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
+import { container, outArms, readValue, valueReads } from './alias_shared.ts';
+import { rustString } from './text.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -77,11 +78,11 @@ export function aliasNode(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const label = langName('node', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ');
+  const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ', (kept, field, holds, head) => keptMakeNode(model, kept, field, holds, head));
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = JsHost { env, held: Vec::new() };
+    let mut host = JsHost::new(env);
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -111,21 +112,25 @@ ${arms.join('\n')}
 // B-1: what a JavaScript value is as a HostValue, one level at a time; the children of a container are asked for
 // through HostValues by the handles that describe gave.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
-export const NODE_HOST = (`
+const NODE_HOST = (`
 /// B-1: the JavaScript values whose children the core may ask for, under the handles that describe gave: an array, the
 /// [key, value] pairs of a Map, and a plain object with its own enumerable string keys.
 enum Held<'env> {
     Items(Object<'env>),
     Pairs(Object<'env>),
-    Properties(Object<'env>, Object<'env>),
+    Properties(Object<'env>, Object<'env>),/*HELD*/
 }
 
 struct JsHost<'env> {
     env: &'env Env,
-    held: Vec<Held<'env>>,
+    held: Vec<Held<'env>>,/*SEEN*/
 }
 
 impl<'env> JsHost<'env> {
+    fn new(env: &'env Env) -> Self {
+        Self { env, held: Vec::new()/*NEW*/ }
+    }
+
     fn hold(&mut self, held: Held<'env>) -> Handle {
         self.held.push(held);
         Handle::new(handle_count(self.held.len() - 1))
@@ -165,7 +170,7 @@ impl<'env> JsHost<'env> {
     /// B-1: an array, a Date, a Map and a plain object (its prototype Object.prototype or null) are their kinds; a typed
     /// array is outside the set; any other object is its handle with the name of its constructor, which the core judges.
     fn describe_object(&mut self, value: Unknown<'env>) -> napi::Result<HostValue> {
-        let object: Object<'env> = unsafe { value.cast() }?;
+        let object: Object<'env> = unsafe { value.cast() }?;/*DESCRIBE*/
         if value.is_array()? {
             let len = u64::from(object.get_array_length()?);
             return Ok(HostValue::List { handle: self.hold(Held::Items(object)), len });
@@ -235,8 +240,8 @@ impl HostValues for JsHost<'_> {
         Ok((key, value))
     }
 
-    fn read(&mut self, _value: Handle) -> Result<HostValue, binding_core::Raised> {
-        Err(raised_binding("B-1: no value class is read"))
+    fn read(&mut self, /*READ*/) -> Result<HostValue, binding_core::Raised> {
+        /*READS*/
     }
 }
 
@@ -282,7 +287,7 @@ fn js_map_set<'env>(map: Object<'env>, key: Unknown<'env>, value: Unknown<'env>)
 
 /// U-7: an integer as a bigint.
 fn js_bigint(env: &Env, value: i64) -> Result<Unknown<'_>, Fail> {
-    Ok(env.create_bigint_from_i64(value).map_err(internal)?.into_unknown(env).map_err(internal)?)
+    ToNapiValue::into_unknown(BigInt::from(value), env).map_err(internal)
 }
 
 /// U-7: the literal token of a number (F-1 (a)) as a bigint, without loss.
@@ -410,4 +415,230 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 }
 `;
   }).join('');
+}
+
+// B-1, GN-6af: the JsHost of a model. An instance of a class that an in row of a value alias names is HostValue::Value
+// with the kind of the row, held for read: an instance of a class without core_type, whose prototype is the one that
+// the entry registered, under one handle within the walk (a Map of the walk finds it); an instance of a class of the
+// addon by its type tag. read gives the property that the row names.
+export function nodeHost(model: Model): string {
+  const reads = valueReads(model, 'node');
+  if (reads.length === 0) {
+    return NODE_HOST.replace('/*HELD*/', '').replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', '').replace('/*READ*/', '_value: Handle')
+      .replace('/*READS*/', 'Err(raised_binding("B-1: no value class is read"))');
+  }
+  const kept = reads.some((r) => r.kept !== undefined);
+  const describe = reads.map((r, index) => {
+    if (r.object !== undefined) {
+      const name = rustField(r.object.unit.unit.name);
+      const struct = langName('node', r.object.unit.unit.name, 'class');
+      return `
+        // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+        if unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), value.raw()) }.is_ok() {
+            let handle = self.hold(Held::Value(object, ${index}));
+            return Ok(HostValue::Value { kind: ${r.variant}, handle });
+        }`;
+    }
+    const position = model.kept.findIndex((k) => k === r.kept?.unit);
+    return `
+        if value_prototype(self.env, ${position}, object)? {
+            let handle = self.identity(object, ${index})?;
+            return Ok(HostValue::Value { kind: ${r.variant}, handle });
+        }`;
+  }).join('');
+  const read = reads.map((r, index) => {
+    if (r.kept !== undefined) {
+      return `
+            ${index} => {
+                let kept: Unknown<'_> = object.get_named_property(${rustString(langName('node', r.kept.field.name, 'variable'))}).map_err(|error| raised(Thrown::Js(error)))?;
+                self.describe(kept).map_err(|error| raised(Thrown::Js(error)))
+            }`;
+    }
+    const o = r.object;
+    if (o === undefined) return '';
+    const name = rustField(o.unit.unit.name);
+    const struct = langName('node', o.unit.unit.name, 'class');
+    return `
+            ${index} => {
+                // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
+                let instance = unsafe { <ClassInstance<'_, class_${name}::${struct}> as FromNapiValue>::from_napi_value(self.env.raw(), object.raw()) }.map_err(|error| raised(Thrown::Js(error)))?;
+                ${o.unit.lock === undefined ? `let value = ${o.property.corePath}(&instance.inner);` : `let held = instance.inner.read(${rustString(struct)}, &[]).map_err(|error| raised(Thrown::Binding(binding_error(error))))?;
+                let value = ${o.property.corePath}(&held);`}
+                Ok(${readValue(o.property.returns as string)})
+            }`;
+  }).join('');
+  const identity = kept ? `
+
+    /// GN-6af: the handle of an instance of a value class, the same for the same instance within the walk.
+    fn identity(&mut self, object: Object<'env>, read: usize) -> napi::Result<Handle> {
+        let seen = match self.seen {
+            Some(seen) => seen,
+            None => {
+                let seen = js_new_map(self.env)?;
+                self.seen = Some(seen);
+                seen
+            }
+        };
+        let found = js_map_get(seen, object.to_unknown())?;
+        if found.get_type()? == ValueType::Number {
+            let position = unsafe { found.cast::<u32>() }?;
+            return Ok(Handle::new(u64::from(position)));
+        }
+        let handle = self.hold(Held::Value(object, read));
+        let position = u32::try_from(handle.raw()).map_err(|_wide| napi::Error::from_reason("B-1: too many values in one walk"))?;
+        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env)?)?;
+        Ok(handle)
+    }` : '';
+  return NODE_HOST
+    .replace('/*HELD*/', "\n    Value(Object<'env>, usize),")
+    .replace('/*SEEN*/', kept ? "\n    seen: Option<Object<'env>>," : '')
+    .replace('/*NEW*/', kept ? ', seen: None' : '')
+    .replace("        Handle::new(handle_count(self.held.len() - 1))\n    }\n", `        Handle::new(handle_count(self.held.len() - 1))\n    }${identity}\n`)
+    .replace('/*DESCRIBE*/', describe)
+    .replace('/*READ*/', 'value: Handle')
+    .replace('/*READS*/', `let Some(Held::Value(object, read)) = self.held.get(handle_position(value.raw())) else {
+            return Err(raised_binding("B-1: no such value"));
+        };
+        let (object, read) = (*object, *read);
+        match read {${read}
+            _ => Err(raised_binding("B-1: no such value")),
+        }`) + (kept ? KEPT_NODE : '');
+}
+
+// GN-6af: the prototypes of the value classes without core_type, which the entry registers, and what makes and reads
+// their instances.
+const KEPT_NODE = `
+thread_local! {
+    /// GN-6af: the prototypes of the value classes, in the order of the contract, which the entry registers once.
+    static VALUE_PROTOTYPES: RefCell<Vec<napi::UnknownRef<false>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// GN-6af: the entry registers the prototype of each value class when it loads.
+#[napi(js_name = "__registerValues")]
+pub fn register_values(env: &Env, prototypes: Vec<Unknown<'_>>) -> napi::Result<()> {
+    let references = prototypes.iter().map(|prototype| unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), prototype.raw()) }).collect::<napi::Result<Vec<_>>>()?;
+    VALUE_PROTOTYPES.with_borrow_mut(|registered| *registered = references);
+    Ok(())
+}
+
+/// GN-6af: the registered prototype of a value class.
+fn value_class<'env>(env: &'env Env, position: usize) -> napi::Result<Unknown<'env>> {
+    VALUE_PROTOTYPES.with_borrow(|registered| match registered.get(position) {
+        Some(prototype) => prototype.get_value(env),
+        None => Err(napi::Error::from_reason("GN-6af: the value classes are not registered")),
+    })
+}
+
+/// GN-6af: whether the prototype of an object is the prototype of the value class.
+fn value_prototype(env: &Env, position: usize, object: Object<'_>) -> napi::Result<bool> {
+    let prototype = object.get_prototype()?;
+    env.strict_equals(prototype, value_class(env, position)?)
+}
+
+/// GN-6af: a new instance of a value class, whose properties make defines.
+fn value_instance(env: &Env, position: usize) -> Result<Object<'_>, Fail> {
+    let prototype = value_class(env, position).map_err(internal)?;
+    js_global_member_call(env, "Object", "create", prototype).map_err(internal)
+}
+
+/// GN-6af: a kept value as the own enumerable data property of an instance, writable when the property is.
+fn value_define<'env>(object: &mut Object<'env>, name: &str, value: Unknown<'env>, writable: bool) -> Result<(), Fail> {
+    let attributes = if writable { PropertyAttributes::Enumerable | PropertyAttributes::Writable } else { PropertyAttributes::Enumerable };
+    let property = Property::new().with_utf8_name(name).map_err(internal)?.with_value(&value).with_property_attributes(attributes);
+    object.define_properties(&[property]).map_err(internal)
+}
+
+fn js_map_get<'env>(map: Object<'env>, key: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+    let get: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = map.get_named_property("get")?;
+    get.apply(map, FnArgs::from((key,)))
+}
+`;
+
+// GN-6af: an instance of a value class without core_type made from the content of an out row, before the content, as
+// the object of its handle.
+function keptMakeNode(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string {
+  const position = model.kept.indexOf(kept);
+  const name = rustString(langName('node', field.name, 'variable'));
+  if (holds === 'value') {
+    if (!field.writable) throw new Unsupported(`${kept.unit.id}: a reference makes an instance of a value class whose property keeps the value it holds, which is writable (GN-6af)`);
+    return `{
+            if let Some(made) = made.get(&handle.raw()) {
+                return Ok(*made);
+            }
+            let mut instance = value_instance(env, ${position})?;
+            value_define(&mut instance, ${name}, out_null(env)?, true)?;
+            made.insert(handle.raw(), instance.to_unknown());
+            let content = make(env, *value, source, made)?;
+            value_define(&mut instance, ${name}, content, true)?;
+            Ok(instance.to_unknown())
+        }`;
+  }
+  return `{
+            ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return Ok(*made);
+            }
+            let mut instance = value_instance(env, ${position})?;
+            let map = js_new_map(env).map_err(internal)?;
+            value_define(&mut instance, ${name}, map.to_unknown(), ${String(field.writable)})?;
+            made.insert(handle.raw(), instance.to_unknown());
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(env, key, source, made)?;
+                let item = make(env, item, source, made)?;
+                js_map_set(map, key, item).map_err(internal)?;
+            }
+            Ok(instance.to_unknown())
+        }`;
+}
+
+// GN-6af: the check of the arguments of the constructor of a value class without core_type, which the JavaScript class
+// of the entry calls before it keeps them: each is described as a HostValue and judged by the core path.
+export function keptCheckNode(kept: KeptClass): string {
+  const js = langName('node', kept.unit.name, 'class');
+  const variable = (f: KeptField): string => rustIdent(langName('node', f.name, 'variable'));
+  const params = kept.fields.map((f) => `, ${variable(f)}: Unknown<'env>`).join('');
+  const describe = (f: KeptField, value: string): string => {
+    const subject = rustString(langName('node', f.name, 'variable'));
+    const type = f.type;
+    if (typeof type === 'object' && 'keyed_map' in type) {
+      const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+      return `{
+                let given = in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, Ok)?;
+                let mut described = binding_core::KeyedMap::new();
+                for (key, item) in given {
+                    described.insert(key, host.describe(item).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+    }
+    if (typeof type === 'object' && 'list' in type) {
+      return `{
+                let given = in_list(${value}, ${subject}, Ok)?;
+                let mut described = Vec::new();
+                for item in given {
+                    described.push(host.describe(item).map_err(js_fail)?);
+                }
+                Ok(described)
+            }`;
+    }
+    return `host.describe(${value}).map_err(js_fail)`;
+  };
+  const lines = kept.fields.map((f) => {
+    const v = variable(f);
+    return f.default === undefined
+      ? `        let ${v} = ${describe(f, v)}?;`
+      : `        let ${v} = in_default(${v}, |value| ${describe(f, 'value')})?;`;
+  });
+  return `
+/// GN-6af: judges the arguments of the constructor of ${js}, which the class of the entry keeps.
+#[napi(js_name = ${rustString(`__check${js}`)})]
+pub fn check_${rustField(kept.unit.name)}<'env>(env: &'env Env${params}) -> napi::Result<()> {
+    guard(|| {
+        let mut host = JsHost::new(env);
+${lines.join('\n')}
+        ${kept.constructor.corePath}(&mut host, ${kept.fields.map(variable).join(', ')}).map_err(failure_error)
+    })
+    .map_err(|fail| throw(env, fail))
+}
+`;
 }

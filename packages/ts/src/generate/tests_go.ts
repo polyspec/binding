@@ -169,11 +169,17 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
 }
 
+// G-5: the Go column of the closed table of the values of a language that are no value of a value type (HOST_VALUES).
+const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', object: 'struct{}{}' } as const;
+
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
 function aliasValue(unit: Unit, json: unknown, where: string): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
+  // G-5: a value of the language that is no value of the value type, {"host": <sort>} of the closed table.
+  const sort = record?.['host'];
+  if (typeof sort === 'string' && Object.hasOwn(GO_HOST_VALUES, sort)) return GO_HOST_VALUES[sort as keyof typeof GO_HOST_VALUES];
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
   const held = record['value'];
@@ -960,7 +966,7 @@ func TestU7${goName(kase.alias.unit.name)}In${testName(kase.id)}(t *testing.T) {
 }
 `).join('');
   const body = `${latin1}${map}${keyed}${aliases}`;
-  const std = ['math', 'reflect'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
+  const std = ['math', 'reflect', 'time'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test

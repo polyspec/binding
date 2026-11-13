@@ -9,7 +9,7 @@ import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
-import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
+import { caseTestTargets, generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
@@ -1858,7 +1858,7 @@ test('WASM: a value alias, its in_raises and a callback unit are generated as fo
   const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
-  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost \{ held: Vec::new\(\) \};/);
+  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost::new\(\);/);
   assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_error\(failure\)\)/);
   assert.match(lib, /OutValue::Map\(value\) => \{\n {12}let handle = value\.handle\(\);\n {12}let len = value\.len\(\);\n {12}if let Some\(made\)/);
   // B-1: an operation that may run code of the value is imported with catch.
@@ -1972,8 +1972,8 @@ test('an entry point runs its core call with the faults that a case armed, and t
     assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn with_faults<T>\(member: &str, call: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::take\(member\)\.run\(call\)/, path);
     assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn shielded<T>\(work: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::Armed::empty\(\)\.run\(work\)/, path);
     // The work of every entry point of a member is shielded, the hooks and the iterate too; the poison entry point
-    // of B-5c (GN-5) is no member.
-    const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n');
+    // of B-5c (GN-5) and the round trip of an alias (GN-13e) are no member.
+    const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n').replace(/\n *(?:pub )?fn _?alias_round_\w+[\s\S]*?\n *\}\n/g, '\n');
     assert.notEqual(members, lib, path);
     assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|binding_core::errno|\{\n        let (id: u64|_value))/g), null, path);
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
@@ -2036,7 +2036,8 @@ test('the errno of a case is the value of its symbol in Python, Node and PHP, wh
     cases.measure[0].raises.errno = 'ENOSPC';
   };
   const out = sampleWith(withErrno, ['python', 'node', 'php']);
-  assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
+  // GN-13e: sample.echo returns the alias data, whose result the tokens compare, which read json and struct.
+  assert.match(text(out, pythonTests), /^import errno\nimport json\nimport struct\nimport unittest$/m);
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
@@ -2088,7 +2089,51 @@ test('fault injection points, the kinds of an alias and the point of another lib
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
-  assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'callable' }; }), /of the alias data: a value \{"host": \.\.\.\} is not generated yet/);
+});
+
+test('a case of an alias gives a value of the language that is no value of the alias by its sort, and an integer outside 64 bits runs in PHP as host values (G-5, GN-13)', () => {
+  const raises = { kind: 'unsupported', status: null, category: 'value' };
+  const change = (c: any, cases: any): void => {
+    cases.data_in.push(
+      { id: 'a_function', value: { host: 'callable' }, raises },
+      { id: 'a_date', value: { host: 'date' }, raises },
+      { id: 'an_object', value: { host: 'object' }, raises },
+      { id: 'a_wide_integer', value: { kind: 'int', value: '9223372036854775808' }, raises },
+    );
+  };
+  const out = sampleWith(change);
+  const wasm = sampleWith(change, ['wasm']);
+  const python = text(out, pythonTests);
+  assert.match(python, /^import datetime\n/m);
+  assert.match(python, /_native\._alias_in_data\(lambda: None\)/);
+  assert.match(python, /_native\._alias_in_data\(datetime\.date\(1970, 1, 1\)\)/);
+  assert.match(python, /_native\._alias_in_data\(object\(\)\)/);
+  assert.match(python, /_native\._alias_in_data\(9223372036854775808\)/);
+  for (const [js, entry] of [[text(out, nodeTests), 'addon\\(\\)'], [text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), 'glue']] as const) {
+    const path = entry;
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(\\(\\) => null\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new Date\\(0\\)\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new \\(class Other \\{\\}\\)\\(\\)\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(9223372036854775808n\\)`), path);
+  }
+  // Go makes a func, a time and an empty struct, in the tests of the feature codec-test, which import time.
+  const goCodec = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(goCodec, /^\t"time"$/m);
+  assert.match(goCodec, /AliasInData\(func\(\) \{\}\)/);
+  assert.match(goCodec, /AliasInData\(time\.Unix\(0, 0\)\.UTC\(\)\)/);
+  assert.match(goCodec, /AliasInData\(struct\{\}\{\}\)/);
+  assert.match(goCodec, /AliasInData\(uint64\(9223372036854775808\)\)/);
+  const php = text(out, phpTests);
+  assert.match(php, /Internal\\aliasInData\(static fn \(\): null => null\);/);
+  assert.match(php, /Internal\\aliasInData\(new \\DateTimeImmutable\('@0'\)\);/);
+  assert.match(php, /Internal\\aliasInData\(new class \{\}\);/);
+  // PHP has no integer outside 64 bits: the case runs through the entry point of the feature case-test, which gives the
+  // in function of the alias the decimal token that Python and JavaScript describe for such an integer.
+  const entry = /public function testU7DataInAWideInteger\(\): void\n    \{\n        try \{\n            \\Polyspec\\Sample\\Internal\\caseTest(\d+)\(\);/.exec(php);
+  assert.ok(entry, php);
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, new RegExp(`pub fn case_test_${entry[1] ?? ''}\\(\\)[\\s\\S]*?let value = HostValue::Number\\(String::from\\("9223372036854775808"\\)\\);`));
+  assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'socket' }; }), /the case bytes_that_are_no_text_are_not_data of the alias data: a value \{"host"\} is "callable", "date" or "object", not "socket" \(G-5\)/);
 });
 
 test('core.result says whether the core returns a Result, and a return of none is bound as the unit (E-1c)', () => {
@@ -2553,4 +2598,316 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
+});
+
+test('a unit with only is generated for the targets that it lists and is absent from the others (Q-4, GN-6af)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const only = { targets: ['python'], reason: 'the test of GN-6af' };
+  for (const unit of contract.units) {
+    if (unit.id === 'gate') unit.only = only;
+    for (const member of unit.members ?? []) if (member.id === 'tag.gate' || member.id === 'tag.gates') member.only = only;
+  }
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'node'] });
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /struct PyGate\b/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /class Gate\b/);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/generated/index.d.ts', 'packages/ts/generated/index.mjs', 'packages/ts/generated/tests/generated.test.mjs']) {
+    assert.doesNotMatch(text(out, path), /\bGate\b/, path);
+  }
+});
+
+test('a value class without core_type keeps the language values that its constructor judges and that a value alias reads and makes (U-1, U-7, GN-6af)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  sample.units.push({
+    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
+    members: [
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The constructor judges its argument as a HostValue, and None when it is left out; no core value is kept.
+    assert.match(lib, /polyspec_sample::check_boxed\(&mut host, /, path);
+    // The in row describes an instance by its identity, and read gives its kept value again.
+    assert.match(lib, /HostValue::Value \{ kind: ValueKind::Reference, handle \}/, path);
+    assert.doesNotMatch(lib, /no value class is read/, path);
+    // The out row makes the instance before its content, without the core.
+    assert.match(lib, /OutValue::Reference \{ handle, value \} =>/, path);
+    assert.doesNotMatch(lib, /polyspec_sample::Boxed\b/, path);
+  }
+  // The property is writable in the declarations; the default is the null of the language.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi'), /class Boxed:[\s\S]*def __init__\(self, value: [^=]+= None\)[\s\S]*@value\.setter/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class Boxed \{[^}]*constructor\(value\?: [^)]*\);[^}]*\n {2}value: /);
+  // PHP holds nothing of the class.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
+});
+
+test('the members of a value class without core_type and a primitive run their cases (GN-13, GN-6af, GN-13d)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  sample.units.push({
+    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
+    members: [
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  // An int leaves Node by two forms, a number or a bigint, so a result of the alias is not compared there; a property
+  // of the class gives the value as it was given, which is compared.
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'int', when: { predicate: 'safe_integer', is: true }, make: { php: 'int', python: 'int', node: 'int', go: 'int', wasm: 'int' } },
+    { kind: 'int', when: { predicate: 'safe_integer', is: false }, make: { php: 'int', python: 'int', node: 'bigint', go: 'int', wasm: 'bigint' } },
+  );
+  data.in = data.in.filter((row: any) => row.node !== 'number');
+  data.in.push(
+    { python: 'int', cases: [{ kind: 'int', read: 'builtin' }] },
+    { node: 'number', cases: [{ when: { predicate: 'integral_float', is: false }, kind: 'float', read: 'builtin' }, { when: { predicate: 'safe_integer', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }] },
+    { node: 'bigint', cases: [{ kind: 'int', read: 'builtin' }] },
+  );
+  const tag = sample.units.find((u: any) => u.id === 'tag');
+  tag.members.push({ id: 'tag.weight', name: ['weight'], kind: 'primitive', visibility: 'public', parameters: [], returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Tag::weight', receiver: '&self' } });
+  sample.cases.push(
+    { member: 'boxed.constructor', file: 'contracts/cases.json', group: 'boxed_constructor' },
+    { member: 'boxed.value', file: 'contracts/cases.json', group: 'boxed_value' },
+    { member: 'tag.weight', file: 'contracts/cases.json', group: 'tag_weight' },
+  );
+  const caseFiles = sampleCases();
+  const cases = caseFiles.get('contracts/cases.json') as Record<string, unknown>;
+  cases['boxed_constructor'] = [
+    { id: 'a_text_is_boxed', value: { kind: 'text', value: 'x' } },
+    { id: 'bytes_that_are_no_text_are_not_boxed', value: { kind: 'bytes', value: { hex: 'ff' } }, raises: { kind: 'unsupported', status: null, category: 'value' } },
+  ];
+  cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }, { id: 'an_int_is_kept_as_it_was_given', value: { kind: 'int', value: 1 }, result: { kind: 'int', value: 1 } }];
+  cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }, { id: 'no_tag_weighs_minus_zero', name: '', result: -0 }];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm'] });
+  // Each case of the constructor and of the property runs: the raising one as B-4, the others as GN-13e; the
+  // constructor counts and names its arguments (G-7).
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  for (const name of ['b4_boxed_new_bytes_that_are_no_text_are_not_boxed', 'gn13e_boxed_new_a_text_is_boxed', 'gn13e_boxed_value_the_value_is_kept', 'g7_boxed_new_counts_and_names_its_arguments']) {
+    assert.match(python, new RegExp(`def test_${name}\\(self\\)`), name);
+  }
+  assert.doesNotMatch(python, /def test_u2_boxed_new_value_takes_none_as_a_value/);
+  assert.match(python, /def test_gn13e_boxed_value_an_int_is_kept_as_it_was_given\(self\) -> None:\n {8}result = pkg\.Boxed\((.+)\)\.value\n {8}expected = \1\n/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    for (const name of ['B-4: Boxed.constructor bytes_that_are_no_text_are_not_boxed', 'GN-13e: Boxed.constructor a_text_is_boxed', 'GN-13e: Boxed.value the_value_is_kept', 'G-7: Boxed.constructor counts and names its arguments']) {
+      assert.ok(tests.includes(`test('${name}'`), `${path}: ${name}`);
+    }
+  }
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    // The property is read on the instance that the constructor makes from the case's keys.
+    assert.match(tests, /test\('GN-13e: Boxed\.value the_value_is_kept', \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Boxed\('x'\)\.value\), ordered\('x'\)\);/, path);
+    // The property gives the value as the language gave it, so the expected value is written as the argument was.
+    assert.match(tests, /test\('GN-13e: Boxed\.value an_int_is_kept_as_it_was_given', \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Boxed\((.+)\)\.value\), ordered\(\1\)\);/, path);
+    // The default of the constructor is the null of the language, so null is no refused value there (GN-13d).
+    assert.doesNotMatch(tests, /U-2: Boxed\.constructor takes null/, path);
+    // A primitive runs its case through the number form of the instance.
+    // assert.strictEqual compares by Object.is, and a negative zero is written as one.
+    assert.match(tests, /test\('N-4: Tag\.weight a_tag_weighs_its_length', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\('ab'\)\), 2\);/, path);
+    assert.match(tests, /test\('N-4: Tag\.weight no_tag_weighs_minus_zero', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\(''\)\), -0\);/, path);
+  }
+  // PHP holds nothing of the class.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\bBoxed\b/);
+});
+
+test('the PHP extension finds the classes of PHP at startup and has no panic (GN-10)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // Only the entry points of the panic test panic, and each allows it by B-7.
+  const items = lib.split(/\n\s*\n/);
+  for (const item of items.filter((i) => /\bpanic!\(/.test(i))) assert.match(item, /#\[allow\(clippy::panic, reason = "B-7: [^\n]*\n\s*#\[cfg\(feature = "panic-test"\)\]/, item);
+  assert.doesNotMatch(lib, /panic!\("B-4/);
+  // Every class of PHP is found before anything is registered, and a missing one fails the start.
+  assert.match(lib, /const BUILTIN_NAMES: \[&str; \d+\] = \[[^\]]*"RuntimeException"/);
+  assert.match(lib, /extern "C" fn startup\(_kind: i32, _module: i32\) -> i32 \{\n[^\n]*\n {4}for \(slot, name\) in BUILTINS\.iter\(\)\.zip\(BUILTIN_NAMES\) \{[\s\S]*?None => return 1,[\s\S]*?let registered = ClassBuilder::new/);
+});
+
+test('a case value names a reference or an object by its id after its first place, which may make a cycle, and repeats an object (GN-13, G-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  const only = { targets, reason: 'the test of GN-6af' };
+  sample.units.push(
+    {
+      id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+        { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+    {
+      id: 'bag', name: ['bag'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'bag.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, default: { empty: 'map' } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_bag' },
+        { id: 'bag.entries', name: ['entries'], kind: 'property', visibility: 'public', returns: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+  );
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const inner = { kind: 'reference', value: { id: 1, value: { kind: 'text', value: 'x' } } };
+  const outer = { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [inner] } } };
+  const object = { kind: 'object', id: 0, value: [['a', { kind: 'object', id: 0 }]] };
+  const repeated = { kind: 'object', repeat: 3, key: 'k', value: { kind: 'null' } };
+  const later = (id: number): unknown => ({ kind: 'reference', value: { id } });
+  file['echo']?.push(
+    { id: 'shared_places', value: { kind: 'list', value: [outer, later(1), later(0), object, { kind: 'object', id: 0 }, repeated] } },
+    // A top reference has no PHP form: its case-test entry point describes the later place of the object by the
+    // identity of the first.
+    { id: 'a_top_reference_of_an_object_twice', value: { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [{ kind: 'object', id: 0, value: [['a', { kind: 'null' }]] }, { kind: 'object', id: 0 }] } } } },
+  );
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
+  // Each id is one instance, made without content before any value, then filled, so a later place, inside the first
+  // or not, holds the same instance; a repeated object is made from the outermost in.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(
+    '(r0 := pkg.Boxed(), r1 := pkg.Boxed(), o0 := pkg.Bag({}), setattr(r1, "value", "x"), setattr(r0, "value", [r1]), o0.entries.__setitem__("a", o0), ' +
+      '[r0, r1, r0, o0, o0, (lambda top: (lambda at: ([at.__setitem__(0, at[0].entries.setdefault("k", pkg.Bag({}))) for _ in range(2)], at[0].entries.__setitem__("k", None), top)[-1])([top]))(pkg.Bag({}))])[-1]',
+  ), 'python');
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.ok(text(out, path).includes(
+      "(() => { const r0 = new pkg.Boxed(); const r1 = new pkg.Boxed(); const o0 = new pkg.Bag(new Map()); r1.value = 'x'; r0.value = [r1]; o0.entries.set('a', o0); " +
+        "return [r0, r1, r0, o0, o0, (() => { const top = new pkg.Bag(new Map()); let at = top; for (let i = 1; i < 3; i += 1) { const next = new pkg.Bag(new Map()); at.entries.set('k', next); at = next; } at.entries.set('k', null); return top; })()]; })()",
+    ), path);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(
+    '(static function () { $o0 = new \\stdClass(); $r1 = "x"; $r0 = [&$r1]; $o0->{"a"} = $o0; ' +
+      'return [&$r0, &$r1, &$r0, $o0, $o0, array_reduce(array_fill(0, 3, null), fn ($inner) => (object) ["k" => $inner], null)]; })()',
+  ), 'php');
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, /let object_0 = host\.reserve\(\);\n\s*let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(/);
+  assert.match(lib, /let entries = vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\];\n\s*host\.fill\(object_0, entries\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
+  assert.match(lib, /\(HostValue::Int\(1\), HostValue::StdClass \{ handle: object_0, len: 1 \}\)/);
+});
+
+test('a result of a value alias is compared by the texts of its places in pre-order, which name the form, the identity and the cycles (GN-13e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const only = { targets: ['python', 'node', 'wasm'], reason: 'the test of GN-13e' };
+  sample.units.push(
+    {
+      id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+        { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+    {
+      id: 'bag', name: ['bag'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'bag.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, default: { empty: 'map' } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_bag' },
+        { id: 'bag.entries', name: ['entries'], kind: 'property', visibility: 'public', returns: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+  );
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } },
+    { kind: 'object', make: { php: 'php_object', python: 'bag.constructor', node: 'bag.constructor', go: 'null', wasm: 'bag.constructor' } },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const reference = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
+  const object = { kind: 'object', id: 0, value: [['a', { kind: 'null' }]] };
+  file['echo'] = [
+    { id: 'shared_places', value: { kind: 'text', value: 'x' }, result: { kind: 'list', value: [reference, { kind: 'reference', value: { id: 0 } }, object, { kind: 'object', id: 0 }, { kind: 'float', value: 1.5 }] } },
+    { id: 'a_deep_list', value: { kind: 'text', value: 'x' }, result: { kind: 'list', repeat: 3000, value: { kind: 'null' } } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  // The bits of a float as the tokens write them: 16 hexadecimal digits.
+  const bitsOf = (float: number): string => {
+    const view = new DataView(new ArrayBuffer(8));
+    view.setFloat64(0, float);
+    return view.getBigUint64(0).toString(16).padStart(16, '0');
+  };
+  const shared = (lang: 'python' | 'node' | 'php'): string[] => lang === 'php'
+    ? ['list 5', 'php_reference #0', 'string 78', 'php_reference again 0', 'php_object #1 1', 'string 61', 'null', 'php_object again 1', `float ${bitsOf(1.5)}`]
+    : ['list 5', 'boxed #0', 'text 78', 'boxed again 0', 'bag #1', 'map 1', 'text 61', 'null', 'bag again 1', `${lang === 'node' ? 'number' : 'float'} ${bitsOf(1.5)}`];
+  const json = (lang: 'python' | 'node' | 'php'): string => JSON.stringify(shared(lang));
+  // The alias has the entry points of codec-test, so the result is compared by these texts and goes back through them.
+  assert.ok(python.includes(`result = pkg.same("x")\n        expected = json.loads(${JSON.stringify(json('python'))})\n        self.assertEqual(_tokens(result), expected)`), python);
+  assert.match(python, /^import json\nimport struct\n/m);
+  assert.match(python, /^_KEPT = \(\(pkg\.Boxed, "boxed", "value"\), \(pkg\.Bag, "bag", "entries"\), \)$/m);
+  for (const js of [node, wasm]) {
+    assert.ok(js.includes(`const result = pkg.same('x');\n  const expected = JSON.parse('${json('node')}');\n  assert.deepStrictEqual(tokens(result), expected);`), js);
+    assert.match(js, /^const KEPT = \[\[pkg\.Boxed, 'boxed', 'value'\], \[pkg\.Bag, 'bag', 'entries'\]\];$/m);
+  }
+  assert.ok(php.includes(`$result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(json('php'))}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));`), php);
+  assert.match(php, /private static function tokens\(mixed \$top\): array/);
+  // A value nested deeper than a recursion takes is its texts, one per place.
+  const deep = JSON.stringify([...Array.from({ length: 3000 }, () => 'list 1'), 'null']);
+  assert.ok(python.includes(JSON.stringify(deep)), 'deep');
+  assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
+});
+
+test('the result of an alias with the entry points of codec-test goes back through its in and out functions to the same texts (GN-13e, U-1)', () => {
+  const out = sampleWith(() => {}, ['python', 'node', 'php']);
+  const wasm = sampleWith(() => {}, ['wasm']);
+  const expected = JSON.stringify(['text 78']);
+  const python = text(out, pythonTests);
+  assert.ok(python.includes(`        result = pkg.same("x")\n        expected = json.loads(${JSON.stringify(expected)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_data(result)), expected)`), python);
+  assert.ok(text(out, nodeTests).includes(`  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRoundData(result)), expected);`), 'node');
+  const js = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.ok(js.includes(`test('GN-13e: same a_text_comes_back', async () => {\n  const glue = await glueModule();\n  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRoundData(result)), expected);`), js);
+  const phpOut = text(out, phpTests);
+  assert.ok(phpOut.includes(`        $result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(JSON.stringify(['string 78']))}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\Polyspec\\Sample\\Internal\\aliasRoundData($result)));`), phpOut);
+  // Each entry point takes the value by the in function of the alias and gives it back by its out function.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[cfg\(feature = "codec-test"\)\]\n#\[pyfunction\]\nfn _alias_round_data<'py>\(py: Python<'py>, value: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n    guard\(py, \|\| \{\n        let value: polyspec_sample::Data = in_data\(py, value, "value"\)\?;\n        out_data\(py, &value\)/);
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /module\.add_function\(wrap_pyfunction!\(_alias_round_data, module\)\?\)\?;/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[napi\(js_name = "__aliasRoundData"\)\]\npub fn alias_round_data<'env>\(env: &'env Env, value: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(env, value, "value"\)\?;\n        out_data\(env, &value\)/);
+  assert.match(text(wasm, 'packages/ts/wasm/generated/lib.rs'), /#\[wasm_bindgen\(js_name = "__aliasRoundData"\)\]\n {4}pub fn alias_round_data\(value: JsValue\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let value: polyspec_sample::Data = in_data\(&value, "value"\)\?;\n {12}out_data\(&value\)/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\aliasRoundData"\)\]\npub fn alias_round_data\(value: &Zval\) -> Result<Zval, PhpException> \{\n    guard\(\|\| \{\n        let value: polyspec_sample::Data = in_data\(value, "value"\)\?;\n        out_data\(&value\)/);
+  assert.match(php, /let module = module\.function\(wrap_function!\(alias_round_data\)\);/);
+});
+
+test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6af, GN-13)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'null', node: 'null', go: 'null', wasm: 'null' } });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const one = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
+  file['echo']?.push(
+    { id: 'a_shared_reference', value: { kind: 'list', value: [one, { kind: 'reference', value: { id: 0 } }] } },
+    { id: 'a_top_reference', value: one },
+  );
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // The make keeps the objects and references that it made under their handles, and makes each before its content.
+  assert.match(lib, /struct PhpMaking \{[^}]*objects: std::collections::BTreeMap<u64, \*mut ZendObject>,[^}]*references: std::collections::BTreeMap<u64, \*mut ext_php_rs::ffi::zend_reference>,/);
+  assert.match(lib, /OutValue::Reference \{ handle, value \} =>[\s\S]*making\.references\.get\(&handle\.raw\(\)\)[\s\S]*php_new_reference\(\)\?;[\s\S]*php_set_reference\(reference, content\);/);
+  assert.match(lib, /making\.objects\.get\(&handle\.raw\(\)\)[\s\S]*php_property\(object, key, item\)\?;/);
+  // A property name and an array key are the bytes of the key.
+  assert.match(lib, /fn php_property\(object: \*mut ZendObject, key: OutValue, item: Zval\)/);
+  assert.match(lib, /OutValue::Bytes\(bytes\) => \{\n\s*let name = ZendStr::new\(bytes\.value\(\), false\);\n\s*array\.insert\(ext_php_rs::types::ArrayKey::ZendString\(&name\), item\)/);
+  const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  // A shared reference is one variable, which both places take by reference.
+  assert.match(tests, /\(static function \(\) \{ \$r0 = "x"; return \[&\$r0, &\$r0\]; \}\)\(\)/);
+  // A reference that is the value itself has no PHP form: the entry point of case-test gives it as host values to the
+  // in function of the alias, and the test runs it.
+  assert.match(tests, /because the value has no PHP form: a reference that is no place of an array or of a property[^\n]*\n {5}\*\/\n {4}public function testGn13esameATopReference\(\): void\n {4}\{\n {8}\\Polyspec\\Sample\\Internal\\caseTest0\(\);\n {8}self::addToAssertionCount\(1\);/);
+  assert.doesNotMatch(tests, /self::fail\("[^"]*no place of an array/);
+  assert.match(lib, /#\[cfg\(feature = "case-test"\)\]\n {4}#\[php_function\]\n {4}#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\caseTest0"\)\]\n {4}pub fn case_test_0\(\) -> Result<\(\), PhpException> \{/);
+  assert.match(lib, /let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(HostValue::Text\(HostText::Bytes\(vec!\[120_u8\]\)\)\) \};\n\s*let _value: polyspec_sample::Data = polyspec_sample::data_from_host\(&mut host, value\)/);
+  assert.match(lib, /#\[cfg\(feature = "case-test"\)\]\n {8}let module = module\.function\(wrap_function!\(case_test_0\)\);/);
+  // The PHP crate has the feature case-test, because PHP has such a case.
+  assert.deepEqual(caseTestTargets({ contract: sample, caseFiles: cases }), ['php']);
+  assert.match(String(trackedPackages(sample, '0.0.0', new Map(), [], new Map(), ['php']).get('packages/php-ext/Cargo.toml')), /\npanic-test = \[\]\ncase-test = \[\]\n/);
+  assert.doesNotMatch(String(trackedPackages(sample, '0.0.0').get('packages/php-ext/Cargo.toml')), /case-test/);
 });

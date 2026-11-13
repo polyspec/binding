@@ -642,6 +642,22 @@ if (targets.includes('wasm') && installed) {
 
 if (targets.includes('php')) {
   const extensions: string[] = [];
+  // GN-13: the entry points of case-test are for tests only. The extension built without features holds none of them,
+  // and the one built with the test features holds each, so the check reads symbols that it can find.
+  for (const p of copiesOf('php').filter((c) => testFeatures(c, 'php').split(',').includes('case-test'))) {
+    const label = `llvm-nm: the extension${copiesOf('php').length === 1 ? '' : ` of ${p.contract.library}`} without features holds no case-test entry point`;
+    if (stepOf(['php'], label, () => {
+      const symbols = (features: string[]): string[] => {
+        run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, ...features]);
+        process.stdout.write('$ llvm-nm --defined-only (case-test entry points)\n');
+        const listed = execFileSync(llvmNm, ['--defined-only', join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+        return listed.split('\n').filter((line) => /case_test_[0-9]+/.test(line));
+      };
+      const leaked = symbols([]);
+      if (leaked.length > 0) throw new Error(`the extension built without features holds case-test entry points: ${leaked.join(', ')}`);
+      if (symbols(['--features', testFeatures(p, 'php')]).length === 0) throw new Error('the extension built with the test features holds no case-test entry point, so the check reads no symbol of one');
+    })) lintOf('php', label);
+  }
   stepOf(['php'], 'build the extensions', () => {
     for (const p of copiesOf('php')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p, 'php')]);

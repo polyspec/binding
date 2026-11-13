@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The rule of a unit with `only` and of a value class without `core_type` had the id GN-6m, which also names the rule
+  of a member with `wait: blocking_io`. The rule of the unit with `only` is now GN-6af in the specification, the code
+  and the tests. A value of the language that is no value of a value type (`{"host": <sort>}`) was refused in Go, which
+  writes the tests of the kinds of an alias; Go now makes `func() {}`, `time.Unix(0, 0).UTC()` and `struct{}{}` for
+  the sorts `callable`, `date` and `object` (GN-13). A case value without a form in PHP that no entry point of
+  `case-test` takes fails its test through the same check as every case that the generator does not write, with the
+  case and the member in the reason (G-4, GN-13e). Verified by `make test-ts`: 319 of 319 pass.
 - The e2e run of `tests/e2e/sample` failed in Go and WASM once a case armed a fault with an errno symbol (`EIO` at
   `sample.tally`). Go: the generated test compared the errno with `int64(syscall.<symbol>)`, while `Errno()` gives an
   `int`, so `go vet` refused the test file (mismatched types); the test now compares with `int(syscall.<symbol>)`.
@@ -319,6 +326,92 @@
   is now one line of at most 80 columns, which both forms keep, and a reason that does not fit is the comment above it;
   the reason of the Node addon names its rule id (GN-3a, GN-4). Verified by `npm test` in `packages/ts`: 289 of 289
   pass, with the test that runs rustfmt on the binding crates with its defaults and with the settings of a repository.
+- The result of a value alias with the entry points of `codec-test` (`in_raises`, GN-5) goes back through the rows of
+  the alias (GN-13e, U-1): each target generates the entry point `_alias_round_<alias>` (Python),
+  `__aliasRound<Alias>` (Node, WASM) or `<namespace>\Internal\aliasRound<Alias>` (PHP), which takes a value by the in
+  function of the alias and gives the core value back by its out function, and the test of a case requires the texts of
+  what it gives back to equal those of the result. Before, a result that the in function refuses or reads as another
+  value passed its test, because only the out direction was compared. The round trip of a value unit without the entry
+  points of `codec-test` stays open (GN-13a). Verified by `make test-ts` (276 tests); the generated tests of
+  php-serialization call the entry point in each of the 601 cases that give a result, for Python, Node, WASM and PHP.
+- A result that is a value alias (GN-13e) is compared as the texts of its places in pre-order, which a loop writes on
+  both sides: the generator writes those of the case value by the out rows of the alias, the row whose kind and
+  predicate (`utf8`, `safe_integer`, `integral_float`, `sequence_keys`) the place has and its form in the language,
+  and the test writes those of the result by the type of each place with the helper `tokens` (Node, WASM, PHP) or
+  `_tokens` (Python). A text names the form and the identity: an instance of a class that an out row names as
+  `<unit>.constructor` (its constructor takes one value that a property of its name gives back), a PHP `stdClass` and a
+  PHP reference are numbered by their first place and named again by their number. Before, a result whose out rows
+  make another form than the built-in one of its kind (text for bytes, `bigint`, a value class, a list for a map, a
+  `stdClass`) failed its test as not compared. Verified by `make test-ts` (275 tests), and by PHP: the texts of the
+  value that PHP's own `unserialize` reads from the data of each of the 601 cases of php-serialization that give a
+  result equal the texts that the generator writes.
+- A case value of the language that is no value of a value type is `{"host": <sort>}` of a closed table (G-5, GN-13):
+  `callable`, `date` and `object`, which Python makes as `lambda: None`, `datetime.date(1970, 1, 1)` and `object()`,
+  Node and WASM as `() => null`, `new Date(0)` and `new (class Other {})()`, and PHP as `static fn (): null => null`,
+  `new \DateTimeImmutable('@0')` and `new class {}`; the specification gives Go `func() {}`, `time.Unix(0, 0).UTC()`
+  and `struct{}{}`, whose tests of the kinds of an alias stay refused by name (U-7). A PHP case value with an integer
+  outside 64 bits runs through the entry point of the feature `case-test` as the decimal token
+  (`HostValue::Number`), for the cases of an alias as for those of a member. Before, a case `{"host": ...}` of an alias
+  refused the generation of every target, and PHP refused the generation for an integer outside 64 bits, so the cases
+  of such an alias were in no generated test. Verified by `make test-ts` (274 tests).
+- The case convention (G-5) gives an object an identity, a reference a place inside its own value and an object nested
+  deeper than a JSON reader takes a form: a `reference` holds `{"id": n, "value": ...}` at the first place of its id
+  and `{"id": n}` at every later place; an `object` with `"id": n` is named at a later place by
+  `{"kind": "object", "id": n}`; `{"kind": "object", "repeat": n, "key": <key>, "value": <value>}` is n objects,
+  each the one property `key` of the one around it. Before, a case of a stdClass held twice, of a reference cycle or
+  of the deepest objects that PHP reads had no value. A generated case value makes each id once without content and
+  fills it after, in a PHP closure, a Python tuple of assignment expressions or a Node and WASM arrow function, so a
+  later place inside the first makes a cycle; a repeated object is made from the outermost in, so no constructor
+  judges the objects inside it again, and from the innermost out with `(object)` in PHP. A case-test entry point
+  reserves the handle of an object with an id before the value and describes a later place of a reference by its
+  identity. A later place that repeats the value of its id is refused by name. Verified by `make test-ts` (273 tests).
+- A case value of Python, Node and WASM made a new instance of the class of a reference (GN-6af) at each place of a
+  reference, so two places of the same id held two references, and `serialize` wrote two values where the case names
+  one shared reference (G-5: the same id is the same reference). The value now makes one instance per id, before the
+  value that holds it, in an expression that names each instance: `(r0 := pkg.Reference(...), [r0, r0])[-1]` in
+  Python and `(() => { const r0 = new pkg.Reference(...); return [r0, r0]; })()` in Node and WASM. Verified by
+  `make test-ts` (273 tests).
+- The generated tests of Python, Node and WASM held no test of a value class without `core_type` (GN-6af): its
+  constructor and its properties were absent from the members that the tests call, so their cases ran in no target.
+  They now have the tests of the members of a class (GN-13): B-4 for each case that raises, GN-13e for each other
+  case, with a property read on an instance that the constructor makes from the case's keys and compared with the
+  value written as the argument was, since the property gives the value of the language that the constructor was
+  given (an int of Node stays a number), and the tests of their parameters, G-7 among them. A primitive (N-4, `valueOf` of Node and WASM) has a test for each case that does not
+  raise, which compares `Number(instance)` with the case's `result` by `assert.strictEqual`, or takes the number form
+  alone when the case gives no `result`; before, its cases ran nowhere. A case float `-0` is written as a negative
+  zero (`-0`, `-0.0`); before, it was written as `0`. The test that an explicit null is refused is not written for a
+  parameter whose default is `{literal: null}`, whose declared value is that null (GN-13d). Verified by
+  `make test-ts` (272 tests).
+- The PHP test of a case whose value is a reference that is no place of an array or of a property, such as the top
+  value of `serialize`, failed with `self::fail`, because no PHP call can give that value, so the refusal of the core
+  was never run in PHP. Such a case now runs through the entry point `<namespace>\Internal\caseTest<n>` of the feature
+  `case-test`, which makes the value as the host values that PHP would describe and gives them to the `in` function of
+  the alias; the test requires the class and the kind of the case. binding scaffold writes `case-test = []` into the
+  PHP crate of a contract with such a case, and the end-to-end check requires with `llvm-nm` that the extension built
+  without features holds no such entry point and the one built with them holds it (GN-13, GN-5). Go, whose case of an
+  argument of another kind needs the same entry point in its C ABI, is generated by the Go generator. Verified by
+  `npm test` in `packages/ts`.
+- The PHP extension panicked when a class of PHP that a library class extends was missing ("B-4: the class {name} is
+  missing") and when a library class was not registered, so a repository that denies `clippy::panic` failed its
+  clippy of the bindings. Startup now finds every class of PHP that a library class extends or implements before it
+  registers anything, and a missing one fails the start of the module (GN-10). The entry points of the panic test of
+  every target, which panic on purpose, carry `#[allow(clippy::panic)]` with the reason B-7, so the deny holds for
+  every other item (GN-5). Verified by `npm test` in `packages/ts` and by clippy of the binding crates of
+  php-serialization with the features `panic-test` and `fault-test`.
+- A unit with `only` and a class of origin `value` without `core_type` were refused ("only and native are not
+  generated yet"), so a contract whose value alias makes such classes, as php-serialization's `StdClass` and
+  `Reference`, generated no target. A unit with `only` is now generated for the targets that it lists only. Python,
+  Node and WASM generate the class as a class of the language that keeps the values it was given: its constructor
+  calls the core's check function on the described arguments, a writable property sets its value, the in row of the
+  alias describes an instance with an identity per walk and `read` gives its kept value, and the out row makes the
+  instance before its content. The primitive hook of a class is `valueOf` in Node and WASM (GN-6g). The PHP binding
+  now makes the form `php_reference` as a reference, makes `php_object` from property names of any bytes, makes a
+  bytes array key, and gives an object and a reference one value at every position of its handle, cycles included.
+  A PHP case value with references is made in a closure, and a case whose reference has no PHP place fails its test
+  with the reason instead of refusing the target (GN-6af, GN-13). A property of a class without a lock is read without
+  one, a large integer is made as a BigInt of napi 3, and the generated Node and PHP code holds no `thrown` function
+  and no `Thrown::Php` variant when the contract has no callback, which `-D warnings` refused as dead code. Verified
+  by `npm test` in `packages/ts` and by clippy of the four binding crates of php-serialization.
 - The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module

@@ -588,7 +588,7 @@ function entry(model: Model, symbol: string, doc: string, lines: string[], featu
 /// # Safety
 ///
 /// \`args\` points to \`len\` bytes that stay valid during the call, or is null with \`len\` 0, and \`result\` points to a
-/// writable \`Buffer\` (B-8).${feature === undefined ? '' : `\n#[cfg(feature = "${feature}")]`}
+/// writable \`Buffer\` (B-8).${lines.some((l) => l.includes('panic!(')) ? '\n#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]' : ''}${feature === undefined ? '' : `\n#[cfg(feature = "${feature}")]`}
 #[no_mangle]
 pub unsafe extern "C" fn ${symbol}(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
     // SAFETY: the caller's contract above.
@@ -974,7 +974,7 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', undefined, 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {

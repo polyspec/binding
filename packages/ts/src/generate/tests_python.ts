@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 
@@ -169,6 +169,7 @@ export function pythonTests(model: Model, module: string): string {
   let usesOutcome = false;
   let usesAsyncio = false;
   let usesSame = false;
+  let usesTokens = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
@@ -217,7 +218,7 @@ export function pythonTests(model: Model, module: string): string {
             ${call(new Map([[arg, unsafeKey]]))}
         self.assertEqual(caught.exception.kind, "invalid_number")`);
       }
-      if (arg.default !== undefined) {
+      if (refusesNull(arg)) {
         out.push(`
     def test_u2_${name}_${argName}_takes_none_as_a_value(self) -> None:
         with self.assertRaises((pkg.${cls('value')}, pkg.${cls('type')})) as caught:
@@ -339,7 +340,16 @@ export function pythonTests(model: Model, module: string): string {
       }), receiver);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined ? `\n        ${call}` : 'refused' in expected ? `\n        self.fail(${pyString(expected.refused)})` : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
+      usesTokens ||= expected !== undefined && 'tokens' in expected;
+      const check = expected === undefined
+        ? `\n        ${call}`
+        : 'refused' in expected
+          ? `\n        self.fail(${pyString(expected.refused)})`
+          : 'tokens' in expected
+            ? expected.round === undefined
+              ? `\n        self.assertEqual(_tokens(${call}), json.loads(${pyString(expected.tokens)}))`
+              : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
+            : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}`);
     }
@@ -470,14 +480,16 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
+  // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.
+  const usesDatetime = out.some((line) => line.includes(HOST_VALUES.date.python));
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}import unittest
 ${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

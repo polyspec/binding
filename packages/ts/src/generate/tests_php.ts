@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -19,6 +19,7 @@ const phpBase = (category: string): string => ({ value: 'InvalidArgumentExceptio
 
 export function phpTests(model: Model, layout: PhpLayout): string {
   checkCaseNames(model, casePascal, true);
+  const caseTestList = phpCaseTests(model);
   const enumRef = (name: string, value: string): string => {
     const unit = model.enums.find((u) => langName('python', u.name, 'class') === name);
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
@@ -84,6 +85,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   ctx.instanceNew = made;
   let usesOutcome = false;
   let usesSame = false;
+  let usesTokens = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -225,8 +227,36 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         .join('');
       return { fixtures, before, after };
     };
+    // GN-13: a case whose value has no PHP form runs the in function of its alias on the value as host values, through
+    // the entry point of the feature case-test.
+    const caseTestOf = (caseId: string): number => caseTestList.findIndex((t) => t.fn === fn && t.id === caseId);
     for (const kase of raisingCases(model, fn)) {
       const id = casePascal(kase.id);
+      const entry = caseTestOf(kase.id);
+      if (entry >= 0) {
+        const errno = expectedErrno(kase);
+        // GN-8a: the value of an errno symbol is read from the extension.
+        const errnoValue = errno === null ? 'null' : 'symbol' in errno ? `\\${layout.namespace}\\Internal\\errnoOf(${phpText(errno.symbol)})` : String(errno.value);
+        methods.push(`
+    /**
+     * GN-13: the in function of ${caseTestList[entry]?.alias.unit.id ?? ''} runs on the value of the case as host values,
+     * because the value has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */
+    public function testB4${name}${id}(): void
+    {
+        try {
+            \\${layout.namespace}\\Internal\\caseTest${entry}();
+            self::fail('no error');
+        } catch (${cls(kase.raises.category)} $error) {
+            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
+            self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
+            self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
+            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
+            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+        }
+    }`);
+        continue;
+      }
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         methods.push(`
@@ -278,6 +308,20 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     }`);
         continue;
       }
+      const entry = caseTestOf(kase.id);
+      if (entry >= 0) {
+        methods.push(`
+    /**
+     * GN-13: the in function of ${caseTestList[entry]?.alias.unit.id ?? ''} runs on the value of the case as host values,
+     * because the value has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */
+    public function testGn13e${name}${id}(): void
+    {
+        \\${layout.namespace}\\Internal\\caseTest${entry}();
+        self::addToAssertionCount(1);
+    }`);
+        continue;
+      }
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         methods.push(`
@@ -295,9 +339,16 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       }), receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
+      usesTokens ||= expected !== undefined && 'tokens' in expected;
       const check = expected === undefined
         ? `\n        ${call};\n        self::addToAssertionCount(1);`
-        : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
+        : 'refused' in expected
+          ? `\n        self::fail(${phpText(expected.refused)});`
+          : 'tokens' in expected
+            ? expected.round === undefined
+              ? `\n        self::assertSame(json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR), self::tokens(${call}));`
+              : `\n        $result = ${call};\n        $expected = json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\${layout.namespace}\\Internal\\aliasRound${langName('php', expected.round, 'class')}($result)));`
+            : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
     {${receiverMade.lines}${before}${check}${after}
@@ -457,11 +508,20 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     const alias = langName('php', kase.alias.unit.name, 'class');
-    methods.push(`
+    // GN-13: a value of the case that has no PHP form runs through the entry point of the feature case-test.
+    const entry = caseTestList.findIndex((t) => t.fn === undefined && t.alias === kase.alias && t.id === kase.id);
+    const call = entry >= 0
+      ? `\\${layout.namespace}\\Internal\\caseTest${entry}()`
+      : `\\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})`;
+    methods.push(`${entry >= 0 ? `
+    /**
+     * GN-13: the in function of ${kase.alias.unit.id} runs on the value of the case as host values, because the value
+     * has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */` : ''}
     public function testU7${alias}In${casePascal(kase.id)}(): void
     {
         try {
-            \\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)});
+            ${call};
             self::fail('no error');
         } catch (${cls(kase.category)} $error) {
             self::assertSame(${cls(kase.category)}::class, $error::class);
@@ -504,7 +564,7 @@ final class GeneratedTest extends TestCase
             self::assertSame($line, $error->getLine());
         }
     }
-${methods.join('\n')}${usesSame ? `
+${methods.join('\n')}${usesTokens ? PHP_TOKENS : ''}${usesSame ? `
 
     /**
      * GN-13e: a result in a form that assertSame compares: an object other than an enum case is its class and its

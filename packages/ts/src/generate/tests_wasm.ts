@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -45,6 +45,7 @@ export function wasmTests(model: Model): string {
   let usesGlue = false;
   let usesStepGlue = false;
   let usesOrdered = false;
+  let usesTokens = false;
   let usesFixture = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -134,7 +135,7 @@ test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () =>
   assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
-      if (arg.default !== undefined) {
+      if (refusesNull(arg)) {
         out.push(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
   assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
@@ -252,9 +253,20 @@ test('GN-13e: ${name} ${kase.id}', () => {
       const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      usesTokens ||= expected !== undefined && 'tokens' in expected;
+      const round = expected !== undefined && 'round' in expected && expected.round !== undefined;
+      usesGlue ||= round;
+      const check = expected === undefined
+        ? `\n  ${call};`
+        : 'refused' in expected
+          ? `\n  assert.fail(${jsString(expected.refused)});`
+          : 'tokens' in expected
+            ? expected.round === undefined
+              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+              : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
+            : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
+test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${receiverMade.lines}${before}${check}${after}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.
@@ -276,6 +288,14 @@ test('K-2: ${name} lets the exception of a callback through', () => {
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });` : ''}`);
+    }
+    for (const kase of primitiveCases(model, ctx, fn)) {
+      const instance = receiverOfCase(kase.receiver);
+      const number = invoke(fn, '', instance.expr);
+      out.push(`
+test('N-4: ${name} ${kase.id}', () => {${instance.lines}
+  ${kase.result === undefined ? `${number};` : `assert.strictEqual(${number}, ${kase.result});`}
+});`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -314,7 +334,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
-${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- `only`가 있는 unit과 `core_type`이 없는 값 class의 규칙이 `wait: blocking_io`인 member의 규칙과 같은 id GN-6m을 썼다.
+  `only`가 있는 unit의 규칙은 이제 명세, 코드, 시험에서 GN-6af다. 값 타입의 값이 아닌 언어의 값(`{"host": <종류>}`)을
+  alias kind의 시험을 쓰는 Go가 거부했다. 이제 Go는 종류 `callable`, `date`, `object`에 `func() {}`,
+  `time.Unix(0, 0).UTC()`, `struct{}{}`를 만든다(GN-13). PHP에 꼴이 없고 `case-test` 진입점도 받지 않는 case 값은 생성기가
+  적지 못하는 다른 case와 같은 검사로 시험이 실패하며, 이유에 case와 member를 댄다(G-4, GN-13e). `make test-ts`로
+  검증했다: 319개 중 319개가 통과했다.
 - case가 errno 기호로 fault를 장전하자(`sample.tally`의 `EIO`) `tests/e2e/sample`의 e2e 실행이 Go와 WASM에서 실패했다.
   Go: 생성 시험이 errno를 `int64(syscall.<기호>)`와 비교했는데 `Errno()`는 `int`를 돌려주므로, `go vet`가 시험 파일을
   거부했다(타입 불일치). 이제 시험은 `int(syscall.<기호>)`와 비교한다. WASM: 생성 시험이 fault를 errno 기호와 함께
@@ -277,6 +283,78 @@
   `src/lib.rs`에서 `cargo fmt --check`가 실패했다. 이제 allow 속성은 두 꼴 모두가 그대로 두는 80칸 이하의 한 줄이고, 들어가지
   않는 이유는 그 위의 주석이 된다. Node addon의 이유는 규칙 id를 적는다(GN-3a, GN-4). `packages/ts`의 `npm test`로
   확인했다: 289개 중 289개 통과이고, 바인딩 crate에 rustfmt를 기본 설정과 저장소의 설정으로 돌리는 시험이 그 안에 있다.
+- `codec-test`의 진입점(`in_raises`, GN-5)이 있는 값 alias의 결과는 alias의 행을 거쳐 돌아온다(GN-13e, U-1). 각 target은
+  진입점 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `<namespace>\Internal\aliasRound<Alias>`(PHP)를
+  생성한다. 이 진입점은 값을 alias의 in 함수로 받고 core 값을 out 함수로 돌려준다. case의 시험은 그것이 돌려준 값의
+  텍스트가 결과의 텍스트와 같기를 요구한다. 전에는 out 방향만 비교했으므로, in 함수가 거부하거나 다른 값으로 읽는 결과도
+  시험을 통과했다. `codec-test`의 진입점이 없는 값 unit의 왕복은 열린 항목으로 남는다(GN-13a). `make test-ts`(시험 276개)로
+  확인했다. php-serialization의 생성 시험은 결과를 주는 case 601개 각각에서 Python, Node, WASM, PHP 모두 이 진입점을 부른다.
+- 값 alias인 결과(GN-13e)는 그 자리들을 전위 순서로 적은 텍스트로 비교하며, 양쪽 모두 반복문이 쓴다. 생성기는 case 값의
+  텍스트를 alias의 out 행으로 쓴다. 자리의 kind와 predicate(`utf8`, `safe_integer`, `integral_float`, `sequence_keys`)에
+  맞는 행과 그 언어 형태다. 시험은 결과의 텍스트를 각 자리의 타입으로 helper `tokens`(Node, WASM, PHP)나
+  `_tokens`(Python)로 쓴다. 텍스트는 형태와 동일성을 적는다. out 행이 `<unit>.constructor`로 적는 class(생성자가 값 하나를
+  받고 그 이름의 property가 그것을 돌려준다)의 인스턴스, PHP `stdClass`, PHP reference는 첫 자리로 번호를 받고 뒤에서는 그
+  번호로 다시 적힌다. 전에는 out 행이 그 kind의 내장 형태가 아닌 형태(bytes에 text, `bigint`, 값 class, map에 list,
+  `stdClass`)를 만드는 결과는 비교하지 않는다는 이유로 시험이 실패했다. `make test-ts`(시험 275개)로 확인했고, PHP로도
+  확인했다. 결과를 주는 php-serialization의 case 601개 각각의 data를 PHP 자신의 `unserialize`가 읽은 값의 텍스트가 생성기가
+  쓰는 텍스트와 같다.
+- 값 타입의 값이 아닌 언어의 case 값은 닫힌 표의 `{"host": <종류>}`다(G-5, GN-13). 종류는 `callable`, `date`, `object`이며,
+  Python은 `lambda: None`, `datetime.date(1970, 1, 1)`, `object()`로, Node와 WASM은 `() => null`, `new Date(0)`,
+  `new (class Other {})()`로, PHP는 `static fn (): null => null`, `new \DateTimeImmutable('@0')`, `new class {}`로
+  만든다. 명세는 Go에 `func() {}`, `time.Unix(0, 0).UTC()`, `struct{}{}`를 주며, Go의 alias kind 시험은 여전히 이름을 대고
+  거부한다(U-7). 64비트 밖의 정수를 가진 PHP case 값은 10진 token(`HostValue::Number`)으로 feature `case-test`의 진입점을
+  지나며, member의 case에도 alias의 case에도 그렇다. 전에는 alias의 `{"host": ...}` case가 모든 target의 생성을 거부했고,
+  PHP는 64비트 밖의 정수에서 생성을 거부했으므로, 그런 alias의 case는 어느 생성 시험에도 없었다. `make test-ts`(시험
+  274개)로 확인했다.
+- case 규약(G-5)이 객체에 동일성을, 참조에 자기 값 안의 자리를, JSON reader가 받는 것보다 깊이 중첩된 객체에 형식을
+  준다. `reference`는 그 id의 첫 자리에서 `{"id": n, "value": ...}`를, 뒤의 모든 자리에서 `{"id": n}`을 담는다.
+  `"id": n`을 가진 `object`는 뒤의 자리에서 `{"kind": "object", "id": n}`으로 부른다.
+  `{"kind": "object", "repeat": n, "key": <key>, "value": <값>}`은 n개의 객체이며, 각 객체는 그것을 감싸는 객체의 유일한
+  property `key`다. 전에는 두 번 담긴 stdClass, 참조의 순환, PHP가 읽는 가장 깊은 객체의 case에 값이 없었다. 생성된 case
+  값은 id마다 하나를 내용 없이 만든 뒤 채우며, 이것을 PHP closure, Python의 대입식 tuple, Node와 WASM의 화살표 함수 안에서
+  한다. 그래서 첫 자리 안의 뒤 자리가 순환을 만든다. 되풀이되는 객체는 바깥부터 만들므로 어떤 생성자도 그 안의 객체를
+  다시 판정하지 않고, PHP는 `(object)`로 가장 안쪽부터 만든다. case-test 진입점은 id를 가진 객체의 handle을 값보다 먼저
+  잡고, 참조의 뒤 자리를 그 동일성으로 기술한다. id의 값을 되풀이하는 뒤 자리는 이름을 대고 거부한다. `make test-ts`(시험
+  273개)로 확인했다.
+- Python, Node, WASM의 case 값은 reference의 자리마다 reference class(GN-6af)의 새 인스턴스를 만들었다. 그래서 같은 id의
+  두 자리가 reference 둘을 가졌고, case가 공유된 reference 하나를 적는 곳에서 `serialize`는 값 둘을 썼다(G-5: 같은 id는
+  같은 reference다). 이제 값은 id마다 인스턴스 하나를, 그것을 담는 값보다 먼저, 각 인스턴스에 이름을 붙이는 식 안에서
+  만든다. Python은 `(r0 := pkg.Reference(...), [r0, r0])[-1]`, Node와 WASM은
+  `(() => { const r0 = new pkg.Reference(...); return [r0, r0]; })()`이다. `make test-ts`(시험 273개)로 확인했다.
+- Python, Node, WASM의 생성 시험에는 `core_type`이 없는 value class(GN-6af)의 시험이 없었다. 그 생성자와 property가
+  시험이 부르는 member에 들어 있지 않아, 그 case는 어느 target에서도 실행되지 않았다. 이제 이것들은 class의 member의
+  시험을 가진다(GN-13). 실패하는 case마다 B-4, 그 밖의 case마다 GN-13e이며, property는 생성자가 case의 키로 만든
+  인스턴스에서 읽고, 인자를 쓴 방식으로 쓴 값과 비교한다. property는 생성자가 받은 언어 값을 주기 때문이다(Node의 int는
+  number로 남는다). G-7을 포함한 parameter의 시험도 가진다. primitive(N-4, Node와 WASM의 `valueOf`)는 실패하지 않는
+  case마다 시험을 가지며, 그 시험은 `Number(instance)`를 case의 `result`와 `assert.strictEqual`로 비교하고, case가
+  `result`를 주지 않으면 수 형태만 얻는다. 전에는 그 case가 어디서도 실행되지 않았다. case의 float `-0`은 음의 영(`-0`,
+  `-0.0`)으로 쓴다. 전에는 `0`으로 썼다. 명시한 null이 거부되는지 보는 시험은 기본값이 `{literal: null}`인 parameter에는
+  쓰지 않는다. 그 null이 선언된 값이기 때문이다(GN-13d). `make test-ts`(시험 272개)로 확인했다.
+- 값이 배열이나 property의 자리가 아닌 reference인 case(예: `serialize`의 맨 위 값)의 PHP 시험은 `self::fail`로 실패했다.
+  어떤 PHP 호출도 그 값을 줄 수 없어서, 코어의 거부가 PHP에서 한 번도 실행되지 않았다. 이제 그런 case는 feature
+  `case-test`의 진입점 `<namespace>\Internal\caseTest<n>`으로 실행한다. 진입점은 PHP가 기술할 host 값으로 그 값을 만들어
+  alias의 `in` 함수에 주고, 시험은 case의 클래스와 kind를 요구한다. binding scaffold는 그런 case가 있는 계약의 PHP crate에
+  `case-test = []`를 쓰고, 종단 검사는 `llvm-nm`으로 feature 없이 빌드한 확장에 그 진입점이 없고 feature를 켠 확장에는
+  있음을 요구한다(GN-13, GN-5). 다른 kind의 인자를 받는 Go의 case는 C ABI에 같은 진입점이 필요하며, Go 생성기가 생성한다.
+  `packages/ts`의 `npm test`로 확인했다.
+- PHP 확장은 라이브러리 클래스가 상속하는 PHP 클래스가 없을 때("B-4: the class {name} is missing")와 라이브러리 클래스가
+  등록되지 않았을 때 panic했다. 그래서 `clippy::panic`을 deny하는 레포는 바인딩의 clippy에서 실패했다. 이제 startup은 무엇이든
+  등록하기 전에 라이브러리 클래스가 상속하거나 구현하는 PHP 클래스를 모두 찾고, 없는 클래스가 있으면 module 시작이
+  실패한다(GN-10). 모든 target에서 일부러 panic하는 panic 시험 진입점은 B-7을 이유로 적은 `#[allow(clippy::panic)]`를
+  가지므로, 다른 모든 항목에는 deny가 유지된다(GN-5). `packages/ts`의 `npm test`와, feature `panic-test`와 `fault-test`를
+  켠 php-serialization 바인딩 crate들의 clippy로 확인했다.
+- `only`가 있는 unit과 `core_type`이 없는 origin `value`의 class는 거부되었다("only and native are not generated yet").
+  그래서 php-serialization의 `StdClass`와 `Reference`처럼 value alias가 그런 class를 만드는 계약은 어떤 target도
+  생성되지 않았다. 이제 `only`가 있는 unit은 그것이 적은 target에만 생성한다. Python, Node, WASM은 그 class를 받은 값을
+  보관하는 언어의 class로 생성한다. constructor는 기술한 인자로 코어의 검사 함수를 부르고, 쓰기 가능한 property는 그
+  값을 바꾸며, alias의 in 행은 walk마다 identity가 있는 instance를 기술하고 `read`는 보관한 값을 주며, out 행은 내용보다
+  먼저 instance를 만든다. class의 primitive hook은 Node와 WASM에서 `valueOf`다(GN-6g). PHP binding은 이제 형식
+  `php_reference`를 reference로 만들고, `php_object`를 어떤 바이트든 담은 property 이름으로 만들며, bytes 배열 key를
+  만들고, 객체와 reference를 그 handle의 모든 위치에서 한 값으로, 순환까지 만든다. reference가 있는 PHP case 값은
+  closure 안에서 만들며, reference에 PHP 자리가 없는 case는 target을 거부하는 대신 그 이유로 시험이 실패한다(GN-6af,
+  GN-13). lock이 없는 class의 property는 lock 없이 읽고, 큰 정수는 napi 3의 BigInt로 만들며, 생성한 Node와 PHP 코드는
+  계약에 callback이 없으면 `thrown` 함수와 `Thrown::Php` variant를 두지 않는다. `-D warnings`가 그것들을 dead code로
+  거부했기 때문이다. `packages/ts`의 `npm test`와 php-serialization의 네 binding crate의 clippy로 확인했다.
 - 생성기는 루트가 아닌 module의 오류 unit을 모든 target에서 거부했다. 이제 그것을 생성한다. PHP는 그 module의 namespace에
   클래스를 등록하고, Python은 `<root>.<module>`과 `<root>`에서 주며, Node와 WASM은 그 이름으로 내보낸다(GN-7a, GN-11).
   tests/e2e/shapes의 오류 unit `utf8_error`는 module `errors`에 있으므로, 종단 검사는 각 target에서 그 오류를 낸다.

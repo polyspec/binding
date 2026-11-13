@@ -97,7 +97,7 @@ export interface Fn {
   args: Arg[];
   returns: Type;
   // N-4: a method that is the language's string form (stringify) or JSON hook (to_json), named by each language.
-  special?: 'stringify' | 'to_json';
+  special?: 'stringify' | 'to_json' | 'primitive';
   // N-4 iterate: what the core's iterator gives, an item or the key and the value of an entry, each borrowed.
   yields?: { key?: Type; value: Type };
   fallible: boolean;
@@ -119,6 +119,28 @@ export interface ObjectClass {
   lock?: Lock;
   // GN-6p: the method that a unit with cleanup names, whose call consumes the value (B-10).
   cleanup?: Fn;
+}
+
+// GN-6af: a class of origin value without core_type, a class of the language that keeps the language values that its
+// constructor was given; the core function of the constructor only judges them.
+export interface KeptClass {
+  unit: Unit;
+  // The constructor, whose core path judges the arguments, described as HostValues, and returns Result<(), Failure<E>>.
+  constructor: Fn;
+  // One kept value per parameter of the constructor, with its property, when the class has one of that name.
+  fields: KeptField[];
+  // GN-13: the constructor and the properties as the members that the tests call; a property has no core path.
+  members: Fn[];
+}
+
+export interface KeptField {
+  name: Name;
+  // A value alias of this contract, or a list or a keyed map of one.
+  type: Type;
+  // The value kept when the argument is left out: the null or a new empty map or list of the language.
+  default?: 'null' | 'map' | 'list';
+  property?: Member;
+  writable: boolean;
 }
 
 export interface Lock {
@@ -225,6 +247,8 @@ export interface Model {
   // The contracts of the libraries that the contract names (T-3).
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
+  // GN-6af: the value classes without core_type.
+  kept: KeptClass[];
   callbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
@@ -315,6 +339,7 @@ export function collectModel(
   const enums: Unit[] = [];
   const records: Unit[] = [];
   const objects: ObjectClass[] = [];
+  const kept: KeptClass[] = [];
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
@@ -407,6 +432,66 @@ export function collectModel(
       ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
     };
   };
+  // GN-6af: a value class without core_type keeps the language values that its constructor takes, which the core path
+  // of the constructor judges as HostValues; a property gives the value kept under its name.
+  const keptClass = (unit: Unit): KeptClass => {
+    const valueType = (type: Type): boolean => {
+      if (typeof type === 'string') return false;
+      if ('list' in type) return valueType(type.list);
+      if ('keyed_map' in type) return valueType(type.keyed_map);
+      if (!('unit' in type) || type.library !== undefined) return false;
+      const alias = units.get(type.unit);
+      return alias?.kind === 'alias' && alias.origin === 'value';
+    };
+    const members = unit.members ?? [];
+    const made = members.filter((m) => m.kind === 'constructor');
+    const [construct] = made;
+    if (construct === undefined || made.length > 1 || unit.constructible === false) throw new Unsupported(`${unit.id}: a value class without core_type has one constructor (GN-6af)`);
+    const fields: KeptField[] = [];
+    for (const parameter of construct.parameters ?? []) {
+      const where = `${construct.id}.${parameter.name.join('_')}`;
+      if (!valueType(parameter.type)) throw new Unsupported(`${where}: a parameter of a value class without core_type is a value alias, or a list or a keyed map of one (GN-6af)`);
+      const declared = parameter.default;
+      let kept: KeptField['default'];
+      if (declared !== undefined) {
+        const container = typeof parameter.type === 'object' && 'list' in parameter.type ? 'list' : typeof parameter.type === 'object' && 'keyed_map' in parameter.type ? 'map' : undefined;
+        if ('literal' in declared && declared.literal === null && container === undefined) kept = 'null';
+        else if ('empty' in declared && declared.empty === container && container !== undefined) kept = container;
+        else throw new Unsupported(`${where}: the default ${JSON.stringify(declared)} of a value class without core_type is not generated (GN-6af)`);
+      }
+      fields.push({ name: parameter.name, type: parameter.type, ...(kept === undefined ? {} : { default: kept }), writable: false });
+    }
+    const fn = toFn(unit, { ...construct, parameters: (construct.parameters ?? []).map(({ default: _default, ...parameter }) => parameter) }, 'constructor');
+    fn.args = fn.args.map((arg, index) => {
+      const declared = construct.parameters?.[index]?.default;
+      return declared === undefined ? arg : { ...arg, default: declared };
+    });
+    // G-7: the tests count the parameters that the call may leave out.
+    fn.params = fn.params.map((param, index) => {
+      const declared = construct.parameters?.[index]?.default;
+      return declared === undefined ? param : { ...param, default: declared };
+    });
+    if (!fn.fallible) throw new Unsupported(`${construct.id}: the constructor of a value class without core_type judges its arguments and returns a Result (GN-6af)`);
+    for (const member of members) {
+      if (member.kind === 'constructor') continue;
+      const name = member.name.join('_');
+      const field = fields.find((f) => f.name.join('_') === name);
+      if (member.kind !== 'property' || member.core !== undefined || (member.parameters ?? []).length > 0 || field === undefined || JSON.stringify(member.returns) !== JSON.stringify(field.type)) {
+        throw new Unsupported(`${member.id}: a member of a value class without core_type is a property without core that gives the constructor parameter of its name (GN-6af)`);
+      }
+      if (member.native !== undefined || (member.wait !== undefined && member.wait !== 'none') || (member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: a property of a value class without core_type neither waits nor raises (GN-6af)`);
+      field.property = member;
+      field.writable = member.writable === true;
+    }
+    const hidden = fields.find((f) => f.property === undefined);
+    if (hidden !== undefined) throw new Unsupported(`${construct.id}.${hidden.name.join('_')}: a value class without core_type has a property for each value that it keeps (GN-6af)`);
+    const properties = fields.flatMap((f): Fn[] =>
+      f.property === undefined
+        ? []
+        : [{ unit, member: f.property, kind: 'property', receiver: '&self', module: unit.module, params: [], args: [], returns: f.type, fallible: false, failure: false, corePath: '' }],
+    );
+    return { unit, constructor: fn, fields, members: [fn, ...properties] };
+  };
   for (const unit of contract.units) {
     const before = refusals.found.length;
     refusals.attempt(() => collectUnit(unit));
@@ -414,7 +499,7 @@ export function collectModel(
   }
   function collectUnit(unit: Unit): void {
     if (unit.visibility !== 'public') throw new Unsupported(`${unit.id}: an internal unit is not generated yet`);
-    if (unit.only !== undefined || unit.native !== undefined) throw new Unsupported(`${unit.id}: only and native are not generated yet`);
+    if (unit.native !== undefined) throw new Unsupported(`${unit.id}: native is not generated yet`);
     if (unit.kind === 'enum') {
       enums.push(unit);
       return;
@@ -436,13 +521,17 @@ export function collectModel(
     // value of the value type is an instance of it (a value alias with core in/out is generated by its conversions).
     if (unit.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) {
       if (unit.implements !== undefined || unit.abstract === true) throw new Unsupported(`${unit.id}: implements and abstract are not generated yet`);
-      if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a class without core_type`);
+      if (unit.core_type === undefined) {
+        kept.push(keptClass(unit));
+        return;
+      }
       const members: Fn[] = [];
       let refused = false;
       for (const member of unit.members ?? []) refused = refusals.attempt(() => classMember(member)) === undefined || refused;
       function classMember(member: Member): true {
-        if (!['constructor', 'static', 'method', 'property', 'iterate', 'stringify', 'to_json'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
-        if (member.kind === 'stringify' || member.kind === 'to_json') {
+        if (!['constructor', 'static', 'method', 'property', 'iterate', 'stringify', 'to_json', 'primitive'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (member.kind === 'primitive' && (typeof member.returns !== 'string' || !['int', 'int64', 'uint', 'float'].includes(member.returns))) throw new Unsupported(`${member.id}: a primitive returns a number (N-4, GN-6g)`);
+        if (member.kind === 'stringify' || member.kind === 'to_json' || member.kind === 'primitive') {
           if ((unit.members ?? []).filter((m) => m.kind === member.kind).length > 1) throw new Unsupported(`${unit.id}: a class has one ${member.kind} (N-4)`);
           if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
           if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
@@ -669,7 +758,7 @@ export function collectModel(
   for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, kept, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -1100,6 +1189,7 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
 export function memberName(lang: Lang, fn: Fn): string {
   if (fn.special === 'stringify') return lang === 'python' ? '__str__' : lang === 'php' ? '__toString' : 'toString';
   if (fn.special === 'to_json') return lang === 'php' ? 'jsonSerialize' : 'toJSON';
+  if (fn.special === 'primitive') return 'valueOf';
   return langName(lang, fn.member.name, 'callable');
 }
 
@@ -1108,18 +1198,30 @@ export function memberName(lang: Lang, fn: Fn): string {
 export function hookCall(lang: 'python' | 'node' | 'php', fn: Fn, receiver: string): string | undefined {
   if (fn.special === 'stringify') return { python: `str(${receiver})`, node: `String(${receiver})`, php: `(string) ${receiver}` }[lang];
   if (fn.special === 'to_json') return { python: undefined, node: `JSON.stringify(${receiver})`, php: `\\json_encode(${receiver})` }[lang];
+  if (fn.special === 'primitive') return { python: undefined, node: `Number(${receiver})`, php: undefined }[lang];
   return undefined;
 }
 
-// Q-4 only: the members that a language has; a member whose only names other targets is not generated there. N-4:
-// Python has no JSON hook, so a to_json is no member of Python.
+// Q-4 only: the units and the members that a language has; a unit or a member whose only names other targets is not
+// generated there (GN-6af). N-4: Python has no JSON hook, so a to_json is no member of Python; only JavaScript has the
+// hook of a primitive (valueOf).
 export function membersFor(model: Model, lang: Lang): Model {
+  const unitHas = (unit: Unit): boolean => unit.only === undefined || unit.only.targets.includes(lang);
   const has = (fn: Fn): boolean =>
-    (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json');
+    unitHas(fn.unit) && (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json') &&
+    !(fn.special === 'primitive' && lang !== 'node' && lang !== 'wasm');
   return {
     ...model,
     functions: model.functions.filter(has),
-    objects: model.objects.map((o) => ({ ...o, members: o.members.filter(has) })),
+    constants: model.constants.filter((c) => unitHas(c.unit)),
+    enums: model.enums.filter(unitHas),
+    records: model.records.filter(unitHas),
+    resultRecords: model.resultRecords.filter(unitHas),
+    objects: model.objects.filter((o) => unitHas(o.unit)).map((o) => ({ ...o, members: o.members.filter(has) })),
+    kept: model.kept.filter((k) => unitHas(k.unit)),
+    callbacks: model.callbacks.filter((c) => unitHas(c.unit)),
+    aliases: model.aliases.filter((a) => unitHas(a.unit)),
+    errorUnits: model.errorUnits.filter((u) => unitHas(u.unit)),
   };
 }
 
@@ -1169,6 +1271,12 @@ export function resolveNamedTypes(contract: Contract): Contract {
 }
 
 // U-7: the value alias of a type, when the type is one.
+// GN-6af: the value class without core_type that a type names.
+export const keptUnit = (model: Model, type: Type): KeptClass | undefined => {
+  const unit = unitOf(model, type);
+  return libraryOf(type) === undefined ? model.kept.find((k) => k.unit === unit) : undefined;
+};
+
 export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
   const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.aliases.find((a) => a.unit === unit && a.library === libraryOf(type));

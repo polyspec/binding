@@ -4,10 +4,10 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, RECEIVER_GUARD, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, type ObjectClass, RECEIVER_GUARD, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
-import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
+import { aliasWasm, foreignFailureWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -293,6 +293,9 @@ fn in_keyed_map<T>(value: &JsValue, subject: &str, kinds: &[u8], expected: &str,
             (0, binding_core::Key::Int(safe_integer(&key, subject, NumberType::Int)?))
         } else if key.is_string() {
             (2, binding_core::Key::Text(in_text(&key, subject)?))
+        } else if let Some(bytes) = key.dyn_ref::<Uint8Array>() {
+            // GN-6af: a byte string key is a Uint8Array, which a contract lists where the entry keeps the Map itself.
+            (1, binding_core::Key::Bytes(bytes.to_vec()))
         } else {
             return Err(type_error(subject, expected));
         };
@@ -807,13 +810,13 @@ ${propertyArms}
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
-  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
+  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
   const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
-  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
+  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), wasmHost(model)];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -821,7 +824,7 @@ function libRust(model: Model): string {
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
-  const cast = /\.(dyn_ref|dyn_into|unchecked_into)::|\.dyn_into\(\)/.test(`${used}${functions}`) || hasProperties(model);
+  const cast = /\.(dyn_ref|dyn_into|unchecked_into)::|\.(dyn_into|unchecked_ref)\(\)/.test(`${used}${functions}`) || hasProperties(model);
   const registered = model.objects.length === 0 ? '' : `
         MAKERS.with(|registered| registered.replace(makers));
         READERS.with(|registered| registered.replace(readers));`;
@@ -831,7 +834,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
@@ -951,6 +954,17 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
         .map_err(throw)
     }
 
+    /// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+    #[cfg(feature = "codec-test")]
+    #[wasm_bindgen(js_name = ${rustString(`__aliasRound${langName('wasm', alias.unit.name, 'class')}`)})]
+    pub fn alias_round_${rustField(alias.unit.name)}(value: JsValue) -> Result<JsValue, JsValue> {
+        guard(|| {
+            let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(&value, "value")?;
+            out_${rustField(alias.unit.name)}(&value)
+        })
+        .map_err(throw)
+    }
+
 `).join('')}${model.faults.length === 0 ? '' : `    /// G-5: arms the faults of a case for the next call of the member, and gives the id of the arming.
     #[cfg(feature = "fault-test")]
     #[wasm_bindgen(js_name = "__armFaults")]
@@ -973,6 +987,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
     }
 
 `}    /// B-7: the entry point of the generated panic test.
+    #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
     #[cfg(feature = "panic-test")]
     #[wasm_bindgen(js_name = "__panicTest")]
     pub fn panic_test() -> Result<(), JsValue> {
@@ -1138,6 +1153,7 @@ const released = new FinalizationRegistry(([free, handle]) => {
   }
 });
 `;
+  const kept = model.kept.map((k) => keptClassWasm(k, internal)).join('\n');
   const constants = model.constants.map((c) => `export const ${langName('wasm', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   return `${header('//')}
 import load, * as glue from './${glue}.js';
@@ -1151,7 +1167,10 @@ const source = url.protocol === 'file:' ? (await import('node:fs/promises')).rea
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
 glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class'))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
-
+${kept === '' ? '' : `${kept}
+${model.aliases.length === 0 ? '' : `// GN-6af: the module knows the instances of the value classes by these prototypes.
+glue.__registerValues([${model.kept.map((k) => `${langName('wasm', k.unit.name, 'class')}.prototype`).join(', ')}]);
+`}`}
 // T-7: a list parameter takes any iterable but a string; the module judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
@@ -1187,6 +1206,34 @@ ${fns}
 
 ${constants}
 `;
+}
+
+// GN-6af: the class of the ES module of a value class without core_type, as for Node (keptClassJs): the count of the
+// arguments (G-7), the check of the module, and the kept values as own enumerable data properties.
+function keptClassWasm(kept: KeptClass, internal: string): string {
+  const cls = langName('wasm', kept.unit.name, 'class');
+  const count = kept.fields.length;
+  const least = kept.fields.filter((f) => f.default === undefined).length;
+  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+  const crossed = kept.fields.map((f, i) => {
+    const keyed = typeof f.type === 'object' && 'keyed_map' in f.type;
+    return keyed ? `args[${i}] === undefined ? undefined : toEntries(args[${i}]) ?? null` : typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
+  });
+  const empty = { null: 'null', map: 'new Map()', list: '[]' };
+  const defined = kept.fields.map((f, i) => {
+    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
+    return `    Object.defineProperty(this, ${jsString(langName('wasm', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
+  });
+  return `
+export class ${cls} {
+  constructor(...args) {
+    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
+      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
+    }
+    enter(${internal}, () => glue.__check${cls}(${crossed.join(', ')}));
+${defined.join('\n')}
+  }
+}`;
 }
 
 // GW-7: the state of the instance, a module of its own that the package does not export, so the generated B-7 test can
@@ -1264,6 +1311,13 @@ export declare class ${langName('wasm', o.unit.name, 'class')} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
+  // GN-6af: the constructor keeps its arguments, each an own property, which a writable property also sets.
+  const kept = model.kept.map((k) => `
+/** GN-6af: keeps the values that its constructor takes. */
+export declare class ${langName('wasm', k.unit.name, 'class')} {
+  constructor(${k.fields.map((f) => `${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
+${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
+}`).join('\n');
   const callbacks = model.callbacks.map((cb) => `
 /** U-3: a callback that JavaScript code implements. */
 export interface ${langName('wasm', cb.unit.name, 'class')} {
@@ -1272,7 +1326,7 @@ ${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.pa
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}${objects === '' ? '' : `\n${objects}`}${callbacks === '' ? '' : `\n${callbacks}`}
+${records}${objects === '' ? '' : `\n${objects}`}${kept === '' ? '' : `\n${kept}`}${callbacks === '' ? '' : `\n${callbacks}`}
 
 ${fns}
 

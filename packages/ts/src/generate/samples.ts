@@ -3,10 +3,10 @@
 // snake_case, a record parameter is an object of its fields, an enum is its value text, latin1 is text of U+0000 to
 // U+00FF).
 
-import type { Type } from '../contract.ts';
+import type { Name, Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -296,25 +296,306 @@ function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
   if (kind === 'map' && Array.isArray(held)) for (const pair of held) madeAsBuilt(unit, lang, (pair as unknown[])[1]);
 }
 
+// GN-13: a case whose value has no form in the language. It is an Unsupported, so the test of the case fails with
+// the reason as caseRefusal names it (G-4).
+export class CaseRefused extends Unsupported {}
+
 // GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
 // test of the case fails with.
-export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+// GN-13e: `round` names the alias whose entry points of codec-test (in_raises) take the result back by its in function
+// and give it again by its out function, so its test compares the texts of that value too.
+export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string; round?: Name } | { refused: string } {
+  // GN-6af: a property of a value class without core_type gives the value that the language gave its constructor, so
+  // the value is written as an argument is, not by the out rows of its alias.
+  const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
-    return { text: fromJson(model, ctx, fn.returns, value, true) };
+    // GN-13e: a result of a value alias is compared by the tokens of its places, which name the form of each place.
+    const alias = kept ? undefined : aliasOf(model, fn.returns);
+    if (alias !== undefined && alias.unit.out !== undefined) {
+      const tokens = JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value));
+      return alias.inRaises.length > 0 ? { tokens, round: alias.unit.name } : { tokens };
+    }
+    return { text: fromJson(model, ctx, fn.returns, value, !kept) };
   } catch (error) {
     return { refused: `${fn.member.id}: ${error instanceof Error ? error.message : String(error)} (GN-13e)` };
   }
 }
 
+// GN-13e: the result of a member that returns a value alias is compared as the texts of its places in pre-order,
+// depth first, which a loop writes on both sides, so a value nested deeper than a recursion takes is compared too. The
+// generator writes the texts of the case value by the out rows of the alias (the row whose kind and predicate the
+// value has, and its form in the language), and the test writes those of the result by the type of each place
+// (ALIAS_TOKENS of each language). A text names the form: null; bool, true or false; int, its decimal (Python, PHP);
+// number, the hex of the IEEE 754 bits or nan (Node, WASM); bigint, its decimal; float, the hex of the bits or nan
+// (Python, PHP); text and bytes, the hex of the UTF-8 or the bytes (Python, Node, WASM), string in PHP; list n, then
+// its items; map n, then each key and its value; and an instance of a value class of the out rows, a PHP object and a
+// PHP reference, numbered together by their first place: `<unit> #k`, then its field, `php_object #k n`, then its
+// pairs, `php_reference #k`, then its value, and `<form> again k` at a later place.
+export type TokenForm = { unit: string; cls: string; field: string };
+
+// The value classes that the out rows of an alias name as `<unit>.constructor` in a language, with their field.
+export function aliasKept(model: Model, lang: Lang3, alias: Unit): TokenForm[] {
+  const forms: TokenForm[] = [];
+  for (const row of alias.out ?? []) {
+    const make = row.make[lang];
+    if (typeof make !== 'string' || !make.endsWith('.constructor')) continue;
+    const unit = make.slice(0, -'.constructor'.length);
+    if (forms.some((f) => f.unit === unit)) continue;
+    // The class of the form: its constructor takes one value, which a property of the same name gives back.
+    const cls = model.contract.units.find((u) => u.id === unit);
+    const params = cls?.members?.find((m) => m.kind === 'constructor')?.parameters ?? [];
+    const [param] = params;
+    const property = param === undefined ? undefined : cls?.members?.find((m) => m.kind === 'property' && m.name.join('_') === param.name.join('_'));
+    if (cls === undefined || param === undefined || params.length !== 1 || property === undefined) throw new Unsupported(`the out form ${make} of ${alias.id} is no class whose constructor takes one value that a property of its name gives back, with which a result is not compared yet`);
+    forms.push({ unit, cls: langName(lang, cls.name, 'class'), field: langName(lang, param.name, 'variable') });
+  }
+  return forms;
+}
+
+// The bits of a float of a case as the tokens write them.
+function floatBits(number: number): string {
+  if (Number.isNaN(number)) return 'nan';
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, number);
+  return view.getBigUint64(0).toString(16).padStart(16, '0');
+}
+
+// The number of a float or an int of a case: {"float": "nan" | "inf" | "-inf"}, a number, or a decimal text.
+function caseNumber(raw: unknown): number {
+  if (typeof raw === 'object' && raw !== null) return { nan: NaN, inf: Infinity, '-inf': -Infinity }[String((raw as { float?: unknown }).float)] ?? NaN;
+  return Number(raw);
+}
+
+// The bytes of a text or bytes of a case, and of a key that is a text or {"hex"}.
+function caseBytes(raw: unknown): Buffer {
+  if (typeof raw === 'string') return Buffer.from(raw, 'utf8');
+  return Buffer.from(String((raw as { hex?: unknown }).hex), 'hex');
+}
+
+function isUtf8(bytes: Buffer): boolean {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return true;
+  } catch (error) {
+    if (error instanceof TypeError) return false;
+    throw error;
+  }
+}
+
+const SAFE = 2n ** 53n - 1n;
+
+// The tokens of a case value of an alias in a language (GN-13e).
+export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown): string[] {
+  const rows = alias.out ?? [];
+  const kept = aliasKept(model, lang, alias);
+  const out: string[] = [];
+  class Key {
+    readonly key: unknown;
+    constructor(key: unknown) {
+      this.key = key;
+    }
+  }
+  const stack: unknown[] = [top];
+  const objects = new Map<number, number>();
+  const references = new Map<number, number>();
+  let count = 0;
+  const intToken = (decimal: string): string => {
+    if (lang !== 'node') return `int ${decimal}`;
+    const wide = BigInt(decimal);
+    return wide >= -SAFE && wide <= SAFE ? `number ${floatBits(Number(wide))}` : `bigint ${decimal}`;
+  };
+  const textToken = (bytes: Buffer, text: boolean): string => `${lang === 'php' ? 'string' : text ? 'text' : 'bytes'} ${bytes.toString('hex')}`;
+  const keyToken = (key: unknown, keys: readonly string[]): string => {
+    if (typeof key === 'object' && key !== null && 'int' in key) return intToken(String((key as { int: unknown }).int));
+    const bytes = caseBytes(key);
+    // PHP makes a key that is the decimal text of an integer that integer.
+    if (lang === 'php' && /^(0|-?[1-9][0-9]*)$/.test(bytes.toString('latin1')) && BigInt(bytes.toString('latin1')) >= -(2n ** 63n) && BigInt(bytes.toString('latin1')) < 2n ** 63n) return `int ${bytes.toString('latin1')}`;
+    return textToken(bytes, keys.includes('text') && isUtf8(bytes));
+  };
+  const keyed = (make: unknown): readonly string[] => (typeof make === 'object' && make !== null && 'keyed_map' in make ? (make as { keyed_map: { key: string[] } }).keyed_map.key : ['int', 'text', 'bytes']);
+  const holds = (kind: string, node: Record<string, unknown>, predicate: string): boolean => {
+    const held = node['value'];
+    switch (predicate) {
+      case 'utf8':
+        return kind === 'text' || isUtf8(caseBytes(held));
+      case 'safe_integer':
+        return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
+      case 'integral_float': {
+        const number = caseNumber(held);
+        return Number.isFinite(number) && Number.isInteger(number);
+      }
+      case 'sequence_keys':
+        return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+      default:
+        throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
+    }
+  };
+  // A case value of the kind list or text is the map or the bytes of an alias whose out rows have no row of the kind.
+  const formOf = (kind: string, node: Record<string, unknown>): unknown => {
+    const own = rows.filter((r) => r.kind === kind);
+    const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
+    const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holds(kind, node, r.when.predicate) === r.when.is)
+      ?? candidates.find((r) => r.when === undefined || r.when === 'else');
+    if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
+    return matched.make[lang];
+  };
+  const keptOfForm = (form: unknown): TokenForm | undefined => (typeof form === 'string' && form.endsWith('.constructor') ? kept.find((k) => `${k.unit}.constructor` === form) : undefined);
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (item instanceof Key) {
+      out.push(item.key as string);
+      continue;
+    }
+    const node = item as Record<string, unknown>;
+    const kind = String(node['kind']);
+    const held = node['value'];
+    switch (kind) {
+      case 'null':
+        out.push('null');
+        continue;
+      case 'bool':
+        out.push(`bool ${String(held === true)}`);
+        continue;
+      default:
+        break;
+    }
+    const form = formOf(kind, node);
+    const cls = keptOfForm(form);
+    switch (kind) {
+      case 'int':
+        out.push(form === 'bigint' ? `bigint ${String(held)}` : intToken(String(held)));
+        break;
+      case 'float': {
+        const bits = floatBits(caseNumber(held));
+        const token = `${lang === 'node' ? 'number' : 'float'} ${bits}`;
+        if (cls === undefined) out.push(token);
+        else out.push(`${cls.unit} #${String(count++)}`, token);
+        break;
+      }
+      case 'text':
+      case 'bytes': {
+        const bytes = caseBytes(held);
+        out.push(textToken(bytes, form === 'text'));
+        break;
+      }
+      case 'list':
+      case 'map':
+      case 'object': {
+        if (kind === 'object' && !('value' in node)) {
+          out.push(`${cls?.unit ?? 'php_object'} again ${String(objects.get(Number(node['id'])))}`);
+          break;
+        }
+        const repeat = node['repeat'] === undefined ? undefined : Number(node['repeat']);
+        let pairs: [unknown, unknown][];
+        if (kind === 'list') {
+          pairs = repeat === undefined ? (held as unknown[]).map((value, i) => [{ int: i }, value]) : [[{ int: 0 }, repeat > 1 ? { ...node, repeat: repeat - 1 } : held]];
+        } else if (repeat !== undefined) {
+          pairs = [[node['key'], repeat > 1 ? { kind, repeat: repeat - 1, key: node['key'], value: held } : held]];
+        } else {
+          pairs = held as [unknown, unknown][];
+        }
+        const push = (keys: readonly string[]): void => {
+          for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i]?.[1], new Key(keyToken(pairs[i]?.[0], keys)));
+        };
+        if (form === 'list') {
+          out.push(`list ${String(pairs.length)}`);
+          for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i]?.[1]);
+        } else if (form === 'map' || (typeof form === 'object' && form !== null && 'keyed_map' in form)) {
+          out.push(`map ${String(pairs.length)}`);
+          push(form === 'map' ? ['text'] : keyed(form));
+        } else if (form === 'php_object' || cls !== undefined) {
+          const number = count++;
+          if (kind === 'object' && node['id'] !== undefined) objects.set(Number(node['id']), number);
+          if (cls === undefined) {
+            out.push(`php_object #${String(number)} ${String(pairs.length)}`);
+            push(['int', 'bytes']);
+          } else {
+            out.push(`${cls.unit} #${String(number)}`, `map ${String(pairs.length)}`);
+            push(keyedField(model, cls.unit));
+          }
+        } else {
+          throw new Unsupported(`the out form ${shown(form)} of ${alias.id} is not compared yet`);
+        }
+        break;
+      }
+      case 'reference': {
+        const ref = held as Record<string, unknown>;
+        const name = cls?.unit ?? 'php_reference';
+        const id = Number(ref['id']);
+        if (!('value' in ref)) {
+          out.push(`${name} again ${String(references.get(id))}`);
+          break;
+        }
+        references.set(id, count);
+        out.push(`${name} #${String(count++)}`);
+        stack.push(ref['value']);
+        break;
+      }
+      default:
+        throw new Unsupported(`a result of the kind ${kind} of ${alias.id} is not compared yet`);
+    }
+  }
+  return out;
+}
+
+// The key forms of the keyed map that the one field of a value class keeps.
+function keyedField(model: Model, unit: string): readonly string[] {
+  const type = model.contract.units.find((u) => u.id === unit)?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
+  return typeof type === 'object' && 'keyed_map' in type ? type.key : ['int', 'text', 'bytes'];
+}
+
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
 // makes in the language: null, bool, int (a number, or its decimal text outside the safe integers), float, text,
-// bytes, list and map. The other kinds are refused by name until a case needs them (G-4).
+// bytes, list, map, object and reference. The other kinds are refused by name until a case needs them (G-4).
+// G-5: a reference, and an object with an id, is named by its id after its first place. Each id is made once without
+// content, then filled, in an expression that names it: a closure in PHP, whose references are variables that the
+// places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
+// every place of an id holds the same instance and a later place inside the first makes a cycle.
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+  const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
+  if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
+  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
+  const value_ = valueOf(model, ctx, value, where, making, false);
+  if (making.made.length === 0 && making.fills.length === 0) return value_;
+  if (ctx.lang === 'python') return `(${[...making.made, ...making.fills, value_].join(', ')})[-1]`;
+  if (ctx.lang === 'node') return `(() => { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
+  return `(static function () { ${[...making.made, ...making.fills].join(' ')} return ${value_}; })()`;
+}
+
+// G-5: the closed table of the values of a language that are no value of a value type, {"host": <sort>}: the value
+// that each language makes for a sort. WASM takes the value of Node, and Go has its column in tests_go.ts
+// (GO_HOST_VALUES). A Python test that makes a date imports datetime.
+export const HOST_VALUES = {
+  callable: { python: 'lambda: None', node: '() => null', php: 'static fn (): null => null' },
+  date: { python: 'datetime.date(1970, 1, 1)', node: 'new Date(0)', php: "new \\DateTimeImmutable('@0')" },
+  object: { python: 'object()', node: 'new (class Other {})()', php: 'new class {}' },
+} as const satisfies Record<string, Record<Lang3, string>>;
+
+// GN-13: what a case value makes before it is returned: the instances of its ids, in the order of their first places,
+// the statements that fill them, in the order in which their first places end, and the ids that a place named.
+interface Making {
+  made: string[];
+  fills: string[];
+  references: Set<number>;
+  objects: Set<number>;
+}
+
+// The id of a reference or of an object of a case value (G-5).
+function idOf(raw: unknown, where: string): number {
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) throw new Error(`an id of ${where} is a number of at least 0, not ${shown(raw)}`);
+  return raw;
+}
+
+// GN-13: a value of valueFromJson, and slot says whether the value is the value of a place of an array or of a
+// property, the one place where PHP holds a reference.
+function valueOf(model: Model, ctx: Context, value: unknown, where: string, making: Making, slot: boolean): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
   if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
   const held = record['value'];
   const lang = ctx.lang;
+  const keyOf = (key: unknown): string => caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
+  const fieldOf = (cls: KeptClass): string => langName(lang === 'python' ? 'python' : 'node', cls.fields[0]?.name ?? [], 'variable');
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
   if (kind === 'bool') return fromJson(model, ctx, 'bool', held);
   if (kind === 'text') return fromJson(model, ctx, 'text', held);
@@ -337,21 +618,107 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
     if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
-    const inner = valueFromJson(model, ctx, held, where);
+    const inner = valueOf(model, ctx, held, where, making, false);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
     return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => [$inner], ${inner})`;
   }
-  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueFromJson(model, ctx, item, where)).join(', ')}]`;
+  if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueOf(model, ctx, item, where, making, true)).join(', ')}]`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = (held as [unknown, unknown][]).map(([key, item]) => {
-      const k = caseKey(key, (keyKind, raw) => (keyKind === 'int' ? String(raw) : fromJson(model, ctx, keyKind, raw)));
-      const v = valueFromJson(model, ctx, item, where);
+      const k = keyOf(key);
+      const v = valueOf(model, ctx, item, where, making, true);
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[lang];
   }
+  // GN-6af: an object is an instance of the value class that keeps a keyed map, and a reference one of the class that
+  // keeps one value; PHP takes its own stdClass and its own references, the places that take a variable by reference.
+  if (kind === 'object') {
+    const cls = lang === 'php' ? undefined : keptOf(model, 'entries', where);
+    const empty = cls === undefined ? 'new \\stdClass()' : lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map())`;
+    const field = cls === undefined ? '' : fieldOf(cls);
+    // G-5: n objects, each the one property key of the one around it; Python, Node and WASM make them from the
+    // outermost in and fill each after it is made, so no constructor judges the objects inside it again.
+    if (record['repeat'] !== undefined) {
+      const repeat = record['repeat'];
+      if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${shown(value)}`);
+      const k = keyOf(record['key']);
+      const inner = valueOf(model, ctx, held, where, making, true);
+      if (lang === 'python') return `(lambda top: (lambda at: ([at.__setitem__(0, at[0].${field}.setdefault(${k}, ${empty})) for _ in range(${repeat - 1})], at[0].${field}.__setitem__(${k}, ${inner}), top)[-1])([top]))(${empty})`;
+      if (lang === 'node') return `(() => { const top = ${empty}; let at = top; for (let i = 1; i < ${repeat}; i += 1) { const next = ${empty}; at.${field}.set(${k}, next); at = next; } at.${field}.set(${k}, ${inner}); return top; })()`;
+      return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => (object) [${k} => $inner], ${inner})`;
+    }
+    const name = (id: number): string => (lang === 'php' ? `$o${id}` : `o${id}`);
+    if (record['id'] !== undefined) {
+      const id = idOf(record['id'], where);
+      if (!('value' in record)) {
+        if (!making.objects.has(id)) throw new Error(`a case value of ${where} names the object ${id} before its first place (G-5)`);
+        return name(id);
+      }
+      if (making.objects.has(id)) throw new Error(`a case value of ${where} gives the value of the object ${id} at two places (G-5)`);
+      making.objects.add(id);
+      making.made.push(lang === 'python' ? `o${id} := ${empty}` : lang === 'node' ? `const o${id} = ${empty};` : `$o${id} = ${empty};`);
+      if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${shown(held)}`);
+      for (const [key, item] of held as [unknown, unknown][]) {
+        const k = keyOf(key);
+        const v = valueOf(model, ctx, item, where, making, true);
+        making.fills.push(lang === 'python' ? `o${id}.${field}.__setitem__(${k}, ${v})` : lang === 'node' ? `o${id}.${field}.set(${k}, ${v});` : `$o${id}->{${k}} = ${v};`);
+      }
+      return name(id);
+    }
+    if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${shown(held)}`);
+    const entries = (held as [unknown, unknown][]).map(([key, item]) => {
+      const k = keyOf(key);
+      const v = valueOf(model, ctx, item, where, making, true);
+      return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
+    });
+    if (cls === undefined) return `(object) [${entries.join(', ')}]`;
+    return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({${entries.join(', ')}})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map([${entries.join(', ')}]))`;
+  }
+  if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
+    const ref = held as Record<string, unknown>;
+    const id = idOf(ref['id'], where);
+    if (lang === 'php' && !slot) throw new CaseRefused(`a case value of ${where} holds a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place (GN-13)`);
+    const name = lang === 'php' ? `&$r${id}` : `r${id}`;
+    if (!('value' in ref)) {
+      if (!making.references.has(id)) throw new Error(`a case value of ${where} names the reference ${id} before its first place (G-5)`);
+      return name;
+    }
+    if (making.references.has(id)) throw new Error(`a case value of ${where} gives the value of the reference ${id} at two places (G-5)`);
+    making.references.add(id);
+    if (lang === 'php') {
+      making.fills.push(`$r${id} = ${valueOf(model, ctx, ref['value'], where, making, false)};`);
+      return name;
+    }
+    const cls = keptOf(model, 'value', where);
+    const field = fieldOf(cls);
+    making.made.push(lang === 'python' ? `r${id} := pkg.${langName('python', cls.unit.name, 'class')}()` : `const r${id} = new pkg.${langName('node', cls.unit.name, 'class')}();`);
+    const inner = valueOf(model, ctx, ref['value'], where, making, false);
+    making.fills.push(lang === 'python' ? `setattr(r${id}, ${pyString(field)}, ${inner})` : `r${id}.${field} = ${inner};`);
+    return name;
+  }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated yet (GN-13)`);
+}
+
+// G-5: an integer key of a case value: a safe integer as a number, a decimal text outside them as a bigint of
+// JavaScript and as the integer of Python and PHP.
+function intKey(lang: Lang3, raw: unknown): string {
+  if (typeof raw === 'number') return String(raw);
+  return lang === 'node' ? `${String(raw)}n` : String(raw);
+}
+
+// GN-6af: the value class without core_type that keeps the content of a case value: a keyed map (an object) or one value
+// (a reference).
+function keptOf(model: Model, holds: 'entries' | 'value', where: string): KeptClass {
+  const found = model.kept.filter((k) => {
+    const [field, ...more] = k.fields;
+    if (field === undefined || more.length > 0) return false;
+    return holds === 'entries' ? typeof field.type === 'object' && 'keyed_map' in field.type : typeof field.type === 'object' && 'unit' in field.type;
+  });
+  const [only] = found;
+  if (only === undefined || found.length > 1) throw new Unsupported(`a case value of ${where}: ${found.length} value classes keep ${holds === 'entries' ? 'a keyed map' : 'one value'} (GN-6af)`);
+  return only;
 }
 
 // The arguments of a call in the form of each language: positional parameters, then the record's fields as Python
@@ -471,7 +838,11 @@ export interface RaisingCase {
 // The callables whose tests are generated: the functions, then the members of each class unit.
 // An iterate has no arguments to test; it is iterated in the round trip of GN-13a. A stringify and a to_json are
 // called by the name of the language's hook (N-4, memberName).
-export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate'))];
+// GN-13: the members that the tests call, those of a value class without core_type (GN-6af) among them.
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate')), ...model.kept.flatMap((k) => k.members)];
+
+// The members of the class of a member: a class unit or a value class without core_type.
+const classMembers = (model: Model, unit: Unit): Fn[] => model.objects.find((o) => o.unit === unit)?.members ?? model.kept.find((k) => k.unit === unit)?.members ?? [];
 
 export interface Receiver {
   factory: Fn;
@@ -665,8 +1036,7 @@ export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>
   if (fn.receiver === undefined) return undefined;
   // GN-13f: a case that gives its receiver as an instance value.
   if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);
-  const object = model.objects.find((o) => o.unit === fn.unit);
-  for (const factory of object?.members ?? []) {
+  for (const factory of classMembers(model, fn.unit)) {
     const returns = factory.returns;
     const makes = typeof returns === 'object' && 'unit' in returns && returns.unit === fn.unit.id && returns.library === undefined;
     if (factory.receiver !== undefined || !makes) continue;
@@ -679,8 +1049,7 @@ export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>
 // An instance for the tests of a method that need any valid receiver: the factory arguments of the first case of the
 // class's members that does not raise.
 export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
-  const object = model.objects.find((o) => o.unit === fn.unit);
-  for (const member of object?.members ?? []) {
+  for (const member of classMembers(model, fn.unit)) {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
       if (record['raises'] !== undefined) continue;
@@ -729,6 +1098,26 @@ export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: stri
   } finally {
     ctx.steps = steps;
   }
+}
+
+// GN-13d: a parameter with a default for which an explicit null is a refused value: every default but {literal: null},
+// whose declared value is that null.
+export const refusesNull = (arg: Arg): boolean =>
+  arg.default !== undefined && !(typeof arg.default === 'object' && arg.default !== null && 'literal' in arg.default && arg.default.literal === null);
+
+// N-4: the cases of a primitive that do not raise, each with the instance of its factory arguments and the number that
+// the language's number form gives, written as the language writes it; a case without result takes the form alone.
+export function primitiveCases(model: Model, ctx: Context, fn: Fn): { id: string; receiver: Receiver; result: string | undefined }[] {
+  if (fn.special !== 'primitive') return [];
+  const out: { id: string; receiver: Receiver; result: string | undefined }[] = [];
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    const receiver = receiverOf(model, fn, record);
+    if (receiver === undefined) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, N-4)`);
+    out.push({ id: String(record['id']), receiver, result: 'result' in record ? fromJson(model, ctx, fn.returns, record['result'], true) : undefined });
+  }
+  return out;
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
@@ -963,6 +1352,10 @@ export function judgesCallbackResult(model: Model, callback: Unit): boolean {
 export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', value: unknown) => T): T {
   if (typeof key === 'string') return make('text', key);
   if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
+  // G-5: an integer key outside the safe integers is its decimal text, which the reader of the case files may give as a
+// bigint.
+  if (typeof key === 'object' && key !== null && 'int' in key && typeof (key as { int: unknown }).int === 'bigint') return make('int', String((key as { int: bigint }).int));
+  if (typeof key === 'object' && key !== null && 'int' in key && typeof (key as { int: unknown }).int === 'string' && /^-?(0|[1-9][0-9]*)$/.test((key as { int: string }).int)) return make('int', (key as { int: string }).int);
   if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
   throw new Unsupported(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${shown(key)}`);
 }
@@ -1022,8 +1415,11 @@ export function aliasCases(model: Model): AliasCase[] {
       const row = model.contract.errors.kinds.find((k) => typeof kind === 'string' && k.library === undefined && kindsOf(k).includes(kind));
       if (typeof kind !== 'string' || row?.category === undefined) throw new Unsupported(`${where} raises no kind of errors.kinds (U-7)`);
       const value = record['value'];
-      // G-5: a value of the language by its kind, {"host": ...}, waits for the closed table of those kinds.
-      if (typeof value === 'object' && value !== null && 'host' in value) throw new Unsupported(`${where}: a value {"host": ...} is not generated yet (G-5)`);
+      // G-5: a value of the language that is no value of the alias is {"host": <sort>} of the closed table HOST_VALUES.
+      const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
+      if (sort !== undefined && (typeof sort !== 'string' || !Object.hasOwn(HOST_VALUES, sort) || Object.keys(value as object).length !== 1)) {
+        throw new Error(`${where}: a value {"host"} is ${Object.keys(HOST_VALUES).map((k) => JSON.stringify(k)).join(', ').replace(/, ([^,]*)$/, ' or $1')}, not ${shown(sort)} (G-5)`);
+      }
       out.push({ alias, id: String(record['id']), value, kind, category: row.category });
     }
   }
@@ -1050,3 +1446,254 @@ export function aliasRepresentative(model: Model, ctx: Context, type: Type): { k
   if (place === undefined || kase === undefined) return undefined;
   return { kase, value: place(fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)) };
 }
+
+// GN-13: why a case value has no PHP form, or undefined when it has one. A PHP reference is a place of an array or of a
+// property, so a reference that is the value itself or the value of a reference has none.
+export function phpFormless(value: unknown, slot = false): string | undefined {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const held = record?.['value'];
+  switch (record?.['kind']) {
+    case 'list':
+      if (record?.['repeat'] !== undefined) return phpFormless(held, false);
+      return Array.isArray(held) ? held.map((item) => phpFormless(item, true)).find((reason) => reason !== undefined) : undefined;
+    case 'map':
+    case 'object':
+      if (record?.['repeat'] !== undefined) return phpFormless(held, true);
+      return Array.isArray(held) ? (held as unknown[][]).map((pair) => phpFormless(pair[1], true)).find((reason) => reason !== undefined) : undefined;
+    case 'reference':
+      if (!slot) return 'a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place';
+      return phpFormless((held as Record<string, unknown> | undefined)?.['value'], false);
+    case 'int':
+      return typeof held === 'string' && /^-?[0-9]+$/.test(held) && (BigInt(held) < -(2n ** 63n) || BigInt(held) >= 2n ** 63n) ? 'an integer outside 64 bits, which PHP has no form of: a PHP int is 64 bits' : undefined;
+    default:
+      return undefined;
+  }
+}
+
+// GN-13: a case whose value of a value alias has no form in PHP. Its test calls the entry point of the feature
+// case-test, which makes the value as the host values that PHP would describe and gives them to the in function of the
+// alias, so the rule of the core that refuses the value runs in the binding. raises is what the case expects.
+export interface CaseTest {
+  // The member of the case, or none for a case of the alias itself (U-7).
+  fn?: Fn;
+  id: string;
+  alias: ValueAlias;
+  value: unknown;
+  reason: string;
+  raises?: RaisingCase['raises'];
+}
+
+export function phpCaseTests(model: Model): CaseTest[] {
+  const out: CaseTest[] = [];
+  for (const fn of callables(model)) {
+    // The cases are read as the case files give them, without the checks of raisingCases and resultCases, so that
+    // binding scaffold, which reads no contract of another library, finds them too.
+    for (const record of (model.cases.get(fn.member.id) ?? []) as Record<string, unknown>[]) {
+      const args = fn.special === undefined ? argsOf(fn, record) : undefined;
+      const raises = record['raises'] as RaisingCase['raises'] | undefined;
+      if (args === undefined || (raises === undefined && record['faults'] !== undefined)) continue;
+      const kase = { id: String(record['id']), args, ...(raises === undefined ? {} : { raises }) };
+      for (const [arg, value] of kase.args) {
+        const alias = aliasOf(model, arg.type);
+        const reason = alias === undefined ? undefined : phpFormless(value);
+        if (alias === undefined || reason === undefined) continue;
+        out.push({ fn, id: kase.id, alias, value, reason, ...(kase.raises === undefined ? {} : { raises: kase.raises }) });
+      }
+    }
+  }
+  for (const kase of aliasCases(model)) {
+    const reason = phpFormless(kase.value);
+    if (reason !== undefined) out.push({ id: kase.id, alias: kase.alias, value: kase.value, reason });
+  }
+  return out;
+}
+
+// GN-13e: the value classes of the out rows of the aliases of the contract, which a result of an alias holds.
+export function tokenForms(model: Model, lang: Lang3): TokenForm[] {
+  const forms: TokenForm[] = [];
+  for (const alias of model.aliases.filter((a) => a.library === undefined && a.unit.out !== undefined)) {
+    for (const form of aliasKept(model, lang, alias.unit)) if (!forms.some((f) => f.unit === form.unit)) forms.push(form);
+  }
+  return forms;
+}
+
+// GN-13e: the tokens of a result in Node and WASM, as aliasTokens writes those of a case value.
+export function nodeTokens(forms: TokenForm[]): string {
+  return `
+// GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
+// a container with its count, and an instance numbered by its first place.
+const KEPT = [${forms.map((f) => `[pkg.${f.cls}, ${jsString(f.unit)}, ${jsString(f.field)}]`).join(', ')}];
+function tokens(top) {
+  const out = [];
+  const stack = [top];
+  const numbers = new Map();
+  const bits = (number) => {
+    if (Number.isNaN(number)) return 'nan';
+    const view = new DataView(new ArrayBuffer(8));
+    view.setFloat64(0, number);
+    return view.getBigUint64(0).toString(16).padStart(16, '0');
+  };
+  const hex = (bytes) => Buffer.from(bytes).toString('hex');
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (value === null) out.push('null');
+    else if (typeof value === 'boolean') out.push(\`bool \${String(value)}\`);
+    else if (typeof value === 'number') out.push(\`number \${bits(value)}\`);
+    else if (typeof value === 'bigint') out.push(\`bigint \${String(value)}\`);
+    else if (typeof value === 'string') out.push(\`text \${hex(new TextEncoder().encode(value))}\`);
+    else if (value instanceof Uint8Array) out.push(\`bytes \${hex(value)}\`);
+    else if (Array.isArray(value)) {
+      out.push(\`list \${value.length}\`);
+      for (let i = value.length - 1; i >= 0; i -= 1) stack.push(value[i]);
+    } else if (value instanceof Map) {
+      const pairs = [...value];
+      out.push(\`map \${pairs.length}\`);
+      for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i][1], pairs[i][0]);
+    } else {
+      const kept = KEPT.find(([cls]) => value instanceof cls);
+      if (kept === undefined) {
+        out.push(\`other \${typeof value}\`);
+      } else if (numbers.has(value)) {
+        out.push(\`\${kept[1]} again \${numbers.get(value)}\`);
+      } else {
+        numbers.set(value, numbers.size);
+        out.push(\`\${kept[1]} #\${numbers.get(value)}\`);
+        stack.push(value[kept[2]]);
+      }
+    }
+  }
+  return out;
+}
+`;
+}
+
+// GN-13e: the tokens of a result in Python, as aliasTokens writes those of a case value.
+export function pythonTokens(forms: TokenForm[]): string {
+  return `
+
+# GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
+# a container with its count, and an instance numbered by its first place.
+_KEPT = (${forms.map((f) => `(pkg.${f.cls}, ${pyString(f.unit)}, ${pyString(f.field)}), `).join('')})
+
+
+def _tokens(top):
+    out = []
+    stack = [top]
+    numbers = {}
+    held = []
+    while stack:
+        value = stack.pop()
+        if value is None:
+            out.append("null")
+        elif isinstance(value, bool):
+            out.append("bool true" if value else "bool false")
+        elif type(value) is int:
+            out.append(f"int {value}")
+        elif type(value) is float:
+            out.append("float nan" if value != value else "float " + struct.pack(">d", value).hex())
+        elif type(value) is str:
+            out.append("text " + value.encode("utf-8", "surrogatepass").hex())
+        elif type(value) is bytes:
+            out.append("bytes " + value.hex())
+        elif type(value) is list:
+            out.append(f"list {len(value)}")
+            stack.extend(reversed(value))
+        elif type(value) is dict:
+            out.append(f"map {len(value)}")
+            for key, item in reversed(list(value.items())):
+                stack.append(item)
+                stack.append(key)
+        else:
+            kept = next((k for k in _KEPT if isinstance(value, k[0])), None)
+            if kept is None:
+                out.append("other " + type(value).__name__)
+            elif id(value) in numbers:
+                out.append(f"{kept[1]} again {numbers[id(value)]}")
+            else:
+                numbers[id(value)] = len(numbers)
+                held.append(value)
+                out.append(f"{kept[1]} #{numbers[id(value)]}")
+                stack.append(getattr(value, kept[2]))
+    return out
+`;
+}
+
+// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, and a
+// place of an array or of an object that is a PHP reference is php_reference before its value.
+export const PHP_TOKENS = `
+
+    /**
+     * GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each
+     * place, a container with its count, and an object or a reference numbered by its first place.
+     *
+     * @return list<string>
+     */
+    private static function tokens(mixed $top): array
+    {
+        $out = [];
+        $stack = [[$top, null]];
+        $numbers = [];
+        $count = 0;
+        while ($stack !== []) {
+            [$value, $place] = array_pop($stack);
+            if ($place === 'key') {
+                $out[] = is_int($value) ? 'int ' . $value : 'string ' . bin2hex($value);
+                continue;
+            }
+            if ($place instanceof \\ReflectionReference) {
+                $id = 'reference ' . $place->getId();
+                if (isset($numbers[$id])) {
+                    $out[] = 'php_reference again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $out[] = 'php_reference #' . $numbers[$id];
+            }
+            if ($value === null) {
+                $out[] = 'null';
+            } elseif (is_bool($value)) {
+                $out[] = 'bool ' . ($value ? 'true' : 'false');
+            } elseif (is_int($value)) {
+                $out[] = 'int ' . $value;
+            } elseif (is_float($value)) {
+                $out[] = 'float ' . (is_nan($value) ? 'nan' : bin2hex(pack('E', $value)));
+            } elseif (is_string($value)) {
+                $out[] = 'string ' . bin2hex($value);
+            } elseif (is_array($value)) {
+                $list = array_is_list($value);
+                $out[] = ($list ? 'list ' : 'map ') . count($value);
+                self::places($value, $list, $stack);
+            } elseif ($value instanceof \\stdClass) {
+                $id = 'object ' . spl_object_id($value);
+                if (isset($numbers[$id])) {
+                    $out[] = 'php_object again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $properties = (array) $value;
+                $out[] = 'php_object #' . $numbers[$id] . ' ' . count($properties);
+                self::places($properties, false, $stack);
+            } else {
+                $out[] = 'other ' . get_debug_type($value);
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * GN-13e: the places of an array on the stack of tokens, each with its key unless the array is a list, and with
+     * the PHP reference that the place is.
+     *
+     * @param array<int|string, mixed> $array
+     * @param list<array{mixed, mixed}> $stack
+     */
+    private static function places(array $array, bool $list, array &$stack): void
+    {
+        foreach (array_reverse(array_keys($array)) as $key) {
+            $stack[] = [$array[$key], \\ReflectionReference::fromArrayElement($array, $key)];
+            if (!$list) {
+                $stack[] = [$key, 'key'];
+            }
+        }
+    }
+`;

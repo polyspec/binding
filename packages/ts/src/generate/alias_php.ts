@@ -6,6 +6,8 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { type CaseTest, caseKey, phpFormless } from './samples.ts';
+import { rustString } from './text.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -36,7 +38,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
                 let item = ${parts.item};
                 array.push(make(item, source, making)?).map_err(php_failed)?;
             }
-            making.remove(&handle.raw());
+            making.entered.remove(&handle.raw());
             let mut zval = Zval::new();
             zval.set_hashtable(array);
             Ok(zval)
@@ -54,7 +56,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
                 let item = make(item, source, making)?;
                 php_insert(&mut array, key, item)?;
             }
-            making.remove(&handle.raw());
+            making.entered.remove(&handle.raw());
             let mut zval = Zval::new();
             zval.set_hashtable(array);
             Ok(zval)
@@ -64,25 +66,56 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
       const parts = container(alias, kind, 'map');
       return `{
             ${parts.head}
-            let mut object = ZendObject::new_stdclass();
-            php_enter(making, handle)?;
+            if let Some(object) = making.objects.get(&handle.raw()) {
+                return Ok(php_shared_object(*object));
+            }
+            let mut zval = ZendObject::new_stdclass().into_zval(false).map_err(php_failed)?;
+            let object = php_object_of(&mut zval)?;
+            making.objects.insert(handle.raw(), object);
             for index in 0..len {
                 let (key, item) = ${parts.entry};
                 let item = make(item, source, making)?;
-                let OutValue::Text(name) = key else {
-                    return Err(binding_error(BindingError::Internal { detail: String::from("U-7: a property of a stdClass whose name is no text") }));
-                };
-                object.set_property(&name, item).map_err(php_failed)?;
+                php_property(object, key, item)?;
             }
-            making.remove(&handle.raw());
-            object.into_zval(false).map_err(php_failed)
+            Ok(zval)
         }`;
     }
+    case 'php_reference':
+      return `{
+            if let Some(reference) = making.references.get(&handle.raw()) {
+                return Ok(php_shared_reference(*reference));
+            }
+            let (zval, reference) = php_new_reference()?;
+            making.references.insert(handle.raw(), reference);
+            let content = make(*value, source, making)?;
+            php_set_reference(reference, content);
+            Ok(zval)
+        }`;
     case 'native':
       return 'native_object(handle)';
     default:
       throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
+}
+
+// U-7: what a make has made so far under the handles of the out value. A PHP array is a value, so one inside its own
+// making is a cycle; an object and a reference have an identity, so a handle that comes again is the same object or
+// reference, a cycle included. A field is generated only when an out row makes that form.
+export function phpMaking(model: Model): string {
+  const makes = model.aliases.flatMap((a) => (a.unit.out ?? []).map((row) => row.make?.php));
+  const forms = new Set(makes.map((form) => (typeof form === 'object' && 'keyed_map' in form ? 'keyed_map' : form)).filter((form) => typeof form === 'string'));
+  const fields = [
+    ['list', 'map', 'keyed_map'].some((form) => forms.has(form)) ? '    entered: BTreeSet<u64>,' : '',
+    forms.has('php_object') ? '    objects: std::collections::BTreeMap<u64, *mut ZendObject>,' : '',
+    forms.has('php_reference') ? '    references: std::collections::BTreeMap<u64, *mut ext_php_rs::ffi::zend_reference>,' : '',
+  ].filter((field) => field !== '');
+  return `
+/// U-7: the arrays that a make has entered, and the objects and references that it has made, under their handles.
+#[derive(Default)]
+struct PhpMaking {
+${fields.join('\n')}
+}
+`;
 }
 
 export function aliasPhp(model: Model, alias: ValueAlias): string {
@@ -102,11 +135,11 @@ fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
 /// U-7: a core value of ${label} leaves as the PHP values of its out rows.
 fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
     let (root, mut source) = ${alias.coreOut}(value.borrow());
-    let mut making = BTreeSet::new();
+    let mut making = PhpMaking::default();
     make_${name}(root, &mut source, &mut making)
 }
 
-fn make_${name}(out: OutValue, source: &mut dyn OutValues, making: &mut BTreeSet<u64>) -> Result<Zval, Fail> {
+fn make_${name}(out: OutValue, source: &mut dyn OutValues, making: &mut PhpMaking) -> Result<Zval, Fail> {
     let make = make_${name};
     match out.clone() {
 ${arms.join('\n')}
@@ -224,8 +257,8 @@ fn php_failed(error: ext_php_rs::error::Error) -> Fail {
 }
 
 /// U-7: a container that the make has entered; one inside its own making is a cycle, which a PHP array cannot hold.
-fn php_enter(making: &mut BTreeSet<u64>, handle: Handle) -> Result<(), Fail> {
-    if making.insert(handle.raw()) {
+fn php_enter(making: &mut PhpMaking, handle: Handle) -> Result<(), Fail> {
+    if making.entered.insert(handle.raw()) {
         return Ok(());
     }
     Err(binding_error(BindingError::Internal { detail: String::from("U-7: a cycle that a PHP array cannot hold") }))
@@ -237,8 +270,84 @@ fn php_insert(array: &mut ZendHashTable, key: OutValue, item: Zval) -> Result<()
         OutValue::Int(integer) => array.insert(integer.value(), item).map_err(php_failed),
         OutValue::Int64(integer) => array.insert(integer, item).map_err(php_failed),
         OutValue::Text(text) => array.insert(text.as_str(), item).map_err(php_failed),
+        OutValue::Bytes(bytes) => {
+            let name = ZendStr::new(bytes.value(), false);
+            array.insert(ext_php_rs::types::ArrayKey::ZendString(&name), item).map_err(php_failed)
+        }
         other => Err(binding_error(BindingError::Internal { detail: format!("U-7: an array key of the kind {}", other.kind().as_str()) })),
     }
+}
+
+/// U-7: the object that a zval made from a new stdClass holds.
+fn php_object_of(zval: &mut Zval) -> Result<*mut ZendObject, Fail> {
+    match zval.object_mut() {
+        Some(object) => Ok(std::ptr::from_mut(object)),
+        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: a stdClass that is no object") })),
+    }
+}
+
+/// U-7: a property of a stdClass under its name, the bytes of a string key, which may hold any byte.
+fn php_property(object: *mut ZendObject, key: OutValue, item: Zval) -> Result<(), Fail> {
+    let name = match key {
+        OutValue::Bytes(bytes) => ZendStr::new(bytes.value(), false),
+        OutValue::Text(text) => ZendStr::new(text.as_bytes(), false),
+        other => return Err(binding_error(BindingError::Internal { detail: format!("U-7: a property name of the kind {}", other.kind().as_str()) })),
+    };
+    // SAFETY: the object is a stdClass that this make created and the zval it returns holds; the engine gives its
+    // table of properties, which it creates when the object has none and which no other value shares.
+    let Some(table) = (unsafe { ext_php_rs::ffi::zend_std_get_properties(object).as_mut() }) else {
+        return Err(binding_error(BindingError::Internal { detail: String::from("U-7: a stdClass without a table of properties") }));
+    };
+    table.insert(ext_php_rs::types::ArrayKey::ZendString(&name), item).map_err(php_failed)
+}
+
+/// U-7: an object that this make made before, once more: a zval that adds a reference count to it.
+fn php_shared_object(object: *mut ZendObject) -> Zval {
+    let mut zval = Zval::new();
+    // SAFETY: the object is alive, because the zval that the make made first for it is held by the value being made.
+    zval.set_object(unsafe { &mut *object });
+    zval
+}
+
+/// U-7: a new reference that holds null until the make sets its value, as ZVAL_NEW_EMPTY_REF of Zend/zend_types.h, and
+/// the zval that holds it.
+fn php_new_reference() -> Result<(Zval, *mut ext_php_rs::ffi::zend_reference), Fail> {
+    // GC_REFERENCE of Zend/zend_types.h: the type of a reference, which the cycle collector does not collect.
+    const GC_REFERENCE: u32 = ext_php_rs::ffi::IS_REFERENCE | (1 << 4);
+    let reference = ext_php_rs::alloc::emalloc(std::alloc::Layout::new::<ext_php_rs::ffi::zend_reference>()).cast::<ext_php_rs::ffi::zend_reference>();
+    if reference.is_null() {
+        return Err(binding_error(BindingError::Internal { detail: String::from("U-7: the engine gave no memory for a reference") }));
+    }
+    let content = ext_php_rs::ffi::zend_reference {
+        gc: ext_php_rs::ffi::zend_refcounted_h { refcount: 1, u: ext_php_rs::ffi::_zend_refcounted_h__bindgen_ty_1 { type_info: GC_REFERENCE } },
+        val: Zval::new(),
+        sources: ext_php_rs::ffi::zend_property_info_source_list { ptr: std::ptr::null_mut() },
+    };
+    // SAFETY: the memory is a new allocation of the engine of the size and alignment of a reference.
+    unsafe { reference.write(content) };
+    Ok((php_reference_zval(reference), reference))
+}
+
+/// U-7: a zval that holds a reference, whose count the caller has taken for it.
+fn php_reference_zval(reference: *mut ext_php_rs::ffi::zend_reference) -> Zval {
+    let mut zval = Zval::new();
+    zval.value.ref_ = reference;
+    zval.u1.type_info = ext_php_rs::ffi::IS_REFERENCE_EX;
+    zval
+}
+
+/// U-7: a reference that this make made before, once more: a zval that adds a reference count to it.
+fn php_shared_reference(reference: *mut ext_php_rs::ffi::zend_reference) -> Zval {
+    // SAFETY: the reference is alive, because the zval that the make made first for it is held by the value being made.
+    unsafe { (*reference).gc.refcount += 1 };
+    php_reference_zval(reference)
+}
+
+/// U-7: the value of a reference that the make made, set after its content was made, so that the content may hold it.
+fn php_set_reference(reference: *mut ext_php_rs::ffi::zend_reference, content: Zval) {
+    // SAFETY: the reference is alive, because the zval that the make made for it is held by the value being made; the
+    // null that it held needs no release.
+    unsafe { (*reference).val = content };
 }
 
 /// U-7: the literal token of a number as an int; one beyond the range of an int is kind internal.
@@ -353,3 +462,173 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 `;
   }).join('');
 }
+
+// GN-13: the case-test entry points of the cases whose value has no PHP form. Each makes the value of its case as the
+// host values that describe gives for a PHP value (B-1), held by CaseHost, and gives them to the in function of the
+// alias, so the core judges them as it judges a PHP value; its failure is thrown as the failure of a call.
+export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: string): { entries: string; registers: string } {
+  if (tests.length === 0) return { entries: '', registers: '' };
+  const bytes = (data: Uint8Array): string => `HostValue::Text(HostText::Bytes(vec![${[...data].map((b) => `${b}_u8`).join(', ')}]))`;
+  const hex = (raw: unknown): Uint8Array => Buffer.from(String((raw as { hex?: unknown } | null)?.['hex' as never] ?? (raw as { hex: string }).hex), 'hex');
+  const key = (raw: unknown): string => caseKey(raw, (kind, held) => (kind === 'int' ? `HostValue::Int(${String(held)}_i64)` : kind === 'text' ? bytes(Buffer.from(String(held), 'utf8')) : bytes(hex(held))));
+  const hold = (pairs: string[], variant: (len: number) => string): string => `{
+            let entries = vec![${pairs.join(', ')}];
+            let handle = host.hold(entries);
+            ${variant(pairs.length)}
+        }`;
+  const value = (v: unknown): string => {
+    const record = v as Record<string, unknown>;
+    const held = record['value'];
+    switch (record['kind']) {
+      case 'null': return 'HostValue::Null';
+      case 'bool': return `HostValue::Bool(${String(held === true)})`;
+      // An integer outside 64 bits is the decimal token that Python and JavaScript describe for it.
+      case 'int': return typeof held === 'string' && phpFormless(record) !== undefined ? `HostValue::Number(String::from(${rustString(held)}))` : `HostValue::Int(${String(held)}_i64)`;
+      case 'float': {
+        const number = Number(held);
+        return `HostValue::Float(${Number.isInteger(number) ? `${String(number)}.0` : String(number)}_f64)`;
+      }
+      case 'text': return bytes(Buffer.from(String(held), 'utf8'));
+      case 'bytes': return bytes(hex(held));
+      case 'list': {
+        if (record['repeat'] !== undefined) return `{
+            let mut value = ${value(held)};
+            for _ in 0..${String(record['repeat'])}_u32 {
+                let handle = host.hold(vec![(HostValue::Int(0), value)]);
+                value = HostValue::PhpArray { handle, len: 1, is_list: true };
+            }
+            value
+        }`;
+        const items = held as unknown[];
+        return hold(items.map((item, i) => `(HostValue::Int(${i}), ${value(item)})`), (len) => `HostValue::PhpArray { handle, len: ${len}, is_list: true }`);
+      }
+      case 'map': {
+        const pairs = held as unknown[][];
+        const list = pairs.every((pair, i) => { const k = pair[0] as { int?: unknown } | null; return typeof k === 'object' && k !== null && k.int === i; });
+        return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::PhpArray { handle, len: ${len}, is_list: ${String(list)} }`);
+      }
+      case 'object': {
+        // G-5: n objects, each the one property of the one around it, each held as its own object.
+        if (record['repeat'] !== undefined) return `{
+            let mut value = ${value(held)};
+            for _ in 0..${String(record['repeat'])}_u32 {
+                let handle = host.hold(vec![(${key(record['key'])}, value)]);
+                value = HostValue::StdClass { handle, len: 1 };
+            }
+            value
+        }`;
+        // G-5: an object with an id is reserved before the value is made, filled at its first place and named by its
+        // handle at every later one.
+        if (record['id'] !== undefined) {
+          const id = String(record['id']);
+          const len = objects.get(id) ?? 0;
+          if (!('value' in record)) return `HostValue::StdClass { handle: object_${id}, len: ${len} }`;
+          const pairs = held as unknown[][];
+          return `{
+            let entries = vec![${pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`).join(', ')}];
+            host.fill(object_${id}, entries);
+            HostValue::StdClass { handle: object_${id}, len: ${len} }
+        }`;
+        }
+        const pairs = held as unknown[][];
+        return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::StdClass { handle, len: ${len} }`);
+      }
+      case 'reference': {
+        // G-5: a later place of a reference names its identity alone; the core does not read the target of an
+        // identity that it has seen.
+        const ref = held as Record<string, unknown>;
+        const target = 'value' in ref ? value(ref['value']) : 'HostValue::Null';
+        return `HostValue::PhpReference { identity: Handle::new(${String(ref['id'])}), target: Box::new(${target}) }`;
+      }
+      default:
+        throw new Unsupported(`a case value of the kind ${String(record['kind'])} is not made as host values yet (GN-13)`);
+    }
+  };
+  // The objects with an id of a value and the number of their properties, which every place of the id gives.
+  let objects = new Map<string, number>();
+  const scan = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const item of v) scan(item);
+      return;
+    }
+    if (typeof v !== 'object' || v === null) return;
+    const record = v as Record<string, unknown>;
+    if (record['kind'] === 'object' && record['id'] !== undefined && Array.isArray(record['value'])) objects.set(String(record['id']), record['value'].length);
+    for (const inner of Object.values(record)) scan(inner);
+  };
+  const entries = tests.map((t, i) => {
+    objects = new Map();
+    scan(t.value);
+    const reserved = [...objects.keys()].map((id) => `let object_${id} = host.reserve();\n            `).join('');
+    const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
+    return `
+    /// GN-13: the case ${t.id} of ${t.fn?.member.id ?? `the alias ${t.alias.unit.id}`}, as the host values that PHP would describe, given to the in
+    /// function of ${t.alias.unit.id}. Its value has no PHP form: ${t.reason}.
+    #[cfg(feature = "case-test")]
+    #[php_function]
+    #[php(name = ${rustString(`${namespace}\\Internal\\caseTest${i}`)})]
+    pub fn case_test_${i}() -> Result<(), PhpException> {
+        guard(|| {
+            let mut host = CaseHost::default();
+            ${reserved}let value = ${value(t.value).replaceAll('\n', '\n    ')};
+            let _value: ${t.alias.unit.core_type ?? ''} = ${t.alias.coreIn}(&mut host, value).map_err(|failure: ${failure}| ${aliasFailureFn(t.alias)}(failure))?;
+            Ok(())
+        })
+    }
+`;
+  }).join('');
+  const registers = tests.map((_t, i) => `
+        #[cfg(feature = "case-test")]
+        let module = module.function(wrap_function!(case_test_${i}));`).join('');
+  return { entries: `${CASE_HOST}${entries}`, registers };
+}
+
+const CASE_HOST = `
+    /// GN-13: the entries of the arrays and the objects that a case-test entry point made, under their handles.
+    #[cfg(feature = "case-test")]
+    #[derive(Default)]
+    struct CaseHost {
+        held: Vec<Vec<(HostValue, HostValue)>>,
+    }
+
+    #[cfg(feature = "case-test")]
+    impl CaseHost {
+        fn hold(&mut self, entries: Vec<(HostValue, HostValue)>) -> Handle {
+            self.held.push(entries);
+            Handle::new(handle_count(self.held.len() - 1))
+        }
+
+        /// G-5: the handle of an object with an id, before its properties are made.
+        fn reserve(&mut self) -> Handle {
+            self.hold(Vec::new())
+        }
+
+        fn fill(&mut self, handle: Handle, entries: Vec<(HostValue, HostValue)>) {
+            if let Some(held) = self.held.get_mut(handle_position(handle.raw())) {
+                *held = entries;
+            }
+        }
+
+        fn entry(&self, handle: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
+            match self.held.get(handle_position(handle.raw())).and_then(|entries| entries.get(handle_position(index))) {
+                Some(entry) => Ok(entry.clone()),
+                None => Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no such entry") })))),
+            }
+        }
+    }
+
+    #[cfg(feature = "case-test")]
+    impl HostValues for CaseHost {
+        fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {
+            Ok(CaseHost::entry(self, list, index)?.1)
+        }
+
+        fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
+            CaseHost::entry(self, map, index)
+        }
+
+        fn read(&mut self, _value: Handle) -> Result<HostValue, binding_core::Raised> {
+            Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no value class is read") }))))
+        }
+    }
+`;

@@ -7,7 +7,7 @@ import { type Files, header, pyHeader, pyString, rustString, closure, optionRef,
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
-import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
+import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -719,12 +719,13 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
+${model.callbacks.length === 0 ? '' : `
 fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     thrown_map().insert(handle, error.into_value(py).into_any());
     binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
 }
-
+`}
 fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
     match failure {
         binding_core::Failure::Kind(error) => core_error(py, error),
@@ -750,6 +751,7 @@ function poisonRust(model: Model): string {
         }`;
   }).join('\n');
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[pyfunction]
 fn ${POISON_ENTRY.python}(py: Python<'_>, object: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -820,14 +822,14 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.aliases.map((a) => aliasPython(model, a)),
-    model.aliases.length > 0 ? PYTHON_HOST : '',
+    model.aliases.length > 0 ? pythonHost(model) : '',
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
   const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
-  const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
+  const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + model.kept.map((k) => keptPython(moduleOf(layout, k.unit.module), k)).join('') + rest;
   const typesFn = `
 fn types(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
     static TYPES: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
@@ -848,13 +850,14 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
     ...model.functions.filter(awaits).map((fn) => `    module.add_function(wrap_pyfunction!(${awaitedName(fn)}, module)?)?;`),
     ...model.objects.map((o) => `    module.add_class::<Py${langName('python', o.unit.name, 'class')}>()?;`),
+    ...model.kept.map((k) => `    module.add_class::<Py${langName('python', k.unit.name, 'class')}>()?;`),
   ].join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
   return `${header('//')}
 // The native module ${layout.module}._native of ${model.contract.library}.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
 ${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
@@ -907,6 +910,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
 
 ${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[pyfunction]
 fn _panic_test(py: Python<'_>) -> PyResult<()> {
@@ -937,6 +941,16 @@ fn _alias_in_${rustField(alias.unit.name)}(py: Python<'_>, value: &Bound<'_, PyA
         Ok(())
     })
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[pyfunction]
+fn _alias_round_${rustField(alias.unit.name)}<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    guard(py, || {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(py, value, "value")?;
+        out_${rustField(alias.unit.name)}(py, &value)
+    })
+}
 `).join('')}
 ${poisonRust(model)}#[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -948,7 +962,9 @@ ${register}
     #[cfg(feature = "panic-test")]
     module.add_function(wrap_pyfunction!(${POISON_ENTRY.python}, module)?)?;` : ''}${aliasesWithKinds(model).map((alias) => `
     #[cfg(feature = "codec-test")]
-    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
+    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;
+    #[cfg(feature = "codec-test")]
+    module.add_function(wrap_pyfunction!(_alias_round_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
     #[cfg(feature = "fault-test")]
     module.add_function(wrap_pyfunction!(_arm_faults, module)?)?;
     #[cfg(feature = "fault-test")]
@@ -1073,6 +1089,7 @@ function modulePy(model: Model, module: string): string {
   const fns = [
     ...model.functions.filter((f) => f.module === module).flatMap((f) => [langName('python', f.member.name, 'callable'), ...(awaits(f) ? [awaitedName(f)] : [])]),
     ...model.objects.filter((o) => o.unit.module === module).map((o) => langName('python', o.unit.name, 'class')),
+    ...model.kept.filter((k) => k.unit.module === module).map((k) => langName('python', k.unit.name, 'class')),
   ];
   const enums = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
   const constants = model.constants.filter((c) => c.module === module);
@@ -1138,6 +1155,18 @@ function nativePyi(model: Model): string {
     });
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
+  // GN-6af: a value class without core_type: the constructor, which keeps its arguments, and a property for each, which
+  // a writable property also sets.
+  for (const k of model.kept) {
+    const init = k.fields.map((f) => `${langName('python', f.name, 'variable')}: ${pyType(model, f.type, true)}${f.default === undefined ? '' : f.default === 'null' ? ' = None' : ' = ...'}`);
+    const lines = [`    def __init__(${['self', ...init].join(', ')}) -> None: ...`];
+    for (const f of k.fields.filter((field) => field.property !== undefined)) {
+      const name = langName('python', f.name, 'variable');
+      lines.push(`    @property\n    def ${name}(self) -> ${pyType(model, f.type, false)}: ...`);
+      if (f.writable) lines.push(`    @${name}.setter\n    def ${name}(self, value: ${pyType(model, f.type, true)}) -> None: ...`);
+    }
+    classes.push(`\n@final\nclass ${langName('python', k.unit.name, 'class')}:\n${lines.join('\n')}\n`);
+  }
   return `${pyHeader()}
 from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
 from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
@@ -1147,13 +1176,14 @@ ${classes.join('')}`;
 }
 
 function initPy(model: Model): string {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])].sort();
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.kept.map((k) => k.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])].sort();
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
     ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('python', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('python', o.unit.name, 'class')),
+    ...model.kept.map((k) => langName('python', k.unit.name, 'class')),
     ...model.enums.map((u) => langName('python', u.name, 'class')),
     ...model.resultRecords.map((u) => langName('python', u.name, 'class')),
     ...model.callbacks.map((c) => langName('python', c.unit.name, 'class')),
@@ -1178,7 +1208,7 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));
   files.set(`${pkg}/py.typed`, '');
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])];
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.kept.map((k) => k.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])];
   for (const module of modules) {
     files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
   }

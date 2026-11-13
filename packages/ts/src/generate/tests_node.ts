@@ -5,7 +5,7 @@ import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind,
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -160,6 +160,7 @@ export function nodeTests(model: Model): string {
   ctx.instanceNew = made;
   let usesOutcome = false;
   let usesOrdered = false;
+  let usesTokens = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('node', fn.member.name, 'callable') : `${langName('node', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('node', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -193,7 +194,7 @@ test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () =>
   assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
-      if (arg.default !== undefined) {
+      if (refusesNull(arg)) {
         out.push(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
   assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
@@ -312,7 +313,17 @@ test('GN-13e: ${name} ${kase.id}', () => {
       const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      usesTokens ||= expected !== undefined && 'tokens' in expected;
+      usesAddon ||= expected !== undefined && 'round' in expected;
+      const check = expected === undefined
+        ? `\n  ${call};`
+        : 'refused' in expected
+          ? `\n  assert.fail(${jsString(expected.refused)});`
+          : 'tokens' in expected
+            ? expected.round === undefined
+              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+              : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
+            : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
 test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
 });`);
@@ -336,6 +347,14 @@ test('K-2: ${name} lets the exception of a callback through', () => {
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });` : ''}`);
+    }
+    for (const kase of primitiveCases(model, ctx, fn)) {
+      const instance = receiverOfCase(kase.receiver);
+      const number = invoke(fn, '', instance.expr);
+      out.push(`
+test('N-4: ${name} ${kase.id}', () => {${instance.lines}
+  ${kase.result === undefined ? `${number};` : `assert.strictEqual(${number}, ${kase.result});`}
+});`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -437,7 +456,7 @@ import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'n
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}
+${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

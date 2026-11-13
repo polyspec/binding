@@ -3,7 +3,8 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { type Model, collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -41,16 +42,9 @@ export const generatedDirs = (contract: Contract): string[] => {
 export const goModuleDir = (contract: Contract): string => place(contract, 'packages/go');
 export const isGoGenerated = (path: string): boolean => /(^|\/)zz_generated_[^/]*\.go$/.test(path);
 
-// G-4: generate() reads the whole contract and fails with every refusal (Unsupported.refusals) before anything is
-// written: an item of the contract that is not supported, then an item that a target of the generation does not take,
-// each by name; an item is named with the first reason that its checks find. Only a model without a refusal is
-// emitted, and a refusal that a target finds while it writes its files fails that target, after every other target
-// wrote its own. `targets` generates the files of those targets of the contract alone (GN-1b), the same files that
-// the whole generation writes for them; the refusals of the other targets are not checked.
-export function generate(inputs: Inputs): Files {
-  const targets = inputs.targets ?? inputs.contract.targets;
-  const notDeclared = targets.filter((target) => !inputs.contract.targets.includes(target));
-  if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
+// The model of a generation: the contract with its cases, by member and by alias (G-5), and the key of each case that
+// holds the result of its member.
+function modelOf(inputs: Inputs, refusals: Refusals): Model & { resultKeys: Map<string, Map<unknown, string>> } {
   const cases = new Map<string, unknown[]>();
   const aliasCases = new Map<string, unknown[]>();
   // GN-13e: the key of each case that holds the result of its member, by the row that names the group.
@@ -69,8 +63,29 @@ export function generate(inputs: Inputs): Files {
       resultKeys.set(kase.member, keys);
     }
   }
-  const refusals = new Refusals();
   const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys };
+  return model;
+}
+
+// GN-13: the targets whose binding crate has the feature case-test: those with a case whose value has no form in the
+// language, which binding scaffold names in the manifest of the crate.
+export function caseTestTargets(inputs: Omit<Inputs, 'version' | 'coreLib'>): Lang[] {
+  const model = modelOf({ ...inputs, version: '0.0.0', coreLib: '' }, new Refusals());
+  return inputs.contract.targets.includes('php') && phpCaseTests(forLanguage(model, 'php')).length > 0 ? ['php'] : [];
+}
+
+// G-4: generate() reads the whole contract and fails with every refusal (Unsupported.refusals) before anything is
+// written: an item of the contract that is not supported, then an item that a target of the generation does not take,
+// each by name; an item is named with the first reason that its checks find. Only a model without a refusal is
+// emitted, and a refusal that a target finds while it writes its files fails that target, after every other target
+// wrote its own. `targets` generates the files of those targets of the contract alone (GN-1b), the same files that
+// the whole generation writes for them; the refusals of the other targets are not checked.
+export function generate(inputs: Inputs): Files {
+  const targets = inputs.targets ?? inputs.contract.targets;
+  const notDeclared = targets.filter((target) => !inputs.contract.targets.includes(target));
+  if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
+  const refusals = new Refusals();
+  const model = modelOf(inputs, refusals);
   // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
   // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and
   // text keys (a Map compares a Uint8Array key by identity, GN-12).

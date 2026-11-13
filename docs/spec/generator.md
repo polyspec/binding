@@ -20,7 +20,7 @@ the design ids are those of the binding design.
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
-  that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  that GN-6i does not list, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
   refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
@@ -147,11 +147,15 @@ the design ids are those of the binding design.
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h); the errno of a symbol in a PHP test (GN-8a) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld`, `errnoOf` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7), and its `in` function and then its `out` function (GN-13e) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
+  | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
-  B-5c test, which takes an instance, takes its write guard and panics. It takes the instances of the classes that the
+  B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
+  carries `#[allow(clippy::panic)]` with a reason that names B-7; a repository that denies `clippy::panic` keeps the
+  deny for every other item, and no other generated item panics.
+  It takes the instances of the classes that the
   target makes, by a constructor or a static member that returns the class, because the test of a class that the target
   cannot make has no instance to give it, and the Go entry point would read the instance table of such a class only
   under `panic-test`, which leaves its reader unused without the feature.
@@ -305,7 +309,8 @@ the design ids are those of the binding design.
 - **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
   of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
   `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node, `jsonSerialize` in PHP, whose class
-  implements `\JsonSerializable`, and `MarshalJSON` in Go (GN-15a); Python has no JSON hook, so the member is absent there. The PHP extension names no
+  implements `\JsonSerializable`, and `MarshalJSON` in Go (GN-15a); Python has no JSON hook, so the member is absent there. A primitive, which returns a
+  number, is `valueOf` in Node and WASM; Python, PHP and Go have no such hook, so the member is absent there. The PHP extension names no
   `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
   and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
   addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
@@ -415,7 +420,10 @@ the design ids are those of the binding design.
   the arginfo declares no type, the stub declares `mixed` and states the contract type in `@param`. The record fields
   follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
   extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
-  the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
+  the file, line and trace of its call. Startup finds every class of PHP that a library class extends or implements
+  before it registers anything, and a class that the engine lacks fails the start of the module (startup returns
+  failure), as does a library class whose registration fails; so every class that a registration or a call reads is
+  there, and the extension has no panic for a missing one; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
   enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
   refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
   (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
@@ -564,6 +572,36 @@ the design ids are those of the binding design.
   not; it is not generated yet. G-5 generates for such a member in Python a test that awaits `a<name>` in
   `asyncio.run` with a callback that raises (K-2) and requires the exception of the callback, so a callback that the
   core calls on the worker thread of `asyncio.to_thread` runs there.
+- **GN-6af** A unit with `only` (Q-4) is generated for the targets that it lists, as a member with `only` is, and the
+  binding, the declarations and the tests of every other target hold nothing of it. A class of origin `value` without
+  `core_type` (U-1, T-5) is a class of the language that keeps the language values that it was given; no core value is
+  behind it. Its constructor names in `core` a function of the core that judges the arguments and returns
+  `Result<(), Failure<E>>`: its first parameter is `&mut dyn HostValues`, and a parameter of a value alias, or a list or
+  a keyed map of one, is the `HostValue` that the binding describes (a `Vec` or a `KeyedMap` of them), an `Option` of it
+  when the parameter has a default, `None` when the call leaves it out. A failure is thrown as the failure of any
+  member (E-2). The instance keeps each argument as the language gave it, or, when it was left out, its default as a
+  value of the language: `{literal: null}` is the null of the language, `{empty: "map"}` a new empty map (a `Map`, a
+  `dict`); such a default needs no `default_core`, because the core takes `None`. A property without `core` gives the
+  kept value of the constructor parameter with its name; a writable property (U-1 `writable`) also sets it, and the
+  value that it sets is judged where it is used, when a member reads it through its value alias. A keyed map that the
+  constructor takes gives the core each key of the kinds that the type lists, a byte string key of Node and WASM
+  being a `Uint8Array`; the instance keeps the `Map` itself, so GN-12, which refuses such keys where the entry makes a
+  `Map` of entries, does not apply. Python defines the class in the native module, with a field per value; Node and
+  WASM define it in the JavaScript entry, with an own enumerable data property per value (writable when the property
+  is), and the addon judges the arguments. An `in` row of a value alias that names a class (U-1) describes an
+  instance of it as `HostValue::Value` with the kind of the row; the handle is the same for the same instance within
+  one walk of the core, so that the core sees one object at each of its positions. `read` of `HostValues` gives, for
+  the handle, the property that the row names as `read`: the kept value, described again, or the value that the core
+  path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
+  class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
+  entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
+  content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
+  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e). PHP makes the form
+  `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
+  byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
+  string key of those bytes. An object and a reference are made before their content and are the same object or
+  reference at every position of their handle, so a cycle through them is made; an array, which is a value, stays
+  kind `internal` inside its own making.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
@@ -755,7 +793,13 @@ the design ids are those of the binding design.
   lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
-  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}` at the first place of its id and
+  `{"id": n}` at every later place, the same reference; an `object` with `"id": n` beside its kind is named at every
+  later place by `{"kind": "object", "id": n}`, the same object. Places are ordered as the value is written, depth
+  first, so a later place may lie inside the value of the first, which makes a cycle; the ids of objects and those of
+  references are separate. An object nested deeper than a JSON reader takes is
+  `{"kind": "object", "repeat": <n>, "key": <key>, "value": <value>}`: n objects (at least 1), each the one property
+  `key` of the one around it, the innermost holding the value.
   A value of a value type that a class of origin value represents (U-1) is the call of the static member or
   constructor that the `out` row of its kind names for the language: a member without parameters for a kind without
   `value`, and a member of one parameter, which takes the case's `value` as a case value of its type, so `list` holds
@@ -776,7 +820,10 @@ the design ids are those of the binding design.
   that array of `[key, value]`. The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
-  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
+  and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A value
+  class without `core_type` (GN-6af) is such a class in Python, Node and WASM: its constructor and its properties have
+  these tests, and a property is read on an instance that the constructor makes from the case's keys of its
+  parameters. A member
   that takes a callback has the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's
@@ -795,8 +842,10 @@ the design ids are those of the binding design.
   ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
-  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify`, `json_encode` or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; a
+  primitive has a test for each of its cases that does not raise, in which the number form of the instance
+  (`Number(instance)` in Node and WASM) is the case's `result`, or is taken alone when the case gives no `result`; the B-4
+  test of a to_json calls `JSON.stringify`, `json_encode` or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; none has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
@@ -822,16 +871,44 @@ the design ids are those of the binding design.
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes.
+  the built-in form of the kind makes. A value of the language that is no value of the value type is `{"host": <sort>}`
+  of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
+  `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
+  `datetime.date(1970, 1, 1)`, which the test imports, Node and WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`,
+  Go `time.Unix(0, 0).UTC()`); and `object`, an instance of a class of the test (Python `object()`, Node and WASM
+  `new (class Other {})()`, PHP `new class {}`, Go `struct{}{}`). Another sort is refused. A PHP reference is a place of an array or of a property, so a case value of
+  PHP whose places hold `{"kind": "reference", "value": {"id", "value"}}` or an object with an id is made in a closure
+  that names one variable per id, a new `stdClass` for an object, then fills each object and sets each reference, and
+  returns the value whose places take the reference variables by reference and the object variables. Python, Node and
+  WASM make, per id, one instance of the class of a reference or of an object (GN-6af) without content, then set its
+  value or fill its map, in an expression that names each instance (an assignment expression of a tuple in Python, an
+  arrow function in Node and WASM), so every place of an id holds the same instance and a cycle is made. A repeated
+  object is made from the outermost in, each object filled after it is made, so no constructor judges the objects
+  inside it again; PHP makes it from the innermost out with `(object)` casts. A case-test entry point (GN-5) describes
+  the later place of an id by the identity of the first, which the core does not read again. A case whose argument has no form in the
+  language of a target, so that no call of that language can give it, runs through an entry point of the feature
+  `case-test` of that target (GN-5), beside `panic-test` and `fault-test`: the entry point makes the argument in the
+  binding's own encoding, as the host values that the binding describes (B-1) or as the value stream of the C ABI of
+  Go (B-8), gives it to the same conversion that a call uses (the `in` function of a value alias, the decode of the
+  arguments), and its test requires the class and the kind of the case, or no failure for a case that does not raise;
+  the doc comment of the entry point and of its test names why the language has no form. A case is neither left out
+  nor generated as a test that fails: left out, the rule of the core stays unverified in that target, and failing,
+  the end-to-end check never passes. A crate has `case-test = []` when its target has such a case, and no build
+  without the feature holds the entry point (the end-to-end check reads the symbols with `llvm-nm`). So far: in PHP, a
+  reference that is no place of an array or of a property (the value itself, or the value of a reference), and an
+  integer outside 64 bits, which PHP has no form of, given as the decimal token that Python and JavaScript describe
+  for it (`HostValue::Number`), each given as host values to the `in` function of its alias, the value of a case of a
+  member and the value of a case of the alias alike; Go (the argument of a kind that the Go type of the parameter does not
+  hold, such as a text for an `int64`) is generated by the Go generator and refused by name until then; Python, Node
+  and WASM have no such case yet.
 - **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; B-10 in Go and WASM, which refuse a class unit
   with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
-  of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
+  of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
-  kinds of an alias, each refused by name when a case gives it: a point of another library; a value of the language by its kind
-  (`{"host": ...}`), whose kinds have no closed table; and a value of a value type of another kind than those of
-  GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
+  kinds of an alias, each refused by name when a case gives it: a point of another library; and a value of a value type of another kind
+  than those of GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
   GN-13e arms no faults yet; the test of a member that takes an alias inside a map, a record field or the
   return of a callback; and the check that no release build has a test feature (the resolved features of
   `cargo tree`, and the export list of each installed package), of which the end-to-end check has the part of Go
@@ -841,7 +918,8 @@ the design ids are those of the binding design.
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
   compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
-  explicit `None` or `null` for such a parameter is tested as a value that is refused. T-1: a `source` parameter gives
+  explicit `None` or `null` for such a parameter is tested as a value that is refused, except where the default is
+  `{literal: null}`, whose declared value is that null. T-1: a `source` parameter gives
   the same for a text and for the bytes of its UTF-8 (Python, Node), a text with an unpaired surrogate is kind
   `invalid_text`, and a value that is neither is kind `invalid_argument_type`. T-7: a `bytes` parameter refuses a
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is
@@ -857,9 +935,29 @@ the design ids are those of the binding design.
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
   call alone and fails when it raises. The result `null` of an optional has a case form whatever the optional holds,
   a class too: each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, and Go `nil`
-  of the type of the result). A case whose result has no case form (a class, a result of `none`), whose
-  value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
-  a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
+  of the type of the result). A result that is a value alias of the contract (not inside another type, and
+  not a property of a value class, which gives the value that its constructor took) is compared as the texts of its
+  places in pre-order, depth first, which a loop writes on both sides, so a value nested deeper than a recursion
+  takes is compared too. The generator writes the texts of the case value by the out rows of the alias: for each
+  place, the row of its kind whose predicate the value has (`utf8`, `safe_integer`, `integral_float`,
+  `sequence_keys`; a case value of the kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no
+  row of its kind) and the form of the row in the language. The test writes the texts of the result by the type of
+  each place. A text names the form: `null`; `bool true` or `bool false`; `int <decimal>` in Python and PHP; `number
+  <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
+  PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
+  `list <n>`, then its items; `map <n>`, then each key and its value, a key in the form of its keyed map (a PHP key
+  that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
+  `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
+  then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. The result of an
+  alias with the entry points of `codec-test` (`in_raises`, GN-5) also goes through the round trip of the rows of the
+  alias (U-1): the test gives the result to `_alias_round_<alias>` (Python), `__aliasRound<Alias>` (Node, WASM) or
+  `Internal\aliasRound<Alias>` (PHP), which takes it by the `in` function of the alias and gives the core value back
+  by its `out` function, and requires the same texts, so each form that the `out` rows make enters again as the same
+  value. A case whose result
+  has no case form (a class, a result of `none`), whose value alias has no out row that makes the built-in form of
+  its kind in the language or a form of the texts, or that gives no argument of a parameter or of the factory of its
+  receiver fails its test with that reason, so the case is never left out.
   The name of the test of a case in a language whose tests are functions or methods (Python, PHP, Go) holds the id of
   the case as its words: the id is split at every run of characters other than ASCII letters and digits
   (`document-order` is `document`, `order`), and the words are joined by `_` in Python and capitalized and joined in
