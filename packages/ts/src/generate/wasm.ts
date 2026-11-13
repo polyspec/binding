@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -14,6 +14,8 @@ import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN }
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
+// GN-6w: the path of a trait method, <Type as Trait>::method, is code in a doc comment, which rustdoc would read as HTML.
+const docPath = (path: string): string => (path.startsWith('<') ? `\`${path}\`` : path);
 
 // The name of the files of wasm-bindgen: <glue>.js, <glue>_bg.wasm and their declarations.
 export const wasmGlue = (model: Model): string => `${model.contract.library.replaceAll('-', '_')}_wasm`;
@@ -36,7 +38,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   // U-3, U-7: a callback object and a value of an alias are judged by their own conversions.
   if (unit?.origin === 'callback') return `in_${rustField(unit.name)}(${value}, ${subject})`;
@@ -69,7 +71,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `${copied(t) ? '' : '&'}${value}.${i}`)}?`).join(', ')}])`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
-  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${rustField(unit.name)}(${value})`;
   const alias = aliasOf(model, type);
   if (unit !== undefined && alias !== undefined) return `out_${recordFn(unit, alias.library)}(${value})`;
@@ -383,6 +385,51 @@ ${writes.join('\n')}
 `;
 }
 
+// T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
+// per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
+function variantRust(model: Model, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const jsName = langName('wasm', variant.unit.name, 'class');
+  const tag = langName('wasm', variant.unit.tag ?? [], 'variable');
+  const set = (key: string, value: string): string => `            Reflect::set(&object, &JsValue::from_str(${rustString(key)}), &${value}?).map_err(|error| internal(&error))?;`;
+  const ins = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => {
+      const js = langName('wasm', f.field.name, 'variable');
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js))}?`)};`;
+    });
+    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    // An optional Box gives its value as Option<&T>, which the match of the optional takes.
+    const value = (f: CaseField): string => (f.boxed === 'optional' ? `${f.variable}.as_deref()` : copied(f.field.type) || f.boxed === 'box' ? caseValue(model, f) : f.variable);
+    const writes = [set(tag, `out_text(${rustString(kase.value)})`), ...fields.map((f) => set(langName('wasm', f.field.name, 'variable'), convertOut(model, f.field.type, value(f))))];
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
+  });
+  return `
+/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
+fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
+    let tag = in_text(&member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
+    match tag.as_str() {
+${ins.join('\n')}
+        _ => Err(type_error(subject, ${rustString(jsName)})),
+    }
+}
+
+/// T-9: a value of the variant ${jsName} leaves as the object of its case.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
+    let object = Object::new();
+    match value.borrow() {
+${arms.join('\n')}
+    }
+    Ok(object.into())
+}
+`;
+}
+
 // T-5: the name of the module's export of a member of a class, which the ES module calls from the class it defines.
 const exportName = (fn: Fn): string => {
   const cls = langName('wasm', fn.unit.name, 'class');
@@ -424,7 +471,7 @@ function iterateRust(model: Model, fn: Fn): string {
     : `            let (key, value) = item;
             items.push(&out_tuple(&[${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
   return withFaults(model, fn, `
-/// ${fn.corePath} (contract member ${fn.member.id}).
+/// ${docPath(fn.corePath)} (contract member ${fn.member.id}).
 #[wasm_bindgen(js_name = ${rustString(exportName(fn))})]
 pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
@@ -492,7 +539,7 @@ function functionRust(model: Model, fn: Fn): string {
   // T-5: the constructor gives the handle of the new value, which the instance under construction keeps.
   lines.push(fn.kind === 'constructor' ? `        insert_${plainName(fn.unit)}(result)` : `        ${convertOut(model, fn.returns, 'result')}`);
   return withFaults(model, fn, `
-/// ${fn.corePath} (contract member ${fn.member.id}).
+/// ${docPath(fn.corePath)} (contract member ${fn.member.id}).
 #[wasm_bindgen(js_name = ${rustString(jsName)})]
 pub fn ${rustExport(fn)}(${params}) -> Result<${fn.kind === 'constructor' ? 'u32' : 'JsValue'}, JsValue> {
     guard(|| {
@@ -813,7 +860,7 @@ function libRust(model: Model): string {
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
   const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
-  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
+  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
@@ -1239,6 +1286,15 @@ export type ${langName('wasm', u.name, 'class')} = ${(u.variants ?? []).map((v) 
 export interface ${langName('wasm', u.name, 'class')} {
 ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
+  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
+  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
+/** T-9: the case ${kase.value} of the variant ${langName('wasm', v.unit.name, 'class')}. */
+export interface ${langName('wasm', kase.unit.name, 'class')} {
+  readonly ${langName('wasm', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
+${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
+
+/** T-9. */
+export type ${langName('wasm', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('wasm', kase.unit.name, 'class')).join(' | ')};`).join('\n');
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
@@ -1259,7 +1315,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
 /** T-5. */
-export declare class ${langName('wasm', o.unit.name, 'class')} {
+export declare class ${langName('wasm', o.unit.name, 'class')}${implementsClause(model, o, 'wasm')} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
@@ -1271,7 +1327,7 @@ ${cb.members.map((m) => `  ${langName('wasm', m.member.name, 'callable')}(${m.pa
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}${objects === '' ? '' : `\n${objects}`}${callbacks === '' ? '' : `\n${callbacks}`}
+${records}${variants === '' ? '' : `\n${variants}`}${objects === '' ? '' : `\n${objects}`}${callbacks === '' ? '' : `\n${callbacks}`}
 
 ${fns}
 

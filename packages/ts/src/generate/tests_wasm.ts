@@ -22,6 +22,8 @@ export function wasmTests(model: Model): string {
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-6v: a case is an object of its tag and its fields, as for Node.
+    variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
+  no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
+  wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of
+  its tag, and a PHP final class of the variant's interface (GN-6v). A class that implements a callback interface of
+  the contract has the members of the interface, which call the trait on the held value, and its instance stands for
+  the callback, also in a case (GN-6w). Go refuses both by name. `tests/e2e/variants` has the variant `figure`, whose
+  case `group` holds figures in a list, a box and an optional box, and the class `ribbon` that implements `tail`.
+  Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/variants`.
 - A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
   dev-dependency of its own, and repositories did it in two forms. The core now has itself as a dev-dependency with
   `fault-test`, so `cargo test` without flags arms its points, and `binding check` reports a core manifest without it

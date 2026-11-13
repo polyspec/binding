@@ -1559,6 +1559,10 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const fn of model.objects.flatMap((o) => o.members).filter((m) => m.special === 'to_json')) {
     refusals.refuse(`${fn.member.id}: a to_json member is not generated for Go (GN-6g: encoding/json reads the exported fields of a value, and a class holds only a handle)`);
   }
+  // GN-6v, GN-6w: Go declares no variant and no class that implements an interface yet; each is refused by its name, and
+  // a place of a variant is refused with it.
+  for (const variant of model.variants) refusals.refuse(`${variant.unit.id}: a variant unit is not generated for Go yet (GN-6v)`);
+  for (const object of model.objects.filter((o) => (o.unit.implements ?? []).length > 0)) refusals.refuse(`${object.unit.id}: a class that implements an interface is not generated for Go yet (GN-6w)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {

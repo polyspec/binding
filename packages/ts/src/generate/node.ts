@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -35,7 +35,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -60,7 +60,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
-  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value})`;
   throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
 }
@@ -416,6 +416,51 @@ fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unkn
     let value = value.borrow();
     let mut object = Object::new(env).map_err(internal)?;
 ${writes.join('\n')}
+    Ok(object.to_unknown())
+}
+`;
+}
+
+// T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
+// per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
+function variantRust(model: Model, variant: Variant): string {
+  const name = recordFn(variant.unit);
+  const core = variant.unit.core_type ?? '';
+  const jsName = langName('node', variant.unit.name, 'class');
+  const tag = langName('node', variant.unit.tag ?? [], 'variable');
+  const ins = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const reads = fields.map((f) => {
+      const memberName = langName('node', f.field.name, 'variable');
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName))}?`)};`;
+    });
+    const built = `Ok(${caseStruct(variant, kase, fields)})`;
+    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
+  });
+  const arms = variant.cases.map((kase) => {
+    const fields = caseFields(model, variant, kase);
+    const writes = [
+      `            object.set_named_property(${rustString(tag)}, out_text(env, ${rustString(kase.value)})?).map_err(internal)?;`,
+      ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
+    ];
+    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
+  });
+  return `
+/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
+fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+    let tag = in_text(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
+    match tag.as_str() {
+${ins.join('\n')}
+        _ => Err(type_error(subject, ${rustString(jsName)})),
+    }
+}
+
+/// T-9: a value of the variant ${jsName} leaves as the object of its case.
+fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+    let mut object = Object::new(env).map_err(internal)?;
+    match value.borrow() {
+${arms.join('\n')}
+    }
     Ok(object.to_unknown())
 }
 `;
@@ -794,6 +839,7 @@ function libRust(model: Model): string {
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
+    ...model.variants.map((v) => variantRust(model, v)),
     // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
@@ -1198,6 +1244,15 @@ export declare class ${langName('node', u.unit.name, 'class')} extends ${u.paren
   const enums = model.enums.map((u) => `
 /** T-6. */
 export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
+  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
+  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
+/** T-9: the case ${kase.value} of the variant ${langName('node', v.unit.name, 'class')}. */
+export interface ${langName('node', kase.unit.name, 'class')} {
+  readonly ${langName('node', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
+${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
+
+/** T-9. */
+export type ${langName('node', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('node', kase.unit.name, 'class')).join(' | ')};`).join('\n');
   const records = model.records.map((u) => `
 /** T-4: the options record; a member whose value is undefined is absent. */
 export interface ${langName('node', u.name, 'class')} {
@@ -1225,7 +1280,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     if (!o.constructible) lines.unshift('  private constructor();');
     return `
 /** T-5. */
-export declare class ${langName('node', o.unit.name, 'class')} {
+export declare class ${langName('node', o.unit.name, 'class')}${implementsClause(model, o)} {
 ${lines.join('\n')}
 }`;
   }).join('\n');
@@ -1237,7 +1292,7 @@ ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.pa
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
-${records}
+${records}${variants === '' ? '' : `\n${variants}`}
 ${objects}
 ${callbacks}
 
