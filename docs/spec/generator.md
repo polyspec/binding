@@ -744,7 +744,9 @@ the design ids are those of the binding design.
     then return, so that the caller gets the same exception object.
   - `passthrough`: `binding_core::Passthrough` holds a language value in the table of the binding (B-3) without
     converting it; the core moves it and never reads it. A result `passthrough` of the member returns that value to
-    language code unchanged, and a `Passthrough` that the core drops releases its value. A handle of the table is a
+    language code unchanged, and a `Passthrough` that the core drops releases its value. A `Passthrough` is not `Send`:
+    the table is bound to the thread of its language code, and a value that ended on another thread would release
+    nothing there and stay in the table. A handle of the table is a
     count that is never given again, so the handle of a released value names no value and never another value; a
     result whose handle names no value is kind `internal`.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the

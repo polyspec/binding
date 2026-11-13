@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 13f6874ef266c98746660d212b9e75c3106f0b9e91c79849cddeda072c764c43 -->
+<!-- source-sha256: 5658e79b477eb1960387f50750efd587782eeb6e7f6059f162dc2095100ceee8 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding_core::Passthrough`는 `Send`였으므로 코어가 그것을 다른 스레드로 옮길 수 있었고, 거기서 버려지면 언어 코드의
+  스레드에 묶인 table의 release 함수가 불려 값이 table에 남았다. `Passthrough`는 이제 `Send`가 아니다(GN-6ae).
+  `docs/core-api.md`는 이제 crate에는 있고 문서에는 없던 `Passthrough`, `Step::Await`, `Machine::settle`,
+  `machine::drive`의 `awaited` 인자, `Next::Await`, `Driving::settle`을 적는다. `make test-rust`로 검증했다. 그
+  `tests/construct.rs`는 `Passthrough`를 다른 스레드로 보내는 crate가 컴파일되지 않을 것을 요구한다.
 - 계약 검사는 함수 타입의 값을 `{"function": [<행>]}`으로 읽었다. 이 형식은 어느 생성기도 쓰지 않았고 class 인자를 줄 수
   없었으며, GN-6ae는 함수 fixture를 적는다. 검사는 이제 함수 fixture `{"function": {"calls": [<step>], "result" |
   "raise"}}`만 읽는다. step `{"on", "call", "args"}`는 위치 `on`의 parameter의 class의 method를 정확히 그 parameter로

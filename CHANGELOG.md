@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `binding_core::Passthrough` was `Send`, so a core could move it to another thread, where its drop would call the
+  release function of a table that is bound to the thread of the language code, and the value would stay in the
+  table. A `Passthrough` is now not `Send` (GN-6ae). `docs/core-api.md` now holds `Passthrough`, `Step::Await`,
+  `Machine::settle`, the `awaited` argument of `machine::drive`, `Next::Await` and `Driving::settle`, which the crate
+  had and the document did not. Verified by `make test-rust`, whose `tests/construct.rs` requires that a crate that
+  sends a `Passthrough` to another thread does not compile.
 - The contract check read a value of a function type as `{"function": [<row>]}`, a form that no generator wrote and
   that could not give a class argument, while GN-6ae names the function fixture. The check now reads only the function
   fixture `{"function": {"calls": [<step>], "result" | "raise"}}`: a step `{"on", "call", "args"}` calls a method of

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9f2d252adccb995eee097959aac2d080a42a8b8fc8a37cab4a5f3f49bc7c6e59 -->
+<!-- source-sha256: 93bd50c6f00a80c4b6584a241ff7cec5ee8d4284ea56b1e0f8ad6f363d52c7eb -->
 # 생성기
 
 [English](generator.md)
@@ -619,7 +619,8 @@
     `Failure::Raised`로 준다. 코어는 그것에 rollback으로 답한 뒤 돌려줄 수 있고, 그러면 호출자는 같은 예외 객체를 받는다.
   - `passthrough`: `binding_core::Passthrough`는 언어 값을 변환하지 않고 binding의 table(B-3)에 쥔다. 코어는 그것을
     옮기기만 하고 읽지 않는다. member의 결과 `passthrough`는 그 값을 그대로 언어 코드에 돌려주며, 코어가 버린
-    `Passthrough`는 그 값을 놓는다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
+    `Passthrough`는 그 값을 놓는다. `Passthrough`는 `Send`가 아니다. table은 언어 코드의 스레드에 묶여 있어서, 다른
+    스레드에서 끝난 값은 거기서 아무것도 놓지 못하고 table에 남기 때문이다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
     가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고

@@ -2,6 +2,7 @@
 
 use crate::value::Handle;
 use std::fmt;
+use std::marker::PhantomData;
 
 /// A language value that the binding holds in its table (B-3) under a handle, which the core moves and never reads:
 /// the value that a function of language code returned, which a member with the result `passthrough` returns to
@@ -9,9 +10,14 @@ use std::fmt;
 ///
 /// Only generated code makes a `Passthrough` and takes its handle (feature `construct`). A `Passthrough` that the core
 /// drops gives its handle to the release function of the binding, which removes the value from its table.
+///
+/// A `Passthrough` is not `Send`: the table of a binding is bound to the thread of its language code, so a
+/// `Passthrough` that ended on another thread would release nothing there and its value would stay in the table.
 pub struct Passthrough {
     handle: Option<Handle>,
     release: fn(Handle),
+    /// A raw pointer is not `Send`, so neither is a `Passthrough`.
+    thread: PhantomData<*const ()>,
 }
 
 #[cfg(feature = "construct")]
@@ -22,6 +28,7 @@ impl Passthrough {
         Self {
             handle: Some(handle),
             release,
+            thread: PhantomData,
         }
     }
 

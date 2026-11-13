@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: fc24615ccd3a84102a622bfbc5b011cebf87d5cdef1bb9d83a6a24bab2558226 -->
+<!-- source-sha256: 2f2e71a0e851ef1783032d185b4a5183f0c737f1d0e5d2282b27b5f6a5470e59 -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -16,7 +16,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
   crate가 켜고 코어 crate는 켜지 않는다(B-5c).
 - feature `driver`: `driver::block_on`, `driver::Caught`와 `rt-multi-thread`를 켠 의존 `tokio` 1.54.1을 더한다.
   `wait: async_driver`인 member가 있는 계약의 PHP·Python·Node 바인딩 crate가 켜고(GN-6n), 코어 crate는 켜지 않는다.
-- feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
+- feature `construct`: wait 토큰, `Raised`, `Passthrough`를 만들 수 있게 하고 `Raised`와 `Passthrough`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - feature `fault-test`: 실패 주입점의 장전 자료(`fault::Armed`, `arm`, `take`, `left`)를 컴파일하며, 선택 의존
   `serde_json` 1.0.154(case의 faults 목록)와 Unix에서 `libc` 0.2.191(errno 기호의 값)을 쓴다. 주입점을 가진 코어는
@@ -71,10 +71,11 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | `fault-test`가 있을 때. `future`의 poll마다 장전을 설치하고 그 뒤 앞의 장전을 되돌리는 future다. panic 뒤에도 되돌린다. 그래서 `async fn`의 주입점은 runtime의 어느 스레드에서도 자기 호출의 장전을 본다. |
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
-| `machine::Machine` (`type Io: Send + 'static`, `type Done`, `resume(&mut self, io: Option<Io>) -> Step<Io, Done>`, `call(&mut self)`) | GN-6ab | `"machine": true`인 member의 코어 경로가 돌려주는 I/O 없는 state machine이며 인자를 소유한다. `resume`은 마지막 기다림의 출력(처음과 call 뒤에는 `None`)으로 그것을 진행시킨다. `call`은 그것을 돌리는 스레드에서 언어 코드를 부르고, 그 실패는 뒤 단계를 위해 지닌다. feature 없이 있으므로 코어 crate가 구현한다. |
-| `machine::Step<I, D>` (`Io(Wait<I>)`, `Call`, `Done(D)`), `machine::Wait<I>` | GN-6ab | machine의 한 단계: 언어 코드에 닿지 않는 코어의 future(`Wait<I>`, pin하고 box한 `Send + 'static` future), 언어 코드의 call, 또는 member의 결과다. |
-| `machine::drive(&mut machine, wait) -> Result<Done, BindingError>` | GN-6ab | 호출 스레드에서 machine을 끝까지 돌린다(PHP, Python의 막는 꼴). `wait`이 각 future를 기다리고, 각 call은 호출 스레드에서 한다. `wait`의 오류는 다른 단계 없이 machine을 끝낸다. |
-| `machine::Driving<M>` (`new`, `give`, `advance() -> Next<Io, Done>`), `machine::Next<I, D>` (`Wait(Wait<I>)`, `Done(D)`) | GN-6ab | 언어의 runtime이 진행시키는 machine(Node): `advance`는 호출 스레드에서 machine의 call을 하고, 기다림에서 멈추거나(그 출력은 `give`가 다음 단계에 준다) 끝에서 멈춘다. |
+| `Passthrough` | T-2 `passthrough`, GN-6ae | 바인딩이 handle 아래 자기 table에 쥐는 언어 값이며, 코어는 그것을 옮기기만 하고 읽지 않는다. 언어 코드의 함수가 돌려준 값이다. `Passthrough::from_generated(Handle, release: fn(Handle))`와 `into_handle(self) -> Handle`은 `construct`가 있을 때만 있다. 버려지는 `Passthrough`는 자기 handle을 `release`에 주고, handle을 꺼낸 것은 아무것도 놓지 않는다. `Debug`이며 `Send`가 아니다. 바인딩의 table은 언어 코드의 스레드에 묶여 있어서, 다른 스레드에서 끝난 값은 table에 남기 때문이다. |
+| `machine::Machine` (`type Io: Send + 'static`, `type Done`, `resume(&mut self, io: Option<Io>) -> Step<Io, Done>`, `call(&mut self)`, `settle(&mut self, outcome: Result<Passthrough, Raised>)`) | GN-6ab, GN-6ae | `"machine": true`인 member의 코어 경로가 돌려주는 I/O 없는 state machine이며 인자를 소유한다. `resume`은 마지막 기다림의 출력(처음, call 뒤, settle 뒤에는 `None`)으로 그것을 진행시킨다. `call`은 그것을 돌리는 스레드에서 언어 코드를 부르고, 그 실패는 뒤 단계를 위해 지닌다. `settle`은 다음 `resume` 전에 마지막 `Step::Await`의 값의 결말, 곧 awaitable이 준 값이나 던진 예외를 받는다. feature 없이 있으므로 코어 crate가 구현한다. |
+| `machine::Step<I, D>` (`Io(Wait<I>)`, `Call`, `Await(Passthrough)`, `Done(D)`), `machine::Wait<I>` | GN-6ab, GN-6ae | machine의 한 단계: 언어 코드에 닿지 않는 코어의 future(`Wait<I>`, pin하고 box한 `Send + 'static` future), 언어 코드의 call, 언어 코드의 함수가 돌려준 값(awaitable일 수 있으며, driver가 자기 언어가 할 수 있는 곳에서 기다리고 settle한다), 또는 member의 결과다. |
+| `machine::drive(&mut machine, wait, awaited) -> Result<Done, BindingError>` | GN-6ab, GN-6ae | 호출 스레드에서 machine을 끝까지 돌린다(PHP, Go, Python의 막는 꼴). `wait`이 각 future를 기다리고, 각 call은 호출 스레드에서 하며, `awaited(Passthrough) -> Result<Result<Passthrough, Raised>, BindingError>`가 기다린 각 값의 결말을 `settle`에 준다. awaitable이 없는 언어는 그 값을 바로 돌려준다. `wait`이나 `awaited`의 오류는 다른 단계 없이 machine을 끝낸다. |
+| `machine::Driving<M>` (`new`, `give`, `settle`, `advance() -> Next<Io, Done>`), `machine::Next<I, D>` (`Wait(Wait<I>)`, `Await(Passthrough)`, `Done(D)`) | GN-6ab, GN-6ae | 언어의 runtime이 진행시키는 machine(Node, WASM): `advance`는 호출 스레드에서 machine의 call을 하고, 기다림에서 멈추거나(그 출력은 `give`가 다음 단계에 준다), 기다리는 값에서 멈추거나(그 결말은 `settle`이 machine에 준다), 끝에서 멈춘다. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`가 있을 때. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 
