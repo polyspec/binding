@@ -124,7 +124,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 
 - **CK-19** Tracked binding packages (L-2): `binding check` compares each tracked file of the binding packages
   (docs/spec/generator.md GN-3a) with what `binding scaffold` writes; a missing or different file is a finding. For
-  a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module needs.
+  a host package (L-2a, GN-3b) it reads only the items of the host's manifest that the native module and its release
+  need, and names each item that is missing or differs with the value it must have.
 - **CK-21** The build of the core, exclusive members and the result of a core path (I-1, U-6, E-1c): `core.features`
   names targets only; `exclusive` is on a member with the receiver `&self` of a generated class only. A member whose
   `core.result` is `false` has no `raises` and no parameter that holds a callback or a function, because a core that

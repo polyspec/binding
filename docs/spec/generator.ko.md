@@ -67,14 +67,16 @@
   - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
     `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
     `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 `optionalDependencies`에 자기 `version`으로 적은
-    GN-3c의 플랫폼 패키지를 갖는다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
+    GN-3c의 플랫폼 패키지를 갖고, GN-3c의 release 필드 `"type": "module"`, `napi.binaryName`, `napi.targets`를 갖는다. release가
+    빌드하고 배포하는 패키지가 host 패키지이기 때문이다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
     생성 시험도 `native/generated/tests/`에서 그렇게 한다. WASM crate는 `native/wasm/`이고, 그 module, glue, 선언은
     `native/wasm/generated/`이며 host의 `files`가 그것을 적는다(`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts`,
     `*.wasm`). 그 시험은 `native/wasm/generated/index.mjs`를 상대 경로로 import한다.
   - PHP: 확장은 별도 Composer 패키지(type `php-ext`) `<host 패키지>-native`이고 자리는
     `packages/<component>/php/native/`다. `scaffold`가 그 crate와 `composer.json`을 거기에 쓰고 `generated/`도 그 옆이다.
     host 라이브러리 `packages/<component>/php/composer.json`은 `ext-<확장 이름>`(`*`)을 require하며, 확장은 PHP가 로드할 때
-    클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다.
+    클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다. 확장의 `composer.json`은 `scaffold`가 쓰므로 `check`는
+    GN-3c의 `php-ext.download-url-method`를 포함해 그 파일 전체를 비교한다.
 - **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
   `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
   `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는 addon을 갖지 않고 모든 플랫폼 패키지를 자기

@@ -87,7 +87,9 @@ the design ids are those of the binding design.
   - Node: the binding crate is `packages/<component>/ts/native/` with the Node `build.rs`; the generated entry and
     declarations are `native/generated/`. The host's `package.json` has its `name`, in `files`
     `native/generated/index.cjs`, `native/generated/index.mjs` and `native/generated/index.d.ts`, and the platform
-    packages of GN-3c in `optionalDependencies` at its own `version`; host code imports `native/generated/index.mjs`
+    packages of GN-3c in `optionalDependencies` at its own `version`, and the fields of a release of GN-3c: `"type":
+    "module"`, `napi.binaryName` and `napi.targets`, because the host package is the package that a release builds
+    and publishes; host code imports `native/generated/index.mjs`
     (or `index.cjs`) by its relative path, and so do the generated tests, from `native/generated/tests/`. The WASM
     crate is `native/wasm/`, its module, glue and declarations are `native/wasm/generated/`, which the host's `files`
     names (`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts` and `*.wasm`), and its tests import
@@ -96,6 +98,8 @@ the design ids are those of the binding design.
     `packages/<component>/php/native/`: `scaffold` writes its crate and its `composer.json` there, and `generated/`
     is beside them. The host library `packages/<component>/php/composer.json` requires `ext-<extension name>` (`*`);
     the extension registers the classes and functions when PHP loads it. A host layout has no `php-ext/` directory.
+    The `composer.json` of the extension is written by `scaffold`, so `check` compares it whole, its
+    `php-ext.download-url-method` of GN-3c included.
 - **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
   napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
   <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
