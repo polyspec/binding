@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -648,9 +648,24 @@ ${outs.join('\n')}
             }
             ${m.returns === 'none' ? 'let _returned: Zval = returned;\n            Ok(())' : returned}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
+    let Thrown::Php(exception) = &error else {
+        return thrown(error);
+    };
+    let core = recognized_kind(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(error),
+    }
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('php', m.member.name, 'callable');
     return `    if !has_method(object, ${rustString(method)}) {
@@ -674,8 +689,26 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
+    for index in classes {
+        let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
+        if exception.instance_of(class) {
+            let scope = category_scope(class);
+            let kind = in_scope(scope, || exception.get_property::<String>("kind")).ok()?;
+            let message = in_scope(scope, || exception.get_property::<String>("message")).ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
 function traitParam(model: Model, type: Type): string {
@@ -829,6 +862,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.objects.map((object) => objectOut(model, object)),
     ...model.callbacks.map((c) => callbackRust(model, c)),
+    model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A callback member with `errors.recognize`, such as `file_loader.load` of a loader that reports a missing file, was
+  refused with "recognized callback errors are not generated yet", so no target of such a contract was generated. An
+  exception of the member that is an instance of a recognized error unit, with a kind of a row of that unit, now
+  reaches the core as that kind: `errors.recognized` names the core function that makes the core error from the value
+  of the kind and the message, and Python, Node, PHP, WASM and Go read the kind and the message of the instance; any
+  other exception goes back to the caller as the same object. `binding check` reports a contract whose callback
+  recognizes its own error unit without `errors.recognized` (CK-17), and the generator refuses a recognized unit of
+  another library by name (GN-6d). Verified by `npm test` in `packages/ts`.
 - A class parameter always gave the core a shared borrow (`&guard`), so a core that takes `&mut Form` did not
   compile, and a core that takes the class by value got no value. A parameter now names the borrow of the core in
   `core` (`&`, `&mut` or `value`; absent, `&`): `&mut` is a write place, `value` gives a clone under the read guard,

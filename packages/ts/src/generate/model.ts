@@ -69,6 +69,9 @@ export interface CallbackMember {
   returns: Type;
   // The receiver of the trait method (U-2 core.receiver of the callback member).
   receiver: '&self' | '&mut self';
+  // U-3, GN-6d: the error units that the member recognizes, and the core error of each of their kinds, an expression
+  // of errors.recognized with the message of the exception in `message`.
+  recognized?: { units: ErrorUnit[]; kinds: { kind: string; error: string }[] };
 }
 
 // U-7: a value alias that the core judges and gives through core: {in, out}, with its value table.
@@ -212,6 +215,22 @@ export const variantPattern = (variant: string): string => {
   const [outer, inner] = variant.split('/');
   return inner === undefined ? `${variant} { .. }` : `${outer ?? ''}(${inner} { .. })`;
 };
+
+// GN-6d: the value of a variant path as an expression: <path>, or <outer>(<inner>) for a nested path.
+export const variantValue = (variant: string): string => {
+  const [outer, inner] = variant.split('/');
+  return inner === undefined ? variant : `${outer ?? ''}(${inner})`;
+};
+
+// U-3, GN-6d: the name of the function that recognizes the exceptions of a callback member.
+export const recognizedFn = (cb: CallbackUnit, m: CallbackMember): string => `recognized_${rustField(cb.unit.name)}_${rustField(m.member.name)}`;
+
+// U-3, GN-6d: the match of a recognized kind, `kind` a String and `message` a &str in scope, into Some of the core error
+// or None, at the given indent.
+export const recognizedMatch = (m: CallbackMember, indent: string): string => `match kind.as_str() {
+${(m.recognized?.kinds ?? []).map((k) => `${indent}    ${JSON.stringify(k.kind)} => Some(${k.error}),`).join('\n')}
+${indent}    _ => None,
+${indent}}`;
 
 // GN-7b: what a match of the kinds reads: the error, or its code through the projection of errors.code. `error` is
 // the name of an owned error, or of a reference when `borrowed`.
@@ -483,7 +502,7 @@ export function collectModel(
       function callbackMember(member: Member): true {
         if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
         if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
-        if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
+        if ((member.errors?.recognize ?? []).some((ref) => ref.library !== undefined)) throw new Unsupported(`${member.id}: a recognized error unit of another library is not generated yet`);
         const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
         if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
         const params = member.parameters ?? [];
@@ -594,6 +613,30 @@ export function collectModel(
     return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
   }) ?? []);
   if (contract.errors.binding.length > 0) refusals.refuse('errors.binding overrides are not generated yet');
+  // U-3, GN-6d: the kinds that a callback member recognizes, of the rows whose class is a recognized unit or extends one.
+  for (const callback of callbacks) {
+    for (const cm of callback.members) {
+      const refs = cm.member.errors?.recognize ?? [];
+      if (refs.length === 0) continue;
+      refusals.attempt(() => {
+        const units = refs.map((ref) => {
+          const found = errorUnits.find((u) => u.unit.id === ref.unit);
+          if (found === undefined) throw new Unsupported(`${cm.member.id}: ${ref.unit} is no error unit that is generated (U-3)`);
+          return found;
+        });
+        const recognizedFn = contract.errors.recognized;
+        if (recognizedFn === undefined) throw new Unsupported(`${cm.member.id}: errors.recognized names no function that makes the core error of a recognized kind (GN-6d)`);
+        const extendsOne = (unit: ErrorUnit | undefined): boolean => unit !== undefined && (units.includes(unit) || extendsOne(unit.parent));
+        const recognizedKinds = kinds.filter((k) => extendsOne(k.unit)).map((k) => {
+          const row = contract.errors.kinds.find((r) => r.variant === k.variant && r.library === undefined);
+          if (row?.kinds !== undefined) throw new Unsupported(`${k.variant}: a recognized variant of two or more kinds is not generated yet`);
+          return { kind: kindText(k.variant), error: `${recognizedFn}(${variantValue(k.variant)}, &message)` };
+        });
+        cm.recognized = { units, kinds: recognizedKinds };
+        return true;
+      });
+    }
+  }
   const enumPaths = new Set(kinds.map((k) => variantEnum(k.variant)));
   if (enumPaths.size > 1) refusals.refuse(`the kinds name ${enumPaths.size} error enums; one is generated`);
   // GN-7b: the kinds are variants of an error enum, or of the code enum of the struct error that errors.code names.

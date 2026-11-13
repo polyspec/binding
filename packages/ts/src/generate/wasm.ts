@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, variantPattern, errorMatched } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -683,9 +683,23 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};
             ${returned}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
     }`;
   }).join('\n');
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
+    let Thrown::Js(value) = &error else {
+        return thrown(error);
+    };
+    let core = recognized_kind(value, &[${(m.recognized?.units ?? []).map((u) => model.classes.length + model.errorUnits.indexOf(u)).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    match core {
+        Some(core) => binding_core::Failure::Kind(core),
+        None => thrown(error),
+    }
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('wasm', m.member.name, 'callable');
     return `    let found = Reflect::get(value, &JsValue::from_str(${rustString(method)})).map_err(|error| internal(&error))?;
@@ -710,8 +724,32 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception whose prototype chain holds the prototype of one of the error
+// classes, for the members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(value: &JsValue, classes: &[usize]) -> Option<(String, String)> {
+    if !value.is_object() {
+        return None;
+    }
+    for index in classes {
+        let prototype = CLASSES.with(|registered| registered.borrow().get(*index).map(|class| Reflect::get(class, &JsValue::from_str("prototype"))))?.ok()?;
+        let mut current = Object::get_prototype_of(value);
+        while !current.is_null() {
+            if Object::is(&current, &prototype) {
+                let kind = Reflect::get(value, &JsValue::from_str("kind")).ok()?.as_string()?;
+                let message = Reflect::get(value, &JsValue::from_str("message")).ok()?.as_string()?;
+                return Some((kind, message));
+            }
+            current = Object::get_prototype_of(&current);
+        }
+    }
+    None
+}
+`;
 
 // E-1c, U-3: what a callback, or a value that the core walks, threw, kept under the handle of its Raised until the
 // generated caller throws it again; and the failure of a core that calls back, as the error of its kind or that
@@ -808,7 +846,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
+  const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.

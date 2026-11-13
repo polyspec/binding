@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `errors.recognize`가 있는 callback member(없는 파일을 알리는 loader의 `file_loader.load` 같은)는 "recognized callback errors
+  are not generated yet"로 거부되어 그런 계약의 target은 생성되지 않았다. 이제 member의 예외가 recognize한 오류 unit의
+  인스턴스이고 그 unit 행의 kind를 가지면 코어에 그 kind로 간다. `errors.recognized`가 kind의 값과 메시지로 코어 오류를 만드는
+  코어 함수를 적고, Python·Node·PHP·WASM·Go가 인스턴스의 kind와 메시지를 읽는다. 그 밖의 예외는 같은 객체로 호출자에게
+  돌아간다. `binding check`는 callback이 자기 오류 unit을 recognize하는데 `errors.recognized`가 없는 계약을 보고하고(CK-17),
+  생성기는 다른 라이브러리의 unit을 recognize하는 것을 이름을 대어 거부한다(GN-6d). `packages/ts`에서 `npm test`로 확인했다.
 - class parameter는 늘 코어에 공유 빌림(`&guard`)을 주었다. 그래서 `&mut Form`을 받는 코어는 컴파일되지 않았고, class를 값으로
   받는 코어는 값을 받지 못했다. 이제 parameter는 코어의 빌림을 `core`에 적는다(`&`, `&mut`, `value`. 없으면 `&`). `&mut`는 쓰기
   쪽 자리이고, `value`는 읽기 guard 아래의 복제를 주며, 모든 crate는 그런 member의 빌림을 코어 경로의 fn pointer 타입으로

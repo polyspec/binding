@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, variantPattern, errorMatched } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -558,9 +558,37 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(thrown)
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
     }`;
   }).join('\n');
+  const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
+  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
+/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
+/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+/// is.
+fn ${recognizedFn(cb, m)}(env: &Env, error: Thrown) -> ${failure} {
+    let Thrown::Js(js) = &error else {
+        return thrown(error);
+    };
+    if js.status != napi::Status::PendingException {
+        return thrown(error);
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return thrown(error);
+    }
+    let core = recognized_kind(env, exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    if let Some(core) = core {
+        return binding_core::Failure::Kind(core);
+    }
+    // SAFETY: the exception that this took is thrown again on the same thread, so the caller throws the same object.
+    if unsafe { napi::sys::napi_throw(env.raw(), exception) } != napi::sys::Status::napi_ok {
+        return thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback could not be thrown again") })));
+    }
+    thrown(error)
+}
+`).join('');
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     return `    let found: Unknown<'env> = object.get_named_property(${rustString(method)}).map_err(internal)?;
@@ -587,8 +615,29 @@ ${checks}
 
 impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
-`;
+${recognizing}`;
 }
+
+// U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
+// members that recognize error units.
+const RECOGNIZED_KIND = `
+/// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
+fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize]) -> Option<(String, String)> {
+    // SAFETY: the value is the exception that a callback threw, a value of env.
+    let value = unsafe { Unknown::from_raw_unchecked(env.raw(), exception) };
+    let registered = CLASSES.get()?;
+    for index in classes {
+        let class = registered.get(*index)?.borrow_back(env).ok()?;
+        if value.instanceof(class).ok()? {
+            let object: Object<'_> = value.coerce_to_object().ok()?;
+            let kind: String = object.get_named_property("kind").ok()?;
+            let message: String = object.get_named_property("message").ok()?;
+            return Some((kind, message));
+        }
+    }
+    None
+}
+`;
 
 // T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
 export function traitParam(model: Model, type: Type): string {
@@ -789,7 +838,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),

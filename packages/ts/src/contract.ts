@@ -143,6 +143,8 @@ export interface Errors {
   kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; kinds?: string[] }[];
   // GN-7b: the core error of a struct that holds the code enum of the kinds, and the projection to that code.
   code?: { error: string; path: string };
+  // U-3, GN-6d: the core function that makes the core error of a recognized kind with its message.
+  recognized?: string;
   binding: { kind: string; class: string }[];
   wrapped: { library: string; unit: string; property: Name; forward?: string; drop?: { reason: string } }[];
 }

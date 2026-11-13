@@ -1762,6 +1762,8 @@ class Checker {
         const refPath = `${path}/errors/recognize/${i}`;
         if (ref.library === undefined || ref.library === this.contract.library) {
           if (this.unit(ref.unit)?.kind !== 'error') this.report('CK-17', refPath, `${ref.unit} is not an error unit`);
+          // GN-6d: the core error of a recognized kind is made by the function that the contract names.
+          else if (this.contract.errors.recognized === undefined) this.report('CK-17', refPath, `${member.id} recognizes ${ref.unit}, but errors.recognized names no function that makes the core error of its kind (GN-6d)`);
         } else {
           const dependency = this.dependency(ref.library, refPath, 'CK-17');
           if (dependency !== null && dependency.units.find((u) => u.id === ref.unit)?.kind !== 'error') {

@@ -1869,7 +1869,7 @@ test('a callback member gives the core the kind of an error unit that it recogni
     assert.ok(lib.includes('"absent" => Some(polyspec_consumer::Error::recognized(polyspec_consumer::Error::Absent, &message)),'), `${crate} makes the core error of the recognized kind`);
     assert.match(lib, /fn recognized_holder_get\(/, crate);
     // A member that recognizes nothing keeps the exception as it is.
-    assert.equal(lib.match(/recognized_holder_get\(/g)?.length, 2, `${crate} calls the recognition of holder.get alone`);
+    assert.equal(lib.match(/\brecognized_holder_get\b/g)?.length, 2, `${crate} calls the recognition of holder.get alone`);
     assert.doesNotMatch(lib, /recognized_holder_set/, crate);
   }
   // Go reads the error that the method returned with errors.As, and the C ABI takes its kind and its message.
