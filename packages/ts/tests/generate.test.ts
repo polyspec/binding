@@ -527,6 +527,44 @@ test('the PHP binding crate links on macOS by its own build script, which check 
   assert.equal(host.get('packages/php/native/build.rs'), PHP_BUILD);
 });
 
+test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
+  const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  contract.targets.push('wasm');
+  const out = trackedPackages(contract, '0.0.0');
+  const npm = JSON.parse(String(out.get('packages/ts/package.json')));
+  // The napi CLI names the addon <binaryName>.<platform>.node, the file that the entry loads, and builds the triples.
+  assert.deepEqual(npm.napi, { binaryName: 'sample', targets: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin'] });
+  // The .js glue of wasm-bindgen --target web is an ES module.
+  assert.equal(npm.type, 'module');
+  const composer = JSON.parse(String(out.get('packages/php-ext/composer.json')));
+  assert.deepEqual(composer['php-ext'], { 'extension-name': 'polyspec_sample', 'download-url-method': ['pre-packaged-binary'] });
+  // L-2a: the extension of a host package is the same Composer package, <host package>-native.
+  const host = trackedPackages({ ...contract, packages: { ...contract.packages, php: { ...contract.packages.php, host: true } } }, '0.0.0');
+  assert.deepEqual(JSON.parse(String(host.get('packages/php/native/composer.json')))['php-ext'], composer['php-ext']);
+  // A package of WASM alone holds no addon, so it names no napi configuration; it is still an ES module package.
+  const wasmOnly = JSON.parse(String(trackedPackages({ ...contract, targets: contract.targets.filter((t: string) => t !== 'node') }, '0.0.0').get('packages/ts/package.json')));
+  assert.equal(wasmOnly.napi, undefined);
+  assert.equal(wasmOnly.type, 'module');
+  // CK-19: a tracked manifest without these fields differs from what scaffold writes.
+  const { root, contract: path } = fixtureCopy(() => {});
+  try {
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' });
+    const npmPath = join(root, 'packages/ts/package.json');
+    const written = JSON.parse(readFileSync(npmPath, 'utf8'));
+    writeFileSync(npmPath, `${JSON.stringify({ ...written, napi: undefined }, null, 2)}\n`);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /ts\/package\.json: CK-19 differs/);
+    writeFileSync(npmPath, `${JSON.stringify(written, null, 2)}\n`);
+    const composerPath = join(root, 'packages/php-ext/composer.json');
+    const ext = JSON.parse(readFileSync(composerPath, 'utf8'));
+    writeFileSync(composerPath, `${JSON.stringify({ ...ext, 'php-ext': { 'extension-name': ext['php-ext']['extension-name'] } }, null, 2)}\n`);
+    assert.throws(() => execFileSync(process.execPath, [cli, 'check', path], { stdio: 'pipe' }), /php-ext\/composer\.json: CK-19 differs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('scaffold writes under --out and not into the repository', () => {
   const { root } = fixtureCopy(() => {});
   const out = mkdtempSync(join(tmpdir(), 'binding-k-'));
