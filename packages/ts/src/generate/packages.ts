@@ -139,13 +139,19 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
 // staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm). libExtra: lines of [lib] after its type.
-function manifest(contract: Contract, version: string, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+// GN-3f: the version and the licence of the core, which the manifests of its binding packages carry.
+interface Core {
+  version: string;
+  license: string | undefined;
+}
+
+function manifest(contract: Contract, core: Core, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
-version = ${JSON.stringify(version)}
+version = ${JSON.stringify(core.version)}
 edition = "2021"
-rust-version = "1.99.0"
+rust-version = "1.99.0"${core.license === undefined ? '' : `\nlicense = ${JSON.stringify(core.license)}`}
 publish = false${extra}
 
 [lib]
@@ -264,7 +270,10 @@ export function trackedPackages(...inputs: Parameters<typeof trackedResult>): Fi
 // armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
 // (casePointLibraries).
 // foreign: the contracts of the libraries that the contract names, whose records go.mod requires (GN-15f).
-export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = []): Tracked {
+// license: the licence of the core, which every manifest with a licence field carries (GN-3f); a core without one gives
+// manifests without the field.
+export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = [], license?: string): Tracked {
+  const core: Core = { version, license };
   // GN-13: a target with a case whose value has no form in its language has the feature case-test.
   const caseTest = new Set(caseTargets);
   const files: Files = new Map();
@@ -298,7 +307,7 @@ export function trackedResult(contract: Contract, version: string, coreDependenc
   };
   if (contract.targets.includes('python')) packageOf('packages/python', () => {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, core, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
     files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
@@ -310,7 +319,7 @@ build-backend = "maturin"
 [project]
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
-requires-python = ">=3.14"${namedLibraries(contract).length === 0 ? '' : `
+requires-python = ">=3.14"${license === undefined ? '' : `\nlicense = ${JSON.stringify(license)}`}${namedLibraries(contract).length === 0 ? '' : `
 dependencies = [${namedLibraries(contract).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
 
 [tool.maturin]
@@ -320,7 +329,7 @@ python-source = "generated/python"
   });
   if (contract.targets.includes('node')) packageOf('packages/ts', () => {
     const npm = (contract.packages['node'] as { package: string }).package;
-    files.set('packages/ts/Cargo.toml', manifest(contract, version, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
+    files.set('packages/ts/Cargo.toml', manifest(contract, core, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       ...foreignOf('node'),
       // GN-6n: the future of a member with wait async_driver runs on the tokio runtime of napi.
       `napi = { version = "=3.16.2", default-features = false, features = [${['napi8', ...(drives(contract, 'node') ? ['tokio_rt'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`,
@@ -328,14 +337,14 @@ python-source = "generated/python"
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'GN-4: napi casts a value to its type after its type was checked']]));
-    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
+    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
   });
   if (contract.targets.includes('wasm')) packageOf('packages/ts/wasm', () => {
-    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, version));
+    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
-    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, armed, 'wasm', `${extensionName(contract)}_wasm`, [
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, core, armed, 'wasm', `${extensionName(contract)}_wasm`, [
       ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
@@ -348,7 +357,7 @@ python-source = "generated/python"
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, core, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
       .replace('panic-test = []\n', caseTest.has('php') ? 'panic-test = []\ncase-test = []\n' : 'panic-test = []\n'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
@@ -361,7 +370,7 @@ python-source = "generated/python"
       name: isHost(contract, 'php') ? `${php.package}-native` : php.package,
       description: `The ${contract.library} library of polyspec as a PHP extension`,
       type: 'php-ext',
-      license: 'MIT',
+      ...(license === undefined ? {} : { license }),
       require: { php: '>=8.4' },
       // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
       'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
@@ -372,7 +381,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n${goRequires(contract, coreDependencies, foreign)}`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, core, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));
@@ -408,7 +417,7 @@ export const WASM_BINDGEN = '0.2.130';
 
 // The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
 // at each entry whose conditions choose it in the browser.
-function npmManifest(contract: Contract, version: string): string {
+function npmManifest(contract: Contract, core: Core): string {
   const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
   const node = contract.targets.includes('node');
   const wasm = contract.targets.includes('wasm');
@@ -425,9 +434,9 @@ function npmManifest(contract: Contract, version: string): string {
   if (wasm) exports['./wasm'] = browser;
   return `${JSON.stringify({
     name: npm.package,
-    version,
+    version: core.version,
     description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
-    license: 'MIT',
+    ...(core.license === undefined ? {} : { license: core.license }),
     // GN-3c: the only .js files of the package are the glue of wasm-bindgen --target web, an ES module.
     type: 'module',
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),

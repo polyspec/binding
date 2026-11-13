@@ -2,6 +2,7 @@
 name = "polyspec-sample"
 version = "0.0.3"
 edition = "2021"
+license = "MIT"
 publish = false
 
 [lib]

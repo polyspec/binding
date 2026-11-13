@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f219d2dee0d5c56d68b9dc606a56d7729498b13ffda9b04484b4d8c686ea949e -->
+<!-- source-sha256: 12515de75345a589f5e205a7f9f51451640e1ede88483de825a28d71a35c6b98 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding scaffold`는 코어의 licence가 무엇이든 `package.json`과 `composer.json`에 licence `MIT`를 고정 값으로 썼고, 바인딩
+  crate의 Cargo manifest와 `pyproject.toml`에는 licence를 쓰지 않았다. 이제 licence 항목이 있는 모든 manifest는 코어 crate의
+  licence를 담는다(GN-3f). 그것은 코어의 `package.license`이며, 코어가 `license.workspace = true`를 적으면
+  `workspace.package.license`다. 바인딩 crate, `package.json`, `composer.json`은 `license`로, `pyproject.toml`은
+  `project.license`로 갖는다. licence를 적지 않은 코어는 `binding check`의 finding, 곧 새 검사 CK-71이며, 그때 `scaffold`는 그
+  항목 없이 manifest를 쓴다. 모든 레포는 `binding scaffold`를 다시 실행한다. CK-19가 manifest를 비교하기 때문이다. licence가
+  없는 코어는 먼저 그것을 적는다. `tests/e2e`의 코어와 단위 시험 fixture의 코어는 `MIT`를 적는다. `make test-ts`로 확인했다.
+  새 시험은 변경 전에 실패했고(398개 중 1개), 변경 뒤 398개 중 398개가 통과한다.
 - `binding scaffold`는 `pyproject.toml`이 다른 polyspec 라이브러리의 Python 패키지에 거는 의존을 코어의 의존 줄이 무엇을
   적든 이름만으로, `dependencies = ["polyspec-<library>"]`로 썼다. 그래서 release의 패키지가 그 라이브러리의 버전을 요구하지
   않았다. 이제 의존은 그 줄의 꼴을 따른다(GN-3e). tag `vX.Y.Z`나 버전 `=X.Y.Z`는 `polyspec-<library>==X.Y.Z`를 주고, 개발

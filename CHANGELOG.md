@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- `binding scaffold` wrote the licence `MIT` as a fixed value into `package.json` and `composer.json`, whatever the
+  licence of the core was, and wrote no licence into the Cargo manifests of the binding crates and into
+  `pyproject.toml`. Every manifest with a licence field now carries the licence of the core crate (GN-3f):
+  `package.license` of the core, or `workspace.package.license` when the core names `license.workspace = true`, as
+  `license` of each binding crate, of `package.json` and of `composer.json` and as `project.license` of
+  `pyproject.toml`. A core that names no licence is a finding of `binding check`, the new check CK-71, and `scaffold`
+  then writes the manifests without the field. Every repository runs `binding scaffold` again, because CK-19 compares
+  the manifests, and a core without a licence adds one first. The cores of `tests/e2e` and of the fixture of the unit
+  tests name `MIT`. Verified by `make test-ts`: the new test failed before the change (1 of 398), and 398 of 398 pass
+  with it.
 - `binding scaffold` wrote the dependency of `pyproject.toml` on the Python package of another polyspec library as the
   name alone, `dependencies = ["polyspec-<library>"]`, whatever the dependency line of the core named, so the package
   of a release required no version of that library. The dependency now follows the form of the line (GN-3e): a tag

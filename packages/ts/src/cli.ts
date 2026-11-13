@@ -162,17 +162,21 @@ const root = resolve(dirname(contractPath), ...checked.core.path.split('/').map(
 // The version and the library name of the core crate from its manifest (T-3), read as TOML: a version inherited from the
 // workspace (version.workspace = true) is the root manifest's workspace.package.version.
 const manifest = parse(readFileSync(join(root, checked.core.path, 'Cargo.toml'), 'utf8')) as {
-  package?: { name?: string; version?: string | { workspace?: boolean } };
+  package?: { name?: string; version?: string | { workspace?: boolean }; license?: string | { workspace?: boolean } };
   lib?: { name?: string };
   dependencies?: Record<string, unknown>;
   'dev-dependencies'?: Record<string, unknown>;
 };
 const core = manifest.package;
 let version = core?.version;
-if (typeof version === 'object' && version.workspace === true) {
-  const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string } } };
-  version = workspace.workspace?.package?.version;
+// GN-3f: the licence of the core, which every manifest of its binding packages carries, read as the version is.
+let license = core?.license;
+if ((typeof version === 'object' && version.workspace === true) || (typeof license === 'object' && license.workspace === true)) {
+  const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string; license?: string } } };
+  if (typeof version === 'object') version = workspace.workspace?.package?.version;
+  if (typeof license === 'object') license = workspace.workspace?.package?.license;
 }
+const coreLicense = typeof license === 'string' ? license : undefined;
 if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 // G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
 // GN-15f: go.mod requires the Go module of each library whose records the contract names, so scaffold of a contract
@@ -202,7 +206,7 @@ const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
 // named with its reason, and so is a failure of the whole that the contract, a case file or a manifest causes.
 function trackedOf(): Tracked {
   try {
-    return trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
+    return trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense);
   } catch (error) {
     return { files: new Map(), refused: sentences(error).map((message) => ({ path: componentBase(checked), message })) };
   }
@@ -244,6 +248,11 @@ if (command === 'check') {
       differs = true;
       process.stderr.write(`${join(coreDir, 'Cargo.toml')}: CK-65 the core ${checked.core.crate} has fault injection points, but its [dev-dependencies] name no ${checked.core.crate} = { path = ".", features = ["fault-test"] }, so cargo test without flags does not arm them (GN-5)\n`);
     }
+  }
+  // CK-71 (GN-3f): the core names the licence that the manifests of its binding packages carry.
+  if (coreLicense === undefined) {
+    differs = true;
+    process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-71 the core ${checked.core.crate} names no license, which every manifest of its binding packages carries (GN-3f)\n`);
   }
   // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
   if (options.has('--release')) {
