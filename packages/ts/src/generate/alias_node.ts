@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, ownedNatives, readAsVariants, readValue, valueReads } from './alias_shared.ts';
+import { type ForeignMake, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -85,6 +85,58 @@ export function foreignClasses(model: Model): { alias: ValueAlias; unit: Unit }[
 }
 
 const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
+
+// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
+// classes of GN-6x in the list that the JavaScript entry hands over.
+const rowIndex = (model: Model, library: string, unit: Unit): number =>
+  foreignClasses(model).length + foreignRowClasses(model, 'node').findIndex((c) => c.library === library && c.unit.id === unit.id);
+
+// GN-6ar: an instance of a class of the owner made from the content of an out row, through the constructor that the
+// JavaScript entry handed over: the content of the kind; the Map of the entries, which the instance keeps (GN-6af) and
+// which is filled after the instance is made; or a reference made on null, whose writable property takes the made
+// value. An object and a reference are the same instance at every position of their handle (U-7 (d)).
+function foreignMakeNode(model: Model, make: ForeignMake, kind: string, head: string): string {
+  const index = rowIndex(model, make.library, make.unit);
+  const constructed = (type: string, argument: string): string => `let class = foreign_class(env, ${index}).map_err(internal)?;
+            let constructor: Function<'env, FnArgs<(${type},)>, Unknown<'env>> = unsafe { class.to_unknown().cast() }.map_err(internal)?;
+            let instance = constructor.new_instance(FnArgs::from((${argument},))).map_err(js_fail)?;`;
+  if (make.holds === 'content') {
+    const content = ({ bool: ['bool', 'value'], float: ['f64', 'value.value()'] } as Record<string, [string, string] | undefined>)[kind];
+    if (content === undefined) throw new Unsupported(`the node make ${make.unit.id}.constructor of the kind ${kind} of ${make.library} is not generated yet: a constructor of a class of another repository takes a bool or a float in Node (GN-6ar)`);
+    return `{
+            ${constructed(content[0], content[1])}
+            Ok(instance)
+        }`;
+  }
+  if (make.holds === 'value') {
+    return `{
+            if let Some(made) = made.get(&handle.raw()) {
+                return Ok(*made);
+            }
+            ${constructed("Unknown<'env>", 'null_out(env)?')}
+            made.insert(handle.raw(), instance);
+            let content = make(env, *value, source, made)?;
+            let mut object: Object<'env> = unsafe { instance.cast() }.map_err(internal)?;
+            object.set_named_property(${rustString(langName('node', make.set?.name ?? [], 'callable'))}, content).map_err(js_fail)?;
+            Ok(instance)
+        }`;
+  }
+  return `{
+            ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return Ok(*made);
+            }
+            let map = js_new_map(env).map_err(internal)?;
+            ${constructed("Unknown<'env>", 'map.to_unknown()')}
+            made.insert(handle.raw(), instance);
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(env, key, source, made)?;
+                let item = make(env, item, source, made)?;
+                js_map_set(map, key, item).map_err(internal)?;
+            }
+            Ok(instance)
+        }`;
+}
 
 // GN-6x: the JavaScript call of a member of the owner on an object: a property read or a method call, with the
 // arguments `args` of the types `types`.
@@ -187,7 +239,8 @@ function valueClassesNodeHost(model: Model): string {
 }
 
 function valueClassesNodeHostAll(model: Model): string {
-  const classes = foreignClasses(model);
+  const rows = foreignReads(model, 'node');
+  const classes = [...foreignClasses(model), ...foreignRowClasses(model, 'node')];
   const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
     const row = classIn(alias, 'node');
     const label = langName('node', alias.unit.name, 'class');
@@ -211,6 +264,44 @@ ${arms}
             return Ok(Some(HostValue::Map { handle: self.hold(Held::Pairs(pairs)), len }));
         }`)];
   });
+  // GN-6ar: an instance of a class of the owner that an in row of a value alias of another repository names. A class
+  // that holds a bool, an integer or a float is a value; any other instance has one handle within the walk.
+  for (const row of rows) {
+    const read = `(${rustString(langName('node', row.read.name, 'callable'))}, false, ReadAs::${row.as})`;
+    const index = rowIndex(model, row.library, row.unit);
+    checks.push(row.as === 'Content'
+      ? `        if value.instanceof(foreign_class(self.env, ${index})?)? {
+            let handle = self.foreign_identity(object, ${read})?;
+            return Ok(Some(HostValue::Value { kind: ${row.variant}, handle }));
+        }`
+      : `        if value.instanceof(foreign_class(self.env, ${index})?)? {
+            return Ok(Some(HostValue::Value { kind: ${row.variant}, handle: self.hold(Held::Foreign(object, Some(${read}))) }));
+        }`);
+  }
+  const identity = rows.some((row) => row.as === 'Content') ? `
+    /// GN-6ar: the handle of an instance of a class of another repository, the same for the same instance within the
+    /// walk, which a Map of the walk finds.
+    fn foreign_identity(&mut self, object: Object<'env>, read: (&'static str, bool, ReadAs)) -> napi::Result<Handle> {
+        let seen = match self.foreign_seen {
+            Some(seen) => seen,
+            None => {
+                let seen = js_new_map(self.env)?;
+                self.foreign_seen = Some(seen);
+                seen
+            }
+        };
+        let get: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = seen.get_named_property("get")?;
+        let found = get.apply(seen, FnArgs::from((object.to_unknown(),)))?;
+        if found.get_type()? == ValueType::Number {
+            let position = unsafe { found.cast::<u32>() }?;
+            return Ok(Handle::new(u64::from(position)));
+        }
+        let handle = self.hold(Held::Foreign(object, Some(read)));
+        let position = u32::try_from(handle.raw()).map_err(|_wide| napi::Error::from_reason("B-1: too many values in one walk"))?;
+        js_map_set(seen, object.to_unknown(), ToNapiValue::into_unknown(position, self.env)?)?;
+        Ok(handle)
+    }
+` : '';
   return `
 /// GN-6x: the classes of other repositories that the JavaScript entry hands over when the module loads, in the order
 /// of the generator: each value class and the classes of its owner that its read members give.
@@ -243,7 +334,7 @@ impl<'env> JsHost<'env> {
 ${checks.join('\n')}
         Ok(None)
     }
-
+${identity}
     /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
     fn read_value(&mut self, value: Handle) -> napi::Result<HostValue> {
         let held = match self.held.get(handle_position(value.raw())) {
@@ -274,6 +365,18 @@ ${checks.join('\n')}
             /*Content{*/
             ReadAs::Content => self.describe(content),
             /*}Content*/
+            /*Bool{*/
+            // GN-6ar: the bool that a property of a class of another repository gives.
+            ReadAs::Bool => Ok(HostValue::Bool(unsafe { content.cast::<bool>() }?)),
+            /*}Bool*/
+            /*Int{*/
+            // GN-6ar: the integer that a property of a class of another repository gives.
+            ReadAs::Int => Ok(HostValue::Int(unsafe { content.cast::<i64>() }?)),
+            /*}Int*/
+            /*Float{*/
+            // GN-6ar: the float that a property of a class of another repository gives.
+            ReadAs::Float => Ok(HostValue::Float(unsafe { content.cast::<f64>() }?)),
+            /*}Float*/
         }
     }
 }
@@ -309,20 +412,33 @@ enum ReadAs {
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str, bool),
     /*}TextOr*/
+    /*Bool{*/
+    /// A bool (GN-6ar).
+    Bool,
+    /*}Bool*/
+    /*Int{*/
+    /// An integer (GN-6ar).
+    Int,
+    /*}Int*/
+    /*Float{*/
+    /// A float (GN-6ar).
+    Float,
+    /*}Float*/
 }
 `;
 }
 
 // GN-6x: the lines of the JavaScript entry that hand the classes of other repositories to the addon.
 export function foreignRegistration(model: Model): string {
-  const classes = foreignClasses(model);
+  // GN-6ar: after the classes of GN-6x, the classes that the rows of the value aliases of other repositories name.
+  const classes = [...foreignClasses(model).map((c) => ({ library: c.alias.library ?? '', owner: c.alias.owner, unit: c.unit })), ...foreignRowClasses(model, 'node')];
   if (classes.length === 0) return '';
-  const libraries = [...new Set(classes.map((c) => c.alias.library ?? ''))];
-  const requires = libraries.map((library) => `const foreign_${library.replaceAll('-', '_')} = require(${jsString((classes.find((c) => c.alias.library === library)?.alias.owner?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('\n');
+  const libraries = [...new Set(classes.map((c) => c.library))];
+  const requires = libraries.map((library) => `const foreign_${library.replaceAll('-', '_')} = require(${jsString((classes.find((c) => c.library === library)?.owner?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('\n');
   return `
 // GN-6x: the addon calls the classes of the value classes of other repositories; it keeps them from here on.
 ${requires}
-addon.__register_foreign([${classes.map((c) => `foreign_${(c.alias.library ?? '').replaceAll('-', '_')}.${langName('node', c.unit.name, 'class')}`).join(', ')}]);
+addon.__register_foreign([${classes.map((c) => `foreign_${c.library.replaceAll('-', '_')}.${langName('node', c.unit.name, 'class')}`).join(', ')}]);
 `;
 }
 
@@ -332,7 +448,7 @@ export function aliasNode(model: Model, alias: ValueAlias): string {
   const label = langName('node', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassNode(model, alias, name, core, failure);
-  const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ', (kept, field, holds, head) => keptMakeNode(model, kept, field, holds, head));
+  const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ', (kept, field, holds, head) => keptMakeNode(model, kept, field, holds, head), 'out_', (make, kind, head) => foreignMakeNode(model, make, kind, head));
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
@@ -653,13 +769,15 @@ fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail 
 // repository is HostValue::Value too, held as Held::Foreign with the read member of its in case, which read calls.
 export function nodeHost(model: Model): string {
   const reads = valueReads(model, 'node');
-  const foreign = model.aliases.some((a) => a.owner !== undefined);
+  const rows = foreignReads(model, 'node');
+  const rowSeen = rows.some((row) => row.as === 'Content');
+  const foreign = rows.length > 0 || model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Object<'env>, Option<(&'static str, bool, ReadAs)>)," : '';
   const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }' : '';
   const foreignRead = 'self.read_value(value).map_err(js_raised)';
   const foreignHost = foreign ? valueClassesNodeHost(model) : '';
   if (reads.length === 0) {
-    return NODE_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
+    return NODE_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : '').replace('/*NEW*/', rowSeen ? ', foreign_seen: None' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
       .replace('/*READS*/', foreign ? foreignRead : 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
   }
   const kept = reads.some((r) => r.kept !== undefined);
@@ -726,8 +844,8 @@ export function nodeHost(model: Model): string {
     }` : '';
   return NODE_HOST
     .replace('/*HELD*/', `\n    Value(Object<'env>, usize),${foreignHeld}`)
-    .replace('/*SEEN*/', kept ? "\n    seen: Option<Object<'env>>," : '')
-    .replace('/*NEW*/', kept ? ', seen: None' : '')
+    .replace('/*SEEN*/', `${kept ? "\n    seen: Option<Object<'env>>," : ''}${rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : ''}`)
+    .replace('/*NEW*/', `${kept ? ', seen: None' : ''}${rowSeen ? ', foreign_seen: None' : ''}`)
     .replace("        Handle::new(handle_count(self.held.len() - 1))\n    }\n", `        Handle::new(handle_count(self.held.len() - 1))\n    }${identity}\n`)
     .replace('/*DESCRIBE*/', `${foreignDescribe}${describe}`)
     .replace('/*READ*/', 'value: Handle')

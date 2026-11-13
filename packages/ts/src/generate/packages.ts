@@ -5,7 +5,7 @@
 // core version, so a contract that the generator cannot generate yet still has them.
 
 import { posix } from 'node:path';
-import type { Contract } from '../contract.ts';
+import type { Contract, Unit } from '../contract.ts';
 import { type Files, header } from './text.ts';
 import { holdsFunction, nativeRoundTrip, resolveNamedTypes, Unsupported, machineFunction } from './model.ts';
 
@@ -495,7 +495,14 @@ export const WASM_BINDGEN = '0.2.130';
 // of the WASM module import the npm package of each for its classes (GN-6x). A library whose contract is not there
 // adds none, as in namedLibraries.
 function valueClassLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
-  return [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && u.kind === 'class' && u.origin === 'value') === true).map((named) => named.library))].sort();
+  // GN-6ar: a value alias whose rows of Node or WASM name a class of its owner is made and read through that class too.
+  const classRows = (owner: Contract, unit: Unit): boolean => unit.kind === 'alias' && (['node', 'wasm'] as const).some((lang) =>
+    (unit.out ?? []).some((row) => { const make = row.make[lang]; return typeof make === 'string' && make.includes('.'); })
+    || (unit.in ?? []).some((row) => owner.units.some((u) => u.kind === 'class' && u.id === row[lang])));
+  return [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => {
+    const owner = foreign.get(library);
+    return owner?.units.some((u) => u.id === unit && ((u.kind === 'class' && u.origin === 'value') || classRows(owner, u))) === true;
+  }).map((named) => named.library))].sort();
 }
 
 // GN-3e: the version of the package of another library in package.json and composer.json: the version of a release form

@@ -6,7 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
+import { container, outArms, readAsVariants, readValue, refuseForeignReads, valueReads } from './alias_shared.ts';
 import { foreignClasses } from './alias_node.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
@@ -650,6 +650,8 @@ fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail 
 // GN-6x: an instance of a value class of another repository is HostValue::Value too, held as Held::Foreign with the
 // read member of its in case, which read calls.
 export function wasmHost(model: Model): string {
+  // GN-6ar: WASM does not generate a class row of a value alias of another repository yet.
+  refuseForeignReads(model, 'wasm');
   const reads = valueReads(model, 'wasm');
   const foreign = model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(JsValue, Option<(&'static str, bool, ReadAs)>)," : '';

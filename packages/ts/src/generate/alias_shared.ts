@@ -1,9 +1,9 @@
 // U-7: what the conversions of a value alias share across languages: the OutValue variant of each kind, the rows of a
 // language selected by kind and `when`, and the parts of a container kind that a list or a map form reads.
 
-import type { OutRow } from '../contract.ts';
+import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
-import { type Fn, type KeptClass, type KeptField, type Model, type ObjectClass, Unsupported, type ValueAlias, rustField } from './model.ts';
+import { type Fn, type KeptClass, type KeptField, type Model, type ObjectClass, Unsupported, type ValueAlias, resolveNamedTypes, rustField } from './model.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
 const PREDICATE: Record<string, string> = {
@@ -51,8 +51,12 @@ const CONTENT: Record<string, { type: string; arg: string }> = {
 // U-7, T-5: an out row that names a member makes an instance of a class of this contract: the content of the kind is the
 // one argument of the core path of the class's constructor or static factory, which cannot fail, and the value it gives
 // leaves as the class's instance (out_<class>, whose first arguments are `env`).
-function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake): string {
-  if (alias.library !== undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
+function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter): string {
+  if (alias.library !== undefined) {
+    // GN-6ar: the class is of the owner of the alias, whose constructor the language of the target calls.
+    if (foreignMake === undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
+    return foreignMake(foreignMakeOf(model, alias, lang, make, kind), kind, kind === 'map' ? container(alias, kind, 'map').head : '');
+  }
   // GN-6af: the constructor of a value class without core_type makes an instance from the content, without the core.
   const kept = model.kept.find((k) => k.constructor.member.id === make);
   if (kept !== undefined) {
@@ -83,7 +87,7 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
 // The match arms of the make function of one language: a row per kind, or a row per `when` of the kind. `env` is the
 // first arguments of the out function of a class in the language, for a row that makes an instance by a member, and
 // `instance` the prefix of the name of that function.
-export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_'): string[] {
+export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter): string[] {
   const rows = (alias.unit.out ?? []).filter((row) => row.make[lang] !== undefined);
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
@@ -95,7 +99,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
       if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake);
+      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;
@@ -156,6 +160,115 @@ export function valueReads(model: Model, lang: Lang): ValueRead[] {
     }
   }
   return reads;
+}
+
+// GN-6ar: the value aliases of other repositories, whose rows may name a class of their owner. A value class of another
+// repository is no such alias: its rows name its own members (GN-6x).
+const foreignAliases = (model: Model): ValueAlias[] => model.aliases.filter((a) => a.library !== undefined && a.owner === undefined);
+
+const sameUnit = (type: Type | undefined, id: string): boolean => typeof type === 'object' && 'unit' in type && type.unit === id && type.library === undefined;
+
+// GN-6ar: an out row of a value alias of another repository that names the constructor of a class of the owner: the
+// constructor takes the content of the kind, the keyed map of the entries of an object or a map, or the value of a
+// reference, which the writable property `set` of the class takes after the instance is made.
+export interface ForeignMake {
+  library: string;
+  owner: Contract;
+  unit: Unit;
+  holds: 'content' | 'entries' | 'value';
+  set?: Member;
+}
+
+// GN-6ar: how a language makes an instance of a class of the owner from the content of an out row; head binds the
+// handle and the length of a map, which the arm of an object binds itself.
+export type ForeignMakeWriter = (make: ForeignMake, kind: string, head: string) => string;
+
+// GN-6ar: the content of a kind that a constructor of the owner takes as its one parameter, by its contract type.
+const FOREIGN_CONTENT: Record<string, string> = { bool: 'bool', int: 'int', int64: 'int64', float: 'float' };
+
+export function foreignMakeOf(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string): ForeignMake {
+  const library = alias.library ?? '';
+  const found = model.foreign.get(library);
+  if (found === undefined) throw new Unsupported(`${alias.unit.id}: the contract of ${library} is not found, so the ${lang} make ${make} is not generated (GN-6ar)`);
+  const owner = resolveNamedTypes(found);
+  const unit = owner.units.find((u) => u.kind === 'class' && (u.members ?? []).some((m) => m.id === make));
+  const member = (unit?.members ?? []).find((m) => m.id === make);
+  if (unit === undefined || member === undefined || member.kind !== 'constructor' || member.visibility !== 'public' || unit.visibility !== 'public') {
+    throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} is no public constructor of a public class of ${library}, and any other member is not generated yet (GN-6ar)`);
+  }
+  if (unit.only !== undefined && !unit.only.targets.includes(lang)) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} names the class ${unit.id} of ${library}, which is not generated for ${lang} (GN-6ar, GN-6af)`);
+  const parameters = member.parameters ?? [];
+  const type = parameters.length === 1 ? parameters[0]?.type : undefined;
+  if (type !== undefined && FOREIGN_CONTENT[kind] !== undefined && type === FOREIGN_CONTENT[kind]) return { library, owner, unit, holds: 'content' };
+  if (type !== undefined && (kind === 'object' || kind === 'map') && typeof type === 'object' && 'keyed_map' in type && sameUnit(type.keyed_map, alias.unit.id)) return { library, owner, unit, holds: 'entries' };
+  if (type !== undefined && kind === 'reference' && sameUnit(type, alias.unit.id)) {
+    const name = JSON.stringify(parameters[0]?.name);
+    const set = (unit.members ?? []).find((m) => m.kind === 'property' && m.writable === true && m.visibility === 'public' && JSON.stringify(m.name) === name);
+    if (set === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind reference needs a writable property of ${unit.id} with the name of the parameter, which takes the value after the reference is made (GN-6ar)`);
+    return { library, owner, unit, holds: 'value', set };
+  }
+  throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes ${parameters.map((p) => (typeof p.type === 'string' ? p.type : JSON.stringify(p.type))).join(', ') || 'no parameter'}, which is not generated: a constructor of a class of another repository takes a bool, an integer or a float of its kind, the keyed map of an object or a map, or the value of a reference (GN-6ar)`);
+}
+
+// GN-6ar: an in row of a value alias of another repository that names a class of the owner: an instance of the class
+// is HostValue::Value with the kind of the row, and read gives the public property that the row names, as the
+// HostValue of its type when that is a bool, an integer or a float, and described by the rules of the language
+// otherwise.
+export interface ForeignRead {
+  alias: ValueAlias;
+  library: string;
+  owner: Contract;
+  unit: Unit;
+  // The Rust variant of ValueKind.
+  variant: string;
+  read: Member;
+  as: 'Content' | 'Bool' | 'Int' | 'Float';
+}
+
+export function foreignReads(model: Model, lang: Lang): ForeignRead[] {
+  const reads: ForeignRead[] = [];
+  for (const alias of foreignAliases(model)) {
+    const library = alias.library ?? '';
+    const found = model.foreign.get(library);
+    if (found === undefined) continue;
+    const owner = resolveNamedTypes(found);
+    for (const row of alias.unit.in ?? []) {
+      const named = row[lang];
+      // A class that is not generated for the language (GN-6af) is no class there: the row names a type of the language.
+      const unit = typeof named === 'string' ? owner.units.find((u) => u.id === named && u.kind === 'class' && (u.only === undefined || u.only.targets.includes(lang))) : undefined;
+      if (unit === undefined || reads.some((r) => r.unit.id === unit.id && r.library === library)) continue;
+      const cases = row.cases ?? [];
+      const [only] = cases;
+      if (only === undefined || cases.length > 1 || only.when !== undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} in row of the class ${unit.id} of ${library} has one case without when (GN-6ar)`);
+      const read = (unit.members ?? []).find((m) => m.id === only.read && m.kind === 'property' && m.visibility === 'public');
+      if (read === undefined) throw new Unsupported(`${alias.unit.id}: the ${lang} in row of the class ${unit.id} of ${library} reads ${String(only.read)}, which is no public property of the class (GN-6ar)`);
+      const variant = `ValueKind::${only.kind.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`;
+      const as = read.returns === 'bool' ? 'Bool' : read.returns === 'int' || read.returns === 'int64' ? 'Int' : read.returns === 'float' ? 'Float' : 'Content';
+      reads.push({ alias, library, owner, unit, variant, read, as });
+    }
+  }
+  return reads;
+}
+
+// GN-6ar: the classes of the owners that the rows of the value aliases of other repositories name for a language, in
+// the order of the aliases: the classes of the in rows, then the classes of the out rows.
+export function foreignRowClasses(model: Model, lang: Lang): { library: string; owner: Contract; unit: Unit }[] {
+  const classes: { library: string; owner: Contract; unit: Unit }[] = foreignReads(model, lang).map((r) => ({ library: r.library, owner: r.owner, unit: r.unit }));
+  for (const alias of foreignAliases(model)) {
+    for (const row of alias.unit.out ?? []) {
+      const make = row.make[lang];
+      if (typeof make !== 'string' || !make.includes('.')) continue;
+      const made = foreignMakeOf(model, alias, lang, make, row.kind);
+      if (!classes.some((c) => c.library === made.library && c.unit.id === made.unit.id)) classes.push({ library: made.library, owner: made.owner, unit: made.unit });
+    }
+  }
+  return classes;
+}
+
+// GN-6ar: a target that does not generate the class rows of a value alias of another repository refuses each by name.
+export function refuseForeignReads(model: Model, lang: Lang): void {
+  const [first] = foreignReads(model, lang);
+  if (first !== undefined) throw new Unsupported(`${first.alias.unit.id}: the ${lang} in row of the class ${first.unit.id} of ${first.library} is not generated yet (GN-6ar)`);
 }
 
 // GN-6af: the HostValue of the value that the core path of a property gives, by its contract type.
@@ -468,7 +581,7 @@ fn take_thrown(raised: &binding_core::Raised) -> Option<Thrown> {
 // read has their arms: a variant that no case constructs is dead code, which the lints deny. The text of a host marks
 // the arm and the variant of each name, and a name that the text constructs nowhere else is left out with them.
 export function readAsVariants(host: string): string {
-  return ['Content', 'Units', 'TextOr'].reduce((text, variant) => {
+  return ['Content', 'Units', 'TextOr', 'Bool', 'Int', 'Float'].reduce((text, variant) => {
     const marked = new RegExp(`[ \\t]*/\\*${variant}\\{\\*/\\n([\\s\\S]*?\\n)[ \\t]*/\\*\\}${variant}\\*/\\n`, 'g');
     const constructed = text.replace(marked, '').includes(`ReadAs::${variant}`);
     return text.replace(marked, constructed ? '$1' : '');

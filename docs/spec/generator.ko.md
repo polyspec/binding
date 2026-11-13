@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e5c4658a289a7306dec31cd0243fcbad0fcc8bd91a39f72534e6a5d0f24c8972 -->
+<!-- source-sha256: 868969be24acfcdfa51b6920de803bf0f7b7ecea405336dcdd731650ae52c060 -->
 # 생성기
 
 [English](generator.md)
@@ -557,10 +557,32 @@
   변형에 준 category의 이 레포 클래스다(E-2). 그 클래스는 소유 레포 kinds에 대한 wildcard 없는 match로 고르므로, 소유 계약에
   없는 변형이 있으면 컴파일되지 않는다(I-2 (3)). 소유 코어가 값을 도는 동안 언어 코드가 던진 예외는 그대로 다시 던진다.
   바인딩 crate는 소유 레포의 crate에, Python 패키지는 소유 레포의 패키지에 의존한다(GN-6c). 소유 레포가 제3 라이브러리의
-  kind를 그대로 전달하거나(E-1b (a)) 오류 enum 둘을 적은 alias, member로 만드는 `out` 행(GN-6e)은 이름을
-  대고 거부한다(G-4). WASM은 GN-18b대로, Go는 GN-15c대로 받는다. 다른 레포 alias의 `in_raises`는 이 레포에 생성할 것을 주지 않는다: 그 alias의 case, kind 단언,
+  kind를 그대로 전달하거나(E-1b (a)) 오류 enum 둘을 적은 alias는 이름을
+  대고 거부한다(G-4). owner의 class를 이름하는 행은 GN-6ar대로 생성한다. WASM은 그 alias를 GN-18b대로, Go는 GN-15c대로 받는다. 다른 레포 alias의 `in_raises`는 이 레포에 생성할 것을 주지 않는다: 그 alias의 case, kind 단언,
   feature `codec-test`의 진입점(GN-5, GN-13)은 소유 레포의 바인딩에 속하고 거기서 한 번 실행된다. 이 레포의 crate는 자기
   alias가 있을 때만 그 feature를 갖는다.
+- **GN-6ar** 다른 레포의 값 alias의 행은 owner의 class를 이름할 수 있다(U-1, GN-6af). `make`가 owner의 public class의
+  public constructor인 `out` 행과, 언어 타입이 그런 class인 `in` 행이다. 바인딩은 다른 레포의 값 class의 member를
+  부르듯이(GN-6x) owner package의 언어 API로 인스턴스를 만들고 읽으며, owner 바인딩의 native 객체를 꺼내지 않는다.
+  Python은 owner package의 module에서 class를 읽고, Node addon의 JavaScript entry는 module이 로드될 때 GN-6x의 class
+  뒤에 그 class들을 넘겨준다. 나갈 때: constructor는 parameter가 하나다. 행의 kind의 bool, 정수, float은 그대로
+  넘긴다(Node는 bool과 float). 그 alias의 keyed map은 kind `object`나 `map`의 entry를 언어의 새 map(`dict`, `Map`)으로
+  받고, 인스턴스는 그 map을 그대로 보관하므로(GN-6af) 바인딩은 빈 map으로 인스턴스를 만든 다음 만든 entry를 그 map에
+  넣는다. alias 자체는 kind `reference`의 값을 받는다. 바인딩은 언어의 null로 인스턴스를 만들고, parameter와 이름이 같은
+  그 class의 writable property로 만든 값을 넣는다. 그래서 object와 reference는 내용보다 먼저 만들어지고 자기 handle의
+  모든 자리에서 같은 인스턴스이며(U-7 (d)), 그것을 지나는 순환이 만들어진다. 들어올 때: 그 class의 인스턴스는 행의 한
+  case(`when` 없음)의 kind를 가진 `HostValue::Value`이고, `HostValues`의 `read`는 그 case가 이름한 public property를
+  준다. 타입이 bool, 정수, float인 property는 그 타입의 `HostValue`다. JavaScript의 number만으로는 정수와 float을
+  구별할 수 없기 때문이다. 그 밖의 property는 언어의 규칙으로 다시 묘사한다. property를 다시 묘사하는 인스턴스는 코어의
+  한 번의 순회 안에서 handle이 하나다(Python은 주소로, Node는 순회의 `Map`으로). bool이나 수를 가진 인스턴스는 값이므로
+  그럴 필요가 없다. 타입의 이름이 `only`가 그 target에서 뺀 class(GN-6af)의 이름인 행은 거기서 언어의 타입을 이름한다.
+  PHP의 `reference`가 그렇다. `package.json`은 owner의 npm package를 적는다(GN-3e). 이름을 대고 거부하는 것(G-4):
+  public constructor가 아닌 member, 다른 parameter를 받는 constructor, 그런 writable property가 없는 class의 reference,
+  case가 여럿이거나 `when`이 있는 `in` 행, class의 public property가 아닌 `read`. 아직 생성하지 않고 이름을 대고
+  거부하는 것(G-4): WASM과 Go의 꼴. WASM module에는 행의 class에 대한 인스턴스 검사와 constructor 호출이 아직 없고,
+  GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
+  class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
+  받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
 - **GN-6x** 다른 레포의 값 class(T-3, U-1)는 다른 레포의 값 alias(GN-6k)와 같은 방식으로 주고받는다.
   이때 owner가 그 class에 `core: {in, out}`으로 적은 두 함수와 `core_type`에 적은 코어 타입을
   쓴다(CK-8). 그것이 없는 다른 레포의 값 class는 이름으로 거절한다(G-4). 생성 코드가 그 인스턴스의 묘사를 직접 코어

@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A value alias of another repository whose `out` row makes by the constructor of a class of its owner was refused
+  in every target as "<alias>: a <target> make by a member (<member>) is not generated yet", and an instance of such
+  a class that an `in` row names entered as an object that the owner's core does not take, without a refusal. Python
+  and Node now make and read the instance through the package of the owner (GN-6ar, row B2.131): the constructor
+  takes the content of the kind, the map of the entries, or a reference whose writable property takes the made value;
+  an instance is `HostValue::Value` with the kind of its row and `read` gives the property that the row names; the
+  JavaScript entry hands the classes to the addon, and `package.json` names the npm package of the owner (GN-3e).
+  WASM and Go refuse such a row by name, the `in` row too, as PHP does. Verified by `npm test` in `packages/ts`: the
+  new test of GN-6ar failed before the change with the refusal. Not run: a build or a test of a generated crate, and
+  `make e2e`.
 - The refusal of a case value of a variant whose tag names no case said that the tag "is the text of one of its
   cases", which reads as a text in lower case; the value is the `value` of the case as the contract states it, so
   the message now says "is the value of one of its cases". A comment of `supportedType` said that `map<T>` is

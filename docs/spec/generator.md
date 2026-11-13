@@ -685,11 +685,38 @@ the design ids are those of the binding design.
   match over the owner's kinds without a wildcard, so a variant that the owner's contract lacks does not compile
   (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again unchanged.
   The binding crate depends on the owner's crate, and the Python package on the owner's package (GN-6c). An alias
-  whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name, as is an
-  `out` row by a member (GN-6e) (G-4); WASM takes it as GN-18b states and Go as GN-15c states. The `in_raises` of an alias of another repository
+  whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name (G-4); a
+  row that names a class of the owner is generated as GN-6ar states; WASM takes the alias as GN-18b states and Go as GN-15c states. The `in_raises` of an alias of another repository
   give this repository nothing to generate: the cases of the alias, the assertions of its kinds and the entry point
   of the feature `codec-test` (GN-5, GN-13) belong to the binding of the owner, which runs them once, and the crate of
   this repository has that feature only for an alias of its own.
+- **GN-6ar** A row of a value alias of another repository may name a class of the owner (U-1, GN-6af): an `out` row
+  whose `make` is the public constructor of a public class of the owner, and an `in` row whose language type is such
+  a class. The binding makes and reads the instance through the language API of the owner's package, as it calls the
+  members of a value class of another repository (GN-6x), and never takes the native object of the owner's binding
+  out: Python reads the class from the module of the owner's package, and the JavaScript entry of the Node addon
+  hands the classes over when the module loads, after the classes of GN-6x. Out: the constructor has one parameter. A
+  bool, an integer or a float of the kind of the row is passed to it (Node: a bool or a float); a keyed map of the
+  alias takes the entries of the kind `object` or `map` as a new map of the language (a `dict`, a `Map`), which the
+  instance keeps (GN-6af), so the binding makes the instance on the empty map and then gives the map each made entry;
+  the alias itself takes the value of the kind `reference`: the binding makes the instance on the null of the
+  language and sets the made value through the writable property of the class that has the name of the parameter.
+  An object and a reference are therefore made before their content and are the same instance at every position of
+  their handle (U-7 (d)), so a cycle through them is made. In: an instance of the class is `HostValue::Value` with
+  the kind of the one case of the row, which has no `when`, and `read` of `HostValues` gives the public property that
+  the case names: a property of the type bool, an integer or float is the `HostValue` of that type, because a number
+  of JavaScript alone does not tell an integer from a float, and any other property is described again by the rules
+  of the language. An instance whose property is described again has one handle within one walk of the core (Python
+  by its address, Node by a `Map` of the walk); an instance that holds a bool or a number is a value and needs none.
+  A row whose type has the name of a class that `only` leaves out for the target (GN-6af) names the type of the
+  language there, as the `reference` of PHP does. `package.json` names the npm package of the owner (GN-3e). Refused
+  by name (G-4): a member that is no public constructor, a constructor with another parameter, a reference whose
+  class has no such writable property, an `in` row with several cases or a `when`, and a `read` that is no public
+  property of the class. Not generated yet, refused by name (G-4): the WASM and Go forms, because the WASM module has
+  no instance check and constructor call for a class of a row yet and the Go call of GN-15c has no node that makes an
+  instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
+  that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
+  language is the only form in which a user of both packages can pass an instance from one to the other.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a

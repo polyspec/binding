@@ -1568,7 +1568,92 @@ test('a value alias of another repository is refused by name where it is not gen
   // GN-6e: an out row by a member is refused through the same error, not as a crash.
   assert.throws(generated(({ foreign }) => {
     foreign.get('sample').units.find((u: any) => u.id === 'data').out[0].make.python = 'tag.new';
-  }), (error: Error) => error.constructor.name === 'Unsupported' && /data: a python make by a member \(tag\.new\) is not generated yet/.test(error.message));
+  }), (error: Error) => error.constructor.name === 'Unsupported' && /data: the python make tag\.new of the kind null takes text, which is not generated: /.test(error.message));
+});
+
+// The consumer sample whose owner gives its alias data three classes that the rows of the alias name (GN-6ar): box keeps
+// the entries of a map, cell the value of a reference, and ratio holds a float of the core.
+const classRowsSample = (): ReturnType<typeof consumerSample> => {
+  const parts = consumerSample();
+  const owner = parts.foreign.get('sample');
+  const data = owner.units.find((u: any) => u.id === 'data');
+  const kept = (id: string, parameter: any): any => ({
+    id, name: [id], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets: ['python', 'node', 'wasm', 'go'], reason: 'S-1' },
+    members: [
+      { id: `${id}.constructor`, name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [parameter], raises: [], wait: 'none', core: `polyspec_sample::check_${id}` },
+      { id: `${id}.${parameter.name[0]}`, name: parameter.name, kind: 'property', visibility: 'public', returns: parameter.type, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  owner.units.push(
+    kept('box', { name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['text'] }, default: { empty: 'map' } }),
+    kept('cell', { name: ['value'], type: { unit: 'data' }, default: { literal: null } }),
+    {
+      id: 'ratio', name: ['ratio'], module: '', kind: 'class', visibility: 'public', origin: 'value', core_type: 'polyspec_sample::Ratio',
+      members: [
+        { id: 'ratio.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: 'float', required: true }], raises: [], wait: 'none', core: 'polyspec_sample::Ratio::new' },
+        { id: 'ratio.value', name: ['value'], kind: 'property', visibility: 'public', returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Ratio::value', receiver: '&self' } },
+      ],
+    },
+  );
+  for (const row of data.out) {
+    if (row.kind === 'map') Object.assign(row.make, { python: 'box.constructor', node: 'box.constructor', wasm: 'box.constructor', go: 'box.constructor' });
+    if (row.kind === 'float') Object.assign(row.make, { node: 'ratio.constructor', wasm: 'ratio.constructor' });
+  }
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'cell.constructor', node: 'cell.constructor', wasm: 'cell.constructor', go: 'cell.constructor' } });
+  for (const lang of ['python', 'node', 'wasm', 'go']) {
+    data.in.push({ [lang]: 'box', cases: [{ kind: 'map', read: 'box.entries' }] }, { [lang]: 'cell', cases: [{ kind: 'reference', read: 'cell.value' }] });
+    if (lang === 'node' || lang === 'wasm') data.in.push({ [lang]: 'ratio', cases: [{ kind: 'float', read: 'ratio.value' }] });
+  }
+  return parts;
+};
+
+test('a value alias of another repository whose rows name a class of its owner makes and reads the instances through the package of the owner in Python and Node (GN-6ar, GN-6k)', () => {
+  const { contract, caseFiles, foreign } = classRowsSample();
+  const python = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), 'packages/python/generated/lib.rs');
+  // Out: the constructor of the owner's class takes the dict of the entries, which is filled after the instance is
+  // made, and a reference is made on None and takes its value by its writable property.
+  assert.match(python, /let map = PyDict::new\(py\);\n +let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\.call1\(\(map\.clone\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);/);
+  assert.match(python, /let instance = foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Cell"\)\?\.call1\(\(py\.None\(\),\)\)\?;\n +made\.insert\(handle\.raw\(\), instance\.clone\(\)\);\n +let content = make\(py, \*value, source, made\)\?;\n +instance\.setattr\("value", content\)\?;/);
+  // In: an instance of the owner's class is HostValue::Value with the kind of its row, under one handle within the
+  // walk, and read gives the property that the row names.
+  assert.match(python, /if value\.is_instance\(&foreign_types\(py, "polyspec\.sample"\)\?\.getattr\("Box"\)\?\)\? \{\n {12}let address = value\.as_ptr\(\)\.addr\(\);[\s\S]*?Held::Foreign\(value\.clone\(\), Some\(\("entries", false, ReadAs::Content\)\)\)[\s\S]*?return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Map, handle \}\)\);/);
+  assert.match(python, /Held::Foreign\(value\.clone\(\), Some\(\("value", false, ReadAs::Content\)\)\)[\s\S]*?kind: ValueKind::Reference, handle/);
+  assert.match(python, /\n {4}seen: BTreeMap<usize, Handle>,\n/);
+  assert.match(python, /\n {4}Foreign\(Bound<'py, PyAny>, Option<\(&'static str, bool, ReadAs\)>\),\n/);
+  const node = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] });
+  const lib = text(node, 'packages/ts/generated/lib.rs');
+  // The JavaScript entry hands the classes of the owner to the addon, which calls their constructors.
+  assert.match(text(node, 'packages/ts/generated/index.cjs'), /const foreign_sample = require\('@polyspec\/sample'\);\naddon\.__register_foreign\(\[foreign_sample\.Box, foreign_sample\.Cell, foreign_sample\.Ratio\]\);/);
+  assert.match(lib, /OutValue::Float\(value\) => \{\n +let class = foreign_class\(env, 2\)\.map_err\(internal\)\?;\n +let constructor: Function<'env, FnArgs<\(f64,\)>, Unknown<'env>> = unsafe \{ class\.to_unknown\(\)\.cast\(\) \}\.map_err\(internal\)\?;\n +let instance = constructor\.new_instance\(FnArgs::from\(\(value\.value\(\),\)\)\)\.map_err\(js_fail\)\?;\n +Ok\(instance\)/);
+  assert.match(lib, /let map = js_new_map\(env\)\.map_err\(internal\)\?;\n +let class = foreign_class\(env, 0\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(map\.to_unknown\(\),\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);/);
+  assert.match(lib, /let class = foreign_class\(env, 1\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(null_out\(env\)\?,\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);\n +let content = make\(env, \*value, source, made\)\?;\n[^\n]*\n +object\.set_named_property\("value", content\)\.map_err\(js_fail\)\?;/);
+  assert.match(lib, /\n {4}if classes\.len\(\) != 3 \{\n/);
+  // GN-3e: package.json names the npm package of the owner, whose classes the entry hands over.
+  assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/ts/package.json')), /"@polyspec\/sample": "\*"/);
+  assert.match(lib, /if value\.instanceof\(foreign_class\(self\.env, 2\)\?\)\? \{\n {12}return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Float, handle: self\.hold\(Held::Foreign\(object, Some\(\("value", false, ReadAs::Float\)\)\)\) \}\)\);/);
+  assert.match(lib, /if value\.instanceof\(foreign_class\(self\.env, 0\)\?\)\? \{\n {12}let handle = self\.foreign_identity\(object, \("entries", false, ReadAs::Content\)\)\?;\n {12}return Ok\(Some\(HostValue::Value \{ kind: ValueKind::Map, handle \}\)\);/);
+  assert.match(lib, /ReadAs::Float => Ok\(HostValue::Float\(/);
+  // A row of PHP whose type has the name of a class that is not generated for PHP names the type of the language.
+  const php = classRowsSample();
+  php.foreign.get('sample').units.find((u: any) => u.id === 'data').in.push({ php: 'cell', cases: [{ kind: 'reference', read: 'builtin' }] });
+  assert.match(text(generate({ contract: php.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: php.caseFiles, foreign: php.foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs'), /fn in_data\(/);
+  // WASM and Go do not generate the rows yet and refuse them by name.
+  for (const target of ['wasm', 'go'] as const) {
+    const parts = classRowsSample();
+    if (target === 'go') parts.contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
+    assert.throws(() => generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: [target] }), new RegExp(`data: (the ${target} in row of the class box of sample is not generated yet \\(GN-6ar\\)|a ${target} make by a member \\((box|ratio|cell)\\.constructor\\) is not generated yet)`), target);
+  }
+  // A make that is no constructor of a class of the owner, and a constructor that takes another content, are named.
+  const refused = (change: (data: any, owner: any) => void): (() => unknown) => () => {
+    const parts = classRowsSample();
+    const owner = parts.foreign.get('sample');
+    change(owner.units.find((u: any) => u.id === 'data'), owner);
+    return generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign, targets: ['python'] });
+  };
+  assert.throws(refused((data) => { data.out[0].make.python = 'tag.name'; }), /data: the python make tag\.name of the kind null is no public constructor of a public class of sample, and any other member is not generated yet \(GN-6ar\)/);
+  assert.throws(refused((data) => { data.out[0].make.python = 'tag.new'; }), /data: the python make tag\.new of the kind null takes text, which is not generated: a constructor of a class of another repository takes a bool, an integer or a float of its kind, the keyed map of an object or a map, or the value of a reference \(GN-6ar\)/);
+  assert.throws(refused((_data, owner) => { owner.units.find((u: any) => u.id === 'cell').members[1].writable = false; }), /data: the python make cell\.constructor of the kind reference needs a writable property of cell with the name of the parameter/);
+  assert.throws(refused((data) => { data.in.find((row: any) => row.python === 'box').cases[0].read = 'box.none'; }), /data: the python in row of the class box of sample reads box\.none, which is no public property of the class \(GN-6ar\)/);
 });
 
 // The consumer sample with the function relay, which takes and gives the value class of the owner fixture (GN-6x).

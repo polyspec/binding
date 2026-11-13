@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, ownedNatives, readAsVariants } from './alias_shared.ts';
+import { container, outArms, ownedNatives, readAsVariants, refuseForeignReads } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
@@ -426,6 +426,8 @@ enum ReadAs {
 
 // B-1: the host of the PHP values, with the description of the value classes of other repositories (GN-6x).
 export function phpHost(model: Model): string {
+  // GN-6ar: PHP has no class of a value alias (GN-6af), so a PHP row that names one is refused by name.
+  refuseForeignReads(model, 'php');
   if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
   const host = PHP_HOST
     .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")

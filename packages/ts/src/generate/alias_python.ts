@@ -5,11 +5,11 @@
 // takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
+import { type ForeignMake, container, foreignReads, outArms, readAsVariants, readValue, valueReads } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
 import { rustString } from './text.ts';
-import type { Member, Unit } from '../contract.ts';
+import type { Contract, Member, Unit } from '../contract.ts';
 
 // The Python value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -91,6 +91,48 @@ function ownerClass(alias: ValueAlias, unit: Unit): string {
   const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
   return `foreign_types(py, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
 }
+
+// GN-6ar: a class of the owner of a value alias of another repository, by the module of the owner's package.
+function rowClass(owner: Contract, unit: Unit): string {
+  const python = owner.packages['python'] as { module: string } | undefined;
+  const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
+  return `foreign_types(py, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
+}
+
+// GN-6ar: an instance of a class of the owner made from the content of an out row, through the constructor of the
+// owner's package: the content of the kind; the dict of the entries, which the instance keeps (GN-6af) and which is
+// filled after the instance is made; or a reference made on None, whose writable property takes the made value. An
+// object and a reference are the same instance at every position of their handle (U-7 (d)).
+const foreignMake = (make: ForeignMake, kind: string, head: string): string => {
+  const cls = rowClass(make.owner, make.unit);
+  if (make.holds === 'content') return `${cls}.call1((${kind === 'bool' || kind === 'int64' ? 'value' : 'value.value()'},))`;
+  if (make.holds === 'value') {
+    return `{
+            if let Some(made) = made.get(&handle.raw()) {
+                return Ok(made.clone());
+            }
+            let instance = ${cls}.call1((py.None(),))?;
+            made.insert(handle.raw(), instance.clone());
+            let content = make(py, *value, source, made)?;
+            instance.setattr(${rustString(langName('python', make.set?.name ?? [], 'callable'))}, content)?;
+            Ok(instance)
+        }`;
+  }
+  return `{
+            ${head === '' ? '' : `${head}\n            `}if let Some(made) = made.get(&handle.raw()) {
+                return Ok(made.clone());
+            }
+            let map = PyDict::new(py);
+            let instance = ${cls}.call1((map.clone(),))?;
+            made.insert(handle.raw(), instance.clone());
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(py, key, source, made)?;
+                map.set_item(key, make(py, item, source, made)?)?;
+            }
+            Ok(instance)
+        }`;
+};
 
 // GN-6x: the Python call of a member of the owner on an object: an attribute for a property, a call for a method.
 const access = (member: Member): { name: string; call: boolean } => ({ name: langName('python', member.name, 'callable'), call: member.kind !== 'property' });
@@ -203,6 +245,23 @@ ${arms}
             return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Foreign(value.clone(), read)) }));
         }`, ...maps];
   });
+  // GN-6ar: an instance of a class of the owner that an in row of a value alias of another repository names, under one
+  // handle within the walk, found by its address while the walk holds it.
+  for (const row of foreignReads(model, 'python')) {
+    const { name, call } = access(row.read);
+    checks.push(`        if value.is_instance(&${rowClass(row.owner, row.unit)})? {
+            let address = value.as_ptr().addr();
+            let handle = match self.seen.get(&address) {
+                Some(handle) => *handle,
+                None => {
+                    let handle = self.hold(Held::Foreign(value.clone(), Some((${rustString(name)}, ${String(call)}, ReadAs::Content))));
+                    self.seen.insert(address, handle);
+                    handle
+                }
+            };
+            return Ok(Some(HostValue::Value { kind: ${row.variant}, handle }));
+        }`);
+  }
   return `
 impl<'py> PyHost<'py> {
     /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance
@@ -271,7 +330,7 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassPython(alias, name, core, failure);
-  const arms = outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', keptMake);
+  const arms = outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', keptMake, 'out_', foreignMake);
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {
@@ -484,13 +543,14 @@ fn failure_of_${library}(py: Python<'_>, failure: binding_core::Failure<${error.
 
 export function pythonHost(model: Model): string {
   const reads = valueReads(model, 'python');
-  const foreign = model.aliases.some((a) => a.owner !== undefined);
+  const rows = foreignReads(model, 'python').length > 0;
+  const foreign = rows || model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';
   const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
   const foreignRead = 'self.read_value(value).map_err(|error| raised(py, error))';
   const foreignHost = foreign ? valueClassesHost(model) : '';
   if (reads.length === 0) {
-    return PYTHON_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
+    return PYTHON_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rows ? '\n    seen: BTreeMap<usize, Handle>,' : '').replace('/*NEW*/', rows ? ', seen: BTreeMap::new()' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
       .replace('/*READS*/', foreign ? foreignRead : 'Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
   }
   const struct = (unit: Unit): string => `Py${langName('python', unit.name, 'class')}`;
@@ -543,8 +603,8 @@ export function pythonHost(model: Model): string {
   }).join('');
   return PYTHON_HOST
     .replace('/*HELD*/', `\n    Value(Bound<'py, PyAny>, usize),${foreignHeld}`)
-    .replace('/*SEEN*/', reads.some((r) => r.kept !== undefined) ? '\n    seen: BTreeMap<usize, Handle>,' : '')
-    .replace('/*NEW*/', reads.some((r) => r.kept !== undefined) ? ', seen: BTreeMap::new()' : '')
+    .replace('/*SEEN*/', rows || reads.some((r) => r.kept !== undefined) ? '\n    seen: BTreeMap<usize, Handle>,' : '')
+    .replace('/*NEW*/', rows || reads.some((r) => r.kept !== undefined) ? ', seen: BTreeMap::new()' : '')
     .replace('/*DESCRIBE*/', `${foreignDescribe}${describe}`)
     .replace('/*READ*/', 'value: Handle')
     .replace('/*READS*/', `${foreign ? `if let Some(Held::Foreign(..)) = self.held.get(handle_position(value.raw())) {

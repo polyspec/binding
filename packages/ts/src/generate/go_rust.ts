@@ -18,7 +18,7 @@ import {
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
-import { type ValueRead, container, outArms, valueReads } from './alias_shared.ts';
+import { type ValueRead, container, outArms, refuseForeignReads, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
 import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
@@ -1336,6 +1336,8 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassRust(model, alias, name, core, failure);
+  // GN-6ar: Go does not generate a class row of a value alias of another repository yet.
+  if (alias.library !== undefined) refuseForeignReads(model, 'go');
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
   const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'no_form_out(output, "U-7: no out row takes the value")', 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head), 'alias_out_');
   return `

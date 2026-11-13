@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 289a18847adef49ddd773cd84aab3fbaee7214144d6470b8a5ca13bb01b5c987 -->
+<!-- source-sha256: 39f531ab042f3a3c77456f8387c6c7085c971d0e222046159ad8957335a4af72 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `out` 행이 owner의 class의 constructor로 만드는 다른 레포의 값 alias를 모든 target이 "<alias>: a <target> make by a
+  member (<member>) is not generated yet"로 거부했고, `in` 행이 이름하는 그런 class의 인스턴스는 거부 없이 owner의 코어가
+  받지 않는 객체로 들어갔다. 이제 Python과 Node는 owner의 package로 인스턴스를 만들고 읽는다(GN-6ar, 행 B2.131).
+  constructor는 kind의 내용, entry의 map, 또는 writable property로 만든 값을 받는 reference를 받는다. 인스턴스는 행의
+  kind를 가진 `HostValue::Value`이고 `read`는 행이 이름한 property를 준다. JavaScript entry가 class를 addon에 넘기고,
+  `package.json`은 owner의 npm package를 적는다(GN-3e). WASM과 Go는 그런 행을 이름을 대고 거부하며 `in` 행도 그렇다.
+  PHP도 같다. `packages/ts`의 `npm test`로 검증했다. GN-6ar의 새 시험은 변경 전에 그 거부로 실패했다. 실행하지 않은 것:
+  생성된 crate의 build와 시험, `make e2e`.
 - tag가 어느 case도 이름하지 않는 variant의 case 값을 거부하는 문장은 tag가 "is the text of one of its cases"라고
   했고, 이것은 소문자 text로 읽힌다. 그 값은 계약이 적은 case의 `value`이므로 이제 문장은 "is the value of one of its
   cases"라고 한다. `supportedType`의 주석은 `map<T>`를 Go에서만 생성하고 다른 target에서는 거부한다고 했으나 그렇게 하는

@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: b16338a79084c7c32116dc6f8529b90e101ee6896f12cc197284aff1dfca8b07 -->
+<!-- source-sha256: cda41187f3d03e6a1dbaffd8cc462b60890bcbe6af466681f65a858d8fb6e347 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -38,3 +38,4 @@
 | B2.120 | json의 value class의 relay가 다섯 target에서 통과한다(GN-14, GN-6x, GN-13, GN-13b). 실행은 contract가 가리키는 의존 저장소마다 그 npm 패키지를 Node addon과 WASM 모듈과 함께 설치하고, 생성된 시험은 그 class의 case 값을 owner의 member로 만든다 | `scripts/e2e.mts`, `scripts/e2e-npm.mts`, `packages/ts/src/generate/samples.ts`, `packages/ts/src/generate/tests_go.ts`, `packages/ts/tests/e2e-npm.test.ts`, `packages/ts/tests/generate.test.ts` | `make test-ts`; `DEPS`를 json의 checkout으로 한 `make e2e REPO=tests/e2e/relay`의 기록이 모든 target을 통과로 적음 | [v] |
 | B2.121 | 다른 저장소의 value class의 instance를 담은 결과를 그 case의 결과와 비교한다(GN-13e, GN-6x). 그런 case의 생성된 시험은 그 instance와 비교할 case 값이 없다는 이유로 실패한다. 시험은 그 instance를 owner의 in 행의 member(`by`, `read`)로 읽어 내용을 case 값과 비교한다 | `packages/ts/src/generate/samples.ts`, 다섯 시험 작성기, `packages/ts/tests/generate.test.ts` | `make test-ts`; 결과를 적은 `carry`의 case를 둔 `make e2e REPO=tests/e2e/relay` | [ ] |
 | B2.130 | case가 다섯 target에서 다른 라이브러리의 실패 주입 지점을 장전한다(G-5, GN-5). 생성기는 그것을 "the point <point> of another library is not armed yet"로 거부했다. 그 지점은 crate의 진입점을 통해 member의 장전으로 장전하며, crate의 `fault-test`가 그 라이브러리의 코어를 적는다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/samples.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 의존 라이브러리의 지점을 장전하는 case가 있는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
+| B2.131 | 다른 레포의 값 alias의 행이 owner의 class를 이름한다(GN-6ar, GN-6k). 생성기는 constructor로 만드는 `out` 행을 "a <target> make by a member is not generated yet"로 거부했고 class의 `in` 행을 읽지 않았다. Python과 Node는 owner의 package로 인스턴스를 만들고 읽으며, WASM, Go, PHP는 그 행을 이름을 대고 거부한다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/alias_shared.ts`, `alias_python.ts`, `alias_node.ts`, `alias_wasm.ts`, `alias_php.ts`, `go_rust.ts`, `packages.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 그런 alias를 주고받는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
