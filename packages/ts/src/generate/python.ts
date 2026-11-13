@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, traitParam, holdsFunction, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -305,6 +305,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `in_keyed_map(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) {
     return `in_${recordFn(unit ?? { name: [] }, aliasOf(model, type)?.library)}(py, ${value}, ${subject})`;
@@ -312,6 +313,37 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
+
+// GN-6m: a function holds the callable that entered; a call converts the arguments out and the result in, and an
+// exception of the Python code, or a failure of the binding in the call, goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
+  const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"');
+  return `in_function(py, ${value}, ${subject}).map(|object| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                Python::attach(|py| {
+                    let call = || -> PyResult<${result}> {
+                        let returned = object.bind(py).call1((${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
+                        ${type.returns === 'none' ? "let _returned: Bound<'_, PyAny> = returned;\n                        " : ''}${returned}
+                    };
+                    call().map_err(|error| thrown(py, error))
+                })
+            })
+        })`;
+}
+
+const FUNCTION_IN = `
+/// GN-6m: a value of a function type is callable (kind invalid_argument_type); the function holds it.
+fn in_function(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
+    if !value.is_callable() {
+        return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a callable") }));
+    }
+    Ok(value.clone().unbind())
+}
+`;
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
@@ -613,18 +645,6 @@ impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 `;
 }
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
-}
-
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -745,7 +765,8 @@ function libRust(model: Model, layout: PythonLayout): string {
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
-  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + failureRust(model) + foreignFailurePython(model);
+  const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + (takesFunction ? FUNCTION_IN : '') + failureRust(model) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
@@ -890,6 +911,8 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `dict[${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? 'object').join(' | ')}, ${pyType(model, type.keyed_map, input)}]`;
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
+  // GN-6m: the callable takes the arguments as the binding gives them and returns a value that the binding takes.
+  if ('function' in type) return `Callable[[${type.function.parameters.map((t) => pyType(model, t, false)).join(', ')}], ${pyType(model, type.function.returns, true)}]`;
   const unit = unitOf(model, type);
   // U-7: a value alias is any value that its core judges.
   if (unit === undefined || aliasOf(model, type) !== undefined) return 'object';
@@ -1055,7 +1078,7 @@ function nativePyi(model: Model): string {
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
   return `${pyHeader()}
-from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
+from collections.abc import ${/\bCallable\[/.test([...fns, ...classes].join('\n')) ? 'Callable, ' : ''}${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
 from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}

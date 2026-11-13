@@ -1121,9 +1121,9 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   assert.match(lib, /fn in_function\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n    if !value\.is_callable\(\) \{/);
   assert.match(lib, /\.call1\(\(out_text\(py, [a-z0-9_]+\)\?, out_list\(py, [a-z0-9_]+, /);
   assert.match(lib, /\.map_err\(\|error\| thrown\(py, error\)\)/);
-  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, Sequence\[int\]\], str\]/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /convert: Callable\[\[str, list\[int\]\], str\]/);
   for (const target of ['node', 'php', 'wasm', 'go']) {
-    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
+    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target as Lang] }), new RegExp(`shapes\\.apply\\.convert: a function type is not generated for ${target}`), target);
   }
 });
 

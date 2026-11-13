@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A member with a parameter of a function type was refused for every target ("the type {"function": ...} is not
+  generated yet"), so a contract with one, such as template `engine.register`, generated no target. Python now
+  generates it: the core takes `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>` by
+  value, the callable is checked as it enters (kind `invalid_argument_type`), and a call converts the arguments out
+  and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6m). Node, PHP and WASM
+  refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
+  function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
 - A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
   dev-dependency of its own, and repositories did it in two forms. The core now has itself as a dev-dependency with
   `fault-test`, so `cargo test` without flags arms its points, and `binding check` reports a core manifest without it

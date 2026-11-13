@@ -259,6 +259,13 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     for (const part of type.tuple) supportedType(part, units, where, foreign);
     return;
   }
+  // GN-6m: a function type, whose parameters and return are types of the boundary; a target that does not hold it
+  // refuses it by name (generate()).
+  if ('function' in type) {
+    for (const part of type.function.parameters) supportedType(part, units, where, foreign);
+    if (type.function.returns !== 'none') supportedType(type.function.returns, units, where, foreign);
+    return;
+  }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
@@ -359,7 +366,9 @@ export function collectModel(
     const firstDefault = args.findIndex((a) => a.default !== undefined);
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
-    const takesCallback = params.some((p) => typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback');
+    // E-1c: a member that calls language code, a callback or a function (GN-6m), fails with the core error or with
+    // what that code raised.
+    const takesCallback = params.some((p) => (typeof p.type === 'object' && 'unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback') || holdsFunction(p.type));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -852,6 +861,12 @@ export function rustType(model: Model, type: Type): string {
   if ('keyed_map' in type) return `binding_core::KeyedMap<${rustType(model, type.keyed_map)}>`;
   if ('optional' in type) return `Option<${rustType(model, type.optional)}>`;
   if ('tuple' in type) return `(${type.tuple.map((t) => rustType(model, t)).join(', ')})`;
+  // GN-6m: the core takes a function by value in the form that it may keep, its parameters borrowed as those of a
+  // callback member (T-1).
+  if ('function' in type) {
+    const { parameters, returns } = type.function;
+    return `Box<dyn Fn(${parameters.map((p) => traitParam(model, p)).join(', ')}) -> Result<${returns === 'none' ? '()' : rustType(model, returns)}, binding_core::Failure<${model.coreError ?? '()'}>> + Send + Sync>`;
+  }
   if ('unit' in type) {
     const unit = unitOf(model, type);
     // U-3: a callback is the generated struct that implements the core trait over the language object.
@@ -866,7 +881,8 @@ export function rustType(model: Model, type: Type): string {
 // source Vec<u8>/&[u8], path PathBuf/&Path) is taken borrowed, and optional<T> of one as Option<borrowed>, which the
 // generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
 export function coreArg(model: Model, type: Type, variable: string): string {
-  if (byValue(model, type)) return variable;
+  // GN-6m: a function moves into the core, which may keep it.
+  if (byValue(model, type) || (typeof type === 'object' && 'function' in type)) return variable;
   // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
   if (unitOf(model, type)?.origin === 'callback') return `&mut { ${variable} }`;
   if (typeof type === 'object' && 'optional' in type) {
@@ -875,6 +891,31 @@ export function coreArg(model: Model, type: Type, variable: string): string {
     throw new Unsupported(`an optional parameter of ${JSON.stringify(inner)} is not generated yet`);
   }
   return `&${variable}`;
+}
+
+// GN-6m: whether a type holds a function type, at any place of a list, an optional, a map or a tuple.
+export function holdsFunction(type: Type): boolean {
+  if (typeof type === 'string') return false;
+  if ('function' in type) return true;
+  if ('list' in type) return holdsFunction(type.list);
+  if ('optional' in type) return holdsFunction(type.optional);
+  if ('map' in type) return holdsFunction(type.map);
+  if ('keyed_map' in type) return holdsFunction(type.keyed_map);
+  if ('tuple' in type) return type.tuple.some(holdsFunction);
+  return false;
+}
+
+// T-1: the type of a parameter of a callback member or of a function type: a type with two forms is borrowed, a Copy
+// type by value, a list as a slice, and any other type by reference.
+export function traitParam(model: Model, type: Type): string {
+  if (typeof type === 'string') {
+    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
+    return borrowed[type] ?? rustType(model, type);
+  }
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('list' in type) return `&[${rustType(model, type.list)}]`;
+  if (byValue(model, type)) return rustType(model, type);
+  return `&${rustType(model, type)}`;
 }
 
 // Whether the core takes the value itself (a Copy type) rather than a reference (T-1).

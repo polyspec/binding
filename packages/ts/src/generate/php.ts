@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, traitParam, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -675,18 +675,6 @@ ${checks}
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
 `;
-}
-
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
 }
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and

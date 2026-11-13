@@ -46,6 +46,12 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
+  // GN-6m: a function that returns the placeholder of its return type, whatever its arguments.
+  if ('function' in type) {
+    const returns = type.function.returns;
+    const value = returns === 'none' ? { python: 'None', node: 'undefined', php: 'null' }[ctx.lang] : placeholder(model, ctx, returns, rich);
+    return { python: `lambda *_arguments: ${value}`, node: `(() => ${value})`, php: `fn (...$arguments) => ${value}` }[ctx.lang];
+  }
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);

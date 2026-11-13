@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 함수 타입 parameter를 가진 member는 모든 target에서 거부되었다("the type {"function": ...} is not generated yet").
+  그래서 template `engine.register` 같은 member가 있는 계약은 어떤 target도 생성되지 않았다. 이제 Python은 그것을
+  생성한다. 코어는 `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`를 값으로 받고, 호출
+  가능한 객체는 들어올 때 판정되며(kind `invalid_argument_type`), 호출은 인자를 내보내고 결과를 들이며, Python 코드의
+  예외는 `Raised`로 코어에 간다(GN-6m). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
+  거부한다. callback member와 함수 타입은 빌린 parameter의 규칙 하나를 함께 쓴다(T-1). `packages/ts`의 `npm test`로
+  확인했다.
 - 실패 주입점을 가진 코어는 저장소가 flag나 자기 dev-dependency를 주지 않으면 지점이 꺼진 채로 `cargo test`를 돌렸고, 저장소들은
   이를 두 꼴로 했다. 이제 코어는 자기 자신을 `fault-test`와 함께 dev-dependency로 두어, flag 없는 `cargo test`가 지점을
   장전한다. `binding check`는 그것이 없는 코어 manifest를 보고한다(CK-65, GN-5). tests/e2e의 sample 코어가 그 dev-dependency를 갖는다.
