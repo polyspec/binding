@@ -222,6 +222,23 @@ function aliasValue(unit: Unit | undefined, json: unknown, where: string): strin
 const funcHead = (v: Values, parts: Type[], name: (index: number) => string): string =>
   `func(${parts.map((part, i) => `${name(i)} ${typeName(v, part)}`).join(', ')}) (any, error)`;
 
+// GN-6ae (CK-22): the statements of a call of a member on a receiver whose results are compared with the value that a
+// case names, when it names one: `failed` is the statement for an error of the call, and `differs` the statement
+// for a result that is not the value. A value that the Go test does not compare refuses the call.
+function comparedCall(v: Values, a: Body, fn: Fn, receiver: string, args: ReadonlyMap<Arg, unknown>, expected: { value: unknown } | undefined, failed: string, differs: (index: number) => string): string[] {
+  const given = callArgs(v, a, fn, (arg) => caseValue(v, a, arg, args));
+  const parts = fn.returns === 'none' || fn.returns === 'never' ? [] : typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : [fn.returns];
+  const expects = expected !== undefined && parts.length > 0;
+  const absent = expected?.value === null && typeof fn.returns === 'object' && 'optional' in fn.returns;
+  const reason = expects && !absent ? comparableResult(v.model, fn.returns) : undefined;
+  if (reason !== undefined) throw new Unsupported(reason);
+  const compared = !expects ? [] : parts.flatMap((type, i) => {
+    const want = parts.length === 1 ? expected.value : (expected.value as unknown[] | null)?.[i];
+    return [`if want := (${typeName(v, type)})(${value(v, a, type, want ?? null)}); !reflect.DeepEqual(value${i}, want) {`, `\t${differs(i)}`, '}'];
+  });
+  return [...a.lines, callLine(fn, invoke(v, fn, given, receiver), expects ? parts.map((_, i) => `value${i}`) : undefined), 'if err != nil {', `\t${failed}`, '}', ...compared];
+}
+
 // GN-6ae: the func of a function fixture, {"function": {"calls": [<step>], "result" | "raise"}} (CK-22 has judged the
 // form), as a local of the body: each step calls a method on the argument at its position and returns its error, and
 // the func then returns its result, a value of GN-13, or the error `raised` that the test holds. An argument of a
@@ -234,7 +251,14 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
     const fn = memberById(v.model, String(step['call']));
     const args = fn === undefined ? undefined : argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>);
     if (fn === undefined || args === undefined) throw new Unsupported(`a step of a function fixture calls ${String(step['call'])} with ${JSON.stringify(step['args'])}, which are not the parameters of a member (GN-6ae)`);
-    const call = invoke(v, fn, callArgs(v, inner, fn, (arg) => caseValue(v, inner, arg, args)), `arg${Number(step['on'])}`);
+    const on = `arg${Number(step['on'])}`;
+    if (Object.hasOwn(step, 'result')) {
+      // CK-22: a step that names a result returns an error that names its member when the call returned another value.
+      const lines = comparedCall(v, inner.child(), fn, on, args, { value: step['result'] }, 'return nil, err', (i) => `return nil, fmt.Errorf("GN-6ae: ${fn.member.id} returned %#v, not %#v", value${i}, want)`);
+      inner.lines.push('{', ...lines.map((line) => `\t${line}`), '}');
+      continue;
+    }
+    const call = invoke(v, fn, callArgs(v, inner, fn, (arg) => caseValue(v, inner, arg, args)), on);
     inner.lines.push(`if ${'_, '.repeat(goResultCount(fn))}err := ${call}; err != nil {`, '\treturn nil, err', '}');
   }
   const raise = fixture['raise'];
@@ -386,19 +410,8 @@ const testName = casePascal;
 // result that the case names.
 function afterLines(v: Values, b: Body, fn: Fn, id: string, after: After[] | undefined, receiver: string): string[] {
   return (after ?? []).flatMap((call) => {
-    const a = b.child();
     try {
-      const args = callArgs(v, a, call.fn, (arg) => caseValue(v, a, arg, call.args));
-      const parts = call.fn.returns === 'none' || call.fn.returns === 'never' ? [] : typeof call.fn.returns === 'object' && 'tuple' in call.fn.returns ? call.fn.returns.tuple : [call.fn.returns];
-      const expects = call.result !== undefined && parts.length > 0;
-      const absent = call.result === null && typeof call.fn.returns === 'object' && 'optional' in call.fn.returns;
-      const reason = expects && !absent ? comparableResult(v.model, call.fn.returns) : undefined;
-      if (reason !== undefined) throw new Unsupported(reason);
-      const compared = !expects ? [] : parts.flatMap((type, i) => {
-        const given = parts.length === 1 ? call.result : (call.result as unknown[] | null)?.[i];
-        return [`if want := (${typeName(v, type)})(${value(v, a, type, given ?? null)}); !reflect.DeepEqual(value${i}, want) {`, `\tt.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`, '}'];
-      });
-      const lines = [...a.lines, callLine(call.fn, invoke(v, call.fn, args, receiver), expects ? parts.map((_, i) => `value${i}`) : undefined), 'if err != nil {', '\tt.Fatalf("GN-6ae: after: %v", err)', '}', ...compared];
+      const lines = comparedCall(v, b.child(), call.fn, receiver, call.args, call.result === undefined ? undefined : { value: call.result }, 't.Fatalf("GN-6ae: after: %v", err)', (i) => `t.Fatalf("GN-6ae: after: %#v is not %#v", value${i}, want)`);
       return ['{', ...lines.map((line) => `\t${line}`), '}'];
     } catch (error) {
       if (!(error instanceof Unsupported)) throw error;

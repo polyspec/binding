@@ -372,7 +372,8 @@
               "call": "scope.get",
               "args": {
                 "key": "a"
-              }
+              },
+              "result": "1"
             }
           ],
           "result": {
@@ -407,6 +408,14 @@
                 "key": "a",
                 "value": "1"
               }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
             }
           ],
           "raise": "exception"
@@ -445,11 +454,27 @@
                     "calls": [
                       {
                         "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "a"
+                        },
+                        "result": "1"
+                      },
+                      {
+                        "on": "0",
                         "call": "scope.put",
                         "args": {
                           "key": "b",
                           "value": "2"
                         }
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "b"
+                        },
+                        "result": "2"
                       }
                     ],
                     "result": {
@@ -458,6 +483,14 @@
                   }
                 }
               }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
             }
           ],
           "result": {
@@ -484,6 +517,125 @@
             "key": "b"
           },
           "result": "2"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_a_function_that_awaits_are_committed",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      },
+                      {
+                        "on": "0",
+                        "call": "scope.get",
+                        "args": {
+                          "key": "a"
+                        },
+                        "result": "1"
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      },
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": "1"
+        },
+        {
+          "call": "store.get",
+          "args": {
+            "key": "b"
+          },
+          "result": "2"
+        }
+      ]
+    },
+    {
+      "id": "the_entries_of_an_awaitable_that_raises_are_dropped",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback",
+      "after": [
+        {
+          "call": "store.get",
+          "args": {
+            "key": "a"
+          },
+          "result": null
         }
       ]
     }

@@ -85,11 +85,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   ctx.instanceNew = made;
   let usesOutcome = false;
   let usesSame = false;
-  // GN-6ae: the function of a function fixture: each step calls a method on one of its arguments; it then returns its
-  // result, throws the instance of an error unit, or throws the exception that the test of the case holds.
+  // GN-6ae: the function of a function fixture: each step calls a method on one of its arguments, and a step that
+  // names a result requires it by an assertion, whose failure is an exception of the function; it then returns its
+  // result, throws the instance of an error unit, or throws the exception that the test of the case holds. PHP has no
+  // awaitable, so a fixture with awaits is the same plain function.
   let usesRaised = false;
   ctx.functionNew = (fixture) => {
-    const steps = fixture.steps.map((step) => `${invoke(step.fn, step.args, `$args[${step.on}]`)}; `).join('');
+    const steps = fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, `$args[${step.on}]`);
+      if (step.expected === undefined) return `${call}; `;
+      if ('refused' in step.expected) return `self::fail(${phpText(step.expected.refused)}); `;
+      usesSame = true;
+      return `self::assertSame(self::same(${step.expected.text}), self::same(${call})); `;
+    }).join('');
     usesRaised ||= 'exception' in fixture.end;
     const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw self::$raised;';
     return `function (mixed ...$args): mixed { ${steps}${end} }`;

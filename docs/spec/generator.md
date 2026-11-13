@@ -785,16 +785,25 @@ the design ids are those of the binding design.
   - Case: an argument of a function type is a function fixture, `{"function": {"calls": [<step>], "result": <case
     value>}}` or with `"raise"` in place of `"result"`: the generated function makes each step on its arguments in
     order, `{"on": "<position>", "call": "<member id>", "args": {...}}`, where `on` is the position of the parameter
-    (`"0"`, `"1"`, ...; CK-22) and an argument of a function type of a step is again a function fixture, and then returns `result`, raises the error unit of `raise` (GN-13) or, with
+    (`"0"`, `"1"`, ...; CK-22) and an argument of a function type of a step is again a function fixture; a step that names `result` requires
+    that its call returns that value (CK-22), by an assertion of the test, whose failure is an exception of the
+    function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
-    nested scope.
+    nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
+    def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose
+    `result` or `raise` is the outcome of that awaitable; a step of such a function awaits the call of a member that
+    waits (`await <argument>.a<name>(...)` in Python), and the Python test of the case calls `a<name>` on an event
+    loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
+    settles at once: a case with the marker runs on the five targets and requires the same result, exception and
+    `after` on each.
   Not generated yet (G-4): Python, Node and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
   yet"; PHP and Go generate the member. The PHP test writes the function fixture, the test of a case with `raises:
   "callback"`, which requires the same exception object, the calls of `after`, and a test that a value that is no
   callable is kind `invalid_callback`. The Go test writes the function fixture as a `func` whose steps return their
-  error, the test of a case with `raises: "callback"`, whose `func` returns the error value that the test holds and
+  error, and a step that names `result` returns an error that names its member when the call returned another value;
+  a fixture with `"awaits": true` is the same `func`; it writes the test of a case with `raises: "callback"`, whose `func` returns the error value that the test holds and
   which requires that same value, the calls of `after`, and for each parameter of a function type a test that a nil
   `func` is kind `invalid_callback`, a test that the member returns the error value that the `func` returned, and a
   test that the member panics with the value of a panic of the `func`; package `binding` tests that a handle of its

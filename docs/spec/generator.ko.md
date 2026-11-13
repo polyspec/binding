@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 19c0608072e2ec17dc0da2ee627d652f29232945db2cde2560ead17fb59e482c -->
+<!-- source-sha256: 5d79125c56626af65c0e6c8f7c4257fe16e9f579e3bf37720fa3088fb7522d2d -->
 # 생성기
 
 [English](generator.md)
@@ -652,14 +652,21 @@
     settle하므로 PHP나 Go 함수는 그 결과를 돌려준다.
   - Case: 함수 타입의 인자는 함수 fixture `{"function": {"calls": [<step>], "result": <case value>}}`이거나 `"result"`
     대신 `"raise"`를 가진다. 생성된 함수는 인자에 각 단계 `{"on": "<위치>", "call": "<member id>", "args":
-    {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
+    {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다). `result`를 적은 단계는 그 호출이 그 값을 돌려줄 것을 시험의 단언으로
+    요구하고(CK-22), 그 단언의 실패는 함수의 예외다. 함수는 그 뒤 `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
     `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
+    `"awaits": true`(CK-22)가 있는 fixture는 awaitable을 돌려주는 함수다. Python은 `async def`, Node와 WASM은 `async`
+    함수이고, 그 step은 binding이 awaitable을 기다릴 때 돌며 `result`나 `raise`는 그 awaitable의 결과다. 그런 함수의
+    step은 기다리는 member의 호출을 기다리고(Python은 `await <인자>.a<name>(...)`), 그 case의 Python 시험은 event
+    loop에서 `a<name>`을 부른다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은 fixture가 보통 함수이고 driver가 그 값을
+    곧바로 settle한다. 표시가 있는 case는 다섯 target에서 돌고 각 target에서 같은 결과, 예외, `after`를 요구한다.
   아직 생성하지 않는 것(G-4): Python, Node, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
   PHP와 Go는 그 member를 생성한다. PHP 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case의 시험,
   `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. Go 시험은 함수 fixture를 각 단계가 그 error를
-  돌려주는 `func`로 쓰고, `raises: "callback"` case의 시험(그 `func`는 시험이 쥔 error 값을 돌려주고 시험은 바로 그
+  돌려주는 `func`로 쓰고, `result`를 적은 단계는 호출이 다른 값을 돌려주면 그 member를 이름하는 error를 돌려준다.
+  `"awaits": true`가 있는 fixture도 같은 `func`다. Go 시험은 `raises: "callback"` case의 시험(그 `func`는 시험이 쥔 error 값을 돌려주고 시험은 바로 그
   값을 요구한다), `after`의 호출, 그리고 함수 타입의 parameter마다 nil `func`가 kind `invalid_callback`이라는 시험,
   member가 `func`가 돌려준 error 값을 돌려준다는 시험, member가 `func`의 panic 값으로 panic한다는 시험을 쓴다.
   package `binding`은 그 table의 handle을 다시 주지 않는다는 것과 handle이 값을 가리키지 않는 결과가 kind

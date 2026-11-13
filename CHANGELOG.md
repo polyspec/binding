@@ -13,11 +13,27 @@
   `Passthrough` through the export `<prefix>__go_release_passed`, and a result whose handle names no value is kind
   `internal`; the member returns the error value that the `func` returned, and a panic of the `func`, which the
   dispatch recovers so that it does not unwind through the frames of the static library, is the panic of the member
-  with the same value. The Go test writes a function fixture as a `func`, the case with `raises: "callback"`, the
-  calls of `after`, and the tests of a nil `func`, of the error and of the panic of a `func`, and no longer refuses a
-  case with `after` or `raises: "callback"` (GN-6ae). Verified by `npm test` in `packages/ts`, whose two tests of the
-  Go crate, package and test pass; 20 tests that generate the sample for every target still fail with the refusal of
-  Python, Node and WASM.
+  with the same value. The Go test writes a function fixture as a `func`, whose step that names `result`
+  returns an error when its call returned another value and whose marker `"awaits": true` changes nothing, the case
+  with `raises: "callback"`, the calls of `after`, and the tests of a nil `func`, of the error and of the panic of a
+  `func`, and no longer refuses a case with `after` or `raises: "callback"` (GN-6ae, CK-22). Verified by `npm test`
+  in `packages/ts`, whose two tests of the Go crate, package and test pass; 20 tests that generate the sample for
+  every target still fail with the refusal of Python, Node and WASM.
+- No case could give a function that returns an awaitable, so the path of `Step::Await` whose awaitable settles later,
+  or raises, had no case. A function fixture may now name `"awaits": true`: the function returns an awaitable of its
+  language whose outcome is the `result` or the `raise` of the fixture. The contract check accepts the marker only
+  with the value `true`, only for a function type with `async_allowed: true`, and inside a step only where the
+  fixture of that step names it. PHP and Go have no awaitable, so there the same fixture is a plain function and a
+  case with the marker runs on the five targets; the PHP test writes it so. The sample has two such cases of
+  `store.transaction`: a function and a nested function that await and commit, and an awaitable that raises and
+  drops its entries (CK-22, GN-6ae). Verified by `npm test` in `packages/ts`, whose tests of the marker pass.
+- A step of a function fixture could not state what its call returns, so the cases of `store.transaction` called
+  `scope.get` inside the function without verifying its value, and a scope that held nothing would have passed. A
+  step may now name `result`, which the contract check accepts and the generated function requires before its next
+  step; the PHP test writes it as an assertion inside the function. The three cases of the sample now require what
+  the scope holds: the pending entry before the commit and before the raise, the entry of the outer scope inside the
+  nested scope, and the entry of the nested scope in the outer one (CK-22, GN-6ae). Verified by `npm test` in
+  `packages/ts`, whose tests of the function fixture pass.
 - The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
   word once their target generates a function parameter, because only the PHP test writes them. Each of those test
   generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>
