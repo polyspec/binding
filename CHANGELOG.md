@@ -11,7 +11,9 @@
   `OutValue::Text16(Vec<u16>)` and the kind `text16` give a text as its UTF-16 code units, unpaired surrogates
   included. An `out` row of the kind `text16` makes the value by a member of the class that takes a list of `uint`
   (json `value.from_units`), and an `in` case of the kind `text16` reads it by a member that gives one (json
-  `value.string_units`) as `HostText::Utf16`, in Python, Node, PHP and WASM. No built-in form makes the kind, because
+  `value.string_units`) as `HostText::Utf16`, in Python, Node, PHP and WASM. A value class keeps its `text` row, so
+  that a case value of the kind `text` is still made, and CK-8 lets that row come back by the case of the kind
+  `text16`, because a Unicode text is the same value as its UTF-16 code units; no other pair of kinds is accepted. No built-in form makes the kind, because
   the string of PHP and Go cannot hold an unpaired surrogate (CK-8). Go does not take a value class yet (B2.80). Red:
   `make test-ts` failed 2 of 301 (CK-1 for the kind, and the refusal of the make `value.from_units` and of the case of
   the kind `text16`), and `make test-rust` failed to compile the test of `OutValue::Text16`; Green: both pass

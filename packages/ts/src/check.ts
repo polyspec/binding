@@ -761,7 +761,11 @@ class Checker {
   roundTrip(row: OutRow, path: string, into: InRow, lang: Lang, made: string, form: string | undefined, siblings: readonly OutRow[]): void {
     let chosen: string | undefined;
     if (into.by !== undefined) {
-      const matching = into.cases.filter((c) => c.kind === row.kind);
+      // GN-6x, P-3: a Unicode text is the same value as its UTF-16 code units, so a text row comes back by the case of the
+      // kind text16 when the row has no case of its own kind; no other pair of kinds is the same value.
+      const own = into.cases.filter((c) => c.kind === row.kind);
+      const units = row.kind === 'text' && own.length === 0 ? into.cases.filter((c) => c.kind === 'text16') : [];
+      const matching = units.length > 0 ? units : own;
       if (matching.length !== 1) {
         this.report('CK-8', path, `${lang} ${made} has ${matching.length} cases of kind ${row.kind}; its by value cannot name one (P-3)`);
         return;

@@ -905,6 +905,7 @@ test('a value class of another repository converts through the core of its owner
     // B2.81: a text leaves as its UTF-16 code units, made by from_units, and enters as the units that string_units gives,
     // so a text with an unpaired surrogate keeps its units in every target.
     assert.match(lib, /OutValue::Text16\(value\) =>/, path);
+    assert.match(lib, /OutValue::Text\(value\) =>/, path);
     assert.match(lib, /ValueKind::Text16/, path);
     assert.match(lib, /HostValue::Text\(HostText::Utf16\(/, path);
   }

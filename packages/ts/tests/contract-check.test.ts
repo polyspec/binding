@@ -195,7 +195,8 @@ describe('CK-8 value units', () => {
   // every string by one case of the kind text16; a Unicode text is the same value as its UTF-16 code units.
   test('a text row that comes back by the case of the kind text16', () => {
     const owner = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
-    assert.deepEqual(checkContract(owner), []);
+    // The fixture holds no case files (CK-22); the round trip is CK-8.
+    assert.deepEqual(checkContract(owner).filter((f) => f.check === 'CK-8'), []);
   });
   test('a text16 row that comes back by the case of the kind text', () =>
     fails('CK-8', `${at('value')}/out/0/make`, (c) => {
