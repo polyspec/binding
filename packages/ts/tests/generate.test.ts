@@ -1855,3 +1855,27 @@ test('a class parameter gives the core the borrow that its core names, which eve
   param('classes.shout').type = { optional: { unit: 'tag' } };
   assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /classes\.shout\.tag: the borrow of an optional class is not generated yet/);
 });
+
+test('a callback member gives the core the kind of an error unit that it recognizes, and passes any other exception (U-3, GN-6d)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  contract.errors.recognized = 'polyspec_consumer::Error::recognized';
+  const get = contract.units.find((u: any) => u.id === 'holder').members.find((m: any) => m.id === 'holder.get');
+  get.errors = { recognize: [{ unit: 'absent_error' }], reason: 'U-3' };
+  const targets = ['php', 'python', 'node', 'go', 'wasm'] as Inputs['targets'] & string[];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets });
+  for (const crate of [...LIBS, 'packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, crate);
+    // The kind of a row whose class is the unit makes the core error with the message of the exception.
+    assert.ok(lib.includes('"absent" => Some(polyspec_consumer::Error::recognized(polyspec_consumer::Error::Absent, &message)),'), `${crate} makes the core error of the recognized kind`);
+    assert.match(lib, /fn recognized_holder_get\(/, crate);
+    // A member that recognizes nothing keeps the exception as it is.
+    assert.equal(lib.match(/recognized_holder_get\(/g)?.length, 2, `${crate} calls the recognition of holder.get alone`);
+    assert.doesNotMatch(lib, /recognized_holder_set/, crate);
+  }
+  // Go reads the error that the method returned with errors.As, and the C ABI takes its kind and its message.
+  assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RecognizeAbsentError\(err error\) error \{\n\tvar unit \*AbsentError\n\tif errors\.As\(err, &unit\) \{/);
+  assert.match(text(out, 'packages/go/zz_generated_consumer.go'), /return binding\.RecognizeAbsentError\(err\)/);
+  // G-4: an error unit of another library is refused by name.
+  get.errors.recognize = [{ unit: 'data', library: 'sample' }];
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), /holder\.get: a recognized error unit of another library is not generated yet/);
+});

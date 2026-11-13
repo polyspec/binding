@@ -350,6 +350,8 @@ describe('CK-17 callbacks', () => {
     fails('CK-17', `${at('store')}/members/0`, (c) => { delete member(c, 'store.read').async_allowed; }));
   test('recognize names a class', () =>
     fails('CK-17', `${at('store')}/members/0/errors/recognize/0`, (c) => { member(c, 'store.read').errors.recognize[0].unit = 'session'; }));
+  test('a callback member that recognizes an error unit of its own, in a contract without errors.recognized (GN-6d)', () =>
+    fails('CK-17', `${at('store')}/members/0/errors/recognize/0`, (c) => { delete c.errors.recognized; }));
   test('a generated implementation that waits, behind a callback member that is not async_allowed', () =>
     fails('CK-17', `${at('store')}/members/0`, (c) => { member(c, 'store.read').async_allowed = false; }));
 });
