@@ -423,7 +423,13 @@ the design ids are those of the binding design.
   string keys, which a `Map` compares by identity, are refused by name (G-4), so nothing is left out silently; the
   generator takes them when a contract needs them.
 
-- **GN-12a** Node and WASM (T-1): an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
+- **GN-12a** Every target (T-1, CK-64): an `int` value that the binding takes, as an argument, an item of a list, a
+  tuple, a map or an optional, or a field of a record, is a safe integer, −(2^53 − 1) to 2^53 − 1, and a `uint` value is
+  0 to 2^53 − 1; an integer outside that range is kind `invalid_number` (B-2) in PHP, Python and Go as in Node and
+  WASM, whose number holds no larger integer exactly. Why: one contract gives the same result in every target, and an
+  integer that one target takes and another refuses would give two. An `int64` takes the range of i64 in every
+  target, and the key of a `keyed_map` keeps the rule of its target (GN-10, GN-11, GN-12, GN-16).
+  Node and WASM: an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
   integers, and anything else is kind `invalid_number` (B-2); an `int64` result is a `bigint`, so that the whole range
   of i64 leaves, as the declarations say (`number | bigint` in, `bigint` out). A case file gives an integer outside
   the safe integers as its JSON token, which `binding` reads as a `bigint` and every test writes by its decimal
@@ -502,7 +508,8 @@ the design ids are those of the binding design.
   `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
   the core leaves as its UTF-8 bytes. An enum value that is not one of the
   constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
-  hold by the Go types and the compiler. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
+  hold by the Go types and the compiler, except the range of GN-12a: the C ABI refuses an `int` or a `uint` outside the
+  safe integers as kind `invalid_number`. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
   package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
   others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
   crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
@@ -588,7 +595,8 @@ the design ids are those of the binding design.
 ## Generated tests (G-5)
 
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
-  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 in Node) as kind `invalid_number` of the value class;
+  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 for uint and int and −2^53 for int, GN-12a) as kind
+  `invalid_number` of the value class;
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
   `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
@@ -716,7 +724,8 @@ the design ids are those of the binding design.
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
 - **GN-13b** Go: the tests of a package are `zz_generated_test.go` in the package itself, so that a test reads the
-  handle of an instance, run by `go test`: B-3 for every text parameter or field (the bytes FF), the enum check of
+  handle of an instance, run by `go test`: B-2 for every `int` parameter (2^53 and −2^53) and every `uint` parameter
+  (2^53) as kind `invalid_number` (GN-12a), B-3 for every text parameter or field (the bytes FF), the enum check of
   GN-16 for every enum parameter or field, U-2 (a call without an argument with a default gives the call with its
   default), U-7 (a kind of an alias through the member), K-2 (a nil callback, and the error of a callback is the error
   of the call), B-4 for every contract case that raises (the exact type of E-2 and E-7, `errors.As` of its category,

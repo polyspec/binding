@@ -350,7 +350,12 @@
   다른 타입 안의 것과 `Map`이 정체성으로 비교하는 바이트 문자열 key는 이름으로 거부하므로(G-4) 조용히 빠지는 것이 없다. 계약이
   그것을 요구하면 그때 생성기가 받는다.
 
-- **GN-12a** Node과 WASM(T-1): `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
+- **GN-12a** 모든 target(T-1, CK-64): 바인딩이 인자, list·tuple·map·optional의 항목, record의 field로 받는 `int` 값은
+  안전 정수 −(2^53 − 1)~2^53 − 1이고 `uint` 값은 0~2^53 − 1이다. 그 범위 밖의 정수는 Node와 WASM처럼 PHP, Python, Go에서도
+  kind `invalid_number`다(B-2). Node와 WASM의 number는 더 큰 정수를 정확히 담지 못한다. 이유: 한 계약은 모든 target에서 같은
+  결과를 주어야 하는데, 한 target이 받고 다른 target이 거부하는 정수는 결과를 둘로 만든다. `int64`는 모든 target에서 i64
+  범위를 받고, `keyed_map`의 key는 그 target의 규칙을 따른다(GN-10, GN-11, GN-12, GN-16).
+  Node과 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
   `invalid_number`다(B-2). `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
   `bigint`)과 같다. case 파일은 안전 정수 밖의 정수를 JSON token으로 주고, `binding`은 그것을 `bigint`로 읽으며 모든 시험은
   그 10진 token으로 쓴다. Node 시험은 `bigint` literal로 쓴다(G-5).
@@ -416,7 +421,7 @@
   U+0000~U+00FF의 rune이 바이트마다 하나인 Go 문자열이다(Go는 문자열을 UTF-8로 읽기 때문이다): C ABI는 UTF-8로 받아 U+00FF를
   넘는 rune을 kind `invalid_text`로 거부하고, 바이트는 같은 code point의 rune으로 나간다(B-8, 모든 언어와 같은 규칙). 코어의
   문자열은 UTF-8 바이트로 나간다. 상수가 아닌 enum 값은 kind
-  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지킨다. `Map[T]`는 T-2의 순서 있는 map이며,
+  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지키며, GN-12a의 범위만은 예외로 C ABI가 안전 정수 밖의 `int`나 `uint`를 kind `invalid_number`로 거부한다. `Map[T]`는 T-2의 순서 있는 map이며,
   쓰는 패키지가 선언하는 `internal/binding.Map`의 별칭이다. 반복 순서가 무작위인 Go map이 아니다: `Set`은 새 key를 끝에
   두고 있는 key의 자리는 지키며, `Keys`는 순서대로 주고, 0값이나 nil `*Map`은 비어 있다. C ABI는 길이와 순서대로의 항목으로
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
@@ -487,7 +492,7 @@
 ## 생성 시험(G-5)
 
 - **GN-13** 함수마다 각 언어의 시험 module은 다음을 확인한다. B-2: 수 parameter와 field마다 G-5의 값(NaN, 무한대, 1.5,
-  true, "7", uint에 -1, Node에 2^53)이 value 클래스의 kind `invalid_number`다. B-3: 짝 없는 surrogate가 든 text(PHP는 UTF-8이
+  true, "7", uint에 -1, uint와 int에 2^53, int에 −2^53, GN-12a)이 value 클래스의 kind `invalid_number`다. B-3: 짝 없는 surrogate가 든 text(PHP는 UTF-8이
   아닌 바이트)와 U+0100이 든 latin1 text가 kind `invalid_text`다. B-4: 실패하는 모든 contract case가 정확한 클래스(GN-13d), E-2의 기반
   클래스, kind, status, errno를 낸다. B-7: panic 진입점이 kind `internal`이다. G-7: 빠진 인자, 하나 많은 인자, 없는 이름(PHP
   이름 있는 인자, Python keyword, Node options record의 member와 빠진 member). case의 인자는 snake_case 키이고, record
@@ -590,7 +595,7 @@
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
 
 - **GN-13b** Go: 패키지의 시험은 시험이 인스턴스의 handle을 읽도록 그 패키지 안의 `zz_generated_test.go`이며 `go test`로
-  실행한다: text parameter·field마다 B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, U-2(기본값이 있는 인자를
+  실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53이 kind `invalid_number`인 B-2(GN-12a), text parameter·field마다 B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, U-2(기본값이 있는 인자를
   뺀 호출은 기본값을 준 호출과 같다), U-7(member를 거친 alias의 kind), K-2(nil callback, callback의 오류가 호출의 오류다),
   raise하는 contract case마다 B-4(E-2와 E-7의 정확한 타입, 그 category의 `errors.As`, kind, status, errno), raise하지 않는
   case마다 GN-13e, stringify마다 N-4. 실패를 장전하는 case는 build tag `polyspec_fault_test`가 붙은
