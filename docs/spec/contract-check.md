@@ -147,9 +147,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise
   (GN-5).
-- **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is only on a
-  parameter whose type is a class unit of this contract or an `optional` of one, because only an instance of a class
-  is a place whose borrow the core takes.
+- **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is on every
+  parameter of a member, other than a member of a callback interface, whose type is a class unit of this contract or
+  an `optional` of one, and on no other parameter, because only an instance of a class is a place whose borrow the
+  core takes, and binding reads no Rust source to find it.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

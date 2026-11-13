@@ -222,8 +222,10 @@ the design ids are those of the binding design.
   instance share one lock (`Arc::ptr_eq`), and an instance that the call takes at a write place and at another place
   fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
   gets `&*guard` for a read place and `&mut *guard` for a write place, and a parameter whose `core` is `value` gets
-  a clone of the value under its read guard, so that class is `Clone`. A parameter whose type is a class names in
-  `core` the borrow that the core takes (`&`, `&mut` or `value`; absent, `&`). Every binding crate holds, for each
+  a clone of the value under its read guard, so that class is `Clone`. A parameter whose type is a class or an `optional`
+  of a class names in `core` the borrow that the core takes (`&`, `&mut` or `value`), and a parameter without it is
+  refused by name (G-4): a default would claim a borrow that nobody wrote, and the call alone does not find a wrong
+  one. Every binding crate holds, for each
   member with a parameter that names its borrow, the assertion `const _: () = { let _: fn(<receiver>, <param>, ...) ->
   _ = <core path>; };`, in which the receiver is `&T`, `&mut T` or `T` of the core type of its class, a parameter that
   names its borrow is `&T`, `&mut T` or `T` of the core type of its class and every other parameter is `_`, so a
