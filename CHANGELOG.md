@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `tests/e2e/functions` checked a function type in Python only. It now declares the targets PHP, Node and WASM as
+  well, so the end-to-end check runs the stored functions of every target that takes one (GN-6m).
 - WASM refused a member that takes a function type (GN-6m). It now holds the function as a `Native` of the table of
   the one thread of the module (GN-6o) and declares the parameter as a TypeScript function type; a value that is not a
   function is kind `invalid_argument_type`. The generated tests of WASM wrote the names of the members of a function

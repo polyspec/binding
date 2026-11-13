@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `tests/e2e/functions`는 함수 타입을 Python에서만 확인했다. 이제 PHP, Node, WASM target도 선언하므로, end-to-end 확인이
+  함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6m).
 - WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6o)로 갖고
   parameter를 TypeScript 함수 타입으로 선언한다. 함수가 아닌 값은 kind `invalid_argument_type`이다. WASM의 생성된 테스트는
   함수 fixture의 member 이름을 PHP 문자열로 썼는데, 이제 JavaScript 문자열로 쓴다.

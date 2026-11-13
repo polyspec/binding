@@ -6,12 +6,34 @@
     "path": "packages/rust"
   },
   "targets": [
-    "python"
+    "php",
+    "python",
+    "node",
+    "wasm"
   ],
   "packages": {
+    "php": {
+      "package": "polyspec/functions",
+      "namespace": "Polyspec\\Functions"
+    },
     "python": {
       "package": "polyspec-functions",
       "module": "polyspec.functions"
+    },
+    "node": {
+      "package": "@polyspec/functions",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
     }
   },
   "naming": {
@@ -21,27 +43,57 @@
   "errors": {
     "classes": {
       "value": {
-        "python": "FunctionsValueError"
+        "php": "Polyspec\\Functions\\FunctionsValueError",
+        "python": "FunctionsValueError",
+        "node": "FunctionsValueError",
+        "wasm": "FunctionsValueError"
       },
       "type": {
-        "python": "FunctionsTypeError"
+        "php": "Polyspec\\Functions\\FunctionsTypeError",
+        "python": "FunctionsTypeError",
+        "node": "FunctionsTypeError",
+        "wasm": "FunctionsTypeError"
       },
       "io": {
-        "python": "FunctionsIoError"
+        "php": "Polyspec\\Functions\\FunctionsIoError",
+        "python": "FunctionsIoError",
+        "node": "FunctionsIoError",
+        "wasm": "FunctionsIoError"
       },
       "store": {
-        "python": "FunctionsStoreError"
+        "php": "Polyspec\\Functions\\FunctionsStoreError",
+        "python": "FunctionsStoreError",
+        "node": "FunctionsStoreError",
+        "wasm": "FunctionsStoreError"
       },
       "busy": {
-        "python": "FunctionsBusyError"
+        "php": "Polyspec\\Functions\\FunctionsBusyError",
+        "python": "FunctionsBusyError",
+        "node": "FunctionsBusyError",
+        "wasm": "FunctionsBusyError"
       },
       "internal": {
-        "python": "FunctionsInternalError"
+        "php": "Polyspec\\Functions\\FunctionsInternalError",
+        "python": "FunctionsInternalError",
+        "node": "FunctionsInternalError",
+        "wasm": "FunctionsInternalError"
       }
     },
     "fixed": [
       {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
         "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
         "class": "TypeError"
       }
     ],
