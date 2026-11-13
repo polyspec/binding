@@ -18,6 +18,13 @@
   `int64`와 `keyed_map`의 key는 i64 범위를 유지한다(`in_int64`). B-2의 생성 시험은 PHP, Python, Go에서 2^53과 -2^53을
   준다(GN-13, GN-13b). `packages/ts`의 `npm test`로 확인했다: 268개 통과, 실패 7개는 이 변경이 건드리지 않는 GN-6m(wait
   `blocking_io`)의 시험이다.
+- `wait: async_driver`인 member는 모든 target이 거부했다("wait async_driver is not generated yet"). 그래서 tokio 위의
+  코어가 가진 `async fn` member에는 binding이 없었다. 이제 생성기는 그런 member의 future를 tokio runtime에서 돌린다
+  (GN-6n). PHP는 `binding_core::driver::block_on`에서 막히고, Python은 그것을 `py.detach`에서 돌리며 `a<name>`을 더하고,
+  Node는 napi의 runtime(`tokio_rt`)에서 `Env::spawn_future_with_callback`의 `Promise`를 돌려준다. future는 바꾼 인자와
+  guard를 가지고, fault는 poll마다 설치되며(`fault::Armed::around`), poll의 panic은 kind `internal`이다
+  (`driver::Caught`). Go와 WASM은 그런 member를 이름을 대고 거부한다. binding_core에 새 feature `driver`가 있다.
+  `make check`로 확인했다.
 - `wait: blocking_io`인 member는 모든 target이 거부했다("wait blocking_io is not generated yet"). 그래서
   `tests/e2e/classes`의 `classes.read`와 `gate.enter_slowly`에는 binding이 없었다. 이제 생성기는 코어에
   `binding_core::Io::for_generated_call()`을 넘기고 언어마다 자기 꼴로 기다린다(GN-6m). PHP는 호출 스레드를 막는다.
@@ -25,6 +32,18 @@
   `ScopedTask`로 libuv 풀에서 돌리는 `Promise`를 돌려주고, 그 진입은 async 함수라서 모든 실패가 promise를 거부한다.
   Go는 그런 member를 이름을 대고 거부하고, 기다리는 constructor·property·iterate·hook도 이름을 대고 거부한다. CK-16은
   Python의 예약어인 awaitable 이름도 보고한다. `make test-ts`로 확인했다.
+- 생성기는 다른 module의 class·callback unit을 이름하는 member의 Go 바인딩을 "a class unit of the module tags in the
+  module (the root) is not generated for Go yet"로 거부했다. 이제 Go는 그런 unit에 그 module 패키지의 `<Class>Handle`,
+  `<Class>FromHandle`, `Dispatch<Callback>`으로 닿는다. 그 첫 parameter `binding.Token`은 Go module의 패키지만
+  이름할 수 있다. 패키지는 다른 module이 이름하는 unit에만 그 함수를 두고, CK-13은 그 이름을 세며, 계약의 패키지
+  이름과 같은 parameter는 끝에 `_`를 붙이고, 시험은 다른 module의 생성자를 패키지 이름으로 부르며, 패키지가 서로
+  import하게 될 module은 이름으로 거부한다(GN-15a). `packages/ts`의 `npm test`와, class와 callback을 다른 두
+  module에 둔 sample의 생성 패키지의 `gofmt`, `go vet`으로 확인했다.
+- 생성기는 Go `out` 행이 `"go": "tag.new"`처럼 member로 값을 만드는 값 alias의 Go 바인딩을 "a Go make by a member
+  (tag.new) is not generated yet (U-7)"로 거부했다. 이제 Go는 그런 값을 class의 인스턴스로 준다. C ABI는 계약 안
+  class의 번호와 값의 handle을 적고, `internal/binding`의 `Reader.ValueWith`가 그것을 읽으며, class 패키지의
+  `aliasInstance`가 인스턴스를 만든다. 그 값을 주는 다른 module의 member는 이름으로 거부한다(GN-15c). `packages/ts`의
+  `npm test`와 생성된 패키지의 `gofmt`, `go vet`으로 확인했다.
 - 생성기는 member `to_json`이 있는 class의 Go 바인딩을 거부해서, `tests/e2e/sample`과 `tests/e2e/classes`의
   `tag.to_json`은 PHP와 Node만 이름하고 Go 바인딩에는 JSON 꼴이 없었다. 이제 Go는 to_json을 내보내지 않은 `toJSON`
   위의 `json.Marshaler`의 `MarshalJSON`으로 준다. 이것은 코어의 값을 `encoding/json`으로 marshal하고 코어의 오류를

@@ -21,6 +21,13 @@
   `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
   (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
   `blocking_io`), which this change does not touch.
+- A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
+  `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
+  runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,
+  and Node returns a `Promise` of `Env::spawn_future_with_callback` on the runtime of napi (`tokio_rt`). The future
+  owns the converted arguments and guards, its faults are installed around each poll (`fault::Armed::around`), and a
+  panic of a poll is kind `internal` (`driver::Caught`). Go and WASM refuse such a member by name. binding_core has the
+  new feature `driver`. Verified by `make check`.
 - A member with `wait: blocking_io` was refused by every target ("wait blocking_io is not generated yet"), so
   `classes.read` and `gate.enter_slowly` of `tests/e2e/classes` had no binding. The generator now passes
   `binding_core::Io::for_generated_call()` to the core and waits in the form of each language (GN-6m): PHP blocks the
@@ -29,6 +36,20 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
+  class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
+  through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first
+  parameter `binding.Token` only the packages of the Go module can name; a package has them only for a unit that
+  another module names, CK-13 counts their names, a parameter that has the name of a package of the contract takes a
+  trailing `_`, a test calls a constructor of another module by its package, and modules whose packages would import
+  each other are refused by name (GN-15a). Verified by `npm test` in `packages/ts` and `gofmt` and `go vet` of the
+  generated packages of the sample with its class and its callback in two other modules.
+- The generator refused the Go binding of a value alias whose Go `out` row makes the value by a member, such as
+  `"go": "tag.new"`, with "a Go make by a member (tag.new) is not generated yet (U-7)". Go now gives such a value as
+  the instance of the class: the C ABI writes the number of the class in the contract and the handle of the value,
+  `Reader.ValueWith` of `internal/binding` reads them, and `aliasInstance` of the package of the class makes the
+  instance; a member of another module that gives the value is refused by name (GN-15c). Verified by `npm test` in
+  `packages/ts` and `gofmt` and `go vet` of the generated packages.
 - The generator refused the Go binding of a class with a member `to_json`, so `tag.to_json` of `tests/e2e/sample`
   and `tests/e2e/classes` named only PHP and Node and the Go binding had no JSON form. Go now gives a to_json as
   `MarshalJSON` of `json.Marshaler` over the unexported `toJSON`, which marshals the value of the core with

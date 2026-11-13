@@ -186,6 +186,16 @@ impl Gate {
         self.enter()
     }
 
+    /// What enters the gate, awaited as an async driver would be (I-2 (4): wait async_driver).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed, and kind `unsupported` when the call runs on no tokio runtime (GN-6n).
+    pub async fn enter_later(&self) -> Result<String, Error> {
+        on_runtime().await?;
+        self.enter()
+    }
+
     /// Closes the gate.
     ///
     /// # Errors
@@ -210,6 +220,29 @@ pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
         return Err(Error::Missing { key: String::from("name") });
     }
     Ok(format!("the text of {name}"))
+}
+
+/// The text of a name, awaited as an async driver would be (I-2 (4): wait async_driver).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty, and kind `unsupported` when the call runs on no tokio runtime (GN-6n).
+pub async fn fetch(name: &str) -> Result<String, Error> {
+    on_runtime().await?;
+    if name.is_empty() {
+        return Err(Error::Missing { key: String::from("name") });
+    }
+    Ok(format!("the fetched text of {name}"))
+}
+
+/// GN-6n: a core of tokio needs the runtime of its call, so an async member fails where the binding gives none. The
+/// call yields once, so that the future is polled again.
+async fn on_runtime() -> Result<(), Error> {
+    tokio::task::yield_now().await;
+    match tokio::runtime::Handle::try_current() {
+        Ok(_handle) => Ok(()),
+        Err(error) => Err(Error::Unsupported { what: format!("a call outside a tokio runtime: {error}") }),
+    }
 }
 
 /// The names of the tags, joined by commas.

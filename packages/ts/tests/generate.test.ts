@@ -741,7 +741,7 @@ test('an out row of a value alias makes a keyed map of the keys it lists in ever
   }
 });
 
-test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e)', () => {
+test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e, GN-15c)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
   for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
@@ -756,6 +756,24 @@ test('an out row of a value alias makes an instance by a factory of a class of t
     assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
     assert.match(text(out, path), /\nfn out_tag\(/, path);
   }
+  // GN-15c: Go gives the number of the class and the handle, and the package of the class makes the instance.
+  row.make.go = 'tag.new';
+  const go = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const ffi = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.ok(ffi.includes('        OutValue::Text(value) => alias_out_tag(output, polyspec_sample::Tag::new(&value)),'), ffi);
+  assert.match(ffi, /\nfn alias_out_tag\(output: &mut Vec<u8>, value: polyspec_sample::Tag\) \{\n {4}output\.push\(10\);\n {4}out_uint\(output, 0u64\);\n {4}out_tag\(output, value\);\n\}/);
+  const pkg = text(go, 'packages/go/zz_generated_sample.go');
+  assert.match(pkg, /= dec\.ValueWith\(aliasInstance\)/);
+  assert.match(pkg, /\nfunc aliasInstance\(class uint64, handle uint64\) any \{\n\tswitch class \{\n\tcase 0:\n\t\treturn newTag\(handle\)\n\t\}\n\treturn nil\n\}\n/);
+  assert.match(text(go, 'packages/go/internal/binding/zz_generated_binding.go'), /\n\tcase 10:\n\t\tclass, handle := r\.Uint\(\), r\.Uint\(\)\n/);
+  // Only the package of the class makes its instance, so a member of another module that gives the value is refused.
+  const moved = structuredClone(sample);
+  moved.units.find((u: any) => u.id === 'tag').module = 'tags';
+  const owner = moved.units.find((u: any) => u.id === 'sample');
+  owner.members = owner.members.filter((m: any) => !JSON.stringify(m).includes('"unit":"tag"'));
+  moved.cases = [];
+  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), /tag: a class whose instance an out row of the alias data makes of the module tags in the module \(the root\) is not generated for Go yet/);
+  row.make.go = 'text';
   // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
   row.kind = 'bool';
   row.make = { php: 'bool', python: 'bool', node: 'tag.new', go: 'bool', wasm: 'bool' };
@@ -1786,10 +1804,28 @@ test('the refusals of each target are named together, and a target generates alo
   const five = sample;
   assert.deepEqual(five.targets, FIVE);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] }).size > 0);
-  // A member of a class in another module is refused by name in Go, whose handle of the class is unexported.
+  // GN-15a: a member of another module reaches a class and a callback through the functions of their packages that
+  // take binding.Token, and its test makes an instance by the constructor of that package.
   const moved = JSON.parse(JSON.stringify(five));
   moved.units.find((u: any) => u.id === 'tag').module = 'tags';
-  assert.throws(() => generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /tag: a class unit of the module tags in the module \(the root\) is not generated for Go yet/);
+  moved.units.find((u: any) => u.id === 'lookup').module = 'lookups';
+  const split = generate({ contract: moved, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] });
+  const root = text(split, 'packages/go/zz_generated_sample.go');
+  assert.match(root, /\tenc\.Uint\(tags\.TagHandle\(binding\.Token\{\}, tag\)\)\n/);
+  assert.match(root, /= tags\.TagFromHandle\(binding\.Token\{\}, dec\.Uint\(\)\)\n/);
+  assert.match(root, /call\.Callback\(enc, lookups\.DispatchLookup\(binding\.Token\{\}, [a-z]+\)\)/);
+  const tags = text(split, 'packages/go/tags/zz_generated_tags.go');
+  assert.match(tags, /\nfunc TagHandle\(_ binding\.Token, this \*Tag\) uint64 \{\n\treturn this\.handle\(\)\n\}\n/);
+  assert.match(tags, /\nfunc TagFromHandle\(_ binding\.Token, handle uint64\) \*Tag \{\n\treturn newTag\(handle\)\n\}\n/);
+  assert.match(text(split, 'packages/go/lookups/zz_generated_lookups.go'), /\nfunc DispatchLookup\(_ binding\.Token, object Lookup\) binding\.Callback \{\n\treturn dispatchLookup\(object\)\n\}\n/);
+  assert.match(text(split, 'packages/go/internal/binding/zz_generated_binding.go'), /\ntype Token struct\{\}\n/);
+  assert.match(text(split, 'packages/go/zz_generated_test.go'), /Join\(\[\]\*tags\.Tag\{\}\)/);
+  assert.doesNotMatch(text(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), 'packages/go/zz_generated_sample.go'), /FromHandle|TagHandle/);
+  // Packages that would import each other are refused by name.
+  const cycle = JSON.parse(JSON.stringify(moved));
+  const tag = cycle.units.find((u: any) => u.id === 'tag');
+  tag.members.push({ ...tag.members.find((m: any) => m.id === 'tag.name'), id: 'tag.counter', name: ['counter'], returns: { unit: 'counter' } });
+  assert.throws(() => generate({ contract: cycle, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }), /the Go packages of the modules \(the root\) and tags import each other, which Go refuses \(GN-15a\)/);
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['go'] }).has('packages/go/zz_generated_sample.go'));
   assert.ok(generate({ contract: five, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['wasm'] }).has('packages/ts/wasm/generated/lib.rs'));
 });
@@ -1911,6 +1947,54 @@ test('an error unit in a module is the class of the namespace or the module of i
   // Node and WASM: the entries export the class by its name.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
+});
+
+test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  // The future owns the converted arguments and the guards, and awaits the async fn of the core.
+  const future = /async move \{[^\n]*polyspec_classes::fetch\(&name\)\.await/;
+  const method = /async move \{[^\n]*polyspec_classes::Gate::enter_later\(&[a-z_]+\)\.await/;
+  // PHP: the calling thread blocks on the runtime of binding_core.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /binding_core::driver::block_on\(binding_core::driver::Caught::new\(/);
+  assert.match(php, future);
+  assert.match(php, method);
+  // Python: the future runs without the GIL, and a<name> runs <name> in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| binding_core::driver::block_on\(/);
+  assert.match(python, future);
+  assert.match(python, /#\[pyfunction\(name = "afetch", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /#\[pyo3\(name = "aenter_later", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /\nasync def afetch\(name: str\) -> str: \.\.\./);
+  // Node: a Promise of the future on the tokio runtime of napi, whose result is converted on the JavaScript thread.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /env\s*\.spawn_future_with_callback\(driven\(binding_core::driver::Caught::new\(future\)\)/);
+  assert.match(node, future);
+  assert.match(node, method);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function fetch\(name: string\): Promise<string>;/);
+  assert.match(dts, /\n {2}enterLater\(\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.fetch\('a'\)/);
+  // The binding crates turn on the driver of binding_core, and the Node crate the tokio runtime of napi.
+  const crates = trackedPackages(read('packages/rust/interface.json'), '0.0.0');
+  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml']) {
+    assert.match(String(crates.get(crate)), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
+  }
+  assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
+  assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
+  // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
+  };
+  assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
+  assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {

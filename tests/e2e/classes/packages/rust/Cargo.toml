@@ -11,6 +11,8 @@ path = "src/lib.rs"
 
 [dependencies]
 polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }
+# GN-6n: the async members require the tokio runtime of their call.
+tokio = { version = "=1.54.1", default-features = false, features = ["rt"] }
 
 [lints]
 workspace = true

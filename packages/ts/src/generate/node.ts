@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -488,7 +488,13 @@ function entryRust(model: Model, fn: Fn): string {
   lines.push(...locks(model, fn));
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
-  if (waitsIo(fn)) {
+  if (waitsAsync(fn)) {
+    // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
+    // is converted on the JavaScript thread.
+    const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
+    const give = convertOut(model, fn.returns, 'result');
+    lines.push(`        driving(env, ${futureOf(model, fn, body)}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+  } else if (waitsIo(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
     const faults = model.faults.length > 0;
@@ -508,7 +514,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!waitsIo(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!awaits(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -573,6 +579,34 @@ where
     fn resolve(&mut self, env: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
         output.and_then(|value| (self.give)(env, value)).map_err(|fail| throw(env, fail))
     }
+}
+`;
+
+// GN-6n: the future of a member with wait async_driver, on the tokio runtime of napi. A panic of a poll is a failure of
+// kind internal (B-7), and the result or the failure is converted on the JavaScript thread.
+const DRIVING = `
+/// GN-6n: starts the future of a member with wait async_driver and gives its promise.
+fn driving<'env, F, O>(env: &'env Env, future: F, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+where
+    F: std::future::Future<Output = Result<O, Fail>> + Send + 'static,
+    O: Send + 'static,
+{
+    let promise = env
+        .spawn_future_with_callback(driven(binding_core::driver::Caught::new(future)), move |env, ended: Result<O, Fail>| {
+            ended.and_then(|value| give(env, value)).map_err(|fail| throw(env, fail))
+        })
+        .map_err(internal)?;
+    Ok(promise.to_unknown())
+}
+/// GN-6n: the end of the future of a member with wait async_driver; a panic of a poll is kind internal (B-7).
+async fn driven<F, O>(future: binding_core::driver::Caught<F>) -> napi::Result<Result<O, Fail>>
+where
+    F: std::future::Future<Output = Result<O, Fail>>,
+{
+    Ok(match future.await {
+        Ok(result) => result,
+        Err(detail) => Err(binding_error(BindingError::Internal { detail })),
+    })
 }
 `;
 
@@ -875,7 +909,7 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
@@ -1115,13 +1149,13 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${waitsIo(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
     const name = langName('node', fn.member.name, 'callable');
     return `
-${waitsIo(fn) ? 'async ' : ''}function ${name}(...args) {
+${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
 ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
 }`;
   }).join('\n');
@@ -1135,7 +1169,7 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: ${waitsIo(fn) ? 'async ' : ''}function ${name}(...args) {
+    value: ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
     },
     writable: true,
@@ -1257,7 +1291,7 @@ function indexDts(model: Model): string {
     return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
   };
   // GN-6m: a member that waits returns a Promise of its result.
-  const returned = (fn: Fn): string => (waitsIo(fn) ? `Promise<${tsType(model, fn.returns, false)}>` : tsType(model, fn.returns, false));
+  const returned = (fn: Fn): string => (awaits(fn) ? `Promise<${tsType(model, fn.returns, false)}>` : tsType(model, fn.returns, false));
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);

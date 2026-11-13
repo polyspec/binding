@@ -12,8 +12,8 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo } from './model.ts';
-import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo, waitsAsync } from './model.ts';
+import { type Echoes, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
 import type { Files } from './text.ts';
@@ -63,9 +63,19 @@ export function goSubject(name: Name): string {
 }
 
 // The Go parameter: the subject, with _ after it where it is a keyword or a local of the generated body.
-export function goParam(name: Name): string {
+// GN-15a: the package names of the modules of a contract, which a parameter does not shadow.
+const PACKAGES = new WeakMap<Model, Set<string>>();
+const packageNames = (model: Model): Set<string> => {
+  const known = PACKAGES.get(model);
+  if (known !== undefined) return known;
+  const names = new Set(model.contract.units.map((u) => goPackage(model.contract, u.module)));
+  PACKAGES.set(model, names);
+  return names;
+};
+
+export function goParam(name: Name, model: Model): string {
   const joined = goSubject(name);
-  return GO_KEYWORDS.has(joined) || GO_LOCALS.has(joined) ? `${joined}_` : joined;
+  return GO_KEYWORDS.has(joined) || GO_LOCALS.has(joined) || packageNames(model).has(joined) ? `${joined}_` : joined;
 }
 
 export const goName = (name: Name): string => langName('go', name, 'class');
@@ -97,6 +107,11 @@ export interface GoScope {
   usesKeyed?: boolean;
   // GN-16: the arities of the tuples of different part types that the package names, as Tuple<N>.
   usesTuples?: Set<number>;
+  // U-7, GN-15c: the classes of the package whose instances the out rows of a value alias make, which aliasInstance
+  // makes by their numbers.
+  aliasInstances?: Set<ObjectClass>;
+  // GN-15a: the classes and callbacks of other modules that the package reaches through binding.Token.
+  reaches?: Set<string>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesJson?: boolean;
@@ -114,8 +129,16 @@ export const callbackOf = (model: Model, type: Type): CallbackUnit | undefined =
   return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
 };
 
-// T-5, U-3: a class or a callback is a type of the package of its module, which another module cannot make or
-// implement through the unexported functions of that package.
+// GN-15a: a class or a callback of another module, which the package reaches through the functions of the package of
+// that module that take binding.Token; undefined for one of this module.
+function reached(scope: GoScope, unit: Unit): string | undefined {
+  if (unit.module === scope.module) return undefined;
+  (scope.reaches ??= new Set()).add(unit.id);
+  scope.imports.add(unit.module);
+  return goPackage(scope.model.contract, unit.module);
+}
+
+// U-7, GN-15c: only the package of a class makes its instance by the number of the class.
 function sameModule(scope: GoScope, unit: Unit, what: string): void {
   if (unit.module !== scope.module) throw new Unsupported(`${unit.id}: a ${what} of the module ${unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its handle and dispatch are unexported)`);
 }
@@ -150,15 +173,9 @@ export function goType(scope: GoScope, type: Type): string {
   // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
   if (aliasOf(scope.model, type) !== undefined) return 'any';
   const object = objectUnit(scope.model, type);
-  if (object !== undefined) {
-    sameModule(scope, object.unit, 'class unit');
-    return `*${goName(object.unit.name)}`;
-  }
+  if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
-  if (callback !== undefined) {
-    sameModule(scope, callback.unit, 'callback unit');
-    return goName(callback.unit.name);
-  }
+  if (callback !== undefined) return goUnitName(scope, callback.unit);
   if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
@@ -279,11 +296,17 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   // U-7: a value of an alias is the call that walks it and its first level.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
   // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
-  if (objectUnit(scope.model, type) !== undefined) return [`${t}enc.Uint(${expr}.handle())`];
+  const object = objectUnit(scope.model, type);
+  if (object !== undefined) {
+    const pkg = reached(scope, object.unit);
+    return [`${t}enc.Uint(${pkg === undefined ? `${expr}.handle()` : `${pkg}.${goName(object.unit.name)}Handle(binding.Token{}, ${expr})`})`];
+  }
   // U-3: a callback is the call and its index in it; a nil interface is kind invalid_callback.
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) {
-    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, dispatch${goName(callback.unit.name)}(${expr}))`, `${t}}`];
+    const pkg = reached(scope, callback.unit);
+    const dispatch = pkg === undefined ? `dispatch${goName(callback.unit.name)}(${expr})` : `${pkg}.Dispatch${goName(callback.unit.name)}(binding.Token{}, ${expr})`;
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, `${t}\tcall.Callback(enc, ${dispatch})`, `${t}}`];
   }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum') return [`${t}enc.Text(string(${expr}))`];
@@ -333,9 +356,20 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, tuplePart(scope, type.tuple, target, i), indent, depth));
   // U-7: a value of an alias is the Go value that its out rows make.
-  if (aliasOf(scope.model, type) !== undefined) return [`${t}${target} = dec.Value()`];
+  const valueAlias = aliasOf(scope.model, type);
+  if (valueAlias !== undefined) {
+    const instances = aliasInstances(scope.model, valueAlias);
+    if (instances.length === 0) return [`${t}${target} = dec.Value()`];
+    // GN-15c: only the package of a class makes its instance, as aliasInstance of that package.
+    for (const object of instances) sameModule(scope, object.unit, `class whose instance an out row of the alias ${valueAlias.unit.id} makes`);
+    for (const object of instances) (scope.aliasInstances ??= new Set()).add(object);
+    return [`${t}${target} = dec.ValueWith(aliasInstance)`];
+  }
   const object = objectUnit(scope.model, type);
-  if (object !== undefined) return [`${t}${target} = new${goName(object.unit.name)}(dec.Uint())`];
+  if (object !== undefined) {
+    const pkg = reached(scope, object.unit);
+    return [`${t}${target} = ${pkg === undefined ? `new${goName(object.unit.name)}(dec.Uint())` : `${pkg}.${goName(object.unit.name)}FromHandle(binding.Token{}, dec.Uint())`}`];
+  }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum') return [`${t}${target} = ${goUnitName(scope, unit)}(dec.Text())`];
   if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goDecode(scope, fieldWire(f), `${target}.${goName(f.name)}`, indent, depth));
@@ -374,7 +408,7 @@ export const goResultCount = (fn: Fn): number => {
 
 function goCallable(scope: GoScope, fn: Fn): string {
   const model = scope.model;
-  const params = fn.params.map((p) => `${goParam(p.name)} ${paramType(scope, fn, p)}`).join(', ');
+  const params = fn.params.map((p) => `${goParam(p.name, scope.model)} ${paramType(scope, fn, p)}`).join(', ');
   const results = memberResults(scope, fn);
   const signature = results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})`;
   const zero = results.map((_, i) => `zero${i}`);
@@ -384,11 +418,11 @@ function goCallable(scope: GoScope, fn: Fn): string {
   if (fn.params.some((p) => needsCall(model, p.type))) lines.push('\tcall := binding.NewCall()', '\tdefer call.Close()');
   lines.push('\tenc := binding.NewWriter()');
   if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
-  for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name), 1, 0));
+  for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
   lines.push(`\tout, err := binding.${bindingFn(fn)}(enc.Done())`);
   // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
   // the call.
-  const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name))];
+  const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name, scope.model))];
   for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
   if (alive.length > 0) scope.usesRuntime = true;
   lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}', '\tdec := binding.NewReader(out)');
@@ -541,18 +575,18 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
   const name = goName(cb.unit.name);
   const methods = cb.members.map((m) => {
     const method = langName('go', m.member.name, 'callable');
-    const params = m.params.map((p) => `${goParam(p.name)} ${goType(scope, p.type)}`).join(', ');
+    const params = m.params.map((p) => `${goParam(p.name, scope.model)} ${goType(scope, p.type)}`).join(', ');
     const results = goResults(scope, m.returns);
     return { m, method, params, signature: results.length === 0 ? 'error' : `(${[...results, 'error'].join(', ')})` };
   });
   const cases = methods.map(({ m, method }, index) => {
     const lines: string[] = [`\t\tcase ${index}:`];
     for (const p of m.params) {
-      lines.push(`\t\t\tvar ${goParam(p.name)} ${goType(scope, p.type)}`);
-      lines.push(...goDecode(scope, p.type, goParam(p.name), 3, 0));
+      lines.push(`\t\t\tvar ${goParam(p.name, scope.model)} ${goType(scope, p.type)}`);
+      lines.push(...goDecode(scope, p.type, goParam(p.name, scope.model), 3, 0));
     }
     lines.push('\t\t\tif err := dec.Finish(); err != nil {', '\t\t\t\treturn err', '\t\t\t}');
-    const args = m.params.map((p) => goParam(p.name)).join(', ');
+    const args = m.params.map((p) => goParam(p.name, scope.model)).join(', ');
     if (m.returns === 'none') {
       lines.push(`\t\t\treturn object.${method}(${args})`);
     } else {
@@ -619,8 +653,33 @@ export function goImportBlock(std: string[], own: string[]): string {
   return `import (\n${paths.map((p) => (p === '' ? '' : `\t${p}`)).join('\n')}\n)\n`;
 }
 
-function goPackageFile(model: Model, module: string): string {
-  const scope: GoScope = { model, module, imports: new Set() };
+// GN-15a: the functions through which another module reaches a class or a callback of this package; binding.Token,
+// which only the packages of the Go module can name, keeps them out of the reach of other code.
+function goReachable(scope: GoScope, unit: Unit, callback: boolean): string {
+  const name = goName(unit.name);
+  if (callback) {
+    return `
+// Dispatch${name} is the dispatch of a ${name} for a call of another module of the binding (GN-15a).
+func Dispatch${name}(_ binding.Token, object ${name}) binding.Callback {
+	return dispatch${name}(object)
+}
+`;
+  }
+  return `
+// ${name}Handle is the handle of a ${name} for a call of another module of the binding (GN-15a).
+func ${name}Handle(_ binding.Token, this *${name}) uint64 {
+	return this.handle()
+}
+
+// ${name}FromHandle holds the value under the handle that a call of another module of the binding gave (GN-15a).
+func ${name}FromHandle(_ binding.Token, handle uint64) *${name} {
+	return new${name}(handle)
+}
+`;
+}
+
+function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, seen?: GoScope): string {
+  const scope: GoScope = seen ?? { model, module, imports: new Set() };
   const objects = model.objects.filter((o) => o.unit.module === module);
   const callbacks = model.callbacks.filter((c) => c.unit.module === module);
   const body = [
@@ -630,7 +689,23 @@ function goPackageFile(model: Model, module: string): string {
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
+    ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
+    ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
   ].join('');
+  const made = [...(scope.aliasInstances ?? [])].sort((a, b) => model.objects.indexOf(a) - model.objects.indexOf(b));
+  const instance = made.length === 0
+    ? ''
+    : `
+// aliasInstance makes the instance of a class of this package by its number in the contract, for a value alias whose
+// out rows make an instance by a member (U-7, GN-15c); nil for any other number.
+func aliasInstance(class uint64, handle uint64) any {
+	switch class {
+${made.map((o) => `	case ${model.objects.indexOf(o)}:
+		return new${goName(o.unit.name)}(handle)`).join('\n')}
+	}
+	return nil
+}
+`;
   const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true || (scope.usesTuples?.size ?? 0) > 0;
   const tuples = [...(scope.usesTuples ?? [])].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
@@ -672,7 +747,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
 package ${goPackage(model.contract, module)}
-${imports}${alias}${keyed}${tuples}${body}`;
+${imports}${alias}${keyed}${tuples}${body}${instance}`;
 }
 
 export const categoryType = (model: Model, category: string): string => goErrorTypes(model.contract).find(([c]) => c === category)?.[1] ?? '';
@@ -1112,7 +1187,7 @@ func (r *Reader) Key() Key {
 	r.failed = true
 	return Key{}
 }
-${model.aliases.length === 0 ? '' : GO_VALUE}
+${GO_TOKEN}${model.aliases.length === 0 ? '' : GO_VALUE}
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -1382,16 +1457,30 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 
 // U-7: the Go values that the out rows of a value alias make: nil, bool, int64, float64, string, []byte, []any,
 // map[string]any and *KeyedMap[any]; a container that the core gives twice is the same Go value.
+const GO_TOKEN = `
+// Token is the first parameter of the functions through which a module of the binding reaches a class or a callback
+// of another module (GN-15a): only the packages of the Go module can name this internal package, so no other code
+// calls them.
+type Token struct{}
+`;
+
 const GO_VALUE = `
 // Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
-// 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], and 255 a
-// value that the out rows give no Go form, which fails Finish with kind internal.
+// 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], 10 an
+// instance of a class by the number of the class and its handle, and 255 a value that the out rows give no Go form,
+// which fails Finish with kind internal.
 func (r *Reader) Value() any {
-	var made []any
-	return r.value(&made)
+	return r.ValueWith(nil)
 }
 
-func (r *Reader) value(made *[]any) any {
+// ValueWith decodes a value of a value alias whose out rows make instances of classes (GN-15c): instance makes the
+// instance of the class of a number around its handle, and nil for a number that its package does not make.
+func (r *Reader) ValueWith(instance func(class uint64, handle uint64) any) any {
+	var made []any
+	return r.value(&made, instance)
+}
+
+func (r *Reader) value(made *[]any, instance func(class uint64, handle uint64) any) any {
 	head := r.take(1)
 	if r.failed {
 		return nil
@@ -1413,19 +1502,19 @@ func (r *Reader) value(made *[]any) any {
 		items := make([]any, r.Len())
 		*made = append(*made, items)
 		for at := range items {
-			items[at] = r.value(made)
+			items[at] = r.value(made, instance)
 		}
 		return items
 	case 7:
 		entries := map[string]any{}
 		*made = append(*made, entries)
 		for at, n := 0, r.Len(); at < n; at++ {
-			key, ok := r.value(made).(string)
+			key, ok := r.value(made, instance).(string)
 			if !ok {
 				r.fail("U-7: a key of a map[string]any that is not a text")
 				return nil
 			}
-			entries[key] = r.value(made)
+			entries[key] = r.value(made, instance)
 		}
 		return entries
 	case 8:
@@ -1440,7 +1529,7 @@ func (r *Reader) value(made *[]any) any {
 		*made = append(*made, entries)
 		for at, n := 0, r.Len(); at < n; at++ {
 			var key Key
-			switch found := r.value(made).(type) {
+			switch found := r.value(made, instance).(type) {
 			case int64:
 				key = IntKey(found)
 			case string:
@@ -1451,9 +1540,22 @@ func (r *Reader) value(made *[]any) any {
 				r.fail("U-7: a key of a keyed map that is no integer, byte string or text")
 				return nil
 			}
-			entries.Set(key, r.value(made))
+			entries.Set(key, r.value(made, instance))
 		}
 		return entries
+	case 10:
+		class, handle := r.Uint(), r.Uint()
+		if r.failed {
+			return nil
+		}
+		var made any
+		if instance != nil {
+			made = instance(class, handle)
+		}
+		if made == nil {
+			r.fail(fmt.Sprintf("U-7: an instance of the class %d that the package of the call does not make", class))
+		}
+		return made
 	case 255:
 		r.fail(r.Text())
 		return nil
@@ -1635,6 +1737,8 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
+  // GN-6n: so does a Go member with wait async_driver.
+  for (const fn of callablesOf(model).filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for Go yet (GN-6n)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
@@ -1662,12 +1766,40 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   }
 }
 
+// GN-15a: Go refuses packages that import each other, so modules whose packages would are refused by name.
+function importCycle(imports: Map<string, Set<string>>): void {
+  const label = (module: string): string => (module === '' ? '(the root)' : module);
+  const done = new Set<string>();
+  const visit = (module: string, path: string[]): void => {
+    const at = path.indexOf(module);
+    if (at >= 0) {
+      const cycle = path.slice(at).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b))).map(label);
+      const names = cycle.length === 2 ? cycle.join(' and ') : `${cycle.slice(0, -1).join(', ')} and ${cycle[cycle.length - 1] ?? ''}`;
+      throw new Unsupported(`the Go packages of the modules ${names} import each other, which Go refuses (GN-15a)`);
+    }
+    if (done.has(module)) return;
+    for (const next of imports.get(module) ?? []) visit(next, [...path, module]);
+    done.add(module);
+  };
+  for (const module of imports.keys()) visit(module, []);
+}
+
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
 // model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
   const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module)])];
+  // GN-15a: a first pass finds the units that other modules reach and the modules that each package imports.
+  const reachedFrom = new Set<string>();
+  const imports = new Map<string, Set<string>>();
   for (const module of modules) {
-    files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module));
+    const scope: GoScope = { model, module, imports: new Set() };
+    goPackageFile(model, module, new Set(), scope);
+    for (const id of scope.reaches ?? []) reachedFrom.add(id);
+    imports.set(module, scope.imports);
+  }
+  importCycle(imports);
+  for (const module of modules) {
+    files.set(`${goDir(module)}/zz_generated_${goPackage(model.contract, module)}.go`, goPackageFile(model, module, reachedFrom));
     for (const [name, text] of goTestFiles(model, module)) files.set(`${goDir(module)}/${name}`, text);
   }
   files.set(`${GO}/errors/zz_generated_errors.go`, goErrors(model));
