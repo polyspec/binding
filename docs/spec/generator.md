@@ -517,8 +517,9 @@ the design ids are those of the binding design.
   Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
   type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
   name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
-  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13);
-  and the module dependency of the PHP extension on the extension of the owning package (`ZEND_MOD_REQUIRED`). Why: a
+  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
+  The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
+  the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
   native object of another binding lives in another module, so the binding of this repository can reach it only
   through the methods that the language gives every object (T-3).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and

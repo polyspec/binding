@@ -428,8 +428,8 @@
   패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
   타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
   거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
-  member의 `new`, GN-13f)이며 그 생성 테스트는 그 이유로 실패한다(GN-13), 그리고 소유 패키지의 확장에 대한 PHP 확장의 module 의존
-  (`ZEND_MOD_REQUIRED`). 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
+  member의 `new`, GN-13f)이며 그 생성 테스트는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
+  의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
