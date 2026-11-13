@@ -244,8 +244,11 @@
   parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 이름을 대고 거부하는 것(G-4): record parameter
-  자신의 기본값(`{empty: "object"}`), `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
+  받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
+  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
   기본값, `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,

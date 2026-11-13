@@ -335,8 +335,15 @@ export function collectModel(
       const type = parameter.type;
       const recordUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
       if (recordUnit?.kind === 'record') {
-        // U-2 {empty: "object"}: what the core takes for a record parameter that is left out is not decided.
-        if (parameter.required !== true) throw new Unsupported(`${where}: a default of a record parameter is not generated yet (U-2 {empty: "object"})`);
+        // U-2 {empty: "object"}: a record parameter that is left out is the record with every field left out, which
+        // the core gets with each field None; so each field has a default, and no other default is a record.
+        const declared = parameter.default;
+        if (declared !== undefined) {
+          const shown = 'empty' in declared ? `{empty: ${JSON.stringify(declared.empty)}}` : JSON.stringify(declared);
+          if (!('empty' in declared) || declared.empty !== 'object') throw new Unsupported(`${where}: the default ${shown} of a record parameter is not generated (U-2)`);
+          const lacking = (recordUnit.fields ?? []).find((field) => field.default === undefined);
+          if (lacking !== undefined) throw new Unsupported(`${where}: the default {empty: "object"} leaves out the record, but its field ${lacking.name.join('_')} has no default (U-2)`);
+        }
         record = { unit: recordUnit, param: parameter };
         for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
         continue;

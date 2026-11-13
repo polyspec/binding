@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A record parameter with the default `{empty: "object"}` was refused for every target ("a default of a record
+  parameter is not generated yet"), so a contract with one, such as `parse(source, options = {})`, generated no
+  target. Such a parameter is generated when every field of the record has a default: the core takes the record with
+  every field `None`, Python and PHP leave out the keywords and named arguments of the fields, and Node and WASM take
+  the options record as a trailing argument that may be missing or `undefined`; a record with a field without a
+  default is refused by name (GN-6i). `tests/e2e/shapes` has the member `shapes.wrap` of this form. Verified by
+  `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
 - The Node and WASM declarations named an `int64` parameter `number | bigint` and an `int64` result `bigint`, but the
   binding took and gave a number of the safe integers only, so the case 9223372036854775807 was refused as an
   argument, and `binding` read that integer of a case file as the nearest double. The binding now takes a `bigint` of

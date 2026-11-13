@@ -298,8 +298,12 @@ the design ids are those of the binding design.
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
-  with named arguments skips and the extension cannot tell the two apart. Refused by name (G-4): a default of the
-  record parameter itself (`{empty: "object"}`), a default of an `optional` type, a default of a type that is no
+  with named arguments skips and the extension cannot tell the two apart. A record parameter with the default
+  `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
+  record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
+  then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
+  and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
+  field without a default, any other default of a record parameter, a default of an `optional` type, a default of a type that is no
   number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
   also has the result form.

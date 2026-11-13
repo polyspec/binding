@@ -1148,7 +1148,7 @@ test('a record parameter whose every field has a default may be left out as a wh
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
     assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
-    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = in_default\(member_or_undefined\(&?options, "left", "options"\)\?/);
+    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = in_default\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
     assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
     assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
