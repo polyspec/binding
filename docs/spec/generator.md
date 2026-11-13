@@ -18,7 +18,7 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none`, a default
+  recognizing callback, a function type outside Python (GN-6m), a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
@@ -241,6 +241,24 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6m** A function type (T-2) is taken by the core as
+  `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
+  borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
+  and `E` is the core error. The core may keep the function after the call (template `engine.register`), so the form
+  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
+  converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
+  the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
+  the parameter as `collections.abc.Callable`. Node, PHP and WASM hold a language value that belongs to one thread and
+  one environment, so they generate a function type on the native lifetime (`Native`, its owner table and its release
+  queue) and refuse it until then; Go refuses it (G-4).
+- **GN-6n** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
+  `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
+  an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
+  binding makes the value for each call, so it has nothing to keep, and a borrowed list would not let the core call a
+  member with the receiver `&mut self`. The core type of a record with a callback field has one lifetime parameter
+  (`polyspec_x::Options<'a>`), which the generator names in the `in` function of the record and in every place that
+  holds it. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
+  Node, PHP and WASM give on the native lifetime as GN-6m states.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.

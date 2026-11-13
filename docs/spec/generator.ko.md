@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  recognize가 있는 callback, Python 밖의 함수 타입(GN-6m), value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -198,6 +198,21 @@
   바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
   `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+- **GN-6m** 함수 타입(T-2)은 코어가
+  `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
+  callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
+  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
+  들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
+  `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수 타입을 native
+  수명(`Native`, 그 소유 표와 해제 대기열) 위에서 생성하며, 그때까지 거부한다. Go는 거부한다(G-4).
+- **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
+  `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
+  넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
+  `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가지며
+  (`polyspec_x::Options<'a>`), 생성기는 그 record의 `in` 함수와 그것을 담는 모든 자리에 그 lifetime을 적는다. 코어가 호출
+  뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6m대로 native 수명 위에서
+  그것을 준다.
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
