@@ -1,4 +1,5 @@
 <!-- doc-id: generator -->
+<!-- source-sha256: 0e12966a7fa10d8ccc3f83105997be4a77ec6d910cb16f16779083ec6170253e -->
 # 생성기
 
 [English](generator.md)
@@ -156,16 +157,16 @@
   `&T`를, optional이나 list의 항목은 그 둘 중 하나의 참조를 준다): 변환 `out_<class>`는 `impl CoreForm<T>`를 받아 소유한 값은 그대로 두고
   빌린 값은 복제하므로, 인스턴스는 코어를 빌리지 않는다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
   property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
-  napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를 유지하지 않으므로, Node
-  생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를 내보낸다(`instanceof`는
-  proxy를 거쳐 클래스의 prototype을 읽는다). 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind `invalid_argument_type`)
-  코어는 가진 값을 빌린다(GN-6h). Node에서는 인스턴스를 그 class의 type tag를 확인하는 `ClassInstance`로 꺼낸다: napi-rs는
-  참조 `&T`를 자기가 생성한 인자 변환에서만 주고 호출 본문이 만든 참조를 거부하는데, 생성 함수는 값을 직접 판정하려고
-  날 값을 받기 때문이다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
-  그런 클래스로 생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
-  인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
-  진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다. member는 JavaScript가
-  예약한 이름(`null`, `delete`)을 가질 수 있는데 그 이름은 함수 이름이 될 수 없고, 메서드는 `<name>`을 `name`으로 지닌다.
+  인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을
+  하는 `<name>`을 정의한다. 진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다.
+  member는 JavaScript가 예약한 이름(`null`, `delete`)을 가질 수 있는데 그 이름은 함수 이름이 될 수 없고, 메서드는 `<name>`을
+  `name`으로 지닌다. napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를
+  유지하지 않으므로, Node 생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를
+  내보낸다. `instanceof`는 proxy를 거쳐 클래스의 prototype을 읽는다. 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind
+  `invalid_argument_type`) 코어는 가진 값을 빌린다(GN-6h). Node에서는 인스턴스를 그 class의 type tag를 확인하는
+  `ClassInstance`로 꺼낸다: napi-rs는 참조 `&T`를 자기가 생성한 인자 변환에서만 주고 호출 본문이 만든 참조를 거부하며,
+  생성 함수는 날 값을 받아 스스로 판정한다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는 그런 클래스로
+  생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
 - **GN-6h** class unit의 잠금(U-2 busy, B-5c). class의 자리는 호출이 그 인스턴스를 받는 곳이다: member의 receiver, 또는 타입이
   그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`다. 그 밖의 자리는 모두 읽기 쪽 자리이며, parameter는
   계약이 그 빌림을 적기 전까지 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
@@ -345,8 +346,8 @@
   모든 공개 이름을 다시 내보낸다(P-3). enum은
   `enum.StrEnum`이다(T-6). 패키지는 Python 3.14가 필요하다(abi3-py314). list parameter는
   list나 tuple을 받는다. `keyed_map<T>{key}`는 순서대로의 `dict`이며 key는 계약이 적은 종류의 `int`(`bool`이 아닌 것),
-  `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `polyspec`에는
-  `__init__.py`가 없다(P-1). `map<T>`는 key가 `str`인 순서대로의 `dict`이며, 그 밖의 key는 kind `invalid_argument_type`이다.
+  `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `map<T>`는 key가
+  `str`인 순서대로의 `dict`이며, 그 밖의 key는 kind `invalid_argument_type`이다. `polyspec`에는 `__init__.py`가 없다(P-1).
 - **GN-12** Node: addon은 원시 값을 받는다(T-8). 생성된 CommonJS 진입점은 인자의 개수, 이름, options record member의 존재를
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
@@ -365,7 +366,7 @@
   정수가 아닌 number key는 모든 target에서 kind `invalid_number`다. 전에는 Node와 WASM이 `invalid_argument_type`을 냈다.
   계약이 나열하지 않은 종류의 key는 그대로 kind `invalid_argument_type`이다(T-2). 이유: 거부된 수는 모든 자리에서 B-2의
   kind를 가지므로, 같은 key는 모든 target에서 같은 kind를 준다.
-  Node과 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
+  Node와 WASM: `int64` parameter는 i64 범위의 `bigint`나 안전 정수의 number를 받고, 그 밖의 값은 kind
   `invalid_number`다(B-2). `int64` 결과는 `bigint`여서 i64의 전 범위가 나가며, 선언(들어올 때 `number | bigint`, 나갈 때
   `bigint`)과 같다. case 파일은 안전 정수 밖의 정수를 JSON token으로 주고, `binding`은 그것을 `bigint`로 읽으며 모든 시험은
   그 10진 token으로 쓴다. Node 시험은 `bigint` literal로 쓴다(G-5).
@@ -544,12 +545,12 @@
   `Option::unwrap_or_default`를 부르므로 export는 그 allow 하나를 가진 모듈 하나에 둔다. `wasm32-unknown-unknown`의 표준
   라이브러리는 `panic=abort`로 빌드되므로 거기서 `catch_unwind`는 panic을 잡지 못하고 panic은 trap이 된다(GW-7): 모든 export는
   패키지가 내보내지 않는 모듈 `state.mjs`를 거쳐 호출하며, 이 모듈은 `WebAssembly.RuntimeError`를 internal 클래스의 kind
-  `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. 모듈을 다시 인스턴스화하지
-  않는다. 그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
-  `internal`을 낸다(B-7). `bytes`는 양방향 모두 `Uint8Array`이고 `source`는 Node와 같이 문자열(그 UTF-8) 또는
-  `Uint8Array`를 받는다(GN-6j, T-7). 기본값이 있는 parameter나 field(GN-6i)는 Node와 같이 생략한다: 빠진 뒤쪽 인자, 옵션
-  record에 없는 member, 또는 `undefined`이며 모듈은 이를 `None`으로 넘긴다. ES 모듈은 인자 개수를 필수 인자 수부터 전체
-  수까지 센다.
+  `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. `bytes`는 양방향 모두
+  `Uint8Array`이고 `source`는 Node와 같이 문자열(그 UTF-8) 또는 `Uint8Array`를 받는다(GN-6j, T-7). 기본값이 있는
+  parameter나 field(GN-6i)는 Node와 같이 생략한다: 빠진 뒤쪽 인자, 옵션 record에 없는 member, 또는 `undefined`이며 모듈은
+  이를 `None`으로 넘긴다. ES 모듈은 인자 개수를 필수 인자 수부터 전체 수까지 센다. 모듈을 다시 인스턴스화하지 않는다.
+  그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
+  `internal`을 낸다(B-7).
 - **GN-18a** WASM의 class unit(T-5): ES 모듈이 정의하는 class이며 Node class의 member(GN-6b, GN-6f, GN-6g: 생성자, static
   member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
   그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
@@ -657,7 +658,7 @@
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
-  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
   errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
@@ -707,7 +708,8 @@
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
 
 - **GN-13b** Go: 패키지의 시험은 시험이 인스턴스의 handle을 읽도록 그 패키지 안의 `zz_generated_test.go`이며 `go test`로
-  실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53, `int` key의 `keyed_map` parameter마다 key 2^53이 kind `invalid_number`인 B-2(GN-12a), text parameter·field마다 B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, U-2(기본값이 있는 인자를
+  실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53이 kind `invalid_number`인 B-2(GN-12a), `int` key의 `keyed_map` parameter마다 key 2^53이 kind
+  `invalid_number`인 것(GN-12a), text parameter·field마다 B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, U-2(기본값이 있는 인자를
   뺀 호출은 기본값을 준 호출과 같다), U-7(member를 거친 alias의 kind), K-2(nil callback, callback의 오류가 호출의 오류다),
   raise하는 contract case마다 B-4(E-2와 E-7의 정확한 타입, 그 category의 `errors.As`, kind, status, errno), raise하지 않는
   case마다 GN-13e, stringify마다 N-4. class의 case 값은 다른 target과 같이 쓴다: instance 값(GN-13f), origin value인
@@ -715,7 +717,7 @@
   쓰지 못하는 case는 그 이유로 실패하는 시험을 가지고, 다른 시험은 쓰인다(GN-13e). 실패를 장전하는 case는 build tag `polyspec_fault_test`가 붙은
   `zz_generated_fault_test.go`이며, 장전이 스레드의 것이므로 goroutine을 스레드에 묶는다. B-5c의 poison 시험은 build tag
   `polyspec_panic_test`가 붙은 `zz_generated_held_test.go`다. 끝에서 끝까지 확인은 crate의 시험 feature마다 tag
-  `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 같은 tag가 C ABI의
+  `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 이 파일이 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
   latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`와 `codec-test`는 시험

@@ -777,7 +777,7 @@ the design ids are those of the binding design.
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify`, `json_encode` or or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  test of a to_json calls `JSON.stringify`, `json_encode` or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
