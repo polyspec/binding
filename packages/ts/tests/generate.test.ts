@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
@@ -1039,8 +1039,10 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.match(goMod({ path: '../../../points/packages/rust' }), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n\\nreplace ${module} => \\.\\.\\/\\.\\.\\/\\.\\.\\/points\\/packages\\/go\\n$`));
   assert.match(goMod('=0.1.2'), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
   assert.match(goMod({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
-  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }]) {
-    assert.throws(() => goMod(spec), /polyspec-points: the dependency line of the core names no path, exact version or tag, so the Go module of points has no version \(GN-15f\)/, JSON.stringify(spec));
+  // GN-3e: a branch, a commit and a version range are development forms, which give v0.0.0 without a replace line; a
+  // tag beside a branch is no release form either.
+  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }, { git: 'https://github.com/polyspec/points.git', branch: 'main', tag: 'v0.1.2' }]) {
+    assert.match(goMod(spec), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n$`), JSON.stringify(spec));
   }
   // A library whose records the contract does not name is not required: the consumer names only a value alias.
   const consumer = consumerSample();
@@ -1062,6 +1064,81 @@ test('binding scaffold reads the contract of a path dependency and writes its Go
     for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
     execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The plot and the points of the end-to-end check in a directory, with a cargo whose metadata names the core of points,
+// as Cargo names the checkout of a git dependency.
+const plotCopy = (): { root: string; env: NodeJS.ProcessEnv } => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
+  for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+  execFileSync('mkdir', ['-p', join(root, 'bin')]);
+  const metadata = JSON.stringify({ packages: [{ name: 'polyspec-points', manifest_path: join(root, 'points/packages/rust/Cargo.toml') }] });
+  writeFileSync(join(root, 'bin/cargo'), `#!/bin/sh\ncat <<'EOF'\n${metadata}\nEOF\n`, { mode: 0o755 });
+  return { root, env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` } };
+};
+
+test('a branch dependency of the core generates every target, and only the check of a release reports it (GN-3e, GN-15f, CK-70)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    const path = 'polyspec-points = { path = "../../../points/packages/rust" }';
+    assert.ok(readFileSync(manifest, 'utf8').includes(path));
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(path, 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
+    const contract = join(root, 'plot/packages/rust/interface.json');
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const scaffold = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(scaffold.status, 0, scaffold.stderr);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n$/);
+    assert.match(readFileSync(join(root, 'plot/packages/python/Cargo.toml'), 'utf8'), /\npolyspec-points = \{ git = "https:\/\/github\.com\/polyspec\/points\.git", branch = "main" \}\n/);
+    // No command stops with a stack trace or with the Go version, for any target.
+    const out = join(root, 'out');
+    for (const target of ['python', 'node', 'php', 'wasm', 'go']) {
+      const generated = run('generate', '--root', join(root, 'plot'), '--out', out, '--target', target);
+      assert.doesNotMatch(generated.stderr, /GN-15f|\n {4}at /, target);
+    }
+    const checked = run('check', contract);
+    assert.doesNotMatch(checked.stderr, /CK-19|CK-70|GN-15f|\n {4}at /);
+    // CK-70: the check of a release names the line.
+    const release = run('check', contract, '--release');
+    assert.equal(release.status, 1);
+    assert.match(release.stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-points names the branch main, a development form, and a release names the version =X\.Y\.Z or the tag vX\.Y\.Z \(GN-3e\)\n/);
+    assert.doesNotMatch(release.stderr, /CK-19|\n {4}at /);
+    // A tag is the release form, which CK-70 passes.
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('branch = "main"', 'tag = "v0.1.2"'));
+    assert.equal(run('scaffold', '--root', join(root, 'plot')).status, 0);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+    assert.doesNotMatch(run('check', contract, '--release').stderr, /CK-70/);
+    // An option that check does not know is an error of the command line.
+    assert.equal(run('check', contract, '--publish').status, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a tracked package that scaffold cannot write is named, and the other packages are written and compared (GN-3e, CK-19)', () => {
+  const { root, env } = plotCopy();
+  try {
+    // points has no Go module, whose record the Go binding of plot names.
+    const pointsPath = join(root, 'points/packages/rust/interface.json');
+    const points = JSON.parse(readFileSync(pointsPath, 'utf8'));
+    points.targets = points.targets.filter((target: string) => target !== 'go');
+    delete points.packages.go;
+    writeFileSync(pointsPath, JSON.stringify(points));
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+    const scaffold = run('scaffold', '--root', join(root, 'plot'));
+    assert.equal(scaffold.status, 1);
+    assert.match(scaffold.stderr, /^binding: packages\/go: not written: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\)\n$/);
+    assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
+    for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
+      assert.equal(existsSync(join(root, 'plot/packages', written)), true, written);
+    }
+    const checked = run('check', join(root, 'plot/packages/rust/interface.json'));
+    assert.equal(checked.status, 1);
+    assert.match(checked.stderr, /plot\/packages\/go: CK-19 binding scaffold does not write it: points: the library has no Go module \(packages\.go\), whose record or value class the Go binding names \(GN-15f\) \(L-2\)\n/);
+    assert.doesNotMatch(checked.stderr, /CK-19 (is missing|differs)|\n {4}at /);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
