@@ -23,8 +23,7 @@ import { trackedPackages } from '../src/generate/packages.ts';
 // is the one whose first unit is words.
 const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
 const TAKEN: Record<string, string[]> = {
-  // Go refuses the tuple of two types in the list that words.split returns (a Go array has one element type).
-  fixture: ['php', 'python', 'node', 'wasm'],
+  fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
@@ -78,36 +77,44 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
+test('the fixture names the five targets, and the generator refuses a target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
-  const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
+  // GN-12: a keyed map inside a list is refused for Node and WASM, whose entry turns a Map into its entries.
+  const root = mkdtempSync(join(tmpdir(), 'binding-v-'));
   const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
   try {
-    // The target Go alone writes nothing.
-    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    const path = join(root, 'packages/rust/interface.json');
+    const contract = JSON.parse(readFileSync(path, 'utf8'));
+    contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
+    writeFileSync(path, JSON.stringify(contract));
+    const refused = /node: not generated \(G-4\), 1 item:\n  split: a map<T> or keyed_map<T> inside another type is not generated for node[^\n]* yet \(GN-12\)/;
+    // The target Node alone writes nothing.
+    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'node'], { encoding: 'utf8' });
     // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
     assert.equal(alone.status, 1, alone.stderr);
     assert.doesNotMatch(alone.stderr, /usage:/);
-    assert.match(alone.stderr, goRefused);
+    assert.match(alone.stderr, refused);
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
-    // Every target: the refused Go is named, and every other target is written as it is alone.
-    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
+    // Every target: the refused Node and WASM are named, and every other target is written as it is alone.
+    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out], { encoding: 'utf8' });
     assert.equal(whole.status, 1, whole.stderr);
     assert.doesNotMatch(whole.stderr, /usage:/);
-    assert.match(whole.stderr, goRefused);
-    assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
+    assert.match(whole.stderr, refused);
+    assert.match(whole.stderr, /generated: php, python, go/);
     const written = files(out);
-    assert.ok(![...written.keys()].some((path) => path.startsWith('packages/go/')), 'the refused target Go wrote files');
+    assert.ok(![...written.keys()].some((file) => file.startsWith('packages/ts/')), 'a refused target wrote files');
     const taken = mkdtempSync(join(tmpdir(), 'binding-w-'));
     try {
-      execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', taken, '--target', FIXTURE_TAKEN]);
+      execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', taken, '--target', 'php,python,go']);
       assert.deepEqual(files(taken), written);
     } finally {
       rmSync(taken, { recursive: true, force: true });
     }
   } finally {
+    rmSync(root, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
   }
 });
@@ -286,7 +293,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
   contract.core.path = 'packages/server/rust';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const dirs = new Set([...out.keys()].map((path) => path.split('/').slice(0, 4).join('/')));
-  assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
+  assert.deepEqual([...dirs].sort(), ['packages/server/go/errors', 'packages/server/go/internal', 'packages/server/go/zz_generated_sample.go', 'packages/server/go/zz_generated_test.go', 'packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
   const root = mkdtempSync(join(tmpdir(), 'binding-h-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
@@ -312,11 +319,15 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
-    // T-2: a Go array has one element type, so a tuple of two types inside a list is refused by name (G-4).
-    assert.throws(() => execFileSync(process.execPath, [cli, 'generate', '--root', root], { stdio: 'pipe' }), /a tuple of \["text","uint"\] inside another type is not generated for Go/);
+    // T-2: a tuple of two types inside a list is a struct of its parts, and a tuple of one type an array.
+    execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]Tuple2\[string, uint64\], error\)/);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /^type Tuple2\[T0, T1 any\] = binding\.Tuple2\[T0, T1\]$/m);
+    assert.match(String(files(join(root, 'packages/go')).get('internal/binding/zz_generated_binding.go')), /^type Tuple2\[T0, T1 any\] struct \{\n\tP0 T0\n\tP1 T1\n\}$/m);
     contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
     writeFileSync(path, JSON.stringify(contract));
     execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]\[2\]string, error\)/);
     const stale = join(root, 'packages/go/zz_generated_stale.go');
     writeFileSync(stale, 'package sample\n');
     writeFileSync(join(root, 'packages/go/go.mod'), 'module github.com/polyspec/sample/packages/go\n');
@@ -416,6 +427,22 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextAboveU00FF\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\u0100"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextThatIsNotUTF8\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\xff"/);
+});
+
+test('Go: a tuple parameter is read part by part, a Tuple<N> of different part types or an array of one (T-2, GN-16)', () => {
+  const { contract } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  contract.units[0].members[0].parameters[0].type = { tuple: ['text', 'uint', 'bool'] };
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const go = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(go, /^func SplitWords\(text_ Tuple3\[string, uint64, bool\], options Options\)/m);
+  assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
+  const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
+  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), in_uint, in_bool\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {

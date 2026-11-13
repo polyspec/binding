@@ -23,8 +23,7 @@ the design ids are those of the binding design.
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
-  parameter.
+  record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -497,8 +496,10 @@ the design ids are those of the binding design.
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
-  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
-  type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
+  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
+  `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
+  whose fields `P0` to `P<N-1>` hold the parts in order and which a package that names it declares as an alias, as it
+  does `Map` (a Go array has one element type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
   that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a Go string of runes U+0000 to U+00FF, one per byte,
   because Go reads a string as UTF-8: the C ABI takes it as UTF-8 and refuses a rune above U+00FF as kind
   `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
