@@ -982,6 +982,13 @@ test('a callback unit of another repository is refused by name in Go and WASM, a
   assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6s\)/);
 });
 
+test('a callback unit of another repository carries language code, so a member that waits and takes it is refused (GN-6s, GN-6h, GN-6m)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract);
+  contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.look').wait = 'blocking_io';
+  assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look: a member with wait blocking_io that reaches language code is not generated \(GN-6m\)/);
+});
+
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
   const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
