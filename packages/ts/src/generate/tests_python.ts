@@ -303,15 +303,16 @@ export function pythonTests(model: Model, module: string): string {
     def test_n4_${name}_${kase.id}(self) -> None:${receiverOfCase(kase.receiver).lines}
         self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
     }
-    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
+    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test. A member without parameters is
+    // a function of no arguments in CPython, which says so for a positional and for a keyword argument.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     out.push(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${target('')}`}
-        with self.assertRaisesRegex(TypeError, "positional"):
+        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no arguments' : 'positional'}"):
             ${target(callArgs(model, ctx, fn, values, 'None'))}
-        with self.assertRaisesRegex(TypeError, "unexpected keyword"):
+        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no keyword arguments' : 'unexpected keyword'}"):
             ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
   }
   // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.

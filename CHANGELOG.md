@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Python test of the argument count (G-7) of a member without parameters expected the words of a function with
+  parameters, which CPython does not give for a function of no arguments, and WASM bound the unit result of a fallible
+  member that returns nothing, which the lints deny. The test expects "takes no arguments" and "takes no keyword
+  arguments" there, and WASM returns the error of such a member alone. Verified by `make e2e` of `tests/e2e/classes`.
 - The generator refused the WASM binding of a host Node package, the generated Node tests of a host package imported
   the package's own entry, which is the host's code, and the end-to-end run read only `packages/rust/interface.json` at
   the paths of the plain layout. The WASM crate of a host Node package is now `native/wasm/`, the tests of a host

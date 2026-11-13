@@ -443,7 +443,10 @@ function functionRust(model: Model, fn: Fn): string {
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
   // G-5: the core call runs with the faults that a test armed for the member (GN-8a).
   const call = armedCall(model, fn, `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`);
-  if (fn.fallible) {
+  if (fn.fallible && fn.returns === 'none') {
+    // A fallible member that returns nothing gives its error alone (E-1c).
+    lines.push(`        if let Err(error) = ${call} {\n            return Err(core_error(error));\n        }`);
+  } else if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else if (fn.returns === 'none') {
     lines.push(`        ${call};`);
