@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The Go C ABI of a contract without a class unit kept the helper `insert` of the table of instances, because the
+  helper pruning took the map call `made.insert(` of a value alias for a call of it, so `cargo clippy` of
+  `polyspec-consumer-go` failed with "cannot find type `Table`" and "cannot find type `Arc`". The helper is now
+  `insert_held`, which only an instance that leaves names. Verified by `npm test` in `packages/ts` and `cargo clippy`
+  of the Go crate of `tests/e2e/consumer`.
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,

@@ -366,7 +366,7 @@ fn held<T>(table: &Mutex<Table<T>>, handle: u64, subject: &str, class: &str) -> 
 }
 
 /// T-5: keeps a value in a table and gives its handle, which is never 0.
-fn insert<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
+fn insert_held<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
     let mut table = lock(table);
     table.next += 1;
     let handle = table.next;
@@ -492,7 +492,7 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
 fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
