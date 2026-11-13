@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- The `package.json` and the `composer.json` that `scaffold` writes named no other library, so a released npm
+  package whose entries import the npm package of the owner of a value class (`require('@polyspec/<library>')`, GN-6x)
+  was installed without it, and a released PHP extension without the extension whose classes it makes and reads.
+  `package.json` now has in `dependencies` the npm package of each library that owns a value class among the types
+  that the contract names, and `composer.json` has in `require` the extension `ext-<extension name>` and the Composer
+  package of each library that owns a record or a value class among them, at the version of a release form of the
+  dependency line of the core and with `*` for a development form (GN-3e). Verified by `make test-ts`: the new test of
+  GN-3e failed before the change, because the manifests held no such entry. Not run: an install of a released
+  package, and `make e2e` of a contract with a value class of another repository, whose run installs the packed
+  package of the owner beside the package.
 - `usedHelpers`, which selects the helpers that a generated crate keeps, counted a helper as used where its name was a
   word of the code, and split the helpers at every blank line. A word of a string literal or a local of the name of a
   helper kept the helper, which the lints deny as dead code; and the methods of an `impl` block and the second half of

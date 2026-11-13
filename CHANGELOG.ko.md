@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a4dfd26ec522d2238aadb5a737c33323c42a098006538c5a68d69f36bcc6c146 -->
+<!-- source-sha256: 0029486beae048a5669c3814a82763efba0f3b66bc27bd329f9b9a9dda066f4e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `scaffold`가 쓰는 `package.json`과 `composer.json`이 다른 라이브러리를 적지 않았다. 그래서 entry가 값 class owner의 npm
+  package를 import하는(`require('@polyspec/<library>')`, GN-6x) release된 npm package가 그 package 없이 설치되었고, release된
+  PHP 확장은 자기가 만들고 읽는 class의 확장 없이 설치되었다. 이제 `package.json`은 계약이 이름하는 타입들에 값 class가
+  있는 각 라이브러리의 npm package를 `dependencies`에 적고, `composer.json`은 그 타입들에 record나 값 class가 있는 각
+  라이브러리의 확장 `ext-<extension name>`과 Composer package를 `require`에 적는다. 버전은 코어 의존 줄이 release 꼴이면 그
+  버전이고 개발 꼴이면 `*`다(GN-3e). `make test-ts`로 검증했다: GN-3e의 새 시험이 변경 전에는 manifest에 그 항목이 없어
+  실패했다. 실행하지 않은 것: release된 package의 설치, 그리고 다른 레포의 값 class가 있는 계약의 `make e2e`(그 실행은
+  owner의 pack된 package를 그 package 옆에 설치한다).
 - 생성된 crate가 남기는 도우미를 고르는 `usedHelpers`는 도우미의 이름이 코드의 단어인 곳을 쓰임으로 세었고, 도우미를 빈
   줄마다 나누었다. 문자열 literal의 단어나 도우미 이름의 local이 그 도우미를 남겼고, lint는 그것을 죽은 코드로 금한다.
   `impl` 블록의 method와 빈 줄이 있는 본문의 뒤 절반은 들여쓰기 없이 적힌 별도의 item이 되어, 그 이름이 코드의 단어인

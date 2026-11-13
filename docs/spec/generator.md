@@ -146,17 +146,22 @@ the design ids are those of the binding design.
   library name when the contract takes that unit, because the binding wraps the callback and converts the values of
   its members (GN-6s). The Cargo manifest of each binding crate has the dependency line of each of them, which the
   core names too, and `pyproject.toml` has the Python package of each; `go.mod` requires those of them that own a
-  record or a value class among those types (GN-15f); `package.json` and `composer.json` name no other library. A
+  record or a value class among those types (GN-15f). A manifest also names the package of another library that the
+  generated code of its ecosystem imports or needs when it is loaded: `package.json` has in `dependencies` the npm
+  package of each library that owns a value class among those types, because the entries of the Node addon and of the
+  WASM module import that package for its classes (GN-6x), and `composer.json` has in `require` the extension
+  `ext-<extension name>` and the Composer package of each library that owns a record or a value class among those
+  types, because the extension makes and reads instances of the classes of that extension, which PHP loads first. A
   library that only the contract of another library names in another place, such as the type of a member of a class
   that this contract does not take, is in no manifest. `scaffold` reads the contract of a library by the `path` of its
   dependency line, from the core of the library that names it, and the others through `cargo metadata`; when Cargo
   fails, it writes the packages with the libraries that the contract itself names and fails with status 1 and the
   instruction of GN-15f, because the libraries that only a callback unit names are then not known. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
   is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
-  dependency `polyspec-<library>==X.Y.Z`). Every other line (a path, a
+  dependency `polyspec-<library>==X.Y.Z`; `package.json` and `composer.json` the version `X.Y.Z` of the package). Every other line (a path, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
   the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
-  `polyspec-<library>` alone), and the development checkout
+  `polyspec-<library>` alone; `package.json` and `composer.json` the package with `*`), and the development checkout
   resolves it through its development links and its development install. No form of the line stops `scaffold`, `generate` or `check`;
   `binding check --release` reports each development form (CK-70). The dependency line of each binding crate on
   `polyspec-binding-core` follows the line of the core on it in the same way: `scaffold` writes the source that the

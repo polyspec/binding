@@ -1654,6 +1654,43 @@ test('one host reads a value class without core_type and a value class of anothe
   }
 });
 
+test('package.json and composer.json name the package of another library that the generated code imports or needs when it is loaded (GN-3e)', () => {
+  // A value class of another library: the entries of the Node addon and of the WASM module import the npm package of
+  // its owner, and the PHP extension makes the instances of the class of the owner's extension.
+  const classes = valueClassSample();
+  const owner = 'owner';
+  const ownerContract = classes.foreign.get(owner);
+  const npmName = ownerContract.packages.node.package;
+  const phpName = ownerContract.packages.php.package;
+  const crate = `polyspec-${owner}`;
+  const manifests = (contract: any, foreign: Map<string, any>, line: unknown): { npm: any; composer: any } => {
+    const out = trackedPackages(contract, '0.0.0', new Map<string, unknown>([...[...foreign.keys()].map((library): [string, unknown] => [`polyspec-${library}`, { path: `../../../${library}/packages/rust` }]), [crate, line]]), [], foreign);
+    return { npm: JSON.parse(String(out.get('packages/ts/package.json'))), composer: JSON.parse(String(out.get('packages/php-ext/composer.json'))) };
+  };
+  // A development form of the dependency line of the core names the package without the version of a release.
+  const development = manifests(classes.contract, classes.foreign, { path: `../../../${owner}/packages/rust` });
+  assert.deepEqual(development.npm.dependencies, { [npmName]: '*' });
+  assert.deepEqual(development.composer.require, { php: '>=8.4', [`ext-polyspec_${owner.replaceAll('-', '_')}`]: '*', [phpName]: '*' });
+  // A release form, an exact version or a tag, names that version.
+  const exact = manifests(classes.contract, classes.foreign, '=1.2.3');
+  assert.deepEqual(exact.npm.dependencies, { [npmName]: '1.2.3' });
+  assert.equal(exact.composer.require[phpName], '1.2.3');
+  assert.equal(exact.composer.require[`ext-polyspec_${owner.replaceAll('-', '_')}`], '*');
+  const tagged = manifests(classes.contract, classes.foreign, { git: `https://github.com/polyspec/${owner}.git`, tag: 'v0.4.0' });
+  assert.deepEqual(tagged.npm.dependencies, { [npmName]: '0.4.0' });
+  assert.equal(tagged.composer.require[phpName], '0.4.0');
+  // A record of another library is a plain object of JavaScript, so no entry imports the package of its owner, and an
+  // instance of the class of the owner's extension in PHP.
+  const plot = plotSample();
+  const records = trackedPackages(plot.contract, '0.0.0', new Map([['polyspec-points', { path: '../../../points/packages/rust' }]]), [], plot.foreign);
+  assert.equal('dependencies' in JSON.parse(String(records.get('packages/ts/package.json'))), false);
+  assert.deepEqual(JSON.parse(String(records.get('packages/php-ext/composer.json'))).require, { php: '>=8.4', 'ext-polyspec_points': '*', 'polyspec/points': '*' });
+  // A contract that names no other library names none.
+  const alone = trackedPackages(JSON.parse(readFileSync(new URL('../../../tests/e2e/classes/packages/rust/interface.json', import.meta.url), 'utf8')), '0.0.0');
+  assert.equal('dependencies' in JSON.parse(String(alone.get('packages/ts/package.json'))), false);
+  assert.deepEqual(JSON.parse(String(alone.get('packages/php-ext/composer.json'))).require, { php: '>=8.4' });
+});
+
 test('Go describes, reads and makes a value class of another repository through the call of GN-15c (T-3, U-1, GN-6x, GN-15c)', () => {
   const { contract, caseFiles, foreign } = valueClassSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });

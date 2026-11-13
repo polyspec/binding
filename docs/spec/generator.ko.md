@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ffd0c4fc29d99ba17517ed0d3ecc8aacd4f32e31b1dbdc2706b44d5828e0e85e -->
+<!-- source-sha256: 1cbaf2a36521825e61ef6e8881f11eb9f73ddbdc4673c082f54aa448521de732 -->
 # 생성기
 
 [English](generator.md)
@@ -115,14 +115,18 @@
   라이브러리의 callback unit을 받을 때 그 unit의 member가 이름하는 라이브러리다. 바인딩이 그 callback을 감싸고 member의 값을
   변환하기 때문이다(GN-6s). 바인딩 crate의 Cargo manifest는 그 각각의 의존 줄을 가지며 코어도 그 줄을 적는다.
   `pyproject.toml`은 그 각각의 Python package를 가진다. `go.mod`는 그 가운데 그 타입들에 record나 값 class가 있는 라이브러리를
-  require한다(GN-15f). `package.json`과 `composer.json`은 다른 라이브러리를 적지 않는다. 다른 라이브러리의 계약이 다른
+  require한다(GN-15f). manifest는 그 생태계의 생성된 코드가 import하거나 로드될 때 필요로 하는 다른 라이브러리의 package도
+  적는다. `package.json`은 그 타입들에 값 class가 있는 각 라이브러리의 npm package를 `dependencies`에 적는다. Node addon과
+  WASM 모듈의 entry가 그 class를 위해 그 package를 import하기 때문이다(GN-6x). `composer.json`은 그 타입들에 record나 값
+  class가 있는 각 라이브러리의 확장 `ext-<extension name>`과 Composer package를 `require`에 적는다. 확장이 그 확장의
+  class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 다른 라이브러리의 계약이 다른
   자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도
   없다. `scaffold`는 라이브러리의 계약을 그것을 이름하는 라이브러리의 코어에서 의존 줄의 `path`로 읽고, 나머지는
   `cargo metadata`로 읽는다. Cargo가 실패하면 계약 자신이 이름하는 라이브러리로 package를 쓰고 상태 1과 GN-15f의 안내로
   실패한다. 그때는 callback unit만이 이름하는 라이브러리를 알 수 없기 때문이다.
   버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
-  `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
-  레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만), 개발
+  `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`; `package.json`과 `composer.json`은 package의 버전 `X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
+  레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만; `package.json`과 `composer.json`은 package와 `*`), 개발
   checkout은 그것을 개발 링크와 개발 설치로 해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
   보고한다(CK-70). 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
   적은 출처(`git`과 그 `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`)를 바인딩 crate에 필요한

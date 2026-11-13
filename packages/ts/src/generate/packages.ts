@@ -398,10 +398,10 @@ python-source = "generated/python"
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);
     files.set('packages/ts/src/lib.rs', entry(`The Node addon of ${npm}.`, [MANY, ['unsafe_code', 'GN-4: napi casts a value to its type after its type was checked']]));
-    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
+    languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core, coreDependencies, foreign));
   });
   if (contract.targets.includes('wasm')) packageOf('packages/ts/wasm', () => {
-    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core));
+    if (!contract.targets.includes('node')) languageManifest('node', 'packages/ts/package.json', npmManifest(contract, core, coreDependencies, foreign));
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
@@ -432,7 +432,8 @@ python-source = "generated/python"
       description: `The ${contract.library} library of polyspec as a PHP extension`,
       type: 'php-ext',
       ...(license === undefined ? {} : { license }),
-      require: { php: '>=8.4' },
+      // GN-3e: the extensions and the packages of the other libraries whose classes the extension makes and reads.
+      require: { php: '>=8.4', ...composerRequires(contract, coreDependencies, foreign) },
       // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
       'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
@@ -490,7 +491,38 @@ export const WASM_BINDGEN = '0.2.130';
 
 // The manifest of the npm package (P-5): the Node addon at its entries, and the WASM module at the subpath ./wasm and
 // at each entry whose conditions choose it in the browser.
-function npmManifest(contract: Contract, core: Core): string {
+// GN-3e: the libraries that own a value class among the types that the contract names: the entries of the Node addon and
+// of the WASM module import the npm package of each for its classes (GN-6x). A library whose contract is not there
+// adds none, as in namedLibraries.
+function valueClassLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
+  return [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && u.kind === 'class' && u.origin === 'value') === true).map((named) => named.library))].sort();
+}
+
+// GN-3e: the version of the package of another library in package.json and composer.json: the version of a release form
+// of the dependency line of the core, and `*` for a development form, which the development install resolves.
+const packageVersion = (library: string, dependencies: CoreDependencies): string => dependencyForm(dependencies.get(`polyspec-${library}`)).version ?? '*';
+
+// GN-3e: the npm package of each library whose value class the entries import, with its version.
+function npmDependencies(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
+  return Object.fromEntries(valueClassLibraries(contract, foreign).flatMap((library): [string, string][] => {
+    const name = (foreign.get(library)?.packages['node'] as { package?: string } | undefined)?.package;
+    return name === undefined ? [] : [[name, packageVersion(library, dependencies)]];
+  }));
+}
+
+// GN-3e: the extension and the Composer package of each library whose record or value class the extension makes and
+// reads as an instance of the class of that extension.
+function composerRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): Record<string, string> {
+  const libraries = [...new Set(namedUnits(contract, foreign).filter(({ library, unit }) => foreign.get(library)?.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value'))) === true).map((named) => named.library))].sort();
+  return Object.fromEntries(libraries.flatMap((library): [string, string][] => {
+    const owner = foreign.get(library);
+    const name = (owner?.packages['php'] as { package?: string } | undefined)?.package;
+    return owner === undefined || name === undefined ? [] : [[`ext-${extensionName(owner)}`, '*'], [name, packageVersion(library, dependencies)]];
+  }));
+}
+
+function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDependencies = new Map(), foreign: ReadonlyMap<string, Contract> = new Map()): string {
+  const dependencies = npmDependencies(contract, coreDependencies, foreign);
   const npm = contract.packages['node'] as { package: string; entries: Record<string, { conditions?: unknown }> };
   const node = contract.targets.includes('node');
   const wasm = contract.targets.includes('wasm');
@@ -521,6 +553,8 @@ function npmManifest(contract: Contract, core: Core): string {
     // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
     // loads, and builds it for the Rust triples of the platforms.
     ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
+    // GN-3e: the packages of the other libraries that the entries import.
+    ...(Object.keys(dependencies).length === 0 ? {} : { dependencies }),
   }, null, 2)}\n`;
 }
 
