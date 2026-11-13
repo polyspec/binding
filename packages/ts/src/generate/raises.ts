@@ -1,6 +1,6 @@
-// E-5, I-2: binding reads no Rust source, so the generated crate holds an assertion for each variant that a member
-// names in `raises`: the path is a variant of the error type that the member's core path returns. A path of another
-// type, or one that names no variant, does not compile.
+// E-5, I-2 (GN-7b): binding reads no Rust source, so every generated crate holds an assertion for each variant that a
+// member names in `raises`: the path is a variant of the error type that the member's core path returns. A path of
+// another type, or one that names no variant, does not compile.
 
 import type { Model } from './model.ts';
 

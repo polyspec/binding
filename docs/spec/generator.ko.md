@@ -225,10 +225,10 @@
   다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
   행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, 루트가 아닌 module의 오류 unit, Go나 WASM의
   오류 unit은 이름으로 거부한다(G-4).
-- **GN-7b** Go와 WASM crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
+- **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
   컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
-  한 번 단언한다. 아직 생성하지 않는 것: Python, Node, PHP crate의 같은 단언, 의존 레포의 오류를 담은 variant의 경로
+  한 번 단언한다. 아직 생성하지 않는 것: 의존 레포의 오류를 담은 variant의 경로
   (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate

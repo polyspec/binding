@@ -270,11 +270,11 @@ the design ids are those of the binding design.
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
   `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
   an error unit in a module other than the root, and an error unit for Go or WASM are refused by name (G-4).
-- **GN-7b** The Go and WASM crates hold, for each variant that a member names in `raises`, the assertion
+- **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
   core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
   returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
-  the same assertion in the Python, Node and PHP crates, the path of a variant that holds the error of a dependency
+  the path of a variant that holds the error of a dependency
   (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and

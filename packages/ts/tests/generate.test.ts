@@ -954,7 +954,7 @@ test('an error unit is a class under its parent, and a kind names the class it i
   assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
 });
 
-test('Go, WASM: each variant that a member raises is asserted against the core error (E-5, I-2)', () => {
+test('each variant that a member raises is asserted against the core error in every crate (E-5, I-2, GN-7b)', () => {
   const { contract, caseFiles } = load();
   contract.targets.push('go', 'wasm');
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
@@ -963,13 +963,13 @@ test('Go, WASM: each variant that a member raises is asserted against the core e
   contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
   const assertion = '#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&polyspec_sample::Error) -> bool = |error| matches!(error, polyspec_sample::Error::TooLong { .. });\n';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
-  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
     assert.equal(text(out, crate).split(assertion).length, 2, `${crate} asserts the variant once`);
   }
   // A crate whose members raise nothing asserts nothing.
   contract.units[0].members[0].raises = [];
   const none = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
-  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
     assert.doesNotMatch(text(none, crate), /matches!\(error,/, crate);
   }
 });
@@ -1201,7 +1201,7 @@ test('the kinds of an alias are checked against its error, run alone and through
     c.cases = c.cases.filter((row: any) => row.alias === undefined);
     void cases;
   });
-  for (const path of LIBS) assert.doesNotMatch(text(without, path), /alias_in_data|matches!\(error/, path);
+  for (const path of LIBS) assert.doesNotMatch(text(without, path), /alias_in_data|the kinds of in_raises/, path);
 });
 
 test('a binding crate has the test features that its contract needs (GN-5)', () => {

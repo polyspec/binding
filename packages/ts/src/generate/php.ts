@@ -5,6 +5,7 @@ import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
+import { raisesAssertions } from './raises.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1216,7 +1217,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${aliasKindsRust(model)}${used}
+${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
 extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
     0

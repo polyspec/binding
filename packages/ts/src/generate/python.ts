@@ -2,6 +2,7 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
+import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
@@ -819,7 +820,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${faultRust(model)}${aliasKindsRust(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
+${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]

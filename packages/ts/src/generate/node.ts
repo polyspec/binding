@@ -6,6 +6,7 @@ import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
+import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -895,7 +896,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${aliasKindsRust(model)}${used}${functions}
+${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
