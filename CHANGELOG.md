@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
+  the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
+  the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields
+  were not added while the code named them. The replacement now names the end of the struct alone, and the generator
+  fails when a part that it adds to the host is not in it. Verified by `make test-ts`: the test of the host of such a
+  crate failed before the change. Not run: the compiler, by `make e2e` of `tests/e2e/relay`.
 - A function value inside a case value, such as the function that a step of the receiver of a case of
   `registry.call` of `tests/e2e/functions` registers, was written as a fixture whose rows named the member
   `__call__` in every language. That is the member of the Python fixture; the Node, WASM and PHP fixture has the

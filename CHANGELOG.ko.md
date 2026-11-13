@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d3ae7114a56a3442a2d3130d8e78ed9d9487441086e10e02fac57ebb868ab7c4 -->
+<!-- source-sha256: 33a0bcc1771c5096fdf93eb1ca1f2878932d0bba0c51053282f6ff4916190bb0 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
+  field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
+  field를 이름하는데 field는 더해지지 않았다. 이제 바꾸기는 struct의 끝만 이름하고, 생성기는 host에 더하는 부분이
+  host에 없으면 실패한다. `make test-ts`로 검증했다: 그런 crate의 host를 보는 시험이 변경 전에는 실패했다. 실행하지 않은
+  것: `tests/e2e/relay`의 `make e2e`로 도는 컴파일러.
 - case 값 안의 함수 값, 예를 들어 `tests/e2e/functions`의 `registry.call` case에서 receiver의 step이 등록하는 함수가
   모든 언어에서 행이 member `__call__`을 이름하는 fixture로 써졌다. 그것은 Python fixture의 member이고, Node·WASM·PHP의
   fixture는 member `call`을 가지므로 받은 호출의 행을 알지 못해 생성된 시험이 case가 기대하지 않은 호출로 실패했다.

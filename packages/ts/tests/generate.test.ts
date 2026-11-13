@@ -3016,6 +3016,13 @@ test('PHP describes a stdClass under one handle at every place, so the core know
   const php = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_kept', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
   assert.match(php, /struct PhpHost<'a> \{\n {4}held: Vec<Vec<\(HostValue, &'a Zval\)>>,\n {4}objects: std::collections::BTreeMap<usize, u64>,\n {4}marked: u64,\n/);
   assert.match(php, /if type_name == "stdClass" \{\n {16}let identity = std::ptr::from_ref\(object\)\.addr\(\);\n {16}let properties = object\.get_properties\(\)\.map_err\(php_failed\)\?;\n {16}let len = handle_count\(properties\.len\(\)\);\n {16}if let Some\(handle\) = self\.objects\.get\(&identity\) \{\n {20}return Ok\(HostValue::StdClass \{ handle: Handle::new\(\*handle\), len \}\);\n {16}\}\n {16}let handle = self\.hold\(properties\);\n {16}self\.objects\.insert\(identity, handle\.raw\(\)\);\n {16}return Ok\(HostValue::StdClass \{ handle, len \}\);/);
+  // A crate that reads a value class of another repository has the same host with the fields of that read: the table
+  // of the objects, and the values and the entries that the members of the owner gave.
+  const owner = valueClassSample();
+  const foreignPhp = text(generate({ contract: owner.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: owner.caseFiles, foreign: owner.foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.match(foreignPhp, /struct PhpHost<'a> \{\n {4}held: Vec<Vec<\(HostValue, &'a Zval\)>>,\n {4}objects: std::collections::BTreeMap<usize, u64>,\n {4}marked: u64,\n {4}owned: Vec<Vec<\(Zval, Zval\)>>,\n {4}values: Vec<[^\n]*>,\n\}/);
+  assert.match(foreignPhp, /&mut self\.values, &mut self\.owned/);
+  assert.match(foreignPhp, /if type_name == "stdClass" \{\n {16}let identity = std::ptr::from_ref\(object\)\.addr\(\);/);
   // Every host of the crate starts without an object.
   assert.equal((php.match(/PhpHost \{ /g) ?? []).length, (php.match(/PhpHost \{ held: Vec::new\(\), objects: std::collections::BTreeMap::new\(\), marked: 0[,} ]/g) ?? []).length);
   assert.ok((php.match(/PhpHost \{ /g) ?? []).length > 0);

@@ -436,7 +436,7 @@ export function phpHost(model: Model): string {
   refuseForeignReads(model, 'php');
   if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
   const host = PHP_HOST
-    .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
+    .replace("    marked: u64,\n}", "    marked: u64,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<(&'static str, ReadAs)>)>,\n}")
     .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
     .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
     .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")
@@ -444,6 +444,11 @@ export function phpHost(model: Model): string {
         self.read_value(value).map_err(|fail| raised(Thrown::Binding(fail)))
     }
 `);
+  // Each change above replaces a text of PHP_HOST; a text that PHP_HOST no longer has would leave the host without that
+  // part, which only the compiler of the generated crate would report.
+  for (const part of ['    owned: Vec<Vec<(Zval, Zval)>>,', 'php_value_class(value, &mut self.values, &mut self.owned)', 'self.owned_entry(list, index)', 'self.read_value(value)']) {
+    if (!host.includes(part)) throw new Error(`GN-6x: the PHP host of a value class of another repository has no ${part.trim()}`);
+  }
   return host + valueClassesPhpHost(model);
 }
 
