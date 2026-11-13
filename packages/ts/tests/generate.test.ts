@@ -786,6 +786,29 @@ test('a language object that a core may keep enters as a Native, which each targ
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
+test('a generated test gives an object through a native row and back, and counts that the binding released it (GN-6o)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const sample = read('sample/packages/rust/interface.json');
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_gn6o_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const js = text(out, path);
+    assert.match(js, /test\('GN-6o: same gives back the same object and releases it', async \(\) => \{\n  pkg\.same\(new Subject\(\)\);\n  const before = addon\(\)\.__nativeCount\(\);\n  const subject = new Subject\(\);\n  assert\.equal\(pkg\.same\(subject\), subject\);\n  await new Promise\(setImmediate\);\n  pkg\.same\(new Subject\(\)\);\n  assert\.equal\(addon\(\)\.__nativeCount\(\), before\);\n\}\);/, path);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /public function testGn6oSameGivesBackTheSameObjectAndReleasesIt\(\): void\n    \{\n        \\Polyspec\\Sample\\same\(new class \{\}\);\n        \$before = \\Polyspec\\Sample\\Internal\\nativeCount\(\);\n        \$subject = new class \{\};\n        self::assertSame\(\$subject, \\Polyspec\\Sample\\same\(\$subject\)\);/);
+  const go = text(out, 'packages/go/internal/binding/zz_generated_native_count_test.go');
+  assert.match(go, /\/\/go:build polyspec_native_count_test/);
+  assert.match(go, /before := NativeCount\(\)/);
+  // The count is the entry point of the feature native-count-test.
+  const packages = trackedPackages(sample, '0.0.0');
+  for (const path of ['packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml', 'packages/ts/wasm/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
+    assert.match(String(packages.get(path)), /\nnative-count-test = \[\]\n/, path);
+  }
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[cfg\(feature = "native-count-test"\)\]\n#\[napi\(js_name = "__nativeCount"\)\]/);
+});
+
 // The consumer sample of the end-to-end check, which names the value alias of the sample (tests/e2e/consumer).
 const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
