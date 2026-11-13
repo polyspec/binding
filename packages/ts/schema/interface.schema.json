@@ -167,6 +167,11 @@
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$"
     },
+    "variantPath": {
+      "description": "A variant of E-1: a Rust path, or `<outer>/<inner>` for a variant that holds a value of another enum, whose pattern is `Outer(Inner { .. })` (GN-7b).",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(/[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*)?$"
+    },
     "word": {
       "oneOf": [
         {
@@ -708,7 +713,7 @@
             ],
             "properties": {
               "variant": {
-                "$ref": "#/$defs/rustPath"
+                "$ref": "#/$defs/variantPath"
               },
               "category": {
                 "$ref": "#/$defs/category"
@@ -765,6 +770,23 @@
                 }
               }
             ]
+          }
+        },
+        "code": {
+          "description": "The core error of a struct that holds a code enum whose variants `kinds` names: `error` is the error type that the core paths return, `path` the projection fn(&E) -> &Code (or Code) (GN-7b).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "error",
+            "path"
+          ],
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/rustPath"
+            },
+            "path": {
+              "$ref": "#/$defs/rustPath"
+            }
           }
         },
         "binding": {
@@ -1360,7 +1382,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/rustPath"
+            "$ref": "#/$defs/variantPath"
           }
         },
         "wait": {
@@ -1596,7 +1618,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/rustPath"
+            "$ref": "#/$defs/variantPath"
           }
         },
         "thread": {

@@ -358,11 +358,20 @@ the design ids are those of the binding design.
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
-  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
-  core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
-  returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
-  the path of a variant that holds the error of a dependency
-  (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
+  `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);` against the core error that the
+  member's core path returns (the `E` of `Failure<E>`), so a path that is no variant of that type does not compile
+  (E-5, I-2). Every member of a contract returns the one core error of E-1, so a variant that several members raise is
+  asserted once. The scrutinee is `error`, or `<projection>(error)` when `errors.code` names one. The pattern of a
+  path is `<path> { .. }`; the nested path `<outer>/<inner>` names a variant that holds a value of another enum (a code
+  enum of a dependency, E-1b) and its pattern is `<outer>(<inner> { .. })`; its kind is the snake_case of the last
+  segment of `<inner>`. The `core_error` match of every target, its second match for the properties of an error unit
+  (GN-7a) and the assertions of `in_raises` (U-7) use the same scrutinee and the same pattern. `errors.code` is
+  `{error, path}` for a core error that is a struct holding a code enum whose variants `errors.kinds` names: `error` is
+  the type that the core paths return, and `path` is the projection `fn(&E) -> &Code` (or `-> Code`) that the
+  generated code calls with the error. The error enum of a kind is then the enum of its code, of the outer path when it
+  is nested, and one is generated. Why: binding reads no Rust source, so the contract names the type of the error and
+  the function that gives its code, and a variant that holds another enum is written as the two paths that its pattern
+  needs. A row with `library` (E-1b (a)) is refused by name, as GN-7a states.
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
   every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`

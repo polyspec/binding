@@ -87,7 +87,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   acronym words of a repository name are binding's table, below), and a PHP class is in the namespace of
   `packages.php`; `errors.fixed` has no Go row (G-7 is a compile
   error in Go); a `class` override in `kinds` or `binding` is an error unit of the kind's category (a dependency kind
-  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once.
+  takes its category from the dependency's contract, E-1b); a variant or a binding kind is declared once. A variant
+  of `kinds`, `raises` and `in_raises` is a Rust path or the nested path `<outer>/<inner>`, and `errors.code` names
+  the core error type and its projection to the code enum of the kinds (`{error, path}`, generator GN-7b); whether
+  they name a variant, a type and a function of the core is judged by the compiler on the generated crate (I-2).
 - **CK-11** Wrapped dependency errors (E-1b, P-4): every property of every error unit of a library whose kinds the
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row

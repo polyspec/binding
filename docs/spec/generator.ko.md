@@ -293,11 +293,18 @@
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
   category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
-- **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
-  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
-  컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
-  한 번 단언한다. 아직 생성하지 않는 것: 의존 레포의 오류를 담은 variant의 경로
-  (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
+- **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 코어 오류(`Failure<E>`의
+  `E`)에 대한 단언 `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);`을 둔다. 그 타입의 variant가
+  아닌 경로는 컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 하나를 돌려주므로, 여러 member가 내는
+  variant는 한 번 단언한다. scrutinee는 `error`이고, `errors.code`가 투영 함수를 적으면 `<투영>(error)`이다. 경로의 pattern은
+  `<path> { .. }`이다. 중첩 경로 `<바깥>/<안쪽>`은 다른 enum의 값(의존 레포의 code enum, E-1b)을 담은 variant를 가리키며 그
+  pattern은 `<바깥>(<안쪽> { .. })`이고, 그 kind는 `<안쪽>`의 마지막 마디를 snake_case로 쓴 것이다. 모든 target의 `core_error`
+  match, 오류 unit의 property를 위한 두 번째 match(GN-7a), `in_raises`의 단언(U-7)은 같은 scrutinee와 같은 pattern을 쓴다.
+  `errors.code`는 코어 오류가 code enum을 담은 구조체이고 `errors.kinds`가 그 code enum의 variant를 적을 때의 `{error, path}`다.
+  `error`는 코어 경로가 돌려주는 타입이고, `path`는 생성 코드가 오류를 넘겨 부르는 투영 `fn(&E) -> &Code`(또는 `-> Code`)다.
+  이때 kind의 오류 enum은 그 code의 enum(중첩이면 바깥 경로의 enum)이고, 하나를 생성한다. 이유: binding은 Rust 소스를 읽지
+  않으므로 계약이 오류의 타입과 그 code를 주는 함수를 적고, 다른 enum을 담은 variant는 그 pattern에 필요한 두 경로로 적는다.
+  `library`가 있는 행(E-1b (a))은 GN-7a대로 이름을 대어 거부한다.
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature
