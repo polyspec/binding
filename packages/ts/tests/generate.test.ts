@@ -2062,9 +2062,10 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   // B-5c: the Go poison entry point reaches each of its classes through a helper that the C ABI defines.
   const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
   for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
-  // The poison entry point takes the instances of the classes that Go makes: Lease has no member for Go, so it has no arm.
-  assert.doesNotMatch(goLib, /held_lease/);
-  assert.match(goLib, /let held = held_gate\(handle, "held"\)\?;/);
+  // The poison entry point takes the instances of the classes that Go makes: Go makes neither Gate nor Lease here, so
+  // the C ABI and the Go package have no poison entry point.
+  assert.doesNotMatch(goLib, /held_lease|panic_test_held/);
+  assert.doesNotMatch(text(classes(() => undefined, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /PanicTestHeld/);
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);

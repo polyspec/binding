@@ -10,7 +10,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, objectUnit, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -1115,7 +1115,7 @@ function testEntries(model: Model): string {
   }
   out.push(entry(model, `${p}__panic_test`, 'B-7: the entry point of the generated panic test.', ['        finish_input(input)?;', '        panic!("panic-test")'], 'panic-test'));
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
-  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => o.lock?.writes === true);
+  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));
   if (written.length > 0) {
     const arms = written.map(({ o, index }) => `            ${index} => {
                 let held = held_${plainName(o.unit)}(handle, "held")?;
@@ -1203,7 +1203,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.objects.filter((o) => o.lock?.writes === true).map((o) => `held_${plainName(o.unit)}`).join(' ')} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
