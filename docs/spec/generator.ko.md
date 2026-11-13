@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 88b03309833970742b901c03a1f218ed462cf25f9d31aa9e2192f75aca906c47 -->
+<!-- source-sha256: d3f8cbcbf21310e36252dcf7a6888445c02da5458554b85dbcced56d801d8192 -->
 # 생성기
 
 [English](generator.md)
@@ -118,8 +118,16 @@
   않는다. helper는 방향을 끝에 적는다: 내장 타입의 변환은 `<type>_in`과 `<type>_out`이고(`text_in`, `list_out`),
   default, callable, passthrough의 helper는 `default_in`, `callable_in`, `passed_out`이다. 새 helper도 같은 규칙을
   따른다. 이유: unit은 어떤 이름이든 가질 수 있고 `default`, `callable`, `text`, `list`, `scope`도 그렇다. `in_<word>`라는
-  이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 아직 적용하지 않은 것(G-4):
-  Node, WASM, Go의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름한다. PHP와 Python의 crate는 이 규칙을 적용한다.
+  이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 계약에서 이름이 오는 모든
+  함수에 같은 것이 적용된다: 계약의 이름과 crate의 helper는 같은 이름을 쓰지 않는다. 그런 함수는 자기 계열을 앞에 적고,
+  helper는 어느 계열의 접두로도 시작하지 않는다: `in_`과 `out_`(unit), `held_`(parameter 자리의 class), `make_`(값
+  alias), `alias_in_`(`codec-test`의 진입), `recognized_<callback>_<member>`, 그리고 functions unit의 함수의 진입인
+  `function_`이다. 그 진입에는 attribute가 언어의 이름을 준다(`#[php(name = ...)]`, `#[pyfunction(name = ...)]`).
+  event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
+  함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
+  이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
+  바꾸기 때문이다. 아직 적용하지 않은 것(G-4): Node, WASM, Go의 crate는 helper를 `in_<word>`와 `out_<word>`로 이름하고,
+  그 함수 진입은 이 규칙으로 검사하지 않았다. PHP와 Python의 crate는 이 규칙을 적용한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

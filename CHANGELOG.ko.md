@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1344bd0f635b9ec5c47070f32ad8f2d4b6a79442cc7ff99dd3c48dcd5744b647 -->
+<!-- source-sha256: 00603486a1f5f9def425448e8876c1f857c69e682c3d49516cdefef3985bfde9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `pass`, `guard`, `raised`처럼 crate의 helper와 이름이 같은 함수가 있는 계약의 PHP와 Python crate는 컴파일되지 않았다.
+  functions unit의 함수의 진입이 함수의 이름을 그대로 가졌고 helper도 그 이름이었기 때문이다. 진입은 이제
+  `function_<name>`이고 언어의 이름은 attribute가 준다. event loop를 받는 Python 진입은 `loop_function_<name>`이고,
+  helper `recognized_kind`는 `kind_of_recognized`다. 그래서 어떤 helper도 계약 이름의 계열의 접두로 시작하지 않는다
+  (GN-4c). 값 alias와 함수 parameter가 함께 있는 계약의 Python crate는 helper `raised`도 두 번 정의했다. alias의 값을
+  위해 한 번, 함수의 기다린 값을 위해 한 번이었다. 이제 한 번 정의한다. `packages/ts`의 `npm test`로 검증했다. 그
+  시험은 `pass`, `guard`, `raised`라는 함수가 있는 PHP crate와 `guard`, `raised`, `driven`이 있는 Python crate를 생성하고
+  crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 `pass`의 정의 둘을 찾았다. 이 변경에 대해
+  생성된 crate는 컴파일하지 않았다.
 - Python은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. Python binding은 이제 그것을
   생성한다. callable은 들어올 때 검사하고(kind `invalid_callback`), closure는 GIL을 쥐고 그것을 부르며 각 class 인자를 새
   인스턴스로 준다. 그것이 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐고, member는 그 객체를 그대로

@@ -3173,10 +3173,13 @@ const helperNamed = (contract: any): void => {
     ],
   });
 };
-// The names of the functions of a generated crate, each with the number of its definitions that no cfg separates.
+// The names of the functions of a generated crate, each with the number of its definitions; a definition under a cfg
+// attribute, which another form of the crate may define again, is not counted.
 const functionNames = (lib: string): Map<string, number> => {
   const names = new Map<string, number>();
-  for (const [, name] of lib.matchAll(/^(?:pub )?fn ([a-z0-9_]+)/gm)) names.set(name ?? '', (names.get(name ?? '') ?? 0) + 1);
+  for (const [, attributes, name] of lib.matchAll(/^((?:(?:#\[|\/\/\/)[^\n]*\n)*)(?:pub )?fn ([a-z0-9_]+)/gm)) {
+    if (!/^#\[cfg\(/m.test(attributes ?? '')) names.set(name ?? '', (names.get(name ?? '') ?? 0) + 1);
+  }
   return names;
 };
 
@@ -3274,4 +3277,30 @@ test('the Python test writes a function fixture as a function of the module, a f
   // A value that is no callable is kind invalid_callback, and so is an awaitable that the plain member cannot await.
   assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_what_is_no_callable\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(1\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)/);
   assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_an_awaitable_without_an_event_loop\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(_function_\d+\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)\n {8}self\.assertIn\("atransaction", str\(caught\.exception\)\)/);
+});
+
+// GN-4c: the sample with functions whose names are those of helpers of the generated crates.
+const helperNamedFunctions = (names: string[]) => (contract: any): void => {
+  const functions = contract.units.find((u: any) => u.id === 'sample');
+  for (const name of names) functions.members.push({ id: `sample.${name}`, name: [name], kind: 'function', visibility: 'public', wait: 'none', raises: [], parameters: [{ name: ['text'], type: 'text', required: true }], returns: 'text', core: `polyspec_sample::${name}` });
+};
+
+test('a function of a functions unit and a helper of a generated crate share no name: functions named pass, guard and raised (GN-4c)', () => {
+  // PHP: the helpers pass, guard and raised are defined once each, beside the entries of the functions of those names.
+  const php = functionNames(text(scopedSample(['php'], helperNamedFunctions(['pass', 'guard', 'raised'])), 'packages/php-ext/generated/lib.rs'));
+  for (const name of ['pass', 'guard', 'raised', 'function_pass', 'function_guard', 'function_raised', 'function_join']) assert.equal(php.get(name), 1, `PHP ${name}`);
+  assert.deepEqual([...php].filter(([, count]) => count > 1).map(([name]) => name), []);
+  // Python, where pass is a keyword that no function takes (CK-23).
+  const lib = text(scopedSample(['python'], helperNamedFunctions(['guard', 'raised', 'driven'])), 'packages/python/generated/lib.rs');
+  const python = functionNames(lib);
+  for (const name of ['guard', 'raised', 'driven', 'function_guard', 'function_raised', 'function_driven', 'function_join']) assert.equal(python.get(name), 1, `Python ${name}`);
+  assert.deepEqual([...python].filter(([, count]) => count > 1).map(([name]) => name), []);
+  // The Python name of a function is given apart from the name of its entry, also for its awaited form.
+  assert.match(lib, /#\[pyfunction\(name = "guard"\)\]\n#\[pyo3\(signature = \(text\)\)\]\nfn function_guard<'py>\(/);
+  assert.match(lib, /module\.add_function\(wrap_pyfunction!\(function_guard, module\)\?\)\?;/);
+  assert.match(lib, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]\nfn function_aresolve_slowly<'py>\([^\n]*\n {4}awaited\(py, wrap_pyfunction!\(function_resolve_slowly, py\)\?\.into_any\(\), args, kwargs\)/);
+  // The helper that reads the kind of a recognized exception has no name of the family recognized_<callback>_<member>.
+  assert.equal(python.get('recognized_kind'), undefined);
+  assert.equal(python.get('kind_of_recognized'), 1);
+  assert.equal(php.get('kind_of_recognized'), 1);
 });

@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- The PHP and Python crates of a contract with a function named as a helper of the crate, such as `pass`, `guard` or
+  `raised`, did not compile: the entry of a function of a functions unit had the bare name of the function, which the
+  helper also had. The entry is now `function_<name>`, with the name of its language given by an attribute, the
+  Python entry with an event loop is `loop_function_<name>`, and the helper `recognized_kind` is `kind_of_recognized`,
+  so that no helper starts with the prefix of a family of names of the contract (GN-4c). The Python crate of a
+  contract with a value alias and a function parameter also defined the helper `raised` twice, once for the values
+  of an alias and once for the awaited value of a function; it is now defined once. Verified by `npm test` in
+  `packages/ts`, whose test generates the PHP crate with functions named `pass`, `guard` and `raised` and the Python
+  crate with `guard`, `raised` and `driven` and requires that no function of the crate is defined twice; before the
+  change it found two definitions of `pass`. The generated crates were not compiled for this change.
 - Python refused a member with a parameter of a function type or a result `passthrough` by name. The Python binding
   now generates it: the callable is checked when it enters (kind `invalid_callback`), the closure calls it with the
   GIL and gives each class argument as a new instance, the value that it returned is held in a thread-local table

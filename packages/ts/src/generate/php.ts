@@ -1,6 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Name, Type, Unit } from '../contract.ts';
+import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { DRIVEN, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, cleanupAsserts, cleanupWarning, propertyValue, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
@@ -46,6 +47,9 @@ const phpCase = (name: Name): string => {
   const plain = langName('php', name, 'class');
   return PHP_CASE_REFUSED.has(plain.toLowerCase()) ? `${plain}_` : plain;
 };
+
+// GN-4c: the Rust name of the entry of a function of a functions unit, which no helper of the crate has.
+const functionEntry = (fn: Fn): string => `function_${convert(fn.member.name, 'rust', 'variable')}`;
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
@@ -730,7 +734,7 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 /// ${phpName} (G-7: PHP counts the arguments and checks their names by the arginfo of these parameters).
 #[php_function]
 #[php(name = ${rustString(phpName)})]
-pub fn ${rustField(fn.member.name)}(${params.join(', ')}) -> Result<Zval, PhpException> {
+pub fn ${functionEntry(fn)}(${params.join(', ')}) -> Result<Zval, PhpException> {
     guard(|| {
 ${lines.join('\n')}
     })
@@ -792,7 +796,7 @@ fn ${recognizedFn(cb, m)}(error: Thrown) -> ${failure} {
     let Thrown::Php(exception) = &error else {
         return thrown(error);
     };
-    let core = recognized_kind(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
+    let core = kind_of_recognized(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
         Some(core) => binding_core::Failure::Kind(core),
         None => thrown(error),
@@ -829,7 +833,7 @@ ${recognizing}`;
 // members that recognize error units. Both are read in the scope of the class of the category, which declares kind.
 const RECOGNIZED_KIND = `
 /// U-3: the kind and the message of an exception that is an instance of one of the library classes (GN-6d).
-fn recognized_kind(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
+fn kind_of_recognized(exception: &ZendObject, classes: &[usize]) -> Option<(String, String)> {
     for index in classes {
         let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
         if exception.instance_of(class) {
@@ -1283,7 +1287,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
   }).join('');
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
-    ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
+    ...model.functions.map((fn) => `        .function(wrap_function!(${functionEntry(fn)}))`),
     // N-4: the iterator is registered before the classes whose getIterator names it as its return type.
     ...(iterates ? ['        .class::<PhpPairs>()'] : []),
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),

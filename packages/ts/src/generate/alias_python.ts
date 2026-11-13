@@ -259,13 +259,6 @@ fn handle_position(value: u64) -> usize {
         Err(_wide) => usize::MAX,
     }
 }
-
-/// U-3: an exception of Python code while the core walks a value, as the Raised that the caller throws again.
-fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
-}
 `).replace(/\n\n(?=[ }])/g, '\n');
 
 // U-7 (a'): the failure of the `in` of a value alias of another repository. Its kind, status and errno are the owner's;

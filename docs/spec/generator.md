@@ -148,8 +148,18 @@ the design ids are those of the binding design.
   `list_out`), and the helpers of a default, of a callable and of a passthrough are `default_in`, `callable_in` and
   `passed_out`. A new helper follows the same rule. Why: a unit takes any name, also `default`, `callable`, `text`,
   `list` or `scope`, and a helper named `in_<word>` is defined a second time in the crate of a contract that has a
-  unit of that name, which does not compile. Not applied yet (G-4): the crates of Node, WASM and Go name their
-  helpers `in_<word>` and `out_<word>`; the crates of PHP and Python apply the rule.
+  unit of that name, which does not compile. The same holds for every function whose name comes from the contract: a
+  name of the contract and a helper of the crate share no name. Such a function states its family first, and no
+  helper starts with the prefix of a family: `in_` and `out_` (a unit), `held_` (a class at a parameter), `make_` (a
+  value alias), `alias_in_` (the entry of `codec-test`), `recognized_<callback>_<member>`, and `function_`, the
+  entry of a function of a functions unit, to which an attribute gives the name of its language (`#[php(name =
+  ...)]`, `#[pyfunction(name = ...)]`); the Python entry of a function with an event loop (GN-6ae) is
+  `loop_function_<name>`. The members of a class are functions of its `impl` block, which holds no helper. The
+  entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
+  where the attribute already gives the name of the language, while a module would change every path from an entry
+  to a helper and the form in which each framework registers the entry. Not applied yet (G-4): the crates of Node,
+  WASM and Go name their helpers `in_<word>` and `out_<word>`, and their entries of functions are not checked
+  against this rule; the crates of PHP and Python apply the rule.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
