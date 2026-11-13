@@ -148,7 +148,9 @@ the design ids are those of the binding design.
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
-  B-5c test, which takes an instance, takes its write guard and panics.
+  B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
+  carries `#[allow(clippy::panic)]` with a reason that names B-7; a repository that denies `clippy::panic` keeps the
+  deny for every other item, and no other generated item panics.
   A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, and
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
   `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
@@ -386,7 +388,10 @@ the design ids are those of the binding design.
   the arginfo declares no type, the stub declares `mixed` and states the contract type in `@param`. The record fields
   follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
   extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
-  the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
+  the file, line and trace of its call. Startup finds every class of PHP that a library class extends or implements
+  before it registers anything, and a class that the engine lacks fails the start of the module (startup returns
+  failure), as does a library class whose registration fails; so every class that a registration or a call reads is
+  there, and the extension has no panic for a missing one; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
   enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
   `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the

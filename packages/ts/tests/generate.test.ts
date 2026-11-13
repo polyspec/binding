@@ -1743,6 +1743,19 @@ test('a value class without core_type keeps the language values that its constru
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
 });
 
+test('the PHP extension finds the classes of PHP at startup and has no panic (GN-10)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // Only the entry points of the panic test panic, and each allows it by B-7.
+  const items = lib.split(/\n\s*\n/);
+  for (const item of items.filter((i) => /\bpanic!\(/.test(i))) assert.match(item, /#\[allow\(clippy::panic, reason = "B-7: [^\n]*\n\s*#\[cfg\(feature = "panic-test"\)\]/, item);
+  assert.doesNotMatch(lib, /panic!\("B-4/);
+  // Every class of PHP is found before anything is registered, and a missing one fails the start.
+  assert.match(lib, /const BUILTIN_NAMES: \[&str; \d+\] = \[[^\]]*"RuntimeException"/);
+  assert.match(lib, /extern "C" fn startup\(_kind: i32, _module: i32\) -> i32 \{\n[^\n]*\n {4}for \(slot, name\) in BUILTINS\.iter\(\)\.zip\(BUILTIN_NAMES\) \{[\s\S]*?None => return 1,[\s\S]*?let registered = ClassBuilder::new/);
+});
+
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const data = sample.units.find((u: any) => u.id === 'data');

@@ -121,7 +121,9 @@
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | 아직 없음. WASM은 `__armFaults`, `__faultLeft` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
-  인스턴스를 받아 쓰기 guard를 얻고 panic한다.
+  인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
+  `#[allow(clippy::panic)]`를 갖는다. `clippy::panic`을 deny하는 레포는 다른 모든 항목에 그 deny를 유지하며, 다른 생성
+  항목은 panic하지 않는다.
   Python·Node·PHP·WASM crate는 계약의 alias에 `in_raises`가 있으면 `codec-test`를, 계약에 `faults`가 있으면
   `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
   `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. case는 다른 라이브러리의
@@ -321,7 +323,9 @@
   받는다(T-8). 엔진이 arginfo로 인자를 세고 이름을 확인한다(G-7). arginfo가 타입을 적지 않으므로 stub은 `mixed`를 적고 계약
   타입은 `@param`에 적는다. record field는 parameter 뒤의 이름 있는 parameter다. category 클래스는 module 시작 때
   `ClassBuilder`로 등록하고, 엔진의 class table에서 찾은 E-2 클래스를 상속하며, 클래스 자신의 객체 handler를 유지하므로 오류는
-  호출의 file, line, trace를 갖는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. enum은 backed enum이다(T-6).
+  호출의 file, line, trace를 갖는다. startup은 무엇이든 등록하기 전에 라이브러리 클래스가 상속하거나 구현하는 PHP 클래스를 모두
+  찾고, 엔진에 없는 클래스가 있으면 module 시작이 실패한다(startup이 실패를 돌려준다). 등록이 실패한 라이브러리 클래스도
+  같다. 그래서 등록이나 호출이 읽는 클래스는 모두 있고, 확장은 없는 클래스 때문에 panic하지 않는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. enum은 backed enum이다(T-6).
   ext-php-rs의 `php_function`과 `php_module` 펼침이 `Option::map_or`와 `Result::unwrap_or`를 부르므로 함수와 module 진입은
   그 allow 하나를 가진 한 module에 있다. `keyed_map<T>{key}`는 순서대로의 array다(T-2). int key는 정수 key이고, 계약이 정수를
   적지 않고 텍스트를 적으면 그 십진 텍스트다(PHP는 십진 문자열 key를 int로 바꾸기 때문이다). 문자열 key는 UTF-8이고 텍스트가
