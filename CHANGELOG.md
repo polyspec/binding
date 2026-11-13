@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A changelog entry named the commit that an end-to-end run had checked, which tells a reader nothing without a lookup
+  and is lost in a shallow history. No tracked file now names a Git commit, except the commit pin of a GitHub action
+  and a lock; `tests/tracked-commits.test.ts` fails any other token of a commit name, and the entry states the run
+  that verified it (B1.4). Verified by `npm test` in `packages/ts`.
 - GN-13a listed B-10 among the tests that G-5 does not generate, while GN-6p states that PHP, Python and Node generate
   a B-10 test for each class unit with `cleanup`. GN-13a now names B-10 as open only in Go and WASM, which refuse such
   a unit by name (GN-6p, GN-13a). Verified by reading the B-10 tests that `npm test` in `packages/ts` requires of PHP,
@@ -122,7 +126,7 @@
   cleanup call: `E_WARNING`, `ResourceWarning`, or `process.emitWarning` of type `ResourceWarning` (GN-6p, B-10). The
   generated tests require kind `consumed` after the call and the warning. Go and WASM refuse such members and units by
   name. Verified by `make check`.
-- The end-to-end check of `tests/e2e/classes` at 8d9ed8c failed for Python, because `a<name>` built its tuple of
+- The end-to-end check of `tests/e2e/classes` failed for Python, because `a<name>` built its tuple of
   arguments from a chained iterator, which `PyTuple::new` does not take (it needs an exact size), and for Node and
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
   clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
