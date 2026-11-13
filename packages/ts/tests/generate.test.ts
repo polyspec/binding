@@ -1753,6 +1753,19 @@ test('the members of a value class without core_type and a primitive run their c
       { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
     ],
   });
+  // An int leaves Node by two forms, a number or a bigint, so a result of the alias is not compared there; a property
+  // of the class gives the value as it was given, which is compared.
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'int', when: { predicate: 'safe_integer', is: true }, make: { php: 'int', python: 'int', node: 'int', go: 'int', wasm: 'int' } },
+    { kind: 'int', when: { predicate: 'safe_integer', is: false }, make: { php: 'int', python: 'int', node: 'bigint', go: 'int', wasm: 'bigint' } },
+  );
+  data.in = data.in.filter((row: any) => row.node !== 'number');
+  data.in.push(
+    { python: 'int', cases: [{ kind: 'int', read: 'builtin' }] },
+    { node: 'number', cases: [{ when: { predicate: 'integral_float', is: false }, kind: 'float', read: 'builtin' }, { when: { predicate: 'safe_integer', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }] },
+    { node: 'bigint', cases: [{ kind: 'int', read: 'builtin' }] },
+  );
   const tag = sample.units.find((u: any) => u.id === 'tag');
   tag.members.push({ id: 'tag.weight', name: ['weight'], kind: 'primitive', visibility: 'public', parameters: [], returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Tag::weight', receiver: '&self' } });
   sample.cases.push(
@@ -1766,7 +1779,7 @@ test('the members of a value class without core_type and a primitive run their c
     { id: 'a_text_is_boxed', value: { kind: 'text', value: 'x' } },
     { id: 'bytes_that_are_no_text_are_not_boxed', value: { kind: 'bytes', value: { hex: 'ff' } }, raises: { kind: 'unsupported', status: null, category: 'value' } },
   ];
-  cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }];
+  cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }, { id: 'an_int_is_kept_as_it_was_given', value: { kind: 'int', value: 1 }, result: { kind: 'int', value: 1 } }];
   cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }, { id: 'no_tag_weighs_minus_zero', name: '', result: -0 }];
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm'] });
   // Each case of the constructor and of the property runs: the raising one as B-4, the others as GN-13e; the
@@ -1776,6 +1789,7 @@ test('the members of a value class without core_type and a primitive run their c
     assert.match(python, new RegExp(`def test_${name}\\(self\\)`), name);
   }
   assert.doesNotMatch(python, /def test_u2_boxed_new_value_takes_none_as_a_value/);
+  assert.match(python, /def test_gn13e_boxed_value_an_int_is_kept_as_it_was_given\(self\) -> None:\n {8}result = pkg\.Boxed\((.+)\)\.value\n {8}expected = \1\n/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const tests = text(out, path);
     for (const name of ['B-4: Boxed.constructor bytes_that_are_no_text_are_not_boxed', 'GN-13e: Boxed.constructor a_text_is_boxed', 'GN-13e: Boxed.value the_value_is_kept', 'G-7: Boxed.constructor counts and names its arguments']) {
@@ -1786,6 +1800,8 @@ test('the members of a value class without core_type and a primitive run their c
     const tests = text(out, path);
     // The property is read on the instance that the constructor makes from the case's keys.
     assert.match(tests, /test\('GN-13e: Boxed\.value the_value_is_kept', \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Boxed\('x'\)\.value\), ordered\('x'\)\);/, path);
+    // The property gives the value as the language gave it, so the expected value is written as the argument was.
+    assert.match(tests, /test\('GN-13e: Boxed\.value an_int_is_kept_as_it_was_given', \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(new pkg\.Boxed\((.+)\)\.value\), ordered\(\1\)\);/, path);
     // The default of the constructor is the null of the language, so null is no refused value there (GN-13d).
     assert.doesNotMatch(tests, /U-2: Boxed\.constructor takes null/, path);
     // A primitive runs its case through the number form of the instance.
