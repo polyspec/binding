@@ -11,6 +11,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 - 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-binding-core`, 라이브러리 이름 `binding_core`, 버전 0.0.1, edition
   2021, rust-version 1.99.0, toolchain 1.99.0(`rust-toolchain.toml`).
 - 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목).
+- feature `lock`: `Exclusive`, `Shared`, `Reading`, `Writing`과 `sync`만 켠 의존 `tokio` 1.54.1을 더한다. Python·Node·PHP 바인딩
+  crate가 켜고 코어 crate는 켜지 않는다(B-5c).
 - feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - 개발 중 다른 레포에서 쓰는 법: 이 폴더에 대한 경로 의존
@@ -28,6 +30,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Cancel::on_cancel(&self, wake: impl FnOnce() + Send + 'static) -> CancelGuard` | B-5 (b) | 호출자가 취소하면 trigger의 스레드에서 `wake`를 한 번 부르고, 이미 취소했으면 바로 부른다. 그래서 블로킹 대기(`Condvar`, park한 스레드)가 폴링 없이 깨어난다. `wake`는 막히면 안 된다. |
 | `CancelGuard` | B-5 (b) | 버리면 아직 불리지 않은 함수를 뺀다. |
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. 상태를 취소한 뒤 등록된 함수를 부른다. |
+| `Exclusive<T>`, `Shared<T>` | U-2 busy, B-5c | `lock`이 있을 때. try로만 얻는 잠금에 담은 class unit의 코어 값: `Exclusive`는 `Arc<tokio::sync::Mutex<T>>`, `Shared`는 `Arc<tokio::sync::RwLock<T>>`이며 각각 `poisoned` 표지를 가진다. `new(T)`, `Clone`(같은 값의 다른 handle), `read(&self, class, beside: &[Option<&Reading<_>>]) -> Result<Reading<_>, BindingError>`(읽기 쪽 자리의 guard. `beside`에 같은 인스턴스의 guard가 있으면 함께 쓴다), `write(&self, class) -> Result<Writing<_>, BindingError>`(쓰기 쪽 자리의 guard). 잡힌 잠금은 kind `busy`, poisoned 객체는 kind `internal`이다. 어떤 호출도 기다리지 않는다. |
+| `Reading<G>`, `Writing<G>` | B-5c | `lock`이 있을 때. 읽기 쪽 자리의 owned guard(`Deref`, `Clone`, 마지막 복제와 함께 놓인다)와 쓰기 쪽 자리의 owned guard(`Deref`, `DerefMut`). 둘 다 값과 함께 `Send`다. panic이 `Writing`을 거쳐 풀리면 잠금을 놓기 전에 `poisoned`를 세운다. |
 | `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | key가 `Key::Int(i64)`, `Key::Bytes(Vec<u8>)`, `Key::Text(String)`인 삽입 순서 보존 맵. API와 규칙은 `OrderedMap`과 같다. |

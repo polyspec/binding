@@ -12,6 +12,8 @@ types of the design rules named below and no rule of any library.
   0.0.1, edition 2021, rust-version 1.99.0, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
   (the entries of `OrderedMap`).
+- Feature `lock`: adds `Exclusive`, `Shared`, `Reading` and `Writing` and the dependency `tokio` 1.54.1 with `sync`
+  only. The binding crates of Python, Node and PHP enable it; a core crate does not (B-5c).
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Use from another repository during development: a path dependency on this folder,
@@ -29,6 +31,8 @@ types of the design rules named below and no rule of any library.
 | `Cancel::on_cancel(&self, wake: impl FnOnce() + Send + 'static) -> CancelGuard` | B-5 (b) | Calls `wake` once on the trigger's thread when the caller cancels, or at once if it already did, so a blocking wait (a `Condvar`, a parked thread) wakes without polling; `wake` must not block. |
 | `CancelGuard` | B-5 (b) | Dropping it removes the function if it has not run. |
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, idempotent; runs the registered functions after the state is cancelled. |
+| `Exclusive<T>`, `Shared<T>` | U-2 busy, B-5c | With `lock`. The core value of a class unit behind a lock that is only tried: `Exclusive` is an `Arc<tokio::sync::Mutex<T>>`, `Shared` an `Arc<tokio::sync::RwLock<T>>`, each with the mark `poisoned`. `new(T)`, `Clone` (another handle of the same value), `read(&self, class, beside: &[Option<&Reading<_>>]) -> Result<Reading<_>, BindingError>` (the guard of a read place; the guard in `beside` of the same instance is shared), `write(&self, class) -> Result<Writing<_>, BindingError>` (the guard of a write place). A lock that is held is kind `busy`, a poisoned object kind `internal`; no call waits. |
+| `Reading<G>`, `Writing<G>` | B-5c | With `lock`. The owned guards (`Send` with their value) of a read place (`Deref`, `Clone`, released with its last clone) and of a write place (`Deref`, `DerefMut`); a `Writing` that a panic unwinds through sets `poisoned` before the lock is released. |
 | `Cleanup` | U-1 `cleanup`, B-10 | Marker trait without methods or blanket implementation; implemented by the core type of a unit with `cleanup`. |
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | Insertion-ordered map whose keys are `Key::Int(i64)`, `Key::Bytes(Vec<u8>)` or `Key::Text(String)`; the same API and rules as `OrderedMap`. |
