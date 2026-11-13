@@ -187,7 +187,11 @@ the design ids are those of the binding design.
   Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
   built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
-  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound.
+  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
+  it is kept until its request ends: the engine frees the values of a request when the request ends, so the extension
+  releases them at its request shutdown, while the engine is alive, and a handle of an ended request finds no value
+  (kind `internal`). A value kept beyond the request is released by the thread after the engine is gone, which ends
+  the process with a fault.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the

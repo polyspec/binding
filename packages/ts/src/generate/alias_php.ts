@@ -266,22 +266,37 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
 }
 
 thread_local! {
-    /// U-7 (VAL-18): the PHP values that entered as handles, which a native value gives back as the same value.
+    /// U-7 (VAL-18): the PHP values that entered as handles in this request, which a native value gives back as the
+    /// same value.
     static NATIVE: RefCell<Vec<Zval>> = const { RefCell::new(Vec::new()) };
+    /// GN-6e: the count of the handles of the requests that ended. The handles of this request follow it, so a handle
+    /// of an ended request finds no value.
+    static RELEASED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 fn native_handle(value: &Zval) -> Handle {
     NATIVE.with_borrow_mut(|native| {
         native.push(value.shallow_clone());
-        Handle::new(handle_count(native.len() - 1))
+        Handle::new(RELEASED.get().saturating_add(handle_count(native.len() - 1)))
     })
 }
 
 fn native_object(handle: Handle) -> Result<Zval, Fail> {
-    NATIVE.with_borrow(|native| match native.get(handle_position(handle.raw())) {
+    let position = handle.raw().checked_sub(RELEASED.get()).map(handle_position);
+    NATIVE.with_borrow(|native| match position.and_then(|position| native.get(position)) {
         Some(value) => Ok(value.shallow_clone()),
         None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: the native value is gone") })),
     })
+}
+
+/// GN-6e: the values that entered as handles are released when the request ends, while the engine that owns them is
+/// alive. Kept longer, they are released by the thread after the engine is gone, which ends the process with a fault.
+extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
+    NATIVE.with_borrow_mut(|native| {
+        RELEASED.set(RELEASED.get().saturating_add(handle_count(native.len())));
+        native.clear();
+    });
+    0
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).

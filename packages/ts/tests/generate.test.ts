@@ -502,6 +502,23 @@ test('a value alias converts through its core functions in every language (U-7)'
   }
 });
 
+test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
+    contract: read(`${repository}/packages/rust/interface.json`), version: '0.0.0', coreLib: `polyspec_${repository}`,
+    caseFiles: new Map([['contracts/cases.json', read(`${repository}/contracts/cases.json`)]]), ...(foreign === undefined ? {} : { foreign }),
+  }), 'packages/php-ext/generated/lib.rs');
+  // A crate with a value alias, its own or of another repository, holds the values and releases them.
+  for (const crate of [lib('sample'), lib('consumer', new Map([['sample', read('sample/packages/rust/interface.json')]]))]) {
+    assert.match(crate, /let module = module\.request_shutdown_function\(release_native\);/);
+    assert.match(crate, /extern "C" fn release_native\(_kind: i32, _module: i32\) -> i32 \{\n    NATIVE\.with_borrow_mut\(\|native\| \{\n        RELEASED\.set\([^\n]*\n        native\.clear\(\);/);
+    // A handle of an ended request is below the count of the released ones and finds no value.
+    if (/fn native_object\(/.test(crate)) assert.match(crate, /let position = handle\.raw\(\)\.checked_sub\(RELEASED\.get\(\)\)\.map\(handle_position\);/);
+    assert.match(crate, /Handle::new\(RELEASED\.get\(\)\.saturating_add\(handle_count\(native\.len\(\) - 1\)\)\)/);
+  }
+  assert.doesNotMatch(lib('shapes'), /request_shutdown_function|release_native/);
+});
+
 // The consumer sample of the end-to-end check, which names the value alias of the sample (tests/e2e/consumer).
 const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));

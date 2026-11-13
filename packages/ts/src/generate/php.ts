@@ -1250,7 +1250,9 @@ ${poisonRust(model, layout)}
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
-    ${register.join('\n')};
+    ${register.join('\n')};${model.aliases.length === 0 ? '' : `
+        // GN-6e: a PHP value that entered as a handle does not outlive its request.
+        let module = module.request_shutdown_function(release_native);`}
         #[cfg(feature = "panic-test")]
         let module = module.function(wrap_function!(panic_test));${model.objects.some((o) => o.lock?.writes === true) ? `
         #[cfg(feature = "panic-test")]
