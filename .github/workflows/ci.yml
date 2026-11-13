@@ -11,9 +11,13 @@
 #
 # Each job runs the bootstrap right after the checkout (uses: ./.github/actions/bootstrap), then installs the tools of its
 # entry with make install-tools: the Rust toolchain of rust-toolchain.toml, which the tests of packages/ts also run for
-# cargo fmt. The end-to-end check (make e2e) is not a job: it needs a checkout of each repository that it checks, and
-# AGENTS.md requires its run of a commit before that commit is pushed or merged. No job waits for another job or reads
-# its build output.
+# cargo fmt. No job waits for another job or reads its build output.
+#
+# The job e2e runs the end-to-end check (make e2e) of each repository of tests/e2e, one entry of its matrix per
+# repository with the repositories that its core depends on (DEPS), on every tool of the checkout (make install-tools)
+# and in a work directory outside the checkout. It is the run of the five targets, and of the released form of the Go
+# module (GN-14f), on Linux; an entry whose run fails stays in the matrix and fails ci-passed. Each entry uploads the
+# record var/report/e2e/. The end-to-end check of another repository needs a checkout of it and is no job.
 name: ci
 
 on:
@@ -62,12 +66,53 @@ jobs:
           name: ci-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: var/ci/${{ matrix.name }}/
           if-no-files-found: error
+  e2e:
+    name: e2e (${{ matrix.name }})
+    runs-on: ubuntu-26.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: classes
+            repo: tests/e2e/classes
+            deps: ""
+          - name: consumer
+            repo: tests/e2e/consumer
+            deps: tests/e2e/sample
+          - name: plot
+            repo: tests/e2e/plot
+            deps: tests/e2e/points
+          - name: sample
+            repo: tests/e2e/sample
+            deps: ""
+          - name: shapes
+            repo: tests/e2e/shapes
+            deps: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+      - uses: ./.github/actions/bootstrap
+        id: bootstrap
+        if: ${{ !cancelled() }}
+      - id: tools
+        if: ${{ !cancelled() }}
+        run: make install-tools
+      - id: e2e
+        if: ${{ !cancelled() }}
+        run: make e2e REPO=${{ matrix.repo }} DEPS="${{ matrix.deps }}" WORK=${{ runner.temp }}/e2e
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: report
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: var/report/e2e/
+          if-no-files-found: error
   # The job that fails the run when any other job did not pass, so a release, which takes a successful run by its id,
   # holds every job. It runs after every other job, also after a failed, skipped or cancelled one (if: always()), and
   # make ci-passed fails unless every job of needs has the result success.
   ci-passed:
     if: ${{ always() }}
-    needs: [check]
+    needs: [check, e2e]
     runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

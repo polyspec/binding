@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- The end-to-end check ran on macOS alone: `.github/workflows/ci.yml` ran no end-to-end check, so no run tested the five
+  targets, or the released form of the Go module, on Linux, where a release is built and used. The workflow now has the
+  job `e2e`, which runs `make e2e` of each repository of `tests/e2e` (classes, consumer with sample, plot with points,
+  sample, shapes) with every tool of the checkout and uploads the record `var/report/e2e/`, and `ci-passed` needs it;
+  `tests/ci-workflow.test.ts` requires the entries and the rules of a workflow. The entry plot fails while its targets
+  php, python and wasm fail. Verified by `make test-ts` (314 tests passed). Not run: the job in CI, which runs on the
+  push of `main`.
+- The static library of the released form of a Go module held the debug sections of the Rust standard library, a
+  third of its size, and the `strip` of a Cargo profile does not change a static library (19402832 bytes of the
+  sample on darwin/arm64 with `strip = "debuginfo"` and without it). The specification states that a release removes
+  them with `llvm-strip --strip-debug` of the pinned toolchain (GN-15g), and the step of the released form of the
+  end-to-end check does so and fails when `llvm-size -A` still names a debug section (GN-14f).
 - No consumer could take the Go module of a library: a Go module is fetched as the source of a tag, the generated Go
   files and the static library are no tracked files, and the generated code named no directory of the library, so a
   build needed `CGO_LDFLAGS`. `binding generate` now writes, for each platform of a Go module (`linux_amd64`,

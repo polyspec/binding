@@ -1,11 +1,21 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0376d82197547faf866cd9c9963179747d7a6ffcc0f6be0637e4f2612b18843d -->
+<!-- source-sha256: ea3b098021cf84754b103c1d29e4a644675d66432677c221cda159890d6b70d4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 검사는 macOS에서만 실행되었다: `.github/workflows/ci.yml`이 end-to-end 검사를 실행하지 않아서, release가
+  빌드되고 쓰이는 Linux에서 다섯 target과 Go 모듈의 release 형태를 시험한 실행이 없었다. 이제 workflow에 job `e2e`가 있다.
+  이 job은 `tests/e2e`의 각 레포(classes, sample과 함께 consumer, points와 함께 plot, sample, shapes)의 `make e2e`를
+  checkout의 모든 도구로 실행하고 기록 `var/report/e2e/`를 upload하며, `ci-passed`가 이 job을 요구한다.
+  `tests/ci-workflow.test.ts`가 그 항목들과 workflow의 규칙을 요구한다. 항목 plot은 그 target php, python, wasm이 실패하는
+  동안 실패한다. 확인: `make test-ts`(시험 314개 통과). 실행하지 않은 것: CI의 job. 그것은 `main`의 push에서 실행된다.
+- Go 모듈의 release 형태의 정적 라이브러리가 Rust 표준 라이브러리의 debug section을 담았고 그것이 크기의 3분의 1이었으며,
+  Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않는다(darwin/arm64에서 sample은 `strip = "debuginfo"`가 있든 없든
+  19402832 bytes). 명세는 release가 고정 toolchain의 `llvm-strip --strip-debug`로 그것을 뗀다고 적고(GN-15g), end-to-end
+  검사의 release 형태 단계가 그렇게 하며 `llvm-size -A`가 debug section을 여전히 적으면 실패한다(GN-14f).
 - 어떤 소비자도 라이브러리의 Go 모듈을 받을 수 없었다: Go 모듈은 tag의 소스로 받아지는데, 생성된 Go 파일과 정적
   라이브러리는 추적 파일이 아니고, 생성 코드는 라이브러리의 디렉터리를 가리키지 않아서 빌드에 `CGO_LDFLAGS`가 필요했다.
   이제 `binding generate`는 Go 모듈의 플랫폼(`linux_amd64`, `linux_arm64`, `darwin_arm64`)마다 지시문
