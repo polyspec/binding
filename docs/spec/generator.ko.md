@@ -442,15 +442,15 @@
 
 ## 끝에서 끝까지 확인
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`는 checkout의
-  Node.js로 `scripts/e2e.mts`를 실행하며
+- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`는
+  checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
   (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없고 계약의 target에 wasm이 있다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
   `binding scaffold`의 추적 package)을 하며 하나씩 출력하고, `binding check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
   따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.
   `ADD_TARGETS`는 그 target을 P-1과 P-5의 package 항목, E-2의 WASM 클래스와 함께 사본에 더하고 그 사실을 출력한다. binding의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
-  (`url.<base>.insteadOf`). Cargo가 사본을 처음 해석하기 전에, 검사는 `Cargo.lock`의 `polyspec-binding-core` 항목에 checkout의
+  (`url.<base>.insteadOf`). Cargo가 사본을 처음 해석하기 전에, 검사는 `Cargo.lock`의 `polyspec-binding-core` 항목에 실행의
   커밋을 적고, 사본에 lock이 없으면 그 항목만 가진 lock을 쓴다. Cargo는 먼저 GitHub에 브랜치의 head를 묻는데 그것은 push된
   커밋이고, `binding scaffold`가 쓰는 manifest는 checkout에만 있는 `binding_core`의 feature를 필요로 할 수 있기 때문이다.
 - **GN-14a** 끝에서 끝까지 확인은 계약의 모든 target을 실행한다. 어떤 단계보다 먼저 각 target의 도구를 checkout이 고정하고
@@ -466,3 +466,14 @@
   뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. macOS에서 PHP
   확장은 링커가 PHP 기호를 로드 때로 남겨야(`-undefined dynamic_lookup`) 링크된다. PHP 바인딩 crate가 BD-9의 `build.rs`를
   갖기 전까지 그 설정은 추적 파일에 없고, macOS의 실행은 그것을 손으로 주며 실행 보고가 그 사실을 적는다.
+- **GN-14b** 실행은 binding의 commit 하나를 확인한다: `BINDING`, 기본은 `HEAD`. 확인은 그 commit의 tree를 `git archive`로
+  `<work>/binding`에 쓰고, 그 tree의 lock으로 생성기의 패키지를 설치하고, 그 tree의 스크립트를 실행한다. 그래서 생성기,
+  `binding_core`(각 사본의 lock이 그 commit을 고정한다), `tests/e2e`의 case runner와 스크립트가 한 commit의 것이다. checkout
+  안의 레포(`tests/e2e/<library>`)도 그 tree에서 읽는다. 실행은 Git이 무시하는 checkout의 `var/report/e2e/<library>.json`에
+  기록을 쓴다: commit, 실행이 증거인지 진단인지와 그 이유, 레포들의 커밋, target마다 돈 것. 실행이 checkout에서 읽는
+  파일(`Makefile`, `scripts/e2e.mts`, AGENTS.md의 도구 고정 파일, `package.json`, `package-lock.json`, `.npmrc`)이 그 commit에
+  대해 커밋된 것이든 커밋되지 않은 것이든 추적되지 않은 것이든 변경이 없고, 빌드나 runner를 바꾸는 변수(`RUSTFLAGS`,
+  `CARGO_TARGET_*`, `CARGO_BUILD_*`, `CARGO_PROFILE_*` 변수, `CGO_*`, `GOFLAGS`, `NODE_OPTIONS`, `PYTHONPATH`, `PHPRC` 등)를 손으로
+  주지 않았을 때만 실행은 그 commit의 증거다. 그렇지 않으면 기록은 실행을 진단으로 적고(그 파일의 변경이면 `diagnosis (not a
+  commit)`) 이유를 적는다. 이유: 작업 tree의 실행은 어느 commit에도 없는 생성기를 다른 commit의 `binding_core`와 함께
+  확인하므로, 그 결과는 push나 merge가 나르는 어느 commit의 것도 아니다.

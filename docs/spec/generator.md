@@ -537,8 +537,8 @@ the design ids are those of the binding design.
 
 ## End-to-end check
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`, which runs
-  `scripts/e2e.mts` on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]`,
+  which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses, whose contract has the target wasm (GN-18a); and `tests/e2e/consumer` is one that names the
@@ -552,7 +552,7 @@ the design ids are those of the binding design.
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. `ADD_TARGETS` adds those targets to the copy
   with the package entries of P-1 and P-5 and the WASM classes of E-2, and says so. The Git dependency on binding resolves to the commits of the checkout (`url.<base>.insteadOf` for the
-  run's commands). Before Cargo first resolves the copy, the check writes the commit of the checkout into the entry of
+  run's commands). Before Cargo first resolves the copy, the check writes the commit of the run into the entry of
   `polyspec-binding-core` in `Cargo.lock`, or writes a lock of that entry alone when the copy has none: Cargo asks
   GitHub for the head of the branch first, which is the pushed commit, and a manifest that `binding scaffold` writes may
   need a feature of `binding_core` that only the checkout has.
@@ -572,3 +572,16 @@ the design ids are those of the binding design.
   counts as a test only when its JUnit log names a test, and a target for which no test ran fails the run. On macOS the PHP extension links only when the linker leaves the PHP symbols to the
   load (`-undefined dynamic_lookup`); until the PHP binding crate has the `build.rs` of BD-9, that setting is not in a
   tracked file and a run on macOS gives it by hand, which the report of the run states.
+- **GN-14b** A run checks one commit of binding: `BINDING`, `HEAD` by default. The check writes the tree of that commit
+  into `<work>/binding` with `git archive`, installs the packages of the generator from the lock of that tree and runs
+  the script of that tree, so the generator, `binding_core` (the lock of each copy pins that commit), the case runners of
+  `tests/e2e` and the script are of one commit; a repository inside the checkout (`tests/e2e/<library>`) is read from
+  that tree too. The run writes its record into `var/report/e2e/<library>.json` of the checkout, which Git ignores: the
+  commit, whether the run is evidence or a diagnosis and why, the commits of the repositories and what ran for each
+  target. The run is evidence of the commit only when the files that it reads from the checkout (the `Makefile`,
+  `scripts/e2e.mts`, the tool pins of AGENTS.md, `package.json`, `package-lock.json` and `.npmrc`) have no change against
+  the commit, committed, uncommitted or untracked, and no variable that changes a build or a runner (`RUSTFLAGS`, the
+  `CARGO_TARGET_*`, `CARGO_BUILD_*` and `CARGO_PROFILE_*` variables, `CGO_*`, `GOFLAGS`, `NODE_OPTIONS`, `PYTHONPATH`, `PHPRC`
+  and the like) is given by hand; otherwise the record names the run a diagnosis (`diagnosis (not a commit)` for a
+  change of those files) and states why. Why: a run of the working tree checks a generator that no commit holds,
+  against a `binding_core` of another commit, so the result belongs to no commit that a push or a merge carries.

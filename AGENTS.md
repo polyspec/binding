@@ -36,5 +36,10 @@ rules of this repository.
   report of a run names a lint apart from a test: a lint runs no code, so it verifies no target. Why: a target that did
   not run is not verified while the run would look passed.
   Enforced by: `make e2e`, which fails before its first step when a tool is missing and at its end when a target ran no test.
-- Own: A change of the generator runs the end-to-end check of `docs/spec/generator.md` (GN-14) before its commit.
-  Enforced by: none, the end-to-end check needs every target with its runner, which no unit test owns.
+- Own: A commit that changes the generator, `binding_core` or the end-to-end check passes the end-to-end check of that
+  commit (`make e2e BINDING=<commit>`, GN-14 and GN-14b) before it is pushed or merged, and a failure is fixed by a new
+  commit, which is checked the same way. Only a run whose record (`var/report/e2e/`) names it evidence of the commit
+  counts. Why: a run of the working tree checks a generator that no commit holds against the `binding_core` of another
+  commit, so the two can differ and the result belongs to no commit that a push or a merge carries.
+  Enforced by: none, the end-to-end check needs every target with its runner, which no unit test owns; the record names
+  the commit of each run.

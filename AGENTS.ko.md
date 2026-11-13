@@ -31,5 +31,10 @@
   `make install`을 적고 실행을 실패시킨다(GN-14a). target을 빼는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를
   실행하지 않으므로 어느 target도 검증하지 않는다. 이유: 돌지 않은 target은 검증되지 않았는데 결과는 통과로 보인다.
   Enforced by: `make e2e`, 도구가 없으면 첫 단계 전에, 시험이 돌지 않은 target이 있으면 끝에서 실패한다.
-- Own: 생성기를 바꾸는 변경은 커밋 전에 `docs/spec/generator.md`의 끝에서 끝까지 확인(GN-14)을 실행한다.
-  Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다.
+- Own: 생성기, `binding_core`, 끝에서 끝까지 확인을 바꾸는 commit은 push나 merge 전에 그 commit의 끝에서 끝까지
+  확인(`make e2e BINDING=<commit>`, GN-14와 GN-14b)을 통과하고, 실패는 새 commit으로 고치며 그 commit도 같은 방법으로
+  확인한다. 기록(`var/report/e2e/`)이 그 commit의 증거라고 적은 실행만 센다. 이유: 작업 tree의 실행은 어느 commit에도 없는
+  생성기를 다른 commit의 `binding_core`와 함께 확인하므로 둘이 갈릴 수 있고, 그 결과는 push나 merge가 나르는 어느 commit의
+  것도 아니다.
+  Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다. 기록이 실행마다 그
+  commit을 적는다.

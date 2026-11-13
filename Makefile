@@ -65,10 +65,12 @@ TOOLCHAIN_LOCK_PLATFORMS := linux-x64,linux-arm64,macos-arm64
 toolchain-lock: ## Write mise.lock for the platforms of the deployment targets; ONLINE
 	$(ONLINE) $(KIT_TOOLS)/bin/mise lock --global --platform $(TOOLCHAIN_LOCK_PLATFORMS)
 
-# The end-to-end check of the generator (GN-14) on the Node.js of the checkout, with the tools of var/tools: REPO is the
-# checkout of a repository, WORK the directory of its copies, DEPS the checkouts of the repositories whose types the
-# contract names and ADD_TARGETS the targets that the run adds to the copy. It downloads the crates and packages that the
-# copies lock; ONLINE.
+# The end-to-end check of the generator (GN-14) on the Node.js of the checkout, with the tools of var/tools: BINDING is
+# the commit of binding that the run checks (GN-14b), REPO the checkout of a repository, WORK the directory of its
+# copies, DEPS the checkouts of the repositories whose types the contract names and ADD_TARGETS the targets that the run
+# adds to the copy. It writes its record into var/report/e2e and downloads the crates and packages that the copies
+# lock; ONLINE.
+BINDING ?= HEAD
 .PHONY: e2e
-e2e: ## Run the end-to-end check of the generator: REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
-	$(ONLINE) $(NODE) scripts/e2e.mts --repo $(REPO) --work $(WORK)$(foreach dep,$(DEPS), --dep $(dep))$(if $(ADD_TARGETS), --add-targets $(ADD_TARGETS))
+e2e: ## Run the end-to-end check of the generator: REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
+	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO) --work $(WORK)$(foreach dep,$(DEPS), --dep $(dep))$(if $(ADD_TARGETS), --add-targets $(ADD_TARGETS))

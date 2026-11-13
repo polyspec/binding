@@ -2,10 +2,11 @@
 // and run the generated tests (G-5) and, where tests/e2e/<library> holds them, the contract cases (V-1) on each
 // language's standard runner, for every target of the contract (GN-14).
 //
-//   make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
+//   make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]
 //
-// which runs node scripts/e2e.mts --repo <checkout> --work <directory> [--dep <checkout>]... [--add-targets go,wasm] with
-// the Node.js of the checkout and the environment of its mise. Every tool is the one that the checkout pins and `make
+// which runs node scripts/e2e.mts --binding <commit> --repo <checkout> --work <directory> [--dep <checkout>]...
+// [--add-targets go,wasm] with the Node.js of the checkout and the environment of its mise. The run checks the commit
+// BINDING of binding (HEAD by default), whose tree it writes into <work>/binding and runs from there (GN-14b). Every tool is the one that the checkout pins and `make
 // install` installs into var/tools (AGENTS.md): before any step the check finds the tool of each target and fails, naming
 // the target, the tool and `make install`, when one is missing. No switch leaves a target out, because a target that did
 // not run is not verified while the run would look passed.
@@ -31,8 +32,8 @@
 // only the tests verify a target, and a target without a test that ran fails the run.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { libraryParts } from '../packages/ts/src/check.ts';
 import { CATEGORIES, type Contract, type Lang, type Type, type Unit } from '../packages/ts/src/contract.ts';
 import { convert, libraryName } from '../packages/ts/src/names.ts';
@@ -45,34 +46,93 @@ for (let i = 2; i < process.argv.length; i += 2) {
   if (key === '--dep') deps.push(value);
   else args.set(key, value);
 }
-const repo = args.get('--repo');
+const options = ['--binding', '--repo', '--work', '--add-targets', '--checkout'];
+for (const key of args.keys()) {
+  if (!options.includes(key)) throw new Error(`unknown option ${key}; the options are --binding, --repo, --work, --dep and --add-targets`);
+}
+const repoArg = args.get('--repo');
 const workArg = args.get('--work');
 const addTargets = (args.get('--add-targets') ?? '').split(',').filter((t) => t !== '') as Lang[];
 for (const added of addTargets) {
   if (!['go', 'wasm'].includes(added)) throw new Error(`--add-targets takes go and wasm, not ${added}`);
 }
-for (const key of args.keys()) {
-  if (!['--repo', '--work', '--add-targets'].includes(key)) throw new Error(`unknown option ${key}; the options are --repo, --work, --dep and --add-targets`);
-}
-if (repo === undefined || workArg === undefined) {
-  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]\n');
+if (repoArg === undefined || workArg === undefined) {
+  process.stderr.write('usage: make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."] [ADD_TARGETS=go,wasm]\n');
   process.exit(2);
 }
 const work = resolve(workArg);
-const binding = new URL('..', import.meta.url).pathname;
+// The directory of this script, with a trailing slash.
+const here = new URL('..', import.meta.url).pathname;
+const git = (dir: string, argv: string[]): string => execFileSync('git', ['-C', dir, ...argv], { encoding: 'utf8' }).trim();
+
+// GN-14b: the run checks one commit of binding. Started by make e2e in the checkout, the script writes the tree of
+// that commit (BINDING, HEAD by default) into <work>/binding with git archive, installs the packages of the generator
+// from the lock of that tree and runs the script of that tree with --checkout, so the generator, binding_core, the
+// case runners and the script itself are of the same commit, whatever the working tree holds.
+if (args.get('--checkout') === undefined) {
+  const checkout = resolve(here);
+  const commit = git(checkout, ['rev-parse', '--verify', `${args.get('--binding') ?? 'HEAD'}^{commit}`]);
+  const source = join(work, 'binding');
+  process.stdout.write(`\n== binding: the tree of the commit ${commit}\n`);
+  rmSync(source, { recursive: true, force: true });
+  mkdirSync(source, { recursive: true });
+  execFileSync('tar', ['-x', '-C', source], { input: execFileSync('git', ['-C', checkout, 'archive', '--format=tar', commit], { maxBuffer: 1 << 30 }) });
+  const npm = join(checkout, 'var/tools/bin/npm');
+  if (!existsSync(npm)) {
+    process.stderr.write('the check installs the packages of the generator with the npm of mise.toml, which is not installed; run make install (AGENTS.md)\n');
+    process.exit(1);
+  }
+  execFileSync(npm, ['ci', '--prefix', join(source, 'packages/ts'), '--no-audit', '--no-fund'], { stdio: 'inherit' });
+  // A repository inside this checkout (tests/e2e/<library>) is read from the same commit.
+  const inSource = (path: string): string => {
+    const at = relative(checkout, resolve(path));
+    return at.startsWith('..') || isAbsolute(at) ? resolve(path) : join(source, at);
+  };
+  const forwarded = [
+    '--checkout', checkout, '--binding', commit, '--repo', inSource(repoArg), '--work', work,
+    ...deps.flatMap((dep) => ['--dep', inSource(dep)]),
+    ...(addTargets.length > 0 ? ['--add-targets', addTargets.join(',')] : []),
+  ];
+  const child = spawnSync(process.execPath, [join(source, 'scripts/e2e.mts'), ...forwarded], { stdio: 'inherit' });
+  process.exit(child.status ?? 1);
+}
+
+// The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
+const checkout = args.get('--checkout') ?? '';
+const commit = args.get('--binding') ?? '';
+const repo = repoArg;
+const binding = here;
 const cli = join(binding, 'packages/ts/src/cli.ts');
 const target = join(work, 'target');
 
+// GN-14b: a run is evidence of the commit only when nothing outside the commit could change it. The run reads from the
+// checkout the Makefile, the script that started it and the tools that var/tools installed from the tool pins, so these
+// files of the working tree must be those of the commit, without an uncommitted or untracked change; and no variable of
+// the environment that changes a build or a runner may be given by hand. Otherwise the run is a diagnosis, and its
+// record says why. Other files of the working tree do not reach the run, which reads the tree of the commit.
+const READ_FROM_CHECKOUT = ['Makefile', 'scripts/e2e.mts', 'mise.toml', 'mise.lock', 'rust-toolchain.toml', '.php-version', 'config', 'package.json', 'package-lock.json', '.npmrc'];
+const BY_HAND = /^(RUSTFLAGS|RUSTDOCFLAGS|RUSTC|RUSTC_WRAPPER|RUSTUP_TOOLCHAIN|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_.*|CARGO_TARGET_.*|CARGO_PROFILE_.*|CGO_.*|GOFLAGS|PYTHONPATH|PYTHONHOME|NODE_OPTIONS|NODE_PATH|PHPRC|PHP_INI_SCAN_DIR)$/;
+const diagnosis: string[] = [];
+const changed = [
+  ...git(checkout, ['diff', '--name-only', commit, '--', ...READ_FROM_CHECKOUT]).split('\n'),
+  ...git(checkout, ['ls-files', '--others', '--exclude-standard', '--', ...READ_FROM_CHECKOUT]).split('\n'),
+].filter((line) => line !== '');
+if (changed.length > 0) diagnosis.push(`diagnosis (not a commit): the checkout holds ${changed.join(', ')} other than the commit has them`);
+for (const [name, value] of Object.entries(process.env)) {
+  if (BY_HAND.test(name)) diagnosis.push(`diagnosis: ${name}=${value ?? ''} is given by hand`);
+}
+process.stdout.write(diagnosis.length === 0 ? `this run is evidence of the commit ${commit} of binding\n` : `this run of the commit ${commit} is a diagnosis:\n${diagnosis.map((d) => `  ${d}\n`).join('')}`);
+
 // The Git dependencies on polyspec repositories resolve to the checkouts beside this one: Git, which Cargo runs for the
-// fetch, reads https://github.com/polyspec/<name> as <parent of this checkout>/<name> (url.<base>.insteadOf, set for
-// these commands only), so the Git dependency on binding is the commits of this checkout.
+// fetch, reads https://github.com/polyspec/<name> as <parent of the checkout>/<name> (url.<base>.insteadOf, set for
+// these commands only), so the Git dependency on binding is the commits of the checkout, of which the run pins one.
 const gitDependency = {
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true',
   GIT_CONFIG_COUNT: '2',
-  GIT_CONFIG_KEY_0: `url.${resolve(binding, '..')}/.insteadOf`,
+  GIT_CONFIG_KEY_0: `url.${resolve(checkout, '..')}/.insteadOf`,
   GIT_CONFIG_VALUE_0: 'https://github.com/polyspec/',
-  // A URL that names <name>.git is this checkout itself for binding (the longest match wins).
-  GIT_CONFIG_KEY_1: `url.${binding}.insteadOf`,
+  // A URL that names <name>.git is the checkout itself for binding (the longest match wins).
+  GIT_CONFIG_KEY_1: `url.${checkout}/.insteadOf`,
   GIT_CONFIG_VALUE_1: 'https://github.com/polyspec/binding.git',
 };
 
@@ -223,9 +283,9 @@ impl binding_core::Kinds for Error {
   step(`${library}: the core builds without the generator`);
   // Cargo asks GitHub for the head of a branch before it fetches (its fast path), which is the pushed commit, not the
   // one of this checkout, and a scaffolded manifest may need a feature of binding_core that only this checkout has.
-  // So the lock names the commit of this binding before Cargo first resolves: the entry of a tracked lock moves to
-  // it, and a copy without a lock gets a lock of that entry alone, which Cargo completes.
-  const head = execFileSync('git', ['-C', binding, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  // So the lock names the commit of the run before Cargo first resolves: the entry of a tracked lock moves to it, and a
+  // copy without a lock gets a lock of that entry alone, which Cargo completes.
+  const head = commit;
   const lockPath = join(copy, 'Cargo.lock');
   const pinned = /(name = "polyspec-binding-core"\nversion = "[^"]*"\nsource = "git\+[^#"]*#)[0-9a-f]+"/;
   if (!existsSync(lockPath)) {
@@ -350,11 +410,11 @@ const need = (forTarget: string, tool: string, pinned: string, found: string | u
   if (found === undefined) missing.push(`the target ${forTarget} needs ${tool} (${pinned})`);
   return found ?? '';
 };
-const tools = join(binding, 'var/tools');
+const tools = join(checkout, 'var/tools');
 const file = (path: string): string | undefined => (existsSync(path) ? path : undefined);
 // mise answers the absolute path of a command of mise.toml that mise.lock pins and var/tools holds.
 const miseWhich = (command: string): string | undefined => {
-  if (existsSync(join(tools, 'bin/mise')) && process.env['MISE_GLOBAL_CONFIG_FILE'] === join(binding, 'mise.toml')) {
+  if (existsSync(join(tools, 'bin/mise')) && process.env['MISE_GLOBAL_CONFIG_FILE'] === join(checkout, 'mise.toml')) {
     const found = spawnSync(join(tools, 'bin/mise'), ['which', command], { encoding: 'utf8' });
     if (found.status === 0 && found.stdout.trim() !== '') return found.stdout.trim();
   }
@@ -363,7 +423,7 @@ const miseWhich = (command: string): string | undefined => {
 if (!process.execPath.startsWith(`${tools}/`)) {
   missing.push(`the check runs on the Node.js of mise.toml, not ${process.execPath}: start it with make e2e`);
 }
-if (process.env['MISE_GLOBAL_CONFIG_FILE'] !== join(binding, 'mise.toml')) {
+if (process.env['MISE_GLOBAL_CONFIG_FILE'] !== join(checkout, 'mise.toml')) {
   missing.push('the check reads the tools of mise.toml with the environment of the mise of the checkout: start it with make e2e');
 }
 const tsc = need('node', 'the TypeScript compiler', 'packages/ts/package-lock.json', file(join(binding, 'packages/ts/node_modules/.bin/tsc')));
@@ -386,7 +446,7 @@ if (targets.includes('wasm')) {
 }
 // The PHP of the machine is wrapped as it is (kit), so its minor is compared with .php-version here.
 if (phpTool !== '') {
-  const want = readFileSync(join(binding, '.php-version'), 'utf8').trim();
+  const want = readFileSync(join(checkout, '.php-version'), 'utf8').trim();
   const minor = spawnSync(phpTool, ['-r', 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;'], { encoding: 'utf8' }).stdout.trim();
   if (minor !== want) missing.push(`the target php needs PHP ${want} (.php-version); var/tools/bin/php is PHP ${minor || 'that does not run'}`);
 }
@@ -397,6 +457,29 @@ if (missing.length > 0) {
 
 // What ran for each target: a lint reads the code, a test runs it; only a test verifies a target.
 const ran = new Map<Lang, { lint: string[]; test: string[] }>(targets.map((t) => [t, { lint: [], test: [] }]));
+// GN-14b: the record of the run, var/report/e2e/<library>.json of the checkout (ignored), written when the run ends
+// in any way: the commit of binding, whether the run is evidence or a diagnosis and why, the commits of the
+// repositories, and what ran for each target. It is published with one rename, so a reader never sees half of it.
+const repositoryCommit = (path: string): string | null => (existsSync(join(resolve(path), '.git')) ? git(resolve(path), ['rev-parse', 'HEAD']) : null);
+process.on('exit', (code) => {
+  const library = (JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract).library;
+  const dir = join(checkout, 'var/report/e2e');
+  mkdirSync(dir, { recursive: true });
+  const report = {
+    binding: commit,
+    evidence: diagnosis.length === 0,
+    diagnosis,
+    repository: { path: resolve(repo), commit: repositoryCommit(repo) },
+    dependencies: deps.map((dep) => ({ path: resolve(dep), commit: repositoryCommit(dep) })),
+    addedTargets: addTargets,
+    targets: Object.fromEntries(ran),
+    result: code === 0 ? 'passed' : 'failed',
+  };
+  const path = join(dir, `${library}.json`);
+  writeFileSync(`${path}.${process.pid}.tmp`, `${JSON.stringify(report, null, 2)}\n`);
+  renameSync(`${path}.${process.pid}.tmp`, path);
+  process.stdout.write(`\nthe record of the run: ${path} (${report.evidence ? `evidence of ${commit}` : 'a diagnosis'}, ${report.result})\n`);
+});
 const record = (t: Lang, kind: 'lint' | 'test', what: string): void => {
   ran.get(t)?.[kind].push(what);
 };
