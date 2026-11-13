@@ -19,7 +19,7 @@ import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { casePointLibraries, componentBase, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -259,6 +259,19 @@ if (command === 'check') {
     for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles))) {
       differs = true;
       process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-70 ${message}\n`);
+    }
+    // The line on polyspec-binding-core of each tracked binding crate, as the repository holds it.
+    for (const path of [...tracked.files.keys()].filter((file) => file.endsWith('/Cargo.toml'))) {
+      let message: string | undefined;
+      try {
+        message = existsSync(join(root, path)) ? bindingCoreFinding(parse(readFileSync(join(root, path), 'utf8'))) : undefined;
+      } catch {
+        // not TOML: CK-19 reports the file
+      }
+      if (message !== undefined) {
+        differs = true;
+        process.stderr.write(`${join(root, path)}: CK-70 ${message}\n`);
+      }
     }
   }
   const names = failedChecks.has('CK-18');

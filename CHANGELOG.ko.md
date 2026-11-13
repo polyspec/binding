@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f85aeb9cd54bddb66fdfd9e06395d9b675eccc53af9b0912317233bee713e62c -->
+<!-- source-sha256: 4f06762c792288f99ebd0236966b3324dc18b7df5acce9f8530e1e6276d6eff5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding scaffold`는 모든 바인딩 crate의 `polyspec-binding-core` 의존 줄을 코어가 무엇을 적든 고정 값, 곧 binding의 Git
+  저장소의 branch `v1/rust-core`로 썼다. 이제 그 줄은 코어의 `polyspec-binding-core` 줄을 따른다(GN-3e). 코어의 `git`과 그
+  `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`를 바인딩 crate의 feature와 함께 쓴다. 그 줄이
+  없는 코어는 binding의 개발 줄을 그대로 갖는다. `binding check --release`는 코어와 추적하는 바인딩 crate 각각에서 그 줄의
+  개발 꼴도 보고한다(CK-70). 코어가 branch `v1/rust-core`가 아닌 줄을 적는 레포는 `binding scaffold`를 다시 실행한다.
+  `make test-ts`로 확인했다. 새 시험과 CK-70의 바뀐 시험은 변경 전에 실패했고(400개 중 2개), 변경 뒤 400개 중 400개가
+  통과한다.
 - 생성된 PHP 확장은 그 crate의 이름 `polyspec-<library>-php-ext`로 등록되었다. ext-php-rs 0.16.4의 `#[php_module]`이 module을
   crate 이름으로 이름하기 때문이다. 한편 그 `composer.json`은 `php-ext.extension-name`으로 `polyspec_<library>`를 적는다.
   그래서 로드된 확장에 대해 `extension_loaded('polyspec_<library>')`가 거짓이었다. 이제 module은 `ModuleBuilder::name`으로

@@ -9,13 +9,23 @@ import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
 import { holdsFunction, nativeRoundTrip, Unsupported } from './model.ts';
 
-// Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
+// GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
+// (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
+// and none that binding pins. Only a core without the line gets the development line of binding, which the check of a
+// release reports (CK-70).
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // Every binding crate holds the core value of a class unit in the locks of the feature lock (GN-6h, GN-18a).
 // GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core,
 // but WASM, whose futures the event loop of JavaScript polls (wasm-bindgen-futures) and which has no tokio runtime.
-const bindingCore = (driver: boolean): string =>
-  `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock', ...(driver ? ['driver'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`;
+export const BINDING_CORE = 'polyspec-binding-core';
+const BINDING_DEVELOPMENT = { git: 'https://github.com/polyspec/binding.git', branch: 'v1/rust-core' };
+const SOURCE_KEYS = ['git', 'branch', 'tag', 'rev', 'version', 'path', 'registry'];
+function bindingCore(spec: unknown, depth: number, driver: boolean): string {
+  const fields = spec === undefined ? BINDING_DEVELOPMENT : typeof spec === 'object' && spec !== null ? spec as Record<string, unknown> : { version: spec };
+  const source = Object.entries(fields).filter(([key]) => SOURCE_KEYS.includes(key)).map(([key, value]): [string, unknown] =>
+    [key, key === 'path' && typeof value === 'string' && !value.startsWith('/') ? `${'../'.repeat(depth)}${value}` : value]);
+  return `${BINDING_CORE} = ${tomlValue({ ...Object.fromEntries(source), features: ['construct', 'lock', ...(driver ? ['driver'] : [])] })}`;
+}
 
 // GN-6n: whether the crate of a target, named by its suffix, has a member with wait async_driver.
 const SUFFIX_TARGET: Record<string, string> = { python: 'python', node: 'node', wasm: 'wasm', 'php-ext': 'php', go: 'go' };
@@ -143,9 +153,12 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
 interface Core {
   version: string;
   license: string | undefined;
+  // GN-3e: the dependency line of the core on polyspec-binding-core, which the binding crates follow.
+  binding: unknown;
 }
 
 function manifest(contract: Contract, core: Core, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+  const corePath = crate?.core ?? (host ? '../../rust' : '../rust');
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -163,8 +176,8 @@ crate-type = ["${crate?.type ?? 'cdylib'}"]${libExtra}
 panic-test = []
 ${testFeatures(contract, suffix, armed)}
 [dependencies]
-${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
-${bindingCore(suffix !== 'wasm' && drives(contract, suffix))}
+${contract.core.crate} = { path = "${corePath}"${coreFeatures(contract, suffix)} }
+${bindingCore(core.binding, corePath.split('../').length - 2, suffix !== 'wasm' && drives(contract, suffix))}
 ${dependencies.join('\n')}
 
 [lints]
@@ -229,6 +242,9 @@ function armedLibraries(contract: Contract, coreDependencies: CoreDependencies, 
   });
 }
 
+const developmentFinding = (crate: string, named: string): string =>
+  `the dependency line of ${crate} names ${named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+
 // CK-70: the development forms among the dependency lines of the core on the libraries whose types the contract names
 // or whose points a case arms, each a finding of the check of a release (GN-3e). A library that the core does not
 // depend on is no finding here: no package is written for it, which CK-19 reports.
@@ -239,11 +255,12 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
   } catch (error) {
     if (!(error instanceof Refused)) throw error;
   }
-  return [...new Set([...namedLibraries(contract), ...armed])].sort().flatMap((library) => {
-    const crate = `polyspec-${library}`;
+  // The line on polyspec-binding-core of the core, when it has one; the lines of the binding crates are read from
+  // their tracked manifests (bindingCoreFinding).
+  return [BINDING_CORE, ...[...new Set([...namedLibraries(contract), ...armed])].sort().map((library) => `polyspec-${library}`)].flatMap((crate) => {
     if (!coreDependencies.has(crate)) return [];
     const form = dependencyForm(coreDependencies.get(crate));
-    return form.version !== undefined ? [] : [`the dependency line of ${crate} names ${form.named}, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`];
+    return form.version !== undefined ? [] : [developmentFinding(crate, form.named)];
   });
 }
 
@@ -252,6 +269,15 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
 function pythonRequirement(library: string, dependencies: CoreDependencies): string {
   const version = dependencyForm(dependencies.get(`polyspec-${library}`)).version;
   return JSON.stringify(`polyspec-${library}${version === undefined ? '' : `==${version}`}`);
+}
+
+// CK-70: the finding of the line on polyspec-binding-core of a tracked binding crate, from its manifest as TOML; none
+// for a release form and for a manifest without the line.
+export function bindingCoreFinding(manifest: unknown): string | undefined {
+  const dependencies = (manifest as { dependencies?: Record<string, unknown> } | undefined)?.dependencies ?? {};
+  if (!(BINDING_CORE in dependencies)) return undefined;
+  const form = dependencyForm(dependencies[BINDING_CORE]);
+  return form.version !== undefined ? undefined : developmentFinding(BINDING_CORE, form.named);
 }
 
 // What scaffold writes: the tracked files, and each package that it cannot write with its reason (GN-3e).
@@ -273,7 +299,7 @@ export function trackedPackages(...inputs: Parameters<typeof trackedResult>): Fi
 // license: the licence of the core, which every manifest with a licence field carries (GN-3f); a core without one gives
 // manifests without the field.
 export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = [], license?: string): Tracked {
-  const core: Core = { version, license };
+  const core: Core = { version, license, binding: coreDependencies.get(BINDING_CORE) };
   // GN-13: a target with a case whose value has no form in its language has the feature case-test.
   const caseTest = new Set(caseTargets);
   const files: Files = new Map();

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- `binding scaffold` wrote the dependency line of every binding crate on `polyspec-binding-core` as a fixed value, the
+  Git repository of binding at the branch `v1/rust-core`, whatever the core named. The line now follows the line of
+  the core on `polyspec-binding-core` (GN-3e): its `git` with its `branch` or `tag`, its `version`, or its `path`,
+  which climbs to the place of the binding crate, with the features of the binding crate. A core without the line
+  keeps the development line of binding. `binding check --release` also reports a development form of that line in
+  the core and in each tracked binding crate (CK-70). A repository whose core names another line than the branch
+  `v1/rust-core` runs `binding scaffold` again. Verified by `make test-ts`: the new test and the changed test of CK-70
+  failed before the change (2 of 400), and 400 of 400 pass with it.
 - The generated PHP extension registered under the name of its crate, `polyspec-<library>-php-ext`, because
   `#[php_module]` of ext-php-rs 0.16.4 names a module after the crate, while its `composer.json` names
   `php-ext.extension-name` `polyspec_<library>`; `extension_loaded('polyspec_<library>')` was false for a loaded

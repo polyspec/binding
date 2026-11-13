@@ -1199,7 +1199,7 @@ test('the line of a binding crate on polyspec-binding-core follows the line of t
   assert.equal(line('=0.3.0'), '\npolyspec-binding-core = { version = "=0.3.0", features = ["construct", "lock"] }\n');
   // A path climbs to the place of the binding crate: the Go crate is two directories below the level of the core.
   assert.equal(line({ path: '../../../binding/packages/core/rust' }), '\npolyspec-binding-core = { path = "../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
-  assert.equal(line({ path: '../../../binding/packages/core/rust' }, 'packages/go/internal/ffi/Cargo.toml', { ...contract, targets: [...contract.targets, 'go'] }), '\npolyspec-binding-core = { path = "../../../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
+  assert.equal(line({ path: '../../../binding/packages/core/rust' }, 'packages/go/internal/ffi/Cargo.toml'), '\npolyspec-binding-core = { path = "../../../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
   // A core without the line: the development line of binding.
   assert.equal(line(undefined), `\npolyspec-binding-core = { git = "${git}", branch = "v1/rust-core", features = ["construct", "lock"] }\n`);
 });
