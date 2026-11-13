@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- `usedHelpers`, which selects the helpers that a generated crate keeps, counted a helper as used where its name was a
+  word of the code, and split the helpers at every blank line. A word of a string literal or a local of the name of a
+  helper kept the helper, which the lints deny as dead code; and the methods of an `impl` block and the second half of
+  a body with a blank line were items of their own, written without their indentation, that stayed only while their
+  name was a word of the code (the method `set` of the callback of `tests/e2e/consumer` in PHP was such an item). The uses are now read from the tokens of the Rust code: a call, a path of the crate, a name that is
+  passed or named as a type, and a macro; no string, comment or attribute, no field, method or associated item of
+  another path, and no local of the function around it (a parameter, a `let`, a pattern, a parameter of a closure).
+  The helpers are groups of items, separated by the blank lines outside every bracket and kept whole: a group stays
+  when a name that it declares is used, a group of `impl` blocks with the type or the trait that it is of, and a group
+  whose item is `pub`, has an ABI or carries an attribute of a macro, or that declares no name, always (GN-4, row
+  B2.102). The generated crates of the contracts of `tests/e2e` hold the same helpers as before; their text differs
+  only in the indentation of the lines that the split had moved to the first column. Verified by `make test-ts`: the
+  two new tests failed before the change, with a helper whose name is only in a string literal among their cases, and
+  431 of 431 pass. No crate is compiled with this change yet.
 - The Python struct `PyNative` held its object in an unnamed field, which only an out row that gives a native value
   back reads, so a crate without such a row carried `#[allow(dead_code)]` on the struct and a crate with one did
   not: one struct had two texts. The field is now `_held`, the name of a field that is kept for its ownership, so the

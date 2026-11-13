@@ -149,7 +149,16 @@ the design ids are those of the binding design.
   hold the helper unused.
   A helper is used where the code calls it or passes it by its name; a method of the same name
   (`map.insert(...)`) is no use of the helper `insert`, because a helper that only a method names is dead code that
-  may name types the crate does not declare.
+  may name types the crate does not declare. The generator reads the uses from the tokens of the Rust code, not from
+  its words: a string, a comment and an attribute name no helper, and neither does a field (`name:`), a macro of the
+  name, an associated item of another path (`Type::name`), or a local of the function around it, which is a
+  parameter, a `let`, the pattern of a `for`, of an `if let` or of a match arm, or a parameter of a closure. The
+  helpers are groups of items, separated by the blank lines outside every bracket, so a function with a blank line in
+  its body and an `impl` block with its methods are each one group. A group is kept when the code, or a group that is
+  kept, uses a name that it declares (a function, a trait, a type, a static, a constant or a macro); a group of
+  `impl` blocks is kept with the type of the block that it is of, or with its trait when the block is of a type of the
+  code; and a group stays when an item of it is named from outside the Rust code that is read, because it is `pub`,
+  has an ABI (`extern "C" fn`) or carries an attribute of a macro, or when it declares no name.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8662bf566242a55f31e571baa9f03f2f7f1dec60a4141f7964fe4e69ff209ce3 -->
+<!-- source-sha256: 34333881768555c66a709d03d1a9db1ef9efc8e051f1b6288c8f92363d10c187 -->
 # 생성기
 
 [English](generator.md)
@@ -118,7 +118,14 @@
   때문이다.
   도우미를 쓰는 것은 코드가 그 이름으로 그것을 부르거나 넘길 때다. 같은 이름의 method(`map.insert(...)`)는 도우미
   `insert`를 쓰는 것이 아니다. method만 그 이름을 적는 도우미는 죽은 코드이고, crate가 선언하지 않은 타입을 적을 수 있기
-  때문이다.
+  때문이다. 생성기는 쓰임을 Rust 코드의 단어가 아니라 token에서 읽는다. 문자열, 주석, attribute는 도우미를 가리키지
+  않는다. field(`name:`), 그 이름의 macro, 다른 path의 연관 항목(`Type::name`), 그리고 둘러싼 함수의 local도 가리키지
+  않으며, local은 parameter, `let`, `for`·`if let`·match arm의 pattern, closure의 parameter다. 도우미는 item의
+  묶음이며, 모든 괄호 밖의 빈 줄이 묶음을 나눈다. 그래서 본문에 빈 줄이 있는 함수와 method를 가진 `impl` 블록은 각각
+  한 묶음이다. 묶음은 코드나 남는 다른 묶음이 그 묶음이 선언한 이름(함수, trait, 타입, static, 상수, macro)을 쓸 때
+  남는다. `impl` 블록의 묶음은 그 블록이 속한 타입과 함께 남고, 블록이 코드의 타입에 속하면 그 trait과 함께 남는다.
+  묶음의 item이 읽는 Rust 코드 밖에서 이름으로 불리면 그 묶음은 남는다. `pub`이거나, ABI를 갖거나(`extern "C" fn`),
+  macro의 attribute를 가진 경우다. 이름을 선언하지 않는 묶음도 남는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는

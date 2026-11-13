@@ -53,36 +53,404 @@ export function phpBytes(bytes: Iterable<number>): string {
 export const phpText = (text: string): string => phpBytes(new TextEncoder().encode(text));
 export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) => c.codePointAt(0) ?? 0));
 
-// The helper functions of a block of Rust items (each a function with its doc comment, the items separated by blank
-// lines and holding none) that `code` calls, directly or through another helper, in their order in the block; a crate holds no unused
-// helper, because its lints deny dead code.
-export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}): string {
-  const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
-  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:(?:async )?fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
-  // A helper is used where its name is a word of the code, called or passed; comments, a field of that name
-  // (`member: ...`) and a method of that name (`map.insert(...)`) do not count (GN-4).
-  const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
-  const usedBy = (text: string): Set<string> => {
-    const used = new Set<string>();
-    let frontier = strip(text);
-    for (;;) {
-      const added = named.filter(({ name }) => !used.has(name) && new RegExp(`(?<![.\\w])${name}\\b(?!\\s*:[^:])`).test(frontier));
-      if (added.length === 0) break;
-      for (const { name } of added) used.add(name);
-      frontier = strip(added.map(({ item }) => item).join('\n'));
-    }
-    return used;
+// ---- The helpers that a crate keeps (GN-4) ----
+//
+// A crate holds no unused helper, because its lints deny dead code. The helpers are kept by what the generated code
+// calls: the code and the helpers are read as tokens of Rust, the items of the helpers are found by their braces, and
+// a helper is kept when the code, or a helper that is kept, names it at a place where a name of the crate is read. No
+// word of a string, of a comment or of an attribute, and no local of a function, is such a place.
+
+interface Token {
+  text: string;
+  // The offset of the token in its source.
+  at: number;
+}
+
+const IDENT_START = /[A-Za-z_]/;
+const IDENT_PART = /[A-Za-z0-9_]/;
+
+// The tokens of Rust source: identifiers, numbers and punctuation (`::`, `=>` and `->` as one token each). A comment
+// and a lifetime give no token, a string literal gives `""` and a character literal `''`.
+function rustTokens(source: string): Token[] {
+  const tokens: Token[] = [];
+  const end = source.length;
+  let at = 0;
+  const quoted = (from: number): number => {
+    let i = from;
+    while (i < end && source[i] !== '"') i += source[i] === '\\' ? 2 : 1;
+    return i + 1;
   };
-  const always = usedBy(code);
+  while (at < end) {
+    const char = source[at] ?? '';
+    const next = source[at + 1] ?? '';
+    if (char === ' ' || char === '\n' || char === '\t' || char === '\r') {
+      at += 1;
+    } else if (char === '/' && next === '/') {
+      const line = source.indexOf('\n', at);
+      at = line < 0 ? end : line;
+    } else if (char === '/' && next === '*') {
+      let depth = 1;
+      at += 2;
+      while (at < end && depth > 0) {
+        if (source.startsWith('/*', at)) { depth += 1; at += 2; } else if (source.startsWith('*/', at)) { depth -= 1; at += 2; } else at += 1;
+      }
+    } else if (char === '"') {
+      tokens.push({ text: '""', at });
+      at = quoted(at + 1);
+    } else if (char === "'") {
+      // 'a', '\n' and '\u{1F600}' are characters; 'a without a closing quote is a lifetime or a label.
+      const close = source[at + 1] === '\\' ? source.indexOf("'", at + 3) : source[at + 2] === "'" ? at + 2 : source[at + 3] === "'" && (source.codePointAt(at + 1) ?? 0) > 0xffff ? at + 3 : -1;
+      if (close >= 0) {
+        tokens.push({ text: "''", at });
+        at = close + 1;
+      } else {
+        at += 1;
+        while (at < end && IDENT_PART.test(source[at] ?? '')) at += 1;
+      }
+    } else if (IDENT_START.test(char)) {
+      // r"...", r#"..."#, b"...", br"...", c"..." and b'.' are literals; r#name is the identifier name.
+      const literal = char === 'r' || char === 'b' || char === 'c' ? /^(?:[bc]?r(#*)"|[bc]")/.exec(source.slice(at, at + 40)) : null;
+      if (literal !== null) {
+        tokens.push({ text: '""', at });
+        if (literal[1] === undefined) at = quoted(at + literal[0].length);
+        else {
+          const close = source.indexOf(`"${literal[1]}`, at + literal[0].length);
+          at = close < 0 ? end : close + 1 + literal[1].length;
+        }
+      } else if (char === 'b' && next === "'") {
+        tokens.push({ text: "''", at });
+        const close = source.indexOf("'", at + (source[at + 2] === '\\' ? 4 : 3));
+        at = close < 0 ? end : close + 1;
+      } else {
+        const from = char === 'r' && next === '#' ? at + 2 : at;
+        let to = from;
+        while (to < end && IDENT_PART.test(source[to] ?? '')) to += 1;
+        tokens.push({ text: source.slice(from, to), at });
+        at = to;
+      }
+    } else if (char >= '0' && char <= '9') {
+      let to = at;
+      while (to < end && (IDENT_PART.test(source[to] ?? '') || (source[to] === '.' && /[0-9]/.test(source[to + 1] ?? '') && source[to - 1] !== '.'))) to += 1;
+      tokens.push({ text: source.slice(at, to), at });
+      at = to;
+    } else if ((char === ':' && next === ':') || ((char === '=' || char === '-') && next === '>')) {
+      tokens.push({ text: char + next, at });
+      at += 2;
+    } else {
+      tokens.push({ text: char, at });
+      at += 1;
+    }
+  }
+  return tokens;
+}
+
+const OPEN = new Set(['(', '[', '{']);
+const CLOSE = new Set([')', ']', '}']);
+
+// The index of the token that closes each opening bracket, and of the one that opens each closing bracket.
+function brackets(tokens: readonly Token[]): { close: Int32Array; open: Int32Array } {
+  const close = new Int32Array(tokens.length).fill(-1);
+  const open = new Int32Array(tokens.length).fill(-1);
+  const stack: number[] = [];
+  tokens.forEach((token, i) => {
+    if (OPEN.has(token.text)) stack.push(i);
+    else if (CLOSE.has(token.text)) {
+      const from = stack.pop();
+      if (from !== undefined) {
+        close[from] = i;
+        open[i] = from;
+      }
+    }
+  });
+  // A bracket that the text does not close ends at the end of the text.
+  for (const from of stack) close[from] = tokens.length;
+  return { close, open };
+}
+
+const KEYWORDS = new Set([
+  'as', 'async', 'await', 'box', 'break', 'const', 'continue', 'crate', 'dyn', 'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
+  'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self', 'Self', 'static', 'struct', 'super', 'trait', 'true', 'type', 'unsafe', 'use',
+  'where', 'while',
+]);
+const isName = (text: string | undefined): text is string => text !== undefined && IDENT_START.test(text.charAt(0)) && !KEYWORDS.has(text);
+// The keywords after which a name is declared, not read.
+const DECLARES = new Set(['fn', 'struct', 'enum', 'trait', 'type', 'mod']);
+// The tokens after which `|` opens the parameters of a closure; after any other token it is an operator or the
+// alternative of a pattern.
+const BEFORE_CLOSURE = new Set(['(', ',', '=', '{', ';', '[', 'move', 'return', '=>', '&', '!']);
+
+// The names that Rust code reads as names of the crate: a call (`name(`, `name::<T>(`), a path of the crate
+// (`crate::name`), a name that is passed or named as a type (`map(name)`, `impl Name`), and a macro as `name!`. No use:
+// a declaration, a field or a method (`.name`), a field of a literal or a typed place (`name:`), an associated item of
+// another path (`Type::name`), anything inside an attribute, and a name that is a local of the function around it: a
+// parameter, a `let`, the pattern of a `for`, of an `if let` and of a match arm, and a parameter of a closure.
+function namesRead(tokens: readonly Token[]): Set<string> {
+  const { close, open } = brackets(tokens);
+  const text = (i: number): string | undefined => tokens[i]?.text;
+  // The function around each token (0 outside every function) and the locals of each.
+  const scope = new Int32Array(tokens.length);
+  const locals = new Map<number, Set<string>>([[0, new Set()]]);
+  const localsAt = (i: number): Set<string> => locals.get(scope[i] ?? 0) ?? new Set();
+  // The names that a pattern between two tokens binds: a lower-case name that is no path, no call and no field name.
+  const bind = (from: number, to: number, into: Set<string>): void => {
+    for (let i = from; i < to; i += 1) {
+      const name = text(i);
+      if (!isName(name) || !/^[a-z_]/.test(name) || name === '_') continue;
+      const after = i + 1 < to ? text(i + 1) : undefined;
+      if (after === '(' || after === '{' || after === '::' || after === '!' || after === ':' || text(i - 1) === '::' || text(i - 1) === '.') continue;
+      into.add(name);
+    }
+  };
+  // The first token of a range at its own depth that is one of the given, or the end of the range.
+  const firstOf = (from: number, to: number, stops: ReadonlySet<string>): number => {
+    for (let i = from; i < to; i += 1) {
+      const token = text(i) ?? '';
+      if (stops.has(token)) return i;
+      if (OPEN.has(token)) i = close[i] ?? to;
+    }
+    return to;
+  };
+  // The parameters between two tokens, separated by commas: each binds its pattern, which ends at its type.
+  const parameters = (from: number, to: number, into: Set<string>): void => {
+    let start = from;
+    while (start < to) {
+      const comma = firstOf(start, to, new Set([',']));
+      bind(start, firstOf(start, comma, new Set([':'])), into);
+      start = comma + 1;
+    }
+  };
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (text(i) !== 'fn' || !isName(text(i + 1))) continue;
+    let at = i + 2;
+    if (text(at) === '<') {
+      let depth = 0;
+      for (; at < tokens.length; at += 1) {
+        if (text(at) === '<') depth += 1;
+        else if (text(at) === '>' && --depth === 0) break;
+      }
+      at += 1;
+    }
+    if (text(at) !== '(') continue;
+    const params = close[at] ?? tokens.length;
+    const body = firstOf(params + 1, tokens.length, new Set(['{', ';']));
+    if (text(body) !== '{') continue;
+    const id = locals.size;
+    const own = new Set<string>();
+    locals.set(id, own);
+    parameters(at + 1, params, own);
+    scope.fill(id, i, Math.min((close[body] ?? tokens.length) + 1, tokens.length));
+  }
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = text(i);
+    const into = localsAt(i);
+    if (token === 'let') {
+      bind(i + 1, firstOf(i + 1, tokens.length, new Set(['=', ';', ':', 'else'])), into);
+    } else if (token === 'for' && text(i + 1) !== '<') {
+      const stop = firstOf(i + 1, tokens.length, new Set(['in', '{', ';']));
+      if (text(stop) === 'in') bind(i + 1, stop, into);
+    } else if (token === '|' && (i === 0 || BEFORE_CLOSURE.has(text(i - 1) ?? ''))) {
+      const end = firstOf(i + 1, tokens.length, new Set(['|', ';', '{']));
+      if (text(end) === '|') {
+        parameters(i + 1, end, into);
+        i = end;
+      }
+    } else if (token === '=>') {
+      // The pattern of the arm starts after the comma, the brace of the match or the block of the arm before it, and
+      // ends at its guard. A closing brace is of the pattern when the pattern goes on after it.
+      let from = i;
+      while (from > 0) {
+        const before = text(from - 1) ?? '';
+        if (before === ',' || before === ';' || OPEN.has(before)) break;
+        if (CLOSE.has(before)) {
+          if (before === '}' && !['=>', '|', 'if', ')', ']', '}', ','].includes(text(from) ?? '')) break;
+          from = open[from - 1] ?? 0;
+          if (from < 0) break;
+        } else from -= 1;
+      }
+      bind(Math.max(from, 0), firstOf(Math.max(from, 0), i, new Set(['if'])), into);
+    }
+  }
+  const read = new Set<string>();
+  for (let i = 0; i < tokens.length; i += 1) {
+    const name = text(i);
+    // An attribute names no item of the crate that the lints count as used.
+    if (name === '#' && (text(i + 1) === '[' || (text(i + 1) === '!' && text(i + 2) === '['))) {
+      i = close[text(i + 1) === '[' ? i + 1 : i + 2] ?? tokens.length;
+      continue;
+    }
+    if (!isName(name)) continue;
+    const before = text(i - 1);
+    const after = text(i + 1);
+    if (after === '!' && text(i + 2) !== '=') {
+      if (before !== '.' && before !== '::') read.add(`${name}!`);
+      continue;
+    }
+    if (before === '.' || (before !== undefined && DECLARES.has(before)) || after === ':') continue;
+    if (before === '::') {
+      const root = text(i - 2);
+      if (root === 'crate' || root === 'self' || root === 'super') read.add(name);
+      continue;
+    }
+    if (after === '(' || after === '::' || !localsAt(i).has(name)) read.add(name);
+  }
+  return read;
+}
+
+// The attributes that the compiler reads itself; any other attribute is of a macro.
+const COMPILER_ATTRIBUTES = new Set(['allow', 'expect', 'cfg', 'cfg_attr', 'derive', 'doc', 'inline', 'must_use', 'repr', 'deprecated']);
+
+interface HelperGroup {
+  text: string;
+  // The names that the items of the group declare; a macro is `name!`.
+  declares: string[];
+  // The types and traits of the impl blocks of the group.
+  impls: string[][];
+  // The offsets in text at which each item starts, after its doc comments.
+  items: number[];
+  // Whether an item of the group is named from outside the Rust code that is read: it is pub, has an ABI
+  // (extern "C" fn), or carries an attribute of a macro, which registers or exports it.
+  exported: boolean;
+  reads: Set<string>;
+}
+
+// The groups of a block of helpers: the block is split at the blank lines outside every bracket, so a body or an impl
+// with a blank line inside is one group, and the writer of a block puts the items that are kept together (a trait with
+// its impls, a function alone) in one group. Each group names what its items declare.
+function helperGroups(block: string): HelperGroup[] {
+  const all = rustTokens(block);
+  const { close } = brackets(all);
+  // The offsets of the block that are inside a bracket.
+  const inside: [number, number][] = [];
+  for (let i = 0; i < all.length; i += 1) {
+    if (OPEN.has(all[i]?.text ?? '')) {
+      const end = close[i] ?? all.length;
+      inside.push([all[i]?.at ?? 0, all[end]?.at ?? block.length]);
+      i = end;
+    }
+  }
+  const pieces: string[] = [];
+  let start = 0;
+  for (const blank of block.matchAll(/\n[ \t]*(?=\n)/g)) {
+    const at = blank.index;
+    if (inside.some(([from, to]) => at > from && at < to)) continue;
+    pieces.push(block.slice(start, at));
+    start = at + blank[0].length;
+  }
+  pieces.push(block.slice(start));
+  // A line of spaces inside a group is an empty line, as the file holds it.
+  return pieces.map((piece) => piece.replace(/^\n+/, '').trimEnd().replace(/\n[ \t]+(?=\n)/g, '\n')).filter((piece) => piece.trim() !== '').map((text): HelperGroup => {
+    const tokens = rustTokens(text);
+    const matched = brackets(tokens);
+    const word = (i: number): string | undefined => tokens[i]?.text;
+    const declares: string[] = [];
+    const impls: string[][] = [];
+    const items: number[] = [];
+    let exported = false;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const first = i;
+      // The attributes and the modifiers of the item.
+      for (;;) {
+        if (word(i) === '#' && word(i + 1) === '[') {
+          if (!COMPILER_ATTRIBUTES.has(word(i + 2) ?? '')) exported = true;
+          i = (matched.close[i + 1] ?? tokens.length) + 1;
+        } else if (word(i) === 'pub' && word(i + 1) === '(') {
+          i = (matched.close[i + 1] ?? tokens.length) + 1;
+        } else if (word(i) === 'pub' || (word(i) === 'extern' && word(i + 1) === '""')) {
+          exported = true;
+          i += word(i) === 'extern' ? 2 : 1;
+        } else if (['unsafe', 'async', 'default'].includes(word(i) ?? '')) {
+          i += 1;
+        } else break;
+      }
+      const keyword = word(i);
+      const name = word(i + 1);
+      if (keyword === 'macro_rules' && name === '!' && isName(word(i + 2))) declares.push(`${word(i + 2) ?? ''}!`);
+      else if (keyword === 'thread_local' && name === '!') {
+        const end = matched.close[i + 2] ?? tokens.length;
+        for (let k = i + 3; k < end; k += 1) if (word(k) === 'static' && isName(word(k + 1))) declares.push(word(k + 1) ?? '');
+      } else if (keyword === 'static' && name === 'mut' && isName(word(i + 2))) declares.push(word(i + 2) ?? '');
+      else if (['fn', 'trait', 'struct', 'enum', 'union', 'type', 'mod', 'static', 'const'].includes(keyword ?? '') && isName(name) && name !== '_') {
+        declares.push(name);
+        // A module is named from outside when an item inside it carries an attribute of a macro.
+        if (keyword === 'mod' && word(i + 2) === '{') {
+          for (let k = i + 3; k < (matched.close[i + 2] ?? tokens.length); k += 1) if (word(k) === '#' && word(k + 1) === '[' && !COMPILER_ATTRIBUTES.has(word(k + 2) ?? '')) exported = true;
+        }
+      }
+      else if (keyword === 'impl') {
+        // impl<...> Trait<...> for Type<...> and impl<...> Type<...>: the last name of each path.
+        const named: string[] = [];
+        let depth = 0;
+        for (let k = i + 1; k < tokens.length && !(depth === 0 && (word(k) === '{' || word(k) === 'where')); k += 1) {
+          if (word(k) === '<') depth += 1;
+          else if (word(k) === '>') depth -= 1;
+          else if (depth === 0 && isName(word(k)) && word(k + 1) !== '::') named.push(word(k) ?? '');
+        }
+        impls.push(named);
+      }
+      items.push(tokens[first]?.at ?? 0);
+      // The item ends at its block, with the semicolon after it, or at its semicolon.
+      let end = i;
+      for (; end < tokens.length; end += 1) {
+        const token = word(end) ?? '';
+        if (token === ';') break;
+        if (OPEN.has(token)) {
+          end = matched.close[end] ?? tokens.length;
+          if (token === '{') {
+            if (word(end + 1) === ';') end += 1;
+            break;
+          }
+        }
+      }
+      i = end;
+    }
+    return { text, declares, impls, items, exported, reads: namesRead(tokens) };
+  });
+}
+
+// The helpers of a block of Rust items that `code` uses, directly or through another helper, in their order in the
+// block. A group is kept when the code, or a group that is kept, reads a name that it declares; a group that declares
+// no name and holds impl blocks is kept with the type or the trait of the block that one of them is of, and stays when
+// the block declares neither, because it is then of a type of the code; a group that declares no name and holds no
+// impl stays.
+export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}): string {
+  const groups = helperGroups(block);
+  const declared = new Set(groups.flatMap((group) => group.declares));
+  // An impl block is of its type, the last name of its header, when the block declares the type, and else of its trait.
+  const attached = (group: HelperGroup): string[] => group.impls.flatMap((named) => (declared.has(named.at(-1) ?? '') ? [named.at(-1) ?? ''] : named.filter((name) => declared.has(name))));
+  const rooted = (group: HelperGroup): boolean => group.exported || (group.declares.length === 0 && (group.impls.length === 0 || group.impls.some((named) => !named.some((name) => declared.has(name)))));
+  const keptBy = (read: ReadonlySet<string>): Set<HelperGroup> => {
+    const kept = new Set<HelperGroup>();
+    const names = new Set(read);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const group of groups) {
+        if (kept.has(group)) continue;
+        const named = group.declares.length > 0 ? group.declares : attached(group);
+        if (!rooted(group) && !named.some((name) => names.has(name))) continue;
+        kept.add(group);
+        for (const name of [...group.reads, ...group.declares]) names.add(name);
+        grew = true;
+      }
+    }
+    return kept;
+  };
+  const codeReads = namesRead(rustTokens(code));
+  const always = keptBy(codeReads);
   // GN-4: a helper that only the code of a feature uses is compiled under that feature, so no form holds it unused.
-  const features = Object.entries(gated).map(([feature, text]) => ({ feature, used: usedBy(`${code}\n${text}`) }));
-  return named
-    .flatMap(({ item, name }) => {
-      if (always.has(name)) return [`\n${item}\n`];
-      const under = features.filter((f) => f.used.has(name)).map((f) => `feature = ${JSON.stringify(f.feature)}`);
+  const features = Object.entries(gated).map(([feature, text]) => ({ feature, used: keptBy(new Set([...codeReads, ...namesRead(rustTokens(text))])) }));
+  return groups
+    .flatMap((group) => {
+      if (always.has(group)) return [`\n${group.text}\n`];
+      const under = features.filter((f) => f.used.has(group)).map((f) => `feature = ${JSON.stringify(f.feature)}`);
       if (under.length === 0) return [];
       const cfg = `#[cfg(${under.length === 1 ? under[0] : `any(${under.join(', ')})`})]`;
-      return [`\n${item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1${cfg}\n`)}\n`];
+      // Each item of the group is under the features, after its doc comments.
+      let text = group.text;
+      for (const at of [...group.items].reverse()) {
+        const line = text.lastIndexOf('\n', at - 1) + 1;
+        text = `${text.slice(0, at)}${cfg}\n${text.slice(line, at)}${text.slice(at)}`;
+      }
+      return [`\n${text}\n`];
     })
     .join('');
 }

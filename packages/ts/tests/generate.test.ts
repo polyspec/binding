@@ -4770,6 +4770,149 @@ test('the WASM future that catches a panic of a poll is an async fn, which clipp
   assert.equal(usedHelpers('\n/// Waits.\nasync fn later() {}\n', 'later().await;'), '\n/// Waits.\nasync fn later() {}\n');
 });
 
+test('a helper is kept by what the code calls, not by the words of the code (GN-4, B2.102)', () => {
+  const block = `
+/// Reads the code units of a text.
+fn units(value: &str) -> Vec<u16> {
+    value.encode_utf16().collect()
+}
+
+/// Names a member.
+fn member(name: &str) -> String {
+    name.to_owned()
+}
+
+/// Gives a value back.
+fn give(value: u64) -> u64 {
+    value
+}
+`;
+  const kept = (code: string): string[] => [...usedHelpers(block, code).matchAll(/^fn ([a-z_]+)/gm)].map((m) => m[1] ?? '');
+  // A word of a string literal, of a raw string, of a comment and of an attribute is no use.
+  assert.deepEqual(kept('fn f() -> String { String::from("the units of a member") }'), []);
+  assert.deepEqual(kept('fn f() -> &\'static str { r#"give "units""# }'), []);
+  assert.deepEqual(kept('/* units */ fn f() {} // member'), []);
+  assert.deepEqual(kept('#[pyo3(signature = (units, member=None))]\nfn f() {}'), []);
+  // A local of the function is no use: a parameter, a let, a closure parameter, the pattern of a match arm, of an if
+  // let and of a for.
+  assert.deepEqual(kept('fn f(units: Vec<u16>) -> usize { units.len() }'), []);
+  assert.deepEqual(kept('fn f() -> usize { let units = Vec::<u16>::new(); take(units) }'), []);
+  assert.deepEqual(kept('fn f(items: Vec<u8>) { items.iter().for_each(|member| drop(member)); }'), []);
+  assert.deepEqual(kept('fn f(v: Option<u8>) -> u8 { match v { Some(give) => give, None => 0 } }'), []);
+  assert.deepEqual(kept('fn f(v: Option<u8>) { if let Some(units) = v { drop(units); } for member in 0..3 { drop(member); } }'), []);
+  assert.deepEqual(kept('fn f(v: Wide) -> u8 { let Wide { units, member: give } = v; units + give }'), []);
+  // A field, a method, a macro and an associated function of another type are no use.
+  assert.deepEqual(kept('fn f(v: &Host) -> Fail { Fail { member: v.units(), ..v.give!() } }'), []);
+  assert.deepEqual(kept('fn f() -> Vec<u16> { Host::units() }'), []);
+  // A call, a call with its types, a call by a path of the crate and a passing by the name are uses; the local of
+  // another function hides nothing.
+  assert.deepEqual(kept('fn f() -> Vec<u16> { units("a") }'), ['units']);
+  assert.deepEqual(kept('fn f() -> u64 { give::<>(1) }'), ['give']);
+  assert.deepEqual(kept('fn f() -> String { crate::member("a") }'), ['member']);
+  assert.deepEqual(kept('fn f(items: Vec<u64>) -> Vec<u64> { items.into_iter().map(give).collect() }'), ['give']);
+  assert.deepEqual(kept('fn f(units: u8) -> u8 { units }\nfn g(items: Vec<&str>) -> Vec<Vec<u16>> { items.into_iter().map(units).collect() }'), ['units']);
+});
+
+test('the helpers are items, kept whole: a body with a blank line, and an impl with the type that it is of (GN-4, B2.102)', () => {
+  const block = `
+/// A table of values.
+struct Table {
+    made: Vec<u64>,
+}
+
+impl Table {
+    fn first(&self) -> Option<u64> {
+        self.made.first().copied()
+    }
+
+    fn set(&mut self, value: u64) {
+        self.made.push(value);
+    }
+}
+
+impl Drop for Table {
+    fn drop(&mut self) {}
+}
+
+/// Reads a value in two steps.
+fn read(table: &Table) -> u64 {
+    let first = table.first();
+
+    if let Some(index) = first {
+        return index;
+    }
+    0
+}
+
+/// The next key.
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`;
+  // Nothing of the block is used: no item, no half of a body and no method of an impl is left.
+  assert.equal(usedHelpers(block, 'fn f() -> &\'static str { "set the first Table, read NEXT" }'), '');
+  // The function is kept with its whole body, and through it the struct, with the impls of the struct and each of
+  // their methods at its indentation; the static and its function are not.
+  const read = usedHelpers(block, 'fn f(table: &Table) -> u64 { read(table) }');
+  assert.equal(read, `
+/// A table of values.
+struct Table {
+    made: Vec<u64>,
+}
+
+impl Table {
+    fn first(&self) -> Option<u64> {
+        self.made.first().copied()
+    }
+
+    fn set(&mut self, value: u64) {
+        self.made.push(value);
+    }
+}
+
+impl Drop for Table {
+    fn drop(&mut self) {}
+}
+
+/// Reads a value in two steps.
+fn read(table: &Table) -> u64 {
+    let first = table.first();
+
+    if let Some(index) = first {
+        return index;
+    }
+    0
+}
+`);
+  // A static is kept by the function that reads it.
+  assert.equal(usedHelpers(block, 'fn f() -> u64 { next_key() }'), `
+/// The next key.
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`);
+  // An impl of a type that the block does not declare is of the code, and stays.
+  assert.equal(usedHelpers('\nimpl core::Lookup for CbLookup {\n    fn set(&mut self) {}\n\n    fn get(&self) {}\n}\n', 'struct CbLookup;'), '\nimpl core::Lookup for CbLookup {\n    fn set(&mut self) {}\n\n    fn get(&self) {}\n}\n');
+  // A helper that only the code of a feature uses is compiled under the feature, each item of its group.
+  assert.equal(usedHelpers(block, 'fn f() {}', { 'codec-test': 'fn g() -> u64 { next_key() }' }), `
+/// The next key.
+#[cfg(feature = "codec-test")]
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+#[cfg(feature = "codec-test")]
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`);
+});
+
 test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {
   let callbacksOnly = 0;
   for (const library of ['sample', 'shapes', 'variants', 'classes', 'points']) {

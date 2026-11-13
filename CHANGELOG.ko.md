@@ -1,11 +1,23 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 694b2d8212ae55131c181310347d12ab8527419ed31a968aed186e1c911e3744 -->
+<!-- source-sha256: cab75040fb3600f5b75408a3a34cae234396d0cf3f39028d84f9febd457e4c21 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 crate가 남기는 도우미를 고르는 `usedHelpers`는 도우미의 이름이 코드의 단어인 곳을 쓰임으로 세었고, 도우미를 빈
+  줄마다 나누었다. 문자열 literal의 단어나 도우미 이름의 local이 그 도우미를 남겼고, lint는 그것을 죽은 코드로 금한다.
+  `impl` 블록의 method와 빈 줄이 있는 본문의 뒤 절반은 들여쓰기 없이 적힌 별도의 item이 되어, 그 이름이 코드의 단어인
+  동안만 남았다(`tests/e2e/consumer`의 callback의 PHP method `set`이 그런 item이었다). 이제 쓰임은 Rust
+  코드의 token에서 읽는다. 호출, crate의 path, 넘기거나 타입으로 적은 이름, macro가 쓰임이다. 문자열, 주석, attribute,
+  field, method, 다른 path의 연관 항목, 둘러싼 함수의 local(parameter, `let`, pattern, closure의 parameter)은 쓰임이
+  아니다. 도우미는 모든 괄호 밖의 빈 줄로 나뉘는 item의 묶음이며 통째로 남는다. 묶음은 그것이 선언한 이름이 쓰일 때
+  남고, `impl` 블록의 묶음은 그것이 속한 타입이나 trait과 함께 남으며, item이 `pub`이거나 ABI를 갖거나 macro의
+  attribute를 가진 묶음과 이름을 선언하지 않는 묶음은 항상 남는다(GN-4, 행 B2.102). `tests/e2e`의 계약으로 생성한
+  crate는 전과 같은 도우미를 가지며, 텍스트는 나누기가 첫 열로 옮겼던 줄의 들여쓰기만 다르다. `make test-ts`로
+  확인했다. 새 시험 둘은 변경 전에 실패했고, 그 case에 이름이 문자열 literal에만 있는 도우미가 있으며, 431개 가운데
+  431개가 통과한다. 이 변경으로 컴파일한 crate는 아직 없다.
 - Python struct `PyNative`는 object를 이름 없는 field에 담았고, 그 field는 native 값을 돌려주는 out 행만 읽는다. 그래서
   그런 행이 없는 crate는 struct에 `#[allow(dead_code)]`를 달았고 있는 crate는 달지 않아, struct 하나의 텍스트가 둘이었다.
   이제 그 field는 소유를 위해 두는 field의 이름인 `_held`이며, struct는 모든 crate에서 같은 텍스트이고 allow가
