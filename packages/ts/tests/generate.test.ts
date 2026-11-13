@@ -1989,6 +1989,14 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   }
   assert.match(text(out, 'packages/python/generated/lib.rs'), /PyResourceWarning/);
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /emitWarning/);
+  // GN-6p: the Python destructor keeps an exception that is being raised and sets it again after the warning.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let raising = PyErr::take\(py\);\n {16}if let Err\(error\) = PyErr::warn\([^\n]*\n {20}error\.write_unraisable\(py, None\);\n {16}\}\n {16}if let Some\(raising\) = raising \{\n {20}raising\.restore\(py\);\n {16}\}/);
+  // GN-6p: PHP puts the name of the running function before the message of a warning.
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertCount\(1, \$warnings\);\n {8}self::assertSame\(E_WARNING, \$warnings\[0\]\[0\]\);\n {8}self::assertStringEndsWith\('Lease was destroyed without release\(\), so its destructor released it \(B-10\)', \$warnings\[0\]\[1\]\);/);
+  // B-5c: the Go poison entry point reaches every class with a write place through its helper, also a class that the
+  // Go package does not generate.
+  const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
