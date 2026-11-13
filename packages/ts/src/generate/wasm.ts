@@ -971,7 +971,36 @@ static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 fn raised(error: Thrown) -> binding_core::Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
+    RAISING.with_borrow_mut(|open| {
+        if let Some(made) = open.last_mut() {
+            made.push(handle);
+        }
+    });
     binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+
+thread_local! {
+    /// U-3: the handles of the Raised values that each call in progress made, the innermost call last.
+    static RAISING: RefCell<Vec<Vec<u64>>> = const { RefCell::new(Vec::new()) };
+}
+
+${drivesMachine(model) ? `/// U-3: the handles that the innermost call in progress made so far, which a machine keeps until it ends.
+fn raised_taken() -> Vec<u64> {
+    RAISING.with_borrow_mut(|open| match open.last_mut() {
+        Some(made) => std::mem::take(made),
+        None => Vec::new(),
+    })
+}
+
+` : ''}/// U-3: a Raised is released by the call that made it: what was thrown under each handle that nothing took, because
+/// the core dropped its Raised and did not return it, leaves the table when the call ends, and is dropped after the
+/// table is released; a thread that ends holds no table.
+fn raised_released(made: &[u64]) {
+    let gone = THROWN.try_with(|map| {
+        let mut map = map.borrow_mut();
+        made.iter().filter_map(|handle| map.remove(handle)).collect::<Vec<Thrown>>()
+    });
+    drop(gone);
 }
 ${model.callbacks.length === 0 && !passesAny(model) ? '' : `
 fn thrown(error: Thrown) -> ${failure} {
@@ -1075,22 +1104,31 @@ where
 
 // GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the ES module
 // advances.
-const MACHINE = `
+const machineText = (carries: boolean): string => `
 /// GN-6ab: the state machine of a call, which the ES module advances until it ends. Each advance makes the calls of
 /// the machine on the JavaScript thread and gives [0, the promise of its wait], [1, the value that it awaits] (GN-6ae)
 /// or [2, its result].
 #[wasm_bindgen]
 pub struct Driven {
-    advance: Advance,
+    advance: Advance,${carries ? `
+    /// U-3: the handles of the Raised values that the advances made and nothing took yet.
+    raised: Vec<u64>,` : ''}
 }
-
+${carries ? `
+/// U-3: a machine that is not advanced to its end releases the Raised values that it kept where its object ends.
+impl Drop for Driven {
+    fn drop(&mut self) {
+        raised_released(&self.raised);
+    }
+}
+` : ''}
 /// GN-6ab, GN-6ae: one advance of the state machine of a call: its step, and the promise of its wait (0), the value
 /// that it awaits (1) or its result (2).
 type Advance = Box<dyn FnMut(JsValue) -> Result<(u32, JsValue), Fail>>;
 
 impl Driven {
     fn new(advance: impl FnMut(JsValue) -> Result<(u32, JsValue), Fail> + 'static) -> Self {
-        Self { advance: Box::new(advance) }
+        Self { advance: Box::new(advance)${carries ? ', raised: Vec::new()' : ''} }
     }
 }
 
@@ -1100,7 +1138,13 @@ impl Driven {
     /// its step, and the promise of its wait, the value that it awaits or its result.
     pub fn advance(&mut self, settled: JsValue) -> Result<JsValue, JsValue> {
         guard(|| {
-            let (step, value) = (self.advance)(settled)?;
+            let advanced = (self.advance)(settled);${carries ? `
+            // U-3: the machine keeps the Raised values of its advances until it ends: at its result, or at a failure.
+            self.raised.append(&mut raised_taken());
+            if !matches!(advanced, Ok((0 | 1, _))) {
+                raised_released(&std::mem::take(&mut self.raised));
+            }` : ''}
+            let (step, value) = advanced?;
             tuple_out(&[JsValue::from(step), value])
         })
         .map_err(throw)
@@ -1114,7 +1158,7 @@ const drivesMachine = (model: Model): boolean => [...model.functions, ...model.o
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
-  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), drivesMachine(model) ? MACHINE : ''].join('');
+  const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), drivesMachine(model) ? machineText(carriesThrown(model)) : ''].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
   const callbacks = [...model.callbacks.map((c) => callbackRust(model, c)), model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model), foreignFailureWasm(model, failRest(model))].join('');
   const functions = `${exported}${callbacks}`;
@@ -1217,8 +1261,10 @@ fn binding_error(error: BindingError) -> Fail {
 ${coreErrorRust(model)}${raisesAssertions(model)}
 /// B-7: a panic of the call reaches the caller as kind internal where the module unwinds; a module built with
 /// panic=abort, the default of wasm32-unknown-unknown, traps instead (GN-18).
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
-    match catch_unwind(AssertUnwindSafe(body)) {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${carriesThrown(model) ? `
+    // U-3: the call releases each Raised that it made and nothing took.
+    RAISING.with_borrow_mut(|open| open.push(Vec::new()));` : ''}
+    let result = match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
             let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
@@ -1228,7 +1274,11 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
             };
             Err(binding_error(BindingError::Internal { detail }))
         }
-    }
+    };${carriesThrown(model) ? `
+    if let Some(made) = RAISING.with_borrow_mut(Vec::pop) {
+        raised_released(&made);
+    }` : ''}
+    result
 }
 ${state}${used}${callbacks}${faultRust(model)}${aliasKindsRust(model)}
 /// The exports of the module. The expansion of wasm_bindgen calls Option::unwrap_or_default, so they are in one module

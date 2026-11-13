@@ -772,6 +772,15 @@ the design ids are those of the binding design.
     nothing there and stay in the table. A handle of the table is a
     count that is never given again, so the handle of a released value names no value and never another value; a
     result whose handle names no value is kind `internal`.
+  - `Raised`: a `Raised` is released by the call that made it. The core may answer a `Raised` and drop it, as a
+    scope does that rolls back and then returns another failure, and a `Raised` has no release function, so what was
+    thrown would stay in the table of the binding under its handle. Node and WASM: each entry point records the
+    handles of the `Raised` values that are made on its thread while it runs, and a call that language code makes
+    inside it records its own; when the entry point returns, it removes from the table what was thrown under each
+    handle that `failure_error` did not take, and drops it after the table is released. A machine keeps the handles
+    of its advances and releases them at the advance that gives its result or fails, or, when it is not advanced to
+    its end, where its `Driven` object ends. Not applied yet (G-4): the crates of PHP, Python and Go do not apply the
+    rule.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the

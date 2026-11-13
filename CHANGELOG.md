@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A `Raised` that the core dropped and did not return left what was thrown in the table `THROWN` of the Node and
+  WASM crates for the life of the thread, because a `Raised` has no release function. The rule is now that the call
+  that made a `Raised` releases it: each entry point records the handles that are made while it runs and, when it
+  returns, removes what was thrown under each handle that `failure_error` did not take; a machine keeps the handles
+  of its advances until the advance that gives its result or fails, or until its `Driven` object ends (U-3, GN-6ae).
+  The crates of PHP, Python and Go do not apply the rule yet. Verified by `npm test` in `packages/ts`, whose test
+  found no table `RAISING` in the crates of the sample before the change. No generated test observes the table, so
+  the end-to-end run shows only that the crates compile, pass clippy and keep their results.
 - A callback that a machine of the Node crate owns (`Owned<Callback>`) left its exception pending in the environment
   while the machine went on, so a later call of Node-API in the same advance, such as the promise of the next Io
   future, would fail. The owned callback now takes the exception out of the environment and holds it under the handle

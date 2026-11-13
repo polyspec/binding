@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ca4b1a2cb3f44e51f473e73acd7ea4adde195d85a9d1ed02debbf1562e333d56 -->
+<!-- source-sha256: 4dc5c070085458b998dfdbeb051ec43ae3633c210cc3ab10efb29f920ed91bba -->
 # 생성기
 
 [English](generator.md)
@@ -640,6 +640,13 @@
     `Passthrough`는 그 값을 놓는다. `Passthrough`는 `Send`가 아니다. table은 언어 코드의 스레드에 묶여 있어서, 다른
     스레드에서 끝난 값은 거기서 아무것도 놓지 못하고 table에 남기 때문이다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
     가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  - `Raised`: `Raised`는 그것을 만든 호출이 해제한다. 코어는 `Raised`에 응답하고 그것을 drop할 수 있다. rollback한 뒤
+    다른 실패를 반환하는 scope가 그렇다. `Raised`에는 해제 함수가 없으므로, 던져진 것이 그 handle 아래 binding의 table에
+    남게 된다. Node와 WASM: 각 진입점은 자기가 도는 동안 자기 스레드에서 만들어진 `Raised`의 handle을 기록하고, 그 안에서
+    언어 코드가 하는 호출은 자기 것을 따로 기록한다. 진입점이 반환할 때, `failure_error`가 가져가지 않은 각 handle 아래의
+    던져진 것을 table에서 제거하고, table을 놓은 뒤에 drop한다. machine은 자기 advance들의 handle을 보관하고, 결과를
+    주거나 실패하는 advance에서 해제하며, 끝까지 advance되지 않으면 그 `Driven` 객체가 끝나는 곳에서 해제한다. 아직
+    적용하지 않음(G-4): PHP, Python, Go의 crate는 이 규칙을 적용하지 않는다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를

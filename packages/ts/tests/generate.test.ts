@@ -3586,3 +3586,29 @@ test('Node takes the exception of a callback that a machine owns out of the envi
   assert.match(alone, /\nfn thrown_again\(exception: &Owned\) -> Fail \{/);
   assert.match(alone, /\nfn kept\(env: &Env, /);
 });
+
+test('a Raised of the Node and WASM crates is released by the call that made it (U-3, GN-6ae)', () => {
+  // The core may drop a Raised and not return it, so what was thrown under its handle would stay in the table. Each
+  // entry point records the handles that are made while it runs and releases those that nothing took; a machine keeps
+  // the handles of its advances until its result, its failure or the end of its object.
+  const out = scopedSample(['node', 'wasm']);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /static RAISING: RefCell<Vec<Vec<u64>>> = const \{ RefCell::new\(Vec::new\(\)\) \};/, path);
+    assert.match(lib, /THROWN\.with_borrow_mut\(\|map\| map\.insert\(handle, error\)\);\n {4}RAISING\.with_borrow_mut\(\|open\| \{\n {8}if let Some\(made\) = open\.last_mut\(\) \{\n {12}made\.push\(handle\);\n {8}\}\n {4}\}\);\n {4}binding_core::Raised::from_generated\(binding_core::Handle::new\(handle\)\)\n\}/, path);
+    assert.match(lib, /fn raised_released\(made: &\[u64\]\) \{\n {4}let gone = THROWN\.try_with\(\|map\| \{\n {8}let mut map = map\.borrow_mut\(\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Thrown>>\(\)\n {4}\}\);\n {4}drop\(gone\);\n\}/, path);
+    assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n[^\n]*\n {4}RAISING\.with_borrow_mut\(\|open\| open\.push\(Vec::new\(\)\)\);\n {4}let result = match catch_unwind\(AssertUnwindSafe\(body\)\) \{[\s\S]*?\n {4}\};\n {4}if let Some\(made\) = RAISING\.with_borrow_mut\(Vec::pop\) \{\n {8}raised_released\(&made\);\n {4}\}\n {4}result\n\}/, path);
+    assert.match(lib, /let advanced = \(self\.advance\)\((?:env, )?settled\);\n[^\n]*\n\s+self\.raised\.append\(&mut raised_taken\(\)\);\n\s+if !matches!\(advanced, Ok\(\(0 \| 1, _\)\)\) \{\n\s+raised_released\(&std::mem::take\(&mut self\.raised\)\);\n\s+\}\n\s+let \(step, value\) = advanced\?;/, path);
+    assert.match(lib, /impl Drop for Driven \{\n\s+fn drop\(&mut self\) \{\n\s+raised_released\(&self\.raised\);\n\s+\}\n\s*\}/, path);
+  }
+  // A contract without a machine has no function that only a machine calls, which would be dead code.
+  const plain = scopedSample(['node', 'wasm'], (contract) => {
+    for (const unit of contract.units) unit.members = (unit.members ?? []).filter((m: any) => m.core?.machine !== true);
+    const kept = new Set(contract.units.flatMap((unit: any) => (unit.members ?? []).map((m: any) => m.id)));
+    contract.cases = contract.cases.filter((k: any) => k.member === undefined || kept.has(k.member));
+  });
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.doesNotMatch(text(plain, path), /struct Driven|fn raised_taken/, path);
+    assert.match(text(plain, path), /fn raised_released\(/, path);
+  }
+});

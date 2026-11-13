@@ -694,7 +694,7 @@ where
 
 // GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
 // advances.
-const MACHINE = `
+const machineText = (carries: boolean): string => `
 /// GN-6ab, GN-6ae: one advance of the state machine of a call, which takes the outcome of the value that the machine
 /// awaited: its step, and the promise of its wait (0), the value that it awaits (1) or its result (2).
 type Advance = Box<dyn for<'env> FnMut(&'env Env, Unknown<'env>) -> Result<(u64, Unknown<'env>), Fail>>;
@@ -712,21 +712,36 @@ where
 /// (GN-6ae) or [2, its result].
 #[napi]
 pub struct Driven {
-    advance: Advance,
+    advance: Advance,${carries ? `
+    /// U-3: the handles of the Raised values that the advances made and nothing took yet.
+    raised: Vec<u64>,` : ''}
 }
 
 impl Driven {
     fn start<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env, Unknown<'e>) -> Result<(u64, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
-        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance)${carries ? ', raised: Vec::new()' : ''} }, env).map_err(internal)
     }
 }
-
+${carries ? `
+/// U-3: a machine that is not advanced to its end releases the Raised values that it kept where its object ends.
+impl Drop for Driven {
+    fn drop(&mut self) {
+        raised_released(&self.raised);
+    }
+}
+` : ''}
 #[napi]
 impl Driven {
     #[napi]
     pub fn advance<'env>(&mut self, env: &'env Env, settled: Unknown<'env>) -> napi::Result<Unknown<'env>> {
         guard(|| {
-            let (step, value) = (self.advance)(env, settled)?;
+            let advanced = (self.advance)(env, settled);${carries ? `
+            // U-3: the machine keeps the Raised values of its advances until it ends: at its result, or at a failure.
+            self.raised.append(&mut raised_taken());
+            if !matches!(advanced, Ok((0 | 1, _))) {
+                raised_released(&std::mem::take(&mut self.raised));
+            }` : ''}
+            let (step, value) = advanced?;
             tuple_out(env, vec![uint_out(env, step)?, value])
         })
         .map_err(|fail| throw(env, fail))
@@ -738,7 +753,7 @@ impl Driven {
 // with no fault (G-5), as the work of every entry point does.
 function machineRust(model: Model): string {
   const machine = [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.machine === true);
-  return machine === undefined ? '' : withFaults(model, machine, MACHINE);
+  return machine === undefined ? '' : withFaults(model, machine, machineText(failureRust(model) !== ''));
 }
 
 // GN-6n: the future of a member with wait async_driver, on the tokio runtime of napi. A panic of a poll is a failure of
@@ -1167,7 +1182,36 @@ static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 fn raised(error: Thrown) -> binding_core::Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
+    RAISING.with_borrow_mut(|open| {
+        if let Some(made) = open.last_mut() {
+            made.push(handle);
+        }
+    });
     binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+
+thread_local! {
+    /// U-3: the handles of the Raised values that each call in progress made, the innermost call last.
+    static RAISING: RefCell<Vec<Vec<u64>>> = const { RefCell::new(Vec::new()) };
+}
+
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `/// U-3: the handles that the innermost call in progress made so far, which a machine keeps until it ends.
+fn raised_taken() -> Vec<u64> {
+    RAISING.with_borrow_mut(|open| match open.last_mut() {
+        Some(made) => std::mem::take(made),
+        None => Vec::new(),
+    })
+}
+
+` : ''}/// U-3: a Raised is released by the call that made it: what was thrown under each handle that nothing took, because
+/// the core dropped its Raised and did not return it, leaves the table when the call ends, and is dropped after the
+/// table is released; a thread that ends holds no table.
+fn raised_released(made: &[u64]) {
+    let gone = THROWN.try_with(|map| {
+        let mut map = map.borrow_mut();
+        made.iter().filter_map(|handle| map.remove(handle)).collect::<Vec<Thrown>>()
+    });
+    drop(gone);
 }
 
 fn thrown(error: Thrown) -> ${failure} {
@@ -1519,8 +1563,10 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
-    match catch_unwind(AssertUnwindSafe(body)) {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${/\bTHROWN\b/.test(functions) ? `
+    // U-3: the call releases each Raised that it made and nothing took.
+    RAISING.with_borrow_mut(|open| open.push(Vec::new()));` : ''}
+    let result = match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
             let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
@@ -1530,7 +1576,11 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
             };
             Err(binding_error(BindingError::Internal { detail }))
         }
-    }
+    };${/\bTHROWN\b/.test(functions) ? `
+    if let Some(made) = RAISING.with_borrow_mut(Vec::pop) {
+        raised_released(&made);
+    }` : ''}
+    result
 }
 ${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.

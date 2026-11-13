@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4c05a67cf74e92de1416d7939c3cc9c96f139b56ff0d736203fead048bb0dd00 -->
+<!-- source-sha256: c85c8cf3b00d50cd9aa9f60205591724d4068738172ffe584894a92cc65d17bd -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 코어가 반환하지 않고 drop한 `Raised`는 던져진 것을 Node와 WASM crate의 table `THROWN`에 스레드가 끝날 때까지 남겼다.
+  `Raised`에 해제 함수가 없기 때문이다. 이제 규칙은 `Raised`를 만든 호출이 그것을 해제한다는 것이다. 각 진입점은 자기가
+  도는 동안 만들어진 handle을 기록하고, 반환할 때 `failure_error`가 가져가지 않은 각 handle 아래의 던져진 것을 제거한다.
+  machine은 자기 advance들의 handle을, 결과를 주거나 실패하는 advance까지, 또는 그 `Driven` 객체가 끝날 때까지
+  보관한다(U-3, GN-6ae). PHP, Python, Go의 crate는 아직 이 규칙을 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다.
+  그 시험은 변경 전에 sample의 crate에서 table `RAISING`을 찾지 못했다. 생성된 시험은 그 table을 관찰하지 않으므로,
+  end-to-end 실행은 crate가 컴파일되고 clippy를 통과하며 결과를 유지한다는 것만 보인다.
 - Node crate의 machine이 소유하는 callback(`Owned<Callback>`)은 machine이 계속 진행하는 동안 예외를 환경에 pending으로
   남겼고, 같은 advance에서 뒤따르는 Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출이 실패할 수 있었다.
   이제 소유된 callback은 machine의 함수와 같이 예외를 환경에서 꺼내어 그 `Raised`의 handle 아래에 보관하고,
