@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- The generator refused a default of an `optional` type with "a default of an optional type is not generated yet
+  (U-2)", a `{literal}` default of an enum, and a `{literal: null}` default of a value type with "a {literal} or
+  {const} default names the constant of the core in default_core (U-2)", so a record field such as
+  `format_options.delimiters: optional<text> = {literal: null}`, a field `optional<uint> = {computed}`, an enum field
+  `= {literal: "indent"}` and a parameter `assign: template_value = {literal: null}` had no binding. A default of an
+  optional type that is `{literal: null}` or `{computed}` is now the `Option<T>` of the type itself: the binding passes
+  `None` for a value that was left out and for a null, Go keeps its one pointer `*T`, and a record that a member also
+  returns gives the null of the language for `None`. An enum `{literal}` default names its constant in
+  `default_core`, which the crate asserts with `matches!` to be the variant of the value. A `{literal: null}` default
+  of a value type passes `None` without a constant. The test that an explicit null is refused leaves out an optional
+  and a value type, which take null as a value (GN-6i, GN-13d, GN-15e). `tests/e2e/shapes` has the function `pad` with
+  these defaults and `tests/e2e/sample` the function `describe`. Verified by `npm test` in `packages/ts` (289 tests).
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
   (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any

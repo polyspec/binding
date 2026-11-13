@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- 생성기는 `optional` 타입의 기본값을 "a default of an optional type is not generated yet (U-2)"로, enum의
+  `{literal}` 기본값과 값 타입의 `{literal: null}` 기본값을 "a {literal} or {const} default names the constant of the
+  core in default_core (U-2)"로 거부했다. 그래서 `format_options.delimiters: optional<text> = {literal: null}` 같은
+  record field, `optional<uint> = {computed}` field, `= {literal: "indent"}` enum field, parameter
+  `assign: template_value = {literal: null}`에 바인딩이 없었다. 이제 `{literal: null}`이나 `{computed}`인 optional
+  타입의 기본값은 그 타입 자신의 `Option<T>`다. 바인딩은 생략된 값에도 null에도 `None`을 넘기고, Go는 포인터 `*T`
+  하나를 그대로 쓰며, member가 돌려주기도 하는 record는 `None`에 언어의 null을 준다. enum의 `{literal}` 기본값은
+  `default_core`에 상수를 적고, crate는 그것이 그 값의 variant임을 `matches!`로 단언한다. 값 타입의
+  `{literal: null}` 기본값은 상수 없이 `None`을 넘긴다. 명시한 null이 거부됨을 보는 시험은 null을 값으로 받는
+  optional과 값 타입을 제외한다(GN-6i, GN-13d, GN-15e). `tests/e2e/shapes`에 이 기본값들을 가진 함수 `pad`가,
+  `tests/e2e/sample`에 함수 `describe`가 있다. `packages/ts`의 `npm test`(시험 289개)로 확인했다.
 - B-2의 Go 시험은 안전한 정수보다 큰 정수를 `1 << 53`으로 적었는데, gofmt는 그것이 여러 인자 가운데 하나일 때
   `1<<53`으로 바꾼다. 그래서 `tests/e2e/points` Go module의 `gofmt -l`이 `zz_generated_test.go`를
   (`Shift(1 << 53, Point{X: 0, Y: 0})`) 이름했다. 이제 시험은 어느 자리에서든 gofmt가 그대로 두는 수
