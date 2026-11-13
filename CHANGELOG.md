@@ -20,7 +20,8 @@
   of an alias and once for the awaited value of a function; it is now defined once. Verified by `npm test` in
   `packages/ts`, whose test generates the PHP crate with functions named `pass`, `guard` and `raised` and the Python
   crate with `guard`, `raised` and `driven` and requires that no function of the crate is defined twice; before the
-  change it found two definitions of `pass`. The generated crates were not compiled for this change.
+  change it found two definitions of `pass`. Also verified by `make e2e` of the sample, where the PHP and Python
+  crates pass clippy and their generated tests pass, 88 each.
 - Python refused a member with a parameter of a function type or a result `passthrough` by name. The Python binding
   now generates it: the callable is checked when it enters (kind `invalid_callback`), the closure calls it with the
   GIL and gives each class argument as a new instance, the value that it returned is held in a thread-local table
@@ -31,8 +32,9 @@
   Python test writes a function fixture as a function of the test module, a fixture with `awaits` as a coroutine
   function, the step results, the case of `raises: "callback"` and the calls of `after` (GN-6ae, CK-22). Verified by
   `npm test` in `packages/ts`, whose tests of the Python crate and of the Python test pass; the tests that generate
-  the sample for every target still fail with the refusal of Node, Go and WASM. The end-to-end check of the sample
-  was not run for this change.
+  the sample for every target still fail with the refusal of Node, Go and WASM. Also verified by `make e2e` of the
+  sample, where the Python crate passes clippy and the 88 generated tests pass on unittest, the five cases of
+  `store.transaction` among them; that run names Node, Go and WASM as failed by their refusal.
 - The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
   helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
   `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to

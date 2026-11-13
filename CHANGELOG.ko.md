@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8682603e3bb1daec3e52f23209d12eb26a759816aca19f1f1656bf88ad77f046 -->
+<!-- source-sha256: 97d643c315235b563cac753b086e5c50020d7e26ff534e8aff90b6cce9b25f1d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -18,8 +18,8 @@
   (GN-4c). 값 alias와 함수 parameter가 함께 있는 계약의 Python crate는 helper `raised`도 두 번 정의했다. alias의 값을
   위해 한 번, 함수의 기다린 값을 위해 한 번이었다. 이제 한 번 정의한다. `packages/ts`의 `npm test`로 검증했다. 그
   시험은 `pass`, `guard`, `raised`라는 함수가 있는 PHP crate와 `guard`, `raised`, `driven`이 있는 Python crate를 생성하고
-  crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 `pass`의 정의 둘을 찾았다. 이 변경에 대해
-  생성된 crate는 컴파일하지 않았다.
+  crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 `pass`의 정의 둘을 찾았다. sample의
+  `make e2e`로도 검증했다. PHP와 Python crate는 clippy를 통과하고 생성된 시험은 각각 88개가 통과한다.
 - Python은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. Python binding은 이제 그것을
   생성한다. callable은 들어올 때 검사하고(kind `invalid_callback`), closure는 GIL을 쥐고 그것을 부르며 각 class 인자를 새
   인스턴스로 준다. 그것이 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐고, member는 그 객체를 그대로
@@ -29,7 +29,8 @@
   실패한다. Python 시험은 함수 fixture를 시험 module의 함수로, `awaits`가 있는 fixture를 coroutine 함수로 쓰고, step의
   결과, `raises: "callback"` case, `after`의 호출을 쓴다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Python
   crate와 Python 시험의 시험은 통과한다. 모든 target으로 sample을 생성하는 시험은 Node, Go, WASM의 거부로 아직 실패한다.
-  이 변경에 대해 sample의 end-to-end 검사는 실행하지 않았다.
+  sample의 `make e2e`로도 검증했다. Python crate는 clippy를 통과하고 생성된 시험 88개가 unittest에서 통과하며,
+  `store.transaction`의 case 다섯이 그 안에 있다. 그 실행은 Node, Go, WASM을 거부로 실패한 target으로 이름한다.
 - `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
   않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
   정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:
