@@ -606,7 +606,12 @@
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. 결과에 case 형식이 없는
   case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의 내장 형태를 만드는 out 행이 없는 case, parameter나 receiver
-  factory의 인자를 주지 않는 case는 그 이유로 시험이 실패하므로, case는 빠지지 않는다.
+  factory의 인자를 주지 않는 case는 그 이유로 시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
+  PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고
+  (`document-order`는 `document`, `order`), 낱말은 Python에서 `_`로 잇고 PHP와 Go에서 첫 글자를 대문자로 해 잇는다
+  (`DocumentOrder`). Node와 WASM은 시험을 문자열로 이름 지으므로 id를 그대로 담는다. 한 member의 case들이나 한 값 alias의
+  case들의 두 id가 같은 이름을 내면 그 target을 이름을 대고 거부하며, PHP는 메서드처럼 대소문자 없이 이름을 비교한다. 그래서
+  어떤 시험도 다른 시험을 가리지 않는다.
 - **GN-13f** 메서드의 case는 receiver를 자기 키 가운데 그 class의 factory 인자로 주거나, 키 `receiver` 아래에 앞선
   호출들이 만드는 인스턴스 값으로 준다:
   `{"new": "<member id>", "receiver": <인스턴스 값>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`

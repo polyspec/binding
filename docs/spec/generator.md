@@ -737,6 +737,12 @@ the design ids are those of the binding design.
   call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
   value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
   a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
+  The name of the test of a case in a language whose tests are functions or methods (Python, PHP, Go) holds the id of
+  the case as its words: the id is split at every run of characters other than ASCII letters and digits
+  (`document-order` is `document`, `order`), and the words are joined by `_` in Python and capitalized and joined in
+  PHP and Go (`DocumentOrder`). Node and WASM name a test by a string, which holds the id as it is. Two ids of the
+  cases of one member, or of one value alias, that give the same name refuse the target by name, PHP comparing names
+  without case as it does for its methods, so no test hides another.
 - **GN-13f** A case of a method gives its receiver either as the arguments of a factory of its class among its own
   keys, or under the key `receiver` as an instance value, which earlier calls make:
   `{"new": "<member id>", "receiver": <instance value>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
