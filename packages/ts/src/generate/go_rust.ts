@@ -62,6 +62,10 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     return `${name}(${input})`;
   }
   if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
+  if ('tuple' in type) {
+    // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
+    return `in_tuple${type.tuple.length}(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
+  }
   if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
@@ -1127,7 +1131,35 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+}
+
+// T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
+// names are left out.
+function tupleReaders(model: Model): string {
+  const arities = new Set<number>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('tuple' in type) {
+      arities.add(type.tuple.length);
+      type.tuple.forEach(visit);
+      return;
+    }
+    for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
+  };
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
+  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
+  return [...arities].sort((a, b) => a - b).map((n) => {
+    const names = Array.from({ length: n }, (_, i) => `T${i}`);
+    return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
+fn in_tuple${n}<'a, ${names.join(', ')}>(
+    input: &mut &'a [u8],
+${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, Fail>,`).join('\n')}
+) -> Result<(${names.join(', ')}${n === 1 ? ',' : ''}), Fail> {
+    Ok((${names.map((_, i) => `part${i}(input)?`).join(', ')}${n === 1 ? ',' : ''}))
+}`;
+  }).join('\n\n');
 }
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.

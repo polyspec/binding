@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The generator refused the Go binding of a contract with a tuple of different part types inside another type or with
+  a tuple parameter, so the fixture, whose `words.split` returns a list of a tuple of text and uint, had no Go
+  binding. Go now gives such a tuple as `Tuple<N>[T0, ...]`, a generic struct of `internal/binding` with the fields
+  `P0` to `P<N-1>` that a package names by an alias, keeps `[N]T` for a tuple of one part type, and reads a tuple
+  argument part by part (GN-16). Verified by `npm test` in `packages/ts` and `go vet` of the generated packages.
 - The Go tests made the instance of a case whose call of `then` has `"raises": {"kind": <kind>}` by requiring that
   call to succeed, so `TestB4GateEnterAGateClosedTwiceLetsNothingPass` of `tests/e2e/classes` failed with "the gate of
   a is closed" where the case expects that failure. The Go test now requires the kind of that call and goes on to the

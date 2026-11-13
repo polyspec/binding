@@ -94,6 +94,8 @@ export interface GoScope {
   usesMap?: boolean;
   // Whether the package names the keyed map of T-2 and its Key.
   usesKeyed?: boolean;
+  // GN-16: the arities of the tuples of different part types that the package names, as Tuple<N>.
+  usesTuples?: Set<number>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesIter?: boolean;
@@ -136,10 +138,12 @@ export function goType(scope: GoScope, type: Type): string {
   }
   if ('optional' in type) return `*${goType(scope, type.optional)}`;
   if ('tuple' in type) {
-    const [first, ...rest] = type.tuple.map((t) => goType(scope, t));
-    // T-2: a tuple inside another type is a Go array, which needs one element type.
-    if (first === undefined || rest.some((t) => t !== first)) throw new Unsupported(`a tuple of ${JSON.stringify(type.tuple)} inside another type is not generated for Go yet (a Go array has one element type)`);
-    return `[${type.tuple.length}]${first}`;
+    // T-2, GN-16: a tuple inside another type or as a parameter is a Go array of its one part type, else a struct of
+    // its parts in order (a Go array has one element type).
+    const parts = type.tuple.map((t) => goType(scope, t));
+    if (tupleArray(parts)) return `[${parts.length}]${parts[0] ?? ''}`;
+    (scope.usesTuples ??= new Set()).add(parts.length);
+    return `Tuple${parts.length}[${parts.join(', ')}]`;
   }
   // U-7: a value of a value alias, of this repository or another, is any Go value; its core judges it.
   if (aliasOf(scope.model, type) !== undefined) return 'any';
@@ -158,6 +162,51 @@ export function goType(scope: GoScope, type: Type): string {
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
 }
+
+// GN-16: whether the Go form of a tuple is an array, which holds parts of one Go type.
+const tupleArray = (parts: string[]): boolean => parts.length > 0 && parts.every((t) => t === parts[0]);
+
+// GN-16: whether a tuple type is a Go array, else a Tuple<N> of its parts.
+export const goTupleArray = (scope: GoScope, parts: Type[]): boolean => tupleArray(parts.map((t) => goType({ ...scope, imports: new Set() }, t)));
+
+// GN-16: the arities of the tuples of different part types in the types of the model, for the Tuple<N> of binding.
+function tupleArities(model: Model): number[] {
+  const found = new Set<number>();
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('tuple' in type) {
+      type.tuple.forEach(visit);
+      if (!goTupleArray(scope, type.tuple)) found.add(type.tuple.length);
+      return;
+    }
+    for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
+  };
+  for (const fn of callablesOf(model)) {
+    for (const p of fn.params) visit(p.type);
+    // A tuple return is several results; a tuple inside it is a value.
+    if (typeof fn.returns === 'object' && 'tuple' in fn.returns) fn.returns.tuple.forEach(visit);
+    else visit(fn.returns);
+    if (fn.yields !== undefined) [fn.yields.value, ...(fn.yields.key === undefined ? [] : [fn.yields.key])].forEach(visit);
+  }
+  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const cb of model.callbacks) for (const m of cb.members) [...m.params.map((p) => p.type), m.returns].forEach(visit);
+  return [...found].sort((a, b) => a - b);
+}
+
+// GN-16: the struct of a tuple of n parts of different types, its parts the fields P0 to P<n-1>.
+function goTupleType(n: number): string {
+  const names = Array.from({ length: n }, (_, i) => `T${i}`);
+  return `
+// Tuple${n} is a tuple of ${n} parts of different types (GN-16), its parts in order.
+type Tuple${n}[${names.join(', ')} any] struct {
+${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
+}
+`;
+}
+
+// The part i of a Go tuple: an item of its array or a field of its struct.
+const tuplePart = (scope: GoScope, parts: Type[], expr: string, i: number): string => (goTupleArray(scope, parts) ? `${expr}[${i}]` : `${expr}.P${i}`);
 
 // U-2, T-4: a field with a default is a pointer, nil when the caller leaves it out.
 export const fieldType = (scope: GoScope, field: { type: Type; default?: unknown }): string =>
@@ -224,7 +273,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   if ('optional' in type) {
     return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
   }
-  if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, `${expr}[${i}]`, indent, depth));
+  if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
   // U-7: a value of an alias is the call that walks it and its first level.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}call.Value(enc, ${expr})`];
   // T-5: an instance is the handle of its value; nil and the zero value are handle 0.
@@ -280,7 +329,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
       `${t}}`,
     ];
   }
-  if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, `${target}[${i}]`, indent, depth));
+  if ('tuple' in type) return type.tuple.flatMap((part, i) => goDecode(scope, part, tuplePart(scope, type.tuple, target, i), indent, depth));
   // U-7: a value of an alias is the Go value that its out rows make.
   if (aliasOf(scope.model, type) !== undefined) return [`${t}${target} = dec.Value()`];
   const object = objectUnit(scope.model, type);
@@ -561,7 +610,14 @@ function goPackageFile(model: Model, module: string): string {
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
   ].join('');
-  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true;
+  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true || (scope.usesTuples?.size ?? 0) > 0;
+  const tuples = [...(scope.usesTuples ?? [])].sort((a, b) => a - b).map((n) => {
+    const names = Array.from({ length: n }, (_, i) => `T${i}`);
+    return `
+// Tuple${n} is a tuple of ${n} parts of different types (GN-16), its parts the fields P0 to P${n - 1} in order.
+type Tuple${n}[${names.join(', ')} any] = binding.Tuple${n}[${names.join(', ')}]
+`;
+  }).join('');
   const alias = scope.usesMap === true
     ? `
 // Map is the contract type map<T> (T-2): text keys in the order in which they were first set, each with its value. Its
@@ -595,7 +651,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 
 // Package ${goPackage(model.contract, module)} is the module ${module === '' ? '(the root)' : module} of the Go binding of ${model.contract.library}.
 package ${goPackage(model.contract, module)}
-${imports}${alias}${keyed}${body}`;
+${imports}${alias}${keyed}${tuples}${body}`;
 }
 
 export const categoryType = (model: Model, category: string): string => goErrorTypes(model.contract).find(([c]) => c === category)?.[1] ?? '';
@@ -963,7 +1019,7 @@ func (k Key) Text() (string, bool) {
 	}
 	return k.text, true
 }
-
+${tupleArities(model).map(goTupleType).join('')}
 // KeyedMap is the contract type keyed_map<T> (T-2): keys in the order in which they were first set, each once with
 // its value.
 type KeyedMap[T any] struct {
