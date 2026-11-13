@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `binding check`는 손으로 쓴 host `package.json`(L-2a)에서 이름, `files`, 플랫폼 패키지만 읽었다. 그래서 release가 읽는
+  `"type"`, `napi.binaryName`, `napi.targets`(kit K1189)가 없는 host 패키지도 검사를 통과했다. 이제 이 세 항목도 읽고, 각각을
+  GN-3c의 값과 깊이 비교하며, 없거나 다른 항목은 그 값과 함께 이름을 적는다. 예: `CK-19 napi.targets is missing, not
+  ["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"]`. host PHP 확장의 `composer.json`은
+  scaffold가 쓰므로 `php-ext.download-url-method`를 포함해 파일 전체를 비교한다(GN-3b, CK-19). `make test-ts`(시험 291개)로
+  검증했다.
 - `binding scaffold`는 `napi.binaryName`, `napi.targets`, `type`이 없는 `package.json`과,
   `php-ext.download-url-method`가 없는 PHP 확장 `composer.json`을 썼다. 그래서 kit의 배포(K1189)가 npm-native 패키지를
   ("names no napi.binaryName")와 php-ext 패키지를("lists no pre-packaged-binary in php-ext.download-url-method") 거부했고,

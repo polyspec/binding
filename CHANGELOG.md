@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- `binding check` read from a hand-written host `package.json` (L-2a) only its name, its `files` and its platform
+  packages, so a host package without `"type"`, `napi.binaryName` or `napi.targets`, which a release reads (kit
+  K1189), passed the check. It now also reads these three items, compares each deeply with the value of GN-3c, and
+  names a missing or different item with that value, such as `CK-19 napi.targets is missing, not
+  ["x86_64-unknown-linux-gnu","aarch64-unknown-linux-gnu","aarch64-apple-darwin"]`. The `composer.json` of a host PHP
+  extension is written by scaffold and compared whole, its `php-ext.download-url-method` included (GN-3b, CK-19).
+  Verified by `make test-ts` (291 tests).
 - `binding scaffold` wrote a `package.json` without `napi.binaryName`, `napi.targets` and `type`, and a PHP extension
   `composer.json` without `php-ext.download-url-method`, so the release of kit (K1189) refused the npm-native package
   ("names no napi.binaryName") and the php-ext package ("lists no pre-packaged-binary in php-ext.download-url-method"),
