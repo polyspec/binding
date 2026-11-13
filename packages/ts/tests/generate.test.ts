@@ -538,6 +538,29 @@ test('the Go package binding holds no keyed-map helper for a contract without a 
   }
 });
 
+test('a member of a class named as a method of the Writer or the Reader keeps no helper of package binding (GN-15h)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const generated = (name: string[] | undefined): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    const holder = contract.units.find((u: any) => u.id === 'lease').members.find((m: any) => m.id === 'lease.holder');
+    if (name !== undefined) holder.name = name;
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['go'] as Inputs['targets'] & string[] });
+  };
+  const binding = text(generated(undefined), 'packages/go/internal/binding/zz_generated_binding.go');
+  const helpers = (source: string): string[] => source.split('\n').filter((l) => /^func \((?:w \*Writer|r \*Reader|k Key|m \*KeyedMap\[T\])\)|^type (?:Key|KeyedMap)\b|^func (?:Int|Bytes|Text)Key\(|^\t"math"$/.test(l));
+  for (const [name, method] of [[['key'], 'Key'], [['float'], 'Float'], [['bytes'], 'Bytes']] as const) {
+    const out = generated([...name]);
+    assert.match(goUses(out), new RegExp(`\\b\\w+\\.${method}\\(`));
+    assert.deepEqual(helpers(text(out, 'packages/go/internal/binding/zz_generated_binding.go')), helpers(binding));
+  }
+  const uses = goUses(generated(undefined));
+  for (const [, receiver, method] of binding.matchAll(/^func \((w \*Writer|r \*Reader)\) ([A-Z]\w*)\(/gm)) {
+    if (method === 'Done' || method === 'Finish') continue;
+    const names = receiver?.startsWith('w') === true ? '(?:enc|tenc|w)' : '(?:dec|r|properties)';
+    assert.match(uses, new RegExp(`\\b${names}\\.${method ?? ''}\\(`), `${receiver ?? ''} ${method ?? ''} is generated and no Go code calls it`);
+  }
+});
+
 test('the Go package binding holds the keyed-map helpers that a keyed_map<T> of the contract uses (GN-15h)', () => {
   const out = (returns: unknown, parameter: unknown): string => {
     const contract = goContract();

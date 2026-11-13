@@ -1081,9 +1081,9 @@ func make${name}(base *${categoryType(model, unit.category)}, r *Reader) *${name
 // generated file. goBinding writes a mark for each helper; go() replaces each mark with the helper when the Go code of
 // the generation, or a helper that is kept, uses it, and with nothing otherwise. The code is read without its comments
 // and the contents of its literals. A method of the Writer or the Reader is used where a value of its type calls it:
-// the generated code names a Writer enc, tenc or w and a Reader dec, r or properties; a call of a method of the name
-// through any other value, which is no package, counts as a use of both, so a helper is never dropped for a name that
-// the rule does not know.
+// the generated code calls a method of a Writer only through a value named enc, tenc or w and a method of a Reader
+// only through a value named dec, r or properties. A call through another name is a method of another type, such as
+// a member of a class of the contract (made0.Key) or of a reflect.Value (v.Float), and no use of a helper.
 
 interface GoHelper {
   name: string;
@@ -1093,19 +1093,10 @@ interface GoHelper {
 
 const WRITERS = ['enc', 'tenc', 'w'];
 const READERS = ['dec', 'r', 'properties'];
-// The packages that the generated Go imports: a selector on one of them is no method call.
-const GO_PACKAGES = new Set(['binding', 'binary', 'bytes', 'C', 'cgo', 'errors', 'fmt', 'iter', 'json', 'log', 'math', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'testing', 'unsafe', 'utf8']);
 
-// Whether the code calls the method through a value that `own` names, or through a value of a name that neither the
-// Writer nor the Reader has.
-function callsMethod(code: string, method: string, own: string[]): boolean {
-  const other = own === WRITERS ? READERS : WRITERS;
-  for (const [, receiver] of code.matchAll(new RegExp(`(\\)|\\b[A-Za-z_]\\w*)\\s*\\.\\s*${method}\\b`, 'g'))) {
-    if (receiver === undefined || GO_PACKAGES.has(receiver) || other.includes(receiver)) continue;
-    return true;
-  }
-  return false;
-}
+// Whether the code calls the method through a value that `own` names.
+const callsMethod = (code: string, method: string, own: string[]): boolean =>
+  new RegExp(`\\b(?:${own.join('|')})\\s*\\.\\s*${method}\\b`).test(code);
 
 const writerHelper = (name: string, text: string): GoHelper => ({ name: `Writer.${name}`, text, kept: (code) => callsMethod(code, name, WRITERS) });
 const readerHelper = (name: string, text: string): GoHelper => ({ name: `Reader.${name}`, text, kept: (code) => callsMethod(code, name, READERS) });
@@ -1220,11 +1211,12 @@ func (r *Reader) Bytes() []byte {
 `),
 ];
 
-// The Key of a keyed_map<T> is used where the code names the type Key, one of its constructors or a KeyedMap; a method
-// of the Key is called through a value of its type, so it is kept with the type.
+// The Key of a keyed_map<T> is used where the code names the type Key (an identifier Key that is no selector, no call
+// and no declaration of a method, as the member Key of a class is), one of its constructors or a KeyedMap; a method of
+// the Key is called through a value of its type, so it is kept with the type.
 const KEY_HELPERS: GoHelper[] = [{
   name: 'Key',
-  kept: (code) => /\bKeyedMap\b|\b(?:Int|Bytes|Text)Key\b|(?<![.\w])Key\b|\bbinding\.Key\b/.test(code),
+  kept: (code) => /\bKeyedMap\b|\b(?:Int|Bytes|Text)Key\b|(?<![.\w])Key\b(?!\s*\()|\bbinding\.Key\b/.test(code),
   text: `
 // Key is a key of the contract type keyed_map<T> (T-2): an integer, a byte string or a text. Keys of different kinds
 // are different keys, as IntKey(1), BytesKey([]byte("1")) and TextKey("1").

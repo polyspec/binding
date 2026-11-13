@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f10892e73678b6a9875ed3791c77fe3dac7d29dc7e79182b59667e77ec38bc27 -->
+<!-- source-sha256: c69ba3f54a54966a608851171ef9477926eee2700fbe2ea65e74dc79e567b65c -->
 # 생성기
 
 [English](generator.md)
@@ -1393,8 +1393,9 @@
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을
   때만 쓴다. 빠진 도우미만 쓰던 import는 그 도우미와 함께 빠진다. 생성기는 쓰임을 주석과 literal 내용을 뺀 생성 Go
   코드에서 읽고, 남는 도우미가 다른 도우미를 부를 수 있으므로 더 남는 도우미가 없을 때까지 되풀이한다. 생성 코드는
-  `Writer`를 `enc`, `tenc`, `w`로, `Reader`를 `dec`, `r`, `properties`로 부른다. 패키지가 아닌 다른 값으로 그 이름의
-  method를 부르면 둘 다의 쓰임으로 센다. 그래서 규칙이 모르는 이름 때문에 도우미가 빠지는 일은 없다. 이유: 어떤 main
+  `Writer`의 method를 `enc`, `tenc`, `w`라는 이름의 값으로만, `Reader`의 method를 `dec`, `r`, `properties`라는 이름의
+  값으로만 부른다. 다른 값으로 같은 이름을 부르는 것은 다른 타입의 method, 예컨대 계약의 class의 member(`made0.Key`)나
+  `reflect.Value`의 method(`v.Float`)이고, 도우미의 쓰임이 아니다. 이유: 어떤 main
   패키지도 어떤 시험도 닿지 않는 함수는 모듈을 쓰는 저장소의 deadcode·unused lint를 실패시키고, 그 저장소는 생성
   파일을 고칠 수 없다. 그러므로 `keyed_map<T>`가 없는 계약은 keyed-map 도우미를 받지 않는다.
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,

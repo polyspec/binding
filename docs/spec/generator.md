@@ -1694,9 +1694,10 @@ the design ids are those of the binding design.
   and its methods, and the type `KeyedMap` with its methods, only when that code names them; an import that only a
   dropped helper used is dropped with it. The generator reads the uses from the generated Go code without its comments
   and the contents of its literals, and repeats until no further helper is kept, because a kept helper may call
-  another. The generated code names a `Writer` `enc`, `tenc` or `w` and a `Reader` `dec`, `r` or `properties`; a call
-  of a method of the name through another value that is not a package counts as a use of both, so a helper is never
-  dropped for a name that the rule does not know. Why: a function that no main package and no test reaches fails the
+  another. The generated code calls a method of a `Writer` only through a value named `enc`, `tenc` or `w` and a
+  method of a `Reader` only through a value named `dec`, `r` or `properties`; a call of the same name through another
+  value is a method of another type, such as a member of a class of the contract (`made0.Key`) or of a
+  `reflect.Value` (`v.Float`), and no use of a helper. Why: a function that no main package and no test reaches fails the
   deadcode and unused lints of the repository that consumes the module, and that repository cannot change a generated
   file. A contract without a `keyed_map<T>` therefore gets no keyed-map helper.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
