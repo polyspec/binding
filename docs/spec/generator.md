@@ -663,7 +663,11 @@ the design ids are those of the binding design.
   K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
   `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
   `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
-  none) and `"once": true` for a row that answers one call. The generated test of each language makes the fixture
+  none) and `"once": true` for a row that answers one call. A row with `"raise": {"error": <error unit>, "kind":
+  <kind>}` throws, in place of a result, an instance of the class of that error unit with the kind and the message
+  `G-5: <kind>`, as language code makes one (GN-7a): Python, Node, WASM and PHP by the constructor of the class with
+  the message and the kind, Go by `Raised<Unit>(kind, message)` of package `internal/binding`, which makes the struct
+  of the unit with no property value. The generated test of each language makes the fixture
   from one implementation that binding writes into the test module, so a repository writes no fixture code: a call
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
@@ -700,7 +704,7 @@ the design ids are those of the binding design.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
-  of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
+  of a value unit's rows; and, of the callback fixture, an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4). Of fault injection and the
   kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
   test, because PHP has no table of the errno symbols of its machine; a value of the language by its kind

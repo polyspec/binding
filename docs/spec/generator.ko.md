@@ -545,7 +545,10 @@
   case는 callback parameter를 fixture로 준다:
   `{"callback": {"<callback member id>": [<행>]}, "calls": [{"member": "<id>", "args": {...}}]}`. 행은
   `{"args": {<snake_case parameter>: <case 값>}}`에 `"result": <case 값>`(member가 none을 돌려주면 없다)과, 호출 하나에만
-  답하는 행의 `"once": true`를 더한 것이다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
+  답하는 행의 `"once": true`를 더한 것이다. `"raise": {"error": <오류 unit>, "kind": <kind>}`가 있는 행은 결과 대신 그 오류
+  unit 클래스의 인스턴스를 kind와 메시지 `G-5: <kind>`로 언어 코드가 만들듯이(GN-7a) 만들어 던진다: Python·Node·WASM·PHP는
+  메시지와 kind를 받는 그 클래스의 생성자로, Go는 property 값 없이 그 unit의 struct를 만드는 `internal/binding` 패키지의
+  `Raised<Unit>(kind, message)`로 만든다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
   예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 다른 타입 안(record의 field, list의
@@ -575,7 +578,7 @@
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
-  fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
+  fixture에서 `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
   errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
   GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
