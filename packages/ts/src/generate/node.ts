@@ -203,7 +203,7 @@ fn out_float<'env>(env: &'env Env, value: impl Borrow<f64>) -> Result<Unknown<'e
 }
 
 fn out_none(env: &Env) -> Result<Unknown<'_>, Fail> {
-    Ok(env.get_undefined().map_err(internal)?.to_unknown())
+    ToNapiValue::into_unknown((), env).map_err(internal)
 }
 
 fn out_null(env: &Env) -> Result<Unknown<'_>, Fail> {
@@ -408,11 +408,13 @@ function entryRust(model: Model, fn: Fn): string {
     }
   }
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  // A return of none has no value to convert, so it is bound as the unit and not as a variable.
+  const bound = fn.returns === 'none' ? '(): ()' : 'result';
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    lines.push(`        let ${bound} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    // E-1c: a core that returns nothing is bound as (), so a Result that it returns does not compile.
-    lines.push(`        let result${fn.returns === 'none' ? ': ()' : ''} = ${call};`);
+    // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
+    lines.push(`        let ${bound} = ${call};`);
   }
   // T-5: napi-rs keeps the classes it parsed in the state of its macro process, which rustc does not keep between the
   // expansions of a struct and its impl, so a constructor in the impl fails to find its struct. The constructor is the

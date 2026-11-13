@@ -509,11 +509,13 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
   const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  // A return of none has no value to convert, so it is bound as the unit and not as a variable.
+  const bound = fn.returns === 'none' ? '(): ()' : 'result';
   if (fn.fallible) {
-    lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    lines.push(`        let ${bound} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
-    // E-1c: a core that returns nothing is bound as (), so a Result that it returns does not compile.
-    lines.push(`        let result${fn.returns === 'none' ? ': ()' : ''} = ${call};`);
+    // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
+    lines.push(`        let ${bound} = ${call};`);
   }
   const params = variables.map((v) => `${rustIdent(v)}: &Zval`);
   if (fn.kind === 'constructor') {
