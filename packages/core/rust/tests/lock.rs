@@ -121,10 +121,18 @@ fn a_taken_value_leaves_the_object_consumed() -> Result<(), BindingError> {
     assert_eq!(exclusive.take("Lease")?, "a");
     assert_eq!(shared.clone().take("Lease")?, "b");
     assert!(exclusive.taken() && shared.taken());
-    for result in [kind(&exclusive.read("Lease", &[])), kind(&exclusive.write("Lease")), kind(&exclusive.take("Lease"))] {
+    for result in [
+        kind(&exclusive.read("Lease", &[])),
+        kind(&exclusive.write("Lease")),
+        kind(&exclusive.take("Lease")),
+    ] {
         assert_eq!(result, "consumed");
     }
-    for result in [kind(&shared.read("Lease", &[])), kind(&shared.write("Lease")), kind(&shared.take("Lease"))] {
+    for result in [
+        kind(&shared.read("Lease", &[])),
+        kind(&shared.write("Lease")),
+        kind(&shared.take("Lease")),
+    ] {
         assert_eq!(result, "consumed");
     }
     Ok(())

@@ -522,10 +522,12 @@ the design ids are those of the binding design.
   - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
   Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
   generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
-  drops it without the cleanup call and requires the warning, and a test that calls the cleanup member, drops the
-  object and requires no warning: PHP unsets the object under an error handler; Python deletes it under
-  `warnings.catch_warnings(record=True)`; Node runs the test file with `--expose-gc`, calls `gc()` and awaits the
-  `warning` event of the process. Why: a resource that the caller forgot to close is still released, and the warning
+  drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
+  member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
+  under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process. Node has no test of the absent
+  warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
+  reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
   names the call that the caller left out.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without

@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -356,6 +356,48 @@ export function pythonTests(model: Model, module: string): string {
         # GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self.assertEqual(_native._fault_left(armed), [])`}`);
   }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    usesOutcome = true;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    out.push(`
+    def test_gn6o_${langName('python', fn.unit.name, 'variable')}_${langName('python', fn.member.name, 'callable')}_consumes_its_object(self) -> None:
+        held = ${made(sample, (arg) => caseValue(model, ctx, arg, sample.args))}
+        _outcome(lambda: ${invoke(fn, args, 'held')})
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${invoke(fn, args, 'held')}
+        self.assertEqual(caught.exception.kind, "consumed")`);
+  }
+  // GN-6p, B-10: an object destroyed without its cleanup call warns with ResourceWarning, and after it does not.
+  let usesWarnings = false;
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    usesWarnings = true;
+    usesOutcome = true;
+    const variable = langName('python', object.unit.name, 'variable');
+    const callName = langName('python', cleanup.member.name, 'callable');
+    const recv = made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
+    const warned = 'self.assertEqual([str(w.message) for w in caught if issubclass(w.category, ResourceWarning)], ';
+    out.push(`
+    def test_b10_${variable}_warns_without_${callName}(self) -> None:
+        held = ${recv}
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            del held
+        ${warned}[${pyString(cleanupWarning(langName('python', object.unit.name, 'class'), memberName('python', cleanup)))}])
+
+    def test_b10_${variable}_does_not_warn_after_${callName}(self) -> None:
+        held = ${recv}
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _outcome(lambda: ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), 'held')})
+            del held
+        ${warned}[])`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     out.push(`
@@ -369,7 +411,7 @@ export function pythonTests(model: Model, module: string): string {
 """The generated tests of the binding (G-5)."""
 
 ${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
-
+${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
 from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
