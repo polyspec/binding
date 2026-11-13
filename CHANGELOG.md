@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A Go case value of a class that was not an instance value, such as `{"kind": "text", "value": "a"}` of a `Value` of
+  json, refused the whole Go target with "a case value of the class value is an instance value". Go now writes it as
+  the other targets do: a class of origin value by the make member of the kind, another class by its constructor and
+  the inserts of its pairs, each a local of the test; a case whose receiver or argument is not written fails its test
+  by name, and the other tests of the target are written (U-1, GN-13, GN-13e, GN-13f). Verified by `npm test` in
+  `packages/ts`.
 - The Python G-7 test of a constructor without parameters, such as `OrderedMap()` of json, expected `takes no
   arguments`, the words of a CPython function of no arguments, but the constructor is the `__new__` of PyO3, which
   reports `takes 0 positional arguments` and `unexpected keyword argument`. The test now expects the words of each

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- instance 값이 아닌 class의 Go case 값(json `Value`의 `{"kind": "text", "value": "a"}`)은 "a case value of the class
+  value is an instance value"로 Go target 전체를 거부했다. 이제 Go는 다른 target과 같이 쓴다: origin value인 class는 그
+  kind의 make member로, 다른 class는 생성자와 쌍의 insert로 만들고, 각각 시험의 지역 변수다. receiver나 인자를 쓰지 못하는
+  case는 그 시험이 이유와 함께 실패하고, target의 다른 시험은 쓰인다(U-1, GN-13, GN-13e, GN-13f). `packages/ts`의
+  `npm test`로 검증했다.
 - parameter 없는 생성자(json `OrderedMap()`)의 Python G-7 시험은 인자 없는 CPython 함수의 말인 `takes no arguments`를
   기대했지만, 그 생성자는 PyO3의 `__new__`이고 `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 이제 시험은
   형태마다 그 말을 기대한다(G-7). `packages/ts`의 `npm test`로 검증했다.

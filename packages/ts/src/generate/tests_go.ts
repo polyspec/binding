@@ -24,7 +24,7 @@ import {
   objectUnit, places, pointName, unitOf,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -139,8 +139,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
-    if (!isInstanceValue(json)) throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} (GN-13f)`);
-    return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
+    // GN-13f, U-1, GN-13: an instance value, the call of the make member of a class of origin value, or the pairs that
+    // fill another class, as in the other targets.
+    if (isInstanceValue(json)) return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
+    if (object.unit.origin === 'value') return made(v, b, valueClassReceiver(v.model, 'go', object.unit, json));
+    if (Array.isArray(json)) return made(v, b, pairsReceiver(v.model, object, json));
+    throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} or the [key, value] pairs that fill it, not ${JSON.stringify(json)} (GN-13f, GN-13)`);
   }
   const unit = unitOf(v.model, type);
   if (unit?.kind === 'enum') {
@@ -311,6 +315,17 @@ function made(v: Values, b: Body, r: Receiver): string {
     }
   }
   return local;
+}
+
+// GN-13e: the receiver and the arguments of a case, or the reason that fails its test by name when a value of the case
+// is not written; the other tests of the target are written.
+function written<T>(fn: Fn, id: string, write: () => T): T | string {
+  try {
+    return write();
+  } catch (error) {
+    if (!(error instanceof Unsupported)) throw error;
+    return `the case ${id} of ${fn.member.id}: ${error.message}`;
+  }
 }
 
 // The statement of a call whose error is err: its results are blanks or the given names.
@@ -490,8 +505,18 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
   for (const kase of raisingCases(model, fn)) {
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
-    const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
-    const args = callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args));
+    const call = written(fn, kase.id, () => {
+      const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
+      return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
+    });
+    if (typeof call === 'string') {
+      (kase.faults === undefined ? out.main : out.fault).push(`
+func TestB4${label}${testName(kase.id)}(t *testing.T) {
+	t.Fatal(${goString(call)})
+}`);
+      continue;
+    }
+    const { receiver, args } = call;
     const lines = [...b.lines];
     if (kase.faults !== undefined) {
       lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
@@ -515,8 +540,18 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     }
     const b = new Body();
     const fixtures = fixturesFor(v, out, b, fn, kase.id, kase.args);
-    const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
-    const args = callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args));
+    const call = written(fn, kase.id, () => {
+      const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
+      return { receiver, args: callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args)) };
+    });
+    if (typeof call === 'string') {
+      out.main.push(`
+func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
+	t.Fatal(${goString(call)})
+}`);
+      continue;
+    }
+    const { receiver, args } = call;
     const results = fn.special === 'stringify' ? 1 : goResultCount(fn);
     const parts = fn.returns === 'none' ? [] : typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : [fn.returns];
     const names = kase.expected === undefined ? undefined : Array.from({ length: results }, (_, i) => `value${i}`);
