@@ -288,6 +288,7 @@
             "targets": [
               "php",
               "node",
+              "go",
               "wasm"
             ],
             "reason": "N-4"

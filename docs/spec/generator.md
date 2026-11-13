@@ -23,7 +23,7 @@ the design ids are those of the binding design.
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  record of another repository, and a class or a callback unit of another module (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -287,8 +287,8 @@ the design ids are those of the binding design.
   iterate of a class, is refused by name (G-4).
 - **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
   of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
-  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node and `jsonSerialize` in PHP, whose class
-  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. The PHP extension names no
+  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node, `jsonSerialize` in PHP, whose class
+  implements `\JsonSerializable`, and `MarshalJSON` in Go (GN-15a); Python has no JSON hook, so the member is absent there. The PHP extension names no
   `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
   and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
   addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
@@ -473,8 +473,10 @@ the design ids are those of the binding design.
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
   panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
-  module is refused by name (its handle and dispatch are unexported), and a member `to_json` too (encoding/json reads
-  the exported fields of a value, and a class holds only a handle).
+  module is refused by name (its handle and dispatch are unexported). A to_json is `MarshalJSON` of `json.Marshaler`,
+  which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
+  `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
+  error alone. A member that returns `never` has no result before its `error`.
 - **GN-15b** Go callback units (U-3, K-2): a callback unit is a Go interface whose methods return their result and
   `error`. The C ABI holds a callback as the handle of the call and of the Go value, calls back through the export
   `<prefix>__go_callback`, and a nil callback is kind `invalid_callback`. An error that a method returns stops the
@@ -644,7 +646,7 @@ the design ids are those of the binding design.
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  test of a to_json calls `JSON.stringify`, `json_encode` or or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
