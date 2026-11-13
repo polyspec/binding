@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- The end-to-end check compiled the generated crates of this tree for the first time and refused six texts. PHP and
+  Node: `thrown_thread` read the number of the thread through a `match` whose `Err` arm gives 0, which clippy names
+  `manual_unwrap_or_default`; it now reads it with `let ... else` (U-3, GN-6u). Python: the generated code reads the
+  cfg `pyo3_disable_reference_pool`, which no crate declared, so rustc refused it (`unexpected_cfgs`); the Python crate
+  now has a `build.rs` that declares the cfg, which its manifest names (GN-3a, GN-6u). WASM: `caught` returned
+  `impl Future` around one `async` block, which clippy names `manual_async_fn`; it is now an `async fn` (GN-6n). Go: for
+  a contract with a callback unit and no value alias, package binding read the list of the handles of a buffer that
+  the Rust crate writes only for a contract with an alias, so every call failed with "the encoded result does not
+  follow the encoding of the binding" or with a misuse of a `cgo.Handle`; Go now reads the list exactly when the crate
+  writes it (GN-6u). Go: a test gave an optional callback as a pointer to the struct of its fixture, which `go vet`
+  refuses for a parameter that is a pointer to the interface; the test now gives `ptr[<interface>](...)` (GN-6aa).
+  Node and WASM: a test left an argument out before the options record by dropping it, so the record took its place;
+  the test now passes `undefined` there, and only a trailing argument is missing (U-2, GN-6i). Verified by
+  `make test-ts`: the six new tests failed, each for its text; with the change 399 of 399 pass.
 - For a contract with a class that has a write place and no member that takes a class as an argument, the generated
   Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
   poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of

@@ -3852,7 +3852,7 @@ test('the generated WASM future of a member with wait async_driver compiles agai
     else params.push(`${input[1]}: ${input[2]}`);
   }
   const helper = (name: string): string => {
-    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    const found = new RegExp(`(?:///[^\\n]*\\n)*(?:async )?fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
     assert.ok(found !== null, `no helper ${name}`);
     return found[0];
   };
@@ -4464,4 +4464,68 @@ test('a crate without a feature uses every name that it imports: an import whose
   }
   assert.ok(crates >= 20, `the test read ${String(crates)} crates`);
   assert.deepEqual(unused, []);
+});
+
+// The generated text that the lints and the tools of each target refused in the end-to-end check.
+const e2eOwn = (library: string, targets?: string[]): Map<string, string | Buffer> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${library}/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  return generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${library}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+};
+
+test('the number of the thread of a thrown object is read without a match that clippy names manual_unwrap_or_default (U-3, GN-6u, R-1)', () => {
+  const out = sampleWith(() => undefined, ['php', 'node']);
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/ts/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /fn thrown_thread\(\) -> u64 \{\n    let Ok\(thread\) = THROWN_THREAD\.try_with\(\|thread\| thread\.0\) else \{\n        return 0;\n    \};\n    thread\n\}/, path);
+    assert.doesNotMatch(lib, /Ok\(thread\) => thread,\n\s+Err\(_ending\) => 0,/, path);
+  }
+});
+
+test('the Python crate declares the cfg pyo3_disable_reference_pool that its generated code reads, in its build script (GN-6u)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = trackedPackages(contract, '0.0.0');
+  assert.match(String(out.get('packages/python/Cargo.toml')), /\npublish = false\nbuild = "build\.rs"\n/);
+  assert.match(String(out.get('packages/python/build.rs')), /fn main\(\) \{\n    println!\("cargo::rustc-check-cfg=cfg\(pyo3_disable_reference_pool\)"\);\n\}\n$/);
+  // The script exists for every Python crate, because the manifest names it for every contract.
+  const plain = trackedPackages(JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')), '0.0.0');
+  assert.equal(plain.get('packages/python/build.rs'), out.get('packages/python/build.rs'));
+});
+
+test('the WASM future that catches a panic of a poll is an async fn, which clippy requires of a function whose body is one async block (GN-6n, B-7)', () => {
+  const wasm = text(e2eOwn('classes'), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /\nasync fn caught<F, O>\(future: F\) -> Result<O, Fail>\nwhere\n    F: std::future::Future<Output = Result<O, Fail>>,\n\{\n    let mut future = std::pin::pin!\(future\);\n/);
+  assert.doesNotMatch(wasm, /fn caught<F, O>\(future: F\) -> impl /);
+});
+
+test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {
+  let callbacksOnly = 0;
+  for (const library of ['sample', 'shapes', 'variants', 'classes', 'points']) {
+    const out = e2eOwn(library, ['go']);
+    const writes = /fn given_first\(/.test(text(out, 'packages/go/internal/ffi/generated/lib.rs'));
+    const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+    assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/.test(binding), writes, library);
+    assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{ return NewReader\(bytes\) \}/.test(binding), !writes, library);
+    if (!writes && /cgo\.NewHandle\(c\)/.test(binding)) callbacksOnly += 1;
+  }
+  // variants has a callback and no alias: Go calls back, and no buffer gives a func.
+  assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
+});
+
+test('a Go test gives an optional callback as a pointer to its interface, not to the struct of the fixture (U-3, GN-6aa)', () => {
+  const tests = text(sampleWith(() => undefined, ['go']), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Maybe\(ptr\[Lookup\]\(fixture0\), "a"\)/);
+  assert.doesNotMatch(tests, /ptr\(fixture\d+\)/);
+});
+
+test('a Node or WASM test passes undefined in the place of an argument left out before the options record (U-2, GN-6i)', () => {
+  const out = shaped();
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', undefined, \{ side: 'left' \}\)\)/, path);
+    assert.match(tests, /pkg\.pad\('ab', undefined, \{ end: '!' \}\)/, path);
+    assert.doesNotMatch(tests, /pkg\.pad\('ab', \{/, path);
+    // A trailing argument that is left out is still missing.
+    assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/, path);
+  }
 });

@@ -215,7 +215,8 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   };
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
+    files.set('packages/python/build.rs', PYTHON_BUILD);
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
     files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
@@ -296,6 +297,18 @@ python-source = "generated/python"
   }
   return placed(contract, files);
 }
+
+// GN-6u: the build script of the Python binding crate. The generated code reads the cfg pyo3_disable_reference_pool,
+// which a build of PyO3 without its reference pool sets for every crate, and rustc refuses a cfg that no crate
+// declares (unexpected_cfgs). The crate takes its lints from the workspace, so its manifest cannot declare the cfg.
+const PYTHON_BUILD = `${header('//')}
+// GN-6u: the generated code refuses a build with the cfg pyo3_disable_reference_pool,
+// which this script declares, because rustc refuses a cfg that no crate declares.
+
+fn main() {
+    println!("cargo::rustc-check-cfg=cfg(pyo3_disable_reference_pool)");
+}
+`;
 
 // BD-9: the build script of the PHP binding crate. PHP resolves the symbols of an extension when it loads it, so the
 // macOS linker has to leave them undefined (-undefined dynamic_lookup). cargo:rustc-cdylib-link-arg applies to the

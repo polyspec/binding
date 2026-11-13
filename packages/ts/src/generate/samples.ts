@@ -821,20 +821,25 @@ export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) =
       positional.push(skipped && ctx.lang !== 'node' ? name(arg, text) : text);
     }
   }
-  while (ctx.lang === 'node' && positional.at(-1) === 'undefined') positional.pop();
-  if (extra !== undefined) positional.push(extra);
+  // U-2: only a trailing argument is missing; an argument left out before one that is given is undefined.
+  const trailing = (): string[] => {
+    const given = [...positional];
+    while (ctx.lang === 'node' && given.at(-1) === 'undefined') given.pop();
+    return given;
+  };
   const fields = fn.args.filter((a) => a.field).flatMap((a) => {
     const text = value(a);
     return text === undefined ? [] : [{ arg: a, text }];
   });
-  if (fn.record === undefined) return positional.join(', ');
+  const tail = extra === undefined ? [] : [extra];
+  if (fn.record === undefined) return [...trailing(), ...tail].join(', ');
   if (ctx.lang === 'node') {
     const object = fields.map((f) => `${langName('node', f.arg.name, 'variable')}: ${f.text}`).join(', ');
     // U-2 {empty: "object"}: a record without a field that is given is left out, when it may be.
-    if (object === '' && fn.record.param.default !== undefined) return positional.join(', ');
-    return [...positional, object === '' ? '{}' : `{ ${object} }`].join(', ');
+    if (object === '' && fn.record.param.default !== undefined) return [...trailing(), ...tail].join(', ');
+    return [...positional, ...tail, object === '' ? '{}' : `{ ${object} }`].join(', ');
   }
-  return [...positional, ...fields.map((f) => name(f.arg, f.text))].join(', ');
+  return [...positional, ...tail, ...fields.map((f) => name(f.arg, f.text))].join(', ');
 }
 
 // The value of an argument in a case: undefined when the case leaves an argument with a default out (U-2).

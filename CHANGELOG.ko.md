@@ -1,11 +1,24 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d1a4eb319d27bc48e8968baeb07c14c440010f1ccc91d3e23d53a79f21cea9f8 -->
+<!-- source-sha256: 15cbc091dde30d4a586f3ec9a207a9c93403a7f3b6b961e2d452122761efba17 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 검사가 이 트리의 생성 crate를 처음으로 컴파일했고 여섯 가지 텍스트를 거부했다. PHP와 Node:
+  `thrown_thread`가 스레드 번호를 `Err` 가지가 0을 주는 `match`로 읽었고, clippy는 이를 `manual_unwrap_or_default`로
+  지적한다. 이제 `let ... else`로 읽는다(U-3, GN-6u). Python: 생성 코드가 cfg `pyo3_disable_reference_pool`을 읽는데
+  어느 crate도 그것을 선언하지 않아 rustc가 거부했다(`unexpected_cfgs`). 이제 Python crate는 그 cfg를 선언하는
+  `build.rs`를 갖고 manifest가 그것을 가리킨다(GN-3a, GN-6u). WASM: `caught`가 `async` 블록 하나를 감싼
+  `impl Future`를 돌려주었고, clippy는 이를 `manual_async_fn`으로 지적한다. 이제 `async fn`이다(GN-6n). Go: callback
+  unit이 있고 value alias가 없는 계약에서, package binding이 버퍼의 handle 목록을 읽었으나 Rust crate는 alias가 있는
+  계약에서만 그 목록을 쓴다. 그래서 모든 호출이 "the encoded result does not follow the encoding of the binding" 또는
+  `cgo.Handle` 오용으로 실패했다. 이제 Go는 crate가 목록을 쓸 때에만 그것을 읽는다(GN-6u). Go: 테스트가 optional
+  callback을 fixture struct의 포인터로 주었고, interface의 포인터인 매개변수에 대해 `go vet`이 이를 거부한다. 이제
+  테스트는 `ptr[<interface>](...)`를 준다(GN-6aa). Node와 WASM: 테스트가 options record 앞에서 생략하는 인자를
+  빼 버려 record가 그 자리에 들어갔다. 이제 테스트는 그 자리에 `undefined`를 주고, 뒤쪽 인자만 빠진다(U-2, GN-6i).
+  `make test-ts`로 검증: 새 테스트 여섯 개가 각자의 텍스트 때문에 실패했고, 변경 후 399개 중 399개가 통과한다.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
   `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
   feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는

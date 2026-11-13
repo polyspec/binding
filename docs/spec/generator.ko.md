@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
+<!-- source-sha256: c3f8d2cd4c9edf38d8933258d4fbcea2b22f8a8a859e869f21320adb23d5456b -->
 # 생성기
 
 [English](generator.md)
@@ -47,7 +47,7 @@
 - **GN-3a** 바인딩마다 최종 자리에 추적하는 얇은 package가 있다: `packages/<python|ts|php-ext>/Cargo.toml`, crate의 속성을
   갖고 `generated/lib.rs`를 include하는 진입 `src/lib.rs`(include된 파일은 그 속성을 가질 수 없다), 언어의 manifest
   (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
-  가리키는 Node와 PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
+  가리키는 Python, Node, PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
   rustfmt가 기본 설정에서도 레포의 설정(`use_small_heuristics = "Max"`, 더 넓은 `max_width`)에서도 그대로 두는 꼴이므로,
   레포의 `rustfmt.toml`이 이 값을 어떻게 적든 `cargo fmt --all --check`가 통과한다: allow 속성은 80칸 이하의 한 줄이며 이는 두
   설정의 함수꼴 속성 폭보다 좁다. 한 줄에 들어가지 않는 이유는 속성 위의 주석이 되고, 속성은 규칙 id만 적는다. 코어가
@@ -358,7 +358,9 @@
   `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
 - **GN-6u** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
   - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
-    `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다.
+    `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다. crate의 `build.rs`가 그 cfg를 선언한다
+    (`cargo::rustc-check-cfg`). rustc는 어느 crate도 선언하지 않은 cfg를 거부하고, crate의 manifest는 lint를
+    workspace에서 받기 때문이다.
   - WASM은 그 한 스레드의 표에서 `JsValue`를 가진 key를 갖고, drop이 그것을 지운다.
   - Node와 PHP는 owner, 그 generation, owner 표의 key를 갖는다. 그 표는 언어 참조를 그것을 가진 스레드에 둔다. 그 스레드의
     참조는 다른 스레드에서 해제할 수 없기 때문이다. owner 스레드의 drop은 곧바로 해제하고, 다른 스레드의 drop은 key를 owner의

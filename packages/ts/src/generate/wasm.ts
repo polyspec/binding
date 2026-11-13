@@ -994,25 +994,23 @@ where
 
 /// GN-6n, B-7: the output of a future, or kind internal for a panic of a poll where the module unwinds; a module built
 /// with panic=abort traps instead (GN-18).
-fn caught<F, O>(future: F) -> impl std::future::Future<Output = Result<O, Fail>>
+async fn caught<F, O>(future: F) -> Result<O, Fail>
 where
     F: std::future::Future<Output = Result<O, Fail>>,
 {
-    async move {
-        let mut future = std::pin::pin!(future);
-        std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
-            Ok(poll) => poll,
-            Err(payload) => {
-                let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
-                    (Some(text), _) => (*text).to_owned(),
-                    (None, Some(text)) => text.clone(),
-                    (None, None) => String::from("a panic without a message"),
-                };
-                std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
-            }
-        })
-        .await
-    }
+    let mut future = std::pin::pin!(future);
+    std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+        Ok(poll) => poll,
+        Err(payload) => {
+            let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
+                (Some(text), _) => (*text).to_owned(),
+                (None, Some(text)) => text.clone(),
+                (None, None) => String::from("a panic without a message"),
+            };
+            std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
+        }
+    })
+    .await
 }
 `;
 

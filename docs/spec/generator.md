@@ -65,7 +65,7 @@ the design ids are those of the binding design.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
   entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
   them), the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
-  needs beside the crate, and a file of the crate that does not depend on the contract (the `build.rs` of Node and of
+  needs beside the crate, and a file of the crate that does not depend on the contract (the `build.rs` of Python, of Node and of
   PHP, which the manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. Each Rust
   file is in a form that rustfmt keeps with its defaults and with the settings of a repository (`use_small_heuristics =
   "Max"`, a wider `max_width`), so `cargo fmt --all --check` of the repository passes whatever its `rustfmt.toml`
@@ -445,7 +445,9 @@ the design ids are those of the binding design.
   value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6u).
 - **GN-6u** What a `Native` (B-1) holds, and what its last drop does, by target:
   - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
-    so the crate does not compile with `pyo3_disable_reference_pool`.
+    so the crate does not compile with `pyo3_disable_reference_pool`. The `build.rs` of the crate declares that cfg
+    (`cargo::rustc-check-cfg`), because rustc refuses a cfg that no crate declares and the manifest of the crate takes
+    its lints from the workspace.
   - WASM holds the key of the table of its one thread, which holds the `JsValue`; the drop removes it.
   - Node and PHP hold the owner, its generation and the key of the owner table, which holds the language reference on
     the thread that owns it, because a reference of that thread cannot be released on another one. A drop on the
