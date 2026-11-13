@@ -1,11 +1,46 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 98e23d954707c551d118c2b4ad7ae9ae5bc1d19220259ec3f052f42ee0ee021e -->
+<!-- source-sha256: 5b3e8bf6ee32915048a4cc55c09eb42c48e50cae331e67a98c93dad51ddabc49 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `wait: process_wait`인 member의 Python `a<name>`은 `<name>`이 끝나기 전에 loop가 닫히면 `RuntimeError`가 자기
+  thread를 벗어나게 했다. `loop.call_soon_threadsafe`가 거기서 그것을 내고 아무것도 잡지 않았기 때문이다. 이제
+  thread는 `loop.is_closed()`가 참일 때에만 그 실패를 잡고, 아무것도 기다리지 않는 결과를 버린다. 그 thread는 여전히
+  interpreter가 기다리는 thread다(GN-6m). 그런 member마다 생성된 Python 시험은 호출의 thread가 시작하기 전에 loop를
+  닫고, 어떤 예외도 thread를 벗어나지 않았음을 요구한다. `tests/e2e/classes`의 함수 `classes.outlast`는 새것이다. 그
+  코어는 인자의 프로그램을 `-c "exit <code>"`로 시작하고 기다리므로, `process_wait`인 member가 실제로 다른 프로세스를
+  기다린다. 그 case는 `/bin/sh`에 code 3과 0을 주고, 없는 프로그램을 주며 이것은 kind `missing`이다. `make test-ts`로
+  검증했다. `process_wait`의 시험은 변경 전에 실패했고 437개 중 437개가 통과한다. awaitable의 소스를 고정된 Python에서
+  곧바로 돌아오는 member로 생성된 시험의 순서대로 실행했다. catch가 없으면 `threading.excepthook`이 `RuntimeError:
+  Event loop is closed`를 받았고, 있으면 아무것도 받지 않았다. 생성된 시험과 새 코어 함수는 아직 실행하지 않았다.
+  `classes`의 end-to-end 검사가 그것을 실행한다.
+- `tests/e2e/kept`은 end-to-end 검사의 새 계약이다. 그 data의 object와 reference는 Python, Node, Go, WASM에서
+  `core_type` 없는 값 class `Bag`과 `Boxed`의 instance이고 PHP에서 `stdClass`와 reference다. 두 위치의 object와
+  reference, 서로를 담은 reference와 object, 두 class의 constructor와 property의 case를 갖는다. 생성된 Go 시험은 case
+  값의 map, keyed map, 반복 list를 한 줄의 함수 literal로 썼고, `gofmt`는 한도보다 긴 것을 나누므로 end-to-end 검사가
+  그런 파일을 실패시킨다. 새 계약의 byte string 값을 가진 keyed map 시험이 그랬다. 이제 각각은 시험의 문장이 만들고
+  채우는 local이다(GN-15c). `make test-ts`로 검증했다. 새 시험이 그 계약의 다섯 target을 생성하고 437개 중 437개가
+  통과한다. `gofmt -l`은 변경 전에 그 계약의 생성된 시험 파일을 보고했고, 변경 후에는 `kept`, `sample`, `classes`,
+  `shapes`, `variants`, `points`의 생성된 Go 파일을 하나도 보고하지 않는다. `binding check`는 실행이 쓰는 scaffold
+  파일과 lock만 보고한다. 계약의 코어는 `rustfmt`로 정렬했고 아직 컴파일하지 않았다. 그 계약의 end-to-end 검사가
+  그것을 컴파일하고 실행한다.
+- Go는 `core_type` 없는 값 class를 이름으로 거부했다. Go make가 그런 class의 constructor를 이름하는 값 alias의 `out`
+  행은 그 target의 생성을 실패시켰다. 이제 생성기가 그것을 받는다(GN-6af, GN-15c). 그 class는 `internal/binding`의
+  struct이고, 그 module의 패키지가 alias로 이름한다. 쓰기 가능한 property는 export된 field이고 그 밖의 property는
+  method다. `New<Class>`는 인자를 묘사해 C ABI의 entry에 주고, 그 entry는 코어의 판정 함수만 부른다. default가 있는
+  인자의 nil은 생략한 인자다. 패키지 binding은 그 struct의 포인터를 `in` 행의 kind와 call 안에서 포인터마다 하나인
+  handle을 담은 node 11로 묘사하고, 질문 read가 보관된 값을 준다. `*KeyedMap[any]`는 entry들을 순서대로 담은 map으로
+  묘사하며, 이전에는 다른 타입의 값으로 묘사했다. `out` 행은 결과의 node 12에서 내용보다 먼저 struct를 만들므로 같은
+  handle의 뒤 위치는 같은 포인터다. 생성된 Go 시험은 constructor와 property의 case를 실행하고, kind `object`와
+  `reference`의 case 값을 각 instance를 만든 뒤 채우는 문장으로 쓰며, 결과를 `reflect.DeepEqual`과 instance의 위치로
+  비교한다. CK-78은 그런 class에 Go를 받아들이고, 그 규칙은 PHP가 그런 class를 생성하지 않는다고 적는다.
+  `make test-ts`로 검증했다. 그 class의 시험은 변경 전에 Go의 거부를 요구했고, CK-78 finding의 시험 둘은 검사가 Go를
+  받아들이기 전에 실패했다. 436개 중 436개가 통과한다. `gofmt -l`은 그 시험의 fixture와 계약 `sample`, `classes`,
+  `shapes`, `variants`, `points`의 생성된 Go 파일을 하나도 보고하지 않는다. 이 변경의 Go와 Rust 파일은 아직 컴파일하지
+  않았다. end-to-end 검사가 그것을 컴파일한다.
 - machine이 있는 member의 함수 parameter(GN-6ae)와 코어가 보관하는 함수 타입(GN-6z)을 함께 생성하고, `Raised`는 한 가지
   꼴을 갖는다. 반환이 `passthrough`인 함수 타입은 machine이 있는 member의 함수이고, 그 밖의 함수 타입은 GN-6z의 값이다.
   case는 앞의 것을 함수 fixture로, 뒤의 것을 그 행으로 준다(CK-22). 뒤의 것을 받는 machine member는 이름을 대어 거부하고,

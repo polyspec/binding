@@ -5,6 +5,46 @@
 
 ## Unreleased
 
+- Python `a<name>` of a member with `wait: process_wait` let a `RuntimeError` escape its thread when the loop was
+  closed before `<name>` ended, because `loop.call_soon_threadsafe` raises it there and nothing caught it. The
+  thread now catches that failure only while `loop.is_closed()` holds and drops the result, which nothing awaits;
+  it stays a thread that the interpreter waits for (GN-6m). Each such member has a generated Python test that closes
+  the loop before the thread of the call starts and requires that no exception escaped a thread. The function
+  `classes.outlast` of `tests/e2e/classes` is new: its core starts the program of its argument with `-c "exit
+  <code>"` and waits for it, so a member with `process_wait` really waits for another process; its cases give
+  `/bin/sh` with the codes 3 and 0 and a program that does not exist, which is kind `missing`. Verified by `make
+  test-ts`: the test of `process_wait` failed before the change, and 437 of 437 pass. The source of the awaitable
+  ran on the pinned Python with a member that returns at once, in the order of the generated test: without the
+  catch `threading.excepthook` received `RuntimeError: Event loop is closed`, with it nothing. The generated test and
+  the new core function are not run yet: the end-to-end check of `classes` runs them.
+- `tests/e2e/kept` is a new contract of the end-to-end check: data whose objects and references are instances of
+  the value classes `Bag` and `Boxed` without `core_type` on Python, Node, Go and WASM and `stdClass` and references
+  on PHP, with cases of an object and of a reference at two places, of a reference and an object that hold each
+  other, and of the constructors and the properties of the classes. A generated Go test wrote a map, a keyed map and
+  a repeated list of a case value as a function literal on one line, which `gofmt` splits when it is longer than
+  its limit, so the end-to-end check would fail such a file: the test of a keyed map with a byte string value of the
+  new contract was one. Each is now a local that statements of the test make and fill (GN-15c). Verified by `make
+  test-ts`, whose new test generates the five targets of the contract, 437 of 437 pass; `gofmt -l` reported the
+  generated test file of the contract before the change and reports no generated Go file of `kept`, `sample`,
+  `classes`, `shapes`, `variants` and `points` after it; `binding check` reports only the scaffold files and the
+  lock that the run writes. The core of the contract is formatted by `rustfmt` and is not compiled yet: the
+  end-to-end check of the contract compiles and runs it.
+- Go refused a value class without `core_type` by name: an `out` row of a value alias whose Go make names the
+  constructor of such a class failed the generation of the target. The generator now takes it (GN-6af, GN-15c). The
+  class is a struct of `internal/binding`, which the package of its module names as an alias; a writable property is
+  an exported field and any other property a method. `New<Class>` describes its arguments to an entry of the C ABI
+  that only calls the judging function of the core, and a nil argument with a default is the argument left out.
+  Package binding describes a pointer to the struct as node 11 with the kind of its `in` row and one handle per
+  pointer of a call, whose kept value the question read gives, and a `*KeyedMap[any]` as a map of its entries in
+  their order, which it described as a value of another type before. An `out` row makes the struct from node 12 of
+  the result before its content, so a later place of its handle is the same pointer. The generated Go tests run the
+  cases of the constructor and of the properties, write a case value of the kinds `object` and `reference` as
+  statements that make each instance and then fill it, and compare a result by `reflect.DeepEqual` and by the
+  places of its instances. CK-78 accepts Go for such a class, and its rule states that PHP never generates one.
+  Verified by `make test-ts`: the test of the class required the refusal of Go before the change, and the two
+  tests of the finding of CK-78 failed before the check accepted Go; 436 of 436 pass. `gofmt -l` reports no
+  generated Go file of the fixture of that test and of the contracts `sample`, `classes`, `shapes`, `variants` and
+  `points`. No Go or Rust file of this change is compiled yet: the end-to-end check compiles them.
 - The function parameter of a member with machine (GN-6ae) and the function type that the core keeps (GN-6z) are
   generated together, and a `Raised` has one form. A function type whose return is `passthrough` is the function of a
   member with machine, and any other function type is the value of GN-6z; a case gives the first as a function

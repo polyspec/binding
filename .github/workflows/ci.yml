@@ -84,6 +84,9 @@ jobs:
           - name: functions
             repo: tests/e2e/functions
             deps: ""
+          - name: kept
+            repo: tests/e2e/kept
+            deps: ""
           - name: plot
             repo: tests/e2e/plot
             deps: tests/e2e/points

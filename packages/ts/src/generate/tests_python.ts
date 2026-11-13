@@ -228,6 +228,9 @@ export function pythonTests(model: Model, module: string): string {
   };
   let usesOutcome = false;
   let usesAsyncio = false;
+  let usesThreads = false;
+  // GN-6m: the members whose test of a closed loop is written, one per member.
+  const closedLoop = new Set<Fn>();
   let usesSame = false;
   let usesTokens = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -509,6 +512,39 @@ export function pythonTests(model: Model, module: string): string {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
       }), receiver, kase.args);
+      // GN-6m: a<name> of a member with wait process_wait drops its result when its loop was closed before its thread
+      // ended. The test keeps the thread of the call from starting until the loop is closed, then starts and joins
+      // it, and requires that no exception escaped a thread.
+      if (fn.member.wait === 'process_wait' && fixtures.length === 0 && !closedLoop.has(fn)) {
+        closedLoop.add(fn);
+        usesAsyncio = true;
+        usesThreads = true;
+        const plain = invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiver === '' ? '' : 'subject');
+        const awaited = plain.replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
+        out.push(`
+    def test_gn6m_${name}_drops_its_result_when_its_loop_is_closed(self) -> None:${receiverMade.lines}${receiver === '' ? '' : `\n        subject = ${receiver}`}
+        escaped = []
+        started = []
+        thread_class = threading.Thread
+
+        class Later(thread_class):
+            def start(self) -> None:
+                started.append(self)
+
+        loop = asyncio.new_event_loop()
+        with unittest.mock.patch.object(threading, "Thread", Later), unittest.mock.patch.object(threading, "excepthook", escaped.append):
+            task = loop.create_task(${awaited})
+            loop.call_soon(loop.stop)
+            loop.run_forever()
+            task.cancel()
+            loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+            loop.close()
+            for thread in started:
+                thread_class.start(thread)
+                thread.join()
+        self.assertEqual(len(started), 1)
+        self.assertEqual(escaped, [])`);
+      }
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
       usesTokens ||= expected !== undefined && 'tokens' in expected;
@@ -684,8 +720,8 @@ export function pythonTests(model: Model, module: string): string {
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesCasePath ? 'import os\nimport tempfile\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest
-${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesCasePath ? 'import os\nimport tempfile\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}${usesThreads ? 'import threading\n' : ''}import unittest
+${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}

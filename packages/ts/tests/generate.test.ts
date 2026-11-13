@@ -501,10 +501,10 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^func TextKey\(value string\) Key \{ return binding\.TextKey\(value\) \}$/m);
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /keyed_map_in\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
-  // A map value of a test is a call of a helper for each entry, which gofmt keeps on its line; it breaks a function
-  // literal whose body is longer than a line.
-  assert.match(text(out, 'packages/go/zz_generated_test.go'), /keyedWith\(&binding\.KeyedMap\[string\]\{\}, binding\.BytesKey\(/);
-  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\nfunc keyedWith\[T any\]\(m \*binding\.KeyedMap\[T\], key binding\.Key, value T\) \*binding\.KeyedMap\[T\] \{\n\tm\.Set\(key, value\)\n\treturn m\n\}\n/);
+  // A map value of a test is a local that statements fill, which gofmt keeps as they are written; it breaks a function
+  // literal whose body is longer than a line, and no helper of the test file makes a map.
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\n\t(entries\d+) := &binding\.KeyedMap\[string\]\{\}\n\t\1\.Set\(binding\.BytesKey\(/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /\b(?:keyedWith|mapWith)\b/);
   assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /m := &binding\.KeyedMap/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
 });
@@ -1011,13 +1011,13 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(go, /\[9\] => HostValue::Callable\(go_native\(uint_in\(input\)\?\)\),/);
   assert.match(go, /fn go_native\(handle: u64\) -> Native \{\n    NATIVE_COUNT\.fetch_add\(1, Ordering::SeqCst\);\n    Native::new\(GoNative \{ handle \}\)/);
   assert.match(go, /impl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n        \/\/ SAFETY: [^\n]*\n        unsafe \{ polyspec_sample__go_release\(self\.handle\) \};/);
-  assert.match(go, /OutValue::Native\(native\) => match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(11\);/);
+  assert.match(go, /OutValue::Native\(native\) => match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(13\);/);
   const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
   assert.match(goBinding, /case reflect\.Func:\n\t\tenc\.bytes = append\(enc\.bytes, 9\)\n\t\tenc\.Uint\(uint64\(cgo\.NewHandle\(value\.Interface\(\)\)\)\)/);
   assert.match(goBinding, /\/\/export polyspec_sample__go_release\nfunc polyspec_sample__go_release\(handle C\.uint64_t\) \{\n\tcgo\.Handle\(uintptr\(handle\)\)\.Delete\(\)\n\}/);
   assert.match(goBinding, /func polyspec_sample__go_native\(handle C\.uint64_t\) C\.uint64_t \{\n\treturn C\.uint64_t\(cgo\.NewHandle\(cgo\.Handle\(uintptr\(handle\)\)\.Value\(\)\)\)\n\}/);
   // The bytes of an out outlive the Native, so they give a new cgo.Handle of the func, which Go deletes before it decodes.
-  assert.match(goBinding, /case 11:\n\t\tindex := r\.Uint\(\)\n(?:[^\n]*\n){4}\t\treturn r\.funcs\[index\]/);
+  assert.match(goBinding, /case 13:\n\t\tindex := r\.Uint\(\)\n(?:[^\n]*\n){4}\t\treturn r\.funcs\[index\]/);
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
@@ -1048,13 +1048,13 @@ test('Go deletes the cgo.Handle of every func that a buffer gives before it deco
   assert.match(lib, /static GIVEN: RefCell<Vec<u64>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
   assert.match(lib, /fn given_first\(bytes: Vec<u8>\) -> Vec<u8> \{/);
   assert.match(lib, /Ok\(bytes\) => \(0, given_first\(bytes\)\),\n\s+Err\(fail\) => \(1, given_first\(encode_fail\(fail\)\)\),/);
-  assert.match(lib, /output\.push\(11\);\n\s+\/\/ SAFETY: [^\n]*\n\s+write_length\(output, give\(/);
+  assert.match(lib, /output\.push\(13\);\n\s+\/\/ SAFETY: [^\n]*\n\s+write_length\(output, give\(/);
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
   // Go takes the func of each handle and deletes the handle before it decodes anything else.
   assert.match(binding, /func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/);
   assert.match(binding, /\t\tr\.funcs = append\(r\.funcs, handle\.Value\(\)\)\n\t\thandle\.Delete\(\)\n/);
   assert.match(binding, /func invoke\(fn entry, args \[\]byte\) \(\*Reader, error\) \{/);
-  assert.match(binding, /case 11:\n\t\tindex := r\.Uint\(\)\n/);
+  assert.match(binding, /case 13:\n\t\tindex := r\.Uint\(\)\n/);
   assert.match(binding, /c\.callbacks\[callback-1\]\(c, member, readerOf\(args\), enc\)/);
   const pkg = text(out, 'packages/go/zz_generated_sample.go');
   assert.doesNotMatch(pkg, /binding\.NewReader\(out\)/);
@@ -1678,6 +1678,11 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(lib, /OutValue::Text\(value\) => \{\n\s*output\.push\(11\);\n\s*uint_out\(output, 0_u64\);\n\s*uint_out\(output, 3_u64\);\n\s*text_out\(output, value\);/);
   // Package binding imports the owner's package, describes its instances by the in row and makes them by the out rows.
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  // Each node of a result has one number: the decoder is one switch, in which Go refuses a number that two cases name.
+  const decoder = binding.slice(binding.indexOf('func (r *Reader) value('));
+  const nodes = [...decoder.slice(0, decoder.indexOf('\n}\n')).matchAll(/^\tcase (\d+):$/gm)].map((found) => found[1]);
+  assert.ok(nodes.includes('11') && nodes.includes('13'), `the decoder has no node of a value class or of a func: ${nodes.join(', ')}`);
+  assert.deepEqual(nodes.filter((node, at) => nodes.indexOf(node) !== at), [], 'two cases of the decoder name one number');
   assert.match(binding, /"github\.com\/polyspec\/owner\/packages\/go"/);
   assert.match(binding, /case \*owner\.Value:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tkind, err := found\.Kind\(\)/);
   assert.match(binding, /case "object":\n\t\t\tc\.describeValue\(enc, 9, func\(\) \(any, error\) \{ return found\.Members\(\) \}, nil\)/);
@@ -4871,7 +4876,7 @@ test('a member with wait process_wait passes the ProcessWait token and waits on 
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: targets as Inputs['targets'] & string[] });
   };
   // Every member of the contract that waits in a blocking call of its core.
-  const waits = ['classes.read', 'gate.enter_slowly', 'classes.attend', 'gate.enter_after'];
+  const waits = ['classes.read', 'gate.enter_slowly', 'classes.attend', 'classes.outlast', 'gate.enter_after'];
   const token = 'binding_core::ProcessWait::for_generated_call()';
   const out = classes(['php', 'python', 'node', 'go']);
   // PHP and Go wait on the calling thread.
@@ -4885,7 +4890,18 @@ test('a member with wait process_wait passes the ProcessWait token and waits on 
   assert.match(python, /fn function_aread<'py>\([^\n]+\n {4}awaited_apart\(py, wrap_pyfunction!\(function_read, py\)\?\.into_any\(\), args, kwargs\)/);
   assert.match(python, /fn member_aenter_slowly<'py>\([^\n]+\n {8}awaited_apart\(slf\.py\(\), /);
   assert.match(python, /\nfn awaited_apart<'py>\([\s\S]*?threading\.Thread\(target=run\)\.start\(\)\n {4}return await future\n"#;/);
-  assert.match(python, /loop\.call_soon_threadsafe\(settle, result, None\)/);
+  // A loop that was closed before the thread ended takes no result: the thread catches exactly that failure of
+  // call_soon_threadsafe, so no exception escapes it, and it stays a thread that the interpreter waits for.
+  assert.match(python, /\n {4}def give\(result, error\):\n {8}try:\n {12}loop\.call_soon_threadsafe\(settle, result, error\)\n {8}except RuntimeError:\n {12}if not loop\.is_closed\(\):\n {16}raise\n/);
+  assert.match(python, /except BaseException as error:\n {12}give\(None, error\)\n {8}else:\n {12}give\(result, None\)\n/);
+  assert.doesNotMatch(python, /daemon/);
+  // The generated test closes the loop before it starts the thread of the call, and requires that no exception
+  // escaped a thread.
+  const pythonTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pythonTests, /\n {4}def test_gn6m_attend_drops_its_result_when_its_loop_is_closed\(self\) -> None:\n[\s\S]*?task = loop\.create_task\(pkg\.aattend\("a"\)\)\n {12}loop\.call_soon\(loop\.stop\)\n {12}loop\.run_forever\(\)\n {12}task\.cancel\(\)\n {12}loop\.run_until_complete\(asyncio\.gather\(task, return_exceptions=True\)\)\n {12}loop\.close\(\)\n {12}for thread in started:\n {16}thread_class\.start\(thread\)\n {16}thread\.join\(\)\n {8}self\.assertEqual\(len\(started\), 1\)\n {8}self\.assertEqual\(escaped, \[\]\)\n/);
+  assert.match(pythonTests, /def test_gn6m_gate_enter_after_drops_its_result_when_its_loop_is_closed\(self\)/);
+  assert.match(pythonTests, /\nimport threading\n/);
+  assert.match(pythonTests, /\nimport unittest\.mock\n/);
   // Node: the work runs on a thread of its own, and the JavaScript thread settles the promise.
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.ok(node.includes(`waiting_apart(env, move || `) && node.includes(`polyspec_classes::read(${token}, `));
@@ -6003,7 +6019,7 @@ test('a unit with only is generated for the targets that it lists and is absent 
 
 test('a value class without core_type keeps the language values that its constructor judges and that a value alias reads and makes (U-1, U-7, GN-6af)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  const targets = ['python', 'node', 'wasm'];
+  const targets = ['python', 'node', 'wasm', 'go'];
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
     members: [
@@ -6012,9 +6028,9 @@ test('a value class without core_type keeps the language values that its constru
     ],
   });
   const data = sample.units.find((u: any) => u.id === 'data');
-  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'boxed.constructor', wasm: 'boxed.constructor' } });
   for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm', 'go'] });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
     const lib = text(out, path);
     // The constructor judges its argument as a HostValue, and None when it is left out; no core value is kept.
@@ -6031,11 +6047,58 @@ test('a value class without core_type keeps the language values that its constru
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class Boxed \{[^}]*constructor\(value\?: [^)]*\);[^}]*\n {2}value: /);
   // PHP holds nothing of the class.
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\bBoxed\b/);
+  // GN-15c: Go keeps the value in a struct of package binding, whose writable property is an exported field; the
+  // constructor describes its argument, nil being the argument left out, and the entry of the C ABI only judges.
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /\ntype Boxed struct \{\n\tValue any\n\}\n/);
+  assert.match(binding, /\nfunc NewBoxed\(value_ any\) \(\*Boxed, error\) \{\n\tcall := NewCall\(\)\n\tdefer call\.Close\(\)\n\tenc := NewWriter\(\)\n\tenc\.Uint\(uint64\(call\.handle\)\)\n\tif value_ == nil \{\n\t\tenc\.Tag\(false\)\n\t\} else \{\n\t\tenc\.Tag\(true\)\n\t\tcall\.describe\(enc, reflect\.ValueOf\(value_\)\)\n\t\}\n/);
+  assert.match(binding, /return C\.\w+_boxed_new\(pointer, length, result\)/);
+  assert.match(binding, /\n\treturn &Boxed\{Value: value_\}, nil\n\}/);
+  assert.match(binding, /int32_t \w+_boxed_new\(const uint8_t \*args, size_t len, \w+_buffer \*result\);/);
+  // An instance is node 11 with the kind of its in row and one handle per pointer, and op 2 reads the kept value.
+  assert.match(binding, /\tcase \*Boxed:\n\t\tif found == nil \{\n\t\t\treturn false\n\t\t\}\n\t\tc\.describeKept\(enc, 12, found, func\(\) \(any, error\) \{ return found\.Value, nil \}\)\n\t\treturn true/);
+  assert.match(binding, /handle, ok := c\.seen\[instance\]/);
+  assert.match(binding, /\tcase op == 2 && held\.read != nil:/);
+  // Node 12 of a result makes the struct before its content, so a later place of its handle is the same pointer.
+  assert.match(binding, /\tcase 12:\n\t\treturn r\.kept\(made, instance\)\n/);
+  assert.match(binding, /\tcase 0:\n\t\tkept := &Boxed\{\}\n\t\t\*made = append\(\*made, kept\)\n\t\tkept\.Value = r\.value\(made, instance\)\n\t\treturn kept\n/);
+  assert.equal(binding.match(/\tcase 12:/g)?.length, 1);
+  // The package of the module names the struct as an alias and gives its constructor.
+  const pkg = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(pkg, /\ntype Boxed = binding\.Boxed\n/);
+  assert.match(pkg, /\nfunc NewBoxed\(value_ any\) \(\*Boxed, error\) \{\n\treturn binding\.NewBoxed\(value_\)\n\}\n/);
+  const goLib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goLib, /pub unsafe extern "C" fn \w+_boxed_new\(args: \*const u8, len: usize, result: \*mut Buffer\) -> i32 \{/);
+  assert.match(goLib, /let call = uint_in\(&mut input\)\?;\n\s*let value: Option<HostValue> = optional_in\(&mut input, read_host\)\?;\n\s*finish_input\(input\)\?;\n\s*let mut host = GoHost \{ call \};\n\s*if let Err\(failure\) = polyspec_sample::check_boxed\(&mut host, value\) \{\n\s*return Err\(failure_error\(failure\)\);/);
+  assert.match(goLib, /\[12\] => ValueKind::Reference,/);
+  assert.match(goLib, /fn read\(&mut self, value: Handle\) -> Result<HostValue, Raised> \{\n\s*let mut values = self\.ask\(2, value, 0, 1\)\?;/);
+  assert.match(goLib, /OutValue::Reference \{ handle, value \} => \{\n\s*if let Some\(index\) = made\.get\(&handle\.raw\(\)\) \{\n\s*output\.push\(8\);\n\s*write_length\(output, \*index\);\n\s*return;\n\s*\}\n\s*made\.insert\(handle\.raw\(\), made\.len\(\)\);\n\s*output\.push\(12\);\n\s*uint_out\(output, 0u64\);\n\s*make\(output, \*value, source, made\);\n\s*\}/);
+  assert.doesNotMatch(goLib, /polyspec_sample::Boxed\b/);
+});
+
+test('the kept contract of the end-to-end check generates its value classes for Go, and a map of a Go test is a local that statements fill (GN-6af, GN-15c, G-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/kept/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  assert.deepEqual(contract.targets, ['php', 'python', 'node', 'go', 'wasm']);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_kept', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: contract.targets });
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  // gofmt keeps a function literal on one line only while it is short, so no case value is one.
+  assert.doesNotMatch(goTests, /func\(\) [^\n]*\{ [^\n]*; return /);
+  assert.match(goTests, /\nfunc TestB4BagNewBytesThatAreNoTextAreNoEntry\(t \*testing\.T\) \{\n\tentries0 := &binding\.KeyedMap\[any\]\{\}\n\tentries0\.Set\(binding\.TextKey\("k"\), \[\]byte\("\\xff"\)\)\n\t_, err := NewBag\(entries0\)\n/);
+  // The object and the reference that hold each other are made, filled and compared by their places.
+  assert.match(goTests, /\nfunc TestGN13eSameAReferenceAndAnObjectThatHoldEachOtherComeBack\(t \*testing\.T\) \{\n\treference0 := must\(binding\.NewBoxed\(nil\)\)\n\tobject1 := must\(binding\.NewBag\(nil\)\)\n\tobject1\.Entries\.Set\(binding\.TextKey\("self"\), reference0\)\n\tobject1\.Entries\.Set\(binding\.TextKey\("again"\), object1\)\n\treference0\.Value = object1\n/);
+  assert.match(goTests, /places\(value0\) != places\(want\)/);
+  for (const name of ['TestGN13eBagNewNoEntriesAreTheEmptyMap', 'TestGN13eBagEntriesTheEntriesAreKept', 'TestB4BoxedNewBytesThatAreNoTextAreNotBoxed', 'TestGN13eBoxedValueNothingIsNull', 'TestGN13eCountAnObjectAtTwoPlacesCountsOnce']) {
+    assert.ok(goTests.includes(`\nfunc ${name}(t *testing.T) {`), name);
+  }
+  assert.doesNotMatch(goTests, /t\.Fatal\("/);
+  // PHP takes its own stdClass and references and holds nothing of the classes.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\b(Bag|Boxed)\b/);
 });
 
 test('the members of a value class without core_type and a primitive run their cases (GN-13, GN-6af, GN-13d)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  const targets = ['python', 'node', 'wasm'];
+  const targets = ['python', 'node', 'wasm', 'go'];
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
     members: [
@@ -6056,6 +6119,7 @@ test('the members of a value class without core_type and a primitive run their c
     { node: 'number', cases: [{ when: { predicate: 'integral_float', is: false }, kind: 'float', read: 'builtin' }, { when: { predicate: 'safe_integer', is: true }, kind: 'int', read: 'builtin' }, { when: 'else', kind: 'float', read: 'builtin' }] },
     { node: 'bigint', cases: [{ kind: 'int', read: 'builtin' }] },
   );
+  for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
   const tag = sample.units.find((u: any) => u.id === 'tag');
   tag.members.push({ id: 'tag.weight', name: ['weight'], kind: 'primitive', visibility: 'public', parameters: [], returns: 'float', raises: [], wait: 'none', core: { path: 'polyspec_sample::Tag::weight', receiver: '&self' } });
   sample.cases.push(
@@ -6071,7 +6135,7 @@ test('the members of a value class without core_type and a primitive run their c
   ];
   cases['boxed_value'] = [{ id: 'the_value_is_kept', value: { kind: 'text', value: 'x' }, result: { kind: 'text', value: 'x' } }, { id: 'an_int_is_kept_as_it_was_given', value: { kind: 'int', value: 1 }, result: { kind: 'int', value: 1 } }];
   cases['tag_weight'] = [{ id: 'a_tag_weighs_its_length', name: 'ab', result: 2 }, { id: 'no_tag_weighs_minus_zero', name: '', result: -0 }];
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm'] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'wasm', 'go'] });
   // Each case of the constructor and of the property runs: the raising one as B-4, the others as GN-13e; the
   // constructor counts and names its arguments (G-7).
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
@@ -6099,6 +6163,14 @@ test('the members of a value class without core_type and a primitive run their c
     assert.match(tests, /test\('N-4: Tag\.weight a_tag_weighs_its_length', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\('ab'\)\), 2\);/, path);
     assert.match(tests, /test\('N-4: Tag\.weight no_tag_weighs_minus_zero', \(\) => \{\n {2}assert\.strictEqual\(Number\(new pkg\.Tag\(''\)\), -0\);/, path);
   }
+  // GN-15c: Go runs the cases of the constructor and of the property; the property is the field of the instance that
+  // the constructor makes, and the result is compared by its values and by the places of its instances.
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTests, /\nfunc TestB4BoxedNewBytesThatAreNoTextAreNotBoxed\(t \*testing\.T\) \{\n\t_, err := NewBoxed\(\[\]byte\("\\xff"\)\)\n/);
+  assert.match(goTests, /\nfunc TestGN13eBoxedNewATextIsBoxed\(t \*testing\.T\) \{\n\t_, err := NewBoxed\("x"\)\n/);
+  assert.match(goTests, /\nfunc TestGN13eBoxedValueAnIntIsKeptAsItWasGiven\(t \*testing\.T\) \{\n\t(made\d+), (failure\d+) := NewBoxed\(int64\(1\)\)\n\tif \2 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", \2\)\n\t\}\n\tvalue0, err := kept\(\1\.Value\)\n\tif err != nil \{\n\t\tt\.Fatalf\("GN-13e: %v", err\)\n\t\}\n\tif want := \(any\)\(int64\(1\)\); !reflect\.DeepEqual\(value0, want\) \|\| places\(value0\) != places\(want\) \{/);
+  assert.match(goTests, /\nfunc kept\[T any\]\(value T\) \(T, error\) \{ return value, nil \}\n/);
+  assert.match(goTests, /\nfunc places\(top any\) string \{[\s\S]*?\t\tcase \*binding\.Boxed:\n[\s\S]*?out = append\(out, fmt\.Sprintf\("again %d", number\)\)[\s\S]*?\t\t\twalk\(found\.Value\)\n/);
   // PHP holds nothing of the class.
   assert.doesNotMatch(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\bBoxed\b/);
 });
@@ -6118,7 +6190,7 @@ test('the PHP extension finds the classes of PHP at startup and has no panic (GN
 
 test('a case value names a reference or an object by its id after its first place, which may make a cycle, and repeats an object (GN-13, G-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  const targets = ['python', 'node', 'wasm'];
+  const targets = ['python', 'node', 'wasm', 'go'];
   const only = { targets, reason: 'the test of GN-6af' };
   sample.units.push(
     {
@@ -6137,7 +6209,7 @@ test('a case value names a reference or an object by its id after its first plac
     },
   );
   const data = sample.units.find((u: any) => u.id === 'data');
-  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'boxed.constructor', wasm: 'boxed.constructor' } });
   for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
   const cases = sampleCases();
   const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
@@ -6152,7 +6224,7 @@ test('a case value names a reference or an object by its id after its first plac
     // identity of the first.
     { id: 'a_top_reference_of_an_object_twice', value: { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [{ kind: 'object', id: 0, value: [['a', { kind: 'null' }]] }, { kind: 'object', id: 0 }] } } } },
   );
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm', 'go'] });
   // Each id is one instance, made without content before any value, then filled, so a later place, inside the first
   // or not, holds the same instance; a repeated object is made from the outermost in.
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
@@ -6175,6 +6247,27 @@ test('a case value names a reference or an object by its id after its first plac
   assert.match(lib, /let object_0 = host\.reserve\(\);\n\s*let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(/);
   assert.match(lib, /let entries = vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\];\n\s*host\.fill\(object_0, entries\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
   assert.match(lib, /\(HostValue::Int\(1\), HostValue::StdClass \{ handle: object_0, len: 1 \}\)/);
+  // GN-15c: Go makes each instance by its constructor as a statement of the test, then fills it, so a later place of
+  // an id is the same pointer; a repeated object is made from the outermost in.
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  assert.ok(goTests.includes([
+    '\treference0 := must(binding.NewBoxed(nil))',
+    '\treference1 := must(binding.NewBoxed(nil))',
+    '\tobject2 := must(binding.NewBag(nil))',
+    '\tobject3 := must(binding.NewBag(nil))',
+    '\treference1.Value = "x"',
+    '\treference0.Value = []any{reference1}',
+    '\tobject2.Entries.Set(binding.TextKey("a"), object2)',
+    '\tobject4 := object3',
+    '\tfor range 2 {',
+    '\t\tnext := must(binding.NewBag(nil))',
+    '\t\tobject4.Entries.Set(binding.TextKey("k"), next)',
+    '\t\tobject4 = next',
+    '\t}',
+    '\tobject4.Entries.Set(binding.TextKey("k"), nil)',
+  ].join('\n')), 'go');
+  assert.match(goTests, /Same\(\[\]any\{reference0, reference1, reference0, object2, object2, object3\}\)/);
+  assert.match(goTests, /\nfunc must\[T any\]\(made T, err error\) T \{\n\tif err != nil \{\n\t\tpanic\(/);
 });
 
 test('a result of a value alias is compared by the texts of its places in pre-order, which name the form, the identity and the cycles (GN-13e)', () => {

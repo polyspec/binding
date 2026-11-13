@@ -235,8 +235,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   such a parameter is an instance value (GN-13f) of a class that implements the interface, or `null` in an `optional`.
 - **CK-78** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
   origin `generated` or `value` that names no `core_type` names `only` (Q-4) with none of the targets that generate
-  no such class. Python, Node and WASM generate it; PHP takes its own `stdClass` and references (generator GN-6e),
-  and Go does not generate it yet. The finding names the unit and each such target. Why: the generator refuses the
+  no such class. Python, Node, WASM and Go generate it. PHP takes its own `stdClass` and references (generator GN-6e) and
+  generates no such class: that is the rule of the target and no state of the generator, so a class of either origin
+  never names PHP. The finding names the unit and each such target. Why: the generator refuses the
   unit for such a target, and a contract error is reported by the check before the generator runs.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of

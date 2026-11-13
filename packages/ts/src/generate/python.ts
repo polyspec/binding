@@ -747,8 +747,10 @@ fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, Py
 }
 
 /// GN-6m, B-5 (b): an awaitable that runs a member that waits for another process on a thread of its own, which gives
-/// its result or its exception to a future of the running loop; a future that was cancelled takes none. The source is
-/// compiled at each call, which costs little beside a wait for a process.
+/// its result or its exception to a future of the running loop; a future that was cancelled takes none, and a loop
+/// that was closed before the member ended takes none either: nothing awaits the future then, so the thread drops
+/// the result, and only that failure of call_soon_threadsafe is caught. The source is compiled at each call, which
+/// costs little beside a wait for a process.
 fn awaited_apart<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
     let source = cr#"
 import asyncio
@@ -763,13 +765,19 @@ async def awaited_apart(member, args, kwargs):
             future.set_result(result)
         else:
             future.set_exception(error)
+    def give(result, error):
+        try:
+            loop.call_soon_threadsafe(settle, result, error)
+        except RuntimeError:
+            if not loop.is_closed():
+                raise
     def run():
         try:
             result = member(*args, **(kwargs or {}))
         except BaseException as error:
-            loop.call_soon_threadsafe(settle, None, error)
+            give(None, error)
         else:
-            loop.call_soon_threadsafe(settle, result, None)
+            give(result, None)
     threading.Thread(target=run).start()
     return await future
 "#;

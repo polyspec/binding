@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 508e99c12ce160a1a98360294c181d6afd3fee46efeae8f54851daf361face89 -->
+<!-- source-sha256: 44a107be88bd28c9f3badb73a44d9feee0e48cd193b07a7457e38ffc81b148b6 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -199,8 +199,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   들어올 때에만 `core_type`으로 변환하기 때문이다. case에서 그런 parameter의 argument는 그 interface를 구현하는
   class의 instance 값(GN-13f)이거나, `optional`에서는 `null`이다.
 - **CK-78** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
-  `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM이 그것을
-  생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e), Go는 아직 생성하지 않는다. finding은 그 unit과 그런
+  `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM, Go가 그것을
+  생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e) 그런 class를 생성하지 않는다. 이것은 그 target의 규칙이며
+  생성기의 현재 상태가 아니므로, 두 origin 어느 쪽의 class도 PHP를 적지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
   보고한다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의

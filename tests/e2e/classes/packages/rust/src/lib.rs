@@ -403,6 +403,25 @@ pub fn attend(_wait: binding_core::ProcessWait, name: &str) -> Result<String, Er
     Ok(format!("{name} was attended"))
 }
 
+/// The exit status of a child process that the call starts and waits for (B-5 (b): wait `process_wait`): the program
+/// `shell` runs `exit <code>`, so the wait lasts until another process ends.
+///
+/// # Errors
+///
+/// Kind `missing` when `shell` cannot be started, or when the child ended without an exit status.
+pub fn outlast(_wait: binding_core::ProcessWait, shell: &str, code: u64) -> Result<u64, Error> {
+    let missing = || Error::Missing {
+        key: shell.to_owned(),
+    };
+    let status = std::process::Command::new(shell)
+        .arg("-c")
+        .arg(format!("exit {code}"))
+        .status()
+        .map_err(|_error| missing())?;
+    let exit = status.code().ok_or_else(missing)?;
+    u64::try_from(exit).map_err(|_negative| missing())
+}
+
 /// The text of a name, awaited as an async driver would be (I-2 (4): wait async_driver).
 ///
 /// # Errors

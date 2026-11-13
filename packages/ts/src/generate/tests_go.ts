@@ -20,15 +20,14 @@ import { defaultCaseValue } from './defaults.ts';
 import { numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
-  objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass,
   nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf,
 } from './samples.ts';
 
 interface Values {
@@ -125,6 +124,14 @@ const goKey = (key: unknown): string => caseKey(key, (kind, raw) => {
   return `binding.BytesKey(${hexBytes(raw, 'bytes')})`;
 });
 
+// A map or a keyed map of a test: a local that statements fill, because gofmt keeps a function literal on one line
+// only while it is short. sink takes the statements, and each of sets is the arguments of one Set.
+function mapLocal(b: Body, sink: string[], type: string, sets: string[]): string {
+  const local = b.fresh('entries');
+  sink.push(`${local} := &${type}{}`, ...sets.map((set) => `${local}.Set(${set})`));
+  return local;
+}
+
 // A case value (JSON) as a Go value of the contract type; an instance value makes its instance in the body.
 function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (json === null) return 'nil';
@@ -143,7 +150,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
   if ('function' in type) return functionValue(v, b, type.function, json);
-  if ('passthrough' in type) return aliasValue(undefined, json, 'a passthrough');
+  if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough');
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
@@ -154,15 +161,15 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
-    // A call of a helper for each entry: gofmt breaks a function literal whose body is longer than a line, and keeps a
-    // call as it is written.
-    return (json as [unknown, unknown][]).reduce<string>((made, [key, item]) => `keyedWith(${made}, ${goKey(key)}, ${value(v, b, type.keyed_map, item)})`, `&binding.KeyedMap[${typeName(v, type.keyed_map)}]{}`);
+    const sets = (json as [unknown, unknown][]).map(([key, item]) => `${goKey(key)}, ${value(v, b, type.keyed_map, item)}`);
+    return mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, type.keyed_map)}]`, sets);
   }
   if ('map' in type) {
-    return Object.entries(json as Record<string, unknown>).reduce<string>((made, [key, item]) => `mapWith(${made}, ${goString(key)}, ${value(v, b, type.map, item)})`, `&binding.Map[${typeName(v, type.map)}]{}`);
+    const sets = Object.entries(json as Record<string, unknown>).map(([key, item]) => `${goString(key)}, ${value(v, b, type.map, item)}`);
+    return mapLocal(b, b.lines, `binding.Map[${typeName(v, type.map)}]`, sets);
   }
   const alias = aliasOf(v.model, type);
-  if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
+  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
   if (implemented !== undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
@@ -229,7 +236,32 @@ const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', o
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(unit: Unit | undefined, json: unknown, where: string): string {
+function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string): string {
+  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map() };
+  const text = aliasPart(model, unit, json, where, making);
+  // GN-13: the instances of the value classes are made first and then filled, as statements of the test, so every
+  // place of an id is the same pointer and a cycle is made.
+  b.lines.push(...making.made, ...making.fills);
+  return text;
+}
+
+// GN-13: what a case value makes before it is used: the instances of its objects and references, in the order of
+// their first places, the statements that fill them, and the local of each id.
+interface Making {
+  b: Body;
+  made: string[];
+  fills: string[];
+  references: Map<number, string>;
+  objects: Map<number, string>;
+}
+
+// The id of a reference or of an object of a case value (G-5).
+function idOf(raw: unknown, where: string): number {
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) throw new Error(`an id of ${where} is a number of at least 0, not ${JSON.stringify(raw)}`);
+  return raw;
+}
+
+function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: string, making: Making): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
   // G-5: a value of the language that is no value of the value type, {"host": <sort>} of the closed table.
   const sort = record?.['host'];
@@ -257,14 +289,81 @@ function aliasValue(unit: Unit | undefined, json: unknown, where: string): strin
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
     if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
-    return `func() any { var inner any = ${aliasValue(unit, held, where)}; for range ${repeat} { inner = []any{inner} }; return inner }()`;
+    const inner = aliasPart(model, unit, held, where, making);
+    const local = making.b.fresh('list');
+    making.fills.push(`var ${local} any = ${inner}`, `for range ${repeat} {`, `\t${local} = []any{${local}}`, '}');
+    return local;
   }
-  if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasValue(unit, item, where)).join(', ')}}`;
+  if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = held as [unknown, unknown][];
     const keyed = (unit?.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
-    if (keyed) return `func() *binding.KeyedMap[any] { m := &binding.KeyedMap[any]{}; ${entries.map(([key, item]) => `m.Set(${goKey(key)}, ${aliasValue(unit, item, where)}); `).join('')}return m }()`;
-    return `map[string]any{${entries.map(([key, item]) => `${goString(String(key))}: ${aliasValue(unit, item, where)}`).join(', ')}}`;
+    if (keyed) {
+      const sets = entries.map(([key, item]) => `${goKey(key)}, ${aliasPart(model, unit, item, where, making)}`);
+      return mapLocal(making.b, making.fills, 'binding.KeyedMap[any]', sets);
+    }
+    return `map[string]any{${entries.map(([key, item]) => `${goString(String(key))}: ${aliasPart(model, unit, item, where, making)}`).join(', ')}}`;
+  }
+  // GN-6af, GN-15c: an object is an instance of the value class that keeps a keyed map, and a reference one of the
+  // class that keeps one value. The constructor makes each without content, and a statement fills it after it is
+  // made, so no constructor judges the instances inside it again.
+  const construct = (cls: KeptClass): string => `must(binding.New${goName(cls.unit.name)}(nil))`;
+  const access = (cls: KeptClass): string => {
+    const [field] = cls.fields;
+    if (field === undefined) throw new Unsupported(`${cls.unit.id} keeps no value (GN-6af)`);
+    return field.writable ? keptField(field) : `${goName(field.name)}()`;
+  };
+  if (kind === 'object') {
+    const cls = keptOf(model, 'entries', where);
+    const key = access(cls);
+    if (record['repeat'] !== undefined) {
+      const repeat = record['repeat'];
+      if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 4 || !('key' in record)) throw new Error(`a case value of ${where} is {"kind": "object", "repeat": <n of at least 1>, "key": <key>, "value": <value>}, not ${JSON.stringify(json)}`);
+      const k = goKey(record['key']);
+      const top = making.b.fresh('object');
+      const at = making.b.fresh('object');
+      making.made.push(`${top} := ${construct(cls)}`);
+      const inner = aliasPart(model, unit, held, where, making);
+      making.fills.push(`${at} := ${top}`, `for range ${repeat - 1} {`, `\tnext := ${construct(cls)}`, `\t${at}.${key}.Set(${k}, next)`, `\t${at} = next`, '}', `${at}.${key}.Set(${k}, ${inner})`);
+      return top;
+    }
+    const filled = (local: string): string => {
+      making.made.push(`${local} := ${construct(cls)}`);
+      if (!Array.isArray(held)) throw new Error(`a case value of ${where} is an object of [key, value] pairs, not ${JSON.stringify(held)}`);
+      for (const [entryKey, item] of held as [unknown, unknown][]) making.fills.push(`${local}.${key}.Set(${goKey(entryKey)}, ${aliasPart(model, unit, item, where, making)})`);
+      return local;
+    };
+    if (record['id'] !== undefined) {
+      const id = idOf(record['id'], where);
+      const known = making.objects.get(id);
+      if (!('value' in record)) {
+        if (known === undefined) throw new Error(`a case value of ${where} names the object ${id} before its first place (G-5)`);
+        return known;
+      }
+      if (known !== undefined) throw new Error(`a case value of ${where} gives the value of the object ${id} at two places (G-5)`);
+      const local = making.b.fresh('object');
+      making.objects.set(id, local);
+      return filled(local);
+    }
+    return filled(making.b.fresh('object'));
+  }
+  if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
+    const ref = held as Record<string, unknown>;
+    const id = idOf(ref['id'], where);
+    const known = making.references.get(id);
+    if (!('value' in ref)) {
+      if (known === undefined) throw new Error(`a case value of ${where} names the reference ${id} before its first place (G-5)`);
+      return known;
+    }
+    if (known !== undefined) throw new Error(`a case value of ${where} gives the value of the reference ${id} at two places (G-5)`);
+    const cls = keptOf(model, 'value', where);
+    const [field] = cls.fields;
+    if (field === undefined || !field.writable) throw new Unsupported(`a case value of ${where} sets the value of ${cls.unit.id}, whose property is not writable (GN-6af)`);
+    const local = making.b.fresh('reference');
+    making.references.set(id, local);
+    making.made.push(`${local} := ${construct(cls)}`);
+    making.fills.push(`${local}.${keptField(field)} = ${aliasPart(model, unit, ref['value'], where, making)}`);
+    return local;
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated for Go yet (GN-13)`);
 }
@@ -370,10 +469,17 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   throw new Unsupported(`no Go placeholder for ${JSON.stringify(type)}`);
 }
 
+// GN-6af: the value class without core_type of a member.
+const keptOwner = (model: Model, fn: Fn): KeptClass | undefined => model.kept.find((k) => k.members.includes(fn) || k.constructor === fn);
+
 // The call of a member as a Go expression: a function, a constructor or a static member by its name, any other member
 // on its receiver. A stringify or a to_json is called by its unexported form, which returns its error.
 function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
   const name = fn.special === 'stringify' ? 'stringify' : fn.special === 'to_json' ? 'toJSON' : goMemberName(fn);
+  // GN-15c: a property of a value class without core_type is a field, or a method that returns no error; kept gives it
+  // as the result of a call that cannot fail.
+  const field = keptOwner(v.model, fn)?.fields.find((f) => f.property === fn.member);
+  if (field !== undefined) return `kept(${receiver}.${field.writable ? keptField(field) : `${goName(field.name)}()`})`;
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
     // GN-15a: a function of another module is named by its package.
     if (fn.module === v.module) return `${name}(${args.join(', ')})`;
@@ -400,6 +506,8 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
     const arg = fn.args.find((a) => !a.field && a.name === p.name);
     const text = arg === undefined ? undefined : given(arg);
     if (text === undefined) return arg?.default === undefined ? placeholder(v, b, p.type) : 'nil';
+    // GN-15c: a parameter with a default of the constructor of a value class without core_type has no pointer form.
+    if (keptOwner(v.model, fn) !== undefined) return text;
     return arg === undefined || !pointed(arg) || text === 'nil' ? text : pointerTo(v, p.type, text);
   });
 }
@@ -559,6 +667,13 @@ function fixturesFor(v: Values, out: Out, b: Body, fn: Fn, id: string, args: Map
   });
 }
 
+// Whether a type holds a value of a value alias of this contract.
+function holdsAlias(model: Model, type: Type): boolean {
+  if (typeof type === 'string') return false;
+  if (aliasOf(model, type) !== undefined) return true;
+  return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsAlias(model, inner));
+}
+
 function memberTests(v: Values, out: Out, fn: Fn): void {
   const model = v.model;
   const types = Object.fromEntries(goErrorTypes(model.contract));
@@ -575,7 +690,9 @@ func Test${rule.replace('-', '')}${label}${testName(what)}(t *testing.T) {
 ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)}
 }`);
   };
-  for (const arg of reachable && fn.special === undefined ? fn.args : []) {
+  // GN-15c: a member of a value class without core_type runs its cases.
+  const ofKept = keptOwner(model, fn) !== undefined;
+  for (const arg of reachable && fn.special === undefined && !ofKept ? fn.args : []) {
     const argName = goParam(arg.name, v.model);
     let base = arg.type;
     let wrap = (text: string): string => text;
@@ -608,11 +725,11 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
       if (keyedType.key.includes('int')) {
         // GN-12a: an int key outside the safe integers is kind invalid_number.
-        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`keyedWith(&binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}, binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)})`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
       }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
-        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`keyedWith(&binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}, ${key}, ${placeholder(v, b, keyedType.keyed_map)})`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
+        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`${key}, ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
       }
     }
     const unit = unitOf(model, base);
@@ -623,7 +740,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
     const alias = aliasOf(model, arg.type);
     const kase = alias === undefined ? undefined : aliasCases(model).find((c) => c.alias === alias);
-    if (kase !== undefined) single('U-7', `gives the kind of ${kase.alias.unit.id} in ${argName}`, arg, () => aliasValue(kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`), expectKind(types[kase.category] ?? '', kase.kind, 'U-7'));
+    if (kase !== undefined) single('U-7', `gives the kind of ${kase.alias.unit.id} in ${argName}`, arg, (b) => aliasValue(model, b, kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`), expectKind(types[kase.category] ?? '', kase.kind, 'U-7'));
     // U-3, K-2: a nil callback is kind invalid_callback, and the error of a callback is the error of the call.
     const callback = callbackOf(model, arg.type);
     if (callback !== undefined) {
@@ -696,7 +813,7 @@ ${indent([...panicked.lines, 'defer func() {', '\tif value := recover(); value !
   const comparable = count === 1 && fn.kind !== 'iterate' && comparableResult(model, fn.returns) === undefined && fn.args.every((a) => callbackOf(model, a.type) === undefined);
   const base = resultCases(model, fn).find((k) => k.refused === undefined);
   const receiverOf = base?.receiver ?? sample;
-  for (const arg of reachable && comparable && (fn.receiver === undefined || receiverOf !== undefined) ? fn.args : []) {
+  for (const arg of reachable && comparable && !ofKept && (fn.receiver === undefined || receiverOf !== undefined) ? fn.args : []) {
     const declared = defaultCaseValue(model, arg);
     if (declared === undefined) continue;
     const b = new Body();
@@ -802,7 +919,9 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
         compared = parts.flatMap((type, i) => {
           const given = parts.length === 1 ? kase.expected?.value : (kase.expected?.value as unknown[] | undefined)?.[i];
           const want = value(v, b, type, given ?? null);
-          return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want) {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
+          // GN-15c: a result that holds instances of value classes holds each pointer at the places of the case.
+          const same = model.kept.length > 0 && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
+          return [`if want := (${typeName(v, type)})(${want}); !reflect.DeepEqual(value${i}, want)${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)`, '}'];
         });
       } catch (error) {
         if (!(error instanceof Unsupported)) throw error;
@@ -1108,30 +1227,84 @@ func casePath(t *testing.T, relative string) string {
 }
 `;
 
-const MAP_WITH = `
-// mapWith is a map after one more entry, for a value of a case.
-func mapWith[T any](m *binding.Map[T], key string, value T) *binding.Map[T] {
-	m.Set(key, value)
-	return m
-}
-`;
-
-const KEYED_WITH = `
-// keyedWith is a keyed map after one more entry, for a value of a case.
-func keyedWith[T any](m *binding.KeyedMap[T], key binding.Key, value T) *binding.KeyedMap[T] {
-	m.Set(key, value)
-	return m
-}
-`;
-
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
 `;
 
+// GN-13: the instance that the constructor of a value class without core_type made for a case value.
+const MUST = `
+// must is the instance that the constructor of a value class made for a case value; an error of the constructor stops
+// the test with that error (GN-13).
+func must[T any](made T, err error) T {
+	if err != nil {
+		panic(fmt.Sprintf("GN-13: the constructor of a case value failed: %v", err))
+	}
+	return made
+}
+`;
+
+const KEPT = `
+// kept is a kept value of a value class without core_type (GN-6af) as the result of a call that cannot fail.
+func kept[T any](value T) (T, error) { return value, nil }
+`;
+
+// GN-15c: the places of the instances of the value classes without core_type in a value, which two deeply equal
+// values share only when each holds the same pointer where the other does.
+function placesHelper(model: Model): string {
+  const cases = model.kept.map((k) => {
+    const walked = k.fields.map((f) => `\t\t\twalk(found.${f.writable ? keptField(f) : `${goName(f.name)}()`})`).join('\n');
+    return `		case *binding.${goName(k.unit.name)}:
+			if found == nil {
+				return
+			}
+			if number, ok := numbers[found]; ok {
+				out = append(out, fmt.Sprintf("again %d", number))
+				return
+			}
+			numbers[found] = len(numbers)
+			out = append(out, fmt.Sprintf("#%d", numbers[found]))
+${walked}`;
+  }).join('\n');
+  return `
+// places is the order in which the instances of the value classes of a value first appear, each with its number, and
+// every later place of one (GN-6af, U-7 (d)).
+func places(top any) string {
+	var out []string
+	numbers := map[any]int{}
+	var walk func(value any)
+	walk = func(value any) {
+		switch found := value.(type) {
+		case []any:
+			for _, item := range found {
+				walk(item)
+			}
+		case map[string]any:
+			keys := make([]string, 0, len(found))
+			for key := range found {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			for _, key := range keys {
+				walk(found[key])
+			}
+		case *binding.KeyedMap[any]:
+			for _, key := range found.Keys() {
+				item, _ := found.Get(key)
+				walk(item)
+			}
+${cases}
+		}
+	}
+	walk(top)
+	return strings.Join(out, " ")
+}
+`;
+}
+
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'slices', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
   std.sort();
   const own = [
@@ -1149,7 +1322,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false, fixtures: new Set() };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
-  for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
+  for (const fn of [...callablesOf(model), ...model.kept.flatMap((k) => k.members)].filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
   consumerTests(v, out, model.objects.filter((o) => o.unit.module === module));
   // GN-6u: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
@@ -1189,11 +1362,12 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
   const helpers = [
     ...(v.usesPtr ? [PTR] : []),
+    ...(/\bmust\(/.test(all) ? [MUST] : []),
+    ...(/\bkept\(/.test(all) ? [KEPT] : []),
+    ...(/\bplaces\(/.test(all) ? [placesHelper(model)] : []),
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
-    ...(/\bmapWith\(/.test(all) ? [MAP_WITH] : []),
-    ...(/\bkeyedWith\(/.test(all) ? [KEYED_WITH] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');
@@ -1391,14 +1565,19 @@ func TestT2AKeyedMapRoundTripsInItsOrder(t *testing.T) {
 }
 ` : '';
   const local = new Set(aliasesWithKinds(model).filter((a) => a.library === undefined));
-  const aliases = aliasCases(model).filter((c) => local.has(c.alias)).map((kase) => `
+  const aliases = aliasCases(model).filter((c) => local.has(c.alias)).map((kase) => {
+    // The statements that make the instances of the value classes of the value, in package binding itself.
+    const b = new Body();
+    const given = aliasValue(model, b, kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`).replace(/\bbinding\./g, '');
+    return `
 func TestU7${goName(kase.alias.unit.name)}In${testName(kase.id)}(t *testing.T) {
-	err := AliasIn${goName(kase.alias.unit.name)}(${aliasValue(kase.alias.unit, kase.value, `the alias ${kase.alias.unit.id}`).replace(/\bbinding\./g, '')})
+${b.lines.map((line) => `\t${line.replace(/\bbinding\./g, '')}\n`).join('')}	err := AliasIn${goName(kase.alias.unit.name)}(${given})
 	if failure, ok := err.(*${categoryType(model, kase.category)}); !ok || failure.Kind() != ${goString(kase.kind)} {
 		t.Fatalf("U-7: %#v", err)
 	}
 }
-`).join('');
+`;
+  }).join('');
   // GN-13g: the B-2 values of GN-13 of another Go type, and values of the type, through the conversion of each number type.
   const sets: Record<string, [string[], string[]]> = {
     uint: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', '-1', 'uint64(9007199254740992)'], ['7', 'uint64(9007199254740991)']],
@@ -1428,8 +1607,9 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
 }
 `;
   }).join('');
-  const body = `${latin1}${map}${keyed}${aliases}${numbers}`;
-  const std = ['math', 'reflect', 'time'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
+  const tests = `${latin1}${map}${keyed}${aliases}${numbers}`;
+  const body = `${/\bmust\(/.test(tests) ? MUST : ''}${tests}`;
+  const std = ['fmt', 'math', 'reflect', 'time'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build polyspec_codec_test
