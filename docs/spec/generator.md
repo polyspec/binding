@@ -295,12 +295,16 @@ the design ids are those of the binding design.
   handle calls the `read` member of that case and describes the result one level at a time: a list as a list, each
   item again by these rules; an instance of a generated class of the owner whose `iterate` member yields `{key,
   value}` as a map of the entries of that iteration, a snapshot taken when the map is described (GN-6f); an instance
-  of the value class again as `HostValue::Value`; and a text or a bool as the `HostValue` of that kind. The owner's
+  of the value class again as `HostValue::Value`; a text or a bool as the `HostValue` of that kind; and for a case of
+  the kind `text16`, whose `read` member gives a list of `uint`, the UTF-16 code units of a text as
+  `HostValue::Text(HostText::Utf16)`, unpaired surrogates included, in every language. The owner's
   `in` function judges the description; its failure and an exception of language code are reported as GN-6k states.
   Out: the owner's `out` function gives the core value as `OutValue`, and the generated code makes the language value
   by the `out` rows of the class for its language, each `make` a public `constructor` or `static` member of the owner
   called through the language API of the owner's package: a member whose one parameter is the content of the kind is
-  called on that content (a bool, a text, and for the kind `number` the literal of `OutValue::Number`); a member of
+  called on that content (a bool, a text, for the kind `number` the literal of `OutValue::Number`, and for the kind
+  `text16` the code units of `OutValue::Text16` as a list of integers of the language, so that a text with an unpaired
+  surrogate leaves as the owner holds it, also where the string of the language cannot hold it); a member of
   the kind `list` whose one parameter is a list of the value type is called on the items, each made by these rows; and
   a member of the kind `map` whose one parameter is a generated class of the owner is called on an instance of that
   class made by its public constructor without parameters, to which the generated code gives each entry in order

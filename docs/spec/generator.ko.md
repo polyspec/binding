@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a2e9df18007471d7941933d4b3390457584e4eb1f4cd7b856ff9b36b50b009b3 -->
+<!-- source-sha256: 9ef9ecb74ebf60523b62b8a8bad8899810ff1524f5405a3b8cdabb1f0fe94458 -->
 # 생성기
 
 [English](generator.md)
@@ -243,11 +243,14 @@
   list는 list로, 각 항목은 다시 이 규칙으로 묘사한다. `iterate` member가 `{key, value}`를 내는
   owner의 생성 class 인스턴스는 그 iteration의 entry로 이루어진 map으로 묘사하며, map을 묘사할 때
   snapshot을 뜬다(GN-6f). 값 class의 인스턴스는 다시 `HostValue::Value`로, text나 bool은 그
-  kind의 `HostValue`로 묘사한다. 묘사는 owner의 `in` 함수가 판정한다. 그 실패와 언어 코드의 예외는
+  kind의 `HostValue`로 묘사한다. `read` member가 `uint`의 list를 주는 kind `text16`의 case는 모든 언어에서
+  text의 UTF-16 code unit을 짝 없는 surrogate까지 `HostValue::Text(HostText::Utf16)`로 묘사한다. 묘사는 owner의 `in` 함수가 판정한다. 그 실패와 언어 코드의 예외는
   GN-6k대로 보고한다. 나갈 때: owner의 `out` 함수가 코어 값을 `OutValue`로 주고, 생성 코드는 자기 언어에
   대한 class의 `out` 행으로 언어 값을 만든다. 각 `make`는 owner 패키지의 언어 API로 부르는 owner의 공개
   `constructor`나 `static` member다. parameter 하나가 그 kind의 내용인 member는 그 내용으로
-  부른다(bool, text, kind `number`면 `OutValue::Number`의 literal). parameter 하나가
+  부른다(bool, text, kind `number`면 `OutValue::Number`의 literal, kind `text16`이면 `OutValue::Text16`의
+  code unit을 언어의 정수 list로). 그래서 짝 없는 surrogate가 있는 text는 언어의 문자열이 담지 못하는 곳에서도
+  owner가 가진 그대로 나간다. parameter 하나가
   값 타입의 list인 kind `list`의 member는 각각 이 행으로 만든 항목으로 부른다. parameter 하나가
   owner의 생성 class인 kind `map`의 member는 parameter 없는 공개 constructor로 만든 그
   class의 인스턴스로 부른다. 생성 코드는 key와 값 타입의 value를 받는 그 class의 공개 method로 각 entry를

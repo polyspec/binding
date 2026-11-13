@@ -201,9 +201,12 @@ These closed sets are binding's own; the Rust names are those of `binding_core` 
 - Acronym words of a repository name (P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`,
   `json`, `orm`, `php`, `sql`, `ui`, `uri`, `url`, `xml`. A new acronym of a repository name is added to this table
   (`LIBRARY_ACRONYMS` in `packages/ts/src/names.ts`), the one place that holds it.
-- Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
+- Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `text16`, `bytes`, `list`, `map`, `object`,
   `reference`, `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
-  `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).
+  `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1). `text16` is a text
+  as UTF-16 code units, unpaired surrogates included, which a value class gives and makes by a member that reads or
+  takes a list of `uint` (GN-6x); no built-in form makes it, because the string of PHP and Go cannot hold an unpaired
+  surrogate.
 - Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float)
   (`Predicate`). A row writes `when: {predicate, is}`.
 - Built-in forms and the language type each makes:

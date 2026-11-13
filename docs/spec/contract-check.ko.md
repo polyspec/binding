@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 7adace6754f74bcab0ef9938bdb05a1ef9e75d4f2ec871f935553568786f9710 -->
+<!-- source-sha256: f0d8c0028288034acb22f422ff4b22cc9bb63870100c4ea32c1101ca3777a115 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -178,9 +178,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - 레포 이름의 약어 낱말(P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`, `json`, `orm`,
   `php`, `sql`, `ui`, `uri`, `url`, `xml`. 레포 이름의 새 약어는 이 표(`packages/ts/src/names.ts`의 `LIBRARY_ACRONYMS`, 그것을 갖는
   유일한 곳)에 더한다.
-- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
+- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `text16`, `bytes`, `list`, `map`, `object`, `reference`,
   `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
-  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
+  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1). `text16`은 짝 없는 surrogate까지 담는 UTF-16 code
+  unit의 text이고, 값 class가 `uint`의 list를 읽거나 받는 member로 주고 만든다(GN-6x). PHP와 Go의 문자열은 짝 없는
+  surrogate를 담지 못하므로 어떤 내장 형태도 그것을 만들지 않는다.
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
 - 내장 형태와 각각이 만드는 언어 타입:
