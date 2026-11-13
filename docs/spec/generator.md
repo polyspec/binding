@@ -205,7 +205,7 @@ the design ids are those of the binding design.
   class unit holds its core value in a lock that is only tried when (1) a member of it has a write place, (2) a value
   of the class comes in from the language (a parameter, a field of a record or an element of a list in one, or the
   return of a callback), or (3) a member of it reaches language code. A type carries language code when it is a
-  callback unit, a function type, `host_value`, a value alias with an `out` row of kind `native`, or a class that
+  callback unit, also of another repository (GN-6s), a function type, `host_value`, a value alias with an `out` row of kind `native`, or a class that
   carries it, also through a field of a record, an `optional`, a `list`, a `tuple` or the value of a map. A class
   carries language code when a member with a receiver of it has a parameter of a type that carries it, or when a
   member that returns the class has such a parameter or is a member, with a receiver, of another class that carries
