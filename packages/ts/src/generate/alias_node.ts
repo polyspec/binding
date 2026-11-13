@@ -454,16 +454,16 @@ fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, F
 }
 
 /// GN-6m: the env of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
-/// and a call after the cleanup of the env is kind internal.
-fn native_env(native: &Native, subject: &str) -> Result<Env, Thrown> {
+/// and a call after the cleanup of the env is kind internal. The failure is a BindingError, which any thread may keep.
+fn native_env(native: &Native, subject: &str) -> Result<Env, BindingError> {
     let Some(native) = native.downcast::<OwnedNative>() else {
-        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") })));
+        return Err(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") });
     };
     if OWNER.get() != Some(native.owner) {
-        return Err(Thrown::Binding(binding_error(BindingError::WrongThread { subject: subject.to_owned() })));
+        return Err(BindingError::WrongThread { subject: subject.to_owned() });
     }
     if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
-        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6o: the env of the function has ended") })));
+        return Err(BindingError::Internal { detail: String::from("GN-6o: the env of the function has ended") });
     }
     Ok(Env::from_raw(NATIVE_ENV.get()))
 }

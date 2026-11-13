@@ -40,6 +40,27 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
+// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is kept
+// as its BindingError, which any thread may hold, under the handle of its Raised; the owner thread makes it its error.
+export const elsewhereRust = (model: Model): string => `
+static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new(BTreeMap::new());
+
+fn thrown_elsewhere(error: BindingError) -> binding_core::Failure<${model.coreError ?? '()'}> {
+    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = ELSEWHERE.lock() {
+        map.insert(handle, error);
+    }
+    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+}
+
+fn elsewhere(raised: &binding_core::Raised) -> Fail {
+    match ELSEWHERE.lock().ok().and_then(|mut map| map.remove(&raised.handle().raw())) {
+        Some(error) => binding_error(error),
+        None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+    }
+}
+`;
+
 // GN-6m, GN-6o: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
@@ -52,8 +73,12 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
   const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
   return `in_function(env, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                let env = match native_env(&native, ${subject}) {
+                    Ok(env) => env,
+                    Err(error) => return Err(thrown_elsewhere(error)),
+                };
                 let call = || -> Result<${result}, Thrown> {
-                    let env = &native_env(&native, ${subject})?;
+                    let env = &env;
                     let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
                     let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
                     let returned = function.call(args).map_err(Thrown::Js)?;
@@ -646,12 +671,12 @@ fn failure_error(failure: ${failure}) -> Fail {
         binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
-            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-`;
+${takesFunction(model) ? elsewhereRust(model) : ''}`;
 }
 
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
@@ -953,8 +978,7 @@ pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<S
     let native = guard(|| in_function(env, value, "value")).map_err(|fail| throw(env, fail))?;
     let kind = std::thread::spawn(move || match native_env(&native, "value") {
         Ok(_env) => String::from("none"),
-        Err(Thrown::Binding(fail)) => fail.kind.to_owned(),
-        Err(Thrown::Js(error)) => error.reason,
+        Err(error) => error.kind().to_owned(),
     })
     .join();
     kind.map_err(|_panic| napi::Error::from_reason("U-3: the thread of the test panicked"))
