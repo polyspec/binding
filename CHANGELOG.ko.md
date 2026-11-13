@@ -1,11 +1,34 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f7272e0618ef38e4d276ffd075efda5967b9e563ebf09df77d7daa3b31b3fc91 -->
+<!-- source-sha256: 39e752eb3737079f2bb16d8680860effbd797e071def66e1574e3f899b9708f4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/relay`에 variant `packet`이 생겼다. 그 case는 json의 value class를 field와 list로 담고, member `passed`와
+  `count`, 그 case가 함께 있다. 그래서 case 안의 다른 레포 value class가 e2e 검사의 계약을 가진다(T-9, GN-6v, GN-6x).
+  e2e 실행으로는 확인하지 않았다. relay의 생성된 테스트는 value class의 case 값을 내장 값으로 쓴다(Go가
+  `*json.Value`를 받는 자리에 `Carry("name")`). `carry`도 새 member도 그렇다. 그래서 다른 레포 value class의 case 값을 그
+  owner의 make member로 쓰기 전에는 relay의 Go 테스트가 컴파일되지 않는다(GN-13b). `make test-ts`만으로 확인했다: 417개 중
+  417개가 통과한다.
+- `binding check`에 검사 CK-72가 생겼다: variant case의 field가 그 variant의 `tag`와 이름이 같으면(단어로 비교) 그
+  field 자리의 finding이고 해결 방법은 "field나 tag의 이름을 바꾼다"다. case의 값은 tag member가 case 값을 담는 객체이기
+  때문이다(T-9, GN-6v). 대상 언어가 예약한 이름에 대한 CK-23의 finding은 해결 방법으로 naming exception을 적었는데
+  생성기는 그것을 생성하지 않는다. 이제 계약에서 그 unit, member, parameter, field의 이름을 바꾸라고 적는다(N-2).
+  `packages/ts/tests/contract-check.test.ts`의 시험으로 확인했다: 새 시험 둘이 검사가 없을 때와 옛 메시지에서 실패했고,
+  232개 중 232개가 통과한다.
+- 다른 레포의 unit을 담는 variant case의 field는 이름을 대고 거부되었다(`a unit of another repository in a case of a
+  variant is not generated yet`). 이제 그런 field를 다섯 target에서 생성한다. 다른 레포의 record, 값 alias, value class가
+  대상이며 list·optional·map·keyed map·tuple 안에 있어도 된다. variant의 변환이 그 unit의 변환을 부른다. 두 변환은 그
+  변환에 필요한 것을 받지 않았다. Node에서 record와 variant의 `in` 변환에는 env가 없었는데 값 alias나 class의 변환이
+  env를 읽으므로, 이제 그런 변환은 모두 env를 첫 parameter로 받는다. Go에서 함수 `encode<Variant>`에는 call이 없었는데
+  call이 값 alias의 값을 훑으므로, case에 값 alias나 callback이 있는 variant의 함수는 이제 member의 call을 먼저 받는다.
+  `tests/e2e/consumer`에 variant `note`가 생겼다. 그 case는 `tests/e2e/sample`의 값 alias `data`를 field와 map의 값으로
+  담고, member `turned`와 `weight`, 그 case가 함께 있다. `tests/e2e/plot`에 variant `mark`가 생겼다. 그 case는
+  `tests/e2e/points`의 record `point`를 field, list, optional로 담고, member `flipped`와 그 case가 함께 있다. 계약 자신의
+  class·callback·값 alias를 담는 case는 여전히 이름을 대고 거부한다(T-9, T-3, GN-6v, GN-6c). `make test-ts`로 확인했다:
+  414개 중 414개가 통과한다.
 - 생성하지 않는 target의 `core_type` 없는 class를 판정하는 검사의 id는 CK-78이다. 이전에는 다른 검사의 id를 썼다.
   명세, finding, 시험이 CK-78을 적고, 검사의 규칙은 바뀌지 않았다. `make test-ts`로 검증했다. 그 finding의 시험 둘은
   검사가 새 id를 보고하기 전에 실패했다.

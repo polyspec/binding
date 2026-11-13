@@ -183,6 +183,92 @@
           ],
           "wait": "none",
           "core": "polyspec_plot::rise"
+        },
+        {
+          "id": "plot.flipped",
+          "name": [
+            "flipped"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "mark"
+              ],
+              "type": {
+                "unit": "mark"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "mark"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_plot::flipped"
+        }
+      ]
+    },
+    {
+      "id": "mark",
+      "name": [
+        "mark"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_plot::Mark",
+      "tag": [
+        "shape"
+      ],
+      "cases": [
+        {
+          "value": "dot",
+          "fields": [
+            {
+              "name": [
+                "at"
+              ],
+              "type": {
+                "unit": "point",
+                "library": "points"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "line",
+          "fields": [
+            {
+              "name": [
+                "points"
+              ],
+              "type": {
+                "list": {
+                  "unit": "point",
+                  "library": "points"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "end"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "point",
+                  "library": "points"
+                }
+              },
+              "required": true,
+              "reason": "T-9"
+            }
+          ]
         }
       ]
     }
@@ -198,6 +284,11 @@
       "member": "plot.rise",
       "file": "contracts/cases.json",
       "group": "rise"
+    },
+    {
+      "member": "plot.flipped",
+      "file": "contracts/cases.json",
+      "group": "flipped"
     }
   ]
 }

@@ -5,6 +5,33 @@
 
 ## Unreleased
 
+- `tests/e2e/relay` has the variant `packet`, whose cases hold the value class of json as a field and in a list,
+  with the members `passed` and `count` and their cases, so that a value class of another repository in a case has
+  a contract of the end-to-end check (T-9, GN-6v, GN-6x). Not verified by an end-to-end run. The generated tests of
+  the relay write a case value of the value class as a built-in value (`Carry("name")` where Go takes `*json.Value`),
+  for `carry` as for the new members, so the Go tests of the relay do not compile until a case value of a value class
+  of another repository is written by the make members of its owner (GN-13b). Verified by `make test-ts` alone: 417
+  of 417 pass.
+- `binding check` has the check CK-72: a field of a case of a variant with the name of the `tag` of the variant,
+  compared by their words, is a finding at that field with the remedy "rename the field or the tag", because the
+  value of a case is an object whose tag member holds the case value (T-9, GN-6v). The finding of CK-23 for a name
+  that a target language reserves named a naming exception as its remedy, which the generator does not generate; it
+  now names the rename of the unit, the member, the parameter or the field in the contract (N-2). Verified by the
+  tests of `packages/ts/tests/contract-check.test.ts`: the two new tests failed without the check and with the old
+  message, and 232 of 232 pass.
+- A field of a case of a variant that holds a unit of another repository was refused by name (`a unit of another
+  repository in a case of a variant is not generated yet`). Such a field is now generated in the five targets for a
+  record, a value alias and a value class of another repository, also inside a list, an optional, a map, a keyed map
+  or a tuple: the conversions of the variant call the conversions of that unit. Two conversions took less than those
+  need. In Node the `in` conversion of a record and of a variant had no env, which the conversion of a value alias or
+  a class reads, so every such conversion now takes the env as its first parameter. In Go the function
+  `encode<Variant>` had no call, which walks the value of a value alias, so the function of a variant with a value
+  alias or a callback in a case now takes the call of the member first. `tests/e2e/consumer` has the variant `note`,
+  whose cases hold the value alias `data` of `tests/e2e/sample` as a field and as the values of a map, with the
+  members `turned` and `weight` and their cases; `tests/e2e/plot` has the variant `mark`, whose cases hold the record
+  `point` of `tests/e2e/points` as a field, in a list and in an optional, with the member `flipped` and its cases. A
+  class, a callback and a value alias of the contract itself in a case stay refused by name (T-9, T-3, GN-6v,
+  GN-6c). Verified by `make test-ts`: 414 of 414 pass.
 - The check of a class without `core_type` on a target that does not generate it has the id CK-78; it had the id of
   another check. The specification, the finding and the tests name CK-78, and the rule of the check is unchanged.
   Verified by `make test-ts`: the two tests of its finding failed before the check reported the new id.

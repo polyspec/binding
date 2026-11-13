@@ -197,6 +197,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
   the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
   source to tell them apart.
+- **CK-72** The tag of a variant (T-9, generator GN-6v): no field of a case of a variant has the name of the `tag` of
+  the variant, compared by their words, because the value of a case in Node, WASM and a case file is an object whose
+  tag member holds the case value, so a field of that name would take the place of the tag. The finding names the
+  field and the remedy: rename the field or the tag.
 - **CK-73** Members that do not wait (generator GN-6m, GN-6n, N-4): a `constructor`,
   a `property`, an `iterate` and a hook (`stringify`, `to_json`, `primitive`) have no `wait` other than `none`,
   because no language has an awaited form of a constructor, of a property or of an iteration, and a language calls a
@@ -267,7 +271,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its
   keywords everywhere; JavaScript (Node, WASM) its reserved words and `eval` and `arguments` for a class, a function
   and a parameter (a property may take them). Go capitalizes every name, which no keyword is, and the generated Rust
-  escapes a keyword. A naming exception (N-3) gives the language another name.
+  escapes a keyword. A naming exception (N-3) gives the language another name, and the check accepts the name that it
+  gives; the generator does not generate a naming exception yet, so the finding names the remedy that works with it:
+  rename the unit, the member, the parameter or the field in the contract.
 - **CK-20** One release (L-2): the repository's `Cargo.lock` pins exactly one `polyspec-binding-core`, of the version
   of the running binding, because one release gives the CLI (npm package `@polyspec/binding`, bin `binding`) and the
   crate and the generated code is written for that crate; no `Cargo.lock`, no pin or another version is a finding.

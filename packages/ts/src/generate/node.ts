@@ -39,7 +39,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
+  // GN-6c, GN-6v: the conversion of a record or a variant takes the env, which a value alias or a class in it reads.
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(env, ${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -466,6 +467,9 @@ ${outArms}
 `;
 }
 
+// The name of the env parameter of a conversion: env when its body names it, and _env when no field reads it.
+const envParam = (body: string): string => (/\benv\b/.test(body) ? 'env' : '_env');
+
 // T-4: the result form of a record, a plain object with a member per field.
 function recordRust(model: Model, unit: Unit, library?: string): string {
   const name = recordFn(unit, library);
@@ -478,7 +482,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
 /// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
-fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+fn in_${name}(${envParam(reads.join('\n'))}: &Env, value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
 }
@@ -520,7 +524,7 @@ function variantRust(model: Model, variant: Variant): string {
   });
   return `
 /// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+fn in_${name}(${envParam(ins.join('\n'))}: &Env, value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
     let tag = in_text(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
     match tag.as_str() {
 ${ins.join('\n')}

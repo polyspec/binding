@@ -1185,7 +1185,7 @@ test('WASM: the crate imports Array, which the failure of every contract uses (G
   assert.match(points, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
   const { contract, caseFiles, foreign } = plotSample();
   const plot = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(plot, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
+  assert.match(plot, /^use js_sys::\{Array, [^}\n]*\};$/m);
 });
 
 test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
@@ -1528,8 +1528,11 @@ test('a value alias of another repository converts through the core of its owner
   // The in_raises of the owner's alias give the consumer nothing: no entry point of codec-test, no assertion of the
   // kinds and no case of the alias, which the binding of the owner holds.
   assert.ok((foreign.get('sample')?.units ?? []).some((u: any) => u.id === 'data' && u.in_raises.length > 0));
+  // The one entry point of codec-test of the consumer is the round trip of a map of Go (GN-13b), which the map of the
+  // variant note brings and which names no alias.
+  const echo = /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_consumer__echo_map\(/g;
   for (const [path, file] of out) {
-    assert.doesNotMatch(String(file), /alias_in_|aliasIn|the kinds of in_raises|codec-test|def test_u7_|U-7: data/, path);
+    assert.doesNotMatch(String(file).replaceAll(echo, ''), /alias_in_|aliasIn|the kinds of in_raises|codec-test|def test_u7_|U-7: data/, path);
   }
 });
 
@@ -5309,4 +5312,81 @@ test('a Node or WASM member with machine binds the borrow of the guard of a clas
   assert.match(node, /let tag = tag\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
   const wasm = text(made(['wasm']), 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
+});
+
+test('a case of a variant holds a unit of another repository, whose conversions the variant calls (T-9, T-3, GN-6v, GN-6c)', () => {
+  // tests/e2e/consumer: the cases of the variant note hold the value alias data of tests/e2e/sample, as a field and
+  // as the values of a map.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /let field_value: polyspec_sample::Data = in_sample_data\(py, &value\.getattr\("value"\)\?, subject\)\?;/);
+  assert.match(python, /in_map\(py, &value\.getattr\("data"\)\?, subject, \|py, item\| in_sample_data\(py, item, subject\)\)\?;/);
+  assert.match(python, /fields\.set_item\("data", out_map\(py, field_data, \|py, item\| out_sample_data\(py, item\)\)\?\)\?;/);
+  // Node: the in conversion of a variant takes the env, which the conversion of the alias reads.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /\nfn in_note\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<polyspec_consumer::Note, Fail> \{/);
+  assert.match(node, /let field_value: polyspec_sample::Data = in_sample_data\(env, member\(value, "value", subject\)\?, "value"\)\?;/);
+  assert.match(node, /in_map\(member\(value, "data", subject\)\?, "data", \|item\| in_sample_data\(env, item, "data"\)\)\?;/);
+  assert.match(node, /let note: polyspec_consumer::Note = in_note\(env, note, "note"\)\?;/);
+  assert.match(node, /in_list\(notes, "notes", \|item\| in_note\(env, item, "notes"\)\)\?;/);
+  assert.match(node, /object\.set_named_property\("value", out_sample_data\(env, field_value\)\?\)/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /\n\s+in_sample_data\(field, subject\)\?\n/);
+  assert.match(php, /case_object\(2, vec!\[\("status", out_uint\(\*field_status\)\?\), \("data", out_map\(field_data, \|item\| out_sample_data\(item\)\)\?\)\]\)/);
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /let field_value: polyspec_sample::Data = in_sample_data\(&member\(value, "value", subject\)\?, "value"\)\?;/);
+  assert.match(wasm, /out_map\(field_data, \|item\| out_sample_data\(item\)\)/);
+  // Go: the encoding of the variant takes the call of the member, which walks the value of the alias.
+  const go = text(out, 'packages/go/zz_generated_consumer.go');
+  assert.match(go, /\nfunc encodeNote\(call \*binding\.Call, enc \*binding\.Writer, value Note\) \{/);
+  assert.match(go, /\tcase NoteSingle:\n\t\tenc\.Uint\(1\)\n\t\tcall\.Value\(enc, case0\.Value\)\n/);
+  assert.match(go, /func Turned\(note Note\) \(Note, error\) \{\n\tvar zero0 Note\n\tcall := binding\.NewCall\(\)\n\tdefer call\.Close\(\)\n\tenc := binding\.NewWriter\(\)\n\tencodeNote\(call, enc, note\)\n/);
+  assert.match(go, /func Weight\(notes \[\]Note\)[^]*?\n\tcall := binding\.NewCall\(\)\n[^]*?\t\tencodeNote\(call, enc, item0\)\n/);
+  assert.match(go, /\tcase 1:\n\t\tvar case0 NoteSingle\n\t\tcase0\.Value = dec\.Value\(\)\n/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /let field_data: binding_core::OrderedMap<polyspec_sample::Data> = in_map\(input, "Data", in_sample_data\)\?;/);
+  // The result forms of the cases name the alias as any place does.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/consumer/_types.py'), /class NotePage:\n[^]*?\n    status: int\n    data: dict\[str, object\]\n/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export interface NotePage \{\n  readonly kind: 'page';\n  readonly status: number;\n  readonly data: ReadonlyMap<string, unknown>;\n\}/);
+  // The cases of the members run in every target.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.turned\(\{ kind: 'single', value: 'x' \}\)\), ordered\(\{ kind: 'page', status: 1, data: new Map\(\[\['value', 'x'\]\]\) \}\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /result = pkg\.turned\(pkg\.NoteSingle\(value="x"\)\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Turned\(NoteSingle\{Value: "x"\}\)/);
+  // tests/e2e/plot: the cases of the variant mark hold the record point of tests/e2e/points, as a field, in a list
+  // and in an optional.
+  const plot = plotSample();
+  const marks = generate({ contract: plot.contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles: plot.caseFiles, foreign: plot.foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const plotNode = text(marks, 'packages/ts/generated/lib.rs');
+  // Node: a record without a field that reads the env takes it unused.
+  assert.match(plotNode, /\nfn in_points_point\(_env: &Env, value: Unknown<'_>, subject: &str\) -> Result<polyspec_points::Point, Fail> \{/);
+  assert.match(plotNode, /let field_at: polyspec_points::Point = in_points_point\(env, member\(value, "at", subject\)\?, "at"\)\?;/);
+  assert.match(plotNode, /in_optional\(member\(value, "end", subject\)\?, \|value\| in_points_point\(env, value, "end"\)\)\?;/);
+  assert.match(text(marks, 'packages/python/generated/lib.rs'), /in_points_point\(py, &value\.getattr\("at"\)\?, subject\)\?;/);
+  assert.match(text(marks, 'packages/php-ext/generated/lib.rs'), /in_list\(field, subject, \|item\| in_points_point\(item, subject\)\)\?/);
+  assert.match(text(marks, 'packages/ts/wasm/generated/lib.rs'), /in_points_point\(&member\(value, "at", subject\)\?, "at"\)\?;/);
+  const plotGo = text(marks, 'packages/go/zz_generated_plot.go');
+  assert.match(plotGo, /type MarkLine struct \{\n\tPoints \[\]points\.Point\n\tEnd +\*points\.Point\n\}/);
+  assert.match(plotGo, /\nfunc encodeMark\(enc \*binding\.Writer, value Mark\) \{\n\tswitch case0 := value\.\(type\) \{\n\tcase MarkDot:\n\t\tenc\.Uint\(0\)\n\t\tenc\.Int\(case0\.At\.X\)\n/);
+  assert.match(text(marks, 'packages/python/generated/python/polyspec/plot/_types.py'), /from polyspec\.points import Point as Point\n[^]*class MarkDot:\n[^]*?\n    at: Point\n/);
+  assert.match(text(marks, 'packages/python/generated/tests/test_generated.py'), /pkg\.flipped\(pkg\.MarkDot\(at=foreign_points\.Point\(x=1, y=2\)\)\)/);
+  assert.match(text(marks, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Plot\\flipped\(new \\Polyspec\\Plot\\MarkDot\(at: new \\Polyspec\\Points\\Point\(x: 1, y: 2\)\)\)/);
+  // tests/e2e/relay: the cases of the variant packet hold the value class of json, as a field and in a list (GN-6x).
+  const relay = relaySample();
+  const packets = generate({ contract: relay.contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles: relay.caseFiles, foreign: relay.foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  assert.match(text(packets, 'packages/python/generated/lib.rs'), /let field_value: polyspec_json::Value = in_json_value\(py, &value\.getattr\("value"\)\?, subject\)\?;/);
+  assert.match(text(packets, 'packages/ts/generated/lib.rs'), /in_list\(member\(value, "values", subject\)\?, "values", \|item\| in_json_value\(env, item, "values"\)\)\?;/);
+  assert.match(text(packets, 'packages/php-ext/generated/lib.rs'), /case_object\(0, vec!\[\("value", out_json_value\(field_value\)\?\)\]\)/);
+  assert.match(text(packets, 'packages/ts/wasm/generated/lib.rs'), /in_json_value\(&member\(value, "value", subject\)\?, "value"\)\?;/);
+  const packetGo = text(packets, 'packages/go/zz_generated_relay.go');
+  assert.match(packetGo, /type PacketOne struct \{\n\tValue \*json\.Value\n\}/);
+  assert.match(packetGo, /\nfunc encodePacket\(call \*binding\.Call, enc \*binding\.Writer, value Packet\) \{\n\tswitch case0 := value\.\(type\) \{\n\tcase PacketOne:\n\t\tenc\.Uint\(0\)\n\t\tcall\.Value\(enc, case0\.Value\)\n/);
+  assert.match(packetGo, /\t\tcase0\.Value, _ = dec\.Value\(\)\.\(\*json\.Value\)\n/);
+  // The cases of the members run: a value of the class is made as at any other place.
+  assert.match(text(packets, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: count many_values_count_each'/);
+  // A value alias of this contract in a case stays refused by name.
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  sample.units.push({ id: 'held', name: ['held'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Held', tag: ['kind'], cases: [{ value: 'one', fields: [{ name: ['value'], type: { unit: 'data' }, required: true }] }] });
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /held\.one\.value: a value alias in a case of a variant is not generated yet \(GN-6v\)/);
+  // A variant without an alias or a callback keeps the encoding without the call.
+  assert.match(text(variants(), 'packages/go/zz_generated_variants.go'), /\nfunc encodeFigure\(enc \*binding\.Writer, value Figure\) \{/);
 });

@@ -1,7 +1,7 @@
 //! A sample library for the end-to-end check of binding: it takes and gives the value alias `data` of the sample
 //! library, in its functions and through a callback interface (T-3, U-7 (a')).
 
-use binding_core::{Failure, Kinds};
+use binding_core::{Failure, Kinds, OrderedMap};
 use polyspec_sample::Data;
 use std::fmt;
 
@@ -123,10 +123,64 @@ pub fn copy(holder: &mut dyn Holder, source: &str, target: &str) -> Result<bool,
     }
 }
 
+/// A note (T-9, GN-6v: a variant whose cases hold the data of the sample library, a unit of another repository, as a
+/// field and as the values of a map).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Note {
+    /// A note without data.
+    Blank,
+    /// A note of one value.
+    Single {
+        /// The value.
+        value: Data,
+    },
+    /// A note of a page: its status and its data by name.
+    Page {
+        /// The status.
+        status: u64,
+        /// The data by name, in order.
+        data: OrderedMap<Data>,
+    },
+}
+
+/// The note turned once: a blank stays, a single becomes the page of status 1 that holds its value as `value`, and a
+/// page counts its status up.
+#[must_use]
+pub fn turned(note: &Note) -> Note {
+    match note {
+        Note::Blank => Note::Blank,
+        Note::Single { value } => {
+            let mut data = OrderedMap::new();
+            let _replaced: Option<Data> = data.insert(String::from("value"), value.clone());
+            Note::Page { status: 1, data }
+        }
+        Note::Page { status, data } => Note::Page {
+            status: status.saturating_add(1),
+            data: data.clone(),
+        },
+    }
+}
+
+/// The weight of the notes: nothing for a blank, the size of the value of a single, and the number of the entries of
+/// a page.
+#[must_use]
+pub fn weight(notes: &[Note]) -> u64 {
+    notes
+        .iter()
+        .map(|note| match note {
+            Note::Blank => 0,
+            Note::Single { value } => measure(value),
+            Note::Page { data, .. } => data
+                .iter()
+                .fold(0, |count: u64, _entry| count.saturating_add(1)),
+        })
+        .fold(0, u64::saturating_add)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{copy, fetch, measure, pair, Error, Holder};
-    use binding_core::Failure;
+    use super::{copy, fetch, measure, pair, turned, weight, Error, Holder, Note};
+    use binding_core::{Failure, OrderedMap};
     use polyspec_sample::Data;
 
     struct One(Vec<(String, Data)>);
@@ -158,5 +212,29 @@ mod tests {
         assert!(matches!(copy(&mut holder, "a", "b"), Ok(true)));
         assert!(matches!(copy(&mut holder, "c", "d"), Ok(false)));
         assert!(matches!(fetch(&mut holder, "b"), Ok(Data::Bool(true))));
+    }
+
+    #[test]
+    fn a_note_holds_the_data_of_the_sample() {
+        assert_eq!(turned(&Note::Blank), Note::Blank);
+        let single = Note::Single { value: Data::Null };
+        let mut data = OrderedMap::new();
+        assert_eq!(data.insert(String::from("value"), Data::Null), None);
+        let page = Note::Page {
+            status: 1,
+            data: data.clone(),
+        };
+        assert_eq!(turned(&single), page);
+        assert_eq!(turned(&page), Note::Page { status: 2, data });
+        assert_eq!(
+            weight(&[
+                Note::Blank,
+                Note::Single {
+                    value: pair(&Data::Null)
+                },
+                page
+            ]),
+            3
+        );
     }
 }

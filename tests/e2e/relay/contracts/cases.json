@@ -143,5 +143,73 @@
       "rule": "RQ-036",
       "depth": 256
     }
+  ],
+  "passed": [
+    {
+      "id": "one_value",
+      "packet": {
+        "kind": "one",
+        "value": {
+          "kind": "text",
+          "value": "a"
+        }
+      }
+    },
+    {
+      "id": "many_values",
+      "packet": {
+        "kind": "many",
+        "values": [
+          {
+            "kind": "text",
+            "value": "a"
+          },
+          {
+            "kind": "null"
+          }
+        ]
+      }
+    }
+  ],
+  "count": [
+    {
+      "id": "one_value_counts_one",
+      "packet": {
+        "kind": "one",
+        "value": {
+          "kind": "text",
+          "value": "a"
+        }
+      },
+      "result": 1
+    },
+    {
+      "id": "many_values_count_each",
+      "packet": {
+        "kind": "many",
+        "values": [
+          {
+            "kind": "text",
+            "value": "a"
+          },
+          {
+            "kind": "null"
+          },
+          {
+            "kind": "bool",
+            "value": true
+          }
+        ]
+      },
+      "result": 3
+    },
+    {
+      "id": "no_value_counts_none",
+      "packet": {
+        "kind": "many",
+        "values": []
+      },
+      "result": 0
+    }
   ]
 }

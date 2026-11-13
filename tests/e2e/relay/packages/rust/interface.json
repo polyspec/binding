@@ -140,6 +140,96 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_relay::carry"
+        },
+        {
+          "id": "relay.passed",
+          "name": [
+            "passed"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "packet"
+              ],
+              "type": {
+                "unit": "packet"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "packet"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_relay::passed"
+        },
+        {
+          "id": "relay.count",
+          "name": [
+            "count"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "packet"
+              ],
+              "type": {
+                "unit": "packet"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_relay::count"
+        }
+      ]
+    },
+    {
+      "id": "packet",
+      "name": [
+        "packet"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_relay::Packet",
+      "tag": [
+        "kind"
+      ],
+      "cases": [
+        {
+          "value": "one",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "json_value",
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "many",
+          "fields": [
+            {
+              "name": [
+                "values"
+              ],
+              "type": {
+                "list": "json_value"
+              },
+              "required": true
+            }
+          ]
         }
       ]
     }
@@ -150,6 +240,16 @@
       "member": "relay.carry",
       "file": "contracts/cases.json",
       "group": "carry"
+    },
+    {
+      "member": "relay.passed",
+      "file": "contracts/cases.json",
+      "group": "passed"
+    },
+    {
+      "member": "relay.count",
+      "file": "contracts/cases.json",
+      "group": "count"
     }
   ]
 }

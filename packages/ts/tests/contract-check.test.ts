@@ -1138,6 +1138,24 @@ describe('CK-22 every member names its cases (K-1)', () => {
   });
 });
 
+describe('CK-72 the tag of a variant (T-9)', () => {
+  const variant = (field: string[]): any => ({
+    id: 'shape', name: ['shape'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'sample::Shape', tag: ['shape', 'kind'],
+    cases: [{ value: 'dot', fields: [] }, { value: 'circle', fields: [{ name: ['radius'], type: 'float', required: true }, { name: field, type: 'text', required: true }] }],
+  });
+  test('a field of a case with the name of the tag', () => {
+    const result = findings((c) => { c.units.push(variant(['shape', 'kind'])); });
+    const found = result.filter((f) => f.check === 'CK-72');
+    assert.equal(found.length, 1, JSON.stringify(result, null, 2));
+    assert.equal(found[0]?.path, `/units/${contract().units.length}/cases/1/fields/1`);
+    assert.match(found[0]?.message ?? '', /the field shape_kind of the case circle of shape has the name of the tag of the variant; rename the field or the tag \(T-9, GN-6v\)/);
+    assert.deepEqual(result.filter((f) => f.check !== 'CK-72'), []);
+  });
+  test('a field with another name is accepted', () => {
+    assert.deepEqual(findings((c) => { c.units.push(variant(['label'])); }), []);
+  });
+});
+
 describe('CK-23 reserved words of the target languages (N-2)', () => {
   test('a PHP function named echo', () =>
     fails('CK-23', `${at('forms')}/members/0`, (c) => { member(c, 'forms.parse').name = ['echo']; }));
@@ -1157,6 +1175,13 @@ describe('CK-23 reserved words of the target languages (N-2)', () => {
     c.targets = ['php', 'node'];
     member(c, 'session.load').name = ['list'];
     assert.deepEqual(checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]) }).filter((f) => f.check === 'CK-23'), []);
+  });
+  test('the finding names the remedy that the generator takes: a rename in the contract', () => {
+    const message = (change: (c: any) => void): string => findings(change).find((f) => f.check === 'CK-23')?.message ?? '';
+    assert.match(message((c) => { member(c, 'forms.parse').parameters[0].name = ['from']; }), /^from, the python name of a parameter of forms\.parse, is a reserved word of python; rename the parameter in the contract \(N-2\)$/);
+    assert.match(message((c) => { member(c, 'forms.parse').name = ['echo']; }), /is a reserved word of php; rename the member in the contract \(N-2\)$/);
+    assert.match(message((c) => { unit(c, 'session').name = ['list']; }), /is a reserved word of php; rename the unit in the contract \(N-2\)$/);
+    assert.doesNotMatch(message((c) => { member(c, 'forms.parse').parameters[0].name = ['from']; }), /naming exception/);
   });
   test('a naming exception gives the language another name (N-3)', () => {
     assert.deepEqual(findings((c) => {

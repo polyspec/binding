@@ -307,9 +307,11 @@ function needsCall(model: Model, type: Type, seen: Set<string> = new Set()): boo
   if ('tuple' in type) return type.tuple.some((t) => needsCall(model, t, seen));
   if (aliasOf(model, type) !== undefined || callbackOf(model, type) !== undefined) return true;
   const unit = unitOf(model, type);
-  if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
+  if (unit === undefined || libraryOf(type) !== undefined || (unit.kind !== 'record' && unit.kind !== 'variant') || seen.has(unit.id)) return false;
   seen.add(unit.id);
-  return (unit.fields ?? []).some((f) => needsCall(model, f.type, seen));
+  // GN-6v: a variant needs the call when a field of one of its cases does.
+  const fields = unit.kind === 'record' ? (unit.fields ?? []) : (unit.cases ?? []).flatMap((c) => c.fields);
+  return fields.some((f) => needsCall(model, f.type, seen));
 }
 
 // ---- Go encoding of the arguments and decoding of the result ----
@@ -361,7 +363,8 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goEncode(scope, fieldWire(f), `${expr}.${goName(f.name)}`, indent, depth));
   // T-9, GN-6v: a variant, which may hold itself, is encoded by the function of its package.
   const variant = variantOf(scope.model, type);
-  if (variant !== undefined) return [`${t}encode${variantPackage(scope, variant)}(enc, ${expr})`];
+  // A variant that holds a value alias or a callback passes the call of the member on (GN-6v).
+  if (variant !== undefined) return [`${t}encode${variantPackage(scope, variant)}(${needsCall(scope.model, type) ? 'call, ' : ''}enc, ${expr})`];
   throw new Unsupported(`no Go encoding of ${JSON.stringify(type)}`);
 }
 
@@ -643,6 +646,7 @@ func (${caseType}) is${name}() {}
         : [`\t\tvar case0 ${goName(kase.unit.name)}`, ...fields.flatMap((f) => goDecode(scope, f.type, `case0.${goName(f.name)}`, 2, 1)), '\t\tvalue = case0']),
     ];
   });
+  const withCall = needsCall(scope.model, { unit: variant.unit.id });
   return `
 // ${name} is the variant ${variant.unit.id} (T-9): a value is one of its case structs, ${variant.cases.map((kase) => goName(kase.unit.name)).join(', ')}.
 type ${name} interface {
@@ -650,8 +654,9 @@ type ${name} interface {
 }
 ${cases}
 // encode${name} encodes a ${name}: the number of its case in the contract and the fields of the case; a value that is
-// no case struct, nil or a pointer to a case struct, is the number 2^64 - 1, which the static library refuses (GN-6v).
-func encode${name}(enc *binding.Writer, value ${name}) {
+// no case struct, nil or a pointer to a case struct, is the number 2^64 - 1, which the static library refuses (GN-6v).${withCall ? `
+// A value alias in a case is walked by the call of the member that takes the ${name}.` : ''}
+func encode${name}(${withCall ? 'call *binding.Call, ' : ''}enc *binding.Writer, value ${name}) {
 	switch ${named ? 'case0 := ' : ''}value.(type) {
 ${encode.join('\n')}
 	default:

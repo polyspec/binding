@@ -9,3 +9,36 @@ use polyspec_json::Value;
 pub fn carry(value: &Value) -> Value {
     value.clone()
 }
+
+/// A packet of json values (T-9, GN-6v: a variant whose cases hold the value class of json, a unit of another
+/// repository, as a field and in a list).
+#[derive(Debug, Clone)]
+pub enum Packet {
+    /// One value.
+    One {
+        /// The value.
+        value: Value,
+    },
+    /// Values in order.
+    Many {
+        /// The values.
+        values: Vec<Value>,
+    },
+}
+
+/// The packet, unchanged: the binding converts each value of a case in and out.
+#[must_use]
+pub fn passed(packet: &Packet) -> Packet {
+    packet.clone()
+}
+
+/// The number of the values of the packet.
+#[must_use]
+pub fn count(packet: &Packet) -> u64 {
+    match packet {
+        Packet::One { .. } => 1,
+        Packet::Many { values } => values
+            .iter()
+            .fold(0, |count: u64, _value| count.saturating_add(1)),
+    }
+}

@@ -63,9 +63,39 @@ pub fn rise(by: i64, point: &Point) -> Result<Point, Error> {
     Ok(Point { x: point.x, y })
 }
 
+/// A mark of a plot (T-9, GN-6v: a variant whose cases hold the record of the points library, a unit of another
+/// repository, as a field, in a list and in an optional).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mark {
+    /// A dot at a point.
+    Dot {
+        /// The point.
+        at: Point,
+    },
+    /// A line through points, which ends at a point or at none.
+    Line {
+        /// The points of the line.
+        points: Vec<Point>,
+        /// The end, or `None`.
+        end: Option<Point>,
+    },
+}
+
+/// The mark with each of its points mirrored.
+#[must_use]
+pub fn flipped(mark: &Mark) -> Mark {
+    match mark {
+        Mark::Dot { at } => Mark::Dot { at: mirror(at) },
+        Mark::Line { points, end } => Mark::Line {
+            points: points.iter().map(mirror).collect(),
+            end: end.as_ref().map(mirror),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{mirror, rise, Error};
+    use super::{flipped, mirror, rise, Error, Mark};
     use polyspec_points::Point;
 
     #[test]
@@ -73,5 +103,29 @@ mod tests {
         assert_eq!(mirror(&Point { x: 1, y: 2 }), Point { x: 2, y: 1 });
         assert_eq!(rise(3, &Point { x: 1, y: 2 }), Ok(Point { x: 1, y: 5 }));
         assert_eq!(rise(-3, &Point { x: 1, y: 2 }), Err(Error::Below { y: -1 }));
+    }
+
+    #[test]
+    fn a_mark_holds_points_of_the_points_library() {
+        let dot = Mark::Dot {
+            at: Point { x: 1, y: 2 },
+        };
+        assert_eq!(
+            flipped(&dot),
+            Mark::Dot {
+                at: Point { x: 2, y: 1 }
+            }
+        );
+        let line = Mark::Line {
+            points: vec![Point { x: 1, y: 2 }],
+            end: None,
+        };
+        assert_eq!(
+            flipped(&line),
+            Mark::Line {
+                points: vec![Point { x: 2, y: 1 }],
+                end: None
+            }
+        );
     }
 }
