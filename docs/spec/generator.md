@@ -368,7 +368,13 @@ the design ids are those of the binding design.
   without a wildcard. The property is a `@property` over a private attribute in Python, a read-only own property of the
   instance in Node, as `kind`, `status` and `errno` are, and a method over a private property of the declaring class in
   PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The type of a
-  property is bool, int, int64, uint, float, text or bytes, or an optional of one. The Node addon keeps the class
+  property is bool, int, int64, uint, float, text or bytes, an optional of one, or `list<text>`, whose function returns
+  any iterable of text items, as the output of a list does (T-2). A property with `raises` names a function that
+  returns `Result<T, E>` of the core error `E`. The generated code reads every property when it makes the error, so an
+  `Err` of that function is raised, as the error of its own kind, in place of the error that the core returned, as a
+  property value that fails its conversion is. Each variant of the `raises` of a property is a kind of `errors.kinds`
+  whose class is no error unit with a property that raises, so that making one error makes at most one other; another
+  variant is refused by name. The Node addon keeps the class
   after the six classes of the categories, and the PHP extension reads and writes `kind`, `status` and `errno` in the
   scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment

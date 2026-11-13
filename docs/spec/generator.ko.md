@@ -300,7 +300,11 @@
   match에서 부른다. property는 Python에서 private 속성 위의 `@property`, Node에서 `kind`·`status`·`errno`와 같은
   인스턴스의 읽기 전용 own property, PHP에서 선언한 클래스의 private property 위의 메서드다. 언어 코드가 직접 만든
   인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. property의 타입은 bool, int, int64, uint, float, text,
-  bytes이거나 그 optional이다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
+  bytes이거나 그 optional이거나 `list<text>`이며, `list<text>`의 함수는 list 출력과 같이 text 항목의 아무 iterable을
+  돌려준다(T-2). `raises`가 있는 property는 코어 오류 `E`의 `Result<T, E>`를 돌려주는 함수를 가리킨다. 생성 코드는 오류를
+  만들 때 모든 property를 읽으므로, 그 함수의 `Err`는 변환에 실패한 property 값과 같이 코어가 돌려준 오류 대신 그 자신의
+  kind의 오류로 일어난다. property의 `raises`의 각 변형은 `errors.kinds`의 kind이며 그 class는 raise하는 property를 가진
+  오류 unit이 아니다. 그래서 오류 하나를 만드는 일은 다른 오류를 많아야 하나 만든다. 다른 변형은 이름으로 거부한다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
   다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
