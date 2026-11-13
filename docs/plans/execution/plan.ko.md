@@ -1,4 +1,5 @@
 <!-- doc-id: plan-execution -->
+<!-- source-sha256: ce9a23abe96e3bcde626f3ef1254b7f20dfb9bde2aeb4246146df65720731364 -->
 # 실행 계획
 
 [English](plan.md)
