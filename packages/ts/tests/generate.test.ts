@@ -1631,11 +1631,11 @@ test('generate --target writes the directories of those targets alone, the files
 test('the Rust files of the thin packages are in the form that rustfmt gives them (GN-3a)', () => {
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
   const files = trackedPackages(contract, '0.0.0');
-  // An allow whose arguments are wider than attr_fn_like_width (70) has each argument on a line of its own.
-  assert.match(files.get('packages/go/internal/ffi/src/lib.rs') as string, /\n#!\[allow\(\n {4}unsafe_code,\n {4}reason = "B-8: [^"\n]*"\n\)\]\n/);
+  // A reason that does not fit on a line of 80 columns is the comment above the allow, which names its rule id alone.
+  assert.match(files.get('packages/go/internal/ffi/src/lib.rs') as string, /\n\/\/ B-8: the C ABI reads [^\n]*\n#!\[allow\(unsafe_code, reason = "B-8"\)\]\n/);
   for (const [path, body] of files) {
     if (!path.endsWith('.rs')) continue;
-    for (const found of (body as string).matchAll(/^#!\[allow\((.*)\)\]$/gm)) assert.ok((found[1] ?? '').length <= 70, `${path}: ${found[0]}`);
+    for (const found of (body as string).matchAll(/^#!\[allow.*$/gm)) assert.ok(found[0].length <= 80 && found[0].endsWith(')]'), `${path}: ${found[0]}`);
   }
 });
 
