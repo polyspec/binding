@@ -567,6 +567,18 @@ describe('CK-67 the borrow of a class parameter', () => {
     }));
 });
 
+describe('CK-68 the state machine of a member that reaches language code', () => {
+  test('a member with async_driver that reaches language code without machine', () =>
+    fails('CK-68', `${at('session')}/members/2/core`, (c) => { member(c, 'session.load').wait = 'async_driver'; }));
+  test('machine on a member that does not reach language code', () =>
+    fails('CK-68', `${at('forms')}/members/0/core/machine`, (c) => { member(c, 'forms.parse').core.machine = true; }));
+  test('machine on a member that does not wait with async_driver', () =>
+    fails('CK-68', `${at('session')}/members/2/core/machine`, (c) => { member(c, 'session.load').core.machine = true; }));
+  test('a member with async_driver that reaches language code and names machine is accepted', () => {
+    assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.wait = 'async_driver'; m.core.machine = true; }), []);
+  });
+});
+
 describe('CK-21 the build of the core and exclusive members', () => {
   test('a core that returns a Result without raises is accepted (E-1c)', () => {
     assert.deepEqual(findings((c) => { const m = member(c, 'forms.parse'); m.raises = []; m.core.result = true; }), []);
