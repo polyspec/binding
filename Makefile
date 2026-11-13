@@ -71,8 +71,8 @@ toolchain-lock: ## Write mise.lock for the platforms of the deployment targets; 
 # contract. It writes its record into var/report/e2e and downloads the crates and packages that the copies lock; ONLINE.
 BINDING ?= HEAD
 .PHONY: e2e
-e2e: ## Run the end-to-end check of the generator: REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]
-	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO) --work $(WORK)$(foreach dep,$(DEPS), --dep $(dep))
+e2e: ## Run the end-to-end check of the generator: REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]
+	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO)$(if $(WORK), --work $(WORK))$(foreach dep,$(DEPS), --dep $(dep))
 
 # The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
 # check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.

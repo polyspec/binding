@@ -559,7 +559,8 @@ function functionRust(model: Model, fn: Fn): string {
   }
   // GN-6h: the guards of the places of the call, the receiver's first. A future owns the guards (GN-6n), so it binds
   // the borrows of the guards inside it.
-  const moved = waitsAsync(fn);
+  // GN-6ab: the core of a member with machine is called at once, so the entry binds the borrows.
+  const moved = waitsAsync(fn) && fn.machine !== true;
   lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2

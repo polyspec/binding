@@ -393,12 +393,11 @@ thread_local! {
 }
 
 /// U-3, GN-6u: the number of this thread; 0, which no thread has, when the thread is ending.
-#[allow(clippy::manual_unwrap_or_default, reason = "R-1: the failure is matched; unwrap_or_default is disallowed")]
 fn thrown_thread() -> u64 {
-    match THROWN_THREAD.try_with(|thread| thread.0) {
-        Ok(thread) => thread,
-        Err(_ending) => 0,
-    }
+    let Ok(thread) = THROWN_THREAD.try_with(|thread| thread.0) else {
+        return 0;
+    };
+    thread
 }
 
 /// U-3, GN-6u: what a Raised holds: the thread that keeps the thrown object and its key in THROWN.

@@ -942,11 +942,11 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-${THREAD_THROWN}
+${THREAD_THROWN}${!keepsThrown(model) ? '' : `
 fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     binding_core::Failure::Raised(keep_thrown(error))
 }
-
+`}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),

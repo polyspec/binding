@@ -4543,3 +4543,138 @@ test('a crate without a feature uses every name that it imports: an import whose
   assert.ok(crates >= 20, `the test read ${String(crates)} crates`);
   assert.deepEqual(unused, []);
 });
+
+// The generated text that the lints and the tools of each target refused in the end-to-end check.
+const e2eOwn = (library: string, targets?: string[]): Map<string, string | Buffer> => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${library}/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  return generateTargets({ contract, version: '0.0.0', coreLib: `polyspec_${library}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+};
+
+test('the number of the thread of a thrown object is read without a match that clippy names manual_unwrap_or_default (U-3, GN-6u, R-1)', () => {
+  const out = sampleWith(() => undefined, ['php', 'node']);
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/ts/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /fn thrown_thread\(\) -> u64 \{\n    let Ok\(thread\) = THROWN_THREAD\.try_with\(\|thread\| thread\.0\) else \{\n        return 0;\n    \};\n    thread\n\}/, path);
+    assert.doesNotMatch(lib, /Ok\(thread\) => thread,\n\s+Err\(_ending\) => 0,/, path);
+  }
+});
+
+test('the Python crate declares the cfg pyo3_disable_reference_pool that its generated code reads, in its build script (GN-6u)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = trackedPackages(contract, '0.0.0');
+  assert.match(String(out.get('packages/python/Cargo.toml')), /\npublish = false\nbuild = "build\.rs"\n/);
+  assert.match(String(out.get('packages/python/build.rs')), /fn main\(\) \{\n    println!\("cargo::rustc-check-cfg=cfg\(pyo3_disable_reference_pool\)"\);\n\}\n$/);
+  // The script exists for every Python crate, because the manifest names it for every contract.
+  const plain = trackedPackages(JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')), '0.0.0');
+  assert.equal(plain.get('packages/python/build.rs'), out.get('packages/python/build.rs'));
+});
+
+test('the WASM future that catches a panic of a poll is an async fn, which clippy requires of a function whose body is one async block (GN-6n, B-7)', () => {
+  const wasm = text(e2eOwn('classes'), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /\nasync fn caught<F, O>\(future: F\) -> Result<O, Fail>\nwhere\n    F: std::future::Future<Output = Result<O, Fail>>,\n\{\n    let mut future = std::pin::pin!\(future\);\n/);
+  assert.doesNotMatch(wasm, /fn caught<F, O>\(future: F\) -> impl /);
+  // A crate without a member with wait async_driver has neither helper: an async fn is a helper as a fn is.
+  const plain = text(e2eOwn('variants'), 'packages/ts/wasm/generated/lib.rs');
+  assert.ok(plain.length > 0);
+  assert.doesNotMatch(plain, /fn (?:caught|awaited)</);
+  assert.equal(usedHelpers('\nasync fn later() {}\n\nfn now() {}\n', 'now();'), '\nfn now() {}\n');
+  assert.equal(usedHelpers('\n/// Waits.\nasync fn later() {}\n', 'later().await;'), '\n/// Waits.\nasync fn later() {}\n');
+});
+
+test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {
+  let callbacksOnly = 0;
+  for (const library of ['sample', 'shapes', 'variants', 'classes', 'points']) {
+    const out = e2eOwn(library, ['go']);
+    const writes = /fn given_first\(/.test(text(out, 'packages/go/internal/ffi/generated/lib.rs'));
+    const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+    assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/.test(binding), writes, library);
+    assert.equal(/func readerOf\(bytes \[\]byte\) \*Reader \{ return NewReader\(bytes\) \}/.test(binding), !writes, library);
+    if (!writes && /cgo\.NewHandle\(c\)/.test(binding)) callbacksOnly += 1;
+  }
+  // variants has a callback and no alias: Go calls back, and no buffer gives a func.
+  assert.ok(callbacksOnly >= 1, 'no contract with a callback and without an alias was read');
+});
+
+test('a Go test gives an optional callback as a pointer to its interface, not to the struct of the fixture (U-3, GN-6aa)', () => {
+  const tests = text(sampleWith(() => undefined, ['go']), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Maybe\(ptr\[Lookup\]\(fixture0\), "a"\)/);
+  assert.doesNotMatch(tests, /ptr\(fixture\d+\)/);
+});
+
+test('a Node or WASM test passes undefined in the place of an argument left out before the options record (U-2, GN-6i)', () => {
+  const out = shaped();
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const tests = text(out, path);
+    assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', undefined, \{ side: 'left' \}\)\)/, path);
+    assert.match(tests, /pkg\.pad\('ab', undefined, \{ end: '!' \}\)/, path);
+    assert.doesNotMatch(tests, /pkg\.pad\('ab', \{/, path);
+    // A trailing argument that is left out is still missing.
+    assert.match(tests, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/, path);
+  }
+});
+
+test('a PHP crate has the helper thrown only where a callback or a function keeps what the PHP code threw (U-3, GN-6z)', () => {
+  const inputs: Record<string, () => Map<string, string | Buffer>> = {
+    fixture: () => generate({ ...load(), version: '0.0.0', coreLib: 'polyspec_sample' }),
+    sample: () => sampleWith(() => undefined),
+    shapes: () => shaped(),
+    variants: () => variants(),
+    consumer: () => generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }),
+    relay: () => generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' }),
+  };
+  const defined: string[] = [];
+  const unused: string[] = [];
+  for (const [name, make] of Object.entries(inputs)) {
+    const php = text(make(), 'packages/php-ext/generated/lib.rs');
+    assert.ok(php.length > 0, name);
+    if (!/\nfn thrown<E>\(/.test(php)) continue;
+    defined.push(name);
+    if (!/(?<!fn )\bthrown\b(?!<E>)[(),]/.test(php.replace(/^\s*\/\/.*$/gm, ''))) unused.push(name);
+  }
+  // A contract with a callback has the helper, and one with a value alias and no callback has none.
+  assert.ok(defined.includes('sample') && defined.includes('variants'), defined.join(', '));
+  assert.deepEqual(unused, []);
+});
+
+test('the assertion of the borrows of a member names the Io token of wait blocking_io and the receiver self as the core takes them (GN-6h, GN-6m, GN-6o, I-2)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const member = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+  // The core of a member with wait blocking_io takes the token first after its receiver (GN-6m).
+  member('classes.shout').wait = 'blocking_io';
+  member('tag.same').wait = 'blocking_io';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node'] });
+  for (const crate of LIBS) {
+    const lib = text(out, crate);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(_, &polyspec_classes::Tag) -> _ = polyspec_classes::shout;\n};'), `${crate} asserts the borrow of shout after the token`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(&polyspec_classes::Tag, _, &polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the borrows of same around the token`);
+  }
+  // The receiver self is the value of the class, not a borrow of it (GN-6o).
+  const taken = read('packages/rust/interface.json');
+  const same = taken.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'tag.same');
+  same.core = { path: typeof same.core === 'string' ? same.core : same.core.path, receiver: 'self' };
+  const consumed = generate({ contract: taken, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node'] });
+  for (const crate of LIBS) {
+    assert.ok(text(consumed, crate).includes('const _: () = {\n    let _: fn(polyspec_classes::Tag, &polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the receiver self of same as a value`);
+  }
+});
+
+test('a Node or WASM member with machine binds the borrow of the guard of a class parameter before its core makes the machine (GN-6ab, GN-6h)', () => {
+  const made = (targets: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const m = contract.units.flatMap((u: any) => u.members ?? []).find((x: any) => x.id === 'sample.resolve_slowly');
+    m.wait = 'async_driver';
+    m.core = { path: 'polyspec_sample::resolve_slowly', machine: true };
+    delete m.only;
+    m.parameters.push({ name: ['tag'], type: { unit: 'tag' }, required: true, core: '&' });
+    // The cases of the member name no tag, so the member is generated without them.
+    contract.cases = contract.cases.filter((c: any) => c.member !== 'sample.resolve_slowly');
+    return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
+  };
+  // The core is called at once, on the thread of the entry, so the entry borrows the guard as a member without a wait does.
+  const node = text(made(['node']), 'packages/ts/generated/lib.rs');
+  assert.match(node, /let tag = tag\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
+  const wasm = text(made(['wasm']), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /\n\s+let tag = &\*tag;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key, CoreForm::core_form\(tag\)\)\);/);
+});
