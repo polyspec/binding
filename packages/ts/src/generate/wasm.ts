@@ -4,6 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, isInternal, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
@@ -760,7 +761,7 @@ fn failure_error(failure: ${failure}) -> Fail {
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${kindClass(model, k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -780,7 +781,7 @@ ${arms}
   const propertyArms = model.kinds.map((k) => {
     const properties = k.unit === undefined ? [] : errorProperties(k.unit);
     const values = properties.map(({ property }) => `(${rustString(langName('wasm', property.member.name, 'variable'))}, ${convertOut(model, property.returns, `${property.corePath}(&error)`)})`);
-    return `        ${k.variant} { .. } => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
+    return `        ${variantPattern(k.variant)} => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
   }).join('\n');
   return `
 ${doc}

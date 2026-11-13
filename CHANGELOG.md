@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A contract whose core passes on the kinds of a dependency (E-1b (a)) generated no target: every such row of
+  `errors.kinds` was refused with "a kind of another library (E-1b (a)) is not generated yet". Such a row now names
+  `<outer>/<inner>`, the variant of the core error that holds the error of the library and the variant of that error,
+  and a member names the same path in `raises`. Every target matches it as `<outer>(<inner> { .. })` in the class and
+  property matches of the core error and in the assertion of `raises`, with the category of the library's row of
+  `<inner>`, and a member that raises only such a kind calls its core as fallible. The schema takes the path in
+  `errors.kinds` and `raises`, and the contract check reports a row with `library` without `<outer>/` and a row without
+  `library` with it (CK-10, GN-7c). Verified by `npm test` in `packages/ts`.
 - A contract with a unit of origin `host` generated no target: a host class and a host functions unit were refused
   with "a host class unit is not generated yet" and "a host functions unit is not generated yet", and the fields of a
   host record were judged as those of a generated one. The generator now writes nothing of a host unit in any

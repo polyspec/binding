@@ -856,22 +856,23 @@ test('a kind of a dependency that the core passes on is matched as the inner var
   const { contract, caseFiles, foreign } = consumerSample();
   const passed = 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Unreadable';
   contract.errors.kinds.push({ variant: passed, library: 'sample' }, { variant: 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Missing', library: 'sample' });
-  contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.fetch').raises.push(passed);
+  // consumer.pair raises nothing else, so only the kind of the dependency makes its core fallible (E-1c).
+  contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.pair').raises.push(passed);
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
   const pattern = 'polyspec_consumer::Error::Sample(polyspec_sample::Error::Unreadable { .. })';
   const arm = (path: string, value: string): void => assert.ok(text(out, path).includes(`        ${pattern} => ${value},`), `${path}: ${pattern} => ${value}`);
   // The class of the category io of sample's row, in this repository's table of E-2.
+  // The generator refuses the WASM target of consumer for other items (TAKEN), so the four others are read.
   arm('packages/ts/generated/lib.rs', '2');
-  arm('packages/ts/wasm/generated/lib.rs', '2');
   arm('packages/python/generated/lib.rs', '"ConsumerIoError"');
   assert.ok(text(out, 'packages/php-ext/generated/lib.rs').includes(`        ${pattern} => `), 'php');
   assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes(`        ${pattern} => `), 'go');
   // GN-7b: the raises of a member is asserted by the same pattern.
-  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
     assert.ok(text(out, path).includes(`matches!(error, ${pattern})`), `${path}: the assertion of ${passed}`);
   }
   // The member that raises only a kind of the dependency calls a core that returns the core error.
-  assert.match(text(out, 'packages/ts/generated/lib.rs'), /Err\(error\) => return Err\(core_error\(error\)\)/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /polyspec_consumer::pair\([^\n]*\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(core_error\(error\)\),/);
 });
 
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
@@ -1780,7 +1781,7 @@ test('the generator reads the whole contract and names every refused item before
     /sample\.join: wait thread is not generated yet/,
     /tag\.name: a writable property is not generated yet/,
     /lookup\.find: an async callback is not generated yet/,
-    /polyspec_sample::Error::Other: a kind of another library \(E-1b \(a\)\) is not generated yet/,
+    /polyspec_sample::Error::Other: a kind of another library names the variant of the core error that holds it, <outer>\/<inner> \(GN-7c\)/,
     /errors\.binding overrides are not generated yet/,
   ]) assert.match(error.message, message);
   assert.equal(error.refusals?.length, 6, error.message);

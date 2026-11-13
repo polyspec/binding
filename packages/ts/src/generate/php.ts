@@ -1,6 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, isInternal, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
@@ -927,14 +928,14 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
+${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
     };
 ${!withProperties ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
         Ok(object) => object,
         Err(fail) => return fail,
     };
     let written = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
+${model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
     };
     match written {
         Ok(()) => error_exception(object, Kinds::kind(&error)),

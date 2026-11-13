@@ -2,6 +2,7 @@
 // stubs and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
+import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
@@ -690,7 +691,7 @@ ${arms}
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -715,7 +716,7 @@ ${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}
     Ok(())
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {

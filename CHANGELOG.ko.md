@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 코어가 의존 레포의 kind를 그대로 전달하는 계약(E-1b (a))은 어떤 target도 생성되지 않았다. `errors.kinds`의 그런 행마다 "a kind of
+  another library (E-1b (a)) is not generated yet"으로 거부되었기 때문이다. 이제 그런 행은 `<바깥>/<안쪽>`을 적는다. 바깥은 그
+  라이브러리의 오류를 담은 코어 오류의 variant이고 안쪽은 그 오류의 variant이며, member는 `raises`에 같은 경로를 적는다. 모든
+  target은 코어 오류의 클래스·property match와 `raises`의 단언에서 그것을 `<바깥>(<안쪽> { .. })`로 맞추고, category는 라이브러리
+  계약에서 `<안쪽>` 행의 것이며, 그런 kind만 내는 member는 코어를 실패할 수 있는 호출로 부른다. schema는 `errors.kinds`와
+  `raises`에서 그 경로를 받고, 계약 검사는 `library`가 있는데 `<바깥>/`이 없는 행과 `library`가 없는데 그것이 있는 행을 보고한다
+  (CK-10, GN-7c). `packages/ts`의 `npm test`로 검증했다.
 - origin이 `host`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. host class와 host functions unit은 "a host class unit is not
   generated yet"과 "a host functions unit is not generated yet"으로 거부되었고, host record의 field는 생성 record의 것처럼
   판정되었다. 이제 생성기는 어느 target에도 host unit을 쓰지 않는다. 그 소스가 선언이고 host 패키지가 그것을 내보내기 때문이다.

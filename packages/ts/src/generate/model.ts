@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, innerVariant, outerVariant } from '../contract.ts';
 import { convert } from '../names.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
@@ -319,7 +319,8 @@ export function collectModel(
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
-  const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
+  // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
+  const ownVariants = new Set(contract.errors.kinds.map((row) => row.variant));
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -572,20 +573,26 @@ export function collectModel(
     if (twice !== undefined) refusals.refuse(`${unit.unit.id}: the property ${twice} is declared twice (E-3 names kind, status and errno)`);
   }
   const kinds: CoreKind[] = contract.errors.kinds.flatMap((row) => refusals.attempt((): CoreKind[] => {
-    // E-1b (a): a row of another library, whose variant holds the error of that library, is not generated yet. A row
-    // with `source` is a variant of this crate (E-1b (b)) and is generated as any other.
-    if (row.library !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a kind of another library (E-1b (a)) is not generated yet`);
+    // GN-7c, E-1b (a): a row of another library names <outer>/<inner>, the variant of the core error that holds the error
+    // of the library and the variant of that error, and takes the category of the library's row of <inner>. A row with
+    // `source` is a variant of this crate (E-1b (b)) and is generated as any other.
+    if (row.library !== undefined && outerVariant(row.variant) === undefined) {
+      throw new Unsupported(`${row.variant}: a kind of another library names the variant of the core error that holds it, <outer>/<inner> (GN-7c)`);
     }
-    if (row.class === undefined) return [{ variant: row.variant, category: row.category, className: className(row.category) }];
+    if (row.library === undefined && outerVariant(row.variant) !== undefined) throw new Unsupported(`${row.variant}: a kind of this library names no inner variant (GN-7c)`);
+    const category = row.library === undefined ? row.category : foreign.get(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
+    if (category === undefined) {
+      throw new Unsupported(row.library === undefined ? `${row.variant}: a kind of this library names its category` : `${row.variant}: ${row.library} declares no kind ${innerVariant(row.variant)} (GN-7c)`);
+    }
+    if (row.class === undefined) return [{ variant: row.variant, category, className: className(category) }];
     // The unit that the row names was refused, and is named already.
     if (refusedUnits.has(row.class)) return [];
     const unit = errorUnits.find((u) => u.unit.id === row.class);
-    if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
-    return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
+    if (unit === undefined || unit.category !== category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${category} (E-2)`);
+    return [{ variant: row.variant, category, className: className(category), unit }];
   }) ?? []);
   if (contract.errors.binding.length > 0) refusals.refuse('errors.binding overrides are not generated yet');
-  const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
+  const enumPaths = new Set(kinds.map((k) => (outerVariant(k.variant) ?? k.variant)).map((v) => v.slice(0, v.lastIndexOf('::'))));
   if (enumPaths.size > 1) refusals.refuse(`the kinds name ${enumPaths.size} error enums; one is generated`);
   const [coreError] = [...enumPaths];
   // E-1c: the error of a Result is the core error of E-1, which a contract without kinds does not name.
