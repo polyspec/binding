@@ -1,0 +1,196 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "points",
+  "core": {
+    "crate": "polyspec-points",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/points",
+      "namespace": "Polyspec\\Points"
+    },
+    "python": {
+      "package": "polyspec-points",
+      "module": "polyspec.points"
+    },
+    "node": {
+      "package": "@polyspec/points",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/points/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Points\\PointsValueError",
+        "python": "PointsValueError",
+        "node": "PointsValueError",
+        "wasm": "PointsValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Points\\PointsTypeError",
+        "python": "PointsTypeError",
+        "node": "PointsTypeError",
+        "wasm": "PointsTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Points\\PointsIoError",
+        "python": "PointsIoError",
+        "node": "PointsIoError",
+        "wasm": "PointsIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Points\\PointsStoreError",
+        "python": "PointsStoreError",
+        "node": "PointsStoreError",
+        "wasm": "PointsStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Points\\PointsBusyError",
+        "python": "PointsBusyError",
+        "node": "PointsBusyError",
+        "wasm": "PointsBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Points\\PointsInternalError",
+        "python": "PointsInternalError",
+        "node": "PointsInternalError",
+        "wasm": "PointsInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_points::Error::Backward",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "point",
+      "name": [
+        "point"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_points::Point",
+      "fields": [
+        {
+          "name": [
+            "x"
+          ],
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": [
+            "y"
+          ],
+          "type": "int",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "points",
+      "name": [
+        "points"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "points.shift",
+          "name": [
+            "shift"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "by"
+              ],
+              "type": "int",
+              "required": true
+            },
+            {
+              "name": [
+                "point"
+              ],
+              "type": {
+                "unit": "point"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "point"
+          },
+          "raises": [
+            "polyspec_points::Error::Backward"
+          ],
+          "wait": "none",
+          "core": "polyspec_points::shift"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "points.shift",
+      "file": "contracts/cases.json",
+      "group": "shift"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, lockLines, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -78,7 +78,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${rustField(unit.name)}(${input})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
@@ -102,7 +102,7 @@ export function convertOut(model: Model, type: Type, value: string): string {
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(output, ${value})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${recordFn(unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${plainName(unit)}(output, ${value})`;
   throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
 }
@@ -389,7 +389,7 @@ fn held<T>(table: &Mutex<Table<T>>, handle: u64, subject: &str, class: &str) -> 
 }
 
 /// T-5: keeps a value in a table and gives its handle, which is never 0.
-fn insert<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
+fn insert_held<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
     let mut table = lock(table);
     table.next += 1;
     let handle = table.next;
@@ -462,8 +462,9 @@ ${outArmsText}
 const rustBytes = (text: string): string => `b${rustString(text)}`;
 
 // T-4, U-2: a record, its fields in contract order; a field with a default is Option<T>, None when Go leaves it nil.
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
+// GN-15f: a record of another repository has the helpers in_<library>_<record> and out_<library>_<record>.
+function recordRust(model: Model, unit: Unit, library?: string): string {
+  const name = recordFn(unit, library);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
@@ -515,7 +516,7 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
 fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
@@ -1165,6 +1166,7 @@ function rustUsed(model: Model): string {
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
+    ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
@@ -1201,7 +1203,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.objects.filter((o) => o.lock?.writes === true).map((o) => `held_${plainName(o.unit)}`).join(' ')} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
