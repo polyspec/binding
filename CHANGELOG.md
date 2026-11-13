@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- `make e2e` without `WORK` gave the script an empty `--work`, which it resolved to the root of the checkout, so the
+  run wrote the tree of the commit, the copies of the repositories and the build directory into the checkout; with
+  `DEPS` the empty value also took `--dep` as the directory. `WORK` is now optional: the recipe gives `--work` only for
+  a named directory, and a run without one makes a directory under the temporary directory of the system and removes
+  it when it ends, when it fails and on SIGINT and SIGTERM. The commands of the run are in a process group of their
+  own and write to one pipe of the script, so a signal stops the group and the directory is removed when the pipe
+  closes, after the last process has exited (GN-14, HR-87); the errors of the run are printed with its output, in the
+  order written. The end-to-end check linted each binding crate with its test features only, so an import that only
+  an entry point of a test feature uses was unused in the build without features and no run saw it. The check now
+  lints each binding crate also without a feature, with `-D warnings`, and names both lints in the outcome of the
+  target (GN-14, GN-5). `scripts/e2e-work.mts` and `scripts/e2e-lint.mts` are files that a run reads from the checkout
+  (GN-14b). Verified by `make test-ts`: the new tests failed without the two modules, and 406 of 406 pass with them.
 - The end-to-end check compiled the generated crates of this tree for the first time and refused six texts. PHP and
   Node: `thrown_thread` read the number of the thread through a `match` whose `Err` arm gives 0, which clippy names
   `manual_unwrap_or_default`; it now reads it with `let ... else` (U-3, GN-6u). Python: the generated code reads the

@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 15cbc091dde30d4a586f3ec9a207a9c93403a7f3b6b961e2d452122761efba17 -->
+<!-- source-sha256: da278c3cda0738603057eb57b58f0c7a52fe9a2b496fb5fee80b7aacdc0d7e57 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `WORK` 없는 `make e2e`는 스크립트에 빈 `--work`를 주었고, 스크립트는 그것을 checkout의 루트로 해석했다. 그래서 실행이
+  commit의 트리, 레포의 복사본, 빌드 디렉터리를 checkout 안에 썼다. `DEPS`가 있으면 그 빈 값이 `--dep`을 디렉터리로
+  받기도 했다. 이제 `WORK`는 선택이다. recipe는 이름이 주어진 디렉터리에만 `--work`를 주고, 그것이 없는 실행은
+  시스템 임시 디렉터리 아래에 디렉터리를 만들어, 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 그것을 지운다. 실행의
+  명령은 자기 프로세스 그룹에서 돌고 스크립트의 파이프 하나에 쓴다. 그래서 신호는 그 그룹을 멈추고, 마지막 프로세스가
+  끝나 파이프가 닫힌 뒤에 디렉터리가 지워진다(GN-14, HR-87). 실행의 오류는 출력과 함께, 쓰인 순서대로 출력된다.
+  end-to-end 검사는 각 바인딩 crate를 시험 feature로만 lint했다. 그래서 시험 feature의 진입점만 쓰는 import는 feature
+  없는 빌드에서 쓰이지 않았는데도 어느 실행도 그것을 보지 못했다. 이제 검사는 각 바인딩 crate를 feature 없이도
+  `-D warnings`로 lint하고, 두 lint를 target의 결과에 적는다(GN-14, GN-5). `scripts/e2e-work.mts`와
+  `scripts/e2e-lint.mts`는 실행이 checkout에서 읽는 파일이다(GN-14b). `make test-ts`로 검증: 새 테스트는 두 모듈이
+  없을 때 실패했고, 모듈이 있을 때 406개 중 406개가 통과한다.
 - end-to-end 검사가 이 트리의 생성 crate를 처음으로 컴파일했고 여섯 가지 텍스트를 거부했다. PHP와 Node:
   `thrown_thread`가 스레드 번호를 `Err` 가지가 0을 주는 `match`로 읽었고, clippy는 이를 `manual_unwrap_or_default`로
   지적한다. 이제 `let ... else`로 읽는다(U-3, GN-6u). Python: 생성 코드가 cfg `pyo3_disable_reference_pool`을 읽는데

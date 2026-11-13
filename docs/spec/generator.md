@@ -1447,8 +1447,11 @@ the design ids are those of the binding design.
 
 ## End-to-end check
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`,
-  which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+- **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`,
+  which runs `scripts/e2e.mts` of the commit `BINDING` (GN-14b) on the Node.js of the checkout in the directory `WORK`,
+  or, without `WORK`, in a directory that the run makes under the temporary directory of the system and removes when it
+  ends, when it fails and on SIGINT and SIGTERM, after every process of the run has exited, so a run without `WORK`
+  writes nothing into the checkout but its record (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
   the first among them the two forms of a call of `then` (GN-13f: the tally of a counter that arms its own fault and
   leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
@@ -1460,7 +1463,9 @@ the design ids are those of the binding design.
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
-  convention (GN-14d), generates for each target, lints the core and each binding crate on the host,
+  convention (GN-14d), generates for each target, lints the core and, on the host, each binding crate with the test features of its manifest
+  and without a feature, because an import or a helper that only an entry point of a test feature uses is unused in
+  the build without features alone (GN-5),
   builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. Every contract of `tests/e2e` names the five targets (BD-27), and a target that the
