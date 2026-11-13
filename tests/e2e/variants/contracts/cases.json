@@ -127,6 +127,18 @@
           "back": null
         }
       }
+    },
+    {
+      "id": "a_label_without_a_position",
+      "figure": {
+        "type": "label",
+        "text": "ok"
+      },
+      "result": {
+        "type": "label",
+        "text": "OK",
+        "at": null
+      }
     }
   ],
   "tail_of": [

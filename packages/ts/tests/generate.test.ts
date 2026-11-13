@@ -1219,9 +1219,23 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   assert.throws(() => variants(undefined, ['go']), /figure: a variant unit is not generated for Go yet \(GN-6v\)/);
   // GN-6v: what is not generated yet is refused by name.
   assert.throws(() => variants((c) => { delete unitOf(c, 'figure').core_type; }), /figure: a variant names its core enum in core_type \(T-9\)/);
-  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case is not generated yet \(T-4, T-9\)/);
+  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].type = { unit: 'ribbon' }; }), /figure\.circle\.radius: a class in a case of a variant is not generated yet \(GN-6v\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
+});
+
+test('an optional field of a case whose default is {literal: null} may be left out, and is null (T-4, T-9, GN-6v)', () => {
+  const out = variants();
+  assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_types.py'), /class FigureLabel:\n[^\n]*\n\n    text: str\n    at: int \| None = None\n/);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly at\?: number \| null;/, path);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let field_at: Option<u64> = in_default\(member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /let field_at: Option<u64> = in_default\(&member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  // G-5: a case value of an input may leave the field out; PHP gives null at its place, and a result holds null.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureLabel\(text="ok"\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'label', text: 'ok' \}\)\), ordered\(\{ type: 'label', text: 'OK', at: null \}\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /grown\(new \\Polyspec\\Variants\\FigureLabel\(text: "ok", at: null\)\)/);
+  // Any other default of a case field is refused by name.
+  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[2].fields[0], { default: { literal: 'a' }, default_core: 'polyspec_variants::TEXT' }); }), /figure\.label\.text: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
 });
 
 test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {

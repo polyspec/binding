@@ -167,8 +167,11 @@
   이름)가 case 값을 가진 plain object이고 선언은 case interface의 union, PHP는 interface `<Variant>`를 구현하는 case마다의
   final 클래스다. case가 아닌 값(tag가 없는 객체, 어느 case도 이름하지 않는 tag, 다른 class의 인스턴스)은 kind
   `invalid_argument_type`이다. case 파일에서 variant 값은 tag 키가 case 값을 갖고 나머지 키가 snake_case 이름의 field인
-  객체다(G-5). 이름으로 거부한다: `core_type`이 없는 variant, Rust 이름이 같은 두 case, tag의 이름을 가진 field, 그리고 아직
-  생성하지 않는 case의 field 기본값과 class·callback·값 alias·다른 레포의 unit을 담는 field.
+  객체다(G-5). 기본값이 `{literal: null}`(T-4)인 `optional` field는 빠질 수 있고, 빠진 field는 null이며 코어는 `None`으로
+  받는다: Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
+  선택적으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고(GN-6i), case 값은 그 키를 뺄 수 있다. 그런 field는 늘 그 값이나
+  null로 나간다. 이름으로 거부한다: `core_type`이 없는 variant, Rust 이름이 같은 두 case, tag의 이름을 가진 field, 그리고 아직
+  생성하지 않는 그 밖의 case field 기본값과 class·callback·값 alias·다른 레포의 unit을 담는 field.
   이유: case의 언어 값이 어느 case인지 말하므로 바인딩은 짐작 없이 바꾸고, wildcard 없는 match는 한쪽에 없는 case를 실행 중
   잃는 값 대신 컴파일 오류로 만든다.
 - **GN-6b** class unit(T-5)은 코어 값을 가진 final 언어 클래스다: Python은 native module의 frozen `pyclass`, Node는 JavaScript

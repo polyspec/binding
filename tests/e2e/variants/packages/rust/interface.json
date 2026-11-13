@@ -252,8 +252,10 @@
               "type": {
                 "optional": "uint"
               },
-              "required": true,
-              "reason": "T-9"
+              "reason": "T-9",
+              "default": {
+                "literal": null
+              }
             }
           ]
         },

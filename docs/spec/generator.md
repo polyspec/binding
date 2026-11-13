@@ -205,9 +205,13 @@ the design ids are those of the binding design.
   each case that implements the interface `<Variant>`. A value that is no case (an object without the tag, a tag that
   names no case, an instance of another class) is kind `invalid_argument_type`. In a case file a variant value is an
   object whose tag key holds the case value and whose other keys are the fields by their snake_case names (G-5).
+  An `optional` field whose default is `{literal: null}` (T-4) may be left out, and a field left out is null, which the
+  core gets as `None`: Python gives the dataclass field the default `None`, Node and WASM read a missing or `undefined`
+  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), and a case
+  value may leave out its key. Such a field always leaves with its value or null.
   Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
-  not generated yet, a field default of a case and a field that holds a class, a callback, a value alias or a unit of
-  another repository.
+  not generated yet, any other field default of a case and a field that holds a class, a callback, a value alias or a
+  unit of another repository.
   Why: the language value of a case says which case it is, so the binding converts it without a guess, and a match
   without a wildcard makes a case that one side lacks a compile error instead of a value lost at run time.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
