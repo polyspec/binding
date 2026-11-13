@@ -2154,6 +2154,8 @@ test('a member with wait blocking_io that reaches language code runs where its l
   assert.doesNotMatch(entry, /waiting\(env/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.resolveSlowly\(/);
+  // G-5: every K-2 test of a member that waits is an async function, as it awaits the call.
+  for (const found of String(text(out, 'packages/ts/generated/tests/generated.test.mjs')).matchAll(/test\('K-2: resolveSlowly [^']*', (async )?\(\) => \{/g)) assert.ok(found[1] !== undefined, found[0]);
   // Node and PHP keep the check of a callback with thread owner.
   assert.match(node, /BindingError::WrongThread/);
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
@@ -2165,6 +2167,15 @@ test('a member with wait blocking_io that reaches language code runs where its l
   assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
   const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
   assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
+});
+
+test('a Go helper that only the entry points of a test feature use is compiled under that feature (GN-4)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  // out_list writes the points that a fault-test entry point gives back, and no member of the sample gives a list.
+  assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
+  // A helper of the members is compiled in every form.
+  assert.match(lib, /\nfn in_text\(/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
