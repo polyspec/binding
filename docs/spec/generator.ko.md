@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f532fa6cce28e13cc799fca7a57bb014dd3e97af1ecced60e0769592594b594e -->
+<!-- source-sha256: 5372100a44a2cf556ef67f4fc1660df65470e2162b9c5b8a876cf774c5c22476 -->
 # 생성기
 
 [English](generator.md)
@@ -665,7 +665,11 @@
   만들고, 그 member에 fault를 장전하고(`_arm_faults`), 곧바로 member를 부르고, 기대한 실패 뒤에 `_fault_left`가
   비었는지 확인한다. 호출이 닿지 않은 fault가 있으면 시험이 실패한다. case `raises`의 `errno`는 실패의 errno와
   비교한다. 수는 그대로, 기호는 그 언어가 그 기계에서 주는 값(Python `errno.<기호>`, Node
-  `os.constants.errno.<기호>`, Go `syscall.<기호>`, PHP는 GN-8a의 `Internal\errnoOf("<기호>")`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. `in_raises`를 가진 값 alias에는
+  `os.constants.errno.<기호>`, Go `syscall.<기호>`, PHP는 GN-8a의 `Internal\errnoOf("<기호>")`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. Go 시험은 기호를
+  `Errno()`가 돌려주는 타입인 `int(syscall.<기호>)`로 비교한다. WASM의 target에는 errno가 없다
+  (`binding_core::errno::value`가 값을 주지 않고, 기호를 적은 장전은 거부된다, GN-8a). 그래서 WASM 시험은 case와
+  `then` 호출의 fault를 `errno` 없이 장전하고, case가 기호를 적은 자리에서는 errno가 없어야 한다고 요구한다. 수는
+  그대로 비교한다. `in_raises`를 가진 값 alias에는
   feature `codec-test`에서 그 `in` 함수만 실행하는 진입점이 있다. alias의 case마다(CK-22) 그 case의 `value`로 그것을
   불러 kind의 category 클래스와 kind를 확인한다. parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는

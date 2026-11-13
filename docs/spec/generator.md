@@ -812,7 +812,10 @@ the design ids are those of the binding design.
   `errno` of a case's `raises` is compared with the failure's errno: a number as it is, a symbol as the value that
   the language gives it on the machine (Python `errno.<symbol>`, Node `os.constants.errno.<symbol>`, Go `syscall.<symbol>`, PHP
   `Internal\errnoOf("<symbol>")` of GN-8a), and no errno when
-  the case names none. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
+  the case names none. The Go test compares the symbol as `int(syscall.<symbol>)`, the type that `Errno()` gives. The
+  target of WASM has no errno (`binding_core::errno::value` gives none, and an arming that names a symbol is refused,
+  GN-8a), so the WASM test arms the faults of a case and of a call of `then` without their `errno` and requires no
+  errno where the case names a symbol; a number is compared as it is. A value alias with `in_raises` has, with the feature `codec-test`, an entry point that runs its
   `in` function alone; each case of the alias (CK-22) calls it with the case's `value` and requires the class of the
   kind's category and the kind. Each member with a parameter that is the alias, an optional of it or a list of it has
   one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
