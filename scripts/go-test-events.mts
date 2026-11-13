@@ -49,3 +49,15 @@ export function goPackageFailure(read: GoTestEvents, status: number | null): str
   const builds = [...read.builds].map(([path, output]) => `: ${path}: ${output.trim().split('\n').join(' ')}`).join('');
   return `go test failed the packages ${read.packageFailures.join(', ')} (status ${String(status)})${builds}`;
 }
+
+// GN-14h: go test of the run reads the tests that the generator writes, the files zz_generated*_test.go, and the
+// contract cases that the run copied into tests/cases_test.go, as the other targets run their generated tests and the
+// contract cases alone. Every other test file of the module is a test of the repository, whose inputs its own runner
+// gives; the overlay of go test and go vet treats each as absent, so no file of the copy changes. The paths are those
+// of the module directory, and the overlay names them by their absolute paths.
+export function goTestScope(moduleDir: string, files: readonly string[], cases: boolean): { dropped: string[]; overlay: string | undefined } {
+  const generated = /(^|\/)zz_generated[^/]*_test\.go$/;
+  const dropped = files.filter((path) => path.endsWith('_test.go') && !generated.test(path) && !(cases && path === 'tests/cases_test.go')).sort();
+  if (dropped.length === 0) return { dropped, overlay: undefined };
+  return { dropped, overlay: `${JSON.stringify({ Replace: Object.fromEntries(dropped.map((path) => [`${moduleDir}/${path}`, ''])) }, null, 2)}\n` };
+}

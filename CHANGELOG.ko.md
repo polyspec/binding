@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- end-to-end check의 Go 시험이 생성된 시험 옆에서 레포의 시험도 실행했다. Go module의 `go test ./...`가 모든 시험 파일을
+  읽었으므로, case 파일의 경로를 `HTTP_MEDIA_TYPE_CASES`에서 읽는 레포의 `packages/go/tests/cases_test.go`가 시험 3개를
+  "open : no such file or directory"로 실패했다. 다른 target은 생성된 시험과 계약 case만 실행한다. 이제 실행의 `go vet`과
+  `go test`는 파일 `zz_generated*_test.go`와 실행이 복사한 계약 case를 읽고, overlay가 module의 다른 시험 파일을 모두
+  없는 것으로 다루며, 배포 형태의 원본도 같은 파일을 뺀다(GN-14h). `make test-ts`로 검증했다: 새 시험이 변경 전에는
+  실패했다.
 - kind가 backed enum인 다른 레포의 값 class를 받는 PHP member가 "Cannot indirectly modify readonly property"로 실패했다.
   생성된 crate가 enum case의 값을 ext-php-rs의 `get_property`로 읽었는데, 이것은 property를 쓰기용으로 가져오고 PHP는
   enum case의 readonly `value`에 그것을 거부한다. 그래서 `carry`에 값을 주는 `tests/e2e/relay`의 생성된 PHP 시험 12개가

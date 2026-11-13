@@ -2267,6 +2267,17 @@ the design ids are those of the binding design.
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. Why: the generated tests
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
+- **GN-14h** On each target the run tests what the generator writes and the contract cases of `tests/e2e/<library>`,
+  and no test of the repository: unittest discovers `packages/python/generated/tests` and the case runners, `node
+  --test` runs `generated.test.mjs` of Node and of WASM and the case runners, PHPUnit runs
+  `packages/php-ext/generated/tests` and `CasesTest.php`, and `go vet` and `go test` of the Go module read the files
+  `zz_generated*_test.go` (GN-13b) and the `tests/cases_test.go` that the run copied. Every other test file of the Go
+  module is a test of the repository; an overlay of `go vet` and `go test` (`-overlay`, a file of the work directory)
+  treats each as absent and the run prints their paths, so no file of the copy changes. The source of the released
+  form (GN-14f) leaves the same files out. The test of the core (GN-14) is a step of every target and stays. Why: a
+  test of the repository reads inputs that the runner of the repository gives, such as the path of its case file in
+  an environment variable, which the run does not know, and one target that runs more than the others gives another
+  result for the same contract.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on

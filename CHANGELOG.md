@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The Go tests of the end-to-end check ran the tests of the repository beside the generated tests: `go test ./...`
+  of the Go module read every test file, so `packages/go/tests/cases_test.go` of a repository, which reads the path
+  of its case file from `HTTP_MEDIA_TYPE_CASES`, failed three tests with "open : no such file or directory", while
+  the other targets run their generated tests and the contract cases alone. `go vet` and `go test` of the run now
+  read the files `zz_generated*_test.go` and the contract cases that the run copied, an overlay treats every other
+  test file of the module as absent, and the source of the released form leaves the same files out (GN-14h).
+  Verified by `make test-ts`: the new test failed before the change.
 - A PHP member that takes a value class of another repository whose kind is a backed enum failed with "Cannot
   indirectly modify readonly property": the generated crate read the value of the enum case with `get_property` of
   ext-php-rs, which fetches a property for writing, and PHP refuses that for the readonly `value` of an enum case, so

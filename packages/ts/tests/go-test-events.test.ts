@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { goPackageFailure, readGoTestEvents } from '../../../scripts/go-test-events.mts';
+import { goPackageFailure, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
 
 const lines = (...events: object[]): string => `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
 
@@ -34,4 +34,25 @@ test('a package that does not build fails with the output of its build (GN-14a)'
   assert.deepEqual(read.counts, { pass: [], fail: [], skip: [] });
   assert.equal(read.printed, '# m/p.test\nld: duplicate symbol _rust_eh_personality\nFAIL\tm/p [build failed]\n');
   assert.equal(goPackageFailure(read, 1), 'go test failed the packages m/p (status 1): m/p [m/p.test]: # m/p.test ld: duplicate symbol _rust_eh_personality');
+});
+
+test('go test of the run reads the tests that the generator writes and the contract cases, and no test of the repository (GN-14h)', () => {
+  const files = [
+    'go.mod',
+    'media_type/zz_generated_media_type.go',
+    'media_type/zz_generated_test.go',
+    'media_type/zz_generated_fault_test.go',
+    'media_type/parse_test.go',
+    'internal/binding/zz_generated_panic_test.go',
+    'tests/cases_test.go',
+    'tests/helpers_test.go',
+  ];
+  // Without contract cases of the run, tests/cases_test.go is a test of the repository.
+  const without = goTestScope('/w/m', files, false);
+  assert.deepEqual(without.dropped, ['media_type/parse_test.go', 'tests/cases_test.go', 'tests/helpers_test.go']);
+  assert.deepEqual(JSON.parse(without.overlay ?? ''), { Replace: { '/w/m/media_type/parse_test.go': '', '/w/m/tests/cases_test.go': '', '/w/m/tests/helpers_test.go': '' } });
+  // The run copied its contract cases into tests/cases_test.go, so go test reads that file.
+  assert.deepEqual(goTestScope('/w/m', files, true).dropped, ['media_type/parse_test.go', 'tests/helpers_test.go']);
+  // A module with no test of the repository needs no overlay.
+  assert.deepEqual(goTestScope('/w/m', ['a/zz_generated_test.go'], false), { dropped: [], overlay: undefined });
 });
