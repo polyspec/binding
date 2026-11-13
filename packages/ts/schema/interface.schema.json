@@ -107,6 +107,13 @@
     "errors": {
       "$ref": "#/$defs/errors"
     },
+    "faults": {
+      "description": "The fault injection points of the core, which a test feature of the core arms (G-5, X-1): a case names a point as <library>.<id> in its faults.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fault"
+      }
+    },
     "units": {
       "type": "array",
       "items": {
@@ -716,6 +723,15 @@
               },
               "class": {
                 "$ref": "#/$defs/id"
+              },
+              "kinds": {
+                "description": "The kinds of a variant that gives two or more (E-1); a variant without it gives the one kind of its name in snake_case.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/kind"
+                }
               }
             },
             "oneOf": [
@@ -1373,6 +1389,10 @@
                     "&self",
                     "&mut self"
                   ]
+                },
+                "result": {
+                  "description": "Whether the core path returns a Result (E-1c). Absent, it does when raises names a variant or a parameter is a callback or a function.",
+                  "type": "boolean"
                 }
               }
             },
@@ -1548,7 +1568,7 @@
           "$ref": "#/$defs/rustPath"
         },
         "core": {
-          "description": "A callback: the path of the core trait (U-3). A value alias: the core functions that judge a language value described as HostValue (in: fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>) and give the core value as OutValue (out: fn(&T) -> (OutValue, impl OutValues)) (U-7).",
+          "description": "A callback: the path of the core trait (U-3). A value alias: the core functions that judge a language value described as HostValue (in: fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>) and give the core value as OutValue (out: a function from &T to (OutValue, V) where V: OutValues may borrow the value) (U-7).",
           "anyOf": [
             {
               "$ref": "#/$defs/rustPath"
@@ -1570,6 +1590,14 @@
               }
             }
           ]
+        },
+        "in_raises": {
+          "description": "A value alias: the variants of E-1 that its in function can give (U-7). They join every member that takes the alias, and are not written in raises (E-5).",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/rustPath"
+          }
         },
         "thread": {
           "enum": [
@@ -1888,16 +1916,30 @@
       }
     },
     "case": {
-      "description": "The contract case file and group that run a member (K-1).",
+      "description": "The contract case file and group that run a member (K-1), or that hold the cases of the in function of a value alias (U-7).",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "member",
         "file",
         "group"
       ],
+      "oneOf": [
+        {
+          "required": [
+            "member"
+          ]
+        },
+        {
+          "required": [
+            "alias"
+          ]
+        }
+      ],
       "properties": {
         "member": {
+          "$ref": "#/$defs/id"
+        },
+        "alias": {
           "$ref": "#/$defs/id"
         },
         "file": {
@@ -1908,6 +1950,60 @@
           "minLength": 1
         }
       }
+    },
+    "fault": {
+      "description": "A fault injection point of the core (G-5): core is the path of the constant that holds its name, which the generated crate names (I-2); inject lists the injections the point takes; fills lists the error kinds that an injection at the point can give; reason is the rule of the condition that the point imitates; place names the function that holds it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "core",
+        "inject",
+        "fills",
+        "reason",
+        "place"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "core": {
+          "$ref": "#/$defs/rustPath"
+        },
+        "inject": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "io",
+              "short",
+              "broken"
+            ]
+          }
+        },
+        "fills": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/kind"
+          }
+        },
+        "reason": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "place": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "kind": {
+      "description": "An error kind, as Kinds::kind of the core gives it (E-3).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
     }
   }
 }

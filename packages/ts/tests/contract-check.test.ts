@@ -494,7 +494,53 @@ describe('CK-18 package names', () => {
     }));
 });
 
+describe('CK-3 fault injection points and alias cases (G-5, U-7)', () => {
+  const point = (id: string, fills: string[]): object => ({ id, core: 'sample::fault::COPY', inject: ['io'], fills, reason: 'F-1', place: 'sample::copy' });
+  test('fault injection points of kinds of the core error are accepted', () => {
+    assert.deepEqual(findings((c) => { c.faults = [point('copy', ['store']), point('rename', ['too_large'])]; }), []);
+  });
+  test('a point declared twice', () =>
+    fails('CK-3', '/faults/1/id', (c) => { c.faults = [point('copy', ['store']), point('copy', ['store'])]; }));
+  test('a point that fills a kind that the core error does not have', () =>
+    fails('CK-3', '/faults/0/fills/0', (c) => { c.faults = [point('copy', ['missing'])]; }));
+  test('a point that takes an injection that binding does not have', () =>
+    fails('CK-1', '/faults/0/inject/0', (c) => { c.faults = [{ ...point('copy', ['store']), inject: ['slow'] }]; }));
+  test('a cases row of an alias that is no value alias', () =>
+    fails('CK-3', '/cases/0/alias', (c) => { c.cases.unshift({ alias: 'value', file: 'contracts/cases.json', group: 'value_in' }); }));
+  test('a cases row of a member and an alias', () =>
+    fails('CK-1', '/cases/0', (c) => { c.cases[0].alias = 'value'; }));
+});
+
+describe('CK-8 the kinds of an alias (U-7, E-5)', () => {
+  const alias = (c: any, raises: string[]): void => {
+    const value = unit(c, 'value');
+    c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, in_raises: raises, out: value.out, in: value.in });
+    delete value.out;
+    delete value.in;
+  };
+  test('in_raises of variants of the core error is accepted', () => {
+    assert.deepEqual(findings((c) => alias(c, ['sample::Error::TooLarge'])), []);
+  });
+  test('in_raises of a variant that errors.kinds does not have', () =>
+    fails('CK-8', '/units/', (c) => alias(c, ['sample::Error::Missing'])));
+  test('in_raises of a unit that is no value alias', () =>
+    fails('CK-8', `${at('value')}/in_raises`, (c) => { unit(c, 'value').in_raises = ['sample::Error::TooLarge']; }));
+});
+
 describe('CK-21 the build of the core and exclusive members', () => {
+  test('a core that returns a Result without raises is accepted (E-1c)', () => {
+    assert.deepEqual(findings((c) => { const m = member(c, 'forms.parse'); m.raises = []; m.core.result = true; }), []);
+    assert.deepEqual(findings((c) => { const m = member(c, 'forms.parse'); m.raises = []; m.core.result = false; }), []);
+  });
+  test('a core without a Result that raises (E-1c)', () =>
+    fails('CK-21', `${at('forms')}/members/0/core/result`, (c) => { member(c, 'forms.parse').core.result = false; }));
+  test('a core without a Result that takes a callback (E-1c)', () =>
+    fails('CK-21', `${at('forms')}/members/0/core/result`, (c) => {
+      const m = member(c, 'forms.parse');
+      m.raises = [];
+      m.core.result = false;
+      m.parameters.push({ name: ['store'], type: { unit: 'store' }, required: true });
+    }));
   test('features of the core for each target are accepted (I-1)', () => {
     assert.deepEqual(findings((c) => { c.core.features = { wasm: ['pure'], node: ['io', 'redis'] }; }), []);
   });
@@ -532,15 +578,135 @@ describe('CK-22 every member names its cases (K-1)', () => {
   test('a kind that no case raises', () => {
     assert.deepEqual(withFiles(contract(), false).map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
   });
-  test('a kind of the category io or internal waits for the case form of a fault injection point (G-5)', () => {
+  const parseCases = (): string => `/cases/${contract().cases.findIndex((kase: any) => kase.member === 'forms.parse')}`;
+  // G-5: the fixture with the fault injection points copy and internal, the variant Store as the io kind store and
+  // the variant Broken as the internal kind broken, all raised by forms.parse; `cases` are the cases of forms.parse.
+  const TOO_LARGE = { id: 'too_large', body: { hex: '00' }, raises: { kind: 'too_large' } };
+  const COPY = { id: 'copy_fails', body: { hex: '00' }, faults: [{ point: 'sample.copy', kind: 'io', errno: 'ENOSPC' }], raises: { kind: 'store', errno: 'ENOSPC' } };
+  const BROKEN = { id: 'broken', body: { hex: '00' }, faults: [{ point: 'sample.internal', kind: 'broken' }], raises: { kind: 'broken' } };
+  const withFaults = (cases: unknown[], change?: (c: any, d: any) => void): Finding[] => {
     const c = contract();
-    member(c, 'forms.parse').raises = ['sample::Error::Store'];
-    for (const category of ['io', 'internal']) {
-      c.errors.kinds[1].category = category;
-      const found = withFiles(c, false);
-      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
-      assert.match(found[0]?.message ?? '', /the case form of a fault injection point is not decided/);
+    const d = dependency();
+    c.errors.kinds[1].category = 'io';
+    c.errors.kinds.push({ variant: 'sample::Error::Broken', category: 'internal' });
+    member(c, 'forms.parse').raises = ['sample::Error::TooLarge', 'sample::Error::Store', 'sample::Error::Broken'];
+    c.faults = [
+      { id: 'copy', core: 'sample::fault::COPY', inject: ['io', 'short'], fills: ['store'], reason: 'F-1', place: 'sample::copy' },
+      { id: 'internal', core: 'sample::fault::INTERNAL', inject: ['broken'], fills: ['broken'], reason: 'X-1', place: 'sample::parse' },
+    ];
+    change?.(c, d);
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const row of c.cases) {
+      const document = files.get(row.file) ?? {};
+      document[row.group] ??= row.member === 'forms.parse' ? cases : [];
+      files.set(row.file, document);
     }
+    return checkContract(c, { dependencies: new Map([['forms-dep', d]]), caseFiles: files });
+  };
+  const raisesAt = (index: number): string => `${at('forms')}/members/0/raises/${index}`;
+  const only = (found: Finding[], path: string, message: RegExp): void => {
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', path]], JSON.stringify(found));
+    assert.match(found[0]?.message ?? '', message);
+  };
+  test('a case that arms a point fills the kinds of the point (G-5)', () => {
+    assert.deepEqual(withFaults([TOO_LARGE, COPY, BROKEN]), []);
+  });
+  test('an io kind without an input case or a fault case', () =>
+    only(withFaults([TOO_LARGE, BROKEN]), raisesAt(1), /no case of forms\.parse raises the kind store, by an input or by a fault injection point/));
+  test('a kind of the category internal needs no case of each member (X-1)', () => {
+    assert.deepEqual(withFaults([TOO_LARGE, COPY, BROKEN], (c) => {
+      c.units.find((u: any) => u.id === 'session').members.find((m: any) => m.id === 'session.load').raises = ['sample::Error::Broken'];
+    }), []);
+  });
+  test('an error enum with a kind of the category internal has the one case of its point internal (X-1)', () => {
+    only(withFaults([TOO_LARGE, COPY]), '/errors/kinds/2', /no case arms the point sample\.internal as broken/);
+    // A case that raises the kind without arming the point is no mapping test of the point.
+    only(withFaults([TOO_LARGE, COPY, { ...BROKEN, faults: undefined }]), '/errors/kinds/2', /no case arms the point sample\.internal as broken/);
+  });
+  test('the error enum of a library whose kinds the contract passes on has its own case (X-1, E-1b)', () => {
+    const passOn = (c: any, d: any): void => {
+      d.errors.kinds[0] = { variant: 'forms_dep::Error::Limit', category: 'internal' };
+      d.faults = [{ id: 'internal', core: 'forms_dep::fault::INTERNAL', inject: ['broken'], fills: ['limit'], reason: 'X-1', place: 'forms_dep::limit' }];
+      c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
+      member(c, 'forms.parse').raises.push('forms_dep::Error::Limit');
+    };
+    const index = contract().errors.kinds.length + 1;
+    const withDep = { id: 'dep_broken', body: { hex: '00' }, faults: [{ point: 'forms_dep.internal', kind: 'broken' }], raises: { kind: 'limit' } };
+    const missing = withFaults([TOO_LARGE, COPY, BROKEN], passOn).filter((f) => f.check === 'CK-22');
+    only(missing, `/errors/kinds/${index}`, /no case arms the point forms_dep\.internal as broken/);
+    assert.deepEqual(withFaults([TOO_LARGE, COPY, BROKEN, withDep], passOn).filter((f) => f.check === 'CK-22'), []);
+  });
+  test('a fault case fills no kind that its points do not fill, so an input rule keeps its input case (G-5)', () => {
+    const found = withFaults([{ ...COPY, raises: { kind: 'too_large' } }, COPY, BROKEN]);
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()], ['CK-22', raisesAt(0)]], JSON.stringify(found));
+    assert.match(found[0]?.message ?? '', /no point that the case arms fills the kind too_large/);
+  });
+  test('the faults of a case name points and their injections (G-5)', () => {
+    const bad: [unknown, RegExp][] = [
+      [[], /faults is not a list of \{point, kind\}/],
+      [[{ point: 'copy', kind: 'io' }], /is not <library>\.<id>/],
+      [[{ point: 'other.copy', kind: 'io' }], /is not <library>\.<id> of this contract or of a library/],
+      [[{ point: 'sample.rename', kind: 'io' }], /sample\.rename is not a point of faults of sample/],
+      [[{ point: 'sample.copy', kind: 'broken' }], /takes io, short, not broken/],
+      [[{ point: 'sample.copy', kind: 'slow' }], /is not io, short or broken/],
+      [[{ point: 'sample.copy', kind: 'short' }], /bytes, a count of bytes, is given with the kind short/],
+      [[{ point: 'sample.copy', kind: 'io', bytes: 1 }], /bytes, a count of bytes, is given with the kind short/],
+      [[{ point: 'sample.copy', kind: 'io', errno: 28 }], /errno is the symbol of an errno/],
+      [[{ point: 'sample.copy', kind: 'short', bytes: 1, errno: 'ENOSPC' }], /errno is the symbol of an errno/],
+      [[{ point: 'sample.copy', kind: 'io', nth: 0 }], /nth counts from 1/],
+      [[{ point: 'sample.copy', kind: 'io', times: 2 }], /has no key times/],
+    ];
+    for (const [faults, message] of bad) {
+      const found = withFaults([TOO_LARGE, COPY, BROKEN, { ...COPY, id: 'bad', faults }]).filter((f) => !/no point that the case arms/.test(f.message));
+      only(found, parseCases(), message);
+    }
+    assert.deepEqual(withFaults([TOO_LARGE, BROKEN, { ...COPY, faults: [{ point: 'sample.copy', kind: 'short', bytes: 0, nth: 2 }], raises: { kind: 'store' } }]), []);
+  });
+  test('the errno that a case expects is a symbol (G-5)', () =>
+    only(withFaults([TOO_LARGE, BROKEN, { ...COPY, raises: { kind: 'store', errno: 'no space' } }]), parseCases(), /is not the symbol of an errno/));
+  test('a variant that gives two kinds has a case of each (E-1)', () => {
+    const two = (c: any): void => { c.errors.kinds[1].kinds = ['store', 'store_full']; c.faults[0].fills = ['store', 'store_full']; };
+    only(withFaults([TOO_LARGE, COPY, BROKEN], two), raisesAt(1), /raises the kind store_full/);
+    assert.deepEqual(withFaults([TOO_LARGE, COPY, BROKEN, { ...COPY, id: 'full', raises: { kind: 'store_full' } }], two), []);
+  });
+  // U-7: the alias values with in_raises, and its cases in a group of its own.
+  const withAlias = (cases: unknown[] | undefined, change?: (c: any) => void): Finding[] => {
+    const c = contract();
+    const value = unit(c, 'value');
+    c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, in_raises: ['sample::Error::TooLarge'], out: value.out, in: value.in });
+    delete value.out;
+    delete value.in;
+    if (cases !== undefined) c.cases.push({ alias: 'values', file: 'contracts/cases.json', group: 'values_in' });
+    change?.(c);
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const row of c.cases) {
+      const document = files.get(row.file) ?? {};
+      document[row.group] ??= row.alias === 'values' ? (cases ?? []) : row.member === 'forms.parse' ? [TOO_LARGE] : [];
+      files.set(row.file, document);
+    }
+    return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
+  };
+  const REFUSED = { id: 'refused', value: { kind: 'bytes', value: { hex: '00' } }, raises: { kind: 'too_large' } };
+  const aliasRow = (): string => `/cases/${contract().cases.length}`;
+  test('the kinds of an alias have their cases in the group of the alias (U-7)', () => {
+    assert.deepEqual(withAlias([REFUSED]), []);
+  });
+  test('a kind of in_raises without a case of the alias', () => {
+    only(withAlias([]), `/units/${contract().units.length}/in_raises/0`, /no case of the alias values raises the kind too_large/);
+    only(withAlias(undefined), `/units/${contract().units.length}/in_raises/0`, /no case of the alias values raises the kind too_large/);
+  });
+  test('a case of an alias is {id, value, raises} of a kind of in_raises (U-7)', () => {
+    const bad: [object, RegExp][] = [
+      [{ id: 'a', raises: { kind: 'too_large' } }, /gives its value/],
+      [{ id: 'a', value: 1 }, /raises a kind/],
+      [{ id: 'a', value: 1, raises: { kind: 'store' } }, /the kind store is not of in_raises of values/],
+      [{ id: 'a', value: 1, result: 1, raises: { kind: 'too_large' } }, /has no key result/],
+    ];
+    for (const [kase, message] of bad) only(withAlias([REFUSED, kase]), aliasRow(), message);
+  });
+  test('a group holds the cases of a member or of an alias, not of both (U-7)', () => {
+    const found = withAlias([REFUSED], (c) => { c.cases.at(-1).group = 'parse'; c.cases.at(-1).file = 'contracts/forms.json'; });
+    assert.ok(found.some((f) => f.check === 'CK-22' && f.path === aliasRow() && /holds the cases of a member and of an alias/.test(f.message)), JSON.stringify(found));
   });
   // forms.parse with the callback parameter store, and one case of it whose store is `store`.
   const withStore = (store: unknown, change?: (c: any) => void): Finding[] => {
@@ -555,7 +721,6 @@ describe('CK-22 every member names its cases (K-1)', () => {
     }
     return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
   };
-  const parseCases = (): string => `/cases/${contract().cases.findIndex((kase: any) => kase.member === 'forms.parse')}`;
   const row = { args: { key: 'a' }, result: null };
   test('a case gives a callback parameter as its fixture (G-5)', () => {
     assert.deepEqual(withStore({ callback: { 'store.read': [row, { args: { key: 'b' }, raise: { error: 'too_large', kind: 'too_large' }, once: true, async: true }] }, calls: [{ member: 'store.read', args: { key: 'a' } }] }), []);

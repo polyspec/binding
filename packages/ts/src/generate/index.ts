@@ -43,13 +43,17 @@ const MAP_TARGETS: ReadonlySet<string> = new Set(['go', 'python', 'node', 'wasm'
 
 export function generate(inputs: Inputs): Files {
   const cases = new Map<string, unknown[]>();
+  const aliasCases = new Map<string, unknown[]>();
   for (const kase of inputs.contract.cases) {
     const file = inputs.caseFiles.get(kase.file) as Record<string, unknown> | undefined;
     const group = file?.[kase.group];
     if (!Array.isArray(group)) throw new Error(`${kase.file} has no group ${kase.group}`);
-    cases.set(kase.member, [...(cases.get(kase.member) ?? []), ...group]);
+    // U-7: the cases of an alias's in function are kept apart from those of the members.
+    const into = kase.member === undefined ? aliasCases : cases;
+    const id = kase.member ?? kase.alias;
+    into.set(id, [...(into.get(id) ?? []), ...group]);
   }
-  const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign);
+  const model = buildModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign, aliasCases);
   // T-2: map<T> is generated for the targets of MAP_TARGETS so far; a contract with a map and another target is refused
   // by name (G-4).
   const hasMap = (type: unknown): boolean => JSON.stringify(type).includes('"map"');

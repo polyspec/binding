@@ -23,7 +23,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-3** 참조: unit·member id는 유일하다. `parent`, `implements`(`interface` unit), `cleanup`(같은 unit의 member), unit
   타입, `{const}` 기본값(constant), `cases[].member`, `changes[].to`가 해석된다. `only`, `native`, `changes[].from`은 target을
   가리킨다. 모든 target에 `packages` 항목이 있다(P-1, `wasm`은 `node`를 쓴다). 타입에 쓴 값 타입(`json_value`,
-  `template_value`, `php_value`)은 `types`에 소유자가 있다(T-3).
+  `template_value`, `php_value`)은 `types`에 소유자가 있다(T-3). `faults`의 id는 유일하고, 그 `fills`의 kind는 모두
+  `errors.kinds`의 kind다(G-5, E-1). `errors.kinds`의 행은 `kinds`에 적은 kind들을 내고, `kinds`가 없으면 variant 이름을
+  snake_case로 쓴 kind 하나를 낸다. `cases`의 행은 `member`나 `alias`를 가리키며, `alias`는 이 계약의 `core: {in, out}`를
+  가진 값 alias다(U-7).
 - **CK-4** 이름 예외(N-3): 예외는 target과, 있는 unit, 그 unit의 member, 그 member의 parameter, 그 record의 field를 가리킨다.
   기호와 언어마다 예외는 하나다. 예외는 변환한 이름(N-2)과 달라야 한다. 아무것도 바꾸지 않는 예외에는 근거가 없기 때문이다.
 - **CK-5** optional 반환과 field(T-5, T-4): `optional<T>`를 돌려주는 member는 `optional_reason`을 갖고, 그런 member만
@@ -53,6 +56,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     가리켜야 한다. case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
     시험은 남는다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
+  - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼
+    수 있는 kind이며, 그 alias를 받는 모든 member에 붙고 `raises`에는 적지 않는다(U-7, E-5).
 - **CK-9** 다른 레포의 unit(T-3): 타입에 쓴 다른 라이브러리의 unit은 그 계약의 `value`, `callback`, `enum`, `record`,
   `variant` unit이다. 다른 라이브러리의 callback·record·variant는 자기 라이브러리의 unit만 쓰며 재귀적으로 확인한다.
   `types`의 값 타입은 소유자의 `value` unit을 가리킨다.
@@ -90,14 +95,29 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-19** 추적하는 바인딩 package(L-2): `binding check`는 바인딩 package의 추적 파일(docs/spec/generator.md
   GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다. host 패키지(L-2a, GN-3b)는 host
   manifest에서 네이티브 모듈에 필요한 항목만 읽는다.
-- **CK-21** 코어의 빌드와 exclusive member(I-1, U-6): `core.features`는 target만 가리킨다. `exclusive`는 generated class의
-  receiver `&self` member에만 둔다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
+- **CK-21** 코어의 빌드, exclusive member, 코어 경로의 결과(I-1, U-6, E-1c): `core.features`는 target만 가리킨다.
+  `exclusive`는 generated class의 receiver `&self` member에만 둔다. `core.result`가 `false`인 member는 `raises`가 없고
+  callback이나 함수를 담은 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의 실패를 둘
+  자리도 없기 때문이다. `core.result`가 없으면, `raises`가 이 계약 자신의 코어 오류 variant를 가리키거나 parameter가
+  callback이나 함수일 때 코어 경로가 `Result`를 돌려준다. `core.result`가 코어와 맞는지는 생성 crate를 컴파일러가
+  판정하며(I-2) 이 검사는 판정하지 않는다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
-  kind마다 그 kind를 내는 case를 가진다. 어떤 입력도 닿지 않는 category `internal`과 `io`의 kind는 빠지지 않고, 코어의
-  시험 feature가 두는 실패 주입점의 case 형식(G-5)을 기다린다고 지적된다.
+  행이 내는 kind마다 그 kind를 내는 case를 가진다. case는 실패 주입점(G-5)을
+  `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<기호>", "bytes": <n>,
+  "nth": <n>}]`로 장전할 수 있다. `<library>`는 snake_case로 쓴 라이브러리 이름이며 이 계약이나 검사가 받은 라이브러리의
+  것이고, `<id>`는 그 계약 `faults`의 점이다. `kind`는 그 점의 `inject` 중 하나다. `bytes`는 `short`에만, 그리고 `short`에는
+  반드시 둔다. errno의 기호(`ENOSPC`)인 `errno`는 `io`에만 둔다. `nth`는 1부터 센다. fault에 다른 키는 없다. `faults`를
+  가진 case는 그 점들의 `fills`에 있는 kind만 채우며, 다른 kind를 기대하는 그런 case는 거부한다. 입력 규칙의 case가
+  입력으로 남게 하기 위해서다. case `raises`의 `errno`가 텍스트이면 그런 기호다. category `internal`의 kind는 member마다
+  case를 요구하지 않는다(X-1). 코어 오류를 옮기는 match가 모든 member에 하나이기 때문이다. 그런 kind를 가진 오류
+  enum마다, 곧 이 계약 자신의 것과 kind를 그대로 전달하는(E-1b (a)) 라이브러리마다, 어느 member의 case 하나가
+  `<library>.internal`을 `broken`으로 장전하고 category `internal`의 kind를 낸다. 값 alias `in_raises`의 kind는 그 alias를
+  가리키는 `cases` 행의 group에 case를 둔다(U-7). 그 group은 member의 행이 가리키지 않는다. 그 case는
+  `{"id", "value", "raises"}`(그리고 `note`, `rule`)이고 `raises.kind`는 `in_raises`의 kind이며, `in_raises`의 kind마다
+  하나가 있다.
   callback interface를 parameter로 받는 member의 case는 그것을 callback fixture로 준다(G-5, GN-13):
   `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 그 member의
   parameter를 정확히 주며, 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `result`와 `raise`를 함께 가진 행,

@@ -128,6 +128,8 @@ export interface Model {
   kinds: CoreKind[];
   // The contract cases of each member, from the case files that `cases` names (K-1).
   cases: Map<string, unknown[]>;
+  // The cases of the in function of each value alias, from the groups that `cases` names by `alias` (U-7).
+  aliasCases: Map<string, unknown[]>;
 }
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
@@ -170,6 +172,7 @@ export function buildModel(
   coreLib: string,
   cases: Map<string, unknown[]>,
   foreign: ReadonlyMap<string, Contract> = new Map(),
+  aliasCases: Map<string, unknown[]> = new Map(),
 ): Model {
   assertNoExceptions(contract);
   contract = resolveNamedTypes(contract);
@@ -374,7 +377,7 @@ export function buildModel(
   const resultRecords = records.filter((r) => result.has(r.id));
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, coreError, kinds, cases,
+    objects, callbacks, aliases, classes, coreError, kinds, cases, aliasCases,
   };
 }
 

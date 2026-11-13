@@ -286,7 +286,8 @@ function conformCases(contract: Contract, copy: string): string[] {
     files.add(file);
     const document = JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>[]>;
     const before = JSON.stringify(document);
-    const found = memberById.get(row.member);
+    // U-7: a case of an alias has no parameter of a member; its keys are already in snake_case.
+    const found = row.member === undefined ? undefined : memberById.get(row.member);
     const parameters = found?.member.parameters ?? [];
     const params = new Map<string, Type>(parameters.map((p) => [p.name.join('_'), p.type]));
     const group = document[row.group];
