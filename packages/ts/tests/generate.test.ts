@@ -3145,3 +3145,9 @@ test('a test generator that does not write after and raises callback refuses the
   assert.throws(() => refuseScopedCases(model([{ id: 'b', raises: 'callback' }]), 'Go'), /the case b of store\.transaction: after and raises "callback" are not written in the test of Go yet \(GN-6ae\)/);
 });
 
+
+test('a function fixture with awaits is a plain function in PHP, which has no awaitable (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['php']), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatAwaitsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("awaited"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); \$args\[0\]->nested\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("b", "2"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return null; \}\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return "awaited"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(self::same\("2"\), self::same\(\$receiver->get\("b"\)\)\);\n {4}\}/);
+  assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAnAwaitableThatRaisesAreDropped\(\): void\n/);
+});

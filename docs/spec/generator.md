@@ -772,7 +772,13 @@ the design ids are those of the binding design.
     function. The function then returns `result`, raises the error unit of `raise` (GN-13) or, with
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
-    nested scope.
+    nested scope. A fixture with `"awaits": true` (CK-22) is a function that returns an awaitable: a Python `async
+    def` and a Node and WASM `async` function, whose steps run when the binding awaits the awaitable and whose
+    `result` or `raise` is the outcome of that awaitable; a step of such a function awaits the call of a member that
+    waits (`await <argument>.a<name>(...)` in Python), and the Python test of the case calls `a<name>` on an event
+    loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
+    settles at once: a case with the marker runs on the five targets and requires the same result, exception and
+    `after` on each.
   Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
   yet"; PHP generates the member. The PHP test writes the function fixture, the test of a case with `raises:

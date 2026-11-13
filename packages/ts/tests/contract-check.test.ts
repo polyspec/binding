@@ -849,6 +849,9 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const step = { on: '0', call: 'session.load', args: { file: 'a' } };
     assert.deepEqual(withParam(takes(['text']), 'convert', { function: { calls: [], result: 'b' } }), []);
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [step, step], result: null } }), []);
+    // A fixture of a function with async_allowed may name awaits: the function returns an awaitable.
+    const awaiting = takes([{ unit: 'session' }], { async_allowed: true });
+    assert.deepEqual(withParam(awaiting, 'convert', { function: { calls: [step], result: 'b', awaits: true } }), []);
     // A step may name the value that its call returns.
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [{ ...step, result: null }, step], result: null } }), []);
     assert.deepEqual(withParam(scoped, 'convert', { function: { calls: [], raise: 'exception' } }), []);
@@ -869,6 +872,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
       [scoped, { function: { calls: [{ ...step, args: { path: 'a' } }], result: 'b' } }, /the args of step 0 of convert are not the parameters file of session\.load/],
       [scoped, { function: { calls: [], raise: { error: 'store_error', kind: 'store' } } }, /the function fixture convert raises store_error, which the function does not recognize \(U-3\)/],
       [scoped, { function: { calls: [], raise: 'error' } }, /the function fixture convert raises "error", which is neither "exception" nor \{"error", "kind"\}/],
+      [scoped, { function: { calls: [], result: 'b', awaits: true } }, /the function fixture convert names awaits, and its function type has no async_allowed: true/],
+      [awaiting, { function: { calls: [], result: 'b', awaits: false } }, /the awaits of the function fixture convert is false, not true/],
     ];
     for (const [parameter, value, message] of refused) {
       const found = withParam(parameter, 'convert', value);
@@ -883,6 +888,16 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const cases = (found: Finding[]): Finding[] => found.filter((f) => f.check === 'CK-22' && f.path === parseCases());
     assert.deepEqual(cases(withParam(scoped, 'convert', inner({ function: { calls: [], result: 'c' } }), nested)), []);
     assert.match(cases(withParam(scoped, 'convert', inner('c'), nested))[0]?.message ?? '', /work of step 0 of convert is not a function fixture/);
+    // A fixture of an argument of a step names awaits only when the fixture of that step names it.
+    const waits = (c: any): void => {
+      nested(c);
+      member(c, 'session.within').parameters[0].type.function.async_allowed = true;
+    };
+    const outer = (awaits: object, work: unknown): unknown => ({ function: { calls: [{ on: '0', call: 'session.within', args: { work } }], result: 'b', ...awaits } });
+    const both = takes([{ unit: 'session' }], { async_allowed: true });
+    assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c', awaits: true } }), waits)), []);
+    assert.deepEqual(cases(withParam(both, 'convert', outer({ awaits: true }, { function: { calls: [], result: 'c' } }), waits)), []);
+    assert.match(cases(withParam(both, 'convert', outer({}, { function: { calls: [], result: 'c', awaits: true } }), waits))[0]?.message ?? '', /the function fixture work of step 0 of convert names awaits, and the fixture of its step does not/);
   });
   test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
     const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: 'text', async_allowed: false } } };

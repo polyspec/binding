@@ -1605,13 +1605,19 @@ class Checker {
   // G-5 (GN-6ae): a function fixture, {"function": {"calls": [<step>], "result": <value>}} or with "raise" in place
   // of "result". A step is {"on": "<position>", "call": "<member id>", "args": {...}}: a method of the class of the
   // parameter at that position, with exactly its parameters, where an argument of a function type is again a function
-  // fixture; a step may name "result", the value that its call returns. "raise" is "exception" or {"error", "kind"} of an error unit that the function recognizes (U-3).
+  // fixture; a step may name "result", the value that its call returns. "awaits": true marks a function that returns an
+  // awaitable, of a function type with async_allowed, and inside a step only where the fixture of the step names it. "raise" is "exception" or {"error", "kind"} of an error unit that the function recognizes (U-3).
   functionValue(fn: Extract<Type, { function: unknown }>['function'], value: unknown, what: string, report: (message: string) => void): void {
     const record = (given: unknown): Record<string, unknown> | undefined => (typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined);
     const form = record(value);
     const fixture = record(form?.['function']);
     if (form === undefined || fixture === undefined || Object.keys(form).length !== 1) return report(`${what} is not a function fixture {"function": {"calls": [<step>], "result" | "raise": <value>}}`);
-    for (const key of Object.keys(fixture)) if (!['calls', 'result', 'raise'].includes(key)) report(`the function fixture ${what} has no key ${key}`);
+    for (const key of Object.keys(fixture)) if (!['calls', 'result', 'raise', 'awaits'].includes(key)) report(`the function fixture ${what} has no key ${key}`);
+    // GN-6ae: awaits, the marker of a function that returns an awaitable.
+    const awaits = Object.hasOwn(fixture, 'awaits');
+    if (awaits && fixture['awaits'] !== true) report(`the awaits of the function fixture ${what} is ${JSON.stringify(fixture['awaits'])}, not true`);
+    else if (awaits && !fn.async_allowed) report(`the function fixture ${what} names awaits, and its function type has no async_allowed: true`);
+    else if (awaits && this.stepAwaits === false) report(`the function fixture ${what} names awaits, and the fixture of its step does not`);
     if (Object.hasOwn(fixture, 'result') === Object.hasOwn(fixture, 'raise')) report(`the function fixture ${what} has a result or a raise, one of them`);
     const raise = fixture['raise'];
     if (Object.hasOwn(fixture, 'raise') && raise !== 'exception') {
@@ -1632,9 +1638,15 @@ class Checker {
         report(`${at} is on ${String(on)}, which is no parameter of the function whose type is a class of this contract`);
         continue;
       }
+      const outer = this.stepAwaits;
+      this.stepAwaits = awaits;
       this.methodCall(unit.id, step, at, report);
+      this.stepAwaits = outer;
     }
   }
+
+  // GN-6ae: whether the function fixture of the step in reading names awaits; undefined outside a step.
+  stepAwaits: boolean | undefined = undefined;
 
   // G-5: a call {"call": "<member id>", "args": {...}} of a method of the class `unitId`, with exactly its parameters;
   // an argument that may hold language code is judged as the value of a case is. Gives the member.

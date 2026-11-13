@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 73a582ed8f6bad4bf89db80014dd61b5a1231c5b9dd8a9505e325755c6da6446 -->
+<!-- source-sha256: 647a1576f37f83e86db3fd2eb5d7c8932316679f20a9eca7195fe27d4e1e449c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- awaitable을 돌려주는 함수를 주는 case가 없어서, awaitable이 나중에 settle되거나 예외를 내는 `Step::Await`의 경로에는
+  case가 없었다. 함수 fixture는 이제 `"awaits": true`를 적을 수 있다. 그 함수는 그 언어의 awaitable을 돌려주고 그
+  결과는 fixture의 `result`나 `raise`다. 계약 검사는 그 표시를 값이 `true`일 때만, `async_allowed: true`인 함수 타입에만,
+  step 안에서는 그 step의 fixture가 그것을 적을 때만 받아들인다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은
+  fixture가 보통 함수이고, 표시가 있는 case는 다섯 target에서 돈다. PHP 시험은 그렇게 쓴다. sample은 `store.transaction`에
+  그런 case 둘을 가진다: 기다리고 commit하는 함수와 중첩된 함수, 그리고 예외를 내고 항목을 버리는 awaitable이다(CK-22,
+  GN-6ae). `packages/ts`의 `npm test`로 검증했고 그 표시의 시험은 통과한다.
 - 함수 fixture의 step은 그 호출이 돌려주는 값을 적을 수 없었다. 그래서 `store.transaction`의 case는 함수 안에서
   `scope.get`을 부르면서 그 값을 검증하지 않았고, 아무것도 쥐지 않은 scope도 통과했을 것이다. step은 이제 `result`를
   적을 수 있다. 계약 검사는 그것을 받아들이고, 생성된 함수는 다음 step 전에 그 값을 요구한다. PHP 시험은 그것을 함수

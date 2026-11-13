@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 75c4cbf61a2c31c8471e49f74fde20853b13ca203c2a14f7b70ed7b303015809 -->
+<!-- source-sha256: 8882362cd7197d25bdf2c79d7330b26fbb8efe16d1f61354d8178aada227154d -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -169,7 +169,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
   fixture 대신 올 수 있다. 함수 타입의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
   <값>}}`이거나 `"result"` 자리에 `"raise"`를 둔 것이다. fixture의 키는 `function`뿐이고, 그 객체는 list `calls`와
-  `result`, `raise` 중 하나를 가지며 다른 키는 없다. step은 `{"on": "<위치>", "call": "<member id>", "args": {...}}`이고
+  `result`, `raise` 중 하나를 가지며 `awaits` 말고 다른 키는 없다. `"awaits": true`는 함수가 그 언어의 awaitable을
+  돌려주고 그 awaitable의 결과가 fixture의 `result`나 `raise`임을 적는다(generator GN-6ae). `async_allowed: true`인 함수
+  타입의 fixture만 그것을 적고, 그 값은 `true`이며, step의 인자의 fixture는 그 step의 fixture가 그것을 적을 때만 적는다.
+  기다리지 않는 함수는 자기 step의 호출을 기다릴 수 없기 때문이다. step은 `{"on": "<위치>", "call": "<member id>", "args": {...}}`이고
   `result` 말고 다른 키는 없다. `on`은 함수의 parameter의 위치 `"0"`, `"1"` 등이다. 함수 타입의 parameter에는 이름이 없기 때문이다. 그
   parameter의 타입은 이 계약의 class unit이다. `call`은 그 class의 method이고, `args`는 정확히 그 method의 parameter이며,
   step의 함수 타입 인자는 다시 함수 fixture다. step은 그 호출이 돌려주는 값인 `"result": <값>`도 적을 수 있다. 생성된
