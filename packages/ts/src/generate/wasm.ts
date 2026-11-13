@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, argType, borrowedItem, coreCallArgs, errorProperties, heldNew, heldParam, heldType, langName, lockLines, memberName, objectUnit, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { raisesAssertions } from './raises.ts';
@@ -33,7 +33,8 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${rustField(unit.name)}(${value}, ${subject})`;
   throw new Unsupported(`no WASM input conversion for ${JSON.stringify(type)}`);
 }
@@ -55,7 +56,8 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('optional' in type) return `out_optional(${value}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`).join(', ')}])`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(${value})`;
+  if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
+  if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${rustField(unit.name)}(${value})`;
   throw new Unsupported(`no WASM output conversion for ${JSON.stringify(type)}`);
 }
@@ -320,8 +322,8 @@ ${outArms}
 `;
 }
 
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
+function recordRust(model: Model, unit: Unit, library?: string): string {
+  const name = recordFn(unit, library);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
@@ -385,21 +387,21 @@ function iterateRust(model: Model, fn: Fn): string {
     ? `            items.push(&${item(yields.value, 'item')});`
     : `            let (key, value) = item;
             items.push(&out_tuple(&[${item(yields.key, 'key')}, ${item(yields.value, 'value')}])?);`;
-  return `
+  return withFaults(model, fn, `
 /// ${fn.corePath} (contract member ${fn.member.id}).
 #[wasm_bindgen(js_name = ${rustString(exportName(fn))})]
 pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
 ${[...receiverLines(model, fn), ...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel)].join('\n')}
         let items = Array::new();
-        for item in ${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'}) {
+        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'})`)} {
 ${body}
         }
         Ok(items.into())
     })
     .map_err(throw)
 }
-`;
+`);
 }
 
 function functionRust(model: Model, fn: Fn): string {
@@ -437,7 +439,8 @@ function functionRust(model: Model, fn: Fn): string {
   // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2
   // core.receiver).
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
-  const call = `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`;
+  // G-5: the core call runs with the faults that a test armed for the member (GN-8a).
+  const call = armedCall(model, fn, `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`);
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else if (fn.returns === 'none') {
@@ -447,7 +450,7 @@ function functionRust(model: Model, fn: Fn): string {
   }
   // T-5: the constructor gives the handle of the new value, which the instance under construction keeps.
   lines.push(fn.kind === 'constructor' ? `        insert_${plainName(fn.unit)}(result)` : `        ${convertOut(model, fn.returns, 'result')}`);
-  return `
+  return withFaults(model, fn, `
 /// ${fn.corePath} (contract member ${fn.member.id}).
 #[wasm_bindgen(js_name = ${rustString(jsName)})]
 pub fn ${rustExport(fn)}(${params}) -> Result<${fn.kind === 'constructor' ? 'u32' : 'JsValue'}, JsValue> {
@@ -456,7 +459,7 @@ ${lines.join('\n')}
     })
     .map_err(throw)
 }
-`;
+`);
 }
 
 // T-5: a class unit. The module keeps the core values of its instances in a table of the class, and an instance of the
@@ -654,7 +657,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
-  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...objectUnits].join('\n');
+  const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
@@ -756,7 +759,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${state}${used}
+${state}${used}${faultRust(model)}
 /// The exports of the module. The expansion of wasm_bindgen calls Option::unwrap_or_default, so they are in one module
 /// that holds that one allow (GN-18).
 #[allow(clippy::disallowed_methods, reason = "GN-18: the wasm_bindgen expansion")]
@@ -773,7 +776,28 @@ mod exports {
         Ok(())
     }
 ${functions.replace(/\n(?=.)/g, '\n    ')}
-    /// B-7: the entry point of the generated panic test.
+${model.faults.length === 0 ? '' : `    /// G-5: arms the faults of a case for the next call of the member, and gives the id of the arming.
+    #[cfg(feature = "fault-test")]
+    #[wasm_bindgen(js_name = "__armFaults")]
+    pub fn arm_faults(member: String, faults: String) -> Result<u32, JsValue> {
+        guard(|| {
+            let id: u64 = binding_core::fault::arm(&member, &faults).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+            u32::try_from(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+        })
+        .map_err(throw)
+    }
+
+    /// G-5: the points of an arming whose fault did not fire.
+    #[cfg(feature = "fault-test")]
+    #[wasm_bindgen(js_name = "__faultLeft")]
+    pub fn fault_left(id: u32) -> Result<Vec<String>, JsValue> {
+        guard(|| {
+            binding_core::fault::left(u64::from(id)).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
+        })
+        .map_err(throw)
+    }
+
+`}    /// B-7: the entry point of the generated panic test.
     #[cfg(feature = "panic-test")]
     #[wasm_bindgen(js_name = "__panicTest")]
     pub fn panic_test() -> Result<(), JsValue> {
@@ -804,6 +828,10 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
+  // T-3: a record of another repository is a plain object, declared here by its fields.
+  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
+    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
+  }
   return unit === undefined ? 'unknown' : langName('wasm', unit.name, 'class');
 }
 
@@ -1070,13 +1098,12 @@ ${constants}
 `;
 }
 
-// G-4: a value alias (U-7), a record of another repository (T-3), a callback unit (U-3), a member with the receiver
-// &mut self (GN-18a) and a host Node package (L-2a) are not generated for WASM yet; each is refused by name.
+// G-4: a value alias (U-7), a callback unit (U-3) and a host Node package (L-2a) are not generated for WASM yet; each is
+// refused by name.
 export function refuseForWasm(model: Model, refusals: Refusals): void {
   for (const alias of model.aliases) {
     refusals.refuse(alias.library !== undefined ? `${alias.library}.${alias.unit.id}: a value alias of another repository is not generated for WASM yet` : `${alias.unit.id}: a value alias is not generated for WASM yet`);
   }
-  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
   for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
   // L-2a: a host Node package keeps its binding crate in native/, where the WASM crate has no place yet.
   if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) refusals.refuse('the WASM binding of a host Node package is not generated yet (L-2a)');

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- WASM refused a contract with fault injection points and a record of another repository. The WASM crate now has the
+  feature `fault-test` with the entry points `__armFaults` and `__faultLeft`, each core call runs with the faults that a
+  test armed, the B-4 test of a case with `faults` arms them, and a record of another repository is a plain object
+  converted through the core of its owner, on which the crate depends (GN-5, GN-6c). Verified by `npm test` in
+  `packages/ts` and `make e2e`.
 - `binding generate` wrote nothing when one target refused an item, so a contract that Go cannot take yet gave no
   binding of any target. It now generates each target by itself, writes every target that refuses nothing, names each
   refused target with its items and fails with status 2 (GN-1c). Verified by `npm test` in `packages/ts`.

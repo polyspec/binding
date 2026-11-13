@@ -22,8 +22,8 @@ the design ids are those of the binding design.
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5); Go and WASM refuse a callback unit, a record of
-  another repository and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5); Go and WASM refuse a callback unit and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses a
+  record of another repository, the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
@@ -125,14 +125,15 @@ the design ids are those of the binding design.
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>` |
-  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet |
+  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
   A Python, Node or PHP crate has `codec-test` when an alias of the contract has `in_raises`, and
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
-  `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. Go and WASM have neither of the two yet: a
-  contract with `faults` or `in_raises` and one of these targets is refused by name (G-4).
+  `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A WASM crate has `fault-test` when the contract has `faults`, and its tests reach the two entry
+  points through the module that wasm-bindgen writes; it has no `codec-test` yet, and Go has neither of the two yet: a
+  contract with `in_raises` and Go or WASM, or with `faults` and Go, is refused by name (G-4).
 
 ## The core boundary (T-1, I-2 (1))
 
@@ -198,7 +199,7 @@ the design ids are those of the binding design.
   Node and PHP binding crates turn on.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
-  loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
+  loaded), Node and WASM take and give a plain object, which the declarations write by its fields. Each binding crate depends
   on that repository's crate with the core's own dependency line, which `binding scaffold` copies.
 - **GN-6d** A callback interface (U-3) is a struct that holds the language object and implements the core trait; a
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).

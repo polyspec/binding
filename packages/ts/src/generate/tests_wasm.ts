@@ -33,6 +33,7 @@ export function wasmTests(model: Model): string {
   };
   const out: string[] = [];
   let usesOutcome = false;
+  let usesGlue = false;
   let usesOrdered = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -122,17 +123,23 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
-      const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
+      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
+      // between the arming and that call, and requires every armed fault to have fired.
+      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseValue(model, ctx, arg, kase.args); return value === undefined ? [] : [[`arg${i}`, value]]; })];
+      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(kase.faults)});`;
+      const args = callArgs(model, ctx, fn, kase.faults === undefined ? (arg) => caseValue(model, ctx, arg, kase.args) : (arg) => (caseValue(model, ctx, arg, kase.args) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
+      const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
+      usesGlue ||= kase.faults !== undefined;
       out.push(`
-test('B-4: ${name} ${kase.id}', () => {
+test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === null);
+    error.errno === null);${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -183,6 +190,9 @@ function outcome(call) {
     return { error: error.constructor, kind: error.kind };
   }
 }
+` : ''}${usesGlue ? `
+// G-5: the module that wasm-bindgen writes, whose test entry points arm the faults of a case.
+const glueModule = () => import(new URL('./${wasmGlue(model)}.js', import.meta.resolve(${jsString(entry)})).href);
 ` : ''}${out.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.

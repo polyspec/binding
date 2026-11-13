@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit, 다른 레포의 record, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), Go는 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit과 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), Go는 다른 레포의 record, 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -101,14 +101,15 @@
   |---|---|---|---|---|---|
   | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>` |
-  | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | 아직 없음 |
+  | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | 아직 없음. WASM은 `__armFaults`, `__faultLeft` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다.
   Python·Node·PHP crate는 계약의 alias에 `in_raises`가 있으면 `codec-test`를, 계약에 `faults`가 있으면
   `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
-  `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. Go와 WASM에는 이 둘이 아직 없다.
-  `faults`나 `in_raises`를 가진 계약에 이 target이 있으면 이름을 대고 거부한다(G-4).
+  `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. WASM crate는 계약에 `faults`가 있으면
+  `fault-test`를 갖고, 그 시험은 wasm-bindgen이 쓰는 모듈로 두 진입점에 닿는다. WASM에는 `codec-test`가 아직 없고 Go에는 둘 다
+  아직 없다. `in_raises`를 가진 계약에 Go나 WASM이 있거나, `faults`를 가진 계약에 Go가 있으면 이름을 대고 거부한다(G-4).
 
 ## 코어 경계(T-1, I-2 (1))
 
@@ -163,7 +164,7 @@
   수 있기 때문이다(P-2). 잠금은 `polyspec-binding-core`의 feature `lock`에 있으며 Python·Node·PHP 바인딩 crate의 manifest가
   그것을 켠다.
 - **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
-  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node는 plain object를 주고받으며 선언은 field로 적는다. 바인딩
+  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node와 WASM은 plain object를 주고받으며 선언은 field로 적는다. 바인딩
   crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출

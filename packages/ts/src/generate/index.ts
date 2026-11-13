@@ -91,11 +91,11 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
-  // G-5, U-7: the entry points of the features fault-test and codec-test of an alias are generated for Python, Node
-  // and PHP so far; a contract with fault injection points or the kinds of an alias and another target is refused by
-  // name (G-4).
+  // G-5, U-7: the entry points of the feature fault-test are generated for Python, Node, PHP and WASM, and those of
+  // codec-test of an alias for Python, Node and PHP so far; a contract with fault injection points or the kinds of an
+  // alias and another target is refused by name (G-4).
   const untested = targets.filter((target) => target === 'go' || target === 'wasm');
-  if (untested.length > 0 && model.faults.length > 0) refusals.refuse(`faults: the entry points of the feature fault-test are not generated for ${untested.join(', ')} yet (G-5)`);
+  if (targets.includes('go') && model.faults.length > 0) refusals.refuse('faults: the entry points of the feature fault-test are not generated for go yet (G-5)');
   for (const alias of untested.length > 0 ? model.aliases.filter((a) => a.inRaises.length > 0) : []) {
     refusals.refuse(`${alias.unit.id}: the entry point of in_raises (codec-test) is not generated for ${untested.join(', ')} yet (U-7)`);
   }

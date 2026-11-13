@@ -77,11 +77,11 @@ function coreFeatures(contract: Contract, suffix: string): string {
 
 // GN-5: the test features of a binding crate beside panic-test. fault-test turns on the feature of the core whose
 // fault injection points the contract names (G-5); codec-test adds the entry points that run the in function of a
-// value alias with in_raises alone (U-7). Go and WASM have neither yet.
+// value alias with in_raises alone (U-7). WASM has fault-test, and Go has neither yet.
 function testFeatures(contract: Contract, suffix: string): string {
-  if (suffix === 'go' || suffix === 'wasm') return '';
+  if (suffix === 'go') return '';
   const faults = (contract.faults ?? []).length > 0 ? `fault-test = ["${contract.core.crate}/fault-test"]\n` : '';
-  const codec = contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
+  const codec = suffix !== 'wasm' && contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
   return `${faults}${codec}`;
 }
 
@@ -201,7 +201,9 @@ python-source = "generated/python"
     if (!contract.targets.includes('node')) files.set('packages/ts/package.json', npmManifest(contract, version));
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
+    // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
     files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, 'wasm', `${extensionName(contract)}_wasm`, [
+      ...foreignCrates(contract, coreDependencies),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
     ], '', false, { type: 'cdylib', core: '../../rust' }));

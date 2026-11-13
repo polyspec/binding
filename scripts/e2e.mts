@@ -497,7 +497,9 @@ stepOf(targets, 'lint the core', () => {
   run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--all-targets', ...((contract.faults ?? []).length > 0 ? ['--features', 'fault-test'] : []), '--', '-D', 'warnings']);
 });
 for (const t of targets) if (!failed(t)) lintOf(t, 'cargo clippy of the core');
-const lintFeatures = (t: Lang): string => (t === 'go' ? 'panic-test,codec-test' : t === 'wasm' ? 'panic-test' : testFeatures(contract));
+// G-5: the WASM crate has the feature fault-test when the contract has fault injection points, and no codec-test.
+const wasmFeatures = (c: Contract): string => ['panic-test', ...((c.faults ?? []).length > 0 ? ['fault-test'] : [])].join(',');
+const lintFeatures = (t: Lang): string => (t === 'go' ? 'panic-test,codec-test' : t === 'wasm' ? wasmFeatures(contract) : testFeatures(contract));
 for (const t of targets) {
   if (stepOf([t], `lint the ${t} binding crate`, () => {
     run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-${crateSuffix[t]}`, '--all-targets', '--features', lintFeatures(t), '--', '-D', 'warnings']);
@@ -569,7 +571,7 @@ if (targets.includes('wasm')) {
     const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
     const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
     if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
-    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
+    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', wasmFeatures(contract)]);
     const glue = `${library.replaceAll('-', '_')}_wasm`;
     run(wasmBindgen, ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
   });
