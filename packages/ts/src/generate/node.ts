@@ -628,7 +628,7 @@ function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
-pub fn entry_${rustField(fn.member.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
+pub fn function_${rustField(fn.member.name).replace(/^r#/, '')}<'env>(env: &'env Env${params}) -> napi::Result<Unknown<'env>> {
     guard(|| {
 ${lines.join('\n')}
     })
@@ -912,7 +912,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = function_in(env, ${name}, ${subject})?;`,
+    `        let ${name} = callable_in(env, ${name}, ${subject})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     `            let env = &Env::from_raw(${name}.env);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
@@ -963,7 +963,7 @@ fn passed_out(env: &Env, value: binding_core::Passthrough) -> Result<Unknown<'_>
 }
 
 /// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn function_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
+fn callable_in(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }

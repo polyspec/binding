@@ -457,7 +457,7 @@ const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()
 
 // The Rust name of an export: a member of a class has the name of its class before its own, so it meets no function.
 const rustExport = (fn: Fn): string =>
-  fn.kind === 'function' ? `entry_${rustField(fn.member.name).replace(/^r#/, '')}` : `class_${plainName(fn.unit)}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
+  fn.kind === 'function' ? `function_${rustField(fn.member.name).replace(/^r#/, '')}` : `class_${plainName(fn.unit)}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
 
 // GN-6h: whether the class of a member holds its value in a lock.
 const locked = (model: Model, fn: Fn): boolean => model.objects.find((o) => o.unit === fn.unit)?.lock !== undefined;
@@ -778,7 +778,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const outs = parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?`);
   return [
-    `        let ${name} = function_in(&${name}, ${subject})?;`,
+    `        let ${name} = callable_in(&${name}, ${subject})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     `                let args: Array = ${outs.length === 0 ? 'Array::new()' : `[${outs.join(', ')}].iter().collect()`};`,
@@ -825,7 +825,7 @@ fn passed_out(value: binding_core::Passthrough) -> Result<JsValue, Fail> {
 }
 
 /// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
-fn function_in(value: &JsValue, subject: &str) -> Result<Function, Fail> {
+fn callable_in(value: &JsValue, subject: &str) -> Result<Function, Fail> {
     value
         .dyn_ref::<Function>()
         .cloned()

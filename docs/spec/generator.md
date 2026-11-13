@@ -154,17 +154,18 @@ the design ids are those of the binding design.
   value alias), `alias_in_` (the entry of `codec-test`), `recognized_<callback>_<member>`, `error_of_<library>` and
   `failure_of_<library>` (the error of another library, U-7), and `function_`, the
   entry of a function of a functions unit, to which an attribute gives the name of its language (`#[php(name =
-  ...)]`, `#[pyfunction(name = ...)]`); the Python entry of a function with an event loop (GN-6ae) is
+  ...)]`, `#[pyfunction(name = ...)]`, `#[napi(js_name = ...)]`, `#[wasm_bindgen(js_name = ...)]`); the Python entry of a function with an event loop (GN-6ae) is
   `loop_function_<name>`. The members of a class are functions of its `impl` block, which holds no helper. The
   entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
   where the attribute already gives the name of the language, while a module would change every path from an entry
   to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
   crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
-  family is `polyspec_`, with which no helper starts. The helper of a function parameter of Node and WASM is `function_in`.
-  The entry point of a function member of the Node and WASM crates is the Rust function `entry_<member>`, exported
-  under the name of the member (`js_name`), and no helper of those crates has a name that starts with `entry_`: a
-  member takes any name, also `guard`, `pass`, `called` or `throw`, and an entry point of that name is a second
-  definition of the helper in the Node crate and hides the helper in the module of the exports of the WASM crate. The five crates apply the rule of the helpers.
+  family is `polyspec_`, with which no helper starts. The helper of a
+  function parameter of Node and WASM is `callable_in`, as that of PHP and Python is. A function takes any name, also
+  `guard`, `pass`, `called`, `throw` or `in`, and an entry of the bare name is a second definition of the helper in
+  the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
+  class of the WASM crate, which has no `impl` block of the class, is `class_<unit>_<member>` of that module. The
+  five crates apply the rule.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

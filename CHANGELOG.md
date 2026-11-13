@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The entry of a function of a functions unit had two names: `function_<name>` in the PHP and Python crates and
+  `entry_<member>` in the Node and WASM crates, whose helper of a function parameter, `function_in`, started with the
+  prefix of the first. The Node and WASM crates now name the entry `function_<name>` and the helper `callable_in`, so
+  GN-4c states one rule for the five crates. The Node and WASM lanes are merged, and no target refuses a member with a
+  parameter of a function type or a result `passthrough`. Verified by `npm test` in `packages/ts`, which passes with
+  no failure: its test generates the Node and WASM crates with functions named `guard`, `pass`, `called`, `throw`,
+  `internal` and `in` and requires that no function is defined twice and that no helper starts with `function_`. The
+  generated crates were not compiled for this change.
 - The end-to-end sample had a function parameter only on methods, so the entries of a function of a functions unit and
   of a static member that take a function were generated and never compiled. The sample now has the function `scoped`
   and the static member `store.once`, each with a case that returns, a case that raises and a case that awaits

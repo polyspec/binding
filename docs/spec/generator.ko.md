@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a97ce5968ac73911e32128776b373bc8e24fb80b6713b88faa64989b03709b5b -->
+<!-- source-sha256: be3abf083ad82063b89b6f2b1f611e36c1d77de34739430b6e7b80e2f64b9e5d -->
 # 생성기
 
 [English](generator.md)
@@ -123,16 +123,17 @@
   helper는 어느 계열의 접두로도 시작하지 않는다: `in_`과 `out_`(unit), `held_`(parameter 자리의 class), `make_`(값
   alias), `alias_in_`(`codec-test`의 진입), `recognized_<callback>_<member>`, `error_of_<library>`와
   `failure_of_<library>`(다른 library의 오류, U-7), 그리고 functions unit의 함수의 진입인
-  `function_`이다. 그 진입에는 attribute가 언어의 이름을 준다(`#[php(name = ...)]`, `#[pyfunction(name = ...)]`).
+  `function_`이다. 그 진입에는 attribute가 언어의 이름을 준다(`#[php(name = ...)]`, `#[pyfunction(name = ...)]`,
+  `#[napi(js_name = ...)]`, `#[wasm_bindgen(js_name = ...)]`).
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
   이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
   바꾸기 때문이다. Go crate의 함수나 member의 진입은 C symbol `polyspec_<library>_<module>_<member>`(B-8)이고,
-  Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는
-  `function_in`이다. Node와 WASM crate에서 function member의 진입점은 Rust 함수 `entry_<member>`이고 member의
-  이름으로 내보내며(`js_name`), 그 crate의 어떤 helper도 `entry_`로 시작하는 이름을 갖지 않는다. member는 어떤 이름이든
-  가질 수 있고 `guard`, `pass`, `called`, `throw`도 그렇다. 그 이름의 진입점은 Node crate에서는 helper의 두 번째 정의이고,
-  WASM crate에서는 export의 모듈 안에서 helper를 가린다. 다섯 crate가 helper의 규칙을 적용한다.
+  Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는 PHP와 Python처럼
+  `callable_in`이다. 함수는 어떤 이름이든 가질 수 있고 `guard`, `pass`, `called`, `throw`, `in`도 그렇다. 이름 그대로의
+  진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
+  class의 `impl` 블록이 없어서, class의 member의 진입은 그 module의 `class_<unit>_<member>`다. 다섯 crate가 이 규칙을
+  적용한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

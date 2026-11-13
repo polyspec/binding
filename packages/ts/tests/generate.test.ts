@@ -1342,7 +1342,7 @@ test('the generated calls of the core compile against the core of tests/e2e/shap
   const wasm = text(shaped(), 'packages/ts/wasm/generated/lib.rs');
   const entries = [...wasm.matchAll(/pub fn (\w+)\([^)]*\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| \{\n([\s\S]*?)\n\s*\}\)\n\s*\.map_err\(throw\)/g)];
   const calls = members.map((name) => {
-    const entry = entries.find((e) => e[1] === `entry_${name}`);
+    const entry = entries.find((e) => e[1] === `function_${name}`);
     assert.ok(entry !== undefined, `no WASM entry point ${name}`);
     const params: string[] = [];
     const body: string[] = [];
@@ -2775,7 +2775,7 @@ test('the generated WASM future of a member with wait async_driver compiles agai
   // wasm-bindgen-futures takes a future of Result<JsValue, JsValue> that is 'static.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const wasm = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  const entry = /pub fn entry_settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
+  const entry = /pub fn function_settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
   assert.ok(entry !== null, 'no WASM entry point settle');
   const params: string[] = [];
   const body: string[] = [];
@@ -2884,7 +2884,7 @@ test('a member with wait blocking_io that reaches language code runs where its l
   assert.match(pyTests, /def test_gn6q_resolve_slowly_awaits_a_callback_on_the_thread_of_to_thread\(self\) -> None:\n {8}raised = LookupError\("raised by the callback"\)\n {8}with self\.assertRaises\(LookupError\) as caught:\n {12}asyncio\.run\(pkg\.aresolve_slowly\(/);
   // Node: the call runs synchronously on the JavaScript thread, and the entry still returns a Promise.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  const entry = node.slice(node.indexOf('pub fn entry_resolve_slowly<'), node.indexOf('\n}\n', node.indexOf('pub fn entry_resolve_slowly<')));
+  const entry = node.slice(node.indexOf('pub fn function_resolve_slowly<'), node.indexOf('\n}\n', node.indexOf('pub fn function_resolve_slowly<')));
   assert.match(entry, /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
   assert.doesNotMatch(entry, /waiting\(env/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
@@ -3223,8 +3223,8 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['node']);
   const lib = text(out, 'packages/ts/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns a reference of napi to it.
-  assert.match(lib, /let work = function_in\(env, work, "work"\)\?;/);
-  assert.match(lib, /fn function_in\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env, value\)\n\}/);
+  assert.match(lib, /let work = callable_in\(env, work, "work"\)\?;/);
+  assert.match(lib, /fn callable_in\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env, value\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function on the JavaScript thread
   // of its reference and stores what it returned in the table; an exception of the function is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let env = &Env::from_raw\(work\.env\);\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0 = out_scope\(env, arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+let returned = called\(env, &work, &\[arg0\]\)\?;\n\s+pass\(env, returned\)\.map_err\(Thrown::Binding\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -3367,8 +3367,8 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   const out = scopedSample(['wasm']);
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // The function is checked when it enters (kind invalid_callback), and the machine owns it as a value of the module.
-  assert.match(lib, /let work = function_in\(&work, "work"\)\?;/);
-  assert.match(lib, /fn function_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
+  assert.match(lib, /let work = callable_in\(&work, "work"\)\?;/);
+  assert.match(lib, /fn callable_in\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
   // The closure makes a new instance of the class of each class argument, calls the function with the receiver
   // undefined and stores what it returned in the table; the value that the function threw is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let args: Array = \[out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?\]\.iter\(\)\.collect\(\);\n\s+let returned = work\.apply\(&JsValue::UNDEFINED, &args\)\.map_err\(Thrown::Js\)\?;\n\s+Ok\(pass\(returned\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -3396,7 +3396,7 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
-  assert.doesNotMatch(plain, /PASSED|outcome_of|fn function_in/);
+  assert.doesNotMatch(plain, /PASSED|outcome_of|fn callable_in/);
 });
 
 test('the WASM entry awaits what the function returned, tells a rejected wait from a rejected awaited value and frees the machine (GN-6ae)', async () => {
@@ -3720,7 +3720,7 @@ test('no helper of a generated Node or WASM crate has a name of the conversions 
     assert.match(lib, /\nfn in_default(?:<'env>)?\([^\n]*\) -> Result<polyspec_sample::Default, Fail> \{/, path);
     assert.match(lib, /\nfn default_in<[^\n]*\) -> Result<Option<T>, Fail> \{/, path);
     assert.match(lib, /\nfn text_in\([^\n]*\) -> Result<String, Fail> \{/, path);
-    assert.match(lib, /\nfn function_in\(/, path);
+    assert.match(lib, /\nfn callable_in\(/, path);
     assert.match(lib, /\nfn passed_out(?:<'env>)?\(/, path);
     // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
     const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
@@ -3731,10 +3731,11 @@ test('no helper of a generated Node or WASM crate has a name of the conversions 
 });
 
 test('the entry point of a function member of a Node or WASM crate does not take the name of a helper of the crate (GN-4c)', () => {
-  // Functions named as helpers of the crates: guard, pass, called, throw and internal.
+  // Functions named as helpers of the crates: guard, pass, called, throw and internal, and in, whose entry
+  // function_in had the name of the helper of a function parameter.
   const named = (contract: any): void => {
     const functions = contract.units.find((u: any) => u.id === 'sample');
-    for (const name of ['guard', 'pass', 'called', 'throw', 'internal']) {
+    for (const name of ['guard', 'pass', 'called', 'throw', 'internal', 'in']) {
       functions.members.push({ id: `sample.${name}`, name: [name], kind: 'function', visibility: 'public', wait: 'none', raises: [], returns: 'uint', core: `polyspec_sample::${name}_of`, parameters: [{ name: ['count'], type: 'uint', required: true }] });
       contract.cases.push({ member: `sample.${name}`, file: 'contracts/cases.json', group: 'store_new' });
     }
@@ -3742,17 +3743,22 @@ test('the entry point of a function member of a Node or WASM crate does not take
   const out = scopedSample(['node', 'wasm'], named);
   const node = text(out, 'packages/ts/generated/lib.rs');
   const names = functionNames(node);
-  for (const name of ['guard', 'pass', 'called', 'throw', 'internal']) {
-    // Node: the helper is defined once, and the entry point is entry_<member>, exported under the name of the member.
-    assert.equal(names.get(name), 1, name);
-    assert.match(node, new RegExp(`\\n#\\[napi\\(js_name = "${name}"\\)\\]\\npub fn entry_${name}<'env>\\(env: &'env Env, count: Unknown<'env>\\)`), name);
+  for (const name of ['guard', 'pass', 'called', 'throw', 'internal', 'in']) {
+    // Node: the helper is defined once, and the entry point is function_<name>, exported under the name of the member.
+    if (name !== 'in') assert.equal(names.get(name), 1, name);
+    assert.match(node, new RegExp(`\\n#\\[napi\\(js_name = "${name}"\\)\\]\\npub fn function_${name}<'env>\\(env: &'env Env, count: Unknown<'env>\\)`), name);
     // WASM: an export named as a helper would hide the helper in the module of the exports.
     const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
-    assert.match(wasm, new RegExp(`\\n {4}#\\[wasm_bindgen\\(js_name = "${name}"\\)\\]\\n {4}pub fn entry_${name}\\(count: JsValue\\)`), name);
+    assert.match(wasm, new RegExp(`\\n {4}#\\[wasm_bindgen\\(js_name = "${name}"\\)\\]\\n {4}pub fn function_${name}\\(count: JsValue\\)`), name);
     assert.doesNotMatch(wasm, new RegExp(`\\n {4}pub fn ${name}\\(`), name);
   }
-  // No helper of either crate has a name that starts with entry_.
-  assert.doesNotMatch(text(scopedSample(['node', 'wasm']), 'packages/ts/generated/lib.rs').replaceAll(/\npub fn entry_[a-z0-9_]+</g, ''), /\bfn entry_/);
+  // No function of either crate is defined twice, and no helper has a name that starts with function_ (GN-4c).
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.deepEqual([...functionNames(lib)].filter(([, count]) => count > 1).map(([name]) => name), [], path);
+    assert.doesNotMatch(lib.replaceAll(/\n(?: {4})?pub fn function_[a-z0-9_]+[<(]/g, ''), /\bfn function_/, path);
+    assert.match(lib, /\nfn callable_in\(/, path);
+  }
 });
 
 test('a Node crate whose only language code is a function parameter has no variant of an exception that nothing makes (GN-6ae)', () => {
@@ -3769,7 +3775,7 @@ test('a Node crate whose only language code is a function parameter has no varia
     contract.cases = contract.cases.filter((k: any) => k.member !== undefined && kept.has(k.member));
   };
   const lib = text(scopedSample(['node'], alone), 'packages/ts/generated/lib.rs');
-  assert.match(lib, /let work = function_in\(env, work, "work"\)\?;/);
+  assert.match(lib, /let work = callable_in\(env, work, "work"\)\?;/);
   assert.doesNotMatch(lib, /CbLookup|describe\(/);
   // Every variant of Thrown that the crate names is made somewhere in it.
   const variants = [...(/enum Thrown \{\n([\s\S]*?)\n\}/.exec(lib)?.[1] ?? '').matchAll(/^ {4}([A-Z][a-z]+)\(/gm)].map((found) => found[1] ?? '');
@@ -3831,7 +3837,7 @@ test('Node takes the exception of a callback that a machine owns out of the envi
     functions.members = functions.members.filter((m: any) => m.id !== 'sample.scoped');
     contract.cases = contract.cases.filter((k: any) => !/^(?:store|scope)\.|^sample\.scoped$/.test(k.member ?? ''));
   }), 'packages/ts/generated/lib.rs');
-  assert.doesNotMatch(alone, /fn function_in\(/);
+  assert.doesNotMatch(alone, /fn callable_in\(/);
   assert.match(alone, /\n {4}Held\(Owned\),\n/);
   assert.match(alone, /\n {4}fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{/);
   assert.match(alone, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);

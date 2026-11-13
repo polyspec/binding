@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2857458fa79aa5ad3bd1b2f3e0cfb2933026f2654e8d3882855331bde307b0a3 -->
+<!-- source-sha256: a3f37fbce4d8b0d605cd0b9815e1952f842ebaca527c0feb9756ff0df4c577b3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- functions unit의 함수의 진입에는 이름이 둘 있었다. PHP와 Python crate에서는 `function_<name>`, Node와 WASM crate에서는
+  `entry_<member>`였고, Node와 WASM의 함수 parameter의 helper `function_in`은 앞의 접두로 시작했다. Node와 WASM crate는 이제
+  진입을 `function_<name>`, helper를 `callable_in`으로 이름하므로 GN-4c는 다섯 crate에 한 규칙을 적는다. Node와 WASM lane을
+  병합했고, 어떤 target도 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 거부하지 않는다. `packages/ts`의
+  `npm test`로 검증했고 실패 없이 통과한다. 그 시험은 `guard`, `pass`, `called`, `throw`, `internal`, `in`이라는 함수가 있는
+  Node와 WASM crate를 생성하고 어떤 함수도 두 번 정의되지 않을 것과 어떤 helper도 `function_`으로 시작하지 않을 것을
+  요구한다. 이 변경으로 생성된 crate를 컴파일하지는 않았다.
 - end-to-end sample에는 함수 parameter가 method에만 있어서, 함수를 받는 functions unit의 함수와 static member의 진입은
   생성되기만 하고 컴파일된 적이 없었다. sample에 이제 함수 `scoped`와 static member `store.once`가 있고, 각각 돌려주는
   case, 던지는 case, 기다리는 case를 가진다(GN-6ae). `tests/e2e/sample`의 `make e2e`로 검증했다: PHP는 생성된 시험 98개,
