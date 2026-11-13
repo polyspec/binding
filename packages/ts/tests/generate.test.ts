@@ -2547,7 +2547,7 @@ test('Python takes a function type as a boxed Fn that calls the callable, and Go
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] });
   const lib = text(out, 'packages/python/generated/lib.rs');
   // The core takes the function by value, in the form that it may keep: 'static, Send and Sync.
-  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(py, /);
+  assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(py, /);
   assert.match(lib, /polyspec_shapes::apply\(convert, /);
   // The callable is checked as it enters, and each call converts the arguments out and the result in.
   assert.match(lib, /fn kept_function_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n    if !value\.is_callable\(\) \{/);
@@ -2558,7 +2558,7 @@ test('Python takes a function type as a boxed Fn that calls the callable, and Go
   // the handles of their funcs first, as those of a callback do.
   const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['go'] });
   const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(goLib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(&mut input, "convert"\)/);
+  assert.match(goLib, /let convert: Function[0-9a-f]{8} = kept_function_in\(&mut input, "convert"\)/);
   assert.match(goLib, /polyspec_shapes::apply\(convert, /);
   assert.equal(/fn given_first\(/.test(goLib), /fn kept_called\(native: &Native, args: &\[u8\]\) -> Result<Vec<u8>, Raised> \{\n(?:[^\n]*\n){5,8}    let args = given_first\(args\.to_vec\(\)\);/.test(goLib));
   assert.match(text(go, 'packages/go/zz_generated_shapes.go'), /\nfunc Apply\(convert func\(string, \[\]int64\) \(string, error\), /);
@@ -2576,7 +2576,7 @@ test('Node holds a function as a Native, which a call from another thread finds 
   ];
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['node'] });
   const lib = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(env, /);
+  assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(env, /);
   assert.match(lib, /fn kept_function_in\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Native, Fail> \{\n    if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{/);
   // Each call runs on the owner thread, in the env of the owner table.
   assert.match(lib, /let env = match native_env\(&native, "convert"\) \{\n\s+Ok\(env\) => env,\n\s+Err\(error\) => return Err\(thrown_elsewhere\(error\)\),/);
@@ -2606,7 +2606,7 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   ];
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['php'] });
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
-  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(/);
+  assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(/);
   assert.match(lib, /fn kept_function_in\(value: &Zval, subject: &str\) -> Result<Native, Fail> \{/);
   assert.match(lib, /if let Err\(error\) = native_thread\(&native, "convert"\) \{\n\s+return Err\(thrown_elsewhere\(error\)\);/);
   assert.match(lib, /let returned = function\.try_call\(vec!\[&arg0, &arg1\]\)/);
@@ -2631,7 +2631,7 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
   ];
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = kept_function_in\(/);
+  assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(/);
   assert.match(lib, /fn kept_function_in\(value: &JsValue, subject: &str\) -> Result<Native, Fail> \{\n    if !value\.is_function\(\) \{/);
   assert.match(lib, /let function: Function = native_object\(&native\)\.map_err\(Thrown::Binding\)\?\.dyn_into::<Function>\(\)/);
   assert.match(lib, /struct WasmNative \{\n    key: u64,\n\}/);
@@ -2984,6 +2984,41 @@ test('Go encodes the fields of an optional record through the pointer, not a poi
   for (const [path, bytes] of generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['go'] })) {
     if (path.endsWith('.go')) assert.doesNotMatch(String(bytes), /[(, ]\*[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\.[A-Za-z_][A-Za-z0-9_]*[),(]/, path);
   }
+});
+
+test('a function type that the core may keep is a type alias of the crate, written once and named where it is used (GN-6z)', () => {
+  // The lints deny a boxed function type at a let or as the result of a closure (clippy type_complexity), so a crate
+  // names the type by an alias and writes it once.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const libs = [...out].filter(([path]) => path.endsWith('generated/lib.rs'));
+  assert.equal(libs.length, 5);
+  for (const [path, bytes] of libs) {
+    const lib = String(bytes);
+    const aliases = [...lib.matchAll(/^type (Function[0-9a-f]{8}) = (Box<dyn Fn\([^\n]*\) -> Result<[^\n]*> \+ Send \+ Sync>);$/gm)];
+    assert.ok(aliases.length > 0, `${path} defines no alias of a function type`);
+    // The boxed type is written in the definitions of the aliases alone.
+    assert.equal((lib.match(/Box<dyn Fn\(/g) ?? []).length, aliases.length, path);
+    for (const [, name = '', type = ''] of aliases) {
+      assert.equal(aliases.filter(([, other]) => other === name).length, 1, `${path} defines ${name} twice`);
+      assert.match(lib, new RegExp(`(?:: |-> )${name}\\b`), `${path} does not name ${name}`);
+      // An alias has no lifetime of a function around it.
+      assert.doesNotMatch(type, /'(?!static\b|_\b)[a-z]/, `${path}: ${name}`);
+    }
+    assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(/, path);
+  }
+});
+
+test('PHP describes a stdClass under one handle at every place, so the core knows an object that it has seen (B-1, U-7, GN-6e)', () => {
+  // The core keeps the place of an object under its handle: with a new handle at each place, an object at two places
+  // was two objects, and an object that a reference in it holds again was read without an end.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/kept/${path}`, import.meta.url), 'utf8'));
+  const php = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_kept', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /struct PhpHost<'a> \{\n {4}held: Vec<Vec<\(HostValue, &'a Zval\)>>,\n {4}objects: std::collections::BTreeMap<usize, u64>,\n {4}marked: u64,\n/);
+  assert.match(php, /if type_name == "stdClass" \{\n {16}let identity = std::ptr::from_ref\(object\)\.addr\(\);\n {16}let properties = object\.get_properties\(\)\.map_err\(php_failed\)\?;\n {16}let len = handle_count\(properties\.len\(\)\);\n {16}if let Some\(handle\) = self\.objects\.get\(&identity\) \{\n {20}return Ok\(HostValue::StdClass \{ handle: Handle::new\(\*handle\), len \}\);\n {16}\}\n {16}let handle = self\.hold\(properties\);\n {16}self\.objects\.insert\(identity, handle\.raw\(\)\);\n {16}return Ok\(HostValue::StdClass \{ handle, len \}\);/);
+  // Every host of the crate starts without an object.
+  assert.equal((php.match(/PhpHost \{ /g) ?? []).length, (php.match(/PhpHost \{ held: Vec::new\(\), objects: std::collections::BTreeMap::new\(\), marked: 0[,} ]/g) ?? []).length);
+  assert.ok((php.match(/PhpHost \{ /g) ?? []).length > 0);
 });
 
 // The conversions of a generated crate, `in_<unit>` and `out_<unit>`, whose parameter `env` or `py` only their own call
@@ -4680,7 +4715,7 @@ test('Go takes a function type as a boxed Fn over a kept func, which is called b
   const out = e2eOwn('functions', ['go']);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   // The core takes the function by value, in the form that it may keep: 'static, Send and Sync.
-  assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<polyspec_functions::Error>> \+ Send \+ Sync> = kept_function_in\(&mut input, "convert"\)\.map\(\|native\| -> Box<dyn Fn/);
+  assert.match(lib, /let convert: Function[0-9a-f]{8} = kept_function_in\(&mut input, "convert"\)\.map\(\|native\| -> Function[0-9a-f]{8} \{/);
   assert.match(lib, /polyspec_functions::apply\(convert, /);
   // A nil func is no function; a func is kept from the moment the C ABI reads it, as a Native of its cgo.Handle.
   assert.match(lib, /\nfn kept_function_in\(input: &mut &\[u8\], subject: &str\) -> Result<Native, Fail> \{\n    if !read_tag\(input\)\? \{\n        return Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("a function"\) \}\)\);\n    \}/);
@@ -6642,6 +6677,12 @@ test('the members of a value class without core_type and a primitive run their c
     assert.match(python, new RegExp(`def test_${name}\\(self\\)`), name);
   }
   assert.doesNotMatch(python, /def test_u2_boxed_new_value_takes_none_as_a_value/);
+  // U-2: an instance of a value class without core_type has no equality of its own in Python, so the test of a default
+  // of its constructor compares what the instance keeps, read through its properties, and its class.
+  assert.match(python, /\ndef _kept\(instance, names\):\n {4}return \(type\(instance\), \*\(getattr\(instance, name\) for name in names\)\)\n/);
+  const defaulted = /def test_u2_boxed_new_value_left_out_is_its_default\(self\) -> None:\n {8}self\.assertEqual\(\n {12}_outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\),\n {12}_outcome\(lambda: _kept\(([^\n]+), \("value",\)\)\),\n {8}\)/.exec(python);
+  assert.ok(defaulted !== null, 'the test of the default of Boxed compares the instances themselves');
+  assert.notEqual(defaulted[1], defaulted[2]);
   assert.match(python, /def test_gn13e_boxed_value_an_int_is_kept_as_it_was_given\(self\) -> None:\n {8}result = pkg\.Boxed\((.+)\)\.value\n {8}expected = \1\n/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
     const tests = text(out, path);

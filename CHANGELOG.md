@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Three defects that the end-to-end runs of `tests/e2e/functions` and `tests/e2e/kept` showed. A crate wrote the
+  boxed type of a function type (GN-6z) at each `let` and as the result of each closure, which the lint
+  `clippy::type_complexity` denies; a crate now names the type by an alias, `Function` and eight hexadecimal digits
+  of the SHA-256 of the type, and writes the type once, in the definition of the alias. The Python test of a default
+  of the constructor of a value class without `core_type` (GN-6af) compared two instances, which have no equality of
+  their own in Python, so it failed for equal values; it now compares the class of the instance and what it keeps,
+  read through its properties. The PHP host gave a `stdClass` a new handle at each place, so the core counted an
+  object at two places twice and read an object and a reference that hold each other until its depth limit; a
+  `stdClass` now has one handle, by the address of its object (U-7). Verified by `make test-ts`: the three new
+  tests failed before the changes. Not run: clippy, Python and PHP, by `make e2e` of the two contracts.
 - A contract could not state that a core keeps a callback of a record field, a list or an `optional` after the
   call, so Node, which writes the lifetime `'env` of the call for such a callback, wrote
   `polyspec_x::Options<'env>` for a core that takes `Options<'static>`, and its crate did not compile. A parameter

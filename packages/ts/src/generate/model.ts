@@ -3,6 +3,7 @@
 // by name, so that nothing is left out silently (G-4, P-4).
 
 import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, outerVariant, variantPattern } from '../contract.ts';
+import { createHash } from 'node:crypto';
 import { convert, sameName } from '../names.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
@@ -1299,6 +1300,37 @@ export function guardBorrows(model: Model, fn: Fn, variable: (parameter: Paramet
 
 // The Rust type of a contract type at the core boundary (T-1, T-2).
 // `inside`: the type is inside another type, or a field of a record, where a callback is a box of the core trait (GN-6aa).
+// GN-6z: the alias of a function type that the core may keep. A crate names the type by its alias at each place and
+// writes the type once, in the definition of the alias, because the lints deny the boxed type at a let and as the result
+// of a closure (clippy type_complexity). The name is `Function` and eight hexadecimal digits of the SHA-256 of the
+// type, so the same type has the same alias at every place of every crate and two types have two.
+const FUNCTION_ALIASES = new Map<string, string>();
+function functionAlias(type: string): string {
+  const name = `Function${createHash('sha256').update(type).digest('hex').slice(0, 8)}`;
+  const earlier = FUNCTION_ALIASES.get(name);
+  if (earlier !== undefined && earlier !== type) throw new Error(`GN-6z: the function types ${earlier} and ${type} have the alias ${name}`);
+  FUNCTION_ALIASES.set(name, type);
+  return name;
+}
+
+// GN-6z: the text of a crate with the definition of each alias of a function type that it names, after its last item;
+// an alias that the definition of another names is defined too.
+export function withFunctionAliases(crate: string): string {
+  const defined = new Map<string, string>();
+  for (let text = crate, grew = true; grew;) {
+    grew = false;
+    for (const [name, type] of FUNCTION_ALIASES) {
+      if (defined.has(name) || !new RegExp(`\\b${name}\\b`).test(text)) continue;
+      defined.set(name, type);
+      text += `\n${type}`;
+      grew = true;
+    }
+  }
+  if (defined.size === 0) return crate;
+  const lines = [...defined].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, type]) => `/// GN-6z: a function that the core may keep.\ntype ${name} = ${type};\n`);
+  return `${crate.replace(/\n*$/, '\n')}\n${lines.join('\n')}`;
+}
+
 export function rustType(model: Model, type: Type, inside = false): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
@@ -1317,7 +1349,7 @@ export function rustType(model: Model, type: Type, inside = false): string {
   // callback member (T-1).
   if ('function' in type) {
     const { parameters, returns } = type.function;
-    return `Box<dyn Fn(${parameters.map((p) => traitParam(model, p)).join(', ')}) -> Result<${returns === 'none' ? '()' : rustType(model, returns)}, binding_core::Failure<${model.coreError ?? '()'}>> + Send + Sync>`;
+    return functionAlias(`Box<dyn Fn(${parameters.map((p) => traitParam(model, p)).join(', ')}) -> Result<${returns === 'none' ? '()' : rustType(model, returns)}, binding_core::Failure<${model.coreError ?? '()'}>> + Send + Sync>`);
   }
   if ('unit' in type) {
     const unit = unitOf(model, type);

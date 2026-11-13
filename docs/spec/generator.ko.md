@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6d41ea682c6691c731626c8a7c6ab255bf61e32687c1a5601f19a3b69f8b7fd6 -->
+<!-- source-sha256: 016eef7fed7b1703b55606b2466ede638a07c16feb1d58192fad6a26b8a41d6e -->
 # 생성기
 
 [English](generator.md)
@@ -421,6 +421,9 @@
 - **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
+  생성된 crate는 이 타입을 type alias로 이름한다. alias의 이름은 `Function`과 그 타입의 SHA-256의 16진 여덟 자리이고,
+  타입은 crate 끝의 alias 정의에 한 번만 쓴다. lint가 `let`과 closure의 결과에 쓴 boxed 타입을
+  거부하기 때문이다(`clippy::type_complexity`).
   코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
   들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
@@ -546,7 +549,8 @@
   하나로 경계를 한 번 건넌다(B2.89). Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
   키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
-  `array_is_list`와 함께, stdClass와 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
+  `array_is_list`와 함께, stdClass를 그 객체의 모든 자리에서 같은 handle로(코어는 그 handle로 이미 본 객체를 안다),
+  그리고 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
   행으로, 내장 형식이나 member로 만든다. member는 계약의 생성된 class의 생성자나 static member로, 하나뿐인 parameter가 그
   kind의 내용(bool, int, int64, float, text, bytes)이고 실패하지 않는 것이며, 그 내용으로 그 코어 경로를 부르고 그 값은 그
   class의 instance로 나간다. 다른 member와 다른 레포 alias의 member는 이름을 대고 거부한다(G-4). 형식 `{"keyed_map": {"key": [...]}}`은 map으로 만들고,

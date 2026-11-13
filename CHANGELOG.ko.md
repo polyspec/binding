@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1fea60c48067838296c8f68a288789512c14086e015e9c3de15105cdb55b9f9d -->
+<!-- source-sha256: e67a6df56f1187b656eba5ce6374de7181c7bf026c1335ce4ef1c94b054f8b34 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/functions`와 `tests/e2e/kept`의 end-to-end 실행이 보인 결함 셋이다. crate가 함수 타입(GN-6z)의 boxed 타입을
+  `let`마다, closure의 결과마다 썼고 lint `clippy::type_complexity`가 그것을 거부한다. 이제 crate는 그 타입을 alias로
+  이름하고(`Function`과 그 타입의 SHA-256의 16진 여덟 자리) 타입은 alias 정의에 한 번만 쓴다. `core_type` 없는 값
+  class(GN-6af)의 constructor 기본값을 보는 Python 시험은 두 인스턴스를 비교했는데, Python에서 그 인스턴스는 자기
+  동등 비교가 없어 같은 값에도 실패했다. 이제 인스턴스의 class와, property로 읽은 보관 값을 비교한다. PHP host는
+  `stdClass`에 자리마다 새 handle을 주어서, 코어가 두 자리에 있는 객체를 두 번 세고 서로를 담는 객체와 참조를 깊이
+  한계까지 읽었다. 이제 `stdClass`는 객체의 주소로 정한 handle 하나를 갖는다(U-7). `make test-ts`로 검증했다: 새 시험
+  셋이 변경 전에는 실패했다. 실행하지 않은 것: 두 계약의 `make e2e`로 도는 clippy, Python, PHP.
 - 계약은 코어가 record field, list, `optional`의 callback을 호출 뒤에도 갖는다는 것을 적을 수 없었다. 그래서 그런
   callback에 호출의 lifetime `'env`를 적는 Node는 `Options<'static>`을 받는 코어에 `polyspec_x::Options<'env>`를 적었고 그
   crate는 컴파일되지 않았다. 이제 parameter는 `keeps: true`를 적고(GN-6aa), `binding check`는 타입이 callback unit을 담지

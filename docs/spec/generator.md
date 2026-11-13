@@ -523,7 +523,10 @@ the design ids are those of the binding design.
 - **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
-  and `E` is the core error. The core may keep the function after the call (template `engine.register`), so the form
+  and `E` is the core error. A generated crate names this type by a type alias, `Function` and eight hexadecimal
+  digits of the SHA-256 of the type, and writes the type once, in the definition of the alias at the end of the
+  crate, because the lints deny the boxed type at a `let` and as the result of a closure
+  (`clippy::type_complexity`). The core may keep the function after the call (template `engine.register`), so the form
   is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
@@ -669,8 +672,8 @@ the design ids are those of the binding design.
   that a common text crosses the boundary once, as one text (B2.89); Node takes a number as `UntypedNumber`, a bigint as `Int` (its decimal
   token outside `i64`), a string as its UTF-16 units, an Array, a Map, a plain object (prototype `Object.prototype` or
   `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
-  element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
-  Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
+  element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass under one
+  handle at every place of the object, by which the core knows an object that it has seen, and a Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
   built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
   parameter is the content of the kind (bool, int, int64, float, text or bytes) and which cannot fail is called on that
   content by its core path, and its value leaves as an instance of the class; any other member, and a member in an

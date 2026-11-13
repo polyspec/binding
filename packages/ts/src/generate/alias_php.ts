@@ -186,7 +186,7 @@ fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
     if !instance {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(own)}) }));
     }
-    let mut host = PhpHost { held: Vec::new(), marked: 0, owned: Vec::new(), values: Vec::new() };
+    let mut host = PhpHost { held: Vec::new(), objects: std::collections::BTreeMap::new(), marked: 0, owned: Vec::new(), values: Vec::new() };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -344,7 +344,7 @@ impl PhpHost<'_> {
         if value.object().is_some() || value.array().is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("GN-6x: a read member gave an object that no in row describes") }));
         }
-        let mut scalar = PhpHost { held: Vec::new(), marked: 0, owned: Vec::new(), values: Vec::new() };
+        let mut scalar = PhpHost { held: Vec::new(), objects: std::collections::BTreeMap::new(), marked: 0, owned: Vec::new(), values: Vec::new() };
         scalar.describe(&value)
     }
 
@@ -451,7 +451,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = PhpHost { held: Vec::new(), marked: 0${model.aliases.some((a) => a.owner !== undefined) ? ', owned: Vec::new(), values: Vec::new()' : ''} };
+    let mut host = PhpHost { held: Vec::new(), objects: std::collections::BTreeMap::new(), marked: 0${model.aliases.some((a) => a.owner !== undefined) ? ', owned: Vec::new(), values: Vec::new()' : ''} };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -478,9 +478,11 @@ ${arms.join('\n')}
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const PHP_HOST = (`
 /// B-1: the entries of an array or of the properties of a stdClass whose children the core may ask for, under the
-/// handles that describe gave, each key already described.
+/// handles that describe gave, each key already described. A stdClass has one handle at every place, by the address
+/// of its object, because the core knows an object that it has seen by its handle (U-7).
 struct PhpHost<'a> {
     held: Vec<Vec<(HostValue, &'a Zval)>>,
+    objects: std::collections::BTreeMap<usize, u64>,
     marked: u64,
 }
 
@@ -542,9 +544,15 @@ impl<'a> PhpHost<'a> {
         if let Some(object) = value.object() {
             let type_name = object.get_class_name().map_err(php_failed)?;
             if type_name == "stdClass" {
+                let identity = std::ptr::from_ref(object).addr();
                 let properties = object.get_properties().map_err(php_failed)?;
                 let len = handle_count(properties.len());
-                return Ok(HostValue::StdClass { handle: self.hold(properties), len });
+                if let Some(handle) = self.objects.get(&identity) {
+                    return Ok(HostValue::StdClass { handle: Handle::new(*handle), len });
+                }
+                let handle = self.hold(properties);
+                self.objects.insert(identity, handle.raw());
+                return Ok(HostValue::StdClass { handle, len });
             }
             if type_name == "Closure" {
                 return Ok(HostValue::Callable(php_native(value)?));
