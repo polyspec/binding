@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- For a core that names no line on `polyspec-binding-core`, such as a core that only passes the values of another
+  library on, `binding scaffold` wrote the development line of binding, the branch `v1/rust-core`, into every binding
+  crate, whichever generator ran, so the binding crates of a repository that a released generator scaffolded named a
+  branch and `binding check --release` reported each of them. Such a core now gets the line of the generator itself
+  (GN-3e): a generator that knows no commit of itself, which is the generator of a release installed at its version
+  (CK-20), writes the tag `vX.Y.Z` of its own version, a release form, and a generator that knows its commit (a
+  checkout, a tree of `git archive`, an install from Git) keeps the branch `v1/rust-core`. A line that the core names
+  is followed as before. Verified by `make test-ts`: the new test failed before the change, because the manifest named
+  the branch for the generator of a release, and 422 of 422 pass with it.
 - `binding scaffold` of a contract with the target go whose core names another library by a dependency that is no
   `path` asks `cargo metadata` for the contract of that library, and a failure of Cargo stopped the scaffold for every
   target. Only `go.mod` reads those contracts, so a failure now names the Go module alone as not written, with the

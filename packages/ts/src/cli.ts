@@ -219,11 +219,15 @@ function scaffolded(): Map<string, unknown> {
   return found;
 }
 const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
+// GN-3e: the running generator, whose own line on polyspec-binding-core the binding crates of a core without that line
+// get: the version of its package and the commit that it knows of itself (CK-20).
+const packageDir = resolve(dirname(new URL(import.meta.url).pathname), '..');
+const generator = { version: (JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version: string }).version, commit: ownCommit(packageDir) };
 // GN-3e: the tracked packages, which check and scaffold read and generate does not. A package that cannot be written is
 // named with its reason, and so is a failure of the whole that the contract, a case file or a manifest causes.
 function trackedOf(): Tracked {
   try {
-    const result = trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense);
+    const result = trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }), coreLicense, generator);
     const failure = metadataFailure;
     return failure === undefined ? result : { files: result.files, refused: result.refused.map((r) => (r.path === goModuleDir(checked) ? { path: r.path, message: `${r.message}: ${failure}` } : r)) };
   } catch (error) {

@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 047f616f3b2c84050ce870c6dcacc4214fd3c120cd0686469b9cac1c3e56f125 -->
+<!-- source-sha256: b8c397c63e4d84a9253812db0efa1fb790c8ed04d4c6b5f91a4626d7f7a14145 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 라이브러리의 값을 넘겨주기만 하는 코어처럼 `polyspec-binding-core` 줄을 적지 않은 코어에 대해, `binding scaffold`는
+  어느 생성기가 실행되든 binding의 개발 줄인 branch `v1/rust-core`를 모든 바인딩 crate에 썼다. 그래서 release의 생성기가
+  scaffold한 레포의 바인딩 crate도 branch를 적었고 `binding check --release`가 그것을 하나씩 보고했다. 이제 그런 코어는
+  생성기 자신의 줄을 받는다(GN-3e). 자신의 commit을 알지 못하는 생성기, 곧 그 버전으로 설치된 release의 생성기(CK-20)는
+  자기 버전의 tag `vX.Y.Z`를 쓰며 이것은 release 꼴이다. 자신의 commit을 아는 생성기(checkout, `git archive`의 tree,
+  Git에서의 설치)는 branch `v1/rust-core`를 그대로 쓴다. 코어가 적은 줄은 전과 같이 따른다. `make test-ts`로 확인했다. 새
+  테스트는 변경 전에 release의 생성기에 대해 manifest가 branch를 적어서 실패했고, 변경 후 422개 가운데 422개가 통과한다.
 - target go가 있고 코어가 다른 라이브러리를 `path`가 아닌 의존으로 적는 계약의 `binding scaffold`는 그 라이브러리의 계약을
   `cargo metadata`에 묻는데, Cargo가 실패하면 모든 target의 scaffold가 멈췄다. 그 계약을 읽는 것은 `go.mod`뿐이므로, 이제
   실패는 Go module만 쓰지 않은 것으로 이름하고, Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를 fetch하는 install

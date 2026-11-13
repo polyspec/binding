@@ -11,17 +11,27 @@ import { holdsFunction, nativeRoundTrip, Unsupported } from './model.ts';
 
 // GN-3e: the dependency line of a binding crate on polyspec-binding-core follows the line of the core on it: its source
 // (git with branch or tag, version, or path, which climbs depth directories more to the place of the binding crate),
-// and none that binding pins. Only a core without the line gets the development line of binding, which the check of a
-// release reports (CK-70).
+// and none that binding pins. A core without the line gets the line of the generator itself (generatorLine).
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // Every binding crate holds the core value of a class unit in the locks of the feature lock (GN-6h, GN-18a).
 // GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core,
 // but WASM, whose futures the event loop of JavaScript polls (wasm-bindgen-futures) and which has no tokio runtime.
 export const BINDING_CORE = 'polyspec-binding-core';
-const BINDING_DEVELOPMENT = { git: 'https://github.com/polyspec/binding.git', branch: 'v1/rust-core' };
+const BINDING_GIT = 'https://github.com/polyspec/binding.git';
+// GN-3e: the running generator, by the version of its package and the commit that it knows of itself (CK-20).
+export interface Generator {
+  version: string;
+  commit: string | undefined;
+}
+// GN-3e: the line of the generator itself, for a core that names none. The generator of a release was installed at its
+// version and knows no commit of itself: the tag of that version, a release form. A generator that knows its commit (a
+// checkout, a tree of git archive, an install from Git) is a development generator: the development branch, which the
+// check of a release reports (CK-70).
+const generatorLine = (generator: Generator | undefined): Record<string, string> =>
+  generator !== undefined && generator.commit === undefined ? { git: BINDING_GIT, tag: `v${generator.version}` } : { git: BINDING_GIT, branch: 'v1/rust-core' };
 const SOURCE_KEYS = ['git', 'branch', 'tag', 'rev', 'version', 'path', 'registry'];
-function bindingCore(spec: unknown, depth: number, driver: boolean): string {
-  const fields = spec === undefined ? BINDING_DEVELOPMENT : typeof spec === 'object' && spec !== null ? spec as Record<string, unknown> : { version: spec };
+function bindingCore(spec: unknown, depth: number, driver: boolean, generator: Generator | undefined): string {
+  const fields = spec === undefined ? generatorLine(generator) : typeof spec === 'object' && spec !== null ? spec as Record<string, unknown> : { version: spec };
   const source = Object.entries(fields).filter(([key]) => SOURCE_KEYS.includes(key)).map(([key, value]): [string, unknown] =>
     [key, key === 'path' && typeof value === 'string' && !value.startsWith('/') ? `${'../'.repeat(depth)}${value}` : value]);
   return `${BINDING_CORE} = ${tomlValue({ ...Object.fromEntries(source), features: ['construct', 'lock', ...(driver ? ['driver'] : [])] })}`;
@@ -155,6 +165,8 @@ interface Core {
   license: string | undefined;
   // GN-3e: the dependency line of the core on polyspec-binding-core, which the binding crates follow.
   binding: unknown;
+  // GN-3e: the running generator, whose own line a core without that line gets; none is a development generator.
+  generator: Generator | undefined;
 }
 
 function manifest(contract: Contract, core: Core, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
@@ -177,7 +189,7 @@ panic-test = []
 ${testFeatures(contract, suffix, armed)}
 [dependencies]
 ${contract.core.crate} = { path = "${corePath}"${coreFeatures(contract, suffix)} }
-${bindingCore(core.binding, corePath.split('../').length - 2, suffix !== 'wasm' && drives(contract, suffix))}
+${bindingCore(core.binding, corePath.split('../').length - 2, suffix !== 'wasm' && drives(contract, suffix), core.generator)}
 ${dependencies.join('\n')}
 
 [lints]
@@ -298,8 +310,9 @@ export function trackedPackages(...inputs: Parameters<typeof trackedResult>): Fi
 // foreign: the contracts of the libraries that the contract names, whose records go.mod requires (GN-15f).
 // license: the licence of the core, which every manifest with a licence field carries (GN-3f); a core without one gives
 // manifests without the field.
-export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = [], license?: string): Tracked {
-  const core: Core = { version, license, binding: coreDependencies.get(BINDING_CORE) };
+// generator: the running generator, whose own line on polyspec-binding-core a core without that line gets (GN-3e).
+export function trackedResult(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = [], license?: string, generator?: Generator): Tracked {
+  const core: Core = { version, license, binding: coreDependencies.get(BINDING_CORE), generator };
   // GN-13: a target with a case whose value has no form in its language has the feature case-test.
   const caseTest = new Set(caseTargets);
   const files: Files = new Map();
