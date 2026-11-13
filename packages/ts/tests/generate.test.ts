@@ -3135,3 +3135,12 @@ test('the PHP test writes a function fixture, the exception of raises callback a
   // A value that is no callable is kind invalid_callback.
   assert.match(tests, /public function testGn6aeStoreTransactionWorkRefusesWhatIsNoCallable\(\): void\n {4}\{\n {8}try \{\n {12}new \\Polyspec\\Sample\\Store\(\)->transaction\(1\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleTypeError \$error\) \{\n {12}self::assertSame\('invalid_callback', \$error->kind\(\)\);/);
 });
+
+test('a test generator that does not write after and raises callback refuses the cases that name them (GN-6ae, G-4)', async () => {
+  const { refuseScopedCases } = await import('../src/generate/samples.ts');
+  const model = (cases: unknown[]): any => ({ cases: new Map([['store.transaction', cases]]) });
+  assert.doesNotThrow(() => refuseScopedCases(model([{ id: 'a', result: null }, { id: 'b', raises: { kind: 'missing' } }]), 'Python'));
+  assert.throws(() => refuseScopedCases(model([{ id: 'a', after: [] }]), 'Python'), /the case a of store\.transaction: after and raises "callback" are not written in the test of Python yet \(GN-6ae\)/);
+  assert.throws(() => refuseScopedCases(model([{ id: 'b', raises: 'callback' }]), 'Go'), /the case b of store\.transaction: after and raises "callback" are not written in the test of Go yet \(GN-6ae\)/);
+});
+

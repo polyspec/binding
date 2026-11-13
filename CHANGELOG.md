@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
+  word once their target generates a function parameter, because only the PHP test writes them. Each of those test
+  generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>
+  yet", until it writes them (GN-6ae, G-4). Verified by `npm test` in `packages/ts`, whose test of the refusal passes;
+  the 21 tests that generate the sample for those targets still fail with the refusal of the members.
 - The generated PHP extension of a contract with the classes `store` and `scope` did not compile: the conversion of a
   class named `scope` had the name `in_scope` of the helper that reads a property in the scope of a class, and a
   method with `machine` gave the core `Clone::clone(&*receiver)`, a clone of a borrow of the borrow that the lock

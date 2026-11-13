@@ -25,7 +25,7 @@ import {
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
-  raisingCases, resultCases, sampleReceiver, stringCases,
+  raisingCases, refuseScopedCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
 interface Values {
@@ -778,6 +778,7 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
 
 export function goTestFiles(model: Model, module: string): [string, string][] {
   checkCaseNames(model, casePascal, false);
+  refuseScopedCases(model, 'Go');
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };

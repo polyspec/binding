@@ -1142,6 +1142,17 @@ export const caseSnake = (id: string): string => caseWords(id).join('_');
 
 // GN-13e: two ids of the cases of one member, or of one value alias, that give one test name refuse the target, PHP
 // comparing the names without case as it does for its methods; an id without a word gives no name.
+// GN-6ae (G-4): a test generator that does not write the calls of after and the case of raises "callback" yet refuses
+// the cases that name them, so that no such case is left out of the tests of its target unseen.
+export function refuseScopedCases(model: Model, target: string): void {
+  for (const [member, cases] of model.cases) {
+    for (const kase of cases) {
+      const record = kase as Record<string, unknown>;
+      if (record['after'] !== undefined || record['raises'] === 'callback') throw new Unsupported(`the case ${String(record['id'])} of ${member}: after and raises "callback" are not written in the test of ${target} yet (GN-6ae)`);
+    }
+  }
+}
+
 export function checkCaseNames(model: Model, name: (id: string) => string, caseless: boolean): void {
   const groups: [string, unknown[]][] = [...model.cases.entries(), ...[...model.aliasCases.entries()].map(([id, cases]): [string, unknown[]] => [`the alias ${id}`, cases])];
   for (const [owner, cases] of groups) {

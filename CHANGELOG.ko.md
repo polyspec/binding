@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 224525656d1b4cdb96d8f4617ec8322f9dc8403c9328891efe23e07d944665f2 -->
+<!-- source-sha256: 2a0879c37d10cd0010de3281bfe4474a3fe5e2c70f4458b84b5656fb3ad156c9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
+  case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
+  때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,
+  G-4). `packages/ts`의 `npm test`로 검증했고 그 거부의 시험은 통과한다. 그 target으로 sample을 생성하는 시험 21개는
+  아직 member의 거부로 실패한다.
 - class `store`와 `scope`가 있는 계약의 생성된 PHP extension은 컴파일되지 않았다. 이름이 `scope`인 class의 변환이
   class의 scope 안에서 property를 읽는 helper의 이름 `in_scope`를 가졌고, `machine`이 있는 method는 lock이 주는
   borrow의 borrow를 clone하는 `Clone::clone(&*receiver)`를 코어에 주었으며, sample의 코어 경로는 `&self`를 받았다.
