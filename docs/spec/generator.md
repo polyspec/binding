@@ -14,17 +14,19 @@ the design ids are those of the binding design.
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
-  repository, GN-6k), enums, constants, error classes and error units (GN-7a),
+  repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
+  interfaces of this contract that a class implements (GN-6w),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  `self`, an abstract class, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
   record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
+  Go refuses a variant unit and a class that implements an interface (GN-6v, GN-6w).
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -184,6 +186,24 @@ the design ids are those of the binding design.
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+- **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
+  that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
+  contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a
+  unit that reaches the variant that owns it again through fields of units and `optional`s alone is `Box<T>` (or
+  `Option<Box<T>>`), because a Rust enum cannot hold itself; a `list` holds the variant without a box. Each binding
+  converts the variant both ways (`in_<variant>`, `out_<variant>`) with a match of its cases that has no wildcard,
+  so a case that the core or the contract lacks does not compile. Each case has the result form (GN-6a) of the record
+  of its fields, named `<Variant><Case>`: Python a frozen keyword-only `dataclass` in `<root>._types` and the alias
+  `type <Variant> = <Variant><Case> | ...`; Node and WASM a plain object whose tag member (the `tag` of the unit, by its
+  language name) holds the case value, and the declarations the union of the case interfaces; PHP a final class of
+  each case that implements the interface `<Variant>`. A value that is no case (an object without the tag, a tag that
+  names no case, an instance of another class) is kind `invalid_argument_type`. In a case file a variant value is an
+  object whose tag key holds the case value and whose other keys are the fields by their snake_case names (G-5).
+  Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
+  not generated yet, a field default of a case and a field that holds a class, a callback, a value alias or a unit of
+  another repository.
+  Why: the language value of a case says which case it is, so the binding converts it without a guess, and a match
+  without a wildcard makes a case that one side lacks a compile error instead of a value lost at run time.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
   native module, Node a napi class exported by its JavaScript name, PHP a `php_class` with the flag final. A method or
   property calls the core path with the held value as its receiver; a static member or the constructor that returns

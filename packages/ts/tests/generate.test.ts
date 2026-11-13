@@ -27,6 +27,8 @@ const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
+  // Go refuses the variant figure (GN-6v) and the class ribbon that implements tail (GN-6w).
+  variants: ['php', 'python', 'node', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
   classes: ['php', 'python', 'node', 'go', 'wasm'],
 };
@@ -1097,6 +1099,56 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 };
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+
+// The repository of the end-to-end check that holds a variant and a class that implements a callback interface
+// (tests/e2e/variants).
+const variants = (change: (contract: any) => void = () => undefined, targets?: Inputs['targets']): Map<string, string | Buffer> => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  change(contract);
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles, ...(targets === undefined ? {} : { targets }) });
+};
+
+test('a variant is the core enum, converted by a match of its cases, and a union of its cases in each language (T-9, GN-6v)', () => {
+  const out = variants();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /fn in_figure\(/, path);
+    assert.match(rust, /fn out_figure/, path);
+    // A case without fields is a struct pattern, and a field that holds the variant again is boxed; a list is not.
+    assert.match(rust, /polyspec_variants::Figure::Dot \{\}/, path);
+    assert.match(rust, /let field_frame: Box<polyspec_variants::Figure> = [\s\S]*?Box::new\(in_figure\(/, path);
+    assert.match(rust, /let field_back: Option<Box<polyspec_variants::Figure>> = [\s\S]*?in_optional\([^\n]*\.map\(Box::new\)/, path);
+    assert.match(rust, /let field_items: Vec<polyspec_variants::Figure> = /, path);
+    assert.match(rust, /polyspec_variants::Figure::Group \{ items: field_items, frame: field_frame, back: field_back \}/, path);
+    assert.doesNotMatch(rust, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/, path);
+  }
+  const types = text(out, 'packages/python/generated/python/polyspec/variants/_types.py');
+  assert.match(types, /@dataclass\(frozen=True, kw_only=True\)\nclass FigureGroup:/);
+  assert.match(types, /^type Figure = FigureDot \| FigureCircle \| FigureLabel \| FigureGroup$/m);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    const dts = text(out, path);
+    assert.match(dts, /export interface FigureDot \{\n  readonly type: 'dot';\n\}/, path);
+    assert.match(dts, /export interface FigureGroup \{\n  readonly type: 'group';\n  readonly items: readonly \(Figure\)\[\];\n  readonly frame: Figure;\n  readonly back: Figure \| null;\n\}/, path);
+    assert.match(dts, /export type Figure = FigureDot \| FigureCircle \| FigureLabel \| FigureGroup;/, path);
+    assert.match(dts, /export declare function grown\(figure: Figure\): Figure;/, path);
+  }
+  const stub = text(out, 'packages/php-ext/generated/polyspec_variants.stub.php');
+  assert.match(stub, /interface Figure\n\s+\{\n\s+\}/);
+  assert.match(stub, /final class FigureCircle implements Figure\n/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /\.implements\(\(variant_figure, "\\\\Polyspec\\\\Variants\\\\Figure"\)\)/);
+  // G-5: a variant value of a case is the object of its tag and fields, which each target writes in its form.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureGroup\(items=\[pkg\.FigureCircle\(radius=1\.25\), pkg\.FigureLabel\(text="ab", at=2\)\], frame=pkg\.FigureDot\(\), back=None\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'group', items: \[\{ type: 'circle', radius: 1\.25 \}, \{ type: 'label', text: 'ab', at: 2 \}\], frame: \{ type: 'dot' \}, back: null \}\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /new \\Polyspec\\Variants\\FigureGroup\(/);
+  // GN-1: Go refuses the variant by name.
+  assert.throws(() => variants(undefined, ['go']), /figure: a variant unit is not generated for Go yet \(GN-6v\)/);
+  // GN-6v: what is not generated yet is refused by name.
+  assert.throws(() => variants((c) => { delete unitOf(c, 'figure').core_type; }), /figure: a variant names its core enum in core_type \(T-9\)/);
+  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case is not generated yet \(T-4, T-9\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].type = { unit: 'ribbon' }; }), /figure\.circle\.radius: a class in a case of a variant is not generated yet \(GN-6v\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
+});
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
