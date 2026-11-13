@@ -1,0 +1,203 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "plot",
+  "core": {
+    "crate": "polyspec-plot",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/plot",
+      "namespace": "Polyspec\\Plot"
+    },
+    "python": {
+      "package": "polyspec-plot",
+      "module": "polyspec.plot"
+    },
+    "node": {
+      "package": "@polyspec/plot",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/plot/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Plot\\PlotValueError",
+        "python": "PlotValueError",
+        "node": "PlotValueError",
+        "wasm": "PlotValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Plot\\PlotTypeError",
+        "python": "PlotTypeError",
+        "node": "PlotTypeError",
+        "wasm": "PlotTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Plot\\PlotIoError",
+        "python": "PlotIoError",
+        "node": "PlotIoError",
+        "wasm": "PlotIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Plot\\PlotStoreError",
+        "python": "PlotStoreError",
+        "node": "PlotStoreError",
+        "wasm": "PlotStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Plot\\PlotBusyError",
+        "python": "PlotBusyError",
+        "node": "PlotBusyError",
+        "wasm": "PlotBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Plot\\PlotInternalError",
+        "python": "PlotInternalError",
+        "node": "PlotInternalError",
+        "wasm": "PlotInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_plot::Error::Below",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "plot",
+      "name": [
+        "plot"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "plot.mirror",
+          "name": [
+            "mirror"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "point"
+              ],
+              "type": {
+                "unit": "point",
+                "library": "points"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "point",
+            "library": "points"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_plot::mirror"
+        },
+        {
+          "id": "plot.rise",
+          "name": [
+            "rise"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "by"
+              ],
+              "type": "int",
+              "required": true
+            },
+            {
+              "name": [
+                "point"
+              ],
+              "type": {
+                "unit": "point",
+                "library": "points"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "point",
+            "library": "points"
+          },
+          "raises": [
+            "polyspec_plot::Error::Below"
+          ],
+          "wait": "none",
+          "core": "polyspec_plot::rise"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "plot.mirror",
+      "file": "contracts/cases.json",
+      "group": "mirror"
+    },
+    {
+      "member": "plot.rise",
+      "file": "contracts/cases.json",
+      "group": "rise"
+    }
+  ]
+}

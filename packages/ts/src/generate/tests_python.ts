@@ -3,13 +3,13 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**64'],
-  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
+  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
+  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**53', '-(2**53)', '2**63'],
   int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
   float: ['True', '"7"', '1'],
 };
@@ -130,6 +130,7 @@ export function pythonTests(model: Model, module: string): string {
     return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
   };
   let usesOutcome = false;
+  let usesAsyncio = false;
   let usesSame = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('python', fn, receiver);
@@ -170,6 +171,14 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, refused.value]]))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+    def test_b2_${name}_${argName}_refuses_a_key_outside_the_safe_integers(self) -> None:
+        with self.assertRaises(pkg.${cls('value')}) as caught:
+            ${call(new Map([[arg, unsafeKey]]))}
+        self.assertEqual(caught.exception.kind, "invalid_number")`);
       }
       if (arg.default !== undefined) {
         out.push(`
@@ -319,6 +328,18 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
             ${with_({ returns: 'wrong' })}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
+      // GN-6q: a member that reaches language code calls the callback on the worker thread of asyncio.to_thread.
+      if (fn.reaches === true) {
+        usesAsyncio = true;
+        const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : placeholder(model, ctx, arg.type, true)));
+        const awaited = invoke(fn, args, recv).replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
+        out.push(`
+    def test_gn6q_${name}_awaits_a_callback_on_the_thread_of_to_thread(self) -> None:
+        raised = LookupError("raised by the callback")
+        with self.assertRaises(LookupError) as caught:
+            asyncio.run(${awaited})
+        self.assertIs(caught.exception, raised)`);
+      }
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -410,7 +431,7 @@ export function pythonTests(model: Model, module: string): string {
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
 ${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
 from ${module} import _native

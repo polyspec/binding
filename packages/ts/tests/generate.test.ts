@@ -442,7 +442,8 @@ test('Go: a tuple parameter is read part by part, a Tuple<N> of different part t
   assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
   const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
-  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), in_uint, in_bool\)\?/);
+  // GN-12a: a uint part is a safe integer, as at every place of the contract.
+  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), \|input\| in_safe_uint\(input, "text"\), in_bool\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
@@ -664,6 +665,9 @@ test('scaffold rewrites its packages after the core crate was renamed, without a
   try {
     const manifest = join(root, 'packages/rust/Cargo.toml');
     writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n`);
+    // GN-15f: scaffold reads the contract of a path dependency from that path, without Cargo, for go.mod.
+    execFileSync('mkdir', ['-p', join(root, 'dep')]);
+    writeFileSync(join(root, 'dep/interface.json'), JSON.stringify({ library: 'forms-dep', units: [{ id: 'dep_part', kind: 'enum' }] }));
     execFileSync('mkdir', ['-p', join(root, 'bin')]);
     // A cargo that fails as it does when a binding manifest names a crate that no longer exists.
     writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
@@ -807,6 +811,85 @@ const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; for
     foreign: new Map([['sample', read('sample/packages/rust/interface.json')]]),
   };
 };
+
+// The plot of the end-to-end check, which takes and gives the record point of tests/e2e/points (GN-15f).
+const plotSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  return {
+    contract: read('plot/packages/rust/interface.json'),
+    caseFiles: new Map([['contracts/cases.json', read('plot/contracts/cases.json')]]),
+    foreign: new Map([['points', read('points/packages/rust/interface.json')]]),
+  };
+};
+
+test('Go: a record of another repository is the struct of its Go module, which go.mod requires (GN-15f)', () => {
+  const { contract, caseFiles, foreign } = plotSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['go'] });
+  const pkg = text(out, 'packages/go/zz_generated_plot.go');
+  assert.match(pkg, /\n\t"github\.com\/polyspec\/points\/packages\/go"\n/);
+  assert.match(pkg, /\nfunc Mirror\(point points\.Point\) \(points\.Point, error\) \{\n/);
+  assert.match(pkg, /\tenc\.Int\(point\.X\)\n\tenc\.Int\(point\.Y\)\n/);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_points_point\(input: &mut &\[u8\]\) -> Result<polyspec_points::Point, Fail> \{\n/);
+  assert.match(lib, /\nfn out_points_point\(output: &mut Vec<u8>, value: impl Borrow<polyspec_points::Point>\) \{\n/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /points\.Point\{X: 1, Y: 2\}/);
+  // binding scaffold requires the Go module of the library by the dependency line of the core.
+  const goMod = (spec: unknown, of = contract, libraries = foreign): string => String(trackedPackages(of, '0.0.0', new Map([['polyspec-points', spec], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries).get('packages/go/go.mod'));
+  const module = 'github\\.com\\/polyspec\\/points\\/packages\\/go';
+  assert.match(goMod({ path: '../../../points/packages/rust' }), new RegExp(`\\ngo 1\\.27\\.3\\n\\nrequire ${module} v0\\.0\\.0\\n\\nreplace ${module} => \\.\\.\\/\\.\\.\\/\\.\\.\\/points\\/packages\\/go\\n$`));
+  assert.match(goMod('=0.1.2'), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
+  assert.match(goMod({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), new RegExp(`\\nrequire ${module} v0\\.1\\.2\\n$`));
+  for (const spec of [{ git: 'https://github.com/polyspec/points.git', branch: 'main' }, { git: 'https://github.com/polyspec/points.git', rev: '0123abc' }, '0.1', { version: '^0.1.2' }]) {
+    assert.throws(() => goMod(spec), /polyspec-points: the dependency line of the core names no path, exact version or tag, so the Go module of points has no version \(GN-15f\)/, JSON.stringify(spec));
+  }
+  // A library whose records the contract does not name is not required: the consumer names only a value alias.
+  const consumer = consumerSample();
+  assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+});
+
+test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
+  // gofmt writes 1 << 53 as 1<<53 where it is one of several arguments, so the test writes the number itself.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const tests = text(generate({ contract: read('points/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_points', caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]), targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Shift\(9007199254740992, Point\{X: 0, Y: 0\}\)/);
+  assert.match(tests, /Shift\(-9007199254740992, Point\{X: 0, Y: 0\}\)/);
+  assert.doesNotMatch(tests, /<< 53/);
+});
+
+test('binding scaffold reads the contract of a path dependency and writes its Go module in go.mod (GN-15f)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-plot-'));
+  try {
+    for (const repository of ['points', 'plot']) execFileSync('cp', ['-r', new URL(`../../../tests/e2e/${repository}`, import.meta.url).pathname, root]);
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')]);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/points\/packages\/go => \.\.\/\.\.\/\.\.\/points\/packages\/go\n$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Go: a contract without a class unit has no table of instances in its C ABI (T-5, GN-15a)', () => {
+  // A map insert of the generated code (made.insert) is no call of the helper that keeps an instance in a table.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /made\.insert\(/);
+  assert.doesNotMatch(lib, /Table<|Arc::new/);
+});
+
+test('Go: an optional output is an Option of a reference to the value of the core, so a generic item takes one type (GN-16)', () => {
+  // An optional property of an error unit (absent_error.length, of the form of machine_error.expected of fsm).
+  const { contract: consumer, caseFiles, foreign } = consumerSample();
+  const ffi = text(generate({ contract: consumer, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(ffi, /\nfn out_optional<T>\(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce\(&mut Vec<u8>, T\)\) \{/);
+  assert.match(ffi, /out_optional\(output, polyspec_consumer::Error::length\(&error\)\.as_ref\(\), out_uint\);/);
+  // An optional uint and an optional text field of a record that leaves the C ABI.
+  const { contract } = load();
+  contract.units[0].members[0].returns = { unit: 'options' };
+  unitOf(contract, 'options').fields.push({ name: ['label'], type: { optional: 'text' }, required: true, reason: 'S-1' });
+  contract.cases = [];
+  const sample = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(sample, /out_optional\(output, value\.max_words\.as_ref\(\), out_uint\);/);
+  assert.match(sample, /out_optional\(output, value\.label\.as_ref\(\), out_text\);/);
+});
 
 test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6k)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
@@ -1181,6 +1264,73 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 };
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+
+// The Rust function `name` of a generated crate, from its line to the closing brace of its body.
+const rustFn = (code: string, name: string): string => {
+  const start = code.search(new RegExp(`\\nfn ${name}[(<]`));
+  return start < 0 ? '' : code.slice(start, code.indexOf('\n}\n', start) + 3);
+};
+
+test('an integer key of a keyed_map outside the safe integers is kind invalid_number in every target, and a key of a kind that the contract does not list is invalid_argument_type (GN-12a, GN-13, GN-13b)', () => {
+  const { contract } = load();
+  contract.units[0].members[0].parameters[0].type = { keyed_map: 'text', key: ['int', 'text'] };
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const safe = /9_007_199_254_740_991/;
+  const node = rustFn(text(out, 'packages/ts/generated/lib.rs'), 'in_keyed_map');
+  assert.match(node, /ValueType::Number if kinds\.contains\(&0\) => \(0, binding_core::Key::Int\(safe_integer\(key, subject, NumberType::Int\)\?\)\)/, 'Node: a number key of a listed int is invalid_number when it is no safe integer');
+  const wasm = rustFn(text(out, 'packages/ts/wasm/generated/lib.rs'), 'in_keyed_map');
+  assert.match(wasm, /key\.as_f64\(\)\.is_some\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(safe_integer\(&key, subject, NumberType::Int\)\?\)\)/, 'WASM: as Node');
+  const python = rustFn(text(out, 'packages/python/generated/lib.rs'), 'in_keyed_map');
+  assert.match(python, /key\.is_exact_instance_of::<PyInt>\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(in_int\(py, &key, subject\)\?\)\)/, 'Python: in_int, the safe integers');
+  const php = rustFn(text(out, 'packages/php-ext/generated/lib.rs'), 'in_keyed_map');
+  assert.match(php, safe, 'PHP: an int key is a safe integer');
+  assert.match(php, /BindingError::InvalidNumber/, 'PHP: an int key outside is invalid_number');
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\{2\*\*53: [^\n]*\n\s+self\.assertEqual\(caught\.exception\.kind, "invalid_number"\)/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(out, path), /new Map\(\[\[2 \*\* 53, [^\n]*error\.kind === 'invalid_number'/, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\[2 \*\* 53 => [^\n]*;\n\s+self::fail\('no error'\);\n\s+\} catch \([^\n]*ValueError \$error\) \{\n\s+self::assertSame\('invalid_number', \$error->kind\(\)\);/);
+  // Go refuses the list of tuples that the member returns (a Go array has one element type), as in the test of T-2.
+  contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const go = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const ffi = rustFn(text(go, 'packages/go/internal/ffi/generated/lib.rs'), 'in_keyed_map');
+  assert.match(ffi, /if !kinds\.contains\(&tag\) \{\n\s+return Err\(type_error\(subject, expected\)\);\n\s+\}\n(?:\s+\/\/[^\n]*\n)?\s+if matches!\(key, binding_core::Key::Int\(integer\) if integer\.unsigned_abs\(\) > 9_007_199_254_740_991\) \{\n\s+return Err\(binding_error\(BindingError::InvalidNumber/, 'Go: the kind of the key first, then its range');
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /binding\.IntKey\(9007199254740992\)[\s\S]{0,400}?"invalid_number"/);
+});
+
+test('an int or a uint outside the safe integers is kind invalid_number in every target, and an int64 takes the range of i64 (GN-12a, GN-13, GN-13b)', () => {
+  // buffer.from_end takes an int, shapes.total a list of uint and shapes.negate an int64.
+  const out = shaped((contract) => {
+    member(contract, 'buffer.from_end').parameters[0].type = 'int';
+  });
+  const safe = /9_007_199_254_740_991/;
+  for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(rustFn(lib, 'in_int'), safe, `${path}: in_int refuses an int outside the safe integers`);
+    assert.match(rustFn(lib, 'in_uint'), safe, `${path}: in_uint refuses a uint above 2^53 - 1`);
+    assert.notEqual(rustFn(lib, 'in_int64'), '', `${path}: in_int64 takes an int64`);
+    assert.doesNotMatch(rustFn(lib, 'in_int64'), safe, `${path}: in_int64 takes the range of i64`);
+  }
+  const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rustFn(ffi, 'in_safe_int'), safe, 'the Go C ABI refuses an int outside the safe integers');
+  assert.match(rustFn(ffi, 'in_safe_uint'), safe, 'the Go C ABI refuses a uint above 2^53 - 1');
+  assert.match(ffi, /in_list\(input, \|input\| in_safe_uint\(input, /, 'an item of a list of uint is in the range');
+  assert.doesNotMatch(rustFn(ffi, 'in_int'), safe, 'an int64, a handle and a length take the range of their word');
+  assert.match(
+    text(out, 'packages/python/generated/tests/test_generated.py'),
+    /def test_b2_buffer_from_end_count_refuses_what_is_not_int\(self\) -> None:\n\s+for bad in \[[^\n]*2\*\*53, -\(2\*\*53\)/,
+  );
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB2BufferFromEnd\w*RefusesWhatIsNotint\(\): void\n\s+\{\n\s+foreach \(\[[^\n]*2 \*\* 53, -\(2 \*\* 53\)/);
+  const goTest = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountAboveTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(9007199254740992\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2BufferFromEndRefusesCountBelowTheSafeIntegers\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)*?\t_, err := made0\.FromEnd\(-9007199254740992\)\n[^\n]*failure\.Kind\(\) != "invalid_number"/);
+  assert.match(goTest, /func TestB2TotalRefusesNumbersAboveTheSafeIntegers\(t \*testing\.T\) \{\n\t[^\n]*Total\(ptr\(\[\]uint64\{9007199254740992\}\)\)/, 'an item of a list of uint');
+  assert.doesNotMatch(goTest, /func TestB2\w*Negate/, 'an int64 takes the range of i64');
+});
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
@@ -1635,6 +1785,8 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // Each core call is armed for its own member, and none twice.
     assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
+  // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
+  assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            out_list(&mut buffer, left, out_text);\n'));
   // GN-8a: the call that is refused as busy leaves the arming, which the next call of the member takes.
   assert.match(text(out, pythonTests), /held = pkg\.Counter\(0\)\n {8}armed = _native\._arm_faults\("counter\.draw", "\[\{\\"point\\":\\"sample\.draw\\",\\"kind\\":\\"broken\\"\}\]"\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.draw\(held\)\n(?:[^\n]*\n)+? {8}with self\.assertRaises\(pkg\.SampleInternalError\) as caught:\n {12}held\.draw\(pkg\.Counter\(0\)\)\n(?:[^\n]*\n){2} {8}self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
   assert.match(text(out, nodeTests), /const armed = addon\(\)\.__armFaults\('counter\.draw', [^\n]*\n {2}assert\.throws\(\(\) => held\.draw\(held\), [^\n]*'busy'\);\n(?:[^\n]*\n)+? {2}assert\.throws\(\(\) => held\.draw\(new pkg\.Counter\(0\)\), [^\n]*'internal'\);\n {2}assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);
@@ -2034,6 +2186,17 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   }
   assert.match(text(out, 'packages/python/generated/lib.rs'), /PyResourceWarning/);
   assert.match(text(out, 'packages/ts/generated/lib.rs'), /emitWarning/);
+  // GN-6p: the Python destructor keeps an exception that is being raised and sets it again after the warning.
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /let raising = PyErr::take\(py\);\n {16}if let Err\(error\) = PyErr::warn\([^\n]*\n {20}error\.write_unraisable\(py, None\);\n {16}\}\n {16}if let Some\(raising\) = raising \{\n {20}raising\.restore\(py\);\n {16}\}/);
+  // GN-6p: PHP puts the name of the running function before the message of a warning.
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertCount\(1, \$warnings\);\n {8}self::assertSame\(E_WARNING, \$warnings\[0\]\[0\]\);\n {8}self::assertStringEndsWith\("Lease was destroyed without release\(\), so its destructor released it \(B-10\)", \$warnings\[0\]\[1\]\);/);
+  // B-5c: the Go poison entry point reaches each of its classes through a helper that the C ABI defines.
+  const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
+  // The poison entry point takes the instances of the classes that Go makes: Go makes neither Gate nor Lease here, so
+  // the C ABI and the Go package have no poison entry point.
+  assert.doesNotMatch(goLib, /held_lease|panic_test_held/);
+  assert.doesNotMatch(text(classes(() => undefined, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /PanicTestHeld/);
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
@@ -2095,6 +2258,44 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
   assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
+});
+
+test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
+  const sample = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = sample();
+  const token = 'binding_core::Io::for_generated_call()';
+  // PHP: the core calls the callback on the calling thread.
+  assert.ok(text(out, 'packages/php-ext/generated/lib.rs').includes(`polyspec_sample::resolve_slowly(${token}, `), 'PHP passes the token');
+  // Python: the call runs without the GIL, each callback call takes the GIL on the thread of the core, and a callback
+  // with thread owner has no check of the thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| [^\n]*polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), /);
+  assert.match(python, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.doesNotMatch(python, /WrongThread|std::thread::current/);
+  const pyTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pyTests, /def test_gn6q_resolve_slowly_awaits_a_callback_on_the_thread_of_to_thread\(self\) -> None:\n {8}raised = LookupError\("raised by the callback"\)\n {8}with self\.assertRaises\(LookupError\) as caught:\n {12}asyncio\.run\(pkg\.aresolve_slowly\(/);
+  // Node: the call runs synchronously on the JavaScript thread, and the entry still returns a Promise.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  const entry = node.slice(node.indexOf('pub fn resolve_slowly<'), node.indexOf('\n}\n', node.indexOf('pub fn resolve_slowly<')));
+  assert.match(entry, /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
+  assert.doesNotMatch(entry, /waiting\(env/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.resolveSlowly\(/);
+  // Node and PHP keep the check of a callback with thread owner.
+  assert.match(node, /BindingError::WrongThread/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
+  // Go refuses a member with blocking_io by name; a member with async_driver that reaches language code is refused.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
+    contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
+  };
+  assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
+  assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {

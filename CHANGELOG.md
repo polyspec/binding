@@ -44,6 +44,48 @@
   not compile. `errors.code` now names the type of the error and its projection to the code, and every crate matches
   and asserts the code (`match <projection>(&error)`); a variant that holds a value of another enum is written
   `<outer>/<inner>` and matched as `Outer(Inner { .. })` (GN-7b). Verified by `npm test` in `packages/ts`.
+- The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
+  class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
+  was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static
+  member, as the Go poison test does, and a package without such a class has no entry point (GN-6h).
+- `make e2e` read `go test -json` without its `build-output` events, so a Go package that failed to link was named
+  only as "go test failed the packages …" without the linker output. The events are read in
+  `scripts/go-test-events.mts`, which prints the output of each build and names it in the cause (GN-14a).
+- The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
+  is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
+  (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any
+  place. Verified by `npm test` in `packages/ts` and `gofmt -l` of the generated Go modules of every repository of
+  tests/e2e.
+- The generator refused the Go binding of a contract that names a record of another repository, with "a record of
+  another repository is not generated for Go yet (GN-15f)", so `tests/e2e/plot`, which takes and gives the record
+  `point` of `tests/e2e/points`, had no Go binding. Go now names the struct `points.Point` of the Go module of that
+  repository, which the package and its tests import, and the C ABI converts it through `in_points_point` and
+  `out_points_point`. `binding scaffold` of a contract with the target go reads the contract of a path dependency of
+  the core from that path without Cargo, and of any other dependency through Cargo, and writes in `go.mod` a
+  `require` line for the Go module of each library whose records the contract names: the exact version or the tag of
+  the dependency line, or `v0.0.0` with a `replace` line to the Go module of a path dependency; a branch, a commit or
+  a version range is refused by name. The end-to-end run builds the Go static library of such a dependency beside the
+  one of the repository (GN-15f, GN-14). Verified by `npm test` in `packages/ts` and `gofmt` and `go vet` of the
+  generated Go modules of the points and the plot.
+- The Go C ABI of a contract without a class unit kept the helper `insert` of the table of instances, because the
+  helper pruning took the map call `made.insert(` of a value alias for a call of it, so `cargo clippy` of
+  `polyspec-consumer-go` failed with "cannot find type `Table`" and "cannot find type `Arc`". The helper is now
+  `insert_held`, which only an instance that leaves names. Verified by `npm test` in `packages/ts` and `cargo clippy`
+  of the Go crate of `tests/e2e/consumer`.
+- The e2e run of `tests/e2e/classes` failed in three targets after the class unit `lease` (GN-6p). Python: a `Lease`
+  that a failed call left as a temporary warned while the `TypeError` of the call was set, so the call ended with
+  `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
+  `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
+  requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
+  block had dropped because only that test entry uses it; the helper is now kept.
+- A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
+  ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
+  and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
+  states, and each Python callback call takes the GIL on the thread on which the core calls it, without the check of
+  kind `wrong_thread`, so the callback also runs on the worker thread of `a<name>`. Node runs the call synchronously
+  on the JavaScript thread, which owns the callback objects, and returns a settled promise. A member with
+  `async_driver` that reaches language code stays refused by name. `sample.resolve_slowly` of `tests/e2e/sample`
+  covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q).
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
@@ -57,6 +99,27 @@
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
   clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
   (GN-6m, GN-6n). Verified by `make e2e` of `tests/e2e/classes`.
+- The Go C ABI of fsm did not compile (E0283, type annotations needed): `out_optional` took `impl Into<Option<T>>`, which
+  an `Option<i64>` of an optional property of an error unit and the `&Option<String>` of an optional text field meet
+  for two types `T`, and the generic `out_int` and `out_text` left `T` unknown. `out_optional` now takes `Option<T>`,
+  given the `as_ref` of the value of the core, as in PHP, Python and Node (GN-16). Verified by `npm test` in
+  `packages/ts`: 280 of 280 pass.
+- The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
+  safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
+  277 of 277 pass.
+- The same integer key of a `keyed_map` gave two results: Node and WASM refused a number key that is no safe integer
+  as `invalid_argument_type`, and PHP, Python and Go took any key of the range of i64. A key of a listed `int` is now
+  a safe integer in every target, and a key outside is kind `invalid_number` (GN-12a); a key of a kind that the
+  contract does not list stays `invalid_argument_type`, and that kind is judged first. The generated tests give the
+  key 2^53 in every target (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 269 pass; the 7 failures are the
+  tests of GN-6m (wait `blocking_io`), which this change does not touch.
+- PHP and Python took an `int` argument of the range of i64 and the Go C ABI any `int64`, so a contract case with
+  9223372036854775807 for an `int` gave `invalid_number` in Node and the error of the core in PHP and Python. An `int`
+  is now a safe integer and a `uint` 0 to 2^53 - 1 in every target and at every place that the binding takes (an
+  argument, an item, a field), and an integer outside is kind `invalid_number` (GN-12a); an `int64` and a key of a
+  `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
+  (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
+  `blocking_io`), which this change does not touch.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
   runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,
@@ -72,6 +135,14 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The Go C ABI of a contract with fault injection points gave the points left through the closure
+  `|output, item| out_text(output, item)`, so `cargo clippy -D warnings` of `polyspec-sample-go` failed with
+  `redundant_closure` and the Go target of `tests/e2e/sample` ran no test. The entry now passes `out_text` itself.
+  Verified by `npm test` in `packages/ts` and `cargo clippy` of the Go crate of the sample with its test features.
+- The Go refusal of a record of another repository named no row that states how Go would generate it. GN-15f now
+  states the design, in which `binding scaffold` writes the Go module of that repository in `go.mod` by the dependency
+  line of the core, and marks it as not implemented; the refusal names GN-15f. Verified by `npm test` in
+  `packages/ts`.
 - The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
   class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
   through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first

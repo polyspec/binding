@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, poisoned, unitOf, waitsIo, waitsAsync } from './model.ts';
 import { type Echoes, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -68,7 +68,7 @@ const PACKAGES = new WeakMap<Model, Set<string>>();
 const packageNames = (model: Model): Set<string> => {
   const known = PACKAGES.get(model);
   if (known !== undefined) return known;
-  const names = new Set(model.contract.units.map((u) => goPackage(model.contract, u.module)));
+  const names = new Set([...model.contract.units.map((u) => goPackage(model.contract, u.module)), ...model.foreignRecords.map((r) => goPackage(r.contract, r.unit.module))]);
   PACKAGES.set(model, names);
   return names;
 };
@@ -112,6 +112,8 @@ export interface GoScope {
   aliasInstances?: Set<ObjectClass>;
   // GN-15a: the classes and callbacks of other modules that the package reaches through binding.Token.
   reaches?: Set<string>;
+  // GN-15f: the import paths of the packages of other repositories that the package names, each with its name.
+  foreignImports?: Map<string, string>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
   usesJson?: boolean;
@@ -142,6 +144,13 @@ function reached(scope: GoScope, unit: Unit): string | undefined {
 function sameModule(scope: GoScope, unit: Unit, what: string): void {
   if (unit.module !== scope.module) throw new Unsupported(`${unit.id}: a ${what} of the module ${unit.module || '(the root)'} in the module ${scope.module || '(the root)'} is not generated for Go yet (its handle and dispatch are unexported)`);
 }
+
+// Whether a type names a unit, inside another type too.
+const namesUnit = (type: Type): boolean => {
+  if (typeof type === 'string') return false;
+  if ('unit' in type) return true;
+  return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(namesUnit);
+};
 
 export function goType(scope: GoScope, type: Type): string {
   if (typeof type === 'string') {
@@ -176,7 +185,19 @@ export function goType(scope: GoScope, type: Type): string {
   if (object !== undefined) return `*${goUnitName(scope, object.unit)}`;
   const callback = callbackOf(scope.model, type);
   if (callback !== undefined) return goUnitName(scope, callback.unit);
-  if (libraryOf(type) !== undefined) throw new Unsupported(`${libraryOf(type) ?? ''}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
+  const library = libraryOf(type);
+  if (library !== undefined) {
+    // GN-15f: a record of another repository is the struct of the package of its module in the Go module of that
+    // repository, which go.mod requires.
+    const record = unitOf(scope.model, type);
+    const owner = scope.model.foreign.get(library);
+    if (record?.kind !== 'record' || owner === undefined) throw new Unsupported(`${library}.${(type as { unit: string }).unit}: a unit of another repository other than a value alias or a record is not generated for Go yet`);
+    if ((record.fields ?? []).some((f) => namesUnit(f.type))) throw new Unsupported(`${library}.${record.id}: a record of another repository with a field of a unit type is not generated for Go yet (GN-15f)`);
+    const pkg = goPackage(owner, record.module);
+    if (new Set(scope.model.contract.units.map((u) => goPackage(scope.model.contract, u.module))).has(pkg)) throw new Unsupported(`${library}.${record.id}: the Go package ${pkg} of the record has the name of a package of ${scope.model.contract.library} (GN-15f)`);
+    (scope.foreignImports ??= new Map()).set(goImport(owner, record.module), pkg);
+    return `${pkg}.${goName(record.name)}`;
+  }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum' || unit?.kind === 'record') return goUnitName(scope, unit);
   throw new Unsupported(`the type ${JSON.stringify(type)} is not generated for Go yet`);
@@ -745,7 +766,7 @@ func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
   const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
-  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`)];
+  const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`), ...[...(scope.foreignImports ?? new Map()).keys()].map((path) => `"${path}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
 
@@ -1626,7 +1647,7 @@ func (r *Reader) fail(problem string) {
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
-  const written = model.objects.some((o) => o.lock?.writes === true);
+  const written = model.objects.some((o) => poisoned(model, o));
   return `${goHeader()}
 
 //go:build polyspec_panic_test
@@ -1781,11 +1802,9 @@ import "C"
 ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${p}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${p}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}${aliasIn}`;
 }
 
-// G-4: what the Go binding does not generate, each refused by name with its reason: a record of another repository
-// (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
-// another module than its own (its handle and dispatch are unexported).
+// G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
+// that a member names.
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
   // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // GN-6n: so does a Go member with wait async_driver.

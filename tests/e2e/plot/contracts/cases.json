@@ -1,0 +1,43 @@
+{
+  "mirror": [
+    {
+      "id": "x_and_y_change_places",
+      "point": {
+        "x": 1,
+        "y": 2
+      },
+      "result": {
+        "x": 2,
+        "y": 1
+      }
+    }
+  ],
+  "rise": [
+    {
+      "id": "a_point_rises_by_its_shift",
+      "point": {
+        "x": 1,
+        "y": 2
+      },
+      "by": 3,
+      "result": {
+        "x": 1,
+        "y": 5
+      }
+    },
+    {
+      "id": "a_point_below_zero_is_refused",
+      "point": {
+        "x": 1,
+        "y": 2
+      },
+      "by": -3,
+      "raises": {
+        "kind": "below",
+        "status": null,
+        "category": "value",
+        "message": "a point below zero at -1"
+      }
+    }
+  ]
+}

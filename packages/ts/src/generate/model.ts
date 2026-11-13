@@ -107,6 +107,8 @@ export interface Fn {
   // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
   failure: boolean;
   corePath: string;
+  // GN-6q: a member with wait blocking_io whose parameter type or receiver class carries language code.
+  reaches?: true;
 }
 
 // U-1 kind class, origin generated: a language class that holds a core value (T-5).
@@ -371,11 +373,13 @@ export function collectModel(
     // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
     // wait is not yet.
     if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io' && member.wait !== 'async_driver') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    let reachesCode = false;
     if (member.wait === 'blocking_io' || member.wait === 'async_driver') {
       const rule = WAIT_RULE[member.wait];
       if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait ${member.wait} is not generated (${rule})`);
-      const reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
-      if (reachesCode) throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
+      reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
+      // GN-6n: a future that a runtime polls on its own threads would call the language code there.
+      if (reachesCode && member.wait === 'async_driver') throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
     }
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
@@ -452,6 +456,7 @@ export function collectModel(
       failure: takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
+      ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
     };
   };
   for (const unit of contract.units) {
@@ -859,6 +864,13 @@ function assignLocks(contract: Contract, units: Map<string, Unit>, objects: Obje
     object.lock = { kind: shared ? 'shared' : 'exclusive', writes };
   }
 }
+
+// T-5: the member that makes an instance of the class: a constructor or a static member that returns it.
+export const factoryOf = (model: Model, object: ObjectClass): Fn | undefined =>
+  object.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
+
+// GN-6h, B-5c: a class whose instance the poison test gives: a class with a write place that the target makes.
+export const poisoned = (model: Model, object: ObjectClass): boolean => object.lock?.writes === true && factoryOf(model, object) !== undefined;
 
 // GN-6h: the Rust type in which a class holds its core value.
 export const heldType = (object: ObjectClass): string => {

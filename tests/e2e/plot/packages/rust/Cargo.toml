@@ -1,0 +1,17 @@
+[package]
+name = "polyspec-plot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "polyspec_plot"
+path = "src/lib.rs"
+
+[dependencies]
+polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }
+polyspec-points = { path = "../../../points/packages/rust" }
+
+[lints]
+workspace = true

@@ -38,6 +38,43 @@
   대해 `match error`를 써서 컴파일되지 않았다. 이제 `errors.code`가 오류의 타입과 code로 가는 투영을 적고, 모든 crate가 code를
   match하고 단언한다(`match <투영>(&error)`). 다른 enum의 값을 담은 variant는 `<바깥>/<안쪽>`으로 적고 `Outer(Inner { .. })`로
   match한다(GN-7b). `packages/ts`에서 `npm test`로 확인했다.
+- `tests/e2e/classes`의 Go C ABI가 `panic-test` 없이 빌드되지 않았다. poison 진입점이 쓰기 쪽 자리가 있는 모든 class에 갈래를
+  두었는데, Go가 만들지 않는 `lease`도 그랬고, 그 갈래만 쓰는 `held_lease`가 feature가 꺼지면 쓰이지 않았다. 이제 진입점은
+  Go poison 시험처럼 Go가 생성자나 static member로 만드는 class만 받고, 그런 class가 없는 패키지에는 진입점이 없다(GN-6h).
+- `make e2e`가 `go test -json`을 그 `build-output` 사건 없이 읽었다. 그래서 link에 실패한 Go 패키지는 linker 출력 없이
+  "go test failed the packages …"로만 적혔다. 이제 `scripts/go-test-events.mts`가 사건을 읽고, 각 빌드의 출력을 찍고 원인에
+  그것을 적는다(GN-14a).
+- B-2의 Go 시험은 안전한 정수보다 큰 정수를 `1 << 53`으로 적었는데, gofmt는 그것이 여러 인자 가운데 하나일 때
+  `1<<53`으로 바꾼다. 그래서 `tests/e2e/points` Go module의 `gofmt -l`이 `zz_generated_test.go`를
+  (`Shift(1 << 53, Point{X: 0, Y: 0})`) 이름했다. 이제 시험은 어느 자리에서든 gofmt가 그대로 두는 수
+  `9007199254740992`를 적는다. `packages/ts`의 `npm test`와 tests/e2e 모든 레포의 생성된 Go module의 `gofmt -l`로
+  확인했다.
+- 생성기는 다른 레포의 record를 이름하는 계약의 Go 바인딩을 "a record of another repository is not generated for Go
+  yet (GN-15f)"로 거부해서, `tests/e2e/points`의 record `point`를 받고 주는 `tests/e2e/plot`에는 Go 바인딩이 없었다.
+  이제 Go는 그 레포 Go module의 struct `points.Point`를 이름하고 패키지와 시험이 그것을 import하며, C ABI는
+  `in_points_point`와 `out_points_point`로 변환한다. target go가 있는 계약의 `binding scaffold`는 코어의 path 의존
+  계약을 Cargo 없이 그 경로에서, 다른 의존 계약은 Cargo로 읽고, 계약이 record를 이름하는 라이브러리마다 `go.mod`에 그
+  Go module의 `require` 줄을 적는다. 버전은 의존 줄의 정확한 버전이나 tag이고, path 의존은 `v0.0.0`과 그 Go module로
+  가는 `replace` 줄이다. branch, commit, 버전 범위는 이름으로 거부한다. end-to-end 실행은 그런 의존의 Go 정적
+  라이브러리를 레포의 것 옆에 빌드한다(GN-15f, GN-14). `packages/ts`의 `npm test`와, points와 plot의 생성된 Go
+  module의 `gofmt`, `go vet`으로 확인했다.
+- class unit이 없는 계약의 Go C ABI는 인스턴스 표의 helper `insert`를 남겼다. helper 정리가 값 alias의 map 호출
+  `made.insert(`를 그 helper의 호출로 보았기 때문이다. 그래서 `polyspec-consumer-go`의 `cargo clippy`가 "cannot find
+  type `Table`"과 "cannot find type `Arc`"로 실패했다. 이제 helper는 나가는 인스턴스만 이름하는 `insert_held`다.
+  `packages/ts`의 `npm test`와 `tests/e2e/consumer` Go crate의 `cargo clippy`로 확인했다.
+- class unit `lease`(GN-6p)를 넣은 뒤 `tests/e2e/classes`의 e2e가 세 target에서 실패했다. Python: 실패한 호출이 임시 값으로
+  남긴 `Lease`가 그 호출의 `TypeError`가 설정된 채 경고해서 호출이 `SystemError`로 끝났다. 이제 소멸자는 그 예외를 맡아
+  두었다가 경고 뒤에 다시 설정한다. PHP: PHP가 메시지 앞에 실행 중인 함수를 붙이므로 경고는 `<function>(): Lease was
+  destroyed …`이다. 그래서 B-10 시험은 그 글로 끝나는 메시지를 요구한다. Go: B-5c의 poison entry point가 `held_lease`를
+  불렀는데, 그것을 쓰는 것이 그 시험 entry뿐이라 helper 묶음이 그것을 뺐다. 이제 그 helper를 남긴다.
+- parameter나 receiver가 언어 코드를 지니는 `wait: blocking_io` member를 모든 target이 거부했다("a member with wait
+  blocking_io that reaches language code is not generated (GN-6m)"). 그래서 host loader를 쓰는 template engine의
+  `engine.load`, `prepare`, `prepare_bound`에 바인딩이 없었다. 이제 PHP와 Python은 GN-6m대로 생성한다. Python
+  callback의 각 호출은 코어가 그것을 부르는 스레드에서 kind `wrong_thread` 검사 없이 GIL을 얻으므로, `a<name>`의 worker
+  스레드에서도 callback이 실행된다. Node는 callback 객체를 가진 JavaScript 스레드에서 호출을 동기로 실행하고 정해진
+  promise를 돌려준다. 언어 코드에 닿는 `async_driver` member는 계속 이름을 대고 거부한다. `tests/e2e/sample`의
+  `sample.resolve_slowly`가 이것을 다루고, 예외를 던지는 callback으로 `aresolve_slowly`를 기다리는 Python 시험이 있다
+  (GN-6q).
 - 코어 receiver가 `self`인 method와 `cleanup`이 있는 class unit은 모든 target이 거부했다("a receiver self is not
   generated yet", "cleanup is not generated yet"). 그래서 닫는 호출이 소비하는 자원에는 binding이 없었다. 이제 PHP·Python·
   Node는 class의 잠금에서 값을 꺼내고(`Exclusive`와 `Shared`의 `take`, 객체는 그 뒤 kind `consumed`다, GN-6o), `cleanup`이
@@ -49,6 +86,23 @@
   iterator로 만들었는데, `PyTuple::new`는 크기가 정확한 것만 받기 때문이다. Node와 WASM에서도 실패했다. 기다리는 member의
   결과 변환이 함수를 부르기만 하는 closure였고, clippy가 이것을 거부하기 때문이다(`redundant_closure`). 이제 Python은
   vector로 tuple을 만들고, Node는 함수 자체를 넘긴다(GN-6m, GN-6n). `tests/e2e/classes`의 `make e2e`로 확인했다.
+- fsm의 Go C ABI가 컴파일되지 않았다(E0283, type annotations needed): `out_optional`이 `impl Into<Option<T>>`를 받았는데,
+  error unit의 optional property인 `Option<i64>`와 optional text field인 `&Option<String>`이 두 타입 `T`에 맞아서 제네릭
+  `out_int`과 `out_text`가 `T`를 정하지 못했다. 이제 `out_optional`은 PHP, Python, Node처럼 코어 값의 `as_ref`를 받는
+  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과.
+- Go tuple parameter 시험이 `uint` 부분에 `in_uint`을 요구했지만, GN-12a는 `uint` 부분을 `in_safe_uint`로 안전 정수에
+  묶는다. 이제 시험은 `in_safe_uint`를 요구한다. `packages/ts`의 `npm test`로 확인했다: 277개 중 277개 통과.
+- 같은 `keyed_map` 정수 key가 두 결과를 냈다: Node와 WASM은 안전 정수가 아닌 number key를 `invalid_argument_type`으로
+  거부했고, PHP, Python, Go는 i64 범위의 key를 다 받았다. 이제 모든 target에서 나열된 `int`의 key는 안전 정수이고, 그 밖의
+  key는 kind `invalid_number`다(GN-12a). 계약이 나열하지 않은 종류의 key는 그대로 `invalid_argument_type`이고, 그 종류를
+  먼저 판정한다. 생성 시험은 모든 target에서 key 2^53을 준다(GN-13, GN-13b). `packages/ts`의 `npm test`로 확인했다:
+  269개 통과, 실패 7개는 이 변경이 건드리지 않는 GN-6m(wait `blocking_io`)의 시험이다.
+- PHP와 Python은 `int` 인자를 i64 범위로, Go C ABI는 어떤 `int64`든 받아서, `int`에 9223372036854775807을 주는 계약
+  case가 Node에서는 `invalid_number`, PHP와 Python에서는 core의 오류를 냈다. 이제 모든 target에서 바인딩이 받는 모든 자리
+  (인자, 항목, field)에서 `int`는 안전 정수, `uint`는 0~2^53 - 1이고, 그 밖의 정수는 kind `invalid_number`다(GN-12a).
+  `int64`와 `keyed_map`의 key는 i64 범위를 유지한다(`in_int64`). B-2의 생성 시험은 PHP, Python, Go에서 2^53과 -2^53을
+  준다(GN-13, GN-13b). `packages/ts`의 `npm test`로 확인했다: 268개 통과, 실패 7개는 이 변경이 건드리지 않는 GN-6m(wait
+  `blocking_io`)의 시험이다.
 - `wait: async_driver`인 member는 모든 target이 거부했다("wait async_driver is not generated yet"). 그래서 tokio 위의
   코어가 가진 `async fn` member에는 binding이 없었다. 이제 생성기는 그런 member의 future를 tokio runtime에서 돌린다
   (GN-6n). PHP는 `binding_core::driver::block_on`에서 막히고, Python은 그것을 `py.detach`에서 돌리며 `a<name>`을 더하고,
@@ -63,6 +117,13 @@
   `ScopedTask`로 libuv 풀에서 돌리는 `Promise`를 돌려주고, 그 진입은 async 함수라서 모든 실패가 promise를 거부한다.
   Go는 그런 member를 이름을 대고 거부하고, 기다리는 constructor·property·iterate·hook도 이름을 대고 거부한다. CK-16은
   Python의 예약어인 awaitable 이름도 보고한다. `make test-ts`로 확인했다.
+- fault injection point가 있는 계약의 Go C ABI는 남은 point를 closure `|output, item| out_text(output, item)`로
+  주어서, `polyspec-sample-go`의 `cargo clippy -D warnings`가 `redundant_closure`로 실패했고 `tests/e2e/sample`의 Go
+  target은 시험을 하나도 돌리지 않았다. 이제 entry는 `out_text` 자체를 넘긴다. `packages/ts`의 `npm test`와 sample
+  Go crate의 시험 feature를 켠 `cargo clippy`로 확인했다.
+- 다른 레포 record의 Go 거부는 Go가 그것을 어떻게 생성할지 적은 행을 이름하지 않았다. 이제 GN-15f가 그 설계를
+  적는다. `binding scaffold`가 코어의 의존 줄에 따라 그 레포의 Go module을 `go.mod`에 적는 설계이며, 아직 구현하지
+  않았다고 표시한다. 거부는 GN-15f를 이름한다. `packages/ts`의 `npm test`로 확인했다.
 - 생성기는 다른 module의 class·callback unit을 이름하는 member의 Go 바인딩을 "a class unit of the module tags in the
   module (the root) is not generated for Go yet"로 거부했다. 이제 Go는 그런 unit에 그 module 패키지의 `<Class>Handle`,
   `<Class>FromHandle`, `Dispatch<Callback>`으로 닿는다. 그 첫 parameter `binding.Token`은 Go module의 패키지만
