@@ -730,7 +730,8 @@ the design ids are those of the binding design.
   `passthrough`, which the scope of a transaction needs: the member calls language code with a class instance that its
   machine made, and returns what that code returned. Defect 86.
   - Receiver: a method with `machine` names the receiver `&self`, and the generated code gives the core path a clone of
-    the value that the instance holds, `Clone::clone(&*<receiver>)`, by value before its arguments; the core type of
+    the value that the instance holds, `Clone::clone(<receiver>)` of the borrow that the lock of the instance gives
+    (GN-6h), by value before its arguments, so the core path takes `self`; the core type of
     the class implements `Clone` as a handle whose clones share one state, so the machine owns what it uses and the
     instance stays usable in language code while the machine runs. `&mut self` and `self` are refused by name with
     `machine` (CK-68), because a clone neither writes back nor consumes the instance.

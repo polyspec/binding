@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5fbc3f62dd4910f22434af5dbcd46ae3b1ee329049f0425d78fdc3391090bad0 -->
+<!-- source-sha256: 16e9f90ef80a44b22927aa6c16166c19c6cf9dbee2e00d0be00379c07fa90ca4 -->
 # 생성기
 
 [English](generator.md)
@@ -606,8 +606,9 @@
 - **GN-6ae** `machine`이 있는 member(GN-6ab)는 method일 수 있고, 함수 타입(T-2)의 parameter를 받고 `passthrough`를
   돌려줄 수 있다. transaction의 범위가 이것을 필요로 한다: member는 그 machine이 만든 class 인스턴스로 언어 코드를
   부르고, 그 코드가 돌려준 것을 돌려준다. 결함 86.
-  - Receiver: `machine`이 있는 method는 receiver `&self`를 적고, 생성 코드는 인스턴스가 쥔 값의 clone
-    `Clone::clone(&*<receiver>)`을 인자보다 앞에 값으로 코어 경로에 준다. class의 코어 타입은 clone들이 한 상태를
+  - Receiver: `machine`이 있는 method는 receiver `&self`를 적고, 생성 코드는 인스턴스가 쥔 값의 clone, 곧 인스턴스의
+    lock이 주는 borrow(GN-6h)의 `Clone::clone(<receiver>)`을 인자보다 앞에 값으로 코어 경로에 주므로 코어 경로는 `self`를
+    받는다. class의 코어 타입은 clone들이 한 상태를
     나누는 handle로 `Clone`을 구현하므로, machine은 쓰는 것을 소유하고 인스턴스는 machine이 도는 동안에도 언어 코드에서
     쓸 수 있다. `&mut self`와 `self`는 `machine`과 함께 이름을 대고 거부한다(CK-69). clone은 인스턴스에 다시 쓰지도,
     인스턴스를 소비하지도 않기 때문이다.

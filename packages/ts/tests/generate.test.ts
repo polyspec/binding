@@ -973,7 +973,7 @@ test('an error unit is the class of the kinds that name it, with the properties 
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /ClassBuilder::new\("Polyspec\\\\Consumer\\\\AbsentError"\)\n        \.extends\(\(registered_class_0, "\\\\Polyspec\\\\Consumer\\\\ConsumerValueError"\)\)\n        \.flags\(ClassFlags::Final\)/);
   assert.match(php, /\.method\(FunctionBuilder::new\("key", absent_error_key_method\)\.returns\(DataType::String, false, true\), MethodFlags::Public\)/);
-  assert.match(php, /in_scope\(registered_class\(6\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("length", property\)\)/);
   assert.match(php, /let class = category_scope\(this\.get_class_entry\(\)\);/);
   assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /final class AbsentError extends \\Polyspec\\Consumer\\ConsumerValueError\n    \{\n        public function key\(\): string\|null \{\}\n\n        public function length\(\): int\|null \{\}/);
   // B-4: the generated test of a raising case names the exact class.
@@ -1030,7 +1030,7 @@ test('an error unit extends its parent, and what is not generated is refused by 
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.ok(php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\MissingError")') < php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\AbsentError")'));
   assert.match(php, /\.extends\(\(registered_class_6, "\\\\Polyspec\\\\Consumer\\\\MissingError"\)\)/);
-  assert.match(php, /in_scope\(registered_class\(6\), \|\| object\.set_property\("key", property\)\)[^]*in_scope\(registered_class\(7\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(php, /with_scope\(registered_class\(6\), \|\| object\.set_property\("key", property\)\)[^]*with_scope\(registered_class\(7\), \|\| object\.set_property\("length", property\)\)/);
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /class MissingError extends ConsumerValueError \{[^]*class AbsentError extends MissingError \{/);
   const refused = (change: (contract: any) => void, message: RegExp): void =>
     assert.throws(() => generated(change), (error: Error) => error.constructor.name === 'Unsupported' && message.test(error.message), String(message));
@@ -2968,7 +2968,7 @@ test('a member with wait async_driver that reaches language code drives the stat
   // GN-6ae: a method with machine gives the core a clone of the value of its instance, before its arguments.
   const method = sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php', 'python', 'node', 'go', 'wasm']);
   for (const crate of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
-    assert.match(text(method, crate), /polyspec_sample::Ledger::known\(Clone::clone\(&\*[^)]*\)/, crate);
+    assert.match(text(method, crate), /polyspec_sample::Ledger::known\(Clone::clone\(receiver\), /, crate);
   }
 });
 
@@ -3096,6 +3096,10 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
   assert.match(lib, /let work = in_callable\(work, "work"\)\?;/);
+  // No helper of the crate has a name of the form in_<unit>, which the conversion of a class named scope would have,
+  // and a class that only a function takes has no conversion in (T-5).
+  assert.match(lib, /\nfn with_scope<R>\(class: &ClassEntry, body: impl FnOnce\(\) -> R\) -> R \{/);
+  assert.doesNotMatch(lib, /\bfn in_scope\b/);
   assert.match(lib, /fn in_callable\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
   // The closure makes a new instance of the class of each class argument, calls the callable and stores what it
   // returned in the table; an exception of the callable is a Raised.
@@ -3103,7 +3107,7 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   assert.match(lib, /fn called\(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>\) -> Result<Zval, Thrown> \{/);
   assert.match(lib, /if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n {8}return Err\(Thrown::Php\(exception\)\);/);
   // The machine takes a clone of the value of the instance and the closure, and PHP settles an awaited value at once.
-  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(&\*receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
   // B-3: the table of the values, its release function, and the result that leaves the table unchanged.
   assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Zval>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
   assert.match(lib, /fn pass\(value: Zval\) -> binding_core::Passthrough \{[^}]*binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);

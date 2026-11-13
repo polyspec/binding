@@ -434,7 +434,7 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
   const props = fields.map((f) => langName('php', f.name, 'variable'));
   const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
-        let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+        let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
     };${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
@@ -459,7 +459,7 @@ fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
         return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(missing)}) }));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(entry, || -> Result<(), Fail> {
+    let written = with_scope(entry, || -> Result<(), Fail> {
 ${writes.map((w) => w.replace(')?)?;', ')?).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;')).join('\n')}
         Ok(())
     });
@@ -495,7 +495,7 @@ ${args.join('\n')}
             let class = this.get_class_entry();
             for (name, value) in [${props.map((p) => rustString(p)).join(', ')}].into_iter().zip(values) {
                 let Some(value) = value else { return };
-                if in_scope(class, || this.set_property(name, value)).is_err() {
+                if with_scope(class, || this.set_property(name, value)).is_err() {
                     return;
                 }
             }
@@ -519,7 +519,7 @@ function variantRust(model: Model, layout: PhpLayout, variant: Variant): string 
   const ins = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
     const reads = fields.map((f) => `            let ${f.variable}: ${caseType(model, f)} = {
-                let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
+                let field = with_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
                 ${caseRead(f, `${convertIn(model, f.field.type, 'field', 'subject')}?`)}
             };${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`);
     return `    if ${fields.length === 0 ? `case_entry(${index(kase)}, object).is_some()` : `let Some(entry) = case_entry(${index(kase)}, object)`} {
@@ -567,7 +567,7 @@ fn case_object(index: usize, properties: Vec<(&str, Zval)>) -> Result<Zval, Fail
         return Err(binding_error(BindingError::Internal { detail: String::from("B-4: the class of a case is not registered") }));
     };
     let mut object = ZendObject::new(entry);
-    in_scope(entry, || -> Result<(), Fail> {
+    with_scope(entry, || -> Result<(), Fail> {
         for (name, value) in properties {
             object.set_property(name, value).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         }
@@ -834,8 +834,8 @@ fn recognized_kind(exception: &ZendObject, classes: &[usize]) -> Option<(String,
         let class = CLASSES.get(*index).and_then(OnceLock::get)?.0;
         if exception.instance_of(class) {
             let scope = category_scope(class);
-            let kind = in_scope(scope, || exception.get_property::<String>("kind")).ok()?;
-            let message = in_scope(scope, || exception.get_property::<String>("message")).ok()?;
+            let kind = with_scope(scope, || exception.get_property::<String>("kind")).ok()?;
+            let message = with_scope(scope, || exception.get_property::<String>("message")).ok()?;
             return Some((kind, message));
         }
     }
@@ -1115,7 +1115,7 @@ ${errorProperties(u).map(({ owner, property }) => {
     const name = langName('php', property.member.name, 'variable');
     return `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`)};
     let property = ${convertOut(model, property.returns, 'value')}?;
-    if let Err(error) = in_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
+    if let Err(error) = with_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
         return Err(PhpException::from_message(format!("B-4: the property ${name} could not be written: {error}")));
     }`;
   }).join('\n')}
@@ -1131,7 +1131,7 @@ ext_php_rs::zend_fastcall! {
 /// I-3: a property of an error unit, read in the scope of the class that declares it.
 fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, name: &str) {
     let Some(this) = ex.get_self() else { return };
-    if let Ok(value) = in_scope(registered_class(class), || this.get_property::<&Zval>(name)) {
+    if let Ok(value) = with_scope(registered_class(class), || this.get_property::<&Zval>(name)) {
         *retval = value.shallow_clone();
     }
 }
@@ -1390,7 +1390,7 @@ fn private_property(name: &str) -> ClassProperty {
 
 /// Runs \`body\` with the scope of \`class\`, as zend_update_property does, so that the properties that \`class\` sees can be
 /// written.
-fn in_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
+fn with_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
     let previous = {
         let mut globals = ExecutorGlobals::get_mut();
         let previous = globals.fake_scope;
@@ -1406,14 +1406,14 @@ fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     let Some(this) = ex.get_self() else { return };
     let class = ${scopeOf('this.get_class_entry()')};
     if name == "kind" {
-        if let Ok(kind) = in_scope(class, || this.get_property::<String>(name)) {
+        if let Ok(kind) = with_scope(class, || this.get_property::<String>(name)) {
             if retval.set_string(&kind, false).is_err() {
                 retval.set_null();
             }
         }
         return;
     }
-    match in_scope(class, || this.get_property::<Option<i64>>(name)) {
+    match with_scope(class, || this.get_property::<Option<i64>>(name)) {
         Ok(Some(number)) => retval.set_long(number),
         Ok(None) | Err(_) => retval.set_null(),
     }
@@ -1434,7 +1434,7 @@ fn construct_error(ex: &mut ExecuteData) {
     let errno = errno.val::<i64>();
     let Some(this) = ex.get_self() else { return };
     let class = ${scopeOf('this.get_class_entry()')};
-    let written = in_scope(class, || -> ext_php_rs::error::Result<()> {
+    let written = with_scope(class, || -> ext_php_rs::error::Result<()> {
         this.set_property("message", message)?;
         this.set_property("kind", kind)?;
         this.set_property("status", status)?;
@@ -1488,7 +1488,7 @@ fn error_object(class: usize, message: &str, kind: &str, status: Option<u16>, er
         return Err(PhpException::from_message(format!("B-4: the class of {kind} is not registered")));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(${scopeOf('entry')}, || -> ext_php_rs::error::Result<()> {
+    let written = with_scope(${scopeOf('entry')}, || -> ext_php_rs::error::Result<()> {
         object.set_property("message", message)?;
         object.set_property("kind", kind)?;
         object.set_property("status", status.map(i64::from))?;

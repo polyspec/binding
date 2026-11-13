@@ -565,11 +565,11 @@ impl Store {
     /// future, the function is language code that the driver calls on its thread, and its value, which may be an
     /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
     /// and dropped when it raises, whose exception the machine returns.
-    pub fn transaction<F>(&self, function: F) -> Scoped<F>
+    pub fn transaction<F>(self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped::new(self.entries.clone(), function)
+        Scoped::new(self.entries, function)
     }
 }
 
@@ -597,11 +597,11 @@ impl Scope {
 
     /// Runs `function` with an inner scope over the pending entries of this scope, as [`Store::transaction`] does: the
     /// entries of the inner scope become pending entries of this scope when the function returns.
-    pub fn nested<F>(&self, function: F) -> Scoped<F>
+    pub fn nested<F>(self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped::new(self.pending.clone(), function)
+        Scoped::new(self.pending, function)
     }
 }
 

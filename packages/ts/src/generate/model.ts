@@ -1188,8 +1188,8 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     const owned = fn.params.map((p) => (held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
     if (fn.receiver === undefined) return owned;
     // GN-6ae: the receiver is a clone of the value of the instance, a handle whose clones share one state.
-    const value = held.some((h) => h.param === undefined) ? RECEIVER_GUARD : receiver;
-    return [`Clone::clone(&*${value})`, ...owned];
+    // GN-6h: the receiver of a class with a lock is the borrow of the value that its guard holds.
+    return [held.some((h) => h.param === undefined) ? `Clone::clone(${RECEIVER_GUARD})` : `Clone::clone(&*${receiver})`, ...owned];
   }
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;

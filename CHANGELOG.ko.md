@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a8e5b44c4e873882c25530791e1ab4cc0be0b4b53aa560a8c5799ae54c0e2b16 -->
+<!-- source-sha256: 224525656d1b4cdb96d8f4617ec8322f9dc8403c9328891efe23e07d944665f2 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- class `store`와 `scope`가 있는 계약의 생성된 PHP extension은 컴파일되지 않았다. 이름이 `scope`인 class의 변환이
+  class의 scope 안에서 property를 읽는 helper의 이름 `in_scope`를 가졌고, `machine`이 있는 method는 lock이 주는
+  borrow의 borrow를 clone하는 `Clone::clone(&*receiver)`를 코어에 주었으며, sample의 코어 경로는 `&self`를 받았다.
+  helper는 이제 `with_scope`이고, `machine`이 있는 method의 receiver는 `Clone::clone(receiver)`이며, sample 코어의
+  `Store::transaction`과 `Scope::nested`는 GN-6ae가 적는 대로 `self`를 받는다(GN-6h). sample의 `make e2e`에서 PHP
+  crate의 clippy가 E0428과 E0308로 실패하여 찾았고, sample의 `make e2e`의 PHP로 검증했다.
 - 생성된 시험은 함수 타입의 parameter가 있는 member를 실행하지 않았고, end-to-end sample의 계약에는 그런 member가
   없었다. PHP 시험은 이제 함수 fixture의 함수를 쓴다. 그 step은 인자의 method를 호출하고, 함수는 결과를 돌려주거나
   던진다. `raises: "callback"` case는 같은 예외 객체를 요구하고, `after`의 호출은 호출 뒤의 receiver를 관찰하며, callable이

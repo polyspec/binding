@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The generated PHP extension of a contract with the classes `store` and `scope` did not compile: the conversion of a
+  class named `scope` had the name `in_scope` of the helper that reads a property in the scope of a class, and a
+  method with `machine` gave the core `Clone::clone(&*receiver)`, a clone of a borrow of the borrow that the lock
+  gives, while the core path of the sample took `&self`. The helper is now `with_scope`; the receiver of a method with
+  `machine` is `Clone::clone(receiver)`; and `Store::transaction` and `Scope::nested` of the sample core take `self`,
+  as GN-6ae states (GN-6h). Found by `make e2e` of the sample, where clippy of the PHP crate failed with E0428 and
+  E0308; verified by `make e2e` of the sample for PHP.
 - No generated test ran a member with a parameter of a function type, and the contract of the end-to-end sample held
   no such member. The PHP test now writes the function of a function fixture, whose steps call methods on its
   arguments and which returns its result or throws; a case with `raises: "callback"` requires the same exception
