@@ -347,6 +347,8 @@ run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', generatedPyth
 if (caseRunners) run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
 
 const lib = (suffix: string): string => `${crate}-${suffix}`.replaceAll('-', '_');
+// Cargo names a cdylib lib<name>.so on Linux and lib<name>.dylib on macOS.
+const dylib = process.platform === 'darwin' ? 'dylib' : 'so';
 let wasmBuilt = false;
 if (contract.targets.includes('wasm')) {
   step('WASM: build the module and its glue with wasm-bindgen');
@@ -379,7 +381,7 @@ const platformDir = join(work, 'node-platform');
 rmSync(platformDir, { recursive: true, force: true });
 mkdirSync(platformDir, { recursive: true });
 const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
-copyFileSync(join(target, `debug/lib${`${crate}-node`.replaceAll('-', '_')}.so`), join(platformDir, addonName));
+copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
 const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
 writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
 run('npm', ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
@@ -404,7 +406,7 @@ step('PHP: build the extensions, run the generated tests and the cases with them
 const extensions: string[] = [];
 for (const prepared of [...dependencies, main]) {
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', 'panic-test']);
-  extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.so`)}`);
+  extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
 }
 run('php', ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);
 run('php', [...extensions, phpunit, join(copy, 'packages/php-ext/generated/tests')]);
@@ -418,7 +420,7 @@ if (contract.targets.includes('go')) {
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
   process.stdout.write('$ nm --defined-only (test entry points)\n');
   const symbols = execFileSync('nm', ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-  const leaked = symbols.split('\n').filter((line) => / [A-Z] polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
+  const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
   if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points:\n${leaked.join('\n')}`);
   rmSync(release, { recursive: true, force: true });
   run('cargo', ['build', ...cargoFlags, '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
