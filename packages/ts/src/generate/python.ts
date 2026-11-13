@@ -861,6 +861,16 @@ fn _alias_in_${rustField(alias.unit.name)}(py: Python<'_>, value: &Bound<'_, PyA
         Ok(())
     })
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[pyfunction]
+fn _alias_round_${rustField(alias.unit.name)}<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    guard(py, || {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(py, value, "value")?;
+        out_${rustField(alias.unit.name)}(py, &value)
+    })
+}
 `).join('')}
 ${poisonRust(model)}#[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -872,7 +882,9 @@ ${register}
     #[cfg(feature = "panic-test")]
     module.add_function(wrap_pyfunction!(${POISON_ENTRY.python}, module)?)?;` : ''}${aliasesWithKinds(model).map((alias) => `
     #[cfg(feature = "codec-test")]
-    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
+    module.add_function(wrap_pyfunction!(_alias_in_${rustField(alias.unit.name)}, module)?)?;
+    #[cfg(feature = "codec-test")]
+    module.add_function(wrap_pyfunction!(_alias_round_${rustField(alias.unit.name)}, module)?)?;`).join('')}${model.faults.length === 0 ? '' : `
     #[cfg(feature = "fault-test")]
     module.add_function(wrap_pyfunction!(_arm_faults, module)?)?;
     #[cfg(feature = "fault-test")]

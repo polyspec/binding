@@ -1268,6 +1268,17 @@ pub fn alias_in_${rustField(alias.unit.name)}(value: &Zval) -> Result<(), PhpExc
         Ok(())
     })
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\aliasRound${langName('php', alias.unit.name, 'class')}`)})]
+pub fn alias_round_${rustField(alias.unit.name)}(value: &Zval) -> Result<Zval, PhpException> {
+    guard(|| {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(value, "value")?;
+        out_${rustField(alias.unit.name)}(&value)
+    })
+}
 `).join('')}
 ${poisonRust(model, layout)}${caseTests.entries}
     #[php_module]
@@ -1284,7 +1295,9 @@ ${poisonRust(model, layout)}${caseTests.entries}
         #[cfg(feature = "fault-test")]
         let module = module.function(wrap_function!(arm_faults)).function(wrap_function!(fault_left));`}${aliasesWithKinds(model).map((alias) => `
         #[cfg(feature = "codec-test")]
-        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));`).join('')}${caseTests.registers}
+        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));
+        #[cfg(feature = "codec-test")]
+        let module = module.function(wrap_function!(alias_round_${rustField(alias.unit.name)}));`).join('')}${caseTests.registers}
         module
     }
 }

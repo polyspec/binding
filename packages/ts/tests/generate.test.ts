@@ -1432,8 +1432,8 @@ test('an entry point runs its core call with the faults that a case armed, and t
     assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn with_faults<T>\(member: &str, call: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::take\(member\)\.run\(call\)/, path);
     assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn shielded<T>\(work: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::Armed::empty\(\)\.run\(work\)/, path);
     // The work of every entry point of a member is shielded, the hooks and the iterate too; the poison entry point
-    // of B-5c (GN-5) is no member.
-    const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n');
+    // of B-5c (GN-5) and the round trip of an alias (GN-13e) are no member.
+    const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n').replace(/\n *(?:pub )?fn _?alias_round_\w+[\s\S]*?\n *\}\n/g, '\n');
     assert.notEqual(members, lib, path);
     assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
@@ -1966,14 +1966,15 @@ test('a result of a value alias is compared by the texts of its places in pre-or
     ? ['list 5', 'php_reference #0', 'string 78', 'php_reference again 0', 'php_object #1 1', 'string 61', 'null', 'php_object again 1', 'float 3ff8000000000000']
     : ['list 5', 'boxed #0', 'text 78', 'boxed again 0', 'bag #1', 'map 1', 'text 61', 'null', 'bag again 1', `${lang === 'node' ? 'number' : 'float'} 3ff8000000000000`];
   const json = (lang: 'python' | 'node' | 'php'): string => JSON.stringify(shared(lang));
-  assert.ok(python.includes(`self.assertEqual(_tokens(pkg.same("x")), json.loads(${JSON.stringify(json('python'))}))`), python);
+  // The alias has the entry points of codec-test, so the result is compared by these texts and goes back through them.
+  assert.ok(python.includes(`result = pkg.same("x")\n        expected = json.loads(${JSON.stringify(json('python'))})\n        self.assertEqual(_tokens(result), expected)`), python);
   assert.match(python, /^import json\nimport struct\n/m);
   assert.match(python, /^_KEPT = \(\(pkg\.Boxed, "boxed", "value"\), \(pkg\.Bag, "bag", "entries"\), \)$/m);
   for (const js of [node, wasm]) {
-    assert.ok(js.includes(`assert.deepStrictEqual(tokens(pkg.same('x')), JSON.parse('${json('node')}'));`), js);
+    assert.ok(js.includes(`const result = pkg.same('x');\n  const expected = JSON.parse('${json('node')}');\n  assert.deepStrictEqual(tokens(result), expected);`), js);
     assert.match(js, /^const KEPT = \[\[pkg\.Boxed, 'boxed', 'value'\], \[pkg\.Bag, 'bag', 'entries'\]\];$/m);
   }
-  assert.ok(php.includes(`self::assertSame(json_decode(${JSON.stringify(json('php'))}, true, 512, JSON_THROW_ON_ERROR), self::tokens(\\Polyspec\\Sample\\same("x")));`), php);
+  assert.ok(php.includes(`$result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(json('php'))}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));`), php);
   assert.match(php, /private static function tokens\(mixed \$top\): array/);
   // A value nested deeper than a recursion takes is its texts, one per place.
   const deep = JSON.stringify([...Array.from({ length: 3000 }, () => 'list 1'), 'null']);
@@ -1990,7 +1991,8 @@ test('the result of an alias with the entry points of codec-test goes back throu
   assert.ok(text(out, nodeTests).includes(`  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRoundData(result)), expected);`), 'node');
   const js = text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs');
   assert.ok(js.includes(`test('GN-13e: same a_text_comes_back', async () => {\n  const glue = await glueModule();\n  const result = pkg.same('x');\n  const expected = JSON.parse('${expected}');\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRoundData(result)), expected);`), js);
-  assert.ok(text(out, phpTests).includes(`        $result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(expected)}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\Polyspec\\Sample\\Internal\\aliasRoundData($result)));`), 'php');
+  const phpOut = text(out, phpTests);
+  assert.ok(phpOut.includes(`        $result = \\Polyspec\\Sample\\same("x");\n        $expected = json_decode(${JSON.stringify(JSON.stringify(['string 78']))}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\Polyspec\\Sample\\Internal\\aliasRoundData($result)));`), phpOut);
   // Each entry point takes the value by the in function of the alias and gives it back by its out function.
   assert.match(text(out, 'packages/python/generated/lib.rs'), /#\[cfg\(feature = "codec-test"\)\]\n#\[pyfunction\]\nfn _alias_round_data<'py>\(py: Python<'py>, value: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n    guard\(py, \|\| \{\n        let value: polyspec_sample::Data = in_data\(py, value, "value"\)\?;\n        out_data\(py, &value\)/);
   assert.match(text(out, 'packages/python/generated/lib.rs'), /module\.add_function\(wrap_pyfunction!\(_alias_round_data, module\)\?\)\?;/);

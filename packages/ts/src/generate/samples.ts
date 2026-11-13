@@ -3,7 +3,7 @@
 // snake_case, a record parameter is an object of its fields, an enum is its value text, latin1 is text of U+0000 to
 // U+00FF).
 
-import type { Type } from '../contract.ts';
+import type { Name, Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { type Arg, type Fn, type KeptClass, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
@@ -193,14 +193,19 @@ export class CaseRefused extends Error {}
 
 // GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
 // test of the case fails with.
-export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string } | { refused: string } {
+// GN-13e: `round` names the alias whose entry points of codec-test (in_raises) take the result back by its in function
+// and give it again by its out function, so its test compares the texts of that value too.
+export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string; round?: Name } | { refused: string } {
   // GN-6m: a property of a value class without core_type gives the value that the language gave its constructor, so
   // the value is written as an argument is, not by the out rows of its alias.
   const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
     // GN-13e: a result of a value alias is compared by the tokens of its places, which name the form of each place.
     const alias = kept ? undefined : aliasOf(model, fn.returns);
-    if (alias !== undefined && alias.unit.out !== undefined) return { tokens: JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value)) };
+    if (alias !== undefined && alias.unit.out !== undefined) {
+      const tokens = JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value));
+      return alias.inRaises.length > 0 ? { tokens, round: alias.unit.name } : { tokens };
+    }
     return { text: fromJson(model, ctx, fn.returns, value, !kept) };
   } catch (error) {
     return { refused: `${fn.member.id}: ${error instanceof Error ? error.message : String(error)} (GN-13e)` };

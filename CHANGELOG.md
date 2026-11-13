@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The result of a value alias with the entry points of `codec-test` (`in_raises`, GN-5) goes back through the rows of
+  the alias (GN-13e, U-1): each target generates the entry point `_alias_round_<alias>` (Python),
+  `__aliasRound<Alias>` (Node, WASM) or `<namespace>\Internal\aliasRound<Alias>` (PHP), which takes a value by the in
+  function of the alias and gives the core value back by its out function, and the test of a case requires the texts of
+  what it gives back to equal those of the result. Before, a result that the in function refuses or reads as another
+  value passed its test, because only the out direction was compared. The round trip of a value unit without the entry
+  points of `codec-test` stays open (GN-13a). Verified by `make test-ts` (276 tests); the generated tests of
+  php-serialization call the entry point in each of the 601 cases that give a result, for Python, Node, WASM and PHP.
 - A result that is a value alias (GN-13e) is compared as the texts of its places in pre-order, which a loop writes on
   both sides: the generator writes those of the case value by the out rows of the alias, the row whose kind and
   predicate (`utf8`, `safe_integer`, `integral_float`, `sequence_keys`) the place has and its form in the language,

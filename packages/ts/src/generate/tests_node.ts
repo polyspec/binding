@@ -260,12 +260,15 @@ test('GN-13e: ${name} ${kase.id}', () => {
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       usesTokens ||= expected !== undefined && 'tokens' in expected;
+      usesAddon ||= expected !== undefined && 'round' in expected;
       const check = expected === undefined
         ? `\n  ${call};`
         : 'refused' in expected
           ? `\n  assert.fail(${jsString(expected.refused)});`
           : 'tokens' in expected
-            ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+            ? expected.round === undefined
+              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+              : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
 test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}

@@ -946,6 +946,17 @@ pub fn alias_in_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unkno
     })
     .map_err(|fail| throw(env, fail))
 }
+
+/// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+#[cfg(feature = "codec-test")]
+#[napi(js_name = ${rustString(`__aliasRound${langName('node', alias.unit.name, 'class')}`)})]
+pub fn alias_round_${rustField(alias.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<Unknown<'env>> {
+    guard(|| {
+        let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(env, value, "value")?;
+        out_${rustField(alias.unit.name)}(env, &value)
+    })
+    .map_err(|fail| throw(env, fail))
+}
 `).join('')}${model.faults.length === 0 ? '' : `
 /// G-5: arms the faults of a case for the next call of the member from this thread, and gives the id of the arming.
 #[cfg(feature = "fault-test")]

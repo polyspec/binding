@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `codec-test`의 진입점(`in_raises`, GN-5)이 있는 값 alias의 결과는 alias의 행을 거쳐 돌아온다(GN-13e, U-1). 각 target은
+  진입점 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `<namespace>\Internal\aliasRound<Alias>`(PHP)를
+  생성한다. 이 진입점은 값을 alias의 in 함수로 받고 core 값을 out 함수로 돌려준다. case의 시험은 그것이 돌려준 값의
+  텍스트가 결과의 텍스트와 같기를 요구한다. 전에는 out 방향만 비교했으므로, in 함수가 거부하거나 다른 값으로 읽는 결과도
+  시험을 통과했다. `codec-test`의 진입점이 없는 값 unit의 왕복은 열린 항목으로 남는다(GN-13a). `make test-ts`(시험 276개)로
+  확인했다. php-serialization의 생성 시험은 결과를 주는 case 601개 각각에서 Python, Node, WASM, PHP 모두 이 진입점을 부른다.
 - 값 alias인 결과(GN-13e)는 그 자리들을 전위 순서로 적은 텍스트로 비교하며, 양쪽 모두 반복문이 쓴다. 생성기는 case 값의
   텍스트를 alias의 out 행으로 쓴다. 자리의 kind와 predicate(`utf8`, `safe_integer`, `integral_float`, `sequence_keys`)에
   맞는 행과 그 언어 형태다. 시험은 결과의 텍스트를 각 자리의 타입으로 helper `tokens`(Node, WASM, PHP)나

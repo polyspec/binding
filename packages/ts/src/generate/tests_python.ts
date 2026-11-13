@@ -282,7 +282,9 @@ export function pythonTests(model: Model, module: string): string {
         : 'refused' in expected
           ? `\n        self.fail(${pyString(expected.refused)})`
           : 'tokens' in expected
-            ? `\n        self.assertEqual(_tokens(${call}), json.loads(${pyString(expected.tokens)}))`
+            ? expected.round === undefined
+              ? `\n        self.assertEqual(_tokens(${call}), json.loads(${pyString(expected.tokens)}))`
+              : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
             : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
     def test_gn13e_${name}_${kase.id}(self) -> None:${receiverMade.lines}${before}${check}${after}`);

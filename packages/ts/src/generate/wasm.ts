@@ -953,6 +953,17 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
         .map_err(throw)
     }
 
+    /// GN-13e: takes a value by the in function of the alias ${alias.unit.id} and gives it back by its out function, for the round trip of a result.
+    #[cfg(feature = "codec-test")]
+    #[wasm_bindgen(js_name = ${rustString(`__aliasRound${langName('wasm', alias.unit.name, 'class')}`)})]
+    pub fn alias_round_${rustField(alias.unit.name)}(value: JsValue) -> Result<JsValue, JsValue> {
+        guard(|| {
+            let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(&value, "value")?;
+            out_${rustField(alias.unit.name)}(&value)
+        })
+        .map_err(throw)
+    }
+
 `).join('')}${model.faults.length === 0 ? '' : `    /// G-5: arms the faults of a case for the next call of the member, and gives the id of the arming.
     #[cfg(feature = "fault-test")]
     #[wasm_bindgen(js_name = "__armFaults")]

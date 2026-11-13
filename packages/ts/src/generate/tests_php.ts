@@ -322,7 +322,9 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
           : 'refused' in expected
             ? `\n        self::fail(${phpText(expected.refused)});`
             : 'tokens' in expected
-              ? `\n        self::assertSame(json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR), self::tokens(${call}));`
+              ? expected.round === undefined
+                ? `\n        self::assertSame(json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR), self::tokens(${call}));`
+                : `\n        $result = ${call};\n        $expected = json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR);\n        self::assertSame($expected, self::tokens($result));\n        self::assertSame($expected, self::tokens(\\${layout.namespace}\\Internal\\aliasRound${langName('php', expected.round, 'class')}($result)));`
               : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
         methods.push(`
     public function testGn13e${name}${id}(): void

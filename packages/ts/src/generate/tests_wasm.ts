@@ -218,15 +218,19 @@ test('GN-13e: ${name} ${kase.id}', () => {
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       usesTokens ||= expected !== undefined && 'tokens' in expected;
+      const round = expected !== undefined && 'round' in expected && expected.round !== undefined;
+      usesGlue ||= round;
       const check = expected === undefined
         ? `\n  ${call};`
         : 'refused' in expected
           ? `\n  assert.fail(${jsString(expected.refused)});`
           : 'tokens' in expected
-            ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+            ? expected.round === undefined
+              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+              : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
+test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${receiverMade.lines}${before}${check}${after}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.
