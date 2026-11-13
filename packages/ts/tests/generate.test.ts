@@ -740,7 +740,7 @@ test('an out row of a value alias makes a keyed map of the keys it lists in ever
   }
 });
 
-test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e)', () => {
+test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e, GN-15c)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
   for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
@@ -755,6 +755,17 @@ test('an out row of a value alias makes an instance by a factory of a class of t
     assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
     assert.match(text(out, path), /\nfn out_tag\(/, path);
   }
+  // GN-15c: Go gives the number of the class and the handle, and the package of the class makes the instance.
+  row.make.go = 'tag.new';
+  const go = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
+  const ffi = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.ok(ffi.includes('        OutValue::Text(value) => alias_out_tag(output, polyspec_sample::Tag::new(&value)),'), ffi);
+  assert.match(ffi, /\nfn alias_out_tag\(output: &mut Vec<u8>, value: polyspec_sample::Tag\) \{\n {4}output\.push\(10\);\n {4}out_uint\(output, 0u64\);\n {4}out_tag\(output, value\);\n\}/);
+  const pkg = text(go, 'packages/go/zz_generated_sample.go');
+  assert.match(pkg, /= dec\.ValueWith\(aliasInstance\)/);
+  assert.match(pkg, /\nfunc aliasInstance\(class uint64, handle uint64\) any \{\n\tswitch class \{\n\tcase 0:\n\t\treturn newTag\(handle\)\n\t\}\n\treturn nil\n\}\n/);
+  assert.match(text(go, 'packages/go/internal/binding/zz_generated_binding.go'), /\n\tcase 10:\n\t\tclass, handle := r\.Uint\(\), r\.Uint\(\)\n/);
+  row.make.go = 'text';
   // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
   row.kind = 'bool';
   row.make = { php: 'bool', python: 'bool', node: 'tag.new', go: 'bool', wasm: 'bool' };
