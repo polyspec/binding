@@ -16,8 +16,8 @@ the design ids are those of the binding design.
   records (as parameters and in their result form, also of another repository), value aliases (also of another
   repository, GN-6k), enums, constants, error classes and error units (GN-7a),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o) and a class unit with
-  `cleanup` (GN-6p).
+  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
+  `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
@@ -236,7 +236,7 @@ the design ids are those of the binding design.
   member that takes one returns `Result<T, Failure<E>>` (E-1c) and the core takes it as `&mut` (or, by coercion, `&`).
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
-  (a result of another type, a call from another thread with `thread: owner`, kind `wrong_thread`), goes to the core
+  (a result of another type, a call from another thread with `thread: owner` on Node and PHP, kind `wrong_thread`), goes to the core
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
@@ -459,9 +459,9 @@ the design ids are those of the binding design.
     channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
     thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
-  A member that waits and takes a callback or a value of language code, and a constructor, a property, an iterate or
-  a hook (N-4) that waits, are refused by name, because the core would reach language code off the thread of the call
-  or the language has no awaited form of them, or calls a hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
+  A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
+  iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
+  hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
 - **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
   generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs.
   The entry point converts the arguments and takes the locks and the arming of its faults on the calling thread, as
@@ -477,7 +477,9 @@ the design ids are those of the binding design.
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
   - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
   - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
-  A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
+  A member with `async_driver` is refused by name where GN-6m refuses a member that waits, and also when it reaches
+  language code, because a future that a runtime polls on its own threads would call the language code there; such a
+  member needs a core that gives a state machine without I/O, which is not generated yet (G-4).
   Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
   thread of a runtime, while the caller of each language waits in the form that its language has.
 - **GN-6o** A method whose core receiver is `self` consumes the core value of its object (E-1a, B-5c). Its receiver is a
@@ -508,6 +510,28 @@ the design ids are those of the binding design.
   warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
   reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
   names the call that the caller left out.
+- **GN-6q** A member with `wait: blocking_io` reaches language code when the type of a parameter or the class of its
+  receiver carries language code (GN-6h): during the call the core may call a callback (U-3) or touch a `Native` of a
+  value of language code. The core calls that code on the thread on which it runs the call, so each language runs the
+  call where its language references may be used, as the owner table of the `Native` lifetime requires (a Node or PHP
+  `Native` names an entry of the owner table of its thread, and a Python `Native` is a `Py<PyAny>`):
+  - PHP calls the core on the calling thread, as GN-6m states, so a callback and a `Native` are used on their thread.
+  - Python runs `<name>` and `a<name>` as GN-6m states. Each call of a callback acquires the GIL on the thread on which
+    the core calls it (`Python::attach`), and a `Py<PyAny>` is released on any thread (the reference pool of PyO3), so
+    the core may call language code on the thread of `py.detach` and on the worker thread of `asyncio.to_thread`. A
+    Python reference is bound to the GIL and not to a thread, so a Python callback with `thread: owner` has no check of
+    kind `wrong_thread`; `thread: owner` is enforced on Node, PHP and WASM (GN-6d, GN-18c).
+  - Node runs the call synchronously on the JavaScript thread, which owns the callback objects and the entries of the
+    owner table, and the entry returns a promise that the result or the failure of that call settles. The JavaScript
+    entry is an async function, and the declarations name `Promise<T>`, as GN-6m states, so the language form of the
+    member does not depend on whether it reaches language code. The JavaScript thread waits while the core waits for
+    I/O; the specification of each core states this cost for such a member.
+  - Go refuses a member with `blocking_io` by name (GN-6m), and WASM has no such member (GN-6m).
+  Why not another thread of Node: a callback object of napi is valid only on the JavaScript thread, and a pool thread
+  that hands each callback call to that thread through a thread-safe function and waits for its answer holds a thread
+  of the libuv pool for the whole call, and it never ends when the JavaScript thread waits for that pool. A core that
+  judges per call whether it reaches language code (`core.reaches`) would let the call run on the pool when it does
+  not; it is not generated yet.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

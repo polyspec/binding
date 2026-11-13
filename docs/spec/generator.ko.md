@@ -11,7 +11,7 @@
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
-  parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o)와 `cleanup`이 있는 class unit(GN-6p)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
+  parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record(GN-15f)와 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -193,7 +193,7 @@
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
-  바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
+  바인딩의 실패(다른 타입의 결과, Node와 PHP에서 `thread: owner`에 다른 스레드가 한 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
   `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
@@ -379,10 +379,9 @@
     export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
     `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
-  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate·hook(N-4)은 이름을
-  대고 거부한다. 코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도
-  기다리지 않는 자기 protocol로 부르기 때문이다. `process_wait`도
-  이름을 대고 거부한다(G-4).
+  언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
+  대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
+  때문이다. `process_wait`도 이름을 대고 거부한다(G-4).
 - **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
   tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. 진입점은 GN-6m처럼 호출
   스레드에서 인자를 바꾸고 잠금과 fault 장전을 가져오며, future가 그것을 가진다. future는 바꾼 값과 소유한 guard 위의
@@ -397,7 +396,9 @@
     JavaScript 진입은 GN-6m처럼 async 함수다.
   - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
   - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
-  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다.
+  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부하고, 언어 코드에 닿는
+  `async_driver` member도 이름을 대고 거부한다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
+  부르게 되기 때문이다. 그런 member에는 I/O 없는 state machine을 주는 코어가 필요하고, 그것은 아직 생성하지 않는다(G-4).
   이유: 네트워크 protocol을 쓰는 코어는 async이고, 호출자의 것을 빌리지 않는 future는 runtime의 어느 스레드에서도 돌 수
   있다. 그동안 각 언어의 호출자는 자기 언어의 꼴로 기다린다.
 - **GN-6o** 코어 receiver가 `self`인 method는 자기 객체의 코어 값을 소비한다(E-1a, B-5c). 그 receiver는 쓰기 자리이고, 생성
@@ -424,6 +425,26 @@
   (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event를
   기다린다. Node에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
   잠금의 `taken`은 binding_core에서 시험한다. 이유: 호출자가 닫지 않은 자원도 놓이고, 경고는 호출자가 빠뜨린 호출을 알려 준다.
+- **GN-6q** parameter의 타입이나 receiver의 class가 언어 코드를 지니면(GN-6h) `wait: blocking_io`인 member는 언어 코드에
+  닿는다. 호출 중에 코어가 callback(U-3)을 부르거나 언어 코드 값의 `Native`를 만질 수 있다는 뜻이다. 코어는 호출을 실행하는
+  스레드에서 그 코드를 부른다. 그래서 각 언어는 자기 언어 참조를 쓸 수 있는 곳에서 호출을 실행한다. 이것은 `Native` 수명의
+  owner 표가 요구하는 것이다(Node와 PHP의 `Native`는 자기 스레드 owner 표의 항목을 가리키고, Python의 `Native`는
+  `Py<PyAny>`이다).
+  - PHP는 GN-6m대로 호출 스레드에서 코어를 부른다. 그래서 callback과 `Native`는 자기 스레드에서 쓰인다.
+  - Python은 `<name>`과 `a<name>`을 GN-6m대로 실행한다. callback의 각 호출은 코어가 그것을 부르는 스레드에서 GIL을 얻고
+    (`Python::attach`), `Py<PyAny>`는 어느 스레드에서도 놓인다(PyO3의 reference pool). 그래서 코어는 `py.detach`의
+    스레드에서도, `asyncio.to_thread`의 worker 스레드에서도 언어 코드를 부를 수 있다. Python 참조는 스레드가 아니라 GIL에
+    묶이므로 `thread: owner`인 Python callback에는 kind `wrong_thread` 검사가 없다. `thread: owner`는 Node, PHP, WASM에서만
+    지킨다(GN-6d, GN-18c).
+  - Node는 callback 객체와 owner 표의 항목을 가진 JavaScript 스레드에서 호출을 동기로 실행하고, entry는 그 호출의 결과나
+    실패로 정해지는 promise를 돌려준다. JavaScript entry는 async function이고 선언은 GN-6m대로 `Promise<T>`를 적는다. 그래서
+    member의 언어 꼴은 언어 코드에 닿는지에 따라 달라지지 않는다. 코어가 I/O를 기다리는 동안 JavaScript 스레드도 기다린다.
+    각 코어의 spec은 그런 member에 대해 이 비용을 적는다.
+  - Go는 `blocking_io`인 member를 이름을 대고 거부하고(GN-6m), WASM에는 그런 member가 없다(GN-6m).
+  Node에서 다른 스레드를 쓰지 않는 이유: napi의 callback 객체는 JavaScript 스레드에서만 유효하다. callback 호출마다
+  thread-safe function으로 그 스레드에 넘기고 답을 기다리는 pool 스레드는 호출 내내 libuv pool의 스레드 하나를 잡고, JavaScript
+  스레드가 그 pool을 기다리면 끝나지 않는다. 호출마다 언어 코드에 닿는지 판단하는 코어(`core.reaches`)가 있으면 닿지 않는
+  호출은 pool에서 실행할 수 있다. 그것은 아직 생성하지 않는다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
