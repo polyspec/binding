@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The Go C ABI of fsm did not compile (E0283, type annotations needed): `out_optional` took `impl Into<Option<T>>`, which
+  an `Option<i64>` of an optional property of an error unit and the `&Option<String>` of an optional text field meet
+  for two types `T`, and the generic `out_int` and `out_text` left `T` unknown. `out_optional` now takes `Option<T>`,
+  given the `as_ref` of the value of the core, as in PHP, Python and Node (GN-16). Verified by `npm test` in
+  `packages/ts`: 280 of 280 pass.
 - The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
   safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
   277 of 277 pass.

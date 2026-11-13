@@ -15,7 +15,7 @@ import {
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
+import { header, closure, optionRef, rustString, usedHelpers, WIDEN } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -96,7 +96,8 @@ export function convertOut(model: Model, type: Type, value: string): string {
   // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
   if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `out_optional(output, ${value}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
+  // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
+  if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
@@ -359,8 +360,8 @@ fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: i
 }
 
 /// An optional value, owned or borrowed (\`&Option<T>\` is an \`Option<&T>\`).
-fn out_optional<T>(output: &mut Vec<u8>, value: impl Into<Option<T>>, item: impl FnOnce(&mut Vec<u8>, T)) {
-    match value.into() {
+fn out_optional<T>(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce(&mut Vec<u8>, T)) {
+    match value {
         Some(value) => {
             output.push(1);
             item(output, value);

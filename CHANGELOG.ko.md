@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- fsm의 Go C ABI가 컴파일되지 않았다(E0283, type annotations needed): `out_optional`이 `impl Into<Option<T>>`를 받았는데,
+  error unit의 optional property인 `Option<i64>`와 optional text field인 `&Option<String>`이 두 타입 `T`에 맞아서 제네릭
+  `out_int`과 `out_text`가 `T`를 정하지 못했다. 이제 `out_optional`은 PHP, Python, Node처럼 코어 값의 `as_ref`를 받는
+  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과.
 - Go tuple parameter 시험이 `uint` 부분에 `in_uint`을 요구했지만, GN-12a는 `uint` 부분을 `in_safe_uint`로 안전 정수에
   묶는다. 이제 시험은 `in_safe_uint`를 요구한다. `packages/ts`의 `npm test`로 확인했다: 277개 중 277개 통과.
 - 같은 `keyed_map` 정수 key가 두 결과를 냈다: Node와 WASM은 안전 정수가 아닌 number key를 `invalid_argument_type`으로
