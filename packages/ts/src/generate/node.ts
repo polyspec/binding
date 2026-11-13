@@ -650,6 +650,13 @@ impl Driven {
 }
 `;
 
+// GN-6ab: the Driven class of a contract with a member with machine; its advance is an entry point, whose work runs
+// with no fault (G-5), as the work of every entry point does.
+function machineRust(model: Model): string {
+  const machine = [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.machine === true);
+  return machine === undefined ? '' : withFaults(model, machine, MACHINE);
+}
+
 // GN-6n: the future of a member with wait async_driver, on the tokio runtime of napi. A panic of a poll is a failure of
 // kind internal (B-7), and the result or the failure is converted on the JavaScript thread.
 const DRIVING = `
@@ -1032,7 +1039,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
     model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
-    ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
+    machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),

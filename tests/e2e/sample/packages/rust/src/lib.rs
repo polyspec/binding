@@ -122,6 +122,50 @@ pub fn resolve_slowly(_io: binding_core::Io, lookup: &mut dyn Lookup, key: &str)
     resolve(lookup, key)
 }
 
+/// The value of a key, which the lookup must hold, resolved by a state machine without I/O (GN-6ab): it reads the key
+/// by an I/O future, which fails with kind `unreadable` for an empty key, then finds its value through the lookup,
+/// which is language code that the driver calls on the thread that owns it, and ends.
+pub fn resolve_driven<L: Lookup>(lookup: L, key: String) -> ResolveDriven<L> {
+    ResolveDriven { lookup, key, read: false, found: None }
+}
+
+/// The state machine of [`resolve_driven`], which owns its lookup and its key.
+pub struct ResolveDriven<L> {
+    lookup: L,
+    key: String,
+    read: bool,
+    found: Option<Result<Option<String>, Failure<Error>>>,
+}
+
+impl<L: Lookup> binding_core::machine::Machine for ResolveDriven<L> {
+    type Io = Result<(), Error>;
+    type Done = Result<String, Failure<Error>>;
+
+    fn resume(&mut self, io: Option<Result<(), Error>>) -> binding_core::machine::Step<Self::Io, Self::Done> {
+        use binding_core::machine::Step;
+        if let Some(found) = self.found.take() {
+            return Step::Done(match found {
+                Ok(Some(value)) => Ok(value),
+                Ok(None) => Err(Failure::Kind(Error::Missing { key: self.key.clone() })),
+                Err(failure) => Err(failure),
+            });
+        }
+        if !self.read {
+            self.read = true;
+            let empty = self.key.is_empty();
+            return Step::Io(Box::pin(async move { if empty { Err(Error::Unreadable { errno: None }) } else { Ok(()) } }));
+        }
+        match io {
+            Some(Err(error)) => Step::Done(Err(Failure::Kind(error))),
+            Some(Ok(())) | None => Step::Call,
+        }
+    }
+
+    fn call(&mut self) {
+        self.found = Some(self.lookup.find(&self.key));
+    }
+}
+
 /// The number of the keys that the lookup holds.
 ///
 /// # Errors

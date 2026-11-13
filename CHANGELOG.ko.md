@@ -12,8 +12,12 @@
   PHP는 호출 스레드에서 machine을 돌리고, Python `<name>`은 각 기다림을 GIL 밖에서 하며 machine을 돌리고 `a<name>`은
   `<name>`을 `asyncio.to_thread`에서 돌린다. Node는 JavaScript 진입이 진행시키는 `Driven` 객체를 돌려주며, 각 call은
   JavaScript 스레드에서, 각 기다림은 napi의 tokio runtime에서 한다. `binding check`는 `machine`이 없는 그런 member와 다른
-  member의 `machine`을 보고한다(CK-68). 생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method를 거부하고, Go와
-  WASM은 `async_driver`인 모든 member와 함께 이를 거부한다(GN-6ab). `make test-ts`와 `make test-rust`로 확인했고,
+  member의 `machine`을 보고한다(CK-68). Go는 C ABI 호출 안에서 호출 스레드로 machine을 돌리며, 각 기다림은 block하고 각
+  callback은 cgo로 부른다. machine은 인자를 값으로 받으므로, 생성 코드는 class parameter를 그 값의 clone으로 넘긴다.
+  생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method와 그런 member의 기본값이 있는 parameter를 거부하고,
+  WASM은 결함 82까지 `async_driver`인 모든 member를 거부한다(GN-6ab). end-to-end sample에 `sample.resolve_driven`을
+  더했다. 그 machine은 I/O 단계, lookup의 call, 그 결과를 지나며, case는 찾은 key, 없는 key, 읽기가 실패한 경우다.
+  lookup이 던지는 경우는 callback을 받는 각 member의 생성 테스트다. `make test-ts`와 `make test-rust`로 확인했고,
   `tests/machine.rs`는 `drive`와 `Driving`으로 machine을 돌린다.
 - 코어 함수가 `Result<String, Error>`를 돌려주는 `partial_target_error.removal_kind` 같은 `raises`가 있는 오류 unit의
   property와, 오류의 trace 같은 타입 `list<text>`의 property는 "a property of an error unit that raises is not generated

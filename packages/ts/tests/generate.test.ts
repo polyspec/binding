@@ -1783,7 +1783,10 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // The core call of an iterate is the whole iteration.
     assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(&receiver\)\)\)/, path);
     // Each core call is armed for its own member, and none twice.
-    assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
+    // GN-6n, GN-6ab: an entry point that waits for a future installs its faults around each poll (armed_future); the
+    // advance of a Driven object (Node) is an entry point without a core call of its own.
+    const advances = (lib.match(/pub fn advance<'env>/g) ?? []).length;
+    assert.equal((lib.match(/(?:with_faults|armed_future)\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
   // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
   assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            out_list(&mut buffer, left, out_text);\n'));

@@ -9,7 +9,7 @@ import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
-  aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
+  aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, DRIVEN, drivenCall, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, objectUnit, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
   variantPattern,
   errorMatched,
@@ -655,7 +655,8 @@ function functionRust(model: Model, fn: Fn): string {
     lines.push('        }', '        Ok(buffer)');
     return entry(model, cSymbol(model, fn), doc, lines);
   }
-  const call = armedCall(model, fn, coreCall(model, fn));
+  // GN-6ab: the call of the C ABI drives the state machine of the core on its thread, and waits for each of its futures.
+  const call = fn.machine === true ? drivenCall(model, fn, coreCall(model, fn), (wait) => wait, 'binding_error') : armedCall(model, fn, coreCall(model, fn));
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -1200,7 +1201,7 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
 }
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion

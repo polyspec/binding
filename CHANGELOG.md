@@ -13,8 +13,13 @@
   calling thread, Python `<name>` drives it with each wait outside the GIL and `a<name>` runs `<name>` in
   `asyncio.to_thread`, and Node returns a `Driven` object that the JavaScript entry advances, each call on the
   JavaScript thread and each wait on the tokio runtime of napi. `binding check` reports such a member without
-  `machine` and `machine` on any other member (CK-68); the generator refuses a method with `machine`, whose machine
-  would borrow its receiver, and Go and WASM refuse it with every member with `async_driver` (GN-6ab). Verified by
+  `machine` and `machine` on any other member (CK-68). Go drives the machine on the calling thread inside the call of
+  its C ABI, each wait blocked on and each callback called through cgo. A machine takes its arguments by value, so
+  the generated code passes a class parameter as a clone of its value. The generator refuses a method with `machine`,
+  whose machine would borrow its receiver, and a parameter with a default of such a member, and WASM refuses every
+  member with `async_driver` until defect 82 (GN-6ab). The end-to-end sample adds `sample.resolve_driven`, whose
+  machine passes an I/O step, a call of the lookup and its result, with the cases of a found key, a missing key and a
+  failed read; a lookup that throws is the generated test of each member that takes a callback. Verified by
   `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
 - A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
   `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
