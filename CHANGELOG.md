@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
+  ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
+  and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
+  states, and each Python callback call takes the GIL on the thread on which the core calls it, without the check of
+  kind `wrong_thread`, so the callback also runs on the worker thread of `a<name>`. Node runs the call synchronously
+  on the JavaScript thread, which owns the callback objects, and returns a settled promise. A member with
+  `async_driver` that reaches language code stays refused by name. `sample.resolve_slowly` of `tests/e2e/sample`
+  covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q).
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
