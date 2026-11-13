@@ -12,7 +12,7 @@ import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
-import { closure } from '../src/generate/text.ts';
+import { closure, usedHelpers } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -987,6 +987,32 @@ test('a callback unit of another repository carries language code, so a member t
   looking(contract);
   contract.units.find((u: any) => u.id === 'consumer').members.find((m: any) => m.id === 'consumer.look').wait = 'blocking_io';
   assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look: a member with wait blocking_io that reaches language code is not generated \(GN-6m\)/);
+});
+
+test('a method call of the name of a helper does not use the helper, in every target (GN-4)', () => {
+  const block = `
+/// T-5: keeps a value in a table.
+fn insert<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
+    0
+}
+
+/// The guard of a mutex.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock()
+}`;
+  // A method of a map, of a guard or of a table of the made values names no helper.
+  assert.equal(usedHelpers(block, 'map.insert(key, value); made.insert(handle.raw(), made.len());'), '');
+  assert.doesNotMatch(usedHelpers(block, 'lock(&THROWN).insert(handle, error);'), /fn insert/);
+  assert.match(usedHelpers(block, 'lock(&THROWN).insert(handle, error);'), /fn lock/);
+  // A call or a passing of the helper by its name uses it.
+  assert.match(usedHelpers(block, 'let handle = insert(&TABLE, value);'), /fn insert/);
+  assert.match(usedHelpers(block, 'items.map(insert)'), /fn insert/);
+  // The Go C ABI of consumer, which has a callback unit and no class unit, has no table helper.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });
+  const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(ffi, /lock\(&THROWN\)\.insert\(handle, error\);/);
+  assert.doesNotMatch(ffi, /fn insert</);
 });
 
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
