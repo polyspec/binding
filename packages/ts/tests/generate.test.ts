@@ -739,7 +739,7 @@ test('an out row of a value alias makes an instance by a factory of a class of t
 test('a language object that a core may keep enters as a Native, which each target holds and releases by its rule (GN-6o)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const sample = read('sample/packages/rust/interface.json');
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   // Python holds the reference, which PyO3 releases at the drop or at its next acquisition of the GIL.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /#\[cfg\(pyo3_disable_reference_pool\)\]\ncompile_error!\(/);
@@ -748,13 +748,13 @@ test('a language object that a core may keep enters as a Native, which each targ
   assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\)\)\);/);
   assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\), type_name, json_serializable: false \}\)/);
   // A value outside the closed set is valid for the call alone.
-  assert.match(python, /HostValue::Other \{ type_name, handle: self\.hold\(Held::Value\(value\.clone\(\)\)\) \}/);
+  assert.match(python, /HostValue::Other \{ type_name, handle: self\.mark\(\) \}/);
   assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\.0\.clone_ref\(py\)\.into_bound\(py\)\),/);
   // WASM holds the key of the table of its one thread; the drop removes it.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
   assert.match(wasm, /impl Drop for WasmNative \{\n    fn drop\(&mut self\) \{\n        let released = NATIVE\.try_with\(/);
-  assert.match(wasm, /return Ok\(HostValue::Date\(self\.hold\(Held::Value\(value\.clone\(\)\)\)\)\);/);
+  assert.match(wasm, /return Ok\(HostValue::Date\(self\.mark\(\)\)\);/);
   assert.match(wasm, /OutValue::Native\(native\) => native_object\(&native\),/);
   // Node and PHP hold the owner, its generation and the key; a drop queues the key for the owner, which releases it on
   // its own thread at the start of every entry point, and a drop of an older generation touches nothing.
@@ -776,9 +776,13 @@ test('a language object that a core may keep enters as a Native, which each targ
   const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(go, /\[9\] => HostValue::Callable\(Native::new\(GoNative \{ handle: in_uint\(input\)\? \}\)\),/);
   assert.match(go, /impl Drop for GoNative \{\n    fn drop\(&mut self\) \{\n        \/\/ SAFETY: [^\n]*\n        unsafe \{ polyspec_sample__go_release\(self\.handle\) \};/);
+  assert.match(go, /OutValue::Native\(native\) => match native\.downcast::<GoNative>\(\) \{\n\s+Some\(object\) => \{\n\s+output\.push\(10\);/);
   const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
   assert.match(goBinding, /case reflect\.Func:\n\t\tenc\.bytes = append\(enc\.bytes, 9\)\n\t\tenc\.Uint\(uint64\(cgo\.NewHandle\(value\.Interface\(\)\)\)\)/);
   assert.match(goBinding, /\/\/export polyspec_sample__go_release\nfunc polyspec_sample__go_release\(handle C\.uint64_t\) \{\n\tcgo\.Handle\(uintptr\(handle\)\)\.Delete\(\)\n\}/);
+  // The bytes of an out outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
+  assert.match(goBinding, /func polyspec_sample__go_native\(handle C\.uint64_t\) C\.uint64_t \{\n\treturn C\.uint64_t\(cgo\.NewHandle\(cgo\.Handle\(uintptr\(handle\)\)\.Value\(\)\)\)\n\}/);
+  assert.match(goBinding, /case 10:\n\t\thandle := cgo\.Handle\(uintptr\(r\.Uint\(\)\)\)\n(?:[^\n]*\n){3}\t\tvalue := handle\.Value\(\)\n\t\thandle\.Delete\(\)/);
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
@@ -1413,7 +1417,7 @@ test('WASM: a value alias, its in_raises and a callback unit are generated as fo
   const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
-  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost \{ held: Vec::new\(\) \};/);
+  assert.match(lib, /\nfn in_data\(value: &JsValue, _subject: &str\) -> Result<polyspec_sample::Data, Fail> \{\n {4}let mut host = JsHost \{ held: Vec::new\(\), marked: 0 \};/);
   assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_error\(failure\)\)/);
   assert.match(lib, /OutValue::Map\(value\) => \{\n {12}let handle = value\.handle\(\);\n {12}let len = value\.len\(\);\n {12}if let Some\(made\)/);
   // B-1: an operation that may run code of the value is imported with catch.

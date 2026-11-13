@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
-import { container, outArms } from './alias_shared.ts';
+import { container, outArms, ownedNatives } from './alias_shared.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -79,7 +79,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
         }`;
     }
     case 'native':
-      return 'native_object(handle)';
+      return 'native_object(&native)';
     default:
       throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -94,7 +94,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = PhpHost { held: Vec::new() };
+    let mut host = PhpHost { held: Vec::new(), marked: 0 };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -124,6 +124,7 @@ export const PHP_HOST = (`
 /// handles that describe gave, each key already described.
 struct PhpHost<'a> {
     held: Vec<Vec<(HostValue, &'a Zval)>>,
+    marked: u64,
 }
 
 impl<'a> PhpHost<'a> {
@@ -140,6 +141,12 @@ impl<'a> PhpHost<'a> {
         }
         self.held.push(entries);
         Handle::new(handle_count(self.held.len() - 1))
+    }
+
+    /// GN-6o: the handle of a value outside the closed set, its number in the order of the call.
+    fn mark(&mut self) -> Handle {
+        self.marked = self.marked.saturating_add(1);
+        Handle::new(self.marked)
     }
 
     /// B-1: an element that is a reference is the reference with its identity, so that elements that share one share
@@ -183,15 +190,15 @@ impl<'a> PhpHost<'a> {
                 return Ok(HostValue::StdClass { handle: self.hold(properties), len });
             }
             if type_name == "Closure" {
-                return Ok(HostValue::Callable(native_handle(value)));
+                return Ok(HostValue::Callable(php_native(value)?));
             }
             let json_serializable = match ClassEntry::try_find("JsonSerializable") {
                 Some(class) => object.instance_of(class),
                 None => false,
             };
-            return Ok(HostValue::Object { handle: native_handle(value), type_name, json_serializable });
+            return Ok(HostValue::Object { native: php_native(value)?, type_name, json_serializable });
         }
-        Ok(HostValue::Other { type_name: String::from("resource"), handle: native_handle(value) })
+        Ok(HostValue::Other { type_name: String::from("resource"), handle: self.mark() })
     }
 
     fn held_entry(&self, handle: Handle, index: u64) -> Result<(HostValue, &'a Zval), binding_core::Raised> {
@@ -265,37 +272,33 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     }
 }
 
-thread_local! {
-    /// U-7 (VAL-18): the PHP values that entered as handles in this request, which a native value gives back as the
-    /// same value.
-    static NATIVE: RefCell<Vec<Zval>> = const { RefCell::new(Vec::new()) };
-    /// GN-6e: the count of the handles of the requests that ended. The handles of this request follow it, so a handle
-    /// of an ended request finds no value.
-    static RELEASED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+${ownedNatives('Zval', 'drop(references);')}
+/// GN-6o: a PHP value that a core may keep, as a Native of the table of this thread.
+fn php_native(value: &Zval) -> Result<Native, Fail> {
+    if OWNED.with_borrow(Option::is_none) {
+        let Some((owner, generation)) = native_owner() else {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the table of the owners is poisoned") }));
+        };
+        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+    }
+    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: this thread has no table") }))
 }
 
-fn native_handle(value: &Zval) -> Handle {
-    NATIVE.with_borrow_mut(|native| {
-        native.push(value.shallow_clone());
-        Handle::new(RELEASED.get().saturating_add(handle_count(native.len() - 1)))
-    })
-}
-
-fn native_object(handle: Handle) -> Result<Zval, Fail> {
-    let position = handle.raw().checked_sub(RELEASED.get()).map(handle_position);
-    NATIVE.with_borrow(|native| match position.and_then(|position| native.get(position)) {
-        Some(value) => Ok(value.shallow_clone()),
-        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: the native value is gone") })),
-    })
-}
-
-/// GN-6e: the values that entered as handles are released when the request ends, while the engine that owns them is
-/// alive. Kept longer, they are released by the thread after the engine is gone, which ends the process with a fault.
-extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
-    NATIVE.with_borrow_mut(|native| {
-        RELEASED.set(RELEASED.get().saturating_add(handle_count(native.len())));
-        native.clear();
+/// GN-6o: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
+fn native_object(native: &Native) -> Result<Zval, Fail> {
+    let found = native.downcast::<OwnedNative>().and_then(|native| {
+        OWNED.with_borrow(|owned| match owned {
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(Zval::shallow_clone),
+            _ => None,
+        })
     });
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") }))
+}
+
+/// GN-6o: the engine frees the values of a request when the request ends, so the request shutdown releases the table
+/// while the engine is alive.
+extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
+    clean_up_native();
     0
 }
 

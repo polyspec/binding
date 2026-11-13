@@ -1006,7 +1006,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
@@ -1015,7 +1015,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
+${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${model.aliases.length > 0 ? '{Mutex, OnceLock}' : 'OnceLock'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1190,7 +1190,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${model.aliases.length > 0 ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {

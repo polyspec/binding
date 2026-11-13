@@ -15,7 +15,7 @@ const VARIANT: Record<string, string> = {
   null: 'OutValue::Null', bool: 'OutValue::Bool(value)', int: 'OutValue::Int(value)', int64: 'OutValue::Int64(value)',
   float: 'OutValue::Float(value)', number: 'OutValue::Number(value)', text: 'OutValue::Text(value)', bytes: 'OutValue::Bytes(value)',
   list: 'OutValue::List { handle, len }', map: 'OutValue::Map(value)', object: 'OutValue::Object { handle, len }',
-  reference: 'OutValue::Reference { handle, value }', safe_text: 'OutValue::SafeText(value)', native: 'OutValue::Native(handle)',
+  reference: 'OutValue::Reference { handle, value }', safe_text: 'OutValue::SafeText(value)', native: 'OutValue::Native(native)',
 };
 
 // A container kind as a list or a map form reads it: the statements that bind `handle` and `len`, and the expressions of
@@ -98,4 +98,127 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       }).join(' ') + ` else { ${noRow} }`;
     return `        ${variant} => ${body},`;
   });
+}
+
+// GN-6o: the owner table of Node and PHP. A Native holds the owner, its generation and the key of the table of the
+// owner thread, which holds the language reference, because a reference of that thread cannot be released on another
+// one. A drop queues the key for its owner and releases the queue of its own thread; every entry point releases it
+// too (`release_queue` in `guard`), and the cleanup of the owner releases the table and raises its generation.
+// `reference` is the Rust type of the reference, and `release` the statement that releases the Vec `references`.
+export function ownedNatives(reference: string, release: string): string {
+  return `
+/// GN-6o: the owner of the language references of one thread: the generation of its table, which its cleanup raises,
+/// and the keys of its Natives that were dropped, which the owner thread releases.
+struct Owner {
+    generation: u64,
+    released: Vec<u64>,
+}
+
+/// GN-6o: the owners, under the index that their Natives name.
+static OWNERS: Mutex<Vec<Owner>> = Mutex::new(Vec::new());
+
+/// GN-6o: the language references that this thread holds for its Natives, under their keys.
+struct Owned {
+    owner: usize,
+    generation: u64,
+    next: u64,
+    values: BTreeMap<u64, ${reference}>,
+}
+
+thread_local! {
+    /// GN-6o: the index of the owner of this thread, which its later tables keep.
+    static OWNER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// GN-6o: the table of this thread, until the cleanup of its owner.
+    static OWNED: RefCell<Option<Owned>> = const { RefCell::new(None) };
+}
+
+/// GN-6o: what a Native of this binding holds: the owner, its generation and the key of the table of the owner.
+#[derive(Debug)]
+struct OwnedNative {
+    owner: usize,
+    generation: u64,
+    key: u64,
+}
+
+impl NativeObject for OwnedNative {}
+
+impl Drop for OwnedNative {
+    fn drop(&mut self) {
+        let Ok(mut owners) = OWNERS.lock() else {
+            return;
+        };
+        match owners.get_mut(self.owner) {
+            Some(owner) if owner.generation == self.generation => owner.released.push(self.key),
+            _other => return,
+        }
+        drop(owners);
+        release_queue();
+    }
+}
+
+/// GN-6o: the owner of this thread and its generation; a thread is registered as an owner at its first Native.
+fn native_owner() -> Option<(usize, u64)> {
+    let mut owners = OWNERS.lock().ok()?;
+    let owner = match OWNER.get() {
+        Some(owner) => owner,
+        None => {
+            owners.push(Owner { generation: 0, released: Vec::new() });
+            let owner = owners.len() - 1;
+            OWNER.set(Some(owner));
+            owner
+        }
+    };
+    owners.get(owner).map(|found| (owner, found.generation))
+}
+
+/// GN-6o: keeps a reference in the table of this thread and gives its Native.
+fn keep_native(reference: ${reference}) -> Option<Native> {
+    OWNED.with_borrow_mut(|owned| {
+        let owned = owned.as_mut()?;
+        owned.next = owned.next.saturating_add(1);
+        owned.values.insert(owned.next, reference);
+        Some(Native::new(OwnedNative { owner: owned.owner, generation: owned.generation, key: owned.next }))
+    })
+}
+
+/// GN-6o: releases on the owner thread the references whose Natives were dropped; the references are released after
+/// the table is no longer borrowed, since releasing one may run language code.
+fn release_queue() {
+    let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
+        return;
+    };
+    let keys = match OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
+        Some(owner) => std::mem::take(&mut owner.released),
+        None => return,
+    };
+    if keys.is_empty() {
+        return;
+    }
+    let taken = OWNED.try_with(|owned| {
+        let mut owned = owned.try_borrow_mut().ok()?;
+        let owned = owned.as_mut()?;
+        Some(keys.iter().filter_map(|key| owned.values.remove(key)).collect::<Vec<${reference}>>())
+    });
+    if let Ok(Some(references)) = taken {
+        ${release}
+    }
+}
+
+/// GN-6o: the cleanup of the owner of this thread: it releases what the table holds and raises the generation, so that
+/// a later drop of a Native of the table touches nothing and its out is kind internal.
+fn clean_up_native() {
+    let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
+        return;
+    };
+    if let Some(owner) = OWNERS.lock().as_mut().ok().and_then(|owners| owners.get_mut(owner)) {
+        owner.generation = owner.generation.saturating_add(1);
+        owner.released.clear();
+    }
+    let taken = OWNED.try_with(|owned| owned.try_borrow_mut().ok().and_then(|mut owned| owned.take()));
+    if let Ok(Some(owned)) = taken {
+        let references: Vec<${reference}> = owned.values.into_values().collect();
+        ${release}
+    }
+}
+`;
 }

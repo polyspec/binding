@@ -65,7 +65,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
         }`;
     }
     case 'native':
-      return 'native_object(handle)';
+      return 'native_object(&native)';
     default:
       throw new Unsupported(`${alias.unit.id}: the WASM form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -80,7 +80,7 @@ export function aliasWasm(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &JsValue, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = JsHost { held: Vec::new() };
+    let mut host = JsHost { held: Vec::new(), marked: 0 };
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -139,12 +139,19 @@ enum Held {
 
 struct JsHost {
     held: Vec<Held>,
+    marked: u64,
 }
 
 impl JsHost {
     fn hold(&mut self, held: Held) -> Handle {
         self.held.push(held);
         Handle::new(handle_count(self.held.len() - 1))
+    }
+
+    /// GN-6o: the handle of a Date or of a value outside the closed set, its number in the order of the call.
+    fn mark(&mut self) -> Handle {
+        self.marked = self.marked.saturating_add(1);
+        Handle::new(self.marked)
     }
 
     /// B-1: a primitive is its kind (a number is untyped: whether it is an integer is the core's rule); a bigint is an
@@ -173,13 +180,13 @@ impl JsHost {
             });
         }
         if value.is_function() {
-            return Ok(HostValue::Callable(native_handle(value)));
+            return Ok(HostValue::Callable(wasm_native(value)));
         }
         if value.is_symbol() {
-            return Ok(HostValue::Other { type_name: String::from("symbol"), handle: native_handle(value) });
+            return Ok(HostValue::Other { type_name: String::from("symbol"), handle: self.mark() });
         }
         if !value.is_object() {
-            return Ok(HostValue::Other { type_name: String::from("external"), handle: native_handle(value) });
+            return Ok(HostValue::Other { type_name: String::from("external"), handle: self.mark() });
         }
         self.describe_object(value)
     }
@@ -194,10 +201,10 @@ impl JsHost {
         }
         let global = js_sys::global();
         if instance_of(value, &global, "Date")? {
-            return Ok(HostValue::Date(native_handle(value)));
+            return Ok(HostValue::Date(self.mark()));
         }
         if js_sys::ArrayBuffer::is_view(value) && !instance_of(value, &global, "DataView")? {
-            return Ok(HostValue::Other { type_name: constructor_name(value)?, handle: native_handle(value) });
+            return Ok(HostValue::Other { type_name: constructor_name(value)?, handle: self.mark() });
         }
         if instance_of(value, &global, "Map")? {
             let pairs = js::array_from(value)?;
@@ -217,7 +224,7 @@ impl JsHost {
             let len = u64::from(keys.length());
             return Ok(HostValue::PlainObject { handle: self.hold(Held::Properties(value.clone(), keys)), len, prototype });
         }
-        Ok(HostValue::Object { handle: native_handle(value), type_name: constructor_name(value)?, json_serializable: false })
+        Ok(HostValue::Object { native: wasm_native(value), type_name: constructor_name(value)?, json_serializable: false })
     }
 }
 
@@ -308,24 +315,47 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
+/// GN-6o: the JavaScript values that a core may keep, under the keys of their Natives.
+struct NativeTable {
+    next: u64,
+    values: BTreeMap<u64, JsValue>,
+}
+
 thread_local! {
-    /// U-7 (VAL-18): the JavaScript values that entered as handles, which a native value gives back as the same value.
-    static NATIVE: RefCell<Vec<JsValue>> = const { RefCell::new(Vec::new()) };
+    /// GN-6o: the table of the one thread of the module.
+    static NATIVE: RefCell<NativeTable> = const { RefCell::new(NativeTable { next: 0, values: BTreeMap::new() }) };
 }
 
-/// The registry keeps each value for the life of the instance (U-7 (d)).
-fn native_handle(value: &JsValue) -> Handle {
-    NATIVE.with_borrow_mut(|native| {
-        native.push(value.clone());
-        Handle::new(handle_count(native.len() - 1))
-    })
+/// GN-6o: what a Native of WebAssembly holds: the key of the table, which holds the value.
+#[derive(Debug)]
+struct WasmNative {
+    key: u64,
 }
 
-fn native_object(handle: Handle) -> Result<JsValue, Fail> {
-    NATIVE.with_borrow(|native| match native.get(handle_position(handle.raw())) {
-        Some(value) => Ok(value.clone()),
-        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: the native value is gone") })),
-    })
+impl NativeObject for WasmNative {}
+
+impl Drop for WasmNative {
+    fn drop(&mut self) {
+        let released = NATIVE.try_with(|native| native.try_borrow_mut().ok().and_then(|mut native| native.values.remove(&self.key)));
+        // The value is released after the table is no longer borrowed.
+        drop(released);
+    }
+}
+
+/// GN-6o: a JavaScript value that a core may keep, as a Native.
+fn wasm_native(value: &JsValue) -> Native {
+    let key = NATIVE.with_borrow_mut(|native| {
+        native.next = native.next.saturating_add(1);
+        native.values.insert(native.next, value.clone());
+        native.next
+    });
+    Native::new(WasmNative { key })
+}
+
+/// GN-6o: the JavaScript value that entered as the Native.
+fn native_object(native: &Native) -> Result<JsValue, Fail> {
+    let found = native.downcast::<WasmNative>().and_then(|native| NATIVE.with_borrow(|table| table.values.get(&native.key).cloned()));
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") }))
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on wasm32).

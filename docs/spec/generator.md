@@ -278,8 +278,8 @@ the design ids are those of the binding design.
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A language object
   that a core may keep, an `Object` or a `Callable`, enters as a `Native` (B-1), which the core copies, keeps and
   drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
-  `Other` value is valid only inside the `in` or `out` call that gave it, so the binding holds that value for the call
-  alone. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6o).
+  `Other` value is valid only inside the `in` or `out` call that gave it: the binding numbers a `Date` and an `Other`
+  value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6o).
 - **GN-6o** What a `Native` (B-1) holds, and what its last drop does, by target:
   - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
     so the crate does not compile with `pyo3_disable_reference_pool`.
@@ -291,7 +291,8 @@ the design ids are those of the binding design.
     the PHP request shutdown release what the table holds and raise its generation; a drop of an older generation
     discards its key and touches nothing of the language, whose environment is gone, and the `out` of such a `Native`
     is kind `internal`.
-  - Go holds the `cgo.Handle`, which the drop deletes on any thread.
+  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread. The bytes of an `out` outlive the
+    `Native`, so its `native` row writes a new `cgo.Handle` of the func, which the decoder of the value deletes.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the

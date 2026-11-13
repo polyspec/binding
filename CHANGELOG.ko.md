@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- 생성된 바인딩은 handle로 들어온 모든 언어 객체를 커지기만 하는 표에 두었다. Python과 WASM은 프로세스가 끝날 때까지,
+  Node는 스레드가 끝날 때까지, PHP는 요청이 끝날 때까지 두었다. `Date`와 `Other` 값도 같이 두었고, Go는 func를 그 호출
+  안에서만 다루었다. 이제 코어가 보관할 수 있는 언어 객체는 `Native`로 들어오고, 마지막 drop이 target의 규칙으로 그것을
+  해제한다(GN-6o). Python은 `Py<PyAny>`를 갖고 `pyo3_disable_reference_pool`을 거부한다. WASM은 표의 key를 갖는다. Node와
+  PHP는 owner, generation, key를 갖고, 다른 스레드의 drop을 owner의 대기열에 넣으며, 모든 진입점의 `guard`에서 대기열을
+  비우고, env cleanup hook과 request shutdown에서 표를 해제하고 generation을 올린다. Go는 func의 `cgo.Handle`을 갖고 `out`
+  마다 새 handle을 준다. `Date`와 `Other` 값은 호출 안의 순서로 번호가 매겨진 handle을 받는다. `tests/e2e/sample`의 data
+  alias는 객체나 함수를 `Data::Native`로 갖고 모든 target에서 `native` 행으로 돌려준다. `generate.test.ts`가 target마다
+  그 형태를 확인한다.
 - binding_core는 코어가 보관할 수 있는 언어 객체(`HostValue::Object`, `HostValue::Callable`, `OutValue::Native`)를
   바인딩 표의 `Handle`로 주었고, 그 표는 모든 객체를 프로세스나 요청이 끝날 때까지 가졌다. 코어가 handle을 버린 때를
   바인딩에 알리는 것이 없었기 때문이다. 이제 그것을 `Native`로 준다. `Native`는 객체로 같음을 판정하는

@@ -1157,7 +1157,8 @@ func (c *Call) Value(enc *Writer, value any) {
 
 // describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 as its
 // decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
-// text, 9 a func, 10 any other value with its type name; a container with its handle and length.
+// text, 9 a func with the cgo.Handle that a Native deletes (GN-6o), 10 any other value with its type name; a container
+// with its handle and length.
 func (c *Call) describe(enc *Writer, value reflect.Value) {
 	for value.IsValid() && value.Kind() == reflect.Interface {
 		value = value.Elem()
@@ -1206,7 +1207,7 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 		enc.Uint(uint64(len(keys)))
 	case reflect.Func:
 		enc.bytes = append(enc.bytes, 9)
-		enc.Uint(c.hold(held{value: value}))
+		enc.Uint(uint64(cgo.NewHandle(value.Interface())))
 	default:
 		enc.bytes = append(enc.bytes, 10)
 		enc.Text(value.Type().String())
@@ -1300,6 +1301,20 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 	}
 	return 0
 }
+
+// ${p}__go_release deletes the cgo.Handle of a func that a Native of the static library held (GN-6o).
+//
+//export ${p}__go_release
+func ${p}__go_release(handle C.uint64_t) {
+	cgo.Handle(uintptr(handle)).Delete()
+}
+
+// ${p}__go_native gives a new cgo.Handle of the func of a Native, which the decoder of the value deletes (GN-6o).
+//
+//export ${p}__go_native
+func ${p}__go_native(handle C.uint64_t) C.uint64_t {
+	return C.uint64_t(cgo.NewHandle(cgo.Handle(uintptr(handle)).Value()))
+}
 `}`;
 }
 
@@ -1307,8 +1322,9 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 // map[string]any and *KeyedMap[any]; a container that the core gives twice is the same Go value.
 const GO_VALUE = `
 // Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
-// 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], and 255 a
-// value that the out rows give no Go form, which fails Finish with kind internal.
+// 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], 10 the func
+// of a Native by a new cgo.Handle, which it deletes (GN-6o), and 255 a value that the out rows give no Go form, which
+// fails Finish with kind internal.
 func (r *Reader) Value() any {
 	var made []any
 	return r.value(&made)
@@ -1377,6 +1393,14 @@ func (r *Reader) value(made *[]any) any {
 			entries.Set(key, r.value(made))
 		}
 		return entries
+	case 10:
+		handle := cgo.Handle(uintptr(r.Uint()))
+		if r.failed {
+			return nil
+		}
+		value := handle.Value()
+		handle.Delete()
+		return value
 	case 255:
 		r.fail(r.Text())
 		return nil

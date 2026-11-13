@@ -796,7 +796,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
 // The native module ${layout.module}._native of ${model.contract.library}.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
 ${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}

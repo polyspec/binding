@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- The generated bindings kept every language object that entered as a handle in a table that only grew: Python and
+  WASM for the life of the process, Node for the life of the thread, PHP until the request ended. A `Date` and an
+  `Other` value were kept the same way, and Go walked a func only inside its call. A language object that a core may
+  keep now enters as a `Native` whose last drop releases it by the rule of its target (GN-6o): Python holds the
+  `Py<PyAny>` and refuses `pyo3_disable_reference_pool`; WASM holds the key of its table; Node and PHP hold the owner,
+  its generation and the key, queue a drop on another thread for the owner, empty that queue in `guard` at every entry
+  point, and release the table and raise the generation at the env cleanup hook and at the request shutdown; Go holds
+  the `cgo.Handle` of the func and gives a new one for each `out`. A `Date` and an `Other` value get a handle numbered
+  in the order of the call. The data alias of `tests/e2e/sample` keeps an object or a function as `Data::Native` and
+  gives it back by the `native` row in every target; `generate.test.ts` checks the form of each target.
 - binding_core gave a language object that a core may keep, a `HostValue::Object`, a `HostValue::Callable` or an
   `OutValue::Native`, as a `Handle` into a table of the binding that kept every object until the end of the process
   or the request, because nothing told the binding when the core dropped the handle. It now gives it as a `Native`,

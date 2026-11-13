@@ -380,8 +380,8 @@ fn taken(buffer: Buffer) -> Vec<u8> {
 }
 
 /// U-7: one level of a Go value, as package binding describes it: 0 nil, 1 a bool, 2 an integer, 3 an integer beyond
-/// int64 as its decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map, 9 a func, 10 any other
-/// value with its type name; a container with its handle and length.
+/// int64 as its decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map, 9 a func with its
+/// cgo.Handle (GN-6o), 10 any other value with its type name; a container with its handle and length.
 fn read_host(input: &mut &[u8]) -> Result<HostValue, Fail> {
     Ok(match take(input, 1)? {
         [0] => HostValue::Null,
@@ -393,7 +393,7 @@ fn read_host(input: &mut &[u8]) -> Result<HostValue, Fail> {
         [6] => HostValue::Bytes(in_bytes(input)?),
         [7] => HostValue::List { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
         [8] => HostValue::Map { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
-        [9] => HostValue::Callable(Handle::new(in_uint(input)?)),
+        [9] => HostValue::Callable(Native::new(GoNative { handle: in_uint(input)? })),
         [10] => {
             let type_name = in_text(input, "a type name")?;
             HostValue::Other { type_name, handle: Handle::new(in_uint(input)?) }
@@ -720,6 +720,21 @@ fn failure_error(failure: ${failure}) -> Fail {
 ` : '';
   if (!callsBack(model)) return failureFn;
   const hosts = model.aliases.length === 0 ? '' : `
+/// GN-6o: what a Native of Go holds: the cgo.Handle of the func, which the drop deletes on any thread.
+#[derive(Debug)]
+struct GoNative {
+    handle: u64,
+}
+
+impl NativeObject for GoNative {}
+
+impl Drop for GoNative {
+    fn drop(&mut self) {
+        // SAFETY: the handle is one that package binding made for this Native, and deleted here only.
+        unsafe { ${p}__go_release(self.handle) };
+    }
+}
+
 /// U-7: the walk of a Go value of a call, which package binding describes one level at a time (B-1).
 struct GoHost {
     call: u64,
@@ -792,7 +807,11 @@ extern "C" {${model.callbacks.length === 0 ? '' : `
     /// U-3: the function that package binding exports to run a member of a Go callback.
     fn ${p}__go_callback(call: u64, callback: u64, member: u32, args: *const u8, len: usize, result: *mut Buffer) -> i32;`}${model.aliases.length === 0 ? '' : `
     /// U-7: the function that package binding exports to describe a child of a Go value.
-    fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;`}
+    fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;
+    /// GN-6o: the function that package binding exports to delete the cgo.Handle of a Native.
+    fn ${p}__go_release(handle: u64);
+    /// GN-6o: the function that package binding exports to give a new cgo.Handle of the func of a Native.
+    fn ${p}__go_native(handle: u64) -> u64;`}
 }
 
 /// U-3, U-7: gives Go a buffer of \`len\` bytes, which Go fills with the answer of a call back and this crate takes back.
@@ -841,8 +860,8 @@ ${failureFn}${hosts}${callbackCall}`;
 
 // The Go form of a built-in make form, written from the content of the matched OutValue (the nodes of package binding:
 // 0 nil, 1 bool, 2 int64, 3 float64, 4 string, 5 []byte, 6 []any, 7 map[string]any, 8 a container made before, 9
-// *KeyedMap[any], 255 no Go form).
-function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
+// *KeyedMap[any], 10 the func of a Native by a new cgo.Handle, 255 no Go form).
+function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
       return 'output.push(0)';
@@ -920,6 +939,16 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
             }
         }`;
     }
+    case 'native':
+      // GN-6o: the bytes outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
+      return `match native.downcast::<GoNative>() {
+            Some(object) => {
+                output.push(10);
+                // SAFETY: the handle is the cgo.Handle of the Native, which is alive while the Native is.
+                out_uint(output, unsafe { ${prefix(model)}__go_native(object.handle) });
+            }
+            None => out_no_form(output, "GN-6o: a native value that no Go func entered as"),
+        }`;
     default:
       break;
   }
@@ -934,7 +963,7 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   // through the C ABI, whose handle the alias conversion does not write.
   const byMember = (alias.unit.out ?? []).find((row) => typeof row.make['go'] === 'string' && row.make['go'].includes('.'));
   if (byMember !== undefined) throw new Unsupported(`${alias.unit.id}: a Go make by a member (${String(byMember.make['go'])}) is not generated yet (U-7)`);
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1145,7 +1174,7 @@ export function libRust(model: Model): string {
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
   const usesMutex = model.objects.length > 0 || callsBack(model);
   const usesMap = model.objects.length > 0 || callsBack(model);
-  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'OutValue', 'OutValues', 'Predicate', 'Raised'].filter((t) => new RegExp(`\\b${t}\\b`).test(all));
+  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised'].filter((t) => new RegExp(`\\b${t}\\b`).test(all));
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure

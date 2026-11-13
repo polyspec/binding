@@ -807,11 +807,11 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
+${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::${model.aliases.length > 0 ? '{Mutex, OnceLock}' : 'OnceLock'};${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -898,7 +898,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${model.aliases.length > 0 ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {

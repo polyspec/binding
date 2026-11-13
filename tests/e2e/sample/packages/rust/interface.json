@@ -783,6 +783,7 @@
             "php": "native",
             "python": "native",
             "node": "native",
+            "go": "native",
             "wasm": "native"
           }
         }
@@ -898,6 +899,14 @@
           ]
         },
         {
+          "python": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "node": "null",
           "cases": [
             {
@@ -951,11 +960,27 @@
           ]
         },
         {
+          "node": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "php": "stdClass",
           "cases": [
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         },
@@ -1013,6 +1038,14 @@
           ]
         },
         {
+          "go": "any",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "wasm": "null",
           "cases": [
             {
@@ -1062,6 +1095,14 @@
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         }

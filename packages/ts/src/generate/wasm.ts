@@ -830,7 +830,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;

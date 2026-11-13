@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
-import { container, outArms } from './alias_shared.ts';
+import { container, outArms, ownedNatives } from './alias_shared.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -66,7 +66,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
         }`;
     }
     case 'native':
-      return 'native_object(env, handle)';
+      return 'native_object(env, &native)';
     default:
       throw new Unsupported(`${alias.unit.id}: the Node form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -81,7 +81,7 @@ export function aliasNode(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.
 fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = JsHost { env, held: Vec::new() };
+    let mut host = JsHost { env, held: Vec::new(), marked: 0 };
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -123,12 +123,19 @@ enum Held<'env> {
 struct JsHost<'env> {
     env: &'env Env,
     held: Vec<Held<'env>>,
+    marked: u64,
 }
 
 impl<'env> JsHost<'env> {
     fn hold(&mut self, held: Held<'env>) -> Handle {
         self.held.push(held);
         Handle::new(handle_count(self.held.len() - 1))
+    }
+
+    /// GN-6o: the handle of a Date or of a value outside the closed set, its number in the order of the call.
+    fn mark(&mut self) -> Handle {
+        self.marked = self.marked.saturating_add(1);
+        Handle::new(self.marked)
     }
 
     /// B-1: a primitive is its kind (a number is untyped: whether it is an integer is the core's rule); a bigint is an
@@ -155,10 +162,10 @@ impl<'env> JsHost<'env> {
                     Err(_wide) => HostValue::Number(text),
                 })
             }
-            ValueType::Function => Ok(HostValue::Callable(native_handle(self.env, value)?)),
+            ValueType::Function => Ok(HostValue::Callable(js_native(self.env, value)?)),
             ValueType::Object => self.describe_object(value),
-            ValueType::Symbol => Ok(HostValue::Other { type_name: String::from("symbol"), handle: native_handle(self.env, value)? }),
-            _other => Ok(HostValue::Other { type_name: String::from("external"), handle: native_handle(self.env, value)? }),
+            ValueType::Symbol => Ok(HostValue::Other { type_name: String::from("symbol"), handle: self.mark() }),
+            _other => Ok(HostValue::Other { type_name: String::from("external"), handle: self.mark() }),
         }
     }
 
@@ -171,10 +178,10 @@ impl<'env> JsHost<'env> {
             return Ok(HostValue::List { handle: self.hold(Held::Items(object)), len });
         }
         if value.is_date()? {
-            return Ok(HostValue::Date(native_handle(self.env, value)?));
+            return Ok(HostValue::Date(self.mark()));
         }
         if value.is_typedarray()? {
-            return Ok(HostValue::Other { type_name: js_constructor_name(object)?, handle: native_handle(self.env, value)? });
+            return Ok(HostValue::Other { type_name: js_constructor_name(object)?, handle: self.mark() });
         }
         let global = self.env.get_global()?;
         let map_class: Unknown<'_> = global.get_named_property("Map")?;
@@ -198,7 +205,7 @@ impl<'env> JsHost<'env> {
             let len = u64::from(keys.get_array_length()?);
             return Ok(HostValue::PlainObject { handle: self.hold(Held::Properties(object, keys)), len, prototype });
         }
-        Ok(HostValue::Object { handle: native_handle(self.env, value)?, type_name: js_constructor_name(object)?, json_serializable: false })
+        Ok(HostValue::Object { native: js_native(self.env, value)?, type_name: js_constructor_name(object)?, json_serializable: false })
     }
 }
 
@@ -317,26 +324,49 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
+${ownedNatives('napi::UnknownRef<false>', 'release_references(references);')}
 thread_local! {
-    /// U-7 (VAL-18): the JavaScript values that entered as handles, which a native value gives back as the same value.
-    static NATIVE: RefCell<Vec<napi::UnknownRef<false>>> = const { RefCell::new(Vec::new()) };
+    /// GN-6o: the env of the table of this thread, which releases its references.
+    static NATIVE_ENV: std::cell::Cell<napi::sys::napi_env> = const { std::cell::Cell::new(std::ptr::null_mut()) };
 }
 
-/// The registry keeps each reference for the life of the thread (U-7 (d)), so its drop is no leak to report.
-fn native_handle(env: &Env, value: Unknown<'_>) -> napi::Result<Handle> {
+/// GN-6o: releases references of the env of this thread. A reference that napi cannot delete stays with the env,
+/// which frees it when it ends.
+fn release_references(references: Vec<napi::UnknownRef<false>>) {
+    let env = Env::from_raw(NATIVE_ENV.get());
+    for reference in references {
+        let _kept = reference.unref(&env);
+    }
+}
+
+/// GN-6o: a JavaScript value that a core may keep, as a Native of the table of this thread; the cleanup hook of the
+/// env is registered with the table.
+fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
+    if OWNED.with_borrow(Option::is_none) {
+        let Some((owner, generation)) = native_owner() else {
+            return Err(napi::Error::from_reason("GN-6o: the table of the owners is poisoned"));
+        };
+        env.add_env_cleanup_hook((), |()| clean_up_native())?;
+        NATIVE_ENV.set(env.raw());
+        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+    }
     // SAFETY: the value is a live value of this env; from_napi_value creates a reference to it.
     let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }?;
-    Ok(NATIVE.with_borrow_mut(|native| {
-        native.push(reference);
-        Handle::new(handle_count(native.len() - 1))
-    }))
+    keep_native(reference).ok_or_else(|| napi::Error::from_reason("GN-6o: this thread has no table"))
 }
 
-fn native_object(env: &Env, handle: Handle) -> Result<Unknown<'_>, Fail> {
-    NATIVE.with_borrow(|native| match native.get(handle_position(handle.raw())) {
-        Some(reference) => reference.get_value(env).map_err(internal),
-        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: the native value is gone") })),
-    })
+/// GN-6o: the JavaScript value that entered as the Native; one of an ended env, or of another thread, is kind internal.
+fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>, Fail> {
+    let found = native.downcast::<OwnedNative>().and_then(|native| {
+        OWNED.with_borrow(|owned| match owned {
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(|reference| reference.get_value(env)),
+            _ => None,
+        })
+    });
+    match found {
+        Some(value) => value.map_err(internal),
+        None => Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") })),
+    }
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).

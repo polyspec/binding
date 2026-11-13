@@ -228,8 +228,8 @@
   그것이 적은 종류의 각 key는 항목과 같이 행으로 만든다(T-2). Python과 Node에서는 같은 handle이 같은 객체이고, 배열이
   값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. 코어가 보관할 수 있는 언어
   객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
-  객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하므로, 바인딩은 그 값을
-  그 호출 동안만 갖는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6o).
+  객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
+  `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6o).
 - **GN-6o** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
   - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
     `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다.
@@ -239,7 +239,8 @@
     해제 대기열에 넣으며, 그 owner의 모든 생성 진입점은 동기 부분의 처음에 대기열을 비운다. Node env cleanup hook과 PHP request
     shutdown은 표가 가진 것을 해제하고 generation을 올린다. 이전 generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤
     것도 건드리지 않으며, 그런 `Native`의 `out`은 kind `internal`이다.
-  - Go는 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
+  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다. `out`의 바이트는 `Native`보다 오래 살므로,
+    `native` 행은 func의 새 `cgo.Handle`을 쓰고 값의 디코더가 그것을 지운다.
 - **GN-6k** 다른 레포의 값 alias(T-3, U-7 (a'))는 자기 레포의 alias(GN-6e)와 같은 방식으로 주고받는다. 바인딩이 언어 값을
   `HostValue`로 기술해 소유 코어의 `in` 함수를 부르고, 소유 코어의 `out` 함수가 주는 `OutValue`를 alias의 `out` 행으로
   만든다. `out` 행은 소유 레포의 계약에서 읽는다. 소유 코어의 두 함수가 유일한 변환이다(P-1). 변환의 이름은
