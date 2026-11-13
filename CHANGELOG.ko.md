@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a3a1d89c95eaf298c465ae713c702a24638613e5703f2bf6b8c27b0ccfdf489d -->
+<!-- source-sha256: ed6531d4929004293f6dbc5795d14221e3d20f9f3a856af694c6eeebae3a4808 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 실행의 work 디렉터리 테스트(GN-14)는 `workOf`와 `runIn`을 부르고 recipe의 텍스트를 읽었을 뿐, work 디렉터리 없이 실행의
+  script를 돌린 테스트는 없었다. 새 테스트는 추적 파일로 자기 checkout을 만들고, 그 안에서 `--work` 없이
+  `scripts/e2e.mts`를 돌리며, 그 checkout의 `git status --porcelain --ignored --untracked-files=all`이 실행 전후에 같지
+  않거나 실행의 임시 디렉터리가 비어 있지 않으면 실패한다. `make test-ts`로 검증했다: 414개 중 414개가 통과한다. 이름이
+  없을 때 `workOf`가 호출자의 디렉터리를 주도록 바꾼 사본에서 같은 단계를 밟으면 commit tree의 파일 195개가 checkout에
+  남았고, 테스트의 비교는 이것을 실패시킨다.
 - PHP, Python, Node, WASM crate의 helper `handle_count`와 `handle_position`은 `clippy::manual_unwrap_or` allow 아래에서
   `try_from`의 결과를 손으로 match했고, 그 이유는 `unwrap_or`가 금지라고 했다. R-1은 그 계열을 `Option`에만 금지하고, 생성
   코드는 다른 곳에서 `Result::unwrap_or`를 부른다. 이제 여덟 helper는 allow 없이 `try_from(value).unwrap_or(MAX)`이고,

@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The tests of the work directory of a run (GN-14) called `workOf` and `runIn` and read the text of the recipe, and none
+  ran the script of the run without a work directory. A new test makes a checkout of its own from the tracked files,
+  runs `scripts/e2e.mts` in it without `--work`, and fails unless `git status --porcelain --ignored
+  --untracked-files=all` of that checkout is the same after the run as before it and the temporary directory of the
+  run is empty. Verified by `make test-ts`: 414 of 414 pass, and the same steps on a copy whose `workOf` gives the
+  directory of the caller for no name left the 195 files of the tree of the commit in the checkout, which the
+  comparison of the test fails.
 - The helpers `handle_count` and `handle_position` of the PHP, Python, Node and WASM crates matched the result of
   `try_from` by hand under an allow of `clippy::manual_unwrap_or`, whose reason named `unwrap_or` disallowed; R-1
   disallows that family for `Option` only, and the generated code calls `Result::unwrap_or` elsewhere. The eight
