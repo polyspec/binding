@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record(GN-15f)와 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -493,14 +493,17 @@
   그 struct로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
-- **GN-15f** 다른 레포의 Go record(T-3, GN-6c), 아직 구현하지 않음: 생성기는 그런 record를 이름으로 거부하고 이 행을
-  적는다(G-4). 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
-  `<Record>`이며, C ABI는 이 레포의 record처럼 field마다 쓰고 읽는다. `binding scaffold`는 `binding generate`처럼
-  계약이 record를 이름하는 라이브러리의 계약을 읽고, 라이브러리마다 `go.mod`에 `require <module> <version>` 줄을
-  적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면 버전은 `vX.Y.Z`다. `path` 의존은
-  `v0.0.0`과 `packages/go` 기준 상대 경로의 `replace <module> => <path>/packages/go` 줄을 준다. branch나 commit을 적은
-  의존 줄에는 Go 버전이 없으므로 이름으로 거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며,
-  `CGO_LDFLAGS`가 이 레포의 디렉터리 옆에 그 디렉터리를 적는다(GN-15).
+- **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
+  `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
+  `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. unit 타입 field가 있는 다른 레포의 record와, 패키지
+  이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. `binding scaffold`는 `binding generate`처럼 계약이
+  이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
+  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record를 이름하는 라이브러리마다 `go.mod`에
+  `require <module> <version>` 줄을 적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
+  버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
+  `replace <module> => <path>` 줄을 준다. branch, commit, 버전 범위를 적은 의존 줄에는 Go 버전이 없으므로 이름으로
+  거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
+  디렉터리에 빌드한다(GN-14).
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은
@@ -709,7 +712,7 @@
 
 - **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`는
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
   생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.

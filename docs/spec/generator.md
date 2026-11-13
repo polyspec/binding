@@ -22,8 +22,8 @@ the design ids are those of the binding design.
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository (GN-15f) and modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
+  refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -590,16 +590,19 @@ the design ids are those of the binding design.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value.
-- **GN-15f** Go records of another repository (T-3, GN-6c), not implemented yet: the generator refuses such a record
-  by name and names this row (G-4). A record of another repository is the struct `<Record>` of the package of its
-  module in the Go module of that repository, the module of `packages.go` of its contract, and the C ABI writes and
-  reads it field by field as a record of this repository. `binding scaffold` reads the contracts of the libraries whose
-  records the contract names, as `binding generate` does, and writes for each a line `require <module> <version>` in
-  `go.mod`: the version is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version
-  `=X.Y.Z` or the tag `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>/packages/go`
-  relative to `packages/go`; a dependency line that names a branch or a commit has no Go version and is refused by
-  name. The Go program then also links the static library of that repository, whose directory `CGO_LDFLAGS` names
-  beside the directory of this one (GN-15).
+- **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
+  module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
+  by its package name; the C ABI writes and reads it field by field as a record of this repository, through
+  `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
+  one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
+  contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
+  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
+  each library whose records the contract names it writes a line `require <module> <version>` in `go.mod`: the version
+  is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
+  `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
+  repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
+  Go version and is refused by name. The Go program then also links the static library of that repository, which the
+  end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
@@ -870,6 +873,9 @@ the design ids are those of the binding design.
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
+  `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
+  `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
+  repository, because the Go program of the repository imports its Go module (GN-15f);
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
