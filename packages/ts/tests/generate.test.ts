@@ -1377,6 +1377,19 @@ test('a case value that the generator does not write fails the test of its case 
   assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
 });
 
+test('a class value that the core gives by reference leaves as a new instance of a copy of it (T-5, GN-6b)', () => {
+  const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  const files = ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
+  for (const file of files) {
+    const lib = text(out, file);
+    // An accessor of the core returns `&Token`, a computed value `Token`, and an item of an optional or a list a
+    // reference to either; the conversion takes each of them and copies only a borrowed value.
+    assert.match(lib, /fn out_token\((?:py: Python<'_>, |env: &Env, )?value: impl Given<polyspec_classes::Token>\)/, file);
+    assert.match(lib, /trait Given<T> \{\n\s+fn given\(self\) -> T;\n\}/, file);
+    assert.match(lib, /impl<T: Clone> Given<T> for &&T \{/, file);
+  }
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
