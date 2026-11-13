@@ -77,7 +77,7 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
+test('the fixture names the five targets, and the generator refuses its go target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
   const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
@@ -85,13 +85,16 @@ test('the fixture names the five targets, and the generator refuses its go targe
   try {
     // The target Go alone writes nothing.
     const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
-    assert.equal(alone.status, 2, alone.stderr);
+    // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
+    assert.equal(alone.status, 1, alone.stderr);
+    assert.doesNotMatch(alone.stderr, /usage:/);
     assert.match(alone.stderr, goRefused);
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
     // Every target: the refused Go is named, and every other target is written as it is alone.
     const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
-    assert.equal(whole.status, 2, whole.stderr);
+    assert.equal(whole.status, 1, whole.stderr);
+    assert.doesNotMatch(whole.stderr, /usage:/);
     assert.match(whole.stderr, goRefused);
     assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
     const written = files(out);
@@ -673,6 +676,40 @@ test('a value alias converts through its core functions in every language (U-7)'
   }
 });
 
+test('an out row of a value alias makes a keyed map of the keys it lists in every language (U-7, T-2, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'map' && r.when.is === false);
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = { keyed_map: { key: lang === 'php' ? ['int', 'bytes'] : ['int', 'text', 'bytes'] } };
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The entries are made as those of a map: each key and each item through the rows of the alias.
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /OutValue::Map\(value\) => if out\.predicate\(Predicate::SequenceKeys\) == Some\(false\) \{ \{\n {12}let handle = value\.handle\(\);/, path);
+  }
+});
+
+test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
+  for (const [path, made] of [
+    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+  ] as const) {
+    assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
+    assert.match(text(out, path), /\nfn out_tag\(/, path);
+  }
+  // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
+  row.kind = 'bool';
+  row.make = { php: 'bool', python: 'bool', node: 'tag.new', go: 'bool', wasm: 'bool' };
+  const bools = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r.kind === 'bool');
+  sample.units.find((u: any) => u.id === 'data').out = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r === row || !bools.includes(r));
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node'] }), /data: the node make tag\.new of the kind bool takes text, not the content of the kind/);
+});
+
 test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
@@ -1113,7 +1150,6 @@ test('a parameter or field with a default is None for the core when it is left o
   // G-4: each default that is not generated is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   const field = (c: any, name: string): any => unitOf(c, 'frame_options').fields.find((f: any) => f.name.join('_') === name);
-  assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /a default of a record parameter is not generated yet \(U-2 \{empty: "object"\}\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /a default of an optional type is not generated yet \(U-2\)/);
   assert.throws(() => shaped((c) => { delete parameter(c, 'shapes.repeat', 'separator').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { delete field(c, 'upper').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
@@ -1131,6 +1167,32 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.match(wasmLib, /const _: \(\) = assert!\(same_text\(polyspec_shapes::DEFAULT_SEPARATOR, ","\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 3\) \{\n {4}throw new TypeError\(`repeat\(\) takes 1 to 3 arguments/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
+});
+
+test('a record parameter whose every field has a default may be left out as a whole (U-2 {empty: "object"}, GN-6i)', () => {
+  const out = shaped();
+  // Python and PHP take the fields as keywords and named arguments, which are all left out with the record.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def wrap\(text: str, \*, left: str = "\[", right: str = "\]"\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function wrap\(mixed \$text, mixed \$left = "\[", mixed \$right = "\]"\): string \{\}/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_wrap_options_left_out\(self\) -> None:/);
+  // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
+  // each left out; the core gets the record with every field None.
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
+    assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
+    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = in_default\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
+    const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
+    assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
+    // G-7: the text is required, so a call without arguments is too short.
+    assert.match(tests, /test\('G-7: wrap counts and names its arguments', \(\) => \{\n\s+assert\.throws\(\(\) => pkg\.wrap\(\)/);
+  }
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /if \(args\.length < 1 \|\| args\.length > 2\) \{\n {4}throw new TypeError\(`wrap\(\) takes 1 to 2 arguments/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 2\) \{\n {4}throw new TypeError\(`wrap\(\) takes 1 to 2 arguments/);
+  // G-4: a record with a field that has no default is not left out, because the core would get no value of that field.
+  const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
+  assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /shapes\.frame\.options: the default \{empty: "object"\} leaves out the record, but its field prefix has no default \(U-2\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.wrap', 'options').default = { empty: 'list' }; }), /shapes\.wrap\.options: the default \{empty: "list"\} of a record parameter is not generated \(U-2\)/);
 });
 
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
@@ -1159,10 +1221,9 @@ test('an error unit is a class under its parent, and a kind names the class it i
   assert.doesNotMatch(php, /fn read_unit_property\(|let mut object = match error_object/);
   // B-4: the exact class of a case is the class of its kind.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /self\.assertIs\(type\(error\), pkg\.Utf8Error\)/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Utf8Error::class, \$error::class\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Errors\\Utf8Error::class, \$error::class\)/);
   // G-4: what E-2 and E-3 hold beyond that is refused by name.
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').members = [{ id: 'parse_error.offset', name: ['offset'], kind: 'property', visibility: 'public', type: 'uint', core: 'polyspec_shapes::Error::offset' }]; }), /parse_error\.offset: a property of an error unit names a function of the core error with the receiver &self/);
-  assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').module = 'errors'; }), /parse_error: an error unit in the module errors is not generated yet/);
   assert.throws(() => shaped((c) => { c.errors.kinds[2].class = 'frame_options'; }), /TooMany: the class frame_options is not an error unit of category value \(E-2\)/);
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').parent = 'utf8_error'; }), /the parents form a cycle \(P-4\)/);
   // E-2, B-4: in Go the exact type of a case is the struct of its error unit, which errors.As finds as its category.
@@ -1580,6 +1641,29 @@ test('the Rust files of the thin packages are in the form that rustfmt gives the
   }
 });
 
+test('the Rust files of the thin packages are unchanged by rustfmt with its defaults and with the settings of a repository (GN-3a)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  // The toolchain of rust-toolchain.toml, outside any checkout, so that no rustfmt.toml is read but the settings given.
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-fmt-'));
+  try {
+    const settings = ['', 'max_width=120,use_small_heuristics=Max'];
+    let checked = 0;
+    for (const [path, body] of trackedPackages(contract, '0.0.0')) {
+      if (!path.endsWith('.rs')) continue;
+      for (const config of settings) {
+        const run = spawnSync('rustfmt', ['--edition', '2021', '--emit', 'stdout', ...(config === '' ? [] : ['--config', config])], { input: String(body), encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+        assert.equal(run.status, 0, `rustfmt of ${path}: ${run.stderr}`);
+        assert.equal(run.stdout, String(body), `${path} is not in the form that rustfmt gives it with ${config === '' ? 'its defaults' : config}`);
+        checked += 1;
+      }
+    }
+    assert.ok(checked >= 8, `${checked} files were formatted`);
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
+});
+
 test('every case that does not raise runs and compares its result in every target (GN-13e)', () => {
   const { contract, caseFiles } = load();
   const cases = caseFiles.get('contracts/cases.json') as any;
@@ -1609,7 +1693,29 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const made1 = made0\.gates\(2\);\n  const made2 = made1\[1\];\n  assert\.deepStrictEqual\(ordered\(made2\.enter\(\)\), ordered\('b\. passes'\)\);/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0 = pkg\.Tag\("a"\)\n        made1 = made0\.gate\(\)\n        made1\.close\(\)\n        with self\.assertRaises/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0 = new \\Polyspec\\Classes\\Tag\("a"\);\n        \$made1 = \$made0->gate\(\);\n        \$made1->close\(\);/);
+  // A call of then that the case expects to fail requires that kind, and the instance stays for the next step.
+  const cases = read('contracts/cases.json');
+  cases.gate_enter[2].receiver.then.push({ call: 'gate.close', raises: { kind: 'closed' } });
+  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(failing, 'packages/ts/generated/tests/generated.test.mjs'), /  made1\.close\(\);\n  assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
+  assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
+  assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
+  assert.match(text(failing, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made1->close\(\);\n        self::assertStringContainsString\("'kind' => 'closed'", self::outcome\(fn \(\) => \$made1->close\(\)\), "G-5: then 1 fails with closed"\);\n[^]*private static function outcome/);
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
+});
+
+test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {
+  const out = shaped((c) => { unitOf(c, 'utf8_error').module = 'errors'; });
+  // PHP: the class is in the namespace of its module, and the extension registers it by that name.
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /namespace Polyspec\\Shapes\\Errors \{\n    \/\*\* The errors of the unit utf8_error \(E-2\)\. \*\/\n    final class Utf8Error extends \\Polyspec\\Shapes\\ParseError/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /ClassBuilder::new\("Polyspec\\\\Shapes\\\\Errors\\\\Utf8Error"\)/);
+  // Python: <root>.errors gives the class of <root>._errors, and <root> re-exports it.
+  const pkg = 'packages/python/generated/python/polyspec/shapes';
+  assert.match(text(out, `${pkg}/errors.py`), /from \._errors import Utf8Error as Utf8Error\n\n__all__ = \["Utf8Error"\]/);
+  assert.match(text(out, `${pkg}/__init__.py`), /from \.errors import \*  # noqa: F403/);
+  // Node and WASM: the entries export the class by its name.
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });

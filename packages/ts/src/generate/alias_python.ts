@@ -86,7 +86,7 @@ export function aliasPython(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
+  const arms = outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ');
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, _subject: &str) -> PyResult<${core}> {

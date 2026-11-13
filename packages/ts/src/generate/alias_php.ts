@@ -90,7 +90,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const label = langName('php', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(alias, 'php', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))');
+  const arms = outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '');
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {

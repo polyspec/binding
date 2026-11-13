@@ -1,8 +1,9 @@
 //! Fault injection points (design G-5, X-1).
 //!
 //! A core marks a place where a failure of its surroundings is imitated with [`point`], which names the place as
-//! `<library>.<id>`. The function is always there and does nothing without the feature `fault-test`, so a core calls it
-//! without a condition. With the feature, which a core turns on only through its own feature `fault-test`, a generated
+//! `<library>.<id>`. The macro is always there and does nothing where the crate that writes it lacks its own feature
+//! `fault-test`, so a core writes it without a condition (GN-5). With the feature, which a core turns on together with
+//! binding_core's `fault-test`, a generated
 //! test arms a list of faults for one call of one member ([`arm`]); the generated entry point of that member takes the
 //! arming ([`take`]) and installs it while its work runs ([`Armed::run`]); `point` reads only the arming that is
 //! installed on its thread. A point reached without an arming for it gives `None`, so the core goes on unchanged.
@@ -30,21 +31,39 @@ pub enum Injected {
     Broken,
 }
 
-/// Asks whether a fault is armed for the point `name` (`<library>.<id>`) on this thread, and counts the visit.
+/// Asks whether a fault is armed for the point `$name` (`<library>.<id>`) on this thread, and counts the visit; it
+/// gives an `Option<Injected>`.
 ///
-/// Without the feature `fault-test` it is `None` and compiles to nothing.
-#[inline(always)]
+/// The point is judged by the feature `fault-test` of the crate that writes it, not by that of binding_core: Cargo
+/// unifies the features of binding_core, so one core with `fault-test` turns it on for every core of the build, and a
+/// point that binding_core judged would be live in a core whose own feature nobody turned on (GN-5). A crate that
+/// writes a point declares `fault-test = ["polyspec-binding-core/fault-test"]`; without its feature the point is
+/// `None` and compiles to nothing.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __fault_point {
+    ($name:expr) => {{
+        #[cfg(feature = "fault-test")]
+        {
+            $crate::fault::reach($name)
+        }
+        #[cfg(not(feature = "fault-test"))]
+        {
+            let _unused: &'static str = $name;
+            ::core::option::Option::<$crate::fault::Injected>::None
+        }
+    }};
+}
+
+#[doc(inline)]
+pub use crate::__fault_point as point;
+
+/// The visit of a point whose crate has the feature `fault-test`; [`point`] calls it, and nothing else does.
+#[cfg(feature = "fault-test")]
+#[doc(hidden)]
 #[must_use]
-pub fn point(name: &'static str) -> Option<Injected> {
-    #[cfg(feature = "fault-test")]
-    {
-        armed::reach(name)
-    }
-    #[cfg(not(feature = "fault-test"))]
-    {
-        let _unused: &str = name;
-        None
-    }
+pub fn reach(name: &'static str) -> Option<Injected> {
+    armed::reach(name)
 }
 
 #[cfg(feature = "fault-test")]
@@ -331,8 +350,8 @@ mod armed {
 
         #[test]
         fn a_point_without_an_arming_does_nothing() {
-            assert_eq!(point(COPY), None);
-            assert_eq!(Armed::empty().run(|| point(COPY)), None);
+            assert_eq!(point!(COPY), None);
+            assert_eq!(Armed::empty().run(|| point!(COPY)), None);
         }
 
         #[test]
@@ -341,8 +360,8 @@ mod armed {
                 "a.once",
                 r#"[{"point": "sample.copy", "kind": "io", "errno": "ENOSPC"}]"#,
             )?;
-            assert_eq!(point(COPY), None);
-            let seen = armed.run(|| (point(RENAME), point(COPY), point(COPY)));
+            assert_eq!(point!(COPY), None);
+            let seen = armed.run(|| (point!(RENAME), point!(COPY), point!(COPY)));
             assert_eq!(
                 seen,
                 (
@@ -353,7 +372,7 @@ mod armed {
                     None
                 )
             );
-            assert_eq!(point(COPY), None);
+            assert_eq!(point!(COPY), None);
             assert_eq!(left(id)?, Vec::<String>::new());
             Ok(())
         }
@@ -362,7 +381,7 @@ mod armed {
         fn nth_counts_the_visits_of_the_point() -> Result<(), ArmError> {
             let faults = r#"[{"point": "sample.copy", "kind": "short", "bytes": 3, "nth": 2}, {"point": "sample.rename", "kind": "broken"}]"#;
             let (id, armed) = armed("a.nth", faults)?;
-            let seen = armed.run(|| (point(COPY), point(COPY), point(COPY)));
+            let seen = armed.run(|| (point!(COPY), point!(COPY), point!(COPY)));
             assert_eq!(seen, (None, Some(Injected::Short { bytes: 3 }), None));
             assert_eq!(left(id)?, vec![String::from(RENAME)]);
             Ok(())
@@ -371,11 +390,14 @@ mod armed {
         #[test]
         fn an_arming_goes_to_its_member_on_its_thread_only() -> Result<(), ArmError> {
             let id = arm("a.member", r#"[{"point": "sample.copy", "kind": "io"}]"#)?;
-            assert_eq!(take("a.other").run(|| point(COPY)), None);
-            let other = std::thread::spawn(|| take("a.member").run(|| point(COPY)));
+            assert_eq!(take("a.other").run(|| point!(COPY)), None);
+            let other = std::thread::spawn(|| take("a.member").run(|| point!(COPY)));
             assert!(matches!(other.join(), Ok(None)));
-            assert_eq!(take("a.member").run(|| point(COPY)), Some(Injected::Io { errno: None }));
-            assert_eq!(take("a.member").run(|| point(COPY)), None);
+            assert_eq!(
+                take("a.member").run(|| point!(COPY)),
+                Some(Injected::Io { errno: None })
+            );
+            assert_eq!(take("a.member").run(|| point!(COPY)), None);
             assert_eq!(left(id)?, Vec::<String>::new());
             Ok(())
         }
@@ -383,7 +405,7 @@ mod armed {
         #[test]
         fn an_entry_point_inside_another_does_not_see_the_outer_arming() -> Result<(), ArmError> {
             let (id, outer) = armed("a.outer", r#"[{"point": "sample.copy", "kind": "broken"}]"#)?;
-            let seen = outer.run(|| (take("a.inner").run(|| point(COPY)), point(COPY)));
+            let seen = outer.run(|| (take("a.inner").run(|| point!(COPY)), point!(COPY)));
             assert_eq!(seen, (None, Some(Injected::Broken)));
             assert_eq!(left(id)?, Vec::<String>::new());
             Ok(())
@@ -394,7 +416,7 @@ mod armed {
             let (id, outer) = armed("a.panic", r#"[{"point": "sample.copy", "kind": "broken"}]"#)?;
             let seen = outer.run(|| {
                 let inner = std::panic::catch_unwind(|| Armed::empty().run(|| panic!("the work panics")));
-                (inner.is_err(), point(COPY))
+                (inner.is_err(), point!(COPY))
             });
             assert_eq!(seen, (true, Some(Injected::Broken)));
             assert_eq!(left(id)?, Vec::<String>::new());
@@ -405,7 +427,7 @@ mod armed {
         fn an_arming_that_no_entry_point_took_is_left_whole_and_forgotten() -> Result<(), ArmError> {
             let id = arm("a.never", r#"[{"point": "sample.copy", "kind": "broken"}]"#)?;
             assert_eq!(left(id)?, vec![String::from(COPY)]);
-            assert_eq!(take("a.never").run(|| point(COPY)), None);
+            assert_eq!(take("a.never").run(|| point!(COPY)), None);
             assert_eq!(left(id), Err(ArmError::Id(id)));
             Ok(())
         }
@@ -458,6 +480,6 @@ mod armed {
 mod tests {
     #[test]
     fn a_point_is_nothing_without_the_feature() {
-        assert_eq!(super::point("sample.copy"), None);
+        assert_eq!(super::point!("sample.copy"), None);
     }
 }

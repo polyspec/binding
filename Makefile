@@ -73,3 +73,39 @@ BINDING ?= HEAD
 .PHONY: e2e
 e2e: ## Run the end-to-end check of the generator: REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]
 	$(ONLINE) $(NODE) scripts/e2e.mts --binding $(BINDING) --repo $(REPO) --work $(WORK)$(foreach dep,$(DEPS), --dep $(dep))
+
+# The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
+# check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.
+define run_all
+	@failed=""; for goal in $(1); do $(MAKE) --no-print-directory $$goal || failed="$$failed $$goal"; done; \
+	if [ -n "$$failed" ]; then printf 'failed:%s\n' "$$failed" >&2; exit 1; fi; printf 'passed: %s\n' "$(strip $(1))"
+endef
+# binding_core, the Rust crate of packages/core/rust, built by the cargo of rust-toolchain.toml.
+CORE_MANIFEST := --manifest-path packages/core/rust/Cargo.toml
+.PHONY: check test-ts typecheck-ts unit-ts test-rust test-rust-features test-rust-plain lint-rust clippy-rust clippy-rust-features fmt-rust
+
+check: ## Run test-ts, test-rust and lint-rust, each to its end, and name each failed one
+	$(call run_all,test-ts test-rust lint-rust)
+
+test-ts: ## Type-check packages/ts and run its tests on node --test
+	$(call run_all,typecheck-ts unit-ts)
+typecheck-ts:
+	$(NPM) run --prefix packages/ts typecheck
+unit-ts:
+	$(NPM) test --prefix packages/ts
+
+test-rust: ## Test binding_core with all features and with none
+	$(call run_all,test-rust-features test-rust-plain)
+test-rust-features:
+	cargo test --locked $(CORE_MANIFEST) --all-features
+test-rust-plain:
+	cargo test --locked $(CORE_MANIFEST)
+
+lint-rust: ## Run clippy on binding_core with all features and with none, and check its format
+	$(call run_all,clippy-rust-features clippy-rust fmt-rust)
+clippy-rust-features:
+	cargo clippy --locked $(CORE_MANIFEST) --all-targets --all-features -- -D warnings
+clippy-rust:
+	cargo clippy --locked $(CORE_MANIFEST) --all-targets -- -D warnings
+fmt-rust:
+	cargo fmt $(CORE_MANIFEST) --check

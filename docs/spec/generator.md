@@ -39,9 +39,12 @@ the design ids are those of the binding design.
   another (GN-14c).
 - **GN-1c** `binding generate` generates each target that it is given, or each target of the contract, by itself
   (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
-  items, keeps the files of a refused target as they are, and then fails with status 2 when a target was refused.
-  Why: a contract that one target cannot take yet still gives the bindings of the other targets, and every target
-  that fails is named.
+  items and the targets that it generated, keeps the files of a refused target as they are, and then fails with
+  status 1 when a target was refused. A refusal, like any failure that is no error of the command line, prints no
+  usage line; only an error of the command line prints it, with status 2. A repository that builds and tests one
+  target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
+  one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
+  usage line would say that the command was written wrong when it was not.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -154,7 +157,9 @@ the design ids are those of the binding design.
   of each such library, and the crate depends on that core as the core does (T-3), because a Cargo feature turns on a
   feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
-  its name, and `binding check` compares the manifests with them (CK-19). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
+  its name, and `binding check` compares the manifests with them (CK-19). A point (`fault::point!`) is live only in a
+  crate whose own feature `fault-test` is on, because Cargo unifies the feature of binding_core across the build;
+  so the feature that this list leaves out keeps the points of that library off, and its cases fail. The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. The Go tests reach
   them through functions of `internal/binding` with the build tags `polyspec_fault_test` and `polyspec_codec_test`
   (GN-13b).
@@ -242,7 +247,11 @@ the design ids are those of the binding design.
   `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
   element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
   Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
-  built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
+  built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
+  parameter is the content of the kind (bool, int, int64, float, text or bytes) and which cannot fail is called on that
+  content by its core path, and its value leaves as an instance of the class; any other member, and a member in an
+  alias of another repository, is refused by name (G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
+  map, each key of the kinds it lists made by the rows as its items are (T-2); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
   handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
   it is kept until its request ends: the engine frees the values of a request when the request ends, so the extension
@@ -300,8 +309,12 @@ the design ids are those of the binding design.
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
-  with named arguments skips and the extension cannot tell the two apart. Refused by name (G-4): a default of the
-  record parameter itself (`{empty: "object"}`), a default of an `optional` type, a default of a type that is no
+  with named arguments skips and the extension cannot tell the two apart. A record parameter with the default
+  `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
+  record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
+  then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
+  and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
+  field without a default, any other default of a record parameter, a default of an `optional` type, a default of a type that is no
   number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
   also has the result form.
@@ -334,9 +347,11 @@ the design ids are those of the binding design.
   scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
-  `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
-  and an error unit in a module other than the root are refused by name (G-4). Go generates an error unit as GN-15d
-  states. WASM generates an
+  `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row
+  are refused by name (G-4). An error unit of a module other than the root is a class of the
+  namespace of its module in PHP (GN-10), a class of `<root>._errors` that `<root>.<module>` imports in Python (GN-11),
+  and an export of the entry by its name in Node and WASM, as every other name of a module is. Go generates an error
+  unit as GN-15d states, in package `errors` whatever its module. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
@@ -387,8 +402,8 @@ the design ids are those of the binding design.
   text, and a decimal text key leaves as an int key.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
-  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
-  and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
+  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`,
+  which imports the error units of the module from `<root>._errors`, and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
   (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
   map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind
@@ -571,6 +586,9 @@ the design ids are those of the binding design.
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
+  `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
+  refused by name (G-4).
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
   every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
   that array of `[key, value]`. The members of a
@@ -590,7 +608,9 @@ the design ids are those of the binding design.
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
   core that swallows the exception still fails, and the calls to be those of `calls`, in order, when the case names
-  them. `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
+  them. A callback inside another type (a field of a record, an item of a list, an `optional`) is given as the same
+  fixture, and a function as `{"function": [<row>]}`, whose `args` are the positions of its parameters (`"0"`, `"1"`,
+  ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
@@ -661,7 +681,8 @@ the design ids are those of the binding design.
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
   `args` holds the parameters of the member by their snake_case keys; a parameter of a class type may be an instance
   value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
-  compared. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
+  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 

@@ -27,7 +27,10 @@
   생성을 막지 않는다(GN-14c).
 - **GN-1c** `binding generate`는 받은 target 또는 계약의 target을 하나씩 따로 생성한다(GN-1b). 아무것도 거부하지 않은
   target의 파일은 모두 쓰고, 거부된 target은 거부한 항목과 함께 이름하며 그 파일은 그대로 두고, target이 하나라도 거부되면
-  상태 2로 실패한다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두 이름한다.
+  생성한 target도 적은 뒤 상태 1로 실패한다. 거부는 명령줄 오류가 아닌 다른 실패와 마찬가지로 usage 줄을 찍지 않는다. usage 줄은
+  명령줄 오류만 상태 2와 함께 찍는다. target 하나를 build하고 시험하는 저장소는 `--target`으로 그 target만 생성하므로, 다른
+  target의 거부에 막히지 않는다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두
+  이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -126,7 +129,9 @@
   `polyspec-<library>/fault-test`도 적고, crate는 코어가 하듯이 그 코어에 의존한다(T-3). Cargo feature는 직접 의존의
   feature만 켜기 때문이며, 계약의 코어가 그것을 적을 필요는 없다. `binding scaffold`는 case 파일의 지점에서 라이브러리를
   읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
-  비교한다(CK-19). WASM crate의 시험은
+  비교한다(CK-19). 지점(`fault::point!`)은 자기 feature `fault-test`가 켜진 crate에서만 살아 있다. Cargo가 build 전체에서
+  binding_core의 feature를 합치기 때문이다. 그래서 이 목록이 빠뜨린 feature는 그 라이브러리의 지점을 꺼 둔 채로 두고, 그
+  case는 실패한다. WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go 시험은
   build tag `polyspec_fault_test`와 `polyspec_codec_test`가 붙은 `internal/binding`의 함수로 닿는다(GN-13b).
 
@@ -198,7 +203,10 @@
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
   키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
   `array_is_list`와 함께, stdClass와 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
-  행 중 내장 형식으로 만든다(member 형식은 이름을 대고 거부, G-4). Python과 Node에서는 같은 handle이 같은 객체이고, 배열이
+  행으로, 내장 형식이나 member로 만든다. member는 계약의 생성된 class의 생성자나 static member로, 하나뿐인 parameter가 그
+  kind의 내용(bool, int, int64, float, text, bytes)이고 실패하지 않는 것이며, 그 내용으로 그 코어 경로를 부르고 그 값은 그
+  class의 instance로 나간다. 다른 member와 다른 레포 alias의 member는 이름을 대고 거부한다(G-4). 형식 `{"keyed_map": {"key": [...]}}`은 map으로 만들고,
+  그것이 적은 종류의 각 key는 항목과 같이 행으로 만든다(T-2). Python과 Node에서는 같은 handle이 같은 객체이고, 배열이
   값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. handle로 들어온 값(`native`, `Other`, callable)은
   스레드 수명 동안 보관하며, 그 한계는 U-7 (d)가 정할 일로 남는다. PHP에서는 그 요청이 끝날 때까지 보관한다: 엔진은
   요청이 끝날 때 그 요청의 값을 해제하므로, 확장은 엔진이 살아 있는 요청 종료(request shutdown)에서 보관한 값을 놓고,
@@ -244,8 +252,11 @@
   parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 이름을 대고 거부하는 것(G-4): record parameter
-  자신의 기본값(`{empty: "object"}`), `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
+  받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
+  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
   기본값, `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
@@ -275,8 +286,10 @@
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
   다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, 루트가 아닌 module의 오류 unit은
-  이름으로 거부한다(G-4). Go는 오류 unit을 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
+  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). 루트가
+  아닌 module의 오류 unit은 PHP에서는 그 module의 namespace에 있는 클래스이고(GN-10), Python에서는 `<root>.<module>`이
+  import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
+  내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
   category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
@@ -319,7 +332,8 @@
   그 십진 텍스트이고, 십진 텍스트 key는 int key로 나간다.
 - **GN-11** Python: native module `<root>._native`는 원시 값을 받고(T-8) record field는 keyword-only다. 런타임이 인자를 세고
   이름을 확인한다(G-7). category 클래스는 `<root>._errors`, enum은 `<root>._types`에 있고 native module이 로드될 때 그것을
-  import한다(B-4). 계약의 module은 `<root>.<module>`이고 `<root>`가 모든 공개 이름을 다시 내보낸다(P-3). enum은
+  import한다(B-4). 계약의 module은 `<root>.<module>`이고 그 module의 오류 unit을 `<root>._errors`에서 import하며, `<root>`가
+  모든 공개 이름을 다시 내보낸다(P-3). enum은
   `enum.StrEnum`이다(T-6). 패키지는 Python 3.14가 필요하다(abi3-py314). list parameter는
   list나 tuple을 받는다. `keyed_map<T>{key}`는 순서대로의 `dict`이며 key는 계약이 적은 종류의 `int`(`bool`이 아닌 것),
   `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `polyspec`에는
@@ -468,7 +482,9 @@
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
-  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. 끝에서 끝까지 확인은 case를 뺀
+  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. 타입 `cancel`의 값은 호출 전에 발동한
+  취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 이 타입은 아직 생성되지 않으므로
+  그것을 받는 member는 이름을 대고 거부한다(G-4). 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
@@ -482,8 +498,9 @@
   답하는 행의 `"once": true`를 더한 것이다. 각 언어의 생성 시험은 binding이 시험 모듈에 쓰는 구현 하나로 fixture를 만들므로
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
-  예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 형식은 `binding check`가
-  판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
+  예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 다른 타입 안(record의 field, list의
+  항목, `optional`)의 callback도 같은 fixture로 주고, 함수는 `args`가 parameter의 위치(`"0"`, `"1"`, ...)인
+  `{"function": [<행>]}`로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
   `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
@@ -541,7 +558,8 @@
   `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
   member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, class 타입
   parameter는 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
-  않는다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
+  않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
+  그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
 

@@ -110,6 +110,10 @@ export function nodeTests(model: Model): string {
     bind: (local, expr) => `const ${local} = ${expr};`,
     name: (local) => local,
     run: (expr) => `${expr};`,
+    fails: (expr, kind, what) => {
+      usesOutcome = true;
+      return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
+    },
     pick: (expr, step) => ('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
@@ -297,7 +301,7 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     out.push(`
-test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined && p !== fn.record?.param) ? '' : `
+test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined) ? '' : `
   assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);

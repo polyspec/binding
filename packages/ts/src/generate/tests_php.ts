@@ -61,6 +61,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     bind: (local, expr) => `$${local} = ${expr};`,
     name: (local) => `$${local}`,
     run: (expr) => `${expr};`,
+    fails: (expr, kind, what) => {
+      usesOutcome = true;
+      return `self::assertStringContainsString(${phpText(`'kind' => '${kind}'`)}, self::outcome(fn () => ${expr}), ${phpText(`G-5: ${what}`)});`;
+    },
     pick: (expr, step) => ('field' in step ? `${expr}->${langName('php', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {

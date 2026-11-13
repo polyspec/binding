@@ -17,6 +17,55 @@
   with the build tag `polyspec_fault_test` (GN-13b). `binding check` names a static member of a class among the names
   of its Go package (CK-13), and the end-to-end check runs `go test` with a tag for each test feature of the crate and
   finds every test entry point in a library built without features. Verified by `npm test` in `packages/ts`.
+- The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
+  registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
+  WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
+  `errors`, so the end-to-end check raises it through each target.
+- A record parameter with the default `{empty: "object"}` was refused for every target ("a default of a record
+  parameter is not generated yet"), so a contract with one, such as `parse(source, options = {})`, generated no
+  target. Such a parameter is generated when every field of the record has a default: the core takes the record with
+  every field `None`, Python and PHP leave out the keywords and named arguments of the fields, and Node and WASM take
+  the options record as a trailing argument that may be missing or `undefined`; a record with a field without a
+  default is refused by name (GN-6i). `tests/e2e/shapes` has the member `shapes.wrap` of this form. Verified by
+  `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
+  of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
+  with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
+  runs the three to their end and names each failed one.
+- `binding generate` ended a refused target, after it had written the other targets, with the usage line and status 2,
+  as if the command line were wrong, so a repository could not tell the refusal from a usage error. A refusal, a core
+  manifest that is not the crate of the contract and a failed `cargo metadata` now end with status 1 and no usage
+  line; only an error of the command line prints the usage with status 2 (GN-1c).
+- A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
+  so one core with `fault-test` turned on the points of every core: a binding crate that left
+  `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
+  is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
+  `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
+  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
+- A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
+  form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
+  positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value
+  of a class that implements the interface; `binding check` judges each as it judges a fixture (CK-22, GN-13). The
+  generator still refuses a function type and a callback inside another type by name (GN-13a). Verified by `npm test`
+  in `packages/ts`.
+- A call of `then` in an instance value that fails stopped the test as a failure of its preparation, so a kind that
+  only an instance after a failed call reaches, such as a failure that a body gives again, had no case. A call of
+  `then` may name `"raises": {"kind": <kind>}`, a kind of its member's `raises`, which `binding check` judges and every
+  target requires before the next step (GN-13f, CK-22). `tests/e2e/classes` has such a case of `gate.enter`. Verified
+  by `npm test` in `packages/ts`.
+- A case gave any value at a place of the type `cancel` without a finding, so a kind that only a cancellation that
+  fired before the call reaches had no case form. A case gives it as `{"cancel": "fired"}`, or `{"cancel": "open"}`
+  for one that does not fire, and `binding check` reports any other value (CK-22). Verified by `npm test` in
+  `packages/ts`.
+- An `out` row of a value alias whose `make` names a member was refused, so a value whose language form is an
+  instance of a class of the contract had no binding. A row by a constructor or static member of a generated class
+  whose one parameter is the content of the kind and which cannot fail now calls its core path on that content, and
+  the value leaves as an instance of the class; any other member is refused by name (GN-6e). Verified by `npm test`
+  in `packages/ts`.
+- An `out` row of a value alias whose `make` is `{"keyed_map": {"key": [...]}}` was refused as a form that is not
+  generated, so a value alias that gives a map of keys that are no sequence as a keyed map had no binding in any
+  language. The row is now made as a map whose keys, of the kinds it lists, are made by the rows of the alias as its
+  items are (GN-6e). Verified by `npm test` in `packages/ts`.
 - The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
   9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
   refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a

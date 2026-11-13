@@ -928,7 +928,11 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  const arms = outArms(alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")');
+  // U-7: a Go value leaves the core as a value of a built-in form; a make by a member would give a class instance
+  // through the C ABI, whose handle the alias conversion does not write.
+  const byMember = (alias.unit.out ?? []).find((row) => typeof row.make['go'] === 'string' && row.make['go'].includes('.'));
+  if (byMember !== undefined) throw new Unsupported(`${alias.unit.id}: a Go make by a member (${String(byMember.make['go'])}) is not generated yet (U-7)`);
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {

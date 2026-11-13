@@ -192,6 +192,15 @@ fn member(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> 
     Reflect::get(record, &JsValue::from_str(name)).map_err(|error| internal(&error))
 }
 
+/// U-2 {empty: "object"}: a member of an options record that may be left out; a record that is left out (undefined)
+/// leaves out each of its members.
+fn member_or_undefined(record: &JsValue, name: &str, subject: &str) -> Result<JsValue, Fail> {
+    if record.is_undefined() {
+        return Ok(JsValue::UNDEFINED);
+    }
+    member(record, name, subject)
+}
+
 fn out_text(value: impl AsRef<str>) -> Result<JsValue, Fail> {
     Ok(JsValue::from_str(value.as_ref()))
 }
@@ -447,7 +456,7 @@ function functionRust(model: Model, fn: Fn): string {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('wasm', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `&member(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
+        const raw = `&${parameter.default === undefined ? 'member' : 'member_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
       }
       const recordType = fn.record.unit.core_type ?? '';
@@ -1033,8 +1042,8 @@ export class ${name} extends ${parent} {
   // call of the module, with the handle of the instance first for a member that has a receiver (T-5).
   const checked = (fn: Fn, label: string, exported: string, wrap: (call: string) => string): string => {
     const count = fn.params.length;
-    // U-2: the parameters that may be left out are the last ones; a record parameter is required.
-    const least = fn.params.filter((p) => p.default === undefined || (fn.record !== undefined && p === fn.record.param)).length;
+    // U-2: the parameters that may be left out are the last ones, a record parameter with {empty: "object"} too.
+    const least = fn.params.filter((p) => p.default === undefined).length;
     const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
     const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
     const passed = fn.params.map((p, i) => {
@@ -1230,7 +1239,7 @@ export type ${langName('wasm', u.name, 'class')} = ${(u.variants ?? []).map((v) 
 export interface ${langName('wasm', u.name, 'class')} {
 ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
-  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined || (fn.record !== undefined && p === fn.record.param) ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
