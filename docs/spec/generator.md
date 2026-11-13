@@ -249,8 +249,10 @@ the design ids are those of the binding design.
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
   the parameter as `collections.abc.Callable`. Node, PHP and WASM hold a language value that belongs to one thread and
-  one environment, so they generate a function type on the native lifetime (`Native`, its owner table and its release
-  queue) and refuse it until then; Go refuses it (G-4).
+  one environment, so the function holds it as a `Native` (GN-6o) and declares the parameter as a function type
+  (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
+  `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
+  either goes to the core as a `Raised`. Go refuses it (G-4).
 - **GN-6n** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the

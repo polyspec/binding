@@ -204,8 +204,10 @@
   코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
   들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
-  `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수 타입을 native
-  수명(`Native`, 그 소유 표와 해제 대기열) 위에서 생성하며, 그때까지 거부한다. Go는 거부한다(G-4).
+  `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수가 그것을
+  `Native`(GN-6o)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
+  스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
+  `Raised`로 코어에 간다. Go는 거부한다(G-4).
 - **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
