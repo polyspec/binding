@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The e2e run of `tests/e2e/classes` failed in three targets after the class unit `lease` (GN-6p). Python: a `Lease`
+  that a failed call left as a temporary warned while the `TypeError` of the call was set, so the call ended with
+  `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
+  `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
+  requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
+  block had dropped because only that test entry uses it; the helper is now kept.
 - A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
   ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
   and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
