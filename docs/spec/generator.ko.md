@@ -121,6 +121,7 @@
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`. WASM은 `__aliasIn<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
   | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6o) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다.
@@ -244,7 +245,13 @@
     해제 대기열에 넣으며, 그 owner의 모든 생성 진입점은 동기 부분의 처음에 대기열을 비운다. Node env cleanup hook과 PHP request
     shutdown은 표가 가진 것을 해제하고 generation을 올린다. 이전 generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤
     것도 건드리지 않으며, 그런 `Native`의 `out`은 kind `internal`이다.
-  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다. `out`의 바이트는 `Native`보다 오래 살므로,
+  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
+  - 값 alias가 그 target의 `native` 행을 갖고, 함수가 그 alias를 하나뿐인 parameter로 받아 그것을 돌려주면 왕복과 해제를
+    시험한다. 시험은 준비 호출 한 번 뒤 바인딩이 가진 것을 세고, 시험의 class의 새 인스턴스를 그 함수에 주어 결과가 같은
+    객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고(Node는 먼저 event loop를 한 번 돌린다), 다시
+    센다. 두 수는 같아야 한다. 세는 것은 Python에서는 대상의 살아 있는 참조 수(`sys.getrefcount`)이고, 대상을 지운 뒤 죽은
+    weak reference를 함께 본다. 다른 target에서는 `native-count-test`의 진입점이다. Node, PHP, WASM은 owner 표의 항목 수,
+    Go는 Native의 살아 있는 `cgo.Handle` 수이며, Go의 func는 비교할 수 없으므로 시험은 수만 확인한다. `out`의 바이트는 `Native`보다 오래 살므로,
     `native` 행은 func의 새 `cgo.Handle`을 쓰고 값의 디코더가 그것을 지운다.
 - **GN-6k** 다른 레포의 값 alias(T-3, U-7 (a'))는 자기 레포의 alias(GN-6e)와 같은 방식으로 주고받는다. 바인딩이 언어 값을
   `HostValue`로 기술해 소유 코어의 `in` 함수를 부르고, 소유 코어의 `out` 함수가 주는 `OutValue`를 alias의 `out` 행으로

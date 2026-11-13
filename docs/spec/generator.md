@@ -148,6 +148,7 @@ the design ids are those of the binding design.
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
   | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `native-count-test` | the count of the language objects that the owner table holds (GN-6o) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
@@ -297,7 +298,15 @@ the design ids are those of the binding design.
     the PHP request shutdown release what the table holds and raise its generation; a drop of an older generation
     discards its key and touches nothing of the language, whose environment is gone, and the `out` of such a `Native`
     is kind `internal`.
-  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread. The bytes of an `out` outlive the
+  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
+  - The round trip and the release are tested where a value alias has a `native` row in the target and a function
+    takes that alias as its one parameter and returns it: after one warm-up call, the test counts what the binding
+    holds, gives that function a new instance of a class of the test, checks that the result is the same object,
+    drops it, makes one more call, which empties the release queue (Node first lets the event loop turn once), and
+    counts again, which must give the first count. The count is the number of live references of the subject
+    (`sys.getrefcount`) in Python, with a weak reference that is dead after the subject is deleted, and the entry point
+    of `native-count-test` in the other targets: the entries of the owner table in Node, PHP and WASM, the live
+    `cgo.Handle` of the Natives in Go, where a func is not comparable, so the test checks the count only. The bytes of an `out` outlive the
     `Native`, so its `native` row writes a new `cgo.Handle` of the func, which the decoder of the value deletes.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
