@@ -683,6 +683,28 @@ test('an out row of a value alias makes a keyed map of the keys it lists in ever
   }
 });
 
+test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
+  for (const [path, made] of [
+    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+  ] as const) {
+    assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
+  }
+  // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
+  row.kind = 'bool';
+  row.make = { php: 'bool', python: 'bool', node: 'tag.new', go: 'bool', wasm: 'bool' };
+  const bools = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r.kind === 'bool');
+  sample.units.find((u: any) => u.id === 'data').out = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r === row || !bools.includes(r));
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node'] }), /data: the node make tag\.new of the kind bool takes text, not the content of the kind/);
+});
+
 test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
