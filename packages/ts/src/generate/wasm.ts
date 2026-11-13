@@ -49,7 +49,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // that the conversion takes as impl Borrow or a widening trait is needless (the lints deny it).
 const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
 
-// GN-6m, GN-6o: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
+// GN-6m, GN-6u: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
 // call converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call, goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -757,7 +757,7 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-/// U-3, GN-6o: what a Raised holds: the key of what was thrown in THROWN, whose last drop removes it, so an exception
+/// U-3, GN-6u: what a Raised holds: the key of what was thrown in THROWN, whose last drop removes it, so an exception
 /// that the core drops is not kept. The module has one thread, which holds the table.
 #[derive(Debug)]
 struct ThrownKey {
@@ -1011,7 +1011,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
         .map_err(throw)
     }
 
-`}${nativeRoundTrip(model.contract, 'wasm') === undefined ? '' : `    /// GN-6o: the entry point of the generated release test: the count of the values that the table of Natives holds.
+`}${nativeRoundTrip(model.contract, 'wasm') === undefined ? '' : `    /// GN-6u: the entry point of the generated release test: the count of the values that the table of Natives holds.
     #[cfg(feature = "native-count-test")]
     #[wasm_bindgen(js_name = "__nativeCount")]
     pub fn native_count() -> u32 {

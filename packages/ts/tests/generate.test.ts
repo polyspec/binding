@@ -736,7 +736,7 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node'] }), /data: the node make tag\.new of the kind bool takes text, not the content of the kind/);
 });
 
-test('a language object that a core may keep enters as a Native, which each target holds and releases by its rule (GN-6o)', () => {
+test('a language object that a core may keep enters as a Native, which each target holds and releases by its rule (GN-6u)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const sample = read('sample/packages/rust/interface.json');
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
@@ -787,7 +787,7 @@ test('a language object that a core may keep enters as a Native, which each targ
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
-test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6o)', () => {
+test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6u)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const libs = [['python', 'packages/python/generated/lib.rs'], ['node', 'packages/ts/generated/lib.rs'], ['php', 'packages/php-ext/generated/lib.rs'], ['wasm', 'packages/ts/wasm/generated/lib.rs'], ['go', 'packages/go/internal/ffi/generated/lib.rs']] as const;
@@ -809,7 +809,7 @@ test('a Raised holds the key of the thrown object as a Native, whose last drop r
   }
 });
 
-test('a generated test gives an object through a native row and back, and counts that the binding released it (GN-6o)', () => {
+test('a generated test gives an object through a native row and back, and counts that the binding released it (GN-6u)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const sample = read('sample/packages/rust/interface.json');
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
@@ -817,7 +817,7 @@ test('a generated test gives an object through a native row and back, and counts
   assert.match(python, /def test_gn6o_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
   for (const [path, entry] of [['packages/ts/generated/tests/generated.test.mjs', 'addon\\(\\)'], ['packages/ts/wasm/generated/tests/generated.test.mjs', '\\(await glueModule\\(\\)\\)']] as const) {
     const js = text(out, path);
-    assert.match(js, new RegExp(`test\\('GN-6o: same gives back the same object and releases it', async \\(\\) => \\{\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  const before = ${entry}\\.__nativeCount\\(\\);\\n  const subject = new Subject\\(\\);\\n  assert\\.equal\\(pkg\\.same\\(subject\\), subject\\);\\n  await new Promise\\(setImmediate\\);\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  assert\\.equal\\(${entry}\\.__nativeCount\\(\\), before\\);\\n\\}\\);`), path);
+    assert.match(js, new RegExp(`test\\('GN-6u: same gives back the same object and releases it', async \\(\\) => \\{\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  const before = ${entry}\\.__nativeCount\\(\\);\\n  const subject = new Subject\\(\\);\\n  assert\\.equal\\(pkg\\.same\\(subject\\), subject\\);\\n  await new Promise\\(setImmediate\\);\\n  pkg\\.same\\(new Subject\\(\\)\\);\\n  assert\\.equal\\(${entry}\\.__nativeCount\\(\\), before\\);\\n\\}\\);`), path);
   }
   const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(php, /public function testGn6oSameGivesBackTheSameObjectAndReleasesIt\(\): void\n    \{\n        \\Polyspec\\Sample\\same\(new class \{\}\);\n        \$before = \\Polyspec\\Sample\\Internal\\nativeCount\(\);\n        \$subject = new class \{\};\n        self::assertSame\(\$subject, \\Polyspec\\Sample\\same\(\$subject\)\);/);
@@ -1220,7 +1220,7 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   }
 });
 
-test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6o)', () => {
+test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1250,7 +1250,7 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
 
-test('PHP holds a function as a Native, a Closure that a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6o)', () => {
+test('PHP holds a function as a Native, a Closure that a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1275,7 +1275,7 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });
 
-test('WASM holds a function as a Native of the table of its one thread (T-2, GN-6m, GN-6o)', () => {
+test('WASM holds a function as a Native of the table of its one thread (T-2, GN-6m, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1769,7 +1769,7 @@ test('a binding crate has the test features that its contract needs (GN-5)', () 
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const packages = trackedPackages(sample, '0.0.0');
   assert.match(String(packages.get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n\[/);
-  // GN-6o: a target that gives a Native back through a round trip counts the Natives that its table holds.
+  // GN-6u: a target that gives a Native back through a round trip counts the Natives that its table holds.
   for (const path of ['packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
     assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n\[/, path);
   }

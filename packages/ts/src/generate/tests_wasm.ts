@@ -290,14 +290,14 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
-  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native.
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
   const roundTrip = nativeRoundTrip(model.contract, 'wasm');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
   if (roundFn !== undefined) {
     usesGlue = true;
     const same = (value: string): string => invoke(roundFn, value, '');
     out.push(`
-test('GN-6o: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
   ${same('new Subject()')};
   const before = (await glueModule()).__nativeCount();
   const subject = new Subject();
@@ -320,7 +320,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
 import assert from 'node:assert/strict';
 import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
-${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${roundFn === undefined ? '' : '\n// GN-6o: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

@@ -381,7 +381,7 @@ fn taken(buffer: Buffer) -> Vec<u8> {
 
 /// U-7: one level of a Go value, as package binding describes it: 0 nil, 1 a bool, 2 an integer, 3 an integer beyond
 /// int64 as its decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map, 9 a func with its
-/// cgo.Handle (GN-6o), 10 any other value with its type name; a container with its handle and length.
+/// cgo.Handle (GN-6u), 10 any other value with its type name; a container with its handle and length.
 fn read_host(input: &mut &[u8]) -> Result<HostValue, Fail> {
     Ok(match take(input, 1)? {
         [0] => HostValue::Null,
@@ -720,7 +720,7 @@ fn failure_error(failure: ${failure}) -> Fail {
 ` : '';
   if (!callsBack(model)) return failureFn;
   const hosts = model.aliases.length === 0 ? '' : `
-/// GN-6o: what a Native of Go holds: the cgo.Handle of the func, which the drop deletes on any thread.
+/// GN-6u: what a Native of Go holds: the cgo.Handle of the func, which the drop deletes on any thread.
 #[derive(Debug)]
 struct GoNative {
     handle: u64,
@@ -736,10 +736,10 @@ impl Drop for GoNative {
     }
 }
 
-/// GN-6o: the count of the live Natives, which the entry point of native-count-test gives.
+/// GN-6u: the count of the live Natives, which the entry point of native-count-test gives.
 static NATIVE_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// GN-6o: the func of a cgo.Handle that package binding made, as a Native.
+/// GN-6u: the func of a cgo.Handle that package binding made, as a Native.
 fn go_native(handle: u64) -> Native {
     NATIVE_COUNT.fetch_add(1, Ordering::SeqCst);
     Native::new(GoNative { handle })
@@ -818,9 +818,9 @@ extern "C" {${model.callbacks.length === 0 ? '' : `
     fn ${p}__go_callback(call: u64, callback: u64, member: u32, args: *const u8, len: usize, result: *mut Buffer) -> i32;`}${model.aliases.length === 0 ? '' : `
     /// U-7: the function that package binding exports to describe a child of a Go value.
     fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;
-    /// GN-6o: the function that package binding exports to delete the cgo.Handle of a Native.
+    /// GN-6u: the function that package binding exports to delete the cgo.Handle of a Native.
     fn ${p}__go_release(handle: u64);
-    /// GN-6o: the function that package binding exports to give a new cgo.Handle of the func of a Native.
+    /// GN-6u: the function that package binding exports to give a new cgo.Handle of the func of a Native.
     fn ${p}__go_native(handle: u64) -> u64;`}
 }
 
@@ -848,7 +848,7 @@ static THROWN: Mutex<BTreeMap<u64, Thrown>> = Mutex::new(BTreeMap::new());
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-/// U-3, GN-6o: what a Raised holds: the key of what went wrong in THROWN, whose last drop removes it, so a failure
+/// U-3, GN-6u: what a Raised holds: the key of what went wrong in THROWN, whose last drop removes it, so a failure
 /// that the core drops is not kept.
 #[derive(Debug)]
 struct ThrownKey {
@@ -967,14 +967,14 @@ function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string):
         }`;
     }
     case 'native':
-      // GN-6o: the bytes outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
+      // GN-6u: the bytes outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
       return `match native.downcast::<GoNative>() {
             Some(object) => {
                 output.push(10);
                 // SAFETY: the handle is the cgo.Handle of the Native, which is alive while the Native is.
                 out_uint(output, unsafe { ${prefix(model)}__go_native(object.handle) });
             }
-            None => out_no_form(output, "GN-6o: a native value that no Go func entered as"),
+            None => out_no_form(output, "GN-6u: a native value that no Go func entered as"),
         }`;
     default:
       break;
@@ -1131,7 +1131,7 @@ function testEntries(model: Model): string {
   }
   out.push(entry(model, `${p}__panic_test`, 'B-7: the entry point of the generated panic test.', ['        finish_input(input)?;', '        panic!("panic-test")'], 'panic-test'));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) {
-    out.push(entry(model, `${p}__native_count`, 'GN-6o: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        out_uint(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
+    out.push(entry(model, `${p}__native_count`, 'GN-6u: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        out_uint(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
   }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
   const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => o.lock?.writes === true);

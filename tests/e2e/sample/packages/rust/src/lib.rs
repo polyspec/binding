@@ -259,7 +259,7 @@ pub enum Data {
     List(Vec<Data>),
     /// A map with text keys, in order.
     Map(Vec<(String, Data)>),
-    /// An object or a function of the language, which data keeps and gives back as the same object (GN-6o).
+    /// An object or a function of the language, which data keeps and gives back as the same object (GN-6u).
     Native(Native),
 }
 

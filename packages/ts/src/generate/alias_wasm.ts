@@ -148,7 +148,7 @@ impl JsHost {
         Handle::new(handle_count(self.held.len() - 1))
     }
 
-    /// GN-6o: the handle of a Date or of a value outside the closed set, its number in the order of the call.
+    /// GN-6u: the handle of a Date or of a value outside the closed set, its number in the order of the call.
     fn mark(&mut self) -> Handle {
         self.marked = self.marked.saturating_add(1);
         Handle::new(self.marked)
@@ -377,22 +377,22 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
   }).join('');
 }
 
-// GN-6o, GN-6m: the Natives of WebAssembly, which a value alias and a function type hold: the table of the one thread
+// GN-6u, GN-6m: the Natives of WebAssembly, which a value alias and a function type hold: the table of the one thread
 // of the module.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const WASM_NATIVE = (`
-/// GN-6o: the JavaScript values that a core may keep, under the keys of their Natives.
+/// GN-6u: the JavaScript values that a core may keep, under the keys of their Natives.
 struct NativeTable {
     next: u64,
     values: BTreeMap<u64, JsValue>,
 }
 
 thread_local! {
-    /// GN-6o: the table of the one thread of the module.
+    /// GN-6u: the table of the one thread of the module.
     static NATIVE: RefCell<NativeTable> = const { RefCell::new(NativeTable { next: 0, values: BTreeMap::new() }) };
 }
 
-/// GN-6o: what a Native of WebAssembly holds: the key of the table, which holds the value.
+/// GN-6u: what a Native of WebAssembly holds: the key of the table, which holds the value.
 #[derive(Debug)]
 struct WasmNative {
     key: u64,
@@ -408,7 +408,7 @@ impl Drop for WasmNative {
     }
 }
 
-/// GN-6o: a JavaScript value that a core may keep, as a Native.
+/// GN-6u: a JavaScript value that a core may keep, as a Native.
 fn wasm_native(value: &JsValue) -> Native {
     let key = NATIVE.with_borrow_mut(|native| {
         native.next = native.next.saturating_add(1);
@@ -418,10 +418,10 @@ fn wasm_native(value: &JsValue) -> Native {
     Native::new(WasmNative { key })
 }
 
-/// GN-6o: the JavaScript value that entered as the Native.
+/// GN-6u: the JavaScript value that entered as the Native.
 fn native_object(native: &Native) -> Result<JsValue, Fail> {
     let found = native.downcast::<WasmNative>().and_then(|native| NATIVE.with_borrow(|table| table.values.get(&native.key).cloned()));
-    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") }))
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: a native value that no JavaScript value entered as") }))
 }
 
 /// GN-6m: a value of a function type is a function (kind invalid_argument_type), held as a Native.

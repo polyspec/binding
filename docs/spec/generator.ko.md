@@ -121,7 +121,7 @@
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`. WASM은 `__aliasIn<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
   | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
-  | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6o) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
+  | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다.
@@ -200,7 +200,7 @@
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
   바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 그것을 가리키는
   `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은 `Raised`의
-  마지막 drop은 GN-6o대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
+  마지막 drop은 GN-6u대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
 - **GN-6m** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
@@ -209,7 +209,7 @@
   들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
   `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수가 그것을
-  `Native`(GN-6o)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
+  `Native`(GN-6u)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
   `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
   만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
@@ -236,8 +236,8 @@
   값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. 코어가 보관할 수 있는 언어
   객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
   객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
-  `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6o).
-- **GN-6o** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
+  `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
+- **GN-6u** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
   - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
     `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다.
   - WASM은 그 한 스레드의 표에서 `JsValue`를 가진 key를 갖고, drop이 그것을 지운다.
@@ -504,7 +504,7 @@
   코드(getter, proxy의 trap, iterator)를 실행할 수 있는 JavaScript 연산은 모두 `catch`로 부른다(`Reflect`와, `catch`로
   import한 `Array.isArray`, `Array.from`, `Object.keys`). 그래서 그 예외는 호출이 그대로 다시 던지는 값이며, 예외는
   WebAssembly 모듈의 frame을 거쳐 unwind하지 않는다. 그렇게 되면 모듈의 stack과 표가 망가진 상태로 남기 때문이다. 실패
-  (`Fail`)는 그 예외를 지니고, 코어는 그것을 U-3의 `Raised`로 지닌다. 코어가 보관할 수 있는 언어 객체는 `Native`다(GN-6o).
+  (`Fail`)는 그 예외를 지니고, 코어는 그것을 U-3의 `Raised`로 지닌다. 코어가 보관할 수 있는 언어 객체는 `Native`다(GN-6u).
   `in_raises`가 있는 alias의 in 함수는 feature `codec-test`의 `__aliasIn<Alias>`로 따로 실행한다(GN-5). 생성 시험은
   `fault-test`의 시험이 `__armFaults`를 부르듯 wasm-bindgen이 쓰는 모듈에서 그것을 부르고, alias의 case마다 category의
   class와 kind를 기대한다(U-7).

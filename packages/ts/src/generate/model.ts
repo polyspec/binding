@@ -935,7 +935,7 @@ export function takesFunction(model: Model): boolean {
   return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
 }
 
-// GN-6o: whether the binding holds Natives: for a value alias, or for a function type.
+// GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
 export function usesNative(model: Model): boolean {
   return model.aliases.length > 0 || takesFunction(model);
 }
@@ -1288,7 +1288,7 @@ export const aliasFailureFn = (alias: ValueAlias): string =>
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
   model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);
 
-// GN-6o: the member whose generated test gives an object through a native row and back: a function without a receiver
+// GN-6u: the member whose generated test gives an object through a native row and back: a function without a receiver
 // that takes a value alias of this repository, with an out row of kind native in the target, as its one parameter and
 // returns it. The contract alone decides it, so that the manifest and the tests agree.
 export function nativeRoundTrip(contract: Contract, lang: Lang): Member | undefined {

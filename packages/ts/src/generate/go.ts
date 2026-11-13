@@ -1157,7 +1157,7 @@ func (c *Call) Value(enc *Writer, value any) {
 
 // describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 as its
 // decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
-// text, 9 a func with the cgo.Handle that a Native deletes (GN-6o), 10 any other value with its type name; a container
+// text, 9 a func with the cgo.Handle that a Native deletes (GN-6u), 10 any other value with its type name; a container
 // with its handle and length.
 func (c *Call) describe(enc *Writer, value reflect.Value) {
 	for value.IsValid() && value.Kind() == reflect.Interface {
@@ -1302,14 +1302,14 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 	return 0
 }
 
-// ${p}__go_release deletes the cgo.Handle of a func that a Native of the static library held (GN-6o).
+// ${p}__go_release deletes the cgo.Handle of a func that a Native of the static library held (GN-6u).
 //
 //export ${p}__go_release
 func ${p}__go_release(handle C.uint64_t) {
 	cgo.Handle(uintptr(handle)).Delete()
 }
 
-// ${p}__go_native gives a new cgo.Handle of the func of a Native, which the decoder of the value deletes (GN-6o).
+// ${p}__go_native gives a new cgo.Handle of the func of a Native, which the decoder of the value deletes (GN-6u).
 //
 //export ${p}__go_native
 func ${p}__go_native(handle C.uint64_t) C.uint64_t {
@@ -1323,7 +1323,7 @@ func ${p}__go_native(handle C.uint64_t) C.uint64_t {
 const GO_VALUE = `
 // Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
 // 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], 10 the func
-// of a Native by a new cgo.Handle, which it deletes (GN-6o), and 255 a value that the out rows give no Go form, which
+// of a Native by a new cgo.Handle, which it deletes (GN-6u), and 255 a value that the out rows give no Go form, which
 // fails Finish with kind internal.
 func (r *Reader) Value() any {
 	var made []any
@@ -1455,7 +1455,7 @@ func PanicTestHeld(class, handle uint64) error {
 ` : ''}`;
 }
 
-// GN-6o: the Go side of the count of the live Natives, with the build tag polyspec_native_count_test.
+// GN-6u: the Go side of the count of the live Natives, with the build tag polyspec_native_count_test.
 function goBindingNativeCount(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
@@ -1470,7 +1470,7 @@ ${cDeclarations(model, [`${p}__native_count`])}
 */
 import "C"
 
-// NativeCount gives the count of the live Natives of the static library, each of which holds a cgo.Handle (GN-6o), or
+// NativeCount gives the count of the live Natives of the static library, each of which holds a cgo.Handle (GN-6u), or
 // the failure of the call.
 func NativeCount() (uint64, error) {
 	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {

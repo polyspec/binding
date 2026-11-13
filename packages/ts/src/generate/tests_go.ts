@@ -724,35 +724,35 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
-  // GN-6o: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
+  // GN-6u: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
   // comparable, so the test checks the count of the live handles of the Natives.
   const roundTrip = nativeRoundTrip(model.contract, 'go');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id && f.module === module);
   const native = roundFn === undefined ? [] : [`
 func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
 	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
-		t.Fatalf("GN-6o: %v", err)
+		t.Fatalf("GN-6u: %v", err)
 	}
 	before, err := binding.NativeCount()
 	if err != nil {
-		t.Fatalf("GN-6o: %v", err)
+		t.Fatalf("GN-6u: %v", err)
 	}
 	got, err := ${invoke(roundFn, ['func() {}'], '')}
 	if err != nil {
-		t.Fatalf("GN-6o: %v", err)
+		t.Fatalf("GN-6u: %v", err)
 	}
 	if _, ok := got.(func()); !ok {
-		t.Fatalf("GN-6o: %#v is no func", got)
+		t.Fatalf("GN-6u: %#v is no func", got)
 	}
 	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
-		t.Fatalf("GN-6o: %v", err)
+		t.Fatalf("GN-6u: %v", err)
 	}
 	after, err := binding.NativeCount()
 	if err != nil {
-		t.Fatalf("GN-6o: %v", err)
+		t.Fatalf("GN-6u: %v", err)
 	}
 	if after != before {
-		t.Fatalf("GN-6o: %d Natives after the call, %d before", after, before)
+		t.Fatalf("GN-6u: %d Natives after the call, %d before", after, before)
 	}
 }`];
   if (out.main.length + out.fault.length + out.held.length + native.length === 0) return [];

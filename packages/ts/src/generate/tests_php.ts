@@ -401,7 +401,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
     }`);
   }
-  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native at
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native at
   // the next entry point.
   const roundTrip = nativeRoundTrip(model.contract, 'php');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);

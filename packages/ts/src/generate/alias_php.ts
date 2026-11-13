@@ -143,7 +143,7 @@ impl<'a> PhpHost<'a> {
         Handle::new(handle_count(self.held.len() - 1))
     }
 
-    /// GN-6o: the handle of a value outside the closed set, its number in the order of the call.
+    /// GN-6u: the handle of a value outside the closed set, its number in the order of the call.
     fn mark(&mut self) -> Handle {
         self.marked = self.marked.saturating_add(1);
         Handle::new(self.marked)
@@ -321,22 +321,22 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
   }).join('');
 }
 
-// GN-6o, GN-6m: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
+// GN-6u, GN-6m: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
 // request shutdown, and the check of the thread of a call of a function.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const PHP_NATIVE = (`${ownedNatives('Zval', 'drop(references);')}
-/// GN-6o: a PHP value that a core may keep, as a Native of the table of this thread.
+/// GN-6u: a PHP value that a core may keep, as a Native of the table of this thread.
 fn php_native(value: &Zval) -> Result<Native, Fail> {
     if OWNED.with_borrow(Option::is_none) {
         let Some((owner, generation)) = native_owner() else {
-            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the table of the owners is poisoned") }));
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6u: the table of the owners is poisoned") }));
         };
         OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
     }
-    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: this thread has no table") }))
+    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: this thread has no table") }))
 }
 
-/// GN-6o: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
+/// GN-6u: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
 fn native_object(native: &Native) -> Result<Zval, Fail> {
     let found = native.downcast::<OwnedNative>().and_then(|native| {
         OWNED.with_borrow(|owned| match owned {
@@ -344,10 +344,10 @@ fn native_object(native: &Native) -> Result<Zval, Fail> {
             _ => None,
         })
     });
-    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") }))
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: the native value is gone") }))
 }
 
-/// GN-6o: the engine frees the values of a request when the request ends, so the request shutdown releases the table
+/// GN-6u: the engine frees the values of a request when the request ends, so the request shutdown releases the table
 /// while the engine is alive.
 extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
     clean_up_native();
@@ -375,13 +375,13 @@ fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
 /// keep, since a PHP error object is made on the owner thread only.
 fn native_thread(native: &Native, subject: &str) -> Result<(), BindingError> {
     let Some(native) = native.downcast::<OwnedNative>() else {
-        return Err(BindingError::Internal { detail: String::from("GN-6o: a native value that no PHP value entered as") });
+        return Err(BindingError::Internal { detail: String::from("GN-6u: a native value that no PHP value entered as") });
     };
     if OWNER.get() != Some(native.owner) {
         return Err(BindingError::WrongThread { subject: subject.to_owned() });
     }
     if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
-        return Err(BindingError::Internal { detail: String::from("GN-6o: the request of the function has ended") });
+        return Err(BindingError::Internal { detail: String::from("GN-6u: the request of the function has ended") });
     }
     Ok(())
 }

@@ -41,7 +41,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6m, GN-6o: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// GN-6m, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -949,7 +949,7 @@ pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
 ${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
-/// GN-6o: the entry point of the generated release test: the count of the references that the table of this thread
+/// GN-6u: the entry point of the generated release test: the count of the references that the table of this thread
 /// holds.
 #[cfg(feature = "native-count-test")]
 #[napi(js_name = "__nativeCount")]

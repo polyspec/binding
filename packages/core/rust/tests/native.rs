@@ -61,7 +61,7 @@ fn the_object_is_released_when_the_last_native_is_dropped() {
 
 #[test]
 fn a_raised_exception_releases_its_object_when_its_last_copy_is_dropped() {
-    // U-3, GN-6o: a core may drop a Raised instead of returning it; the binding's entry is released all the same.
+    // U-3, GN-6u: a core may drop a Raised instead of returning it; the binding's entry is released all the same.
     let released = Arc::new(AtomicUsize::new(0));
     let raised = Raised::from_generated(kept(3, &released));
     let copy = raised.clone();

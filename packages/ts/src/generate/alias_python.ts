@@ -75,7 +75,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'native':
       return `match native.downcast::<PyNative>() {
             Some(object) => Ok(object.0.clone_ref(py).into_bound(py)),
-            None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6o: a native value that no Python object entered as") })),
+            None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
         }`;
     default:
       throw new Unsupported(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
@@ -139,7 +139,7 @@ impl<'py> PyHost<'py> {
         Handle::new(handle_count(self.held.len() - 1))
     }
 
-    /// GN-6o: the handle of a value outside the closed set, its number in the order of the call.
+    /// GN-6u: the handle of a value outside the closed set, its number in the order of the call.
     fn mark(&mut self) -> Handle {
         self.marked = self.marked.saturating_add(1);
         Handle::new(self.marked)
@@ -229,14 +229,14 @@ impl HostValues for PyHost<'_> {
     }
 }
 
-/// GN-6o: a Python object that a core may keep, released when the last Native that holds it is dropped.
+/// GN-6u: a Python object that a core may keep, released when the last Native that holds it is dropped.
 #[derive(Debug)]
 struct PyNative(Py<PyAny>);
 
 impl NativeObject for PyNative {}
 
 #[cfg(pyo3_disable_reference_pool)]
-compile_error!("GN-6o: a Native of Python is dropped on any thread, which PyO3 defers to its next acquisition of the GIL through the reference pool that pyo3_disable_reference_pool removes");
+compile_error!("GN-6u: a Native of Python is dropped on any thread, which PyO3 defers to its next acquisition of the GIL through the reference pool that pyo3_disable_reference_pool removes");
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
 #[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]

@@ -373,7 +373,7 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})
         self.assertEqual(caught.exception.kind, ${pyString(kase.kind)})`);
   }
-  // GN-6o: an object goes through the native row and back as the same object, and the binding keeps no reference to it.
+  // GN-6u: an object goes through the native row and back as the same object, and the binding keeps no reference to it.
   const roundTrip = nativeRoundTrip(model.contract, 'python');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
   if (roundFn !== undefined) {
@@ -414,7 +414,7 @@ if __name__ == "__main__":
 `;
 }
 
-// GN-6o: the subject of the round-trip test, an instance of a class of the test, since a built-in value may be
+// GN-6u: the subject of the round-trip test, an instance of a class of the test, since a built-in value may be
 // interned or cached.
 const PYTHON_SUBJECT = `
 

@@ -100,24 +100,24 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
   });
 }
 
-// GN-6o: the owner table of Node and PHP. A Native holds the owner, its generation and the key of the table of the
+// GN-6u: the owner table of Node and PHP. A Native holds the owner, its generation and the key of the table of the
 // owner thread, which holds the language reference, because a reference of that thread cannot be released on another
 // one. A drop queues the key for its owner and releases the queue of its own thread; every entry point releases it
 // too (`release_queue` in `guard`), and the cleanup of the owner releases the table and raises its generation.
 // `reference` is the Rust type of the reference, and `release` the statement that releases the Vec `references`.
 export function ownedNatives(reference: string, release: string): string {
   return `
-/// GN-6o: the owner of the language references of one thread: the generation of its table, which its cleanup raises,
+/// GN-6u: the owner of the language references of one thread: the generation of its table, which its cleanup raises,
 /// and the keys of its Natives that were dropped, which the owner thread releases.
 struct Owner {
     generation: u64,
     released: Vec<u64>,
 }
 
-/// GN-6o: the owners, under the index that their Natives name.
+/// GN-6u: the owners, under the index that their Natives name.
 static OWNERS: Mutex<Vec<Owner>> = Mutex::new(Vec::new());
 
-/// GN-6o: the language references that this thread holds for its Natives, under their keys.
+/// GN-6u: the language references that this thread holds for its Natives, under their keys.
 struct Owned {
     owner: usize,
     generation: u64,
@@ -126,13 +126,13 @@ struct Owned {
 }
 
 thread_local! {
-    /// GN-6o: the index of the owner of this thread, which its later tables keep.
+    /// GN-6u: the index of the owner of this thread, which its later tables keep.
     static OWNER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-    /// GN-6o: the table of this thread, until the cleanup of its owner.
+    /// GN-6u: the table of this thread, until the cleanup of its owner.
     static OWNED: RefCell<Option<Owned>> = const { RefCell::new(None) };
 }
 
-/// GN-6o: what a Native of this binding holds: the owner, its generation and the key of the table of the owner.
+/// GN-6u: what a Native of this binding holds: the owner, its generation and the key of the table of the owner.
 #[derive(Debug)]
 struct OwnedNative {
     owner: usize,
@@ -156,7 +156,7 @@ impl Drop for OwnedNative {
     }
 }
 
-/// GN-6o: the owner of this thread and its generation; a thread is registered as an owner at its first Native.
+/// GN-6u: the owner of this thread and its generation; a thread is registered as an owner at its first Native.
 fn native_owner() -> Option<(usize, u64)> {
     let mut owners = OWNERS.lock().ok()?;
     let owner = match OWNER.get() {
@@ -171,7 +171,7 @@ fn native_owner() -> Option<(usize, u64)> {
     owners.get(owner).map(|found| (owner, found.generation))
 }
 
-/// GN-6o: keeps a reference in the table of this thread and gives its Native.
+/// GN-6u: keeps a reference in the table of this thread and gives its Native.
 fn keep_native(reference: ${reference}) -> Option<Native> {
     OWNED.with_borrow_mut(|owned| {
         let owned = owned.as_mut()?;
@@ -181,7 +181,7 @@ fn keep_native(reference: ${reference}) -> Option<Native> {
     })
 }
 
-/// GN-6o: releases on the owner thread the references whose Natives were dropped; the references are released after
+/// GN-6u: releases on the owner thread the references whose Natives were dropped; the references are released after
 /// the table is no longer borrowed, since releasing one may run language code.
 fn release_queue() {
     let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
@@ -204,7 +204,7 @@ fn release_queue() {
     }
 }
 
-/// GN-6o: the cleanup of the owner of this thread: it releases what the table holds and raises the generation, so that
+/// GN-6u: the cleanup of the owner of this thread: it releases what the table holds and raises the generation, so that
 /// a later drop of a Native of the table touches nothing and its out is kind internal.
 fn clean_up_native() {
     let Ok(Some(owner)) = OWNER.try_with(std::cell::Cell::get) else {
@@ -244,12 +244,12 @@ fn elsewhere(raised: &binding_core::Raised) -> Fail {
 }
 `;
 
-// U-3, GN-6o: the thrown objects of Node and PHP, which belong to the thread that threw them. A Raised holds the number
+// U-3, GN-6u: the thrown objects of Node and PHP, which belong to the thread that threw them. A Raised holds the number
 // of that thread and the key of the object in its table THROWN; its last drop removes the entry on that thread, or,
 // on another thread, queues the key for that thread while it lives. The thread removes its queued keys when it next
 // keeps or throws again an exception, and its end discards its queue.
 export const THREAD_THROWN = `
-/// U-3, GN-6o: the threads that keep thrown objects, and the keys of the Raised that were dropped on another thread,
+/// U-3, GN-6u: the threads that keep thrown objects, and the keys of the Raised that were dropped on another thread,
 /// with the thread that keeps each.
 struct Dropped {
     live: BTreeSet<u64>,
@@ -260,7 +260,7 @@ static DROPPED: Mutex<Dropped> = Mutex::new(Dropped { live: BTreeSet::new(), key
 
 static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
 
-/// U-3, GN-6o: the number of a thread that keeps thrown objects; its end discards the keys queued for it.
+/// U-3, GN-6u: the number of a thread that keeps thrown objects; its end discards the keys queued for it.
 struct ThrownThread(u64);
 
 impl ThrownThread {
@@ -286,7 +286,7 @@ thread_local! {
     static THROWN_THREAD: ThrownThread = ThrownThread::new();
 }
 
-/// U-3, GN-6o: the number of this thread; 0, which no thread has, when the thread is ending.
+/// U-3, GN-6u: the number of this thread; 0, which no thread has, when the thread is ending.
 fn thrown_thread() -> u64 {
     match THROWN_THREAD.try_with(|thread| thread.0) {
         Ok(thread) => thread,
@@ -294,7 +294,7 @@ fn thrown_thread() -> u64 {
     }
 }
 
-/// U-3, GN-6o: what a Raised holds: the thread that keeps the thrown object and its key in THROWN.
+/// U-3, GN-6u: what a Raised holds: the thread that keeps the thrown object and its key in THROWN.
 #[derive(Debug)]
 struct ThrownKey {
     thread: u64,
@@ -320,7 +320,7 @@ impl Drop for ThrownKey {
     }
 }
 
-/// U-3, GN-6o: removes the thrown objects of this thread whose Raised were dropped on another thread.
+/// U-3, GN-6u: removes the thrown objects of this thread whose Raised were dropped on another thread.
 fn release_dropped() {
     let thread = thrown_thread();
     let mut keys = Vec::new();

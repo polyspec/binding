@@ -676,7 +676,7 @@ if (targets.includes('go')) {
     const crate = p.contract.core.crate;
     const goEnv = goEnvOf(p);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
-    // GN-13b, GN-6o: panic-test, codec-test and native-count-test are for tests only; the library built without features
+    // GN-13b, GN-6u: panic-test, codec-test and native-count-test are for tests only; the library built without features
     // has no test entry point.
     if (stepOf(['go'], `llvm-nm: the static library${of} without features holds no test entry point`, () => {
       const release = join(work, 'target-release-check');

@@ -661,7 +661,7 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
-/// U-3, GN-6o: what a Raised holds: the key of the exception in THROWN, whose last drop removes it, so an exception
+/// U-3, GN-6u: what a Raised holds: the key of the exception in THROWN, whose last drop removes it, so an exception
 /// that the core drops is not kept.
 #[derive(Debug)]
 struct ThrownKey {

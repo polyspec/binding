@@ -148,7 +148,7 @@ the design ids are those of the binding design.
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
   | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
-  | `native-count-test` | the count of the language objects that the owner table holds (GN-6o) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
+  | `native-count-test` | the count of the language objects that the owner table holds (GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
@@ -243,7 +243,7 @@ the design ids are those of the binding design.
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner`, kind `wrong_thread`), goes to the core
   as a `Raised` whose `Native` names it in the binding's table, and the generated caller throws the same object again.
-  The last drop of a `Raised` that no caller threw again removes its entry, as GN-6o states.
+  The last drop of a `Raised` that no caller threw again removes its entry, as GN-6u states.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
 - **GN-6m** A function type (T-2) is taken by the core as
@@ -254,7 +254,7 @@ the design ids are those of the binding design.
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
   the parameter as `collections.abc.Callable`. Node, PHP and WASM hold a language value that belongs to one thread and
-  one environment, so the function holds it as a `Native` (GN-6o) and declares the parameter as a function type
+  one environment, so the function holds it as a `Native` (GN-6u) and declares the parameter as a function type
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
   either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
@@ -287,8 +287,8 @@ the design ids are those of the binding design.
   that a core may keep, an `Object` or a `Callable`, enters as a `Native` (B-1), which the core copies, keeps and
   drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
   `Other` value is valid only inside the `in` or `out` call that gave it: the binding numbers a `Date` and an `Other`
-  value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6o).
-- **GN-6o** What a `Native` (B-1) holds, and what its last drop does, by target:
+  value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6u).
+- **GN-6u** What a `Native` (B-1) holds, and what its last drop does, by target:
   - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
     so the crate does not compile with `pyo3_disable_reference_pool`.
   - WASM holds the key of the table of its one thread, which holds the `JsValue`; the drop removes it.
@@ -614,7 +614,7 @@ the design ids are those of the binding design.
   `Array.isArray`, `Array.from` and `Object.keys` imported with `catch`), so its exception is a value that the call
   throws again unchanged; an exception never unwinds through the frames of the WebAssembly module, which would leave
   its stack and its tables in a broken state. A failure (`Fail`) carries that exception, and the core keeps it as the
-  `Raised` of U-3. A language object that a core may keep is a `Native` (GN-6o). The in function of
+  `Raised` of U-3. A language object that a core may keep is a `Native` (GN-6u). The in function of
   an alias with `in_raises` runs alone through `__aliasIn<Alias>` of the feature `codec-test` (GN-5); the generated
   test calls it on the module that wasm-bindgen writes, as the tests of `fault-test` call `__armFaults`, and expects the
   class of the category and the kind of each case of the alias (U-7).

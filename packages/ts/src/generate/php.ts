@@ -51,7 +51,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6m, GN-6o: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
+// GN-6m, GN-6u: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
 // out and the result in, and an exception of the PHP code, or a failure of the binding in the call (kind wrong_thread
 // on another thread), goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -159,8 +159,8 @@ pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
 }
 `;
 
-// GN-6o: the entry point of the generated release test: the count of the Natives that the table of this thread holds.
-const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6o: the entry point of the generated release test.
+// GN-6u: the entry point of the generated release test: the count of the Natives that the table of this thread holds.
+const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6u: the entry point of the generated release test.
 #[cfg(feature = "native-count-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\nativeCount`)})]
@@ -1297,7 +1297,7 @@ ${poisonRust(model, layout)}
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
     ${register.join('\n')};${!usesNative(model) ? '' : `
-        // GN-6o: the Natives of a request are released at its end, while the engine is alive.
+        // GN-6u: the Natives of a request are released at its end, while the engine is alive.
         let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `
         #[cfg(feature = "thread-test")]
         let module = module.function(wrap_function!(thread_test));`}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : `

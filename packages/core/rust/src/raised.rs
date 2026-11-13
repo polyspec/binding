@@ -9,7 +9,7 @@ use std::fmt;
 /// doing and returns the `Raised` to the generated code, which throws the same language object again. Only generated
 /// code makes a `Raised` and reads its `Native` (feature `construct`, like the wait tokens), so a core can carry it but
 /// cannot look inside. A core that drops a `Raised` instead of returning it releases the exception, because the last
-/// drop of the `Native` releases what the binding keeps for it (GN-6o). A `Raised` has no kind, status or category:
+/// drop of the `Native` releases what the binding keeps for it (GN-6u). A `Raised` has no kind, status or category:
 /// the caller catches the original object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Raised {

@@ -8,12 +8,12 @@
 - A `Raised` held a bare handle, so the exception under it stayed in the table of the binding when the core dropped
   the `Raised` instead of returning it, and a failure of the binding on another thread stayed in its own table. A
   `Raised` now holds a `Native` (`Raised::from_generated(Native)`, `native()`), whose last drop removes the entry
-  (GN-6o): Python, Go and WASM at the drop; Node and PHP on the thread that threw, at once, or, after a drop on another
+  (GN-6u): Python, Go and WASM at the drop; Node and PHP on the thread that threw, at once, or, after a drop on another
   thread, when that thread next keeps or throws again an exception, and the end of the thread discards its queue. A
   failure of the binding on another thread is held by its `Raised` as its `BindingError`.
 - No generated test gave a language object through a `native` row and back, so a binding that kept or lost the
   object passed. For a value alias with a `native` out row and a function that takes it and gives it back, each target
-  now tests that the object comes back as the same object and that the binding keeps no reference to it (GN-6o):
+  now tests that the object comes back as the same object and that the binding keeps no reference to it (GN-6u):
   Python by `sys.getrefcount` and a `weakref`, Node, PHP and WASM by the count of their owner table, which the entry
   point of the new feature `native-count-test` gives (`__nativeCount`, `Internal\nativeCount`), and Go by the count of
   its live handles (`binding.NativeCount`, build tag `polyspec_native_count_test`). A Go func that enters is now a
@@ -22,23 +22,23 @@
 - `tests/e2e/functions` checked a function type in Python only. It now declares the targets PHP, Node and WASM as
   well, so the end-to-end check runs the stored functions of every target that takes one (GN-6m).
 - WASM refused a member that takes a function type (GN-6m). It now holds the function as a `Native` of the table of
-  the one thread of the module (GN-6o) and declares the parameter as a TypeScript function type; a value that is not a
+  the one thread of the module (GN-6u) and declares the parameter as a TypeScript function type; a value that is not a
   function is kind `invalid_argument_type`. The generated tests of WASM wrote the names of the members of a function
   fixture as PHP strings; they write them as JavaScript strings.
 - PHP refused a member that takes a function type (GN-6m). It now holds the Closure as a `Native` of its owner table
-  (GN-6o), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
+  (GN-6u), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
   feature `thread-test` shows, and a value that is not a Closure is kind `invalid_argument_type`. In Node and PHP a
   failure of the binding in a call on another thread is kept as its `BindingError` in a table that every thread
   reaches, because a language error object is made on the owner thread only, which makes it when the call fails.
 - Node refused a member that takes a function type (GN-6m). It now holds the JavaScript function as a `Native` of
-  its owner table (GN-6o) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
+  its owner table (GN-6u) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
   the env of the table, and a call on another thread is kind `wrong_thread`, which the entry point `__threadTest` of
   the new feature `thread-test` shows. A value that is not a function is kind `invalid_argument_type`. The generated
   tests give a function value of a case as the call of a fixture.
 - The generated bindings kept every language object that entered as a handle in a table that only grew: Python and
   WASM for the life of the process, Node for the life of the thread, PHP until the request ended. A `Date` and an
   `Other` value were kept the same way, and Go walked a func only inside its call. A language object that a core may
-  keep now enters as a `Native` whose last drop releases it by the rule of its target (GN-6o): Python holds the
+  keep now enters as a `Native` whose last drop releases it by the rule of its target (GN-6u): Python holds the
   `Py<PyAny>` and refuses `pyo3_disable_reference_pool`; WASM holds the key of its table; Node and PHP hold the owner,
   its generation and the key, queue a drop on another thread for the owner, empty that queue in `guard` at every entry
   point, and release the table and raise the generation at the env cleanup hook and at the request shutdown; Go holds

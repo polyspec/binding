@@ -7,33 +7,33 @@
 
 - `Raised`는 handle만 가져서, 코어가 `Raised`를 돌려주지 않고 버리면 그 아래의 예외가 바인딩의 표에 남았고, 다른 스레드에서
   난 바인딩의 실패도 그 표에 남았다. 이제 `Raised`는 `Native`를 갖고(`Raised::from_generated(Native)`, `native()`), 그 마지막
-  drop이 항목을 지운다(GN-6o). Python, Go, WASM은 drop에서 지우고, Node와 PHP는 던진 스레드에서 곧바로 지우거나, 다른
+  drop이 항목을 지운다(GN-6u). Python, Go, WASM은 drop에서 지우고, Node와 PHP는 던진 스레드에서 곧바로 지우거나, 다른
   스레드의 drop 뒤에는 그 스레드가 다음에 예외를 보관하거나 다시 던질 때 지우며, 스레드가 끝나면 그 대기열을 버린다. 다른
   스레드에서 난 바인딩의 실패는 그 `Raised`가 `BindingError`로 갖는다.
 - 언어 객체를 `native` 행으로 보냈다가 돌려받는 생성 시험이 없어서, 객체를 붙잡거나 잃는 바인딩도 통과했다. `native` out
   행이 있는 값 alias와 그것을 받아 그대로 돌려주는 함수가 있으면, 이제 각 target이 객체가 같은 객체로 돌아오는지와 바인딩이
-  그 객체의 참조를 남기지 않는지 시험한다(GN-6o). Python은 `sys.getrefcount`와 `weakref`로, Node, PHP, WASM은 새 feature
+  그 객체의 참조를 남기지 않는지 시험한다(GN-6u). Python은 `sys.getrefcount`와 `weakref`로, Node, PHP, WASM은 새 feature
   `native-count-test`의 진입점(`__nativeCount`, `Internal\nativeCount`)이 주는 owner 표의 개수로, Go는 살아 있는 handle의
   개수(`binding.NativeCount`, build tag `polyspec_native_count_test`)로 본다. 들어오는 Go func는 이제 정적 라이브러리가 세는
   `Native`다. end-to-end 확인은 feature 없이 빌드한 정적 라이브러리에 `__native_count`가 있으면 실패한다.
 - `tests/e2e/functions`는 함수 타입을 Python에서만 확인했다. 이제 PHP, Node, WASM target도 선언하므로, end-to-end 확인이
   함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6m).
-- WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6o)로 갖고
+- WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6u)로 갖고
   parameter를 TypeScript 함수 타입으로 선언한다. 함수가 아닌 값은 kind `invalid_argument_type`이다. WASM의 생성된 테스트는
   함수 fixture의 member 이름을 PHP 문자열로 썼는데, 이제 JavaScript 문자열로 쓴다.
-- PHP는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 Closure를 owner 표의 `Native`(GN-6o)로 갖고 `\Closure`로
+- PHP는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 Closure를 owner 표의 `Native`(GN-6u)로 갖고 `\Closure`로
   선언한다. 다른 스레드의 호출은 kind `wrong_thread`이며 feature `thread-test`의 `Internal\threadTest`가 그것을 보이고,
   Closure가 아닌 값은 kind `invalid_argument_type`이다. Node와 PHP에서 다른 스레드의 호출 중 바인딩의 실패는 모든 스레드가
   닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만 만들어지므로, 호출이 실패할 때 owner가 그것을
   만든다.
-- Node는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6o)로 갖고 parameter를
+- Node는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6u)로 갖고 parameter를
   TypeScript 함수 타입으로 선언한다. 호출은 owner 스레드에서 표의 env 안에서 실행되고, 다른 스레드의 호출은 kind
   `wrong_thread`이며, 새 feature `thread-test`의 진입점 `__threadTest`가 그것을 보인다. 함수가 아닌 값은 kind
   `invalid_argument_type`이다. 생성된 테스트는 case의 함수 값을 fixture의 call로 준다.
 - 생성된 바인딩은 handle로 들어온 모든 언어 객체를 커지기만 하는 표에 두었다. Python과 WASM은 프로세스가 끝날 때까지,
   Node는 스레드가 끝날 때까지, PHP는 요청이 끝날 때까지 두었다. `Date`와 `Other` 값도 같이 두었고, Go는 func를 그 호출
   안에서만 다루었다. 이제 코어가 보관할 수 있는 언어 객체는 `Native`로 들어오고, 마지막 drop이 target의 규칙으로 그것을
-  해제한다(GN-6o). Python은 `Py<PyAny>`를 갖고 `pyo3_disable_reference_pool`을 거부한다. WASM은 표의 key를 갖는다. Node와
+  해제한다(GN-6u). Python은 `Py<PyAny>`를 갖고 `pyo3_disable_reference_pool`을 거부한다. WASM은 표의 key를 갖는다. Node와
   PHP는 owner, generation, key를 갖고, 다른 스레드의 drop을 owner의 대기열에 넣으며, 모든 진입점의 `guard`에서 대기열을
   비우고, env cleanup hook과 request shutdown에서 표를 해제하고 generation을 올린다. Go는 func의 `cgo.Handle`을 갖고 `out`
   마다 새 handle을 준다. `Date`와 `Other` 값은 호출 안의 순서로 번호가 매겨진 handle을 받는다. `tests/e2e/sample`의 data

@@ -358,14 +358,14 @@ test('U-3: a function called on another thread is kind wrong_thread (GN-6m)', ()
   assert.equal(addon().__threadTest(() => null), 'wrong_thread');
 });`);
   }
-  // GN-6o: an object goes through the native row and back as the same object, and the binding releases its Native.
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
   const roundTrip = nativeRoundTrip(model.contract, 'node');
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
   if (roundFn !== undefined) {
     usesAddon = true;
     const same = (value: string): string => invoke(roundFn, value, '');
     out.push(`
-test('GN-6o: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
   ${same('new Subject()')};
   const before = addon().__nativeCount();
   const subject = new Subject();
@@ -391,7 +391,7 @@ import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } fro
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6o: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {
