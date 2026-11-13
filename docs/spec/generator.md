@@ -18,7 +18,7 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none`, a default
+  recognizing callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
@@ -433,6 +433,24 @@ the design ids are those of the binding design.
   name of a member meets a naming convention that the lints judge for methods (`from_*` with `self`, the names of the
   methods of std traits); a hook keeps the name the language calls (N-4). A field of a scalar of T-1 is passed to its
   WASM conversion by value, because a borrow of a `Copy` value is needless.
+- **GN-6m** A member with `wait: blocking_io` (B-5 (a)) passes `binding_core::Io::for_generated_call()` to its core
+  function as the first argument after the receiver (I-2 (4)), and each language waits in its own form:
+  - PHP calls the core on the calling thread, which blocks until the core returns.
+  - Python: `<name>` converts the arguments with the GIL held and runs the core call in `py.detach`, so other Python
+    threads run while the core waits. The object or module also has `a<name>`, an awaitable that runs `<name>` with the
+    same arguments in `asyncio.to_thread`, so an event loop does not block; its arguments are judged when `<name>` runs
+    in that thread (CK-66 keeps the name apart from the other members).
+  - Node returns a `Promise`. The entry point converts the arguments, takes the locks of its places and the arming of
+    its faults on the JavaScript thread, runs the core call on the libuv pool (`Env::spawn` of a `ScopedTask`) and
+    converts the result or the error on the JavaScript thread; a panic of the call rejects the promise with kind
+    `internal` (B-7). The declarations name `Promise<T>`, and the generated tests await the call.
+  - Go hands the work to the core in a cgo call that returns at once; the calling goroutine waits on the completion
+    channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
+    thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
+  - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
+  A member that waits and takes a callback or a value of language code, and a constructor, a property or an iterate
+  that waits, are refused by name, because the core would reach language code off the thread of the call or the
+  language has no awaited form of them; `process_wait` and `async_driver` are refused by name (G-4).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,
