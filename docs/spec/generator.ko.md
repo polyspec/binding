@@ -253,7 +253,8 @@
   class의 인스턴스로 부른다. 생성 코드는 key와 값 타입의 value를 받는 그 class의 공개 method로 각 entry를
   순서대로 넣고, key는 kind `text`의 행으로 만든다. 그 밖의 `make`는 이름으로 거절한다(G-4). Python,
   Node, PHP는 이렇게 주고받는다. WASM은 owner의 WASM 패키지의 JavaScript class로 Node와 같이
-  주고받는다(GN-18b). Go는 인스턴스 값의 case 꼴이 생성될 때까지(GN-13f) 이름으로 거절한다.
+  주고받는다(GN-18b). Go는 owner class의 Go 타입으로 받으며, GN-15c의 host 질문에 대한 답이 그
+  `by`와 `read` member를 부른다. 줄 때는 `out` 행이 적은 owner Go 패키지의 export 함수로 만든다.
 - **GN-6f** class의 kind `iterate` member(N-4)는 `&self`로 코어를 불러, 빌린 항목이나 `yields: {key, value}`면 빌린 key와
   value의 iterator를 받는다. 바인딩은 순회가 시작될 때 모든 항목을 변환한다(class 값의 snapshot, 값 타입은 값으로, class는
   코어 값의 복사로). Python은 `__iter__`로 항목을 주거나, dict처럼 `__iter__`로 key를, `items()`로 쌍을 준다. Node는 class를

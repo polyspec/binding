@@ -306,8 +306,9 @@ the design ids are those of the binding design.
   class made by its public constructor without parameters, to which the generated code gives each entry in order
   through its public method that takes a key and a value of the value type, the key made by the row of the kind
   `text`. Any other `make` is refused by name (G-4). Python, Node and PHP take and give it so; WASM takes and gives it
-  as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go refuses it by name until the
-  case form of an instance value is generated (GN-13f).
+  as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go takes it as the Go type of the
+  owner's class, whose `by` and `read` members the answers of the host questions of GN-15c call, and gives it by the
+  exported functions of the owner's Go package that the `out` rows name.
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
