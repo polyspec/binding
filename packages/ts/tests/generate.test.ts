@@ -7,6 +7,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
@@ -190,6 +191,31 @@ test('an integer return widens a narrower Rust integer with From (T-1)', () => {
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     assert.match(text(out, path), /fn out_uint[^\n]*value: impl WideUint\)/, path);
     assert.match(text(out, path), /wide_uint!\(u8, u16, u32, u64\);/, path);
+  }
+});
+
+test('a core with fault injection points has itself as a dev-dependency with fault-test, so cargo test without flags arms them (CK-65, GN-5)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-s-'));
+  try {
+    execFileSync('cp', ['-r', fileURLToPath(new URL('../../../tests/e2e/sample/', import.meta.url)), `${root}/`]);
+    const contract = join(root, 'packages/rust/interface.json');
+    const manifestPath = join(root, 'packages/rust/Cargo.toml');
+    execFileSync(process.execPath, [cli, 'scaffold', '--root', root]);
+    writeFileSync(join(root, 'Cargo.lock'), lock(version));
+    const run = (): ReturnType<typeof spawnSync> => spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
+    const passed = run();
+    assert.equal(passed.status, 0, String(passed.stderr));
+    const manifest = readFileSync(manifestPath, 'utf8');
+    const self = /\npolyspec-sample = \{ path = "\.", features = \["fault-test"\] \}\n/;
+    assert.match(manifest, self);
+    writeFileSync(manifestPath, manifest.replace(self, '\n'));
+    const missing = run();
+    assert.equal(missing.status, 1, String(missing.stderr));
+    assert.match(String(missing.stderr), /packages\/rust\/Cargo\.toml: CK-65 the core polyspec-sample has fault injection points, but its \[dev-dependencies\] name no polyspec-sample = \{ path = "\.", features = \["fault-test"\] \}/);
+    writeFileSync(manifestPath, manifest.replace(self, '\npolyspec-sample = { path = "." }\n'));
+    assert.match(String(run().stderr), /CK-65 the core polyspec-sample has fault injection points/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
