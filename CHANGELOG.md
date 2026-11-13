@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A method with `wait: async_driver` that reaches language code was refused ("a method with machine is not generated,
+  because its machine would borrow its receiver"), so `db.transaction`, `tx.savepoint` and `db.close` of orm were
+  generated in no target. Such a method now names the receiver `&self`, and every target gives its core path a clone
+  of the value of the instance, `Clone::clone(&*receiver)`, by value before its arguments, so the machine owns a
+  handle whose clones share one state; `binding check` reports another receiver of a method with machine (CK-69,
+  GN-6ae). A parameter of a function type, a result `passthrough` and an awaited `async_allowed` function, which GN-6ae
+  states with the function fixture of a case, are not generated yet (defect 86). Verified by `npm test` in
+  `packages/ts`.
 - The end-to-end sample had no contract case of a callback that raises, so only the generated test K-2 of each
   target showed what a member that takes a callback does with an exception of language code. The sample now has the
   error unit `refused_error` of the kind `refused`, which `lookup.find` recognizes through `Error::recognized` (U-3),

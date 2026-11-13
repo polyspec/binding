@@ -404,7 +404,8 @@ export function collectModel(
       // state machine; a machine that borrowed its receiver across its steps would borrow from the guard of the driver.
       if (reachesCode && member.wait === 'async_driver') {
         if (typeof member.core !== 'object' || member.core.machine !== true) throw new Unsupported(`${member.id}: a member with wait async_driver that reaches language code names machine: true in its core (GN-6ab, CK-68)`);
-        if (kind === 'method') throw new Unsupported(`${member.id}: a method with machine is not generated, because its machine would borrow its receiver (GN-6ab)`);
+        // GN-6ae, CK-69: a method with machine gives the core a clone of the value of its instance.
+        if (kind === 'method' && typeof member.core === 'object' && member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a method with machine names the receiver &self (GN-6ae, CK-69)`);
         for (const p of member.parameters ?? []) {
           if (p.default !== undefined) throw new Unsupported(`${member.id}.${p.name.join('_')}: a parameter with a default of a member with machine is not generated yet (GN-6ab)`);
           if (p.core !== undefined && p.core !== 'value') throw new Unsupported(`${member.id}.${p.name.join('_')}: a machine owns its arguments, so a class parameter of a member with machine takes the borrow value (GN-6ab)`);
@@ -1152,7 +1153,13 @@ export const fieldsOf = (unit: Unit): Field[] => unit.fields ?? [];
 export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string): string[] {
   const held = places(model, fn);
   // GN-6ab: a state machine owns its arguments, so the core takes each by value, a class by the clone of its value.
-  if (fn.machine === true) return fn.params.map((p) => (held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
+  if (fn.machine === true) {
+    const owned = fn.params.map((p) => (held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
+    if (fn.receiver === undefined) return owned;
+    // GN-6ae: the receiver is a clone of the value of the instance, a handle whose clones share one state.
+    const value = held.some((h) => h.param === undefined) ? RECEIVER_GUARD : receiver;
+    return [`Clone::clone(&*${value})`, ...owned];
+  }
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
     // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.

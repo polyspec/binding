@@ -1761,6 +1761,9 @@ class Checker {
       const machine = typeof member.core === 'object' && member.core.machine === true;
       if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
       if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
+      // CK-69, GN-6ae: the core of a method with machine takes a clone of the value of the instance.
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (machine && needs && member.kind === 'method' && receiver !== '&self') this.report('CK-69', `${path}/core/receiver`, `${member.id} has a state machine, which takes a clone of the value of its instance, so its receiver is &self (GN-6ae)`);
     }
   }
 

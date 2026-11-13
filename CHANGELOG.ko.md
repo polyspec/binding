@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 언어 코드에 닿는 `wait: async_driver` method는 거부되어("a method with machine is not generated, because its machine
+  would borrow its receiver") orm의 `db.transaction`, `tx.savepoint`, `db.close`는 어느 target에서도 생성되지 않았다.
+  이제 그런 method는 receiver `&self`를 적고, 모든 target은 인스턴스 값의 clone `Clone::clone(&*receiver)`을 인자보다
+  앞에 값으로 코어 경로에 주므로, machine은 clone들이 한 상태를 나누는 handle을 소유한다. `binding check`는 machine이
+  있는 method의 다른 receiver를 보고한다(CK-69, GN-6ae). GN-6ae가 case의 함수 fixture와 함께 적는 함수 타입의
+  parameter, 결과 `passthrough`, 기다리는 `async_allowed` 함수는 아직 생성하지 않는다(결함 86). `packages/ts`에서
+  `npm test`로 확인했다.
 - end-to-end sample에는 예외를 던지는 callback의 계약 case가 없어서, callback을 받는 member가 언어 코드의 예외를 어떻게
   다루는지는 각 target의 생성 테스트 K-2만 보였다. 이제 sample에는 `lookup.find`가 `Error::recognized`로 인식하는(U-3)
   kind `refused`의 오류 unit `refused_error`가 있고, `sample.resolve_driven`의 case
