@@ -12,10 +12,9 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6n), host unit은 아무것도 쓰지 않는다(GN-6o). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
-  다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6p), host unit은 아무것도 쓰지 않는다(GN-6o). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
+  recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  `self`, unit의 `only`, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -236,7 +235,7 @@
   raises가 있는 iterate와 class의 두 번째 iterate는 이름을 대고 거부한다(G-4).
 - **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
   코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
-  `toJSON`, PHP `jsonSerialize`이고 그 PHP class는 `\JsonSerializable`을 구현한다. Python에는 JSON hook이 없으므로 그
+  `toJSON`, PHP `jsonSerialize`(그 PHP class는 `\JsonSerializable`을 구현한다), Go `MarshalJSON`(GN-15a)이다. Python에는 JSON hook이 없으므로 그
   member가 없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
   인터페이스를 주고, 그것을 한 번 더 적은 class를 확장이 로드될 때 거부하기 때문이다. stub은 그 인터페이스를 선언한다. Node의
   hook은 진입 파일의 인자 검사(G-7) 없이 자기 이름을 가진 addon의 메서드다. 언어가 hook을 자기 규약의 인자로 부르기
@@ -372,19 +371,38 @@
   - PHP는 호출 스레드에서 코어를 부르고, 코어가 돌아올 때까지 그 스레드가 막힌다.
   - Python: `<name>`은 GIL을 쥔 채 인자를 바꾸고 코어 호출을 `py.detach`에서 돌린다. 그래서 코어가 기다리는 동안 다른
     Python 스레드가 돈다. 객체나 module은 `a<name>`도 가진다. 이것은 같은 인자로 `<name>`을 `asyncio.to_thread`에서 돌리는
-    awaitable이라서 이벤트 루프를 막지 않는다. 그 인자는 그 스레드에서 `<name>`이 돌 때 판정된다(CK-66이 이 이름을 다른
-    member와 떼어 둔다).
+    awaitable이라서 이벤트 루프를 막지 않는다. 그 인자는 그 스레드에서 `<name>`이 돌 때 판정된다(CK-16이 이 이름을 다른
+    member와 예약어에서 떼어 둔다).
   - Node는 `Promise`를 돌려준다. 진입점은 JavaScript 스레드에서 인자를 바꾸고 자리의 잠금과 fault 장전을 가져온 뒤, 코어
     호출을 libuv 풀에서 돌리고(`ScopedTask`의 `Env::spawn`), 결과나 오류를 JavaScript 스레드에서 바꾼다. 호출의 panic은
-    kind `internal`로 promise를 거부한다(B-7). 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
+    kind `internal`로 promise를 거부한다(B-7). member의 JavaScript 진입은 async 함수다. 그래서 인자의 실패를 포함한 모든
+    실패가 promise를 거부하고, 호출 자리에서 던져지는 실패는 없다. 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
   - Go는 cgo 호출로 작업을 코어에 넘기고 곧바로 돌아오며, 호출 goroutine은 그 작업의 완료 channel에서 기다린다. 코어는
     export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
     `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
-  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate는 이름을 대고 거부한다.
-  코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없기 때문이다. `process_wait`와
-  `async_driver`도 이름을 대고 거부한다(G-4).
-- **GN-6n** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 테스트로 생성하고,
+  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate·hook(N-4)은 이름을
+  대고 거부한다. 코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도
+  기다리지 않는 자기 protocol로 부르기 때문이다. `process_wait`도
+  이름을 대고 거부한다(G-4).
+- **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
+  tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. 진입점은 GN-6m처럼 호출
+  스레드에서 인자를 바꾸고 잠금과 fault 장전을 가져오며, future가 그것을 가진다. future는 바꾼 값과 소유한 guard 위의
+  `async move`이므로 `Send + 'static`이다. fault는 poll마다 설치되고(`fault::Armed::around`), poll의 panic은 kind
+  `internal`의 실패다(`driver::Caught`, B-7). 언어마다 GN-6m의 꼴로 기다린다:
+  - PHP는 future를 binding_core의 runtime에서 `binding_core::driver::block_on`으로 돌리고, 끝날 때까지 호출 스레드가
+    막힌다.
+  - Python: `<name>`은 `py.detach` 안에서 `binding_core::driver::block_on`을 돌리고, `a<name>`은 GN-6m처럼 `<name>`을
+    `asyncio.to_thread`에서 돌린다.
+  - Node는 `Promise`를 돌려준다. future는 napi의 tokio runtime에서 돌고(`Env::spawn_future_with_callback`, napi feature
+    `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
+    JavaScript 진입은 GN-6m처럼 async 함수다.
+  - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다.
+  이유: 네트워크 protocol을 쓰는 코어는 async이고, 호출자의 것을 빌리지 않는 future는 runtime의 어느 스레드에서도 돌 수
+  있다. 그동안 각 언어의 호출자는 자기 언어의 꼴로 기다린다.
+- **GN-6p** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 테스트로 생성하고,
   각 언어는 그것을 공개 API가 아니라고 표시한다.
   - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
   - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
@@ -420,8 +438,10 @@
   `New<Class>`(`constructible`이 false이면 없음), static member는 함수 `<Class><Member>`(CK-13), method와 property는
   호출이 끝날 때까지 receiver를 살려 두는(`runtime.KeepAlive`) `*<Class>`의 method다. iterate는 C ABI가 모은 항목에 대한
   `iter.Seq[T]`나 `iter.Seq2[K, V]`를 돌려주고, stringify는 `String()`이며 `fmt.Stringer`에 오류 결과가 없으므로 코어의
-  오류로 panic한다. 다른 module의 class·callback unit은 이름으로 거부하고(handle과 dispatch가 내보내지 않은 것이다),
-  member `to_json`도 거부한다(encoding/json은 값의 내보낸 field를 읽는데 class는 handle만 담는다).
+  오류로 panic한다. 다른 module의 class·callback unit은 이름으로 거부한다(handle과 dispatch가 내보내지 않은 것이다).
+  to_json은 `json.Marshaler`의 `MarshalJSON`이다. 코어가 준 값을 `encoding/json`으로 marshal하고 코어의 오류를 돌려주므로
+  인스턴스의 `json.Marshal`은 코어가 정한 JSON 꼴을 준다. `never`를 돌려주는 to_json은 오류만 돌려준다. `never`를
+  돌려주는 member는 `error` 앞에 결과가 없다.
 - **GN-15b** Go callback unit(U-3, K-2): callback unit은 결과와 `error`를 돌려주는 method의 Go interface다. C ABI는
   callback을 호출과 Go 값의 handle로 잡고 export `<prefix>__go_callback`으로 되부르며, nil callback은 kind
   `invalid_callback`이다. method가 돌려준 오류는 코어를 멈추고 같은 오류 값으로 호출자에게 돌아온다. 호출은 그 값을 끝날
@@ -430,7 +450,9 @@
   Go 값을 읽으므로(종류, 항목, `fmt.Sprint` 순서의 map key) 코어의 `in` 함수가 복사 없이 값을 돈다. `in` 함수의 kind는 그
   category의 오류이며, 다른 레포의 alias는 소유 레포의 E-1을 따른다. 코어 값은 내장 형태인 첫 `out` 행의 Go 값으로
   나간다: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`, `map[string]any`, `*KeyedMap[any]`.
-  `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
+  member로 값을 만드는 행(GN-6e)은 class의 인스턴스를 준다. C ABI는 계약 안 class의 번호와 값의 handle을 적고, class의
+  module 패키지가 그 번호로 인스턴스를 만든다. `internal/binding`은 그 패키지를 import하지 않기 때문이다. 그런 값을
+  주는 다른 module의 member는 이름으로 거부한다. 그 class의 패키지만 인스턴스를 만들기 때문이다. `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
@@ -438,7 +460,7 @@
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
-  bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안의 tuple `[N]T`(원소 타입 하나), tuple 반환은 여러 결과.
+  bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.
   Go 문자열은 바이트다: text는 바이트로 넘기고 C ABI가 UTF-8이 아닌 바이트를 kind `invalid_text`로 거부한다(B-3). latin1은
   U+0000~U+00FF의 rune이 바이트마다 하나인 Go 문자열이다(Go는 문자열을 UTF-8로 읽기 때문이다): C ABI는 UTF-8로 받아 U+00FF를
   넘는 rune을 kind `invalid_text`로 거부하고, 바이트는 같은 code point의 rune으로 나간다(B-8, 모든 언어와 같은 규칙). 코어의
@@ -556,7 +578,7 @@
   `{"function": [<행>]}`로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
-  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
+  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`, `json_encode`, Go에서는 내보내지 않은 `toJSON`을 부른다(Go의 stringify 시험이 `stringify`를 부르는 것과 같다). 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
   poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
   parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
   가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한 뒤

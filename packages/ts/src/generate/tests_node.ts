@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf, awaits } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
@@ -65,6 +65,27 @@ function outcome(call) {
 }
 `;
 
+// GN-6m: what a call that may wait gives: its result, or the class and the kind of its failure.
+const NODE_SETTLED = `
+async function settled(call) {
+  try {
+    return { result: await call() };
+  } catch (error) {
+    return { error: error.constructor, kind: error.kind };
+  }
+}
+`;
+
+// GN-6m: a test that calls a member that waits awaits it: the test is an async function, a failure is a rejection and
+// an outcome is settled.
+const awaitedTest = (block: string): string => {
+  if (!/\bawait /.test(block)) return block;
+  return block
+    .replace(/^(\ntest\('[^\n]*?'), \(\) => \{/, '$1, async () => {')
+    .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ')
+    .replaceAll('outcome(() => ', 'await settled(async () => ');
+};
+
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them, as host code does; the package's own
@@ -90,7 +111,9 @@ export function nodeTests(model: Model): string {
   let usesFixture = false;
   let usesErrno = false;
   let usesAddon = false;
-  const invoke = (fn: Fn, args: string, receiver: string): string => {
+  // GN-6m: a call of a member that waits is awaited where it is made.
+  const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
+  const called = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('node', fn.member.name, 'callable');
@@ -125,7 +148,9 @@ export function nodeTests(model: Model): string {
   const made = (receiver: Receiver): string => {
     if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
     const built = madeLines(model, form, receiver);
-    return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
+    const body = `${built.lines.join(' ')} return ${built.expr};`;
+    // GN-6m: a receiver that a call that waits makes is awaited.
+    return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
   };
   ctx.instanceNew = made;
   let usesOutcome = false;
@@ -349,6 +374,9 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
+  const blocks = out.map(awaitedTest);
+  usesOutcome = blocks.some((block) => block.includes('outcome('));
+  const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -357,7 +385,7 @@ import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } fro
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
+${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {
@@ -377,7 +405,7 @@ test('the CommonJS and the ESM entries share their classes', () => {
   const cjs = require(${jsString(cjsEntry)});
   assert.equal(cjs.${cls('value')}, pkg.${cls('value')});
 });
-${out.join('\n')}
+${blocks.join('\n')}
 `;
 }
 

@@ -77,7 +77,7 @@ def _outcome(call):
 `;
 
 export function pythonTests(model: Model, module: string): string {
-  // GN-6n: a name of an internal unit is called in the module of the internal names of its module, which the test
+  // GN-6p: a name of an internal unit is called in the module of the internal names of its module, which the test
   // imports when it is not the root module.
   const internalModules = new Set<string>();
   const ref = (unit: Unit | undefined): string => {

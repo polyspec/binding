@@ -11,7 +11,7 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for public and internal units
-  (GN-6n), and nothing for a host unit (GN-6o):
+  (GN-6p), and nothing for a host unit (GN-6o):
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
@@ -19,13 +19,12 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
+  recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
+  `self`, `only` of a unit, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
-  parameter.
+  record of another repository, and a class or a callback unit of another module (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -289,8 +288,8 @@ the design ids are those of the binding design.
   iterate of a class, is refused by name (G-4).
 - **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
   of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
-  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node and `jsonSerialize` in PHP, whose class
-  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. The PHP extension names no
+  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node, `jsonSerialize` in PHP, whose class
+  implements `\JsonSerializable`, and `MarshalJSON` in Go (GN-15a); Python has no JSON hook, so the member is absent there. The PHP extension names no
   `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
   and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
   addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
@@ -452,19 +451,39 @@ the design ids are those of the binding design.
   - Python: `<name>` converts the arguments with the GIL held and runs the core call in `py.detach`, so other Python
     threads run while the core waits. The object or module also has `a<name>`, an awaitable that runs `<name>` with the
     same arguments in `asyncio.to_thread`, so an event loop does not block; its arguments are judged when `<name>` runs
-    in that thread (CK-66 keeps the name apart from the other members).
+    in that thread (CK-16 keeps the name apart from the other members and from the reserved words).
   - Node returns a `Promise`. The entry point converts the arguments, takes the locks of its places and the arming of
     its faults on the JavaScript thread, runs the core call on the libuv pool (`Env::spawn` of a `ScopedTask`) and
     converts the result or the error on the JavaScript thread; a panic of the call rejects the promise with kind
-    `internal` (B-7). The declarations name `Promise<T>`, and the generated tests await the call.
+    `internal` (B-7). The JavaScript entry of the member is an async function, so that every failure, also one of the
+    arguments, rejects the promise and none is thrown at the call. The declarations name `Promise<T>`, and the
+    generated tests await the call.
   - Go hands the work to the core in a cgo call that returns at once; the calling goroutine waits on the completion
     channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
     thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
-  A member that waits and takes a callback or a value of language code, and a constructor, a property or an iterate
-  that waits, are refused by name, because the core would reach language code off the thread of the call or the
-  language has no awaited form of them; `process_wait` and `async_driver` are refused by name (G-4).
-- **GN-6n** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
+  A member that waits and takes a callback or a value of language code, and a constructor, a property, an iterate or
+  a hook (N-4) that waits, are refused by name, because the core would reach language code off the thread of the call
+  or the language has no awaited form of them, or calls a hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
+- **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
+  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs.
+  The entry point converts the arguments and takes the locks and the arming of its faults on the calling thread, as
+  GN-6m states, and the future owns them: it is `async move` over the converted values and the owned guards, so it is
+  `Send + 'static`. Its faults are installed around each poll (`fault::Armed::around`), and a panic of a poll is a
+  failure of kind `internal` (`driver::Caught`, B-7). Each language waits in the form of GN-6m:
+  - PHP runs the future in `binding_core::driver::block_on`, on the runtime of binding_core, and the calling thread
+    blocks until it ends.
+  - Python: `<name>` runs `binding_core::driver::block_on` in `py.detach`, and `a<name>` runs `<name>` in
+    `asyncio.to_thread`, as GN-6m states.
+  - Node returns a `Promise`: the future runs on the tokio runtime of napi (`Env::spawn_future_with_callback`, the
+    napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
+    error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
+  - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
+  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
+  A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
+  Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
+  thread of a runtime, while the caller of each language waits in the form that its language has.
+- **GN-6p** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
   same conversions, refusals and generated tests, and each language marks it as no public API:
   - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
   - Python: its names are in no `__all__`, so `<root>` does not re-export them. The names of the root module are in
@@ -510,8 +529,10 @@ the design ids are those of the binding design.
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
   panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
-  module is refused by name (its handle and dispatch are unexported), and a member `to_json` too (encoding/json reads
-  the exported fields of a value, and a class holds only a handle).
+  module is refused by name (its handle and dispatch are unexported). A to_json is `MarshalJSON` of `json.Marshaler`,
+  which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
+  `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
+  error alone. A member that returns `never` has no result before its `error`.
 - **GN-15b** Go callback units (U-3, K-2): a callback unit is a Go interface whose methods return their result and
   `error`. The C ABI holds a callback as the handle of the call and of the Go value, calls back through the export
   `<prefix>__go_callback`, and a nil callback is kind `invalid_callback`. An error that a method returns stops the
@@ -521,8 +542,12 @@ the design ids are those of the binding design.
   `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the
   error of its category, for an alias of another repository by the E-1 of its owner. A core value leaves as the Go
   value of the first `out` row of a built-in form: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`,
-  `map[string]any`, or `*KeyedMap[any]`. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in`
-  function of an alias of this repository alone.
+  `map[string]any`, or `*KeyedMap[any]`. A row that makes the value by a member (GN-6e) gives the instance of the
+  class: the C ABI writes the number of the class in the contract and the handle of the value, and the package of the
+  module of the class makes the instance by that number, because `internal/binding` does not import that package. A
+  member of another module that gives such a value is refused by name, because only the package of the class makes
+  its instance. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in` function of an alias of
+  this repository alone.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
@@ -531,8 +556,10 @@ the design ids are those of the binding design.
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
-  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
-  type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
+  `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
+  `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
+  whose fields `P0` to `P<N-1>` hold the parts in order and which a package that names it declares as an alias, as it
+  does `Map` (a Go array has one element type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
   that are not UTF-8 as kind `invalid_text` (B-3); latin1 is a Go string of runes U+0000 to U+00FF, one per byte,
   because Go reads a string as UTF-8: the C ABI takes it as UTF-8 and refuses a rune above U+00FF as kind
   `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
@@ -679,7 +706,7 @@ the design ids are those of the binding design.
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  test of a to_json calls `JSON.stringify`, `json_encode` or or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a

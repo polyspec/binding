@@ -1117,6 +1117,10 @@ class Checker {
         if (other !== undefined) {
           this.report('CK-16', `${path}${pointer('members', m)}`, `the Python awaitable ${name} of ${member.id} is the name of ${other} (N-5)`);
         }
+        // GN-6m: the generator writes the awaitable under this name, which a reserved word cannot be.
+        if (PYTHON_RESERVED.includes(name)) {
+          this.report('CK-16', `${path}${pointer('members', m)}`, `the Python awaitable ${name} of ${member.id} is a reserved word of Python (N-5, GN-6m)`);
+        }
       }
     }
   }
@@ -1134,7 +1138,7 @@ class Checker {
       if (reserved === undefined) continue;
       const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
       for (const { value: unit, path } of this.units.values()) {
-        // GN-6n: the generated code declares the names of an internal unit as those of a public one.
+        // GN-6p: the generated code declares the names of an internal unit as those of a public one.
         if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');

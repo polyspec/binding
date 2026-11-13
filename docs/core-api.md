@@ -14,6 +14,9 @@ types of the design rules named below and no rule of any library.
   (the entries of `OrderedMap`).
 - Feature `lock`: adds `Exclusive`, `Shared`, `Reading` and `Writing` and the dependency `tokio` 1.54.1 with `sync`
   only. The binding crates of Python, Node and PHP enable it; a core crate does not (B-5c).
+- Feature `driver`: adds `driver::block_on` and `driver::Caught` and the dependency `tokio` 1.54.1 with `rt-multi-thread`.
+  The binding crates of PHP, Python and Node of a contract with a member of `wait: async_driver` enable it (GN-6n); a
+  core crate does not.
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
 - Feature `fault-test`: compiles the arming of fault injection points (`fault::Armed`, `arm`, `take`, `left`) with the
@@ -63,6 +66,9 @@ types of the design rules named below and no rule of any library.
 | `fault::Injected` | G-5 | `Io { errno: Option<i32> }` (the I/O call of the place fails, with the target's value of the fault's errno symbol), `Short { bytes: u64 }` (the read or write handles that many bytes and ends), `Broken` (the invariant of the place is broken). |
 | `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | With `fault-test`. Arms the JSON list of a case's `faults` (`point`, `kind`, `errno`, `bytes`, `nth`) for the next call of the member id from this thread and gives the id of the arming. A fault fires once, at the `nth` visit of its point (1 without `nth`). An errno symbol is one of POSIX that Linux and macOS both have; a symbol that the target does not have, or a target without errno, is `ArmError::Errno`. |
 | `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | With `fault-test`. A generated entry point takes the arming of its member and thread, or an empty one, in its synchronous part, moves it with its work and runs the work in `run`, which installs the arming on the thread and puts the earlier one back, also after a panic. `point` reads only the installed arming, so an entry point that a callback enters does not see the outer arming, and a task or thread that the core starts does not inherit it. |
+| `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | With `fault-test`. A future that installs the arming around each poll of `future` and puts the earlier one back after it, also after a panic, so that the points of an `async fn` see the arming of their call on any thread of the runtime. |
+| `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | With `driver`. Runs `future` on the runtime of the process, a multi-thread tokio runtime with every driver of the build, which the first call makes; the calling thread waits until the future ends. A runtime that cannot be made is `BindingError::Internal`. A thread of that runtime does not call it. |
+| `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | With `driver`. A future whose output is `Result<F::Output, String>`: a panic of a poll of `future` ends it with the message of the panic, which generated code gives as kind `internal`. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | With `fault-test`. The points of the arming whose fault did not fire, and forgets the arming; a generated test requires it to be empty. |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`; `Display`, `std::error::Error`. |
 

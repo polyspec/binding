@@ -1216,7 +1216,7 @@ export function enter(Internal, call) {
 }
 
 function indexDts(model: Model): string {
-  // GN-6n: the JSDoc of a declaration of an internal unit holds @internal.
+  // GN-6p: the JSDoc of a declaration of an internal unit holds @internal.
   const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
