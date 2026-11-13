@@ -1586,6 +1586,35 @@ test('a Python case value deeper than the parser takes is made step by step in l
   assert.match(py, /def test_gn13e_show_deep\(self\) -> None:\n[^\n]*pkg\.show\(_deep_0\(\)\)/);
 });
 
+test('a member named by a word that JavaScript reserves is defined by its key, and the entry parses (GN-6b, GN-18a)', () => {
+  const RESERVED = [
+    'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum',
+    'export', 'extends', 'false', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof',
+    'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'eval', 'arguments',
+  ];
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  for (const word of RESERVED) {
+    token.members.push({ id: `token.${word}_static`, name: [word], kind: 'static', visibility: 'public', parameters: [{ name: ['text'], type: 'text', required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::word' } });
+  }
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/index.cjs');
+  for (const word of RESERVED) assert.ok(!new RegExp(`function ${word}\\(`).test(node), `no function expression is named ${word}`);
+  assert.match(node, /Object\.defineProperty\(Token, "null", \{\n\s+value: \{ \["null"\]\(\.\.\.args\) \{/);
+  const dir = mkdtempSync(join(tmpdir(), 'binding-reserved-'));
+  try {
+    writeFileSync(join(dir, 'index.cjs'), node);
+    writeFileSync(join(dir, 'index.mjs'), text(out, 'packages/ts/wasm/generated/index.mjs'));
+    for (const file of ['index.cjs', 'index.mjs']) {
+      const checked = spawnSync(process.execPath, ['--check', join(dir, file)], { encoding: 'utf8' });
+      assert.equal(checked.status, 0, `${file} parses: ${checked.stderr}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
