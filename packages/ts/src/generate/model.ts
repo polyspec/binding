@@ -1210,6 +1210,13 @@ export const ownOption = (arg: { type: Type; default?: Default }): boolean => ar
 // itself for one of an optional type.
 export const argType = (model: Model, arg: Arg): string => (arg.default === undefined || ownOption(arg) ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
 
+// GN-6i, GN-13d: whether a type takes null as a value: an optional type, and a value alias, which its core judges.
+export const takesNull = (model: Model, type: Type): boolean => (typeof type === 'object' && 'optional' in type) || aliasOf(model, type) !== undefined;
+
+// U-2, GN-15e: whether Go takes an argument as a pointer to its type, nil when it is left out; an optional type with a
+// default keeps its own pointer.
+export const pointed = (arg: { type: Type; default?: Default }): boolean => arg.default !== undefined && !ownOption(arg);
+
 // U-2, GN-6i: the conversion of an argument that may be left out, from the call of in_default; the Option of an
 // optional type is flattened, so that a value left out and a null are both None.
 export const leftOut = (arg: Arg, call: string): string => (ownOption(arg) ? `${call}.map(Option::flatten)` : call);

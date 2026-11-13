@@ -194,7 +194,7 @@ pub struct PadOptions {
     pub side: Option<Side>,
     /// The least width of the text; `None` is the width of the text (SH-2: a computed default).
     pub width: Option<u64>,
-    /// What comes after the filled text; `None` is nothing (a `{literal: null}` default).
+    /// What comes after the filled text; `None` is nothing (SH-3: a `{literal: null}` default).
     pub end: Option<String>,
 }
 

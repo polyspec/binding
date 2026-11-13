@@ -1451,7 +1451,7 @@ test('a default of an optional type is one Option, None when it is left out or n
   // GN-15e: in Go the optional type keeps its one pointer.
   const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
   assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);
-  assert.match(goShapes, /\tEnd \*string\n/);
+  assert.match(goShapes, /\tEnd +\*string\n/);
   assert.doesNotMatch(goShapes, /\*\*/);
   assert.doesNotMatch(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /Option<Option</);
   // G-4: another default of an optional type is refused by name.

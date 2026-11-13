@@ -21,7 +21,7 @@ import {
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
-  objectUnit, places, pointName, unitOf,
+  objectUnit, places, pointName, pointed, unitOf,
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue,
@@ -156,7 +156,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
         throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
       }
       const inner = value(v, b, f.type, fields[key]);
-      return `${goName(f.name)}: ${f.default === undefined || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
+      return `${goName(f.name)}: ${!pointed(f) || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
     }).join(', ')}}`;
   }
   throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
@@ -262,14 +262,14 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
         const arg = fn.args.find((a) => a.field && a.name === f.name);
         const text = arg === undefined ? undefined : given(arg);
         if (text === undefined) return `${goName(f.name)}: ${f.default === undefined ? placeholder(v, b, f.type) : 'nil'}`;
-        return `${goName(f.name)}: ${f.default === undefined || text === 'nil' ? text : pointerTo(v, f.type, text)}`;
+        return `${goName(f.name)}: ${!pointed(f) || text === 'nil' ? text : pointerTo(v, f.type, text)}`;
       });
       return `${typeName(v, p.type)}{${fields.join(', ')}}`;
     }
     const arg = fn.args.find((a) => !a.field && a.name === p.name);
     const text = arg === undefined ? undefined : given(arg);
     if (text === undefined) return arg?.default === undefined ? placeholder(v, b, p.type) : 'nil';
-    return arg?.default === undefined || text === 'nil' ? text : pointerTo(v, p.type, text);
+    return arg === undefined || !pointed(arg) || text === 'nil' ? text : pointerTo(v, p.type, text);
   });
 }
 

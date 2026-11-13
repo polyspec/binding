@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, takesNull } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -177,7 +177,8 @@ export function pythonTests(model: Model, module: string): string {
             ${call(new Map([[arg, unsafeKey]]))}
         self.assertEqual(caught.exception.kind, "invalid_number")`);
       }
-      if (arg.default !== undefined) {
+      // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
+      if (arg.default !== undefined && !takesNull(model, arg.type)) {
         out.push(`
     def test_u2_${name}_${argName}_takes_none_as_a_value(self) -> None:
         with self.assertRaises((pkg.${cls('value')}, pkg.${cls('type')})) as caught:

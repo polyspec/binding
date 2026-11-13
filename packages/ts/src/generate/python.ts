@@ -1103,7 +1103,16 @@ function nativePyi(model: Model): string {
     const base = `${langName('python', a.name, 'variable')}: ${pyType(model, a.type, true)}`;
     if (a.default === undefined) return base;
     const value = declaredValue(model, a)?.value;
-    const shown = value === undefined ? '...' : typeof value === 'boolean' ? (value ? 'True' : 'False') : typeof value === 'string' ? pyString(value) : String(value);
+    // GN-6i: an enum default is its member, and a {literal: null} default is None.
+    const unit = unitOf(model, a.type);
+    const variant = unit?.kind === 'enum' ? (unit.variants ?? []).find((v) => v.value === value) : undefined;
+    const shown =
+      value === undefined ? '...'
+      : value === null ? 'None'
+      : variant !== undefined && unit !== undefined ? `${langName('python', unit.name, 'class')}.${langName('python', variant.name, 'constant')}`
+      : typeof value === 'boolean' ? (value ? 'True' : 'False')
+      : typeof value === 'string' ? pyString(value)
+      : String(value);
     return `${base} = ${shown}`;
   };
   const fns = model.functions.map((fn) => {
