@@ -1818,3 +1818,12 @@ test('a callback inside a list, an optional or a record parameter enters as a bo
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false]]).object`), 'node');
 });
+
+test('a member with core.failure converts the error of its core as the failure of language code (E-1c, GN-7)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/functions/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] });
+  const lib = text(out, 'packages/python/generated/lib.rs');
+  // registry.call takes no function, but calls the one that the registry keeps.
+  const call = lib.slice(lib.indexOf('fn member_call<'));
+  assert.match(call, /polyspec_functions::Registry::call\(&receiver, &name, &value\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(failure_error\(py, error\)\),/);
+});

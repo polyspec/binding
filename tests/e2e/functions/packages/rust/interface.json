@@ -233,7 +233,8 @@
           "wait": "none",
           "core": {
             "path": "polyspec_functions::Registry::call",
-            "receiver": "&self"
+            "receiver": "&self",
+            "failure": true
           }
         }
       ]
