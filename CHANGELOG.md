@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
+  with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
+  polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
+  `core`, and its core path returns a state machine without I/O, `binding_core::machine::Machine`, whose steps are an
+  I/O future that touches no language code, a call of language code and the result. PHP drives the machine on the
+  calling thread, Python `<name>` drives it with each wait outside the GIL and `a<name>` runs `<name>` in
+  `asyncio.to_thread`, and Node returns a `Driven` object that the JavaScript entry advances, each call on the
+  JavaScript thread and each wait on the tokio runtime of napi. `binding check` reports such a member without
+  `machine` and `machine` on any other member (CK-68); the generator refuses a method with `machine`, whose machine
+  would borrow its receiver, and Go and WASM refuse it with every member with `async_driver` (GN-6ab). Verified by
+  `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.
 - A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
   `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
   property of an error unit that raises is not generated yet" and "a property of an error unit of type

@@ -43,7 +43,9 @@ impl Machine for Sum {
 fn ready<T>(mut wait: Wait<T>) -> Result<T, BindingError> {
     match wait.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
         Poll::Ready(output) => Ok(output),
-        Poll::Pending => Err(BindingError::Internal { detail: String::from("the future is pending") }),
+        Poll::Pending => Err(BindingError::Internal {
+            detail: String::from("the future is pending"),
+        }),
     }
 }
 
@@ -58,7 +60,11 @@ fn drive_gives_the_output_of_a_wait_to_the_next_step_and_makes_each_call() -> Re
 #[test]
 fn drive_ends_with_the_failure_of_a_wait() {
     let mut machine = Sum::default();
-    let failed = drive(&mut machine, |_wait| Err(BindingError::Internal { detail: String::from("no runtime") }));
+    let failed = drive(&mut machine, |_wait| {
+        Err(BindingError::Internal {
+            detail: String::from("no runtime"),
+        })
+    });
     assert!(matches!(failed, Err(BindingError::Internal { .. })));
     assert_eq!(machine.calls, 0);
 }
@@ -67,11 +73,15 @@ fn drive_ends_with_the_failure_of_a_wait() {
 fn driving_returns_at_each_wait_and_takes_its_output() -> Result<(), BindingError> {
     let mut driving = Driving::new(Sum::default());
     let Next::Wait(wait) = driving.advance() else {
-        return Err(BindingError::Internal { detail: String::from("the machine did not wait") });
+        return Err(BindingError::Internal {
+            detail: String::from("the machine did not wait"),
+        });
     };
     driving.give(ready(wait)?);
     let Next::Done(done) = driving.advance() else {
-        return Err(BindingError::Internal { detail: String::from("the machine did not end") });
+        return Err(BindingError::Internal {
+            detail: String::from("the machine did not end"),
+        });
     };
     assert_eq!(done, Some(42));
     Ok(())

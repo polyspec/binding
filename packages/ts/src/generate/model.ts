@@ -109,6 +109,8 @@ export interface Fn {
   corePath: string;
   // GN-6q: a member with wait blocking_io whose parameter type or receiver class carries language code.
   reaches?: true;
+  // GN-6ab: a member with wait async_driver that reaches language code, whose core path returns a state machine.
+  machine?: true;
 }
 
 // U-1 kind class, origin generated: a language class that holds a core value (T-5).
@@ -378,8 +380,12 @@ export function collectModel(
       const rule = WAIT_RULE[member.wait];
       if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait ${member.wait} is not generated (${rule})`);
       reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
-      // GN-6n: a future that a runtime polls on its own threads would call the language code there.
-      if (reachesCode && member.wait === 'async_driver') throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
+      // GN-6ab: a future that a runtime polls on its own threads would call the language code there, so the core gives a
+      // state machine; a machine that borrowed its receiver across its steps would borrow from the guard of the driver.
+      if (reachesCode && member.wait === 'async_driver') {
+        if (typeof member.core !== 'object' || member.core.machine !== true) throw new Unsupported(`${member.id}: a member with wait async_driver that reaches language code names machine: true in its core (GN-6ab, CK-68)`);
+        if (kind === 'method') throw new Unsupported(`${member.id}: a method with machine is not generated, because its machine would borrow its receiver (GN-6ab)`);
+      }
     }
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
@@ -457,6 +463,7 @@ export function collectModel(
       corePath,
       ...(record === undefined ? {} : { record }),
       ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
+      ...(reachesCode && member.wait === 'async_driver' ? { machine: true as const } : {}),
     };
   };
   for (const unit of contract.units) {
@@ -1132,9 +1139,13 @@ export function futureOf(model: Model, fn: Fn, body: string): string {
 }
 
 // GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
-// gives the form of the wait around block_on, and failed the conversion of a BindingError.
+// gives the form of the wait around block_on, and failed the conversion of a BindingError. GN-6ab: the core call of a
+// member with machine makes the machine, and drive makes its calls on the calling thread and waits for each of its
+// futures in the same form.
 export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string): string =>
-  `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
+  fn.machine === true
+    ? `{\n            let mut machine = ${core};\n            binding_core::machine::drive(&mut machine, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, 'io.await')}))`)})).map_err(${failed})?\n        }`
+    : `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
 
 // GN-6n: the end of the future of a member with wait async_driver on the calling thread: a runtime that cannot be made,
 // or a panic of a poll, is a failure of kind internal (B-7).

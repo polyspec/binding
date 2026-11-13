@@ -67,6 +67,10 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `fault::Armed::around(self, future) -> Around<F>` | G-5, GN-6n | `fault-test`가 있을 때. `future`의 poll마다 장전을 설치하고 그 뒤 앞의 장전을 되돌리는 future다. panic 뒤에도 되돌린다. 그래서 `async fn`의 주입점은 runtime의 어느 스레드에서도 자기 호출의 장전을 본다. |
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
+| `machine::Machine` (`type Io: Send + 'static`, `type Done`, `resume(&mut self, io: Option<Io>) -> Step<Io, Done>`, `call(&mut self)`) | GN-6ab | `"machine": true`인 member의 코어 경로가 돌려주는 I/O 없는 state machine이며 인자를 소유한다. `resume`은 마지막 기다림의 출력(처음과 call 뒤에는 `None`)으로 그것을 진행시킨다. `call`은 그것을 돌리는 스레드에서 언어 코드를 부르고, 그 실패는 뒤 단계를 위해 지닌다. feature 없이 있으므로 코어 crate가 구현한다. |
+| `machine::Step<I, D>` (`Io(Wait<I>)`, `Call`, `Done(D)`), `machine::Wait<I>` | GN-6ab | machine의 한 단계: 언어 코드에 닿지 않는 코어의 future(`Wait<I>`, pin하고 box한 `Send + 'static` future), 언어 코드의 call, 또는 member의 결과다. |
+| `machine::drive(&mut machine, wait) -> Result<Done, BindingError>` | GN-6ab | 호출 스레드에서 machine을 끝까지 돌린다(PHP, Python의 막는 꼴). `wait`이 각 future를 기다리고, 각 call은 호출 스레드에서 한다. `wait`의 오류는 다른 단계 없이 machine을 끝낸다. |
+| `machine::Driving<M>` (`new`, `give`, `advance() -> Next<Io, Done>`), `machine::Next<I, D>` (`Wait(Wait<I>)`, `Done(D)`) | GN-6ab | 언어의 runtime이 진행시키는 machine(Node): `advance`는 호출 스레드에서 machine의 call을 하고, 기다림에서 멈추거나(그 출력은 `give`가 다음 단계에 준다) 끝에서 멈춘다. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`에서만. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 

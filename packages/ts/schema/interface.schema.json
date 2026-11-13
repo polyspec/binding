@@ -1427,6 +1427,10 @@
                 "result": {
                   "description": "Whether the core path returns a Result (E-1c). Absent, it does when raises names a variant or a parameter is a callback or a function.",
                   "type": "boolean"
+                },
+                "machine": {
+                  "description": "Whether the core path of a member with wait async_driver that reaches language code returns a state machine without I/O, binding_core::machine::Machine, in place of a future (GN-6ab, CK-68).",
+                  "const": true
                 }
               }
             },

@@ -492,7 +492,31 @@ function entryRust(model: Model, fn: Fn): string {
   lines.push(...locks(model, fn));
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
-  if (waitsAsync(fn)) {
+  if (fn.machine === true) {
+    // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
+    // calls on the JavaScript thread and gives the promise of its next wait, whose future runs on the tokio runtime of
+    // napi, or its converted result.
+    const done = fn.fallible ? `let result = result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));
+        Driven::new(env, advancing(move |env| {
+            let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
+            if let Some(output) = output {
+                machine.give(output);
+            }
+            match machine.advance() {
+                binding_core::machine::Next::Wait(io) => {
+                    let given = std::sync::Arc::clone(&given);
+                    let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
+                    Ok((false, promise))
+                }
+                binding_core::machine::Next::Done(result) => {
+                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                }
+            }
+        }))`);
+  } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
@@ -518,7 +542,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!waitsAsync(fn) && !pooled(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn) && fn.machine !== true) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -582,6 +606,46 @@ where
     }
     fn resolve(&mut self, env: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
         output.and_then(|value| (self.give)(env, value)).map_err(|fail| throw(env, fail))
+    }
+}
+`;
+
+// GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
+// advances.
+const MACHINE = `
+/// GN-6ab: one advance of the state machine of a call: whether it ended, and its result or the promise of its wait.
+type Advance = Box<dyn for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail>>;
+
+/// GN-6ab: gives a closure the type of an advance, so that its result borrows the environment of its call.
+fn advancing<F>(advance: F) -> F
+where
+    F: for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail> + 'static,
+{
+    advance
+}
+
+/// GN-6ab: the state machine of a call, which the JavaScript entry advances until it ends. Each advance makes the calls
+/// of the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+#[napi]
+pub struct Driven {
+    advance: Advance,
+}
+
+impl Driven {
+    fn new<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+        ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
+    }
+}
+
+#[napi]
+impl Driven {
+    #[napi]
+    pub fn advance<'env>(&mut self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+        guard(|| {
+            let (ended, value) = (self.advance)(env)?;
+            out_tuple(env, vec![out_bool(env, ended)?, value])
+        })
+        .map_err(|fail| throw(env, fail))
     }
 }
 `;
@@ -967,7 +1031,8 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model);
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    ([...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? MACHINE : '');
   const enums = [
     ...model.enums.map(enumRust),
     ...model.resultRecords.map((u) => recordRust(model, u)),
@@ -1219,7 +1284,9 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
+    const called = fn.machine === true ? `drive(${call(passed.join(', '))})` : call(passed.join(', '));
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${called});` : `  return ${called};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
@@ -1296,7 +1363,17 @@ ${classes}${units === '' ? '' : `\n${units}`}
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
 
-// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
+${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
+// promise of each of its waits, which this function awaits.
+async function drive(driven) {
+  for (;;) {
+    const [ended, value] = driven.advance();
+    if (ended) return value;
+    await value;
+  }
+}
+
+` : ''}// T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
     return Array.from(value);

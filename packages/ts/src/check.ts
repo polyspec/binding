@@ -20,6 +20,7 @@ import {
   type Unit,
   kindsOf,
 } from './contract.ts';
+import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
@@ -1750,6 +1751,16 @@ class Checker {
         if (parameter.core !== undefined && !place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is no class or optional of a class, so the core takes no borrow of it (GN-6h)`);
         if (parameter.core === undefined && place) this.report('CK-67', at, `${member.id}.${parameter.name.join('_')} is a class parameter, which names the borrow that the core takes in core (GN-6h)`);
       }
+    }
+    // CK-68, GN-6ab: a member with async_driver that reaches language code drives a state machine of its core, and
+    // binding reads no Rust source to tell a machine from a future.
+    const carrying = carriers(this.contract.units);
+    for (const { member, unit, path } of this.members.values()) {
+      const reaches = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (member.kind === 'method' && carrying.classes.has(unit.id));
+      const needs = member.wait === 'async_driver' && reaches;
+      const machine = typeof member.core === 'object' && member.core.machine === true;
+      if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
+      if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
     }
   }
 

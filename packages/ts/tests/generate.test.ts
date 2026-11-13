@@ -2313,15 +2313,15 @@ test('a member with wait async_driver that reaches language code drives the stat
   // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /let mut machine = polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\);/);
-  assert.match(php, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(async move \{ io\.await \}\)\)\)\)\.map_err\(binding_error\)\?/);
+  assert.match(php, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\.map_err\(binding_error\)\?/);
   assert.doesNotMatch(php, /binding_core::Io::for_generated_call\(\), &mut \{ lookup \}/);
   // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
-  assert.match(python, /binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| binding_core::driver::block_on\(binding_core::driver::Caught::new\(async move \{ io\.await \}\)\)\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?/);
+  assert.match(python, /binding_core::machine::drive\(&mut machine, \|io\| driven\(py\.detach\(\|\| binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_slowly", async move \{ io\.await \}\)\)\)\)\)\)\.map_err\(\|error\| binding_error\(py, error\)\)\?/);
   assert.match(python, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
   // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /let mut driving = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);/);
+  assert.match(node, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_slowly\(&mut \{ lookup \}, &key\)\);/);
   assert.match(node, /Driven::new\(env, advancing\(move \|env\| \{/);
   assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
   assert.match(node, /pub struct Driven \{/);
