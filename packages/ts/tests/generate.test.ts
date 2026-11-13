@@ -1634,6 +1634,27 @@ test('the result null of an optional of a class is compared with the null of eac
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
 });
 
+test('a float case value is a float literal in Python and PHP, also where JSON writes an integer (B-2, G-5)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.scale', name: ['scale'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: 'float', required: true }], returns: 'float', raises: [], wait: 'none', core: 'polyspec_classes::scale' });
+  contract.cases.push({ member: 'classes.scale', file: 'contracts/cases.json', group: 'scale' });
+  (caseFiles.get('contracts/cases.json') as any).scale = [{ id: 'zero', value: 0, result: 0 }, { id: 'negative_zero', value: -0, result: -0 }, { id: 'e20', value: 1e20, result: 1e20 }, { id: 'half', value: 0.5, result: 0.5 }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /result = pkg\.scale\(0\.0\)\n\s+expected = 0\.0\n/);
+  assert.match(py, /result = pkg\.scale\(-0\.0\)\n\s+expected = -0\.0\n/);
+  assert.match(py, /result = pkg\.scale\(1e\+20\)\n\s+expected = 1e\+20\n/);
+  assert.match(py, /result = pkg\.scale\(0\.5\)\n\s+expected = 0\.5\n/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /self::assertSame\(self::same\(0\.0\), self::same\([^\n]*scale\(0\.0\)\)\);/);
+  assert.match(php, /self::assertSame\(self::same\(-0\.0\), self::same\([^\n]*scale\(-0\.0\)\)\);/);
+  assert.match(php, /self::assertSame\(self::same\(1e\+20\), self::same\([^\n]*scale\(1e\+20\)\)\);/);
+  // Node has one number type, and a negative zero keeps its sign.
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /pkg\.scale\(0\), ordered\(0\)|ordered\(pkg\.scale\(0\)\), ordered\(0\)/);
+  assert.match(node, /ordered\(pkg\.scale\(-0\)\), ordered\(-0\)/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
