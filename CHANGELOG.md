@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- PHP refused a member with a parameter of a function type or a result `passthrough` by name. The PHP binding now
+  generates it: the parameter takes a `callable` (any other value is kind `invalid_callback`), from which the entry
+  makes the closure that the machine calls, with each class argument as a new instance of its class; the value that
+  the callable returned is held in a thread-local table under the handle of its `Passthrough`, released when the core
+  drops it and returned unchanged as the result of the member; an exception of the callable is a `Raised`, which the
+  caller gets as the same object; and the driver settles an awaited value at once. The stub declares `@param
+  callable(<parameters>): mixed` and the result `mixed`. Python, Node, Go and WASM still refuse the member by name
+  (GN-6ae). Verified by `npm test` in `packages/ts`; the generated extension is not compiled yet, because no contract
+  of an end-to-end repository holds such a member until every target generates it.
 - A parameter of a function type and a result `passthrough` were refused as "the type ... is not generated yet" for
   every member, so the refusal named neither the rule nor the target. The model now takes them on a member with
   `machine` only, requires the function to return `passthrough` and checks the types of its parameters; another

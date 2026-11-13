@@ -744,7 +744,15 @@ the design ids are those of the binding design.
     then return, so that the caller gets the same exception object.
   - `passthrough`: `binding_core::Passthrough` holds a language value in the table of the binding (B-3) without
     converting it; the core moves it and never reads it. A result `passthrough` of the member returns that value to
-    language code unchanged, and a `Passthrough` that the core drops releases its value.
+    language code unchanged, and a `Passthrough` that the core drops releases its value. A handle of the table is a
+    count that is never given again, so the handle of a released value names no value and never another value; a
+    result whose handle names no value is kind `internal`.
+  - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
+    stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
+    callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
+    `Raised` of U-3, so `failure_error` throws the same object again. The table of the values is a thread-local map
+    from a handle to a `Zval`; the release function takes the value out of the table and ends it after the table is
+    released, because the destructor of a PHP value may run PHP code that enters the binding again.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
     the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
@@ -760,6 +768,11 @@ the design ids are those of the binding design.
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (c6 1.2) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope.
+  Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
+  `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
+  yet"; PHP generates the member. No test generator writes a function fixture, `raises: "callback"` or `after` yet,
+  and the contract of the end-to-end sample does not hold `store` and `scope` until every target generates them; its
+  core holds them.
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
   `passthrough`, and the class `scope`, whose `put` and `get` write and read the pending entries and whose `nested`
   takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. Why: a transaction is a

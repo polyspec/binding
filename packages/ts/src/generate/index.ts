@@ -98,9 +98,9 @@ export function generate(inputs: Inputs): Files {
     // GN-6o, GN-6p: WASM has no method with the receiver self and no finalizer of a class unit with cleanup yet.
     refuseConsumers(forWasm, 'WASM', refusals);
   }
-  // GN-6ae: no target generates a parameter of a function type and a result passthrough yet.
-  const names = { php: 'PHP', python: 'Python', node: 'Node', go: 'Go', wasm: 'WASM' } as const;
-  for (const target of targets) refusePassing(membersFor(model, target), names[target], refusals);
+  // GN-6ae: the targets that do not generate a parameter of a function type and a result passthrough yet.
+  const names = { python: 'Python', node: 'Node', go: 'Go', wasm: 'WASM' } as const;
+  for (const target of targets) if (target !== 'php') refusePassing(membersFor(model, target), names[target], refusals);
   refusals.fail();
   const files: Files = new Map();
   if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));

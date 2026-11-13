@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9ecb0e55035766c3512af0dbb1b63fcb32860d9b4c16026d2f6ca94dd910d684 -->
+<!-- source-sha256: ec16bba634e0fe09e3be456cab0feb71da520ed2fb20c85c3b1f04a20fc05965 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- PHP는 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. PHP 바인딩은 이제 그것을
+  생성한다. parameter는 `callable`을 받고(다른 값은 kind `invalid_callback`이다), 진입점은 그것으로 machine이 부르는
+  closure를 만들며 각 class 인자는 그 class의 새 인스턴스가 된다. callable이 돌려준 값은 그 `Passthrough`의 handle
+  아래 thread-local table에 쥐고, 코어가 버리면 놓으며, member의 결과로 그대로 돌려준다. callable의 예외는 `Raised`이고
+  호출자는 같은 객체를 받는다. driver는 기다리는 값을 곧바로 settle한다. stub은 `@param callable(<parameters>):
+  mixed`와 결과 `mixed`를 선언한다. Python, Node, Go, WASM은 여전히 그 member를 이름을 대고 거부한다(GN-6ae).
+  `packages/ts`의 `npm test`로 검증했다. 생성된 확장은 아직 컴파일하지 않았다. 모든 target이 생성하기 전에는 어느
+  end-to-end 레포의 계약도 그런 member를 갖지 않기 때문이다.
 - 함수 타입의 parameter와 결과 `passthrough`는 모든 member에서 "the type ... is not generated yet"로 거부되어, 그
   거부는 규칙도 target도 대지 않았다. 이제 model은 그것을 `machine`이 있는 member에서만 받고, 함수가 `passthrough`를
   돌려주기를 요구하며 그 parameter의 타입을 검사한다. 다른 member는 "a parameter of a function type is generated for a

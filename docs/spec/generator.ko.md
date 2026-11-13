@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7069591a06204e2d75c6c370b8091f83eb5b75fb81298e5a3ef00f6e4679458b -->
+<!-- source-sha256: cc9c0f703738c881fbc801fbdaa5e6b7224029fcab038c3b24412a3261367bad -->
 # 생성기
 
 [English](generator.md)
@@ -619,7 +619,13 @@
     `Failure::Raised`로 준다. 코어는 그것에 rollback으로 답한 뒤 돌려줄 수 있고, 그러면 호출자는 같은 예외 객체를 받는다.
   - `passthrough`: `binding_core::Passthrough`는 언어 값을 변환하지 않고 binding의 table(B-3)에 쥔다. 코어는 그것을
     옮기기만 하고 읽지 않는다. member의 결과 `passthrough`는 그 값을 그대로 언어 코드에 돌려주며, 코어가 버린
-    `Passthrough`는 그 값을 놓는다.
+    `Passthrough`는 그 값을 놓는다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
+    가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
+  - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
+    `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
+    `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
+    다시 던진다. 값의 table은 handle에서 `Zval`로 가는 thread-local map이다. release 함수는 값을 table에서 꺼내고 table을
+    놓은 뒤에 값을 끝낸다. PHP 값의 destructor가 binding으로 다시 들어오는 PHP 코드를 돌릴 수 있기 때문이다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
     driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
     WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
@@ -632,6 +638,10 @@
     {...}}`를 차례로 하고(단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
     `after`(c6 1.2)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
+  아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
+  "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
+  PHP는 그 member를 생성한다. 어느 시험 생성기도 아직 함수 fixture, `raises: "callback"`, `after`를 쓰지 않으며,
+  end-to-end sample의 계약은 모든 target이 생성할 때까지 `store`와 `scope`를 갖지 않는다. 그 코어는 그것을 가진다.
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class
   `scope`의 `put`과 `get`은 대기 중인 항목을 쓰고 읽고 `nested`는 안쪽 `scope`의 함수를 받는다. 그 case는 commit하고,
   던진 뒤 rollback하고, 중첩한다. 이유: transaction은 코어가 열고 언어 코드에 넘기고 그 코드가 돌아온 뒤 닫는 범위이므로,

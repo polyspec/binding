@@ -76,6 +76,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
     return `${fn[type]}(${value})`;
   }
+  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
+  if ('passthrough' in type) return `out_passed(${value})`;
   if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
@@ -684,6 +686,11 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
     const held = arg.field ? undefined : heldParam(model, arg.type);
+    // GN-6ae: a function parameter is the closure that the machine of the member calls.
+    if (typeof arg.type === 'object' && 'function' in arg.type) {
+      lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
+      continue;
+    }
     const converted = arg.default === undefined ? convertIn(model, arg.type, rustIdent(variable), rustString(variable)) : `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
@@ -848,6 +855,81 @@ function traitParam(model: Model, type: Type): string {
   return `&${rustType(model, type)}`;
 }
 
+// GN-6ae: the lines that make the closure of a function parameter from a PHP callable. The closure owns a reference to
+// the callable; each call makes the PHP value of each argument, a class argument as a new instance of its class, and
+// gives what the callable returned as a Passthrough, or its exception as a Raised.
+function functionClosure(model: Model, type: Type & { function: unknown }, name: string, value: string, subject: string): string[] {
+  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return [
+    `        let ${name} = in_callable(${value}, ${subject})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
+    ...parts.map((part, i) => `                let arg${i}: Zval = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
+    `                Ok(pass(called(&${name}, vec![${parts.map((_part, i) => `&arg${i}`).join(', ')}])?))`,
+    '            };',
+    '            call().map_err(thrown)',
+    '        };',
+  ];
+}
+
+// GN-6ae: whether a member takes a function parameter or returns passthrough.
+const passes = (fn: Fn): boolean => fn.params.some((p) => typeof p.type === 'object' && 'function' in p.type) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+
+// GN-6ae, B-3: the table of the values that the functions of PHP code returned, each under the handle of its
+// Passthrough; the call of a PHP callable; and the check of a callable that enters.
+function passingRust(model: Model): string {
+  if (![...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes)) return '';
+  return `
+thread_local! {
+    /// GN-6ae, B-3: the values that the functions of PHP code returned, each until its Passthrough ends.
+    static PASSED: RefCell<BTreeMap<u64, Zval>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+static NEXT_PASSED: AtomicU64 = AtomicU64::new(1);
+
+/// GN-6ae: holds a PHP value in the table, which the core moves and never reads.
+fn pass(value: Zval) -> binding_core::Passthrough {
+    let handle = NEXT_PASSED.fetch_add(1, Ordering::Relaxed);
+    PASSED.with_borrow_mut(|map| map.insert(handle, value));
+    binding_core::Passthrough::from_generated(binding_core::Handle::new(handle), release_passed)
+}
+
+/// GN-6ae: removes the value of a Passthrough that the core dropped. The value ends after the table is released,
+/// because its destructor may run PHP code that enters the binding again; a thread that ends holds no table.
+fn release_passed(handle: binding_core::Handle) {
+    let gone = PASSED.try_with(|map| map.borrow_mut().remove(&handle.raw()));
+    drop(gone);
+}
+
+/// GN-6ae: the value of a result passthrough, which leaves the table unchanged.
+fn out_passed(value: binding_core::Passthrough) -> Result<Zval, Fail> {
+    let handle = value.into_handle();
+    PASSED
+        .with_borrow_mut(|map| map.remove(&handle.raw()))
+        .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))
+}
+
+/// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback), to which the closure keeps a reference.
+fn in_callable(value: &Zval, subject: &str) -> Result<Zval, Fail> {
+    if !value.is_callable() {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    Ok(value.shallow_clone())
+}
+
+/// GN-6ae: calls a PHP callable; an exception of its code is the Thrown of the call.
+fn called(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
+    let callable = ext_php_rs::types::ZendCallable::new(function).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+    let returned = callable.try_call(args).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+    if let Some(exception) = ExecutorGlobals::take_exception() {
+        return Err(Thrown::Php(exception));
+    }
+    Ok(returned)
+}
+`;
+}
+
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -1006,6 +1088,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.callbacks.map((c) => callbackRust(model, c)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
+    passingRust(model),
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? PHP_HOST : '',
@@ -1524,6 +1607,8 @@ function stub(model: Model, layout: PhpLayout): string {
     if (typeof type === 'object' && 'keyed_map' in type) return `array<${type.key.includes('int') || type.key.includes('text') ? 'array-key' : 'string'}, ${docType(type.keyed_map)}>`;
     if (typeof type === 'object' && 'tuple' in type) return `array{${type.tuple.map(docType).join(', ')}}`;
     if (typeof type === 'object' && 'optional' in type) return `${docType(type.optional)}|null`;
+    // GN-6ae: a function parameter is a callable of its parameters, whose value is any value.
+    if (typeof type === 'object' && 'function' in type) return `callable(${type.function.parameters.map(docType).join(', ')}): mixed`;
     return phpType(type);
   };
   const blocks: string[] = [];

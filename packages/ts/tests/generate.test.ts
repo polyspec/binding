@@ -2998,7 +2998,7 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  for (const [target, name] of [['php', 'PHP'], ['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+  for (const [target, name] of [['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
     assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
@@ -3061,4 +3061,59 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
+});
+
+// The sample with the classes store and scope of its core (GN-6ae): a transaction takes a function of a scope and
+// returns what the function returned.
+function scopedSample(targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  if (!contract.units.some((u: any) => u.id === 'store')) {
+    const work = { function: { parameters: [{ unit: 'scope' }], returns: { passthrough: 'T' }, async_allowed: true } };
+    const scopedMember = (unit: string, name: string): any => ({ id: `${unit}.${name}`, name: [name], kind: 'method', visibility: 'public', parameters: [{ name: ['work'], type: work, required: true }], returns: { passthrough: 'T' }, raises: [], wait: 'async_driver', core: { path: `polyspec_sample::${unit === 'store' ? 'Store' : 'Scope'}::${name}`, receiver: '&self', machine: true } });
+    const get = (unit: string): any => ({ id: `${unit}.get`, name: ['get'], kind: 'method', visibility: 'public', parameters: [{ name: ['key'], type: 'text', required: true }], returns: { optional: 'text' }, raises: [], wait: 'none', core: { path: `polyspec_sample::${unit === 'store' ? 'Store' : 'Scope'}::get`, receiver: '&self' } });
+    contract.units.push({
+      id: 'store', name: ['store'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Store', final: true,
+      members: [
+        { id: 'store.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], raises: [], wait: 'none', core: 'polyspec_sample::Store::new' },
+        get('store'),
+        scopedMember('store', 'transaction'),
+      ],
+    }, {
+      id: 'scope', name: ['scope'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Scope', final: true, constructible: false,
+      members: [
+        { id: 'scope.put', name: ['put'], kind: 'method', visibility: 'public', parameters: [{ name: ['key'], type: 'text', required: true }, { name: ['value'], type: 'text', required: true }], returns: 'none', raises: [], wait: 'none', core: { path: 'polyspec_sample::Scope::put', receiver: '&self' } },
+        get('scope'),
+        scopedMember('scope', 'nested'),
+      ],
+    });
+  }
+  change(contract);
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
+}
+
+test('PHP makes a closure of a callable, holds its value in the passthrough table and returns it unchanged (GN-6ae)', () => {
+  const out = scopedSample(['php']);
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
+  assert.match(lib, /let work = in_callable\(work, "work"\)\?;/);
+  assert.match(lib, /fn in_callable\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  // The closure makes a new instance of the class of each class argument, calls the callable and stores what it
+  // returned in the table; an exception of the callable is a Raised.
+  assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0: Zval = out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+Ok\(pass\(called\(&work, vec!\[&arg0\]\)\?\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
+  assert.match(lib, /fn called\(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>\) -> Result<Zval, Thrown> \{/);
+  assert.match(lib, /if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n {8}return Err\(Thrown::Php\(exception\)\);/);
+  // The machine takes a clone of the value of the instance and the closure, and PHP settles an awaited value at once.
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(&\*receiver\), work\), \|io\| driven\([^\n]*\), \|value\| Ok\(Ok\(value\)\)\)/);
+  // B-3: the table of the values, its release function, and the result that leaves the table unchanged.
+  assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Zval>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
+  assert.match(lib, /fn pass\(value: Zval\) -> binding_core::Passthrough \{[^}]*binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);
+  assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{/);
+  // A handle is a count that is never given again, and a result whose handle names no value is kind internal.
+  assert.match(lib, /let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);/);
+  assert.match(lib, /\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n\s+\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)/);
+  assert.match(lib, /fn out_passed\(value: binding_core::Passthrough\) -> Result<Zval, Fail> \{/);
+  assert.match(lib, /\n\s+out_passed\(result\)\n/);
+  // The declaration: a callable of the scope that returns any value, which the member returns.
+  const stub = text(out, 'packages/php-ext/generated/polyspec_sample.stub.php');
+  assert.match(stub, /\* @param callable\(\\Polyspec\\Sample\\Scope\): mixed \$work\n(?:[^\n]*\n)*? {9}\*\/\n {8}public function transaction\(mixed \$work\): mixed \{\}/);
 });
