@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6d41ea682c6691c731626c8a7c6ab255bf61e32687c1a5601f19a3b69f8b7fd6 -->
+<!-- source-sha256: ca218d851899957da440947a09b364b80daa3e15bb8b97e1e8c0b75d30e696d8 -->
 # 생성기
 
 [English](generator.md)
@@ -1067,8 +1067,8 @@
   언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
   패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
   타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
-  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
-  member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
+  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴. case는 그런 callback을 fixture로 주거나
+  소유 레포의 member가 만드는 instance 값으로 준다(GN-13f). PHP 확장은 소유 패키지의 확장에 대한 module
   의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
   method로만 그것에 닿을 수 있다(T-3).
 - **GN-6ab** 언어 코드에 닿는(GN-6q: parameter의 타입이나 receiver의 class가 언어 코드를 지닌다) `wait: async_driver`
@@ -1652,6 +1652,16 @@
   값이 fault를 장전하는 시험을 fault를 장전하는 case와 함께 둔다(GN-13b). 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
+  다른 레포의 callback unit(GN-6s) 자리의 instance 값은 소유 레포의 member를 적는다: `new`나 `from`은 소유 계약의 member
+  가운데 그 unit을 구현하는 소유 레포의 class를 주는 것을 적고, 그 `receiver`, `args`, `then`의 호출은 소유 레포의 member와
+  값이다. Python, Node, PHP의 시험은 소유 레포의 value class에 하듯(GN-6x) 소유 패키지를 import해 그 패키지로 그것들을
+  부르고, Node는 기다리는 소유 member를 await한다. member는 생성기가 그 target에 대해 소유 계약에서 받는 것이다: 소유 레포가
+  `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서 거부하는 member는 그 이유로 실패하는 case 시험이 된다(GN-13e).
+  아직 생성하지 않으며 각각 이름을 대고 실패하는 case 시험이 되는 것: 소유 레포의 function, 소유 레포 internal unit의
+  member, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의 faults. Go와 WASM은 그 parameter 자체를
+  거부하므로(GN-6s) 그런 instance를 쓰지 않는다. CK-22는 이 계약의 member만 읽으므로 `binding check`는 그런 값을 판정하지
+  않는다. 이유: 그 unit을 구현하는 class는 소유 레포 바인딩의 class이므로 소유 패키지만 그것을 만들고, 시험이 다른 방법으로
+  만든 객체는 사용자가 넘기는 객체가 아니다.
 
 - **GN-13b** Go: 패키지의 시험은 시험이 인스턴스의 handle을 읽도록 그 패키지 안의 `zz_generated_test.go`이며 `go test`로
   실행한다: `int` parameter마다 2^53과 −2^53, `uint` parameter마다 2^53이 kind `invalid_number`인 B-2(GN-12a), `int` key의 `keyed_map` parameter마다 key 2^53이 kind

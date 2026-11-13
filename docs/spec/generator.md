@@ -1292,8 +1292,8 @@ the design ids are those of the binding design.
   the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
   Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
   type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
-  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
-  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13).
+  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms. A case gives
+  such a callback as its fixture or as an instance value that members of the owning repository make (GN-13f).
   The PHP extension declares no module dependency on the extension of the owning package (`ZEND_MOD_REQUIRED`), so
   the configuration of PHP loads that extension first; the generator refuses nothing for it. Why: a
   native object of another binding lives in another module, so the binding of this repository can reach it only
@@ -2029,6 +2029,19 @@ the design ids are those of the binding design.
   arms faults, and Go puts a test whose instance values arm faults with the cases that arm faults (GN-13b). A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
+  An instance value at the place of a callback unit of another repository (GN-6s) names members of the owning
+  repository: `new` or `from` names a member of the contract of the owner that gives a class of the owner that
+  implements the unit, and its `receiver`, its `args` and its calls of `then` are members and values of the owner. The
+  test of Python, Node and PHP calls them through the package of the owner, which it imports as it does for a value
+  class of the owner (GN-6x), and Node awaits a member of the owner that waits. The members are those that the generator
+  takes from the contract of the owner for the target: a member that the owner leaves out of the target by `only`, or
+  that the generator refuses in the contract of the owner, gives a test of the case that fails with that reason
+  (GN-13e). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
+  internal unit of the owner, an argument that is an enum, a record, a variant or a callback of the owner, and the
+  faults of a call of `then`. Go and WASM refuse the parameter itself (GN-6s), so they write no such instance.
+  `binding check` does not judge such a value, because CK-22 reads the members of this contract alone. Why: the class
+  that implements the unit is a class of the binding of the owner, so only the package of the owner makes it, and an
+  object that the test made in another way would not be the object that a user passes.
 
 - **GN-13b** Go: the tests of a package are `zz_generated_test.go` in the package itself, so that a test reads the
   handle of an instance, run by `go test`: B-2 for every `int` parameter (2^53 and −2^53) and every `uint` parameter
