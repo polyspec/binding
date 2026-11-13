@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -686,7 +686,7 @@ ${arms}
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -694,7 +694,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -711,15 +711,15 @@ ${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}
     Ok(())
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
-    let class = match error {
+    let class = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     let raised = library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error));
-    let written = match error {
+    let written = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     match written {

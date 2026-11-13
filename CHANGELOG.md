@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A contract whose core error is a struct that holds a code enum, such as `FormError { code: FormErrorCode, .. }`,
+  named the variants of the code in `errors.kinds`, and the generator refused it with "the kinds name 2 error enums"
+  when a variant of the code held a code of a dependency, or wrote `match error` against the code variants, which does
+  not compile. `errors.code` now names the type of the error and its projection to the code, and every crate matches
+  and asserts the code (`match <projection>(&error)`); a variant that holds a value of another enum is written
+  `<outer>/<inner>` and matched as `Outer(Inner { .. })` (GN-7b). Verified by `npm test` in `packages/ts`.
 - The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
   the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
   each with its reason (GN-14b).

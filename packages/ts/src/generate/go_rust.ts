@@ -11,6 +11,8 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, lockLines, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  variantPattern,
+  errorMatched,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -966,12 +968,12 @@ function foreignFailureRust(model: Model): string {
     const library = (alias.library ?? '').replaceAll('-', '_');
     const error = alias.error ?? { path: '', kinds: [] };
     const variant = (category: string): string => `Category::${category.charAt(0).toUpperCase()}${category.slice(1)}`;
-    const arms = error.kinds.map((k) => `        ${k.variant} { .. } => ${variant(k.category)},`).join('\n');
+    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${variant(k.category)},`).join('\n');
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the category that its E-1 gives it.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn ${library}_error(error: ${error.path}) -> Fail {
-    let category: Category = match error {
+    let category: Category = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     Fail { category, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error), class: 0, properties: Vec::new(), raised: None }
@@ -993,24 +995,24 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const variant = (category: string): string => `Category::${category.charAt(0).toUpperCase()}${category.slice(1)}`;
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${variant(k.category)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${variant(k.category)},`).join('\n');
   const hasUnits = model.kinds.some((k) => k.unit !== undefined);
   const hasProperties = model.kinds.some((k) => k.unit !== undefined && errorProperties(k.unit).length > 0);
   // E-2, I-3: the class of the kind, 1 + the index of its error unit or 0 for its category, and the properties of the
   // unit and its parents, read from the core error by a second match without a wildcard.
   const classArms = model.kinds.map((k) => {
-    if (k.unit === undefined) return `        ${k.variant} { .. } => 0,`;
+    if (k.unit === undefined) return `        ${variantPattern(k.variant)} => 0,`;
     const index = model.errorUnits.indexOf(k.unit) + 1;
     const properties = errorProperties(k.unit);
-    if (properties.length === 0) return `        ${k.variant} { .. } => ${index},`;
-    return `        ${k.variant} { .. } => {
+    if (properties.length === 0) return `        ${variantPattern(k.variant)} => ${index},`;
+    return `        ${variantPattern(k.variant)} => {
             let output = &mut properties;
 ${properties.map(({ property }) => `            ${convertOut(model, property.returns, `${property.corePath}(&error)`)};`).join('\n')}
             ${index}
         }`;
   }).join('\n');
   const classLines = !hasUnits ? '    let class: u8 = 0;\n    let properties = Vec::new();' : `    ${hasProperties ? 'let mut properties = Vec::new();' : 'let properties = Vec::new();'}
-    let class: u8 = match error {
+    let class: u8 = match ${errorMatched(model, 'error')} {
 ${classArms}
     };`;
   return `
@@ -1019,7 +1021,7 @@ ${classArms}
 /// source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
-    let category: Category = match error {
+    let category: Category = match ${errorMatched(model, 'error')} {
 ${arms}
     };
 ${classLines}

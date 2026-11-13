@@ -139,6 +139,8 @@ export interface Errors {
   classes: Partial<Record<Category, Partial<Record<Lang, string>>>>;
   fixed: { lang: Lang; class: string }[];
   kinds: { variant: string; category?: Category; library?: string; source?: string; class?: string; kinds?: string[] }[];
+  // GN-7b: the core error of a struct that holds the code enum of the kinds, and the projection to that code.
+  code?: { error: string; path: string };
   binding: { kind: string; class: string }[];
   wrapped: { library: string; unit: string; property: Name; forward?: string; drop?: { reason: string } }[];
 }

@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, variantPattern, errorMatched } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -728,7 +728,7 @@ function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const classIndex = (k: Model['kinds'][number]): number =>
     k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${classIndex(k)},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${classIndex(k)},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -736,7 +736,7 @@ function coreErrorRust(model: Model): string {
     return `
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
@@ -767,14 +767,14 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
     })
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
-    let class: usize = match error {
+    let class: usize = match ${errorMatched(model, 'error')} {
 ${arms}
     };
-    let properties = match error {
+    let properties = match ${errorMatched(model, 'error')} {
 ${propertyArms}
     };
     Fail { properties, ..library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) }

@@ -81,7 +81,7 @@ export interface ValueAlias {
   // T-3, U-7 (a'): the library that owns the alias, when it is another repository's, with the error enum of its `in`
   // function and the category that the owner's E-1 gives each variant.
   library?: string;
-  error?: { path: string; kinds: { variant: string; category: Category }[] };
+  error?: { path: string; code?: string; kinds: { variant: string; category: Category }[] };
 }
 
 export interface Fn {
@@ -200,6 +200,24 @@ export const errorProperties = (unit: ErrorUnit): { owner: ErrorUnit; property: 
 export const kindText = (variant: string): string =>
   variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
 
+// GN-7b: the enum of a variant path, the outer one of a nested path <outer>/<inner>.
+export const variantEnum = (variant: string): string => {
+  const outer = variant.split('/')[0] ?? variant;
+  return outer.slice(0, outer.lastIndexOf('::'));
+};
+
+// GN-7b: the pattern of a variant path: <path> { .. }, or <outer>(<inner> { .. }) for a nested path. The pattern
+// { .. } matches a variant with or without data, which the generator does not see (I-2).
+export const variantPattern = (variant: string): string => {
+  const [outer, inner] = variant.split('/');
+  return inner === undefined ? `${variant} { .. }` : `${outer ?? ''}(${inner} { .. })`;
+};
+
+// GN-7b: what a match of the kinds reads: the error, or its code through the projection of errors.code. `error` is
+// the name of an owned error, or of a reference when `borrowed`.
+export const errorMatched = (model: Pick<Model, 'codeOf'>, error: string, borrowed = false): string =>
+  model.codeOf === undefined ? error : `${model.codeOf}(${borrowed ? error : `&${error}`})`;
+
 // E-2: the error unit of the kind of a contract case, when the row of the kind names one in `class`.
 export const errorUnitOfKind = (model: Model, kind: string): ErrorUnit | undefined =>
   model.kinds.find((k) => k.unit !== undefined && kindText(k.variant) === kind)?.unit;
@@ -227,6 +245,8 @@ export interface Model {
   // E-2: the error units, a parent before the units that extend it (P-4).
   errorUnits: ErrorUnit[];
   coreError: string | undefined;
+  // GN-7b: the projection of a struct error to the code enum whose variants the kinds are (errors.code).
+  codeOf: string | undefined;
   kinds: CoreKind[];
   // G-5: the fault injection points of the core that the contract names.
   faults: FaultPoint[];
@@ -573,15 +593,18 @@ export function collectModel(
     return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
   }) ?? []);
   if (contract.errors.binding.length > 0) refusals.refuse('errors.binding overrides are not generated yet');
-  const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
+  const enumPaths = new Set(kinds.map((k) => variantEnum(k.variant)));
   if (enumPaths.size > 1) refusals.refuse(`the kinds name ${enumPaths.size} error enums; one is generated`);
-  const [coreError] = [...enumPaths];
+  // GN-7b: the kinds are variants of an error enum, or of the code enum of the struct error that errors.code names.
+  const [kindEnum] = [...enumPaths];
+  const coreError = kindEnum === undefined ? undefined : contract.errors.code?.error ?? kindEnum;
+  const codeOf = kindEnum === undefined ? undefined : contract.errors.code?.path;
   // E-1c: the error of a Result is the core error of E-1, which a contract without kinds does not name.
   const unnamed = coreError === undefined && contract.errors.kinds.length === 0 ? [...functions, ...objects.flatMap((o) => o.members)].filter((fn) => fn.fallible && !fn.failure) : [];
   for (const fn of unnamed) refusals.refuse(`${fn.member.id}: its core returns a Result (core.result), but errors.kinds names no core error`);
   for (const alias of aliases) {
-    const foreignVariant = alias.inRaises.find((variant) => variant.slice(0, variant.lastIndexOf('::')) !== coreError);
-    if (foreignVariant !== undefined) refusals.refuse(`${alias.unit.id}: in_raises names ${foreignVariant}, which is no variant of the core error ${String(coreError)}`);
+    const foreignVariant = alias.inRaises.find((variant) => variantEnum(variant) !== kindEnum);
+    if (foreignVariant !== undefined) refusals.refuse(`${alias.unit.id}: in_raises names ${foreignVariant}, which is no variant of the core error ${String(kindEnum)}`);
   }
   const result = new Set<string>();
   const foreignRecords: ForeignRecord[] = [];
@@ -637,11 +660,14 @@ export function collectModel(
     const rows = foreign.get(library)?.errors.kinds ?? [];
     const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);
     if (dependent !== undefined) throw new Unsupported(`${library}.${unit.id}: a value alias whose owner forwards the kind ${dependent.variant} of another library is not generated yet`);
-    const paths = new Set(rows.map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
-    const [path] = [...paths];
-    if (path === undefined || paths.size > 1) throw new Unsupported(`${library}.${unit.id}: the kinds of ${library} name ${paths.size} error enums; a value alias is generated for one`);
+    const paths = new Set(rows.map((row) => variantEnum(row.variant)));
+    const [enumPath] = [...paths];
+    if (enumPath === undefined || paths.size > 1) throw new Unsupported(`${library}.${unit.id}: the kinds of ${library} name ${paths.size} error enums; a value alias is generated for one`);
+    // GN-7b: the error of a struct that holds a code enum is the type that its owner names, matched by its code.
+    const code = foreign.get(library)?.errors.code;
+    const path = code?.error ?? enumPath;
     // U-7: the cases of in_raises and the entry point of codec-test belong to the binding of the owner (GN-5).
-    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error: { path, kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
+    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error: { path, ...(code === undefined ? {} : { code: code.path }), kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
   };
   for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
@@ -650,7 +676,7 @@ export function collectModel(
   for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, errorUnits, coreError, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, callbacks, aliases, classes, errorUnits, coreError, codeOf, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -1188,7 +1214,7 @@ export const aliasesWithKinds = (model: Model): ValueAlias[] => model.aliases.fi
 // its Failure<E>: a variant that the error does not have does not compile.
 export function aliasKindsRust(model: Model): string {
   const asserts = aliasesWithKinds(model).flatMap((alias) =>
-    alias.inRaises.map((variant) => `#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&${model.coreError ?? '()'}) -> bool = |error| matches!(error, ${variant} { .. });`));
+    alias.inRaises.map((variant) => `#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]\nconst _: fn(&${model.coreError ?? '()'}) -> bool = |error| matches!(${errorMatched(model, 'error', true)}, ${variantPattern(variant)});`));
   return asserts.length === 0 ? '' : `\n/// U-7, I-2: the kinds of in_raises are variants of the error of the alias's in function.\n${asserts.join('\n')}\n`;
 }
 
