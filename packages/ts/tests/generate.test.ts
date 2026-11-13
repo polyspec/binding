@@ -1278,6 +1278,29 @@ test('each variant that a member raises is asserted against the core error in ev
   }
 });
 
+test('a struct error is matched by the code of its projection, and a nested variant by its two paths (GN-7b, E-1b)', () => {
+  // errors.code names the type that the core paths return and the function that gives its code; the kinds are the
+  // variants of the code enum, and Limit holds a value of another enum, written <outer>/<inner>.
+  const nested = 'polyspec_shapes::Code::Limit/polyspec_shapes::Count::TooMany';
+  const out = shaped((c) => {
+    c.errors.code = { error: 'polyspec_shapes::Failure', path: 'polyspec_shapes::Failure::code' };
+    const renamed = (variant: string): string => variant === 'polyspec_shapes::Error::TooMany' ? nested : variant.replace('::Error::', '::Code::');
+    for (const row of c.errors.kinds) row.variant = renamed(row.variant);
+    for (const unit of c.units) for (const m of unit.members ?? []) if (m.raises !== undefined) m.raises = m.raises.map(renamed);
+  });
+  const pattern = 'polyspec_shapes::Code::Limit(polyspec_shapes::Count::TooMany { .. })';
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
+    const lib = text(out, crate);
+    assert.match(lib, /fn core_error\([^)]*error: polyspec_shapes::Failure\)/, crate);
+    assert.ok(lib.includes('match polyspec_shapes::Failure::code(&error) {'), `${crate} matches the code of the error`);
+    assert.doesNotMatch(lib, /match error \{/, `${crate} matches no error without its code`);
+    assert.ok(lib.includes(`${pattern} =>`), `${crate} matches the nested variant by its pattern`);
+    assert.ok(lib.includes(`const _: fn(&polyspec_shapes::Failure) -> bool = |error| matches!(polyspec_shapes::Failure::code(error), ${pattern});`), `${crate} asserts the nested variant through the projection`);
+    assert.ok(lib.includes('const _: fn(&polyspec_shapes::Failure) -> bool = |error| matches!(polyspec_shapes::Failure::code(error), polyspec_shapes::Code::Empty { .. });'), `${crate} asserts a variant of the code`);
+    assert.ok(!lib.includes(nested), `${crate} writes no nested path as it is`);
+  }
+});
+
 test('Python: a crate whose only raising member is a to_json holds no core_error (GN-6g)', () => {
   // Python generates no to_json (GN-6g), so nothing calls the conversion of the core error there: a function that
   // nothing calls fails the build of the crate as dead code.
