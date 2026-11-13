@@ -36,7 +36,7 @@ the design ids are those of the binding design.
 - **GN-1b** A generation of some targets of the contract (`generate` with `targets`) writes for them the same files
   that the generation of every target writes, and checks the refusals of those targets alone; the refusals of the
   contract are refusals of every target. Why: one target that the generator refuses does not stop the generation of
-  another.
+  another (GN-14c).
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -559,7 +559,7 @@ the design ids are those of the binding design.
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding
   scaffold`), runs `binding check`, tests the core without the generator, rewrites a case file that does not follow
-  GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates, lints the workspace,
+  GN-13 (camelCase keys, a record as an array of its field values) and prints it, generates for each target, lints the core and each binding crate on the host,
   builds each binding crate with the test features of its manifest (GN-5) and installs each package, and runs the generated tests and, where `tests/e2e/<library>` holds them, the
   contract cases on unittest, `node --test` and PHPUnit, and for the targets go and wasm on `go test` (after `gofmt -l`
   and `go vet`) and on `node --test --expose-gc` through the subpath `./wasm`. `ADD_TARGETS` adds those targets to the copy
@@ -582,7 +582,7 @@ the design ids are those of the binding design.
   it on another tool, and no generated or case test of a target is skipped: a test that needs a setting of its runner,
   such as the collector of GN-18a, gets it from the check and fails without it. Why: a target that did not run is not
   verified while the run would look passed, and a result of a tool that the checkout does not pin cannot be repeated.
-  The run ends with what it did for each target, a lint apart from the tests: the lint of the workspace on the host, `php
+  The run ends with what it did for each target, a lint apart from the tests: the lint of the crates on the host, `php
   -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
   counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
   that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
@@ -602,3 +602,13 @@ the design ids are those of the binding design.
   and the like) is given by hand; otherwise the record names the run a diagnosis (`diagnosis (not a commit)` for a
   change of those files) and states why. Why: a run of the working tree checks a generator that no commit holds,
   against a `binding_core` of another commit, so the result belongs to no commit that a push or a merge carries.
+- **GN-14c** Each target generates its files (`binding generate --target`, GN-1b), builds and runs its tests on its
+  own, to its end: a step that fails is a cause of its target, the later steps of that target, which read what the
+  failed step gives, do not run, and the other targets go on. The lint of the core and the steps of a repository that
+  every target needs (the copy and its changes, the test of the core, `binding check`, the cases) fail every target.
+  The WASM tests run in the npm package that the Node steps pack and install, so a failure of those steps is a cause
+  of wasm too. Every runner is counted: the JUnit log of `node --test` and of PHPUnit, the events of `go test -json` and
+  the summary of unittest; a run with no test, a failed test or a skipped test fails its target. The run ends with each
+  target, its lint, its tests with their counts and the causes of its failure, one line each, and fails when a target
+  failed. Why: a run that stops at the first failure hides whether the other targets pass, and a refusal of one target
+  then reads as a failure of all.

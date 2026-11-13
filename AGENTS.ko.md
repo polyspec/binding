@@ -28,7 +28,8 @@
 - Own: 계약 검사의 모든 검사는 자기 이유로 실패하는 시험을 가진다(PRINCIPLES P19).
   Enforced by: `packages/ts`의 `npm test`
 - Own: 끝에서 끝까지 확인은 계약의 모든 target을 checkout의 도구로 실행하고, 도구가 없는 target은 그 target, 도구,
-  `make install`을 적고 실행을 실패시킨다(GN-14a). target을 빼는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를
+  `make install`을 적고 실행을 실패시킨다(GN-14a).
+  target마다 생성·빌드·시험을 따로 끝까지 돌리고, 실행은 실패한 target을 그 원인과 함께 모두 이름한다(GN-14c). target을 빼는 스위치는 없고, 실행 보고는 lint와 시험을 가른다. lint는 코드를
   실행하지 않으므로 어느 target도 검증하지 않는다. 이유: 돌지 않은 target은 검증되지 않았는데 결과는 통과로 보인다.
   Enforced by: `make e2e`, 도구가 없으면 첫 단계 전에, 시험이 돌지 않은 target이 있으면 끝에서 실패한다.
 - Own: 생성기, `binding_core`, 끝에서 끝까지 확인을 바꾸는 commit은 push나 merge 전에 그 commit의 끝에서 끝까지

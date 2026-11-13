@@ -24,7 +24,7 @@
   보이므로, 계약을 고치려면 거부된 항목 수만큼 실행해야 한다.
 - **GN-1b** 계약의 일부 target의 생성(`targets`를 준 `generate`)은 그 target에 모든 target의 생성이 쓰는 것과 같은 파일을
   쓰고, 그 target의 거부만 검사한다. 계약의 거부는 모든 target의 거부다. 이유: 생성기가 거부하는 한 target이 다른 target의
-  생성을 막지 않는다.
+  생성을 막지 않는다(GN-14c).
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -455,7 +455,7 @@
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
   (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없고 계약의 target에 wasm이 있다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다; `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
   `binding scaffold`의 추적 package)을 하며 하나씩 출력하고, `binding check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
-  따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
+  따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.
   `ADD_TARGETS`는 그 target을 P-1과 P-5의 package 항목, E-2의 WASM 클래스와 함께 사본에 더하고 그 사실을 출력한다. binding의 Git 의존은 실행의 명령에 한해 checkout의 커밋으로 풀린다
@@ -474,7 +474,7 @@
   target을 빼거나 다른 도구로 돌리는 스위치, 옵션, 환경 변수는 없고, target의 생성 시험과 case 시험은 건너뛰지 않는다.
   runner의 설정이 필요한 시험(GN-18a의 collector 등)은 확인이 그 설정을 주며 설정이 없으면 실패한다. 이유: 돌지 않은 target은
   검증되지 않았는데 결과는 통과로 보이고, checkout이 고정하지 않은 도구의 결과는 되풀이할 수 없다. 실행은 target마다 한 일을
-  lint와 시험으로 갈라 적고 끝난다. host에서의 workspace lint, `php -l`, `gofmt -l`, `go vet`, `llvm-nm`, `tsc`는 코드를 읽을
+  lint와 시험으로 갈라 적고 끝난다. host에서의 crate lint, `php -l`, `gofmt -l`, `go vet`, `llvm-nm`, `tsc`는 코드를 읽을
   뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, `go test`는 `-json`으로 실행해 그 사건에서
   통과·실패·건너뜀 시험을 세며, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. 건너뛴 Go 시험은 이름을 적고 실행을
   실패시킨다. 아무것도 검증하지 않기 때문이다. macOS에서 PHP
@@ -491,3 +491,11 @@
   주지 않았을 때만 실행은 그 commit의 증거다. 그렇지 않으면 기록은 실행을 진단으로 적고(그 파일의 변경이면 `diagnosis (not a
   commit)`) 이유를 적는다. 이유: 작업 tree의 실행은 어느 commit에도 없는 생성기를 다른 commit의 `binding_core`와 함께
   확인하므로, 그 결과는 push나 merge가 나르는 어느 commit의 것도 아니다.
+- **GN-14c** target마다 자기 파일을 생성하고(`binding generate --target`, GN-1b) 빌드하고 시험을 따로 끝까지 실행한다.
+  실패한 단계는 그 target의 원인이 되고, 그 단계가 주는 것을 읽는 그 target의 뒤 단계는 돌지 않으며, 다른 target은 계속한다.
+  코어의 lint와 모든 target이 필요로 하는 레포의 단계(사본과 그 변경, 코어 시험, `binding check`, case)는 모든 target을
+  실패시킨다. WASM 시험은 Node 단계가 pack하고 설치한 npm 패키지 안에서 돌므로, 그 단계의 실패는 wasm의 원인이기도 하다. 모든
+  runner를 센다: `node --test`와 PHPUnit의 JUnit 기록, `go test -json`의 사건, unittest의 요약. 시험이 없거나, 실패했거나,
+  건너뛴 시험이 있는 실행은 그 target을 실패시킨다. 실행은 target마다 lint, 수를 단 시험, 실패의 원인을 한 줄에 하나씩 적고
+  끝나며, 실패한 target이 있으면 실패한다. 이유: 첫 실패에서 멈추는 실행은 다른 target이 통과하는지를 감추고, 그러면 한
+  target의 거부가 모든 target의 실패로 읽힌다.

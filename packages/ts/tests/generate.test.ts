@@ -1365,3 +1365,26 @@ test('the refusals of each target are named together, and a target generates alo
     return true;
   });
 });
+
+test('generate --target writes the directories of those targets alone, the files that a whole generation writes (GN-1b, GN-14c)', () => {
+  const whole = mkdtempSync(join(tmpdir(), 'binding-t-'));
+  const parts = mkdtempSync(join(tmpdir(), 'binding-u-'));
+  try {
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', whole]);
+    const targets = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
+    const [first, ...others] = targets;
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', first ?? '']);
+    const alone = files(parts);
+    assert.ok(alone.size > 0 && alone.size < files(whole).size, `${first ?? ''} alone wrote ${alone.size} files`);
+    for (const [path, bytes] of alone) assert.ok(bytes.equals(files(whole).get(path) ?? Buffer.alloc(0)), path);
+    // A later generation of the other targets keeps what the first wrote.
+    execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', others.join(',')]);
+    assert.deepEqual([...files(parts).keys()], [...files(whole).keys()]);
+    const refused = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', parts, '--target', 'cobol'], { encoding: 'utf8' });
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /--target names cobol, which the contract does not name in targets/);
+  } finally {
+    rmSync(whole, { recursive: true, force: true });
+    rmSync(parts, { recursive: true, force: true });
+  }
+});

@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import { ownCommit } from './commit.ts';
-import type { Contract } from './contract.ts';
+import type { Contract, Lang } from './contract.ts';
 import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { hostRequirements, trackedPackages } from './generate/packages.ts';
@@ -73,7 +73,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
   process.exit(2);
 }
 
@@ -90,7 +90,7 @@ if (command === 'check') {
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
     const value = rest[i + 1];
-    if (key === undefined || value === undefined || !['--root', '--contract', '--out'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    if (key === undefined || value === undefined || !['--root', '--contract', '--out', ...(command === 'generate' ? ['--target'] : [])].includes(key)) usage(`unknown argument ${key ?? ''}`);
     options.set(key, value);
   }
   // L-1: a core at packages/<component>/rust names its contract with --contract; --root finds packages/rust.
@@ -214,9 +214,13 @@ if (command === 'scaffold') {
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
+// GN-1b: --target generates those targets of the contract alone and writes their directories; the others are kept.
+const targets = options.get('--target')?.split(',') as Lang[] | undefined ?? checked.targets;
+const notTargets = targets.filter((target) => !checked.targets.includes(target));
+if (notTargets.length > 0) usage(`--target names ${notTargets.join(', ')}, which the contract does not name in targets`);
 let files: ReturnType<typeof generate>;
 try {
-  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> });
+  files = generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets });
 } catch (error) {
   // G-4: every item that the generator cannot generate yet is named, one line each, and nothing is written.
   if (error instanceof Unsupported) usage(`not generated (G-4), ${error.refusals.length} item${error.refusals.length === 1 ? '' : 's'}:\n${error.refusals.map((line) => `  ${line}\n`).join('')}`);
@@ -247,7 +251,7 @@ for (const dir of owned) {
 }
 // L-1: the tracked Go files zz_generated_*.go. Every one under the Go module is removed, so none of an earlier generation
 // stays, and the new ones are written; the other files of the module (go.mod, host, tests) are not touched.
-if (checked.targets.includes('go')) {
+if (targets.includes('go')) {
   const remove = (dir: string): void => {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {

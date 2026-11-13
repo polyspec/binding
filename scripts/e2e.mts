@@ -28,8 +28,9 @@
 // still lacks the arguments of its member is left out; both are printed, and a run that left a case out fails at its
 // end, after every step ran.
 //
-// The run ends with what it did for each target, a lint and the tests apart: a lint reads the code and runs nothing, so
-// only the tests verify a target, and a target without a test that ran fails the run.
+// Each target generates, builds and tests on its own to its end (GN-14c), so a refusal or a failure of one target does
+// not stop another. The run ends with each target, a lint and the tests apart, and the causes of each failed target: a
+// lint reads the code and runs nothing, so only the tests verify a target, and a target without a test that ran fails.
 
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -158,7 +159,8 @@ interface Prepared {
   caseFiles: string[];
 }
 
-// Copies a checkout, makes the changes it lacks, checks and tests its core, conforms its cases and generates.
+// Copies a checkout, makes the changes it lacks, checks and tests its core and conforms its cases; each target
+// generates its own files afterwards (GN-14c).
 function prepare(checkout: string, added: Lang[] = []): Prepared {
   const contract = JSON.parse(readFileSync(join(resolve(checkout), 'packages/rust/interface.json'), 'utf8')) as Contract;
   const library = contract.library;
@@ -321,8 +323,6 @@ impl binding_core::Kinds for Error {
   step(`${library}: the cases in the convention of G-5 (each change printed; the core reads the committed form)`);
   const caseFiles = conformCases(contract, copy);
 
-  step(`${library}: generate`);
-  run(process.execPath, [cli, 'generate', '--root', copy]);
   return { contract, copy, caseFiles };
 }
 
@@ -463,11 +463,49 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-// What ran for each target: a lint reads the code, a test runs it; only a test verifies a target.
-const ran = new Map<Lang, { lint: string[]; test: string[] }>(targets.map((t) => [t, { lint: [], test: [] }]));
+// GN-14c: each target generates, builds and tests on its own, to its end: a step that fails is the cause of its target,
+// whose later steps read what it gives and do not run, and the other targets go on. The steps of a repository that
+// every target needs (the copy, the core, the contract check, the cases) fail every target. The run ends with each
+// target, its lint, its tests with their counts and the causes of its failure, and fails when a target failed.
+interface Outcome {
+  lint: string[];
+  tests: { what: string; passed: number; failed: number; skipped: number }[];
+  causes: string[];
+}
+const results = new Map<Lang, Outcome>(targets.map((t) => [t, { lint: [], tests: [], causes: [] }]));
+const outcome = (t: Lang): Outcome => results.get(t) ?? { lint: [], tests: [], causes: [] };
+const failed = (t: Lang): boolean => outcome(t).causes.length > 0;
+const firstLine = (error: unknown): string => (error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error));
+// Runs one step of the targets ts, unless one of them failed already; a failure is the cause of each of them.
+const stepOf = (ts: Lang[], name: string, body: () => void): boolean => {
+  const live = ts.filter((t) => !failed(t));
+  if (live.length === 0) return false;
+  step(`${live.join(', ')}: ${name}`);
+  try {
+    body();
+    return true;
+  } catch (error) {
+    for (const t of live) outcome(t).causes.push(`${name}: ${firstLine(error)}`);
+    process.stdout.write(`failed (${live.join(', ')}): ${name}: ${firstLine(error)}\n`);
+    return false;
+  }
+};
+const lintOf = (t: Lang, what: string): void => {
+  outcome(t).lint.push(what);
+};
+// A run of a test runner counts as a test only when it ran a test, none failed and none was skipped (GN-14a).
+const counted = (t: Lang, what: string, passed: number, failedCount: number, skipped: number, skippedNames: string[] = []): void => {
+  process.stdout.write(`${what}: ${passed} passed, ${failedCount} failed, ${skipped} skipped\n`);
+  for (const name of skippedNames) process.stdout.write(`skipped (a failure, GN-14a): ${name}\n`);
+  if (failedCount > 0) throw new Error(`${what}: ${failedCount} failed`);
+  if (passed + skipped === 0) throw new Error(`${what} ran no test`);
+  if (skipped > 0) throw new Error(`${what} skipped ${skipped}, which verify nothing${skippedNames.length > 0 ? `: ${skippedNames.join(', ')}` : ''}`);
+  outcome(t).tests.push({ what, passed, failed: failedCount, skipped });
+};
+
 // GN-14b: the record of the run, var/report/e2e/<library>.json of the checkout (ignored), written when the run ends
 // in any way: the commit of binding, whether the run is evidence or a diagnosis and why, the commits of the
-// repositories, and what ran for each target. It is published with one rename, so a reader never sees half of it.
+// repositories, and the outcome of each target. It is published with one rename, so a reader never sees half of it.
 const repositoryCommit = (path: string): string | null => (existsSync(join(resolve(path), '.git')) ? git(resolve(path), ['rev-parse', 'HEAD']) : null);
 process.on('exit', (code) => {
   const library = (JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract).library;
@@ -480,7 +518,7 @@ process.on('exit', (code) => {
     repository: { path: resolve(repo), commit: repositoryCommit(repo) },
     dependencies: deps.map((dep) => ({ path: resolve(dep), commit: repositoryCommit(dep) })),
     addedTargets: addTargets,
-    targets: Object.fromEntries(ran),
+    targets: Object.fromEntries([...results].map(([t, o]) => [t, { result: o.causes.length > 0 ? 'failed' : 'passed', ...o }])),
     result: code === 0 ? 'passed' : 'failed',
   };
   const path = join(dir, `${library}.json`);
@@ -488,202 +526,268 @@ process.on('exit', (code) => {
   renameSync(`${path}.${process.pid}.tmp`, path);
   process.stdout.write(`\nthe record of the run: ${path} (${report.evidence ? `evidence of ${commit}` : 'a diagnosis'}, ${report.result})\n`);
 });
-const record = (t: Lang, kind: 'lint' | 'test', what: string): void => {
-  ran.get(t)?.[kind].push(what);
-};
 
-const dependencies = deps.map((dep) => prepare(dep));
-const main = prepare(repo, addTargets);
-const { contract, copy } = main;
+// The steps of a repository that every target needs; a failure fails every target with its cause.
+const prepared = (checkout: string, added: Lang[] = []): Prepared | undefined => {
+  let found: Prepared | undefined;
+  stepOf(targets, `${checkout}: copy, the changes the repository needs, the core, the contract check and the cases`, () => {
+    found = prepare(checkout, added);
+  });
+  return found;
+};
+const dependencies = deps.map((dep) => prepared(dep));
+const main = prepared(repo, addTargets);
+const contract = main?.contract ?? (JSON.parse(readFileSync(join(resolve(repo), 'packages/rust/interface.json'), 'utf8')) as Contract);
+const copy = main?.copy ?? join(work, contract.library);
 const library = contract.library;
 const crate = contract.core.crate;
 
-step('lint the generated crates');
-run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '--workspace', '--all-targets', '--features', testFeatures(contract), '--', '-D', 'warnings']);
-for (const t of targets) record(t, 'lint', 'cargo clippy of the workspace on the host');
+// G-4, GN-1b: each target generates its own files of each repository, so a refusal names that target alone; the
+// refusals are its cause, one line each.
+const generateOf = (t: Lang, preparedCopy: Prepared | undefined): void => {
+  if (preparedCopy === undefined) return;
+  stepOf([t], `generate ${preparedCopy.contract.library} for ${t}`, () => {
+    process.stdout.write(`$ ${process.execPath} ${cli} generate --root ${preparedCopy.copy} --target ${t}\n`);
+    const generated = spawnSync(process.execPath, [cli, 'generate', '--root', preparedCopy.copy, '--target', t], { encoding: 'utf8' });
+    process.stdout.write(generated.stdout);
+    process.stdout.write(generated.stderr);
+    if (generated.status !== 0) {
+      const refusals = generated.stderr.split('\n').filter((line) => line.startsWith('  ')).map((line) => line.trim());
+      throw new Error(refusals.length > 0 ? refusals.join('; ') : generated.stderr.split('\n')[0] ?? `status ${String(generated.status)}`);
+    }
+  });
+};
+for (const t of targets) for (const p of [...dependencies, main]) generateOf(t, p);
 
-const [cases] = main.caseFiles;
+// The core is linted once, with the fault injection points of its feature fault-test when the contract has them.
+stepOf(targets, 'lint the core', () => {
+  run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', crate, '--all-targets', ...((contract.faults ?? []).length > 0 ? ['--features', 'fault-test'] : []), '--', '-D', 'warnings']);
+});
+for (const t of targets) if (!failed(t)) lintOf(t, 'cargo clippy of the core');
+const crateSuffix: Record<Lang, string> = { python: 'python', node: 'node', php: 'php-ext', go: 'go', wasm: 'wasm' };
+const lintFeatures = (t: Lang): string => (t === 'go' ? 'panic-test,codec-test' : t === 'wasm' ? 'panic-test' : testFeatures(contract));
+for (const t of targets) {
+  if (stepOf([t], `lint the ${t} binding crate`, () => {
+    run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-${crateSuffix[t]}`, '--all-targets', '--features', lintFeatures(t), '--', '-D', 'warnings']);
+  })) lintOf(t, `cargo clippy of the ${t} binding crate with its test features`);
+}
+
+const [cases] = main?.caseFiles ?? [];
 const e2e = join(binding, 'tests/e2e', library);
 // The case runners of a library are its cases.test.mjs, test_cases.py and CasesTest.php (tests/e2e/sample is a
 // repository, not runners).
 const caseRunners = existsSync(join(e2e, 'cases.test.mjs')) && cases !== undefined;
 if (!caseRunners) process.stdout.write(`note: tests/e2e/${library} holds no case runners; the generated tests run alone\n`);
+const allCopies = [...dependencies, main].filter((p): p is Prepared => p !== undefined);
+
+// unittest prints "Ran <n> tests" and "OK", "OK (skipped=<k>)" or "FAILED (...)" on stderr (the Python of mise.toml).
+const unittest = (t: Lang, what: string, argv: string[], env: Record<string, string> = {}): void => {
+  process.stdout.write(`$ ${argv.join(' ')}\n`);
+  const [command = '', ...rest] = argv;
+  const ran = spawnSync(command, rest, { cwd: work, encoding: 'utf8', env: { ...process.env, ...env } });
+  process.stdout.write(ran.stdout);
+  process.stdout.write(ran.stderr);
+  const total = Number(/^Ran (\d+) tests? in /m.exec(ran.stderr)?.[1] ?? '0');
+  const summary = /^(OK|FAILED)(?: \(([^)]*)\))?$/m.exec(ran.stderr);
+  const field = (name: string): number => Number(new RegExp(`\\b${name}=(\\d+)`).exec(summary?.[2] ?? '')?.[1] ?? '0');
+  const failures = field('failures') + field('errors') + field('unexpected successes') + (ran.status !== 0 && summary?.[1] !== 'FAILED' ? 1 : 0);
+  const skipped = field('skipped') + field('expected failures');
+  counted(t, what, total - failures - skipped, failures, skipped);
+};
+// node --test writes a JUnit log beside its spec output; a testcase with <skipped> or <failure> is counted so.
+const nodeTest = (t: Lang, what: string, flags: string[], testFiles: string[], cwd: string, env: Record<string, string>): void => {
+  const log = join(work, `junit-${t}.xml`);
+  rmSync(log, { force: true });
+  const argv = [...flags, '--test', '--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=junit', `--test-reporter-destination=${log}`, ...testFiles];
+  process.stdout.write(`$ ${process.execPath} ${argv.join(' ')}\n`);
+  const ran = spawnSync(process.execPath, argv, { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
+  const xml = existsSync(log) ? readFileSync(log, 'utf8') : '';
+  const testcases = xml.split('<testcase ').slice(1);
+  const skippedNames = testcases.filter((c) => /<skipped/.test(c.split('</testcase>')[0] ?? c)).map((c) => /name="([^"]*)"/.exec(c)?.[1] ?? '');
+  const failures = testcases.filter((c) => /<failure/.test(c.split('</testcase>')[0] ?? c)).length + (ran.status !== 0 && testcases.length === 0 ? 1 : 0);
+  counted(t, what, testcases.length - failures - skippedNames.length, failures, skippedNames.length, skippedNames);
+};
 
 if (targets.includes('python')) {
-step('Python: build the wheels, install them, run the generated tests and the cases');
-const venv = join(work, 'venv');
-run(pythonTool, ['-m', 'venv', '--clear', venv]);
-for (const prepared of [...dependencies, main]) {
+  const venv = join(work, 'venv');
   const wheels = join(work, 'wheels');
-  // The wheel is built for the Python of the venv, the one of mise.toml, and installed from the local directory alone.
-  run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(prepared.contract), '--out', wheels], { cwd: join(prepared.copy, 'packages/python') });
-  const python = prepared.contract.packages['python'] as { package: string };
-  const prefix = `${python.package.replaceAll('-', '_')}-`;
-  const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
-  if (wheel === undefined) throw new Error(`maturin wrote no wheel of ${python.package}`);
-  run(join(venv, 'bin/pip'), ['install', '-q', '--no-index', '--force-reinstall', '--find-links', wheels, join(wheels, wheel)]);
-}
-const generatedPython = join(copy, 'packages/python/generated/tests');
-run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython], { cwd: work });
-record('python', 'test', 'the generated tests on unittest');
-if (caseRunners) {
-  run(join(venv, 'bin/python'), ['-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { cwd: work, env: { CASES: cases } });
-  record('python', 'test', 'the contract cases on unittest');
-}
+  stepOf(['python'], 'build the wheels and install them into a venv of the Python of mise.toml', () => {
+    run(pythonTool, ['-m', 'venv', '--clear', venv]);
+    rmSync(wheels, { recursive: true, force: true });
+    for (const p of allCopies) {
+      // The wheel is built for the Python of the venv, the one of mise.toml, and installed from the local directory alone.
+      run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(p.contract), '--out', wheels], { cwd: join(p.copy, 'packages/python') });
+      const python = p.contract.packages['python'] as { package: string };
+      const prefix = `${python.package.replaceAll('-', '_')}-`;
+      const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
+      if (wheel === undefined) throw new Error(`maturin wrote no wheel of ${python.package}`);
+      run(join(venv, 'bin/pip'), ['install', '-q', '--no-index', '--force-reinstall', '--find-links', wheels, join(wheels, wheel)]);
+    }
+  });
+  const generatedPython = join(copy, 'packages/python/generated/tests');
+  stepOf(['python'], 'the generated tests on unittest', () => unittest('python', 'the generated tests on unittest', [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', generatedPython, '-t', generatedPython]));
+  if (caseRunners) stepOf(['python'], 'the contract cases on unittest', () => unittest('python', 'the contract cases on unittest', [join(venv, 'bin/python'), '-m', 'unittest', 'discover', '-s', e2e, '-t', e2e, '-p', 'test_*.py'], { CASES: cases }));
 }
 
 const lib = (suffix: string): string => `${crate}-${suffix}`.replaceAll('-', '_');
 // Cargo names a cdylib lib<name>.so on Linux and lib<name>.dylib on macOS.
 const dylib = process.platform === 'darwin' ? 'dylib' : 'so';
 if (targets.includes('wasm')) {
-  step('WASM: build the module and its glue with wasm-bindgen');
-  const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
-  const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
-  if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
-  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
-  const glue = `${library.replaceAll('-', '_')}_wasm`;
-  run(wasmBindgen, ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
+  stepOf(['wasm'], 'build the module and its glue with wasm-bindgen', () => {
+    const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(join(copy, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
+    const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
+    if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
+    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-wasm`, '--target', 'wasm32-unknown-unknown', '--features', 'panic-test']);
+    const glue = `${library.replaceAll('-', '_')}_wasm`;
+    run(wasmBindgen, ['--target', 'web', '--out-dir', join(copy, 'packages/ts/wasm/generated'), '--out-name', glue, join(target, `wasm32-unknown-unknown/debug/${lib('wasm')}.wasm`)]);
+  });
 }
 
-// The npm package holds the addon of Node and the WASM module, so both targets install it.
+// The npm package holds the addon of Node and the WASM module, so the WASM tests need the package that the Node steps
+// pack and install; WASM fails with the cause of Node when they fail.
 const nodeDir = join(work, 'node');
+let installed = false;
 if (targets.includes('node') || targets.includes('wasm')) {
-  step('Node: build the addon, pack and install the package');
-  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', testFeatures(contract)]);
-  const npm = (contract.packages['node'] as { package: string }).package;
-  rmSync(nodeDir, { recursive: true, force: true });
-  mkdirSync(nodeDir, { recursive: true });
-  // T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies; the
-  // run packs it as a release does and installs it from the tarball.
-  const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
-  const platformDir = join(work, 'node-platform');
-  rmSync(platformDir, { recursive: true, force: true });
-  mkdirSync(platformDir, { recursive: true });
-  const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
-  copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
-  const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
-  writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
-  run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
-  run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
-  writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
-  const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
-  if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
-  // The other platforms' packages are optional and absent, as on a machine of this platform.
-  run(npmTool, ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
+  const owner: Lang[] = targets.includes('node') ? ['node'] : ['wasm'];
+  installed = stepOf(owner, 'build the addon, pack and install the npm package', () => {
+    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-node`, '--features', testFeatures(contract)]);
+    const npm = (contract.packages['node'] as { package: string }).package;
+    rmSync(nodeDir, { recursive: true, force: true });
+    mkdirSync(nodeDir, { recursive: true });
+    // T-2: the addon is the npm package of this machine's platform, which the package names in optionalDependencies;
+    // the run packs it as a release does and installs it from the tarball.
+    const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+    const platformDir = join(work, 'node-platform');
+    rmSync(platformDir, { recursive: true, force: true });
+    mkdirSync(platformDir, { recursive: true });
+    const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
+    copyFileSync(join(target, `debug/lib${lib('node')}.${dylib}`), join(platformDir, addonName));
+    const version = (JSON.parse(readFileSync(join(copy, 'packages/ts/package.json'), 'utf8')) as { version: string }).version;
+    writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
+    run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
+    run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: join(copy, 'packages/ts') });
+    writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
+    const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
+    if (tarballs.length !== 2) throw new Error('npm pack wrote no package');
+    // The other platforms' packages are optional and absent, as on a machine of this platform.
+    run(npmTool, ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
+  });
+  if (!installed && targets.includes('wasm') && owner[0] === 'node' && !failed('wasm')) {
+    outcome('wasm').causes.push(`the npm package that holds the module was not installed: ${outcome('node').causes.join('; ')}`);
+  }
 }
-if (targets.includes('node')) {
-  step('Node: run the generated tests and the cases');
-  copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
-  if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
-  run(process.execPath, ['--test', 'generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
-  record('node', 'test', `the generated tests${caseRunners ? ' and the contract cases' : ''} on node --test`);
+if (targets.includes('node') && installed) {
+  stepOf(['node'], 'the generated tests and the cases on node --test', () => {
+    copyFileSync(join(copy, 'packages/ts/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.test.mjs'));
+    if (caseRunners) copyFileSync(join(e2e, 'cases.test.mjs'), join(nodeDir, 'cases.test.mjs'));
+    nodeTest('node', `the generated tests${caseRunners ? ' and the contract cases' : ''} on node --test`, [], ['generated.test.mjs', ...(caseRunners ? ['cases.test.mjs'] : [])], nodeDir, { CASES: cases ?? '' });
+  });
 }
-if (targets.includes('wasm')) {
-  step('WASM: run the generated tests and the cases through the subpath ./wasm');
+if (targets.includes('wasm') && installed) {
   // P-5: the WASM binding passes the same tests and cases through the subpath ./wasm of the same package.
-  copyFileSync(join(copy, 'packages/ts/wasm/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.wasm.test.mjs'));
-  const wasmCases = caseRunners && existsSync(join(e2e, 'cases.wasm.test.mjs'));
-  if (wasmCases) copyFileSync(join(e2e, 'cases.wasm.test.mjs'), join(nodeDir, 'cases.wasm.test.mjs'));
-  // --expose-gc: a case of GN-18a collects instances.
-  run(process.execPath, ['--expose-gc', '--test', 'generated.wasm.test.mjs', ...(wasmCases ? ['cases.wasm.test.mjs'] : [])], { cwd: nodeDir, env: { CASES: cases ?? '' } });
-  record('wasm', 'test', `the generated tests${wasmCases ? ' and the contract cases' : ''} on node --test through ./wasm`);
+  stepOf(['wasm'], 'the generated tests and the cases through the subpath ./wasm', () => {
+    copyFileSync(join(copy, 'packages/ts/wasm/generated/tests/generated.test.mjs'), join(nodeDir, 'generated.wasm.test.mjs'));
+    const wasmCases = caseRunners && existsSync(join(e2e, 'cases.wasm.test.mjs'));
+    if (wasmCases) copyFileSync(join(e2e, 'cases.wasm.test.mjs'), join(nodeDir, 'cases.wasm.test.mjs'));
+    // --expose-gc: a case of GN-18a collects instances.
+    nodeTest('wasm', `the generated tests${wasmCases ? ' and the contract cases' : ''} on node --test through ./wasm`, ['--expose-gc'], ['generated.wasm.test.mjs', ...(wasmCases ? ['cases.wasm.test.mjs'] : [])], nodeDir, { CASES: cases ?? '' });
+  });
 }
 
 if (targets.includes('php')) {
-  step('PHP: build the extensions, run the generated tests and the cases with them loaded');
   const extensions: string[] = [];
-  for (const prepared of [...dependencies, main]) {
-    run('cargo', ['build', '--manifest-path', join(prepared.copy, 'Cargo.toml'), '-p', `${prepared.contract.core.crate}-php-ext`, '--features', testFeatures(prepared.contract)]);
-    extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(prepared.contract)}.${dylib}`)}`);
-  }
-  run(phpTool, ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]);
-  record('php', 'lint', 'php -l of the stub');
-  // A run of PHPUnit counts as a test only when its JUnit log names at least one test that ran.
+  stepOf(['php'], 'build the extensions', () => {
+    for (const p of allCopies) {
+      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p.contract)]);
+      extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)}`);
+    }
+  });
+  if (stepOf(['php'], 'php -l of the stub', () => run(phpTool, ['-l', join(copy, `packages/php-ext/generated/${extensionOf(contract)}.stub.php`)]))) lintOf('php', 'php -l of the stub');
+  // A run of PHPUnit counts by its JUnit log: the tests it names, their failures, errors and skips.
   const phpunitRun = (name: string, path: string, env: Record<string, string> = {}): void => {
-    const log = join(work, `phpunit-${name}.xml`);
+    const log = join(work, `phpunit-${name.replaceAll(' ', '-')}.xml`);
     rmSync(log, { force: true });
-    run(phpTool, [...extensions, phpunit, '--log-junit', log, path], { env });
-    const count = Number(/<testsuite [^>]*tests="(\d+)"/.exec(existsSync(log) ? readFileSync(log, 'utf8') : '')?.[1] ?? '0');
-    if (count === 0) throw new Error(`PHPUnit ran no test of ${path} (its JUnit log ${log} names none)`);
-    record('php', 'test', `${count} ${name} on PHPUnit`);
+    process.stdout.write(`$ ${phpTool} ${[...extensions, phpunit, '--log-junit', log, path].join(' ')}\n`);
+    const ran = spawnSync(phpTool, [...extensions, phpunit, '--log-junit', log, path], { stdio: 'inherit', env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...env } });
+    const suite = /<testsuite [^>]*>/.exec(existsSync(log) ? readFileSync(log, 'utf8') : '')?.[0] ?? '';
+    const attribute = (key: string): number => Number(new RegExp(`\\b${key}="(\\d+)"`).exec(suite)?.[1] ?? '0');
+    const failures = attribute('failures') + attribute('errors') + (ran.status !== 0 && suite === '' ? 1 : 0);
+    counted('php', `${name} on PHPUnit`, attribute('tests') - failures - attribute('skipped'), failures, attribute('skipped'));
   };
-  phpunitRun('generated tests', join(copy, 'packages/php-ext/generated/tests'));
-  if (caseRunners) phpunitRun('contract cases', join(e2e, 'CasesTest.php'), { CASES: cases ?? '' });
+  stepOf(['php'], 'the generated tests on PHPUnit', () => phpunitRun('generated tests', join(copy, 'packages/php-ext/generated/tests')));
+  if (caseRunners) stepOf(['php'], 'the contract cases on PHPUnit', () => phpunitRun('contract cases', join(e2e, 'CasesTest.php'), { CASES: cases ?? '' }));
 }
 
 if (targets.includes('go')) {
-  step('Go: build the static library, run the generated tests and the cases with go test');
-  run('cargo', ['clippy', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test', '--', '-D', 'warnings']);
-  record('go', 'lint', 'cargo clippy of the C ABI crate with its test features');
-  // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
-  const release = join(work, 'target-release-check');
-  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
-  process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
-  const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-  const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
-  if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points:\n${leaked.join('\n')}`);
-  rmSync(release, { recursive: true, force: true });
-  record('go', 'lint', 'llvm-nm: the static library without features holds no test entry point');
-  run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
   const goModule = join(copy, 'packages/go');
-  if (caseRunners && existsSync(join(e2e, 'cases_test.go'))) {
-    mkdirSync(join(goModule, 'tests'), { recursive: true });
-    copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
-  }
   const goEnv = { CGO_LDFLAGS: `-L${join(target, 'debug')}`, GOTOOLCHAIN: 'local', GOFLAGS: '-tags=polyspec_panic_test,polyspec_codec_test', CASES: cases ?? '' };
-  process.stdout.write('$ gofmt -l .\n');
-  const unformatted = execFileSync(gofmt, ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
-  if (unformatted !== '') throw new Error(`gofmt would change:\n${unformatted}`);
-  run(goTool, ['vet', './...'], { cwd: goModule, env: goEnv });
-  record('go', 'lint', 'gofmt -l and go vet');
-  // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
-  // skipped, as the JUnit log of PHPUnit does. No test that ran fails the target, as for the other targets, and a skipped
-  // test fails it too and is named, because a skipped test verifies nothing.
-  process.stdout.write(`$ ${goTool} test -json -count=1 ./...\n`);
-  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
-  const counts = { pass: [] as string[], fail: [] as string[], skip: [] as string[] };
-  const packageFailures: string[] = [];
-  for (const line of goTest.stdout.split('\n')) {
-    if (!line.startsWith('{')) {
-      if (line !== '') process.stdout.write(`${line}\n`);
-      continue;
+  // GN-13b: panic-test and codec-test are for tests only; the library built without features has no test entry point.
+  if (stepOf(['go'], 'llvm-nm: the static library without features holds no test entry point', () => {
+    const release = join(work, 'target-release-check');
+    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
+    process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
+    const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib('go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_)/.test(line));
+    if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
+    rmSync(release, { recursive: true, force: true });
+  })) lintOf('go', 'llvm-nm: the static library without features holds no test entry point');
+  stepOf(['go'], 'build the static library with the test features', () => {
+    run('cargo', ['build', '--manifest-path', join(copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', 'panic-test,codec-test']);
+    if (caseRunners && existsSync(join(e2e, 'cases_test.go'))) {
+      mkdirSync(join(goModule, 'tests'), { recursive: true });
+      copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));
     }
-    const event = JSON.parse(line) as { Action: string; Package?: string; Test?: string; Output?: string };
-    if (event.Action === 'output' && event.Output !== undefined) process.stdout.write(event.Output);
-    const name = `${event.Package ?? ''}.${event.Test ?? ''}`;
-    if (event.Test !== undefined && (event.Action === 'pass' || event.Action === 'fail' || event.Action === 'skip')) counts[event.Action].push(name);
-    if (event.Test === undefined && event.Action === 'fail') packageFailures.push(event.Package ?? '');
-  }
-  process.stderr.write(goTest.stderr);
-  process.stdout.write(`go test: ${counts.pass.length} passed, ${counts.fail.length} failed, ${counts.skip.length} skipped\n`);
-  for (const name of counts.skip) process.stdout.write(`skipped (a failure, GN-14a): ${name}\n`);
-  const total = counts.pass.length + counts.fail.length + counts.skip.length;
-  if (goTest.status !== 0 || counts.fail.length > 0 || packageFailures.length > 0) throw new Error(`go test failed: ${counts.fail.length} tests${packageFailures.length > 0 ? `, the packages ${packageFailures.join(', ')}` : ''} (status ${String(goTest.status)})`);
-  if (total === 0) throw new Error(`go test ran no test of ${goModule}`);
-  if (counts.skip.length > 0) throw new Error(`go test skipped ${counts.skip.length} test${counts.skip.length === 1 ? '' : 's'}, which verify nothing: ${counts.skip.join(', ')}`);
-  record('go', 'test', `${counts.pass.length} ${caseRunners && existsSync(join(e2e, 'cases_test.go')) ? 'generated tests and contract cases' : 'generated tests'} on go test`);
+  });
+  if (stepOf(['go'], 'gofmt -l and go vet', () => {
+    process.stdout.write('$ gofmt -l .\n');
+    const unformatted = execFileSync(gofmt, ['-l', '.'], { cwd: goModule, encoding: 'utf8' });
+    if (unformatted !== '') throw new Error(`gofmt would change: ${unformatted.trim().split('\n').join(', ')}`);
+    run(goTool, ['vet', './...'], { cwd: goModule, env: goEnv });
+  })) lintOf('go', 'gofmt -l and go vet');
+  // GN-14a: go test -json gives an event for each test, so the run counts the tests that passed, failed and were
+  // skipped.
+  stepOf(['go'], 'the generated tests and the cases on go test', () => {
+    process.stdout.write(`$ ${goTool} test -json -count=1 ./...\n`);
+    const goTest = spawnSync(goTool, ['test', '-json', '-count=1', './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
+    const counts = { pass: [] as string[], fail: [] as string[], skip: [] as string[] };
+    const packageFailures: string[] = [];
+    for (const line of goTest.stdout.split('\n')) {
+      if (!line.startsWith('{')) {
+        if (line !== '') process.stdout.write(`${line}\n`);
+        continue;
+      }
+      const event = JSON.parse(line) as { Action: string; Package?: string; Test?: string; Output?: string };
+      if (event.Action === 'output' && event.Output !== undefined) process.stdout.write(event.Output);
+      const name = `${event.Package ?? ''}.${event.Test ?? ''}`;
+      if (event.Test !== undefined && (event.Action === 'pass' || event.Action === 'fail' || event.Action === 'skip')) counts[event.Action].push(name);
+      if (event.Test === undefined && event.Action === 'fail') packageFailures.push(event.Package ?? '');
+    }
+    process.stdout.write(goTest.stderr);
+    if (packageFailures.length > 0 && counts.fail.length === 0) throw new Error(`go test failed the packages ${packageFailures.join(', ')} (status ${String(goTest.status)})`);
+    counted('go', `the generated tests${caseRunners && existsSync(join(e2e, 'cases_test.go')) ? ' and the contract cases' : ''} on go test`, counts.pass.length, counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+  });
 }
 
-step('declarations');
-run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]);
-record('node', 'lint', 'tsc --strict of the declarations');
-if (targets.includes('wasm')) {
-  run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/wasm/generated/index.d.ts')]);
-  record('wasm', 'lint', 'tsc --strict of the declarations');
+if (targets.includes('node') && installed) {
+  if (stepOf(['node'], 'tsc --strict of the declarations', () => run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/generated/index.d.ts')]))) lintOf('node', 'tsc --strict of the declarations');
+}
+if (targets.includes('wasm') && installed) {
+  if (stepOf(['wasm'], 'tsc --strict of the declarations', () => run(tsc, ['--noEmit', '--strict', join(copy, 'packages/ts/wasm/generated/index.d.ts')]))) lintOf('wasm', 'tsc --strict of the declarations');
 }
 
-step('what ran for each target (a lint reads the code; only a test verifies the target)');
-const untested: Lang[] = [];
-for (const [t, { lint, test }] of ran) {
-  process.stdout.write(`${t}\n  lint: ${lint.join('; ') || 'none'}\n  test: ${test.join('; ') || 'NONE'}\n`);
-  if (test.length === 0) untested.push(t);
+step('each target (a lint reads the code; only a test verifies the target)');
+for (const [t, o] of results) {
+  if (o.causes.length === 0 && o.tests.length === 0) o.causes.push('no test ran (GN-14)');
+  const tests = o.tests.map((x) => `${x.what}: ${x.passed} passed`).join('; ');
+  process.stdout.write(`${t}: ${o.causes.length > 0 ? 'FAILED' : 'passed'}\n  lint: ${o.lint.join('; ') || 'none'}\n  test: ${tests || 'NONE'}\n${o.causes.map((c) => `  cause: ${c}\n`).join('')}`);
 }
-if (untested.length > 0) {
-  process.stdout.write(`\nno test ran for the target${untested.length === 1 ? '' : 's'} ${untested.join(', ')}: the run fails (GN-14)\n`);
+const failedTargets = [...results].filter(([, o]) => o.causes.length > 0).map(([t]) => t);
+if (failedTargets.length > 0) {
+  process.stdout.write(`\nthe target${failedTargets.length === 1 ? '' : 's'} ${failedTargets.join(', ')} failed, each with its causes above: the run fails (GN-14c)\n`);
   process.exit(1);
 }
 if (leftOut > 0) {
-  process.stdout.write(`\nall steps passed, but ${leftOut} case${leftOut === 1 ? ' was' : 's were'} left out (each printed as a change above): the run fails (G-5)\n`);
+  process.stdout.write(`\nevery target passed, but ${leftOut} case${leftOut === 1 ? ' was' : 's were'} left out (each printed as a change above): the run fails (G-5)\n`);
   process.exit(1);
 }
-process.stdout.write('\nall steps passed\n');
+process.stdout.write('\nevery target passed\n');
