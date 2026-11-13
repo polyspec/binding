@@ -902,3 +902,26 @@ describe('CK-22 instance values (GN-13f)', () => {
     assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
   });
 });
+
+describe('CK-64 integers of a case (T-1)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): string[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => `${f.check} ${f.path} ${f.message}`);
+  };
+  const outside = (where: string, what: string, type: string): string =>
+    `CK-64 ${where}: ${what} 9223372036854775807 is outside the safe integers, the range of the type ${type} (T-1); a value of the range of i64 is an int64`;
+  test('the shapes repository passes, with its int64 case outside the safe integers', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('an argument, an item of a list and a result outside the safe integers of uint', () => {
+    const big = 9223372036854775807n;
+    assert.deepEqual(run((c) => { c.repeat[0].times = big; }), [outside('/cases/1 the case twice_with_a_separator of shapes.repeat', 'the argument times', 'uint')]);
+    const id: string = read('contracts/cases.json').total[0].id;
+    assert.deepEqual(run((c) => { c.total[0].numbers = [1, big]; c.total[0].result = big; }), [
+      outside(`/cases/5 the case ${id} of shapes.total`, 'the argument numbers[1]', 'uint'),
+      outside(`/cases/5 the case ${id} of shapes.total`, 'the result result', 'uint'),
+    ]);
+  });
+});

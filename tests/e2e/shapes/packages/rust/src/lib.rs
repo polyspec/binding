@@ -145,6 +145,28 @@ pub fn frame(text: &str, options: &FrameOptions) -> String {
     framed
 }
 
+/// The length and the emptiness of a text (T-4: a record with a bool field as a return).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measure {
+    /// The number of the characters.
+    pub length: u64,
+    /// Whether the text has no character.
+    pub empty: bool,
+}
+
+/// The measure of a text.
+#[must_use]
+pub fn measure(text: &str) -> Measure {
+    Measure { length: widen(text.chars().count()), empty: text.is_empty() }
+}
+
+/// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
+/// the largest.
+#[must_use]
+pub const fn negate(value: i64) -> i64 {
+    value.saturating_neg()
+}
+
 /// The sum of the bytes (T-7: bytes as a parameter).
 ///
 /// # Errors
@@ -184,6 +206,14 @@ impl Buffer {
     #[must_use]
     pub fn new(start: &[u8]) -> Self {
         Self { bytes: start.to_vec() }
+    }
+
+    /// The last `count` bytes, or all of them when there are fewer (the member `from_end`, a method whose name the
+    /// lints of the generated code take as any name).
+    #[must_use]
+    pub fn last(&self, count: u64) -> Vec<u8> {
+        let keep = usize::try_from(count).map_or(self.bytes.len(), |count| count.min(self.bytes.len()));
+        self.bytes[self.bytes.len() - keep..].to_vec()
     }
 
     /// The number of the bytes.

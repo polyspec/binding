@@ -155,5 +155,53 @@
       "times": 2,
       "result": 6
     }
+  ],
+  "measure": [
+    {
+      "id": "a_text_of_two_characters",
+      "text": "ab",
+      "result": {
+        "length": 2,
+        "empty": false
+      }
+    },
+    {
+      "id": "the_empty_text",
+      "text": "",
+      "result": {
+        "length": 0,
+        "empty": true
+      }
+    }
+  ],
+  "negate": [
+    {
+      "id": "the_largest_int64",
+      "value": 9223372036854775807,
+      "result": -9223372036854775807
+    },
+    {
+      "id": "a_small_number",
+      "value": -5,
+      "result": 5
+    }
+  ],
+  "buffer_from_end": [
+    {
+      "id": "the_last_two_bytes",
+      "start": "abc",
+      "count": 2,
+      "result": {
+        "hex": "6263"
+      }
+    },
+    {
+      "id": "more_bytes_than_the_buffer",
+      "start": "ab",
+      "count": 5,
+      "result": {
+        "hex": "6162"
+      }
+    }
   ]
 }

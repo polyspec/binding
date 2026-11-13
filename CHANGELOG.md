@@ -17,6 +17,19 @@
   with the build tag `polyspec_fault_test` (GN-13b). `binding check` names a static member of a class among the names
   of its Go package (CK-13), and the end-to-end check runs `go test` with a tag for each test feature of the crate and
   finds every test entry point in a library built without features. Verified by `npm test` in `packages/ts`.
+- The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
+  9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
+  refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a
+  place (CK-64).
+- The Node and WASM declarations named an `int64` parameter `number | bigint` and an `int64` result `bigint`, but the
+  binding took and gave a number of the safe integers only, so the case 9223372036854775807 was refused as an
+  argument, and `binding` read that integer of a case file as the nearest double. The binding now takes a `bigint` of
+  the range of i64 and gives a `bigint`, and `binding` reads an integer outside the safe integers as a `bigint`
+  (GN-12a). A method whose name meets a lint convention (`from_end`) failed clippy in the Python and PHP crates, and a
+  bool field went to a WASM conversion by a needless borrow; a method has the Rust name `member_<name>` with its
+  language name as an attribute, and a scalar field is passed by value (GN-6l). `tests/e2e/shapes` has the members
+  `shapes.measure`, `shapes.negate` and `buffer.from_end` for these forms. Verified by `npm test` in `packages/ts` and
+  `make e2e` of `tests/e2e/shapes`.
 - A case could give a value of a value type only as JSON nested once per level, so a value deeper than the default
   limit of a JSON reader (PHP 512, serde_json 128) could not be written, and a kind that only such a value raises had
   no case (CK-22). A case gives it as `{"kind": "list", "repeat": <n>, "value": <value>}`, which each test makes in a

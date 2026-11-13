@@ -12,6 +12,10 @@ import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
 export type Lang3 = 'python' | 'node' | 'php';
 
+// A case value in a message: an integer outside the safe integers is a bigint (cli.ts reads the case files so), which
+// JSON.stringify does not write.
+export const shown = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => (typeof item === 'bigint' ? String(item) : item));
+
 export interface Context {
   lang: Lang3;
   // How the generated test names an enum value: python `pkg.Enum("value")`, php `\Ns\Enum::from("value")`.
@@ -64,7 +68,7 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if (factory !== undefined && ctx.objectNew !== undefined) {
     return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
   }
-  throw new Error(`no placeholder for ${JSON.stringify(type)}`);
+  throw new Error(`no placeholder for ${shown(type)}`);
 }
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
@@ -77,7 +81,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     // text holds, an unpaired surrogate where a text is code points or UTF-16 and the byte 0xFF where it is bytes.
     if (type === 'text' && typeof value === 'object') {
       const text = (value as { ill_formed?: unknown }).ill_formed;
-      if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
+      if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${shown(value)}`);
       if (ctx.lang === 'python') return `${pyString(text)} + "\\ud800"`;
       if (ctx.lang === 'node') return `${jsString(text)} + '\\uD800'`;
       return `${phpText(text)} . "\\xFF"`;
@@ -98,16 +102,18 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
         '-inf': { python: 'float("-inf")', node: '-Infinity', php: '-INF' },
       };
       const form = typeof name === 'string' ? forms[name] : undefined;
-      if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+      if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${shown(value)}`);
       return form[ctx.lang];
     }
-    if (type === 'int64' && out && ctx.lang === 'node') return `${String(value)}n`;
+    // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
+    // them as a bigint (cli.ts), whose decimal token every language writes.
+    if (type === 'int64' && ctx.lang === 'node' && (out || typeof value === 'bigint')) return `${String(value)}n`;
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
       if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
       const hex = typeof value === 'object' ? (value as { hex?: unknown }).hex : undefined;
-      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${shown(value)}`);
       if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
       if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
       return `hex2bin(${phpText(hex)})`;
@@ -116,7 +122,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   }
   if ('optional' in type) return fromJson(model, ctx, type.optional, value, out);
   if ('tuple' in type) {
-    if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Error(`a case value of the tuple ${JSON.stringify(type)} is an array of ${type.tuple.length} values`);
+    if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Error(`a case value of the tuple ${shown(type)} is an array of ${type.tuple.length} values`);
     const items = type.tuple.map((part, i) => fromJson(model, ctx, part, value[i], out));
     return ctx.lang === 'python' ? `(${items.map((item) => `${item},`).join(' ')})` : `[${items.join(', ')}]`;
   }
@@ -160,7 +166,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
       }),
     );
   }
-  throw new Error(`no case value of the type ${JSON.stringify(type)}`);
+  throw new Error(`no case value of the type ${shown(type)}`);
 }
 
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
@@ -172,7 +178,7 @@ function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
   if (typeof kind !== 'string') return;
   for (const row of (unit.out ?? []).filter((r) => r.kind === kind)) {
     const make = row.make[lang];
-    if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${JSON.stringify(make)}, with which a result is not compared yet`);
+    if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${shown(make)}, with which a result is not compared yet`);
   }
   const held = record?.['value'];
   if (kind === 'list' && record?.['repeat'] !== undefined) madeAsBuilt(unit, lang, held);
@@ -196,7 +202,7 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
-  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(value)}`);
+  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
   const held = record['value'];
   const lang = ctx.lang;
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
@@ -208,8 +214,8 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
     return lang === 'python' ? `float(${float})` : lang === 'php' ? `(float) ${float}` : float;
   }
   if (kind === 'int') {
-    const token = typeof held === 'number' && Number.isSafeInteger(held) ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
+    const token = typeof held === 'number' && Number.isSafeInteger(held) ? String(held) : typeof held === 'bigint' ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
+    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${shown(held)}`);
     if (typeof held === 'number' || lang === 'python') return token;
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);
@@ -220,7 +226,7 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(value)}`);
+    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
     const inner = valueFromJson(model, ctx, held, where);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
@@ -389,7 +395,7 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
     if (typeof step === 'string') {
       const unit = unitOf(model, at);
       const field = unit?.kind === 'record' ? (unit.fields ?? []).find((f) => langName('python', f.name, 'variable') === step) : undefined;
-      if (field === undefined) return `${what} names the field ${step}, which ${JSON.stringify(at)} has not`;
+      if (field === undefined) return `${what} names the field ${step}, which ${shown(at)} has not`;
       at = field.type;
       continue;
     }
@@ -397,10 +403,10 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
     const n = record['index'] ?? record['tuple'];
     if (Object.keys(record).length !== 1 || typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return `${what} is not a field name, {"index": n} or {"tuple": n}`;
     if ('index' in record) {
-      if (typeof at !== 'object' || !('list' in at)) return `${what} takes an item of ${JSON.stringify(at)}, which is no list`;
+      if (typeof at !== 'object' || !('list' in at)) return `${what} takes an item of ${shown(at)}, which is no list`;
       at = at.list;
     } else {
-      if (typeof at !== 'object' || !('tuple' in at) || n >= at.tuple.length) return `${what} takes part ${n} of ${JSON.stringify(at)}, which is no tuple of that length`;
+      if (typeof at !== 'object' || !('tuple' in at) || n >= at.tuple.length) return `${what} takes part ${n} of ${shown(at)}, which is no tuple of that length`;
       at = at.tuple[n] ?? 'none';
     }
   }
@@ -424,7 +430,7 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
   const pick = Array.isArray(record['pick']) ? record['pick'] : [];
   const reached = pickedType(model, factory.returns, 'from' in record ? pick : []);
   if (typeof reached === 'string') return fail(reached);
-  if (typeof reached !== 'object' || !('unit' in reached) || reached.unit !== unitId || reached.library !== undefined) fail(`${factory.member.id} gives ${JSON.stringify(reached)}, not the class ${unitId}`);
+  if (typeof reached !== 'object' || !('unit' in reached) || reached.unit !== unitId || reached.library !== undefined) fail(`${factory.member.id} gives ${shown(reached)}, not the class ${unitId}`);
   const args = argsOf(factory, (record['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args are not the parameters of ${factory.member.id}`);
   const on = factory.receiver === undefined ? undefined : instanceOf(model, factory.unit.id, record['receiver'] ?? fail(`${factory.member.id} is a method, so the value gives its receiver`), `${where}, the receiver of ${factory.member.id}`);
   const then = (Array.isArray(record['then']) ? record['then'] : []).map((item, i) => {
@@ -577,7 +583,7 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const own = `${model.contract.library.replaceAll('-', '_')}.`;
     const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
     if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
-    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: JSON.stringify(faults) }), ...(receiver === undefined ? {} : { receiver }) });
+    out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: shown(faults) }), ...(receiver === undefined ? {} : { receiver }) });
   }
   return out;
 }
@@ -609,7 +615,7 @@ export function comparableResult(model: Model, type: Type): string | undefined {
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return undefined;
   if (unit?.kind === 'record') return (unit.fields ?? []).map((f) => comparableResult(model, f.type)).find((reason) => reason !== undefined);
-  return `a result of ${JSON.stringify(type)} is not compared yet`;
+  return `a result of ${shown(type)} is not compared yet`;
 }
 
 export function resultCases(model: Model, fn: Fn): ResultCase[] {
@@ -780,7 +786,7 @@ export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', 
   if (typeof key === 'string') return make('text', key);
   if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
   if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
-  throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${JSON.stringify(key)}`);
+  throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${shown(key)}`);
 }
 
 // G-5: the errno that a raising case expects: none, a number, or the symbol of an errno, whose value each language
