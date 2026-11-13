@@ -9,7 +9,7 @@ import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
-  aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
+  aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, lockLines, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
   variantPattern,
   errorMatched,
@@ -1053,7 +1053,7 @@ function coreErrorRust(model: Model): string {
     if (properties.length === 0) return `        ${variantPattern(k.variant)} => ${index},`;
     return `        ${variantPattern(k.variant)} => {
             let output = &mut properties;
-${properties.map(({ property }) => `            ${convertOut(model, property.returns, `${property.corePath}(&error)`)};`).join('\n')}
+${properties.map(({ property }) => `            ${convertOut(model, property.returns, propertyValue(property, '&error', (failure) => `core_error(${failure})`))};`).join('\n')}
             ${index}
         }`;
   }).join('\n');

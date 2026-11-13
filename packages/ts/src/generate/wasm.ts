@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, propertyValue, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -817,7 +817,7 @@ ${arms}
   // error by a second match without a wildcard.
   const propertyArms = model.kinds.map((k) => {
     const properties = k.unit === undefined ? [] : errorProperties(k.unit);
-    const values = properties.map(({ property }) => `(${rustString(langName('wasm', property.member.name, 'variable'))}, ${convertOut(model, property.returns, `${property.corePath}(&error)`)})`);
+    const values = properties.map(({ property }) => `(${rustString(langName('wasm', property.member.name, 'variable'))}, ${convertOut(model, property.returns, propertyValue(property, '&error', (failure) => `core_error(${failure})`))})`);
     return `        ${variantPattern(k.variant)} => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
   }).join('\n');
   return `

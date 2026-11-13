@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, propertyValue, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -899,7 +899,7 @@ function libRust(model: Model, layout: PhpLayout): string {
 fn ${rustField(u.unit.name)}_properties(object: &mut ZendObject, error: &${model.coreError ?? '()'}) -> Result<(), Fail> {
 ${errorProperties(u).map(({ owner, property }) => {
     const name = langName('php', property.member.name, 'variable');
-    return `    let value = ${property.corePath}(error);
+    return `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`)};
     let property = ${convertOut(model, property.returns, 'value')}?;
     if let Err(error) = in_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
         return Err(PhpException::from_message(format!("B-4: the property ${name} could not be written: {error}")));
@@ -949,6 +949,7 @@ fn category_scope(class: &ClassEntry) -> &ClassEntry {
 }
 `;
   const propertyType = (type: Type): string => {
+    if (typeof type === 'object' && 'list' in type) return 'Array';
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
     return ({ bool: 'Bool', int: 'Long', int64: 'Long', uint: 'Long', float: 'Double' } as Record<string, string>)[String(base)] ?? 'String';
   };
@@ -1397,7 +1398,8 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
     blocks.push(`namespace ${phpNamespace(layout, u.unit.module)} {
     /** The errors of the unit ${u.unit.id} (E-2). */
     ${u.unit.final === true ? 'final ' : ''}class ${langName('php', u.unit.name, 'class')} extends ${parent}
-    {${u.properties.map((p) => `
+    {${u.properties.map((p) => `${typeof p.returns === 'object' && 'list' in p.returns ? `
+        /** @return ${docType(p.returns)}|null */` : ''}
         public function ${langName('php', p.member.name, 'callable')}(): ${phpType(typeof p.returns === 'object' && 'optional' in p.returns ? p.returns.optional : p.returns).replace(/^\?/, '')}|null {}`).join('\n')}
     }
 }`);

@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, propertyValue, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -917,15 +917,16 @@ ${arms}
   // The closure outlives the core error, so a text or bytes that the error lends is copied.
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    if (typeof type === 'object' && 'list' in type) return `${call}.into_iter().map(|item| String::from(AsRef::<str>::as_ref(&item))).collect::<Vec<String>>()`;
     const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
     if (from === undefined) return call;
     return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;
   };
   const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
 /// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
-fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Properties {
-${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, `${property.corePath}(error)`)};`).join('\n')}
-    Box::new(move |env, object| {
+fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Result<Properties, Fail> {
+${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, propertyValue(property, 'error', (failure) => `Err(core_error(${failure}))`))};`).join('\n')}
+    Ok(Box::new(move |env, object| {
 ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         let property = match ${convertOut(model, property.returns, 'value')} {
             Ok(property) => property,
@@ -933,10 +934,13 @@ ${errorProperties(u).map(({ property }, i) => `        let value = value${i};
         };
         read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
         Ok(())
-    })
+    }))
 }
 `).join('');
-  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  const propertyArms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `match ${rustField(k.unit.unit.name)}_properties(&error) {
+            Ok(properties) => Some(Box::new(properties)),
+            Err(fail) => return fail,
+        }`},`).join('\n');
   return `${setters}
 ${doc}
 fn core_error(error: ${model.coreError}) -> Fail {

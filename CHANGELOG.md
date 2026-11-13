@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A property of an error unit with `raises`, such as `partial_target_error.removal_kind`, whose core function returns
+  `Result<String, Error>`, and a property of type `list<text>`, such as a trace of the error, were refused with "a
+  property of an error unit that raises is not generated yet" and "a property of an error unit of type
+  {\"list\":\"text\"} is not generated yet", so no target of such a contract was generated. Every target now
+  generates both: the generated code reads every property when it makes the error, so the `Err` of a property that
+  raises is raised as the error of its own kind in place of the error that the core returned, and a `list<text>`
+  property is a list of strings. A variant of the `raises` of a property that is no kind, or whose class has a property
+  that raises, is refused by name (GN-7a). Verified by `npm test` and `npm run typecheck` in `packages/ts`.
 - No constructor of the generated PHP error classes took a kind, so PHP code could make an error with its kind only
   by writing the private property `kind` in the scope of the category class, which is no public API, and the fixture
   of a raise row did so. Each category class now has the public constructor `__construct(string $message, string

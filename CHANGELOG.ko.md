@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 코어 함수가 `Result<String, Error>`를 돌려주는 `partial_target_error.removal_kind` 같은 `raises`가 있는 오류 unit의
+  property와, 오류의 trace 같은 타입 `list<text>`의 property는 "a property of an error unit that raises is not generated
+  yet"와 "a property of an error unit of type {\"list\":\"text\"} is not generated yet"로 거부되어, 그런 계약의 어떤
+  대상도 생성되지 않았다. 이제 모든 대상이 둘 다 생성한다. 생성 코드는 오류를 만들 때 모든 property를 읽으므로, raise하는
+  property의 `Err`는 코어가 돌려준 오류 대신 그 자신의 kind의 오류로 일어나고, `list<text>` property는 문자열 list다.
+  kind가 아니거나 그 class가 raise하는 property를 가진 property `raises`의 변형은 이름을 대어 거부한다(GN-7a). `packages/ts`에서
+  `npm test`와 `npm run typecheck`로 확인했다.
 - 생성된 PHP 오류 클래스의 어떤 생성자도 kind를 받지 않아서, PHP 코드는 category 클래스의 scope에서 private 속성 `kind`를
   적어야만 kind를 가진 오류를 만들 수 있었고, 그것은 공개 API가 아니며 raise 행의 fixture가 그렇게 했다. 이제 모든 category
   클래스는 공개 생성자 `__construct(string $message, string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든

@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, propertyValue, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -796,7 +796,7 @@ ${arms}
 /// I-3: the properties of ${unitClass(u)}, read from the core error.
 fn ${rustField(u.unit.name)}_properties(py: Python<'_>, raised: &PyErr, error: &${model.coreError}) -> PyResult<()> {
     let object = raised.value(py);
-${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}(error);
+${errorProperties(u).map(({ property }) => `    let value = ${propertyValue(property, 'error', (failure) => `Err(core_error(py, ${failure}))`)};
     object.setattr(${rustString(`_${langName('python', property.member.name, 'variable')}`)}, ${convertOut(model, property.returns, 'value')}?)?;`).join('\n')}
     Ok(())
 }

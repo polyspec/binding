@@ -184,7 +184,16 @@ export interface ErrorProperty {
   member: Member;
   corePath: string;
   returns: Type;
+  // GN-7a: the variants that the core function returns in its Err; none when it returns the value itself.
+  raises: string[];
 }
+
+// GN-7a: the value of a property, read from the core error `error`. The Err of a property that raises is raised in place
+// of the error, by `raised` of the error that the function returned, which the arm returns.
+export const propertyValue = (property: ErrorProperty, error: string, raised: (failure: string) => string): string =>
+  property.raises.length === 0
+    ? `${property.corePath}(${error})`
+    : `match ${property.corePath}(${error}) { Ok(value) => value, Err(failure) => return ${raised('failure')} }`;
 
 // E-2: an error unit. Its class extends the class of its parent, or of its category when it has none.
 export interface ErrorUnit {
@@ -555,13 +564,13 @@ export function collectModel(
         if (member.writable === true) throw new Unsupported(`${member.id}: a writable property is not generated yet`);
         if (typeof member.core !== 'object' || member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a property of an error unit names a function of the core error with the receiver &self`);
         if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a property takes no parameter`);
-        if ((member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: a property of an error unit that raises is not generated yet`);
         const returns = member.returns ?? 'none';
         const base = typeof returns === 'object' && 'optional' in returns ? returns.optional : returns;
-        if (typeof base !== 'string' || !['bool', 'int', 'int64', 'uint', 'float', 'text', 'bytes'].includes(base)) {
+        const textList = typeof returns === 'object' && 'list' in returns && returns.list === 'text';
+        if (!textList && (typeof base !== 'string' || !['bool', 'int', 'int64', 'uint', 'float', 'text', 'bytes'].includes(base))) {
           throw new Unsupported(`${member.id}: a property of an error unit of type ${JSON.stringify(returns)} is not generated yet`);
         }
-        return { member, corePath: member.core.path, returns };
+        return { member, corePath: member.core.path, returns, raises: member.raises ?? [] };
       }
       errorUnits.push({ unit, category: unit.category, properties });
       return;
@@ -629,6 +638,19 @@ export function collectModel(
     if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
     return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
   }) ?? []);
+  // GN-7a: a variant that a property raises is a kind whose class has no property that raises, so that making one
+  // error makes at most one other.
+  for (const unit of errorUnits) {
+    for (const property of unit.properties) {
+      for (const variant of property.raises) {
+        const kind = kinds.find((k) => k.variant === variant);
+        if (kind === undefined) refusals.refuse(`${property.member.id}: the variant ${variant} of its raises is no kind of errors.kinds (GN-7a)`);
+        else if (kind.unit !== undefined && errorProperties(kind.unit).some(({ property: p }) => p.raises.length > 0)) {
+          refusals.refuse(`${property.member.id}: the kind ${variant} of its raises has the class ${kind.unit.unit.id}, which has a property that raises (GN-7a)`);
+        }
+      }
+    }
+  }
   if (contract.errors.binding.length > 0) refusals.refuse('errors.binding overrides are not generated yet');
   // U-3, GN-6d: the kinds that a callback member recognizes, of the rows whose class is a recognized unit or extends one.
   for (const callback of callbacks) {

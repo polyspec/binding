@@ -903,7 +903,7 @@ test('a property of an error unit that raises raises in place of the error, and 
   const unit = contract.units.find((u: any) => u.id === 'absent_error');
   unit.members[0].raises = ['polyspec_consumer::Error::Internal'];
   unit.members.push({ id: 'absent_error.trace', name: ['trace'], kind: 'property', visibility: 'public', returns: { list: 'text' }, wait: 'none', raises: [], core: { path: 'polyspec_consumer::Error::trace', receiver: '&self' } });
-  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(py, failure\)\) \};/);
   assert.match(python, /let value = polyspec_consumer::Error::trace\(error\);\n    object\.setattr\("_trace", out_list\(py, value, /);
