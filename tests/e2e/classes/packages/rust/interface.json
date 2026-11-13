@@ -241,6 +241,38 @@
           ],
           "wait": "async_driver",
           "core": "polyspec_classes::fetch"
+        },
+        {
+          "id": "classes.settle",
+          "name": [
+            "settle"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "wasm"
+            ],
+            "reason": "GN-6n"
+          },
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "async_driver",
+          "core": "polyspec_classes::settle"
         }
       ]
     },
@@ -812,6 +844,11 @@
       "member": "classes.fetch",
       "file": "contracts/cases.json",
       "group": "fetch"
+    },
+    {
+      "member": "classes.settle",
+      "file": "contracts/cases.json",
+      "group": "settle"
     },
     {
       "member": "gate.enter_slowly",

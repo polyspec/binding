@@ -10,6 +10,50 @@
   kind `refused`의 오류 unit `refused_error`가 있고, `sample.resolve_driven`의 case
   `a_lookup_that_raises_a_recognized_error_refuses_the_key`에서는 lookup이 call에서 그 오류 unit을 던지므로, 모든
   target이 machine에서 kind `refused`를 기대한다. `make test-ts`로 확인했고, target들은 `make e2e`에서 그 case를 실행한다.
+- WASM은 `wait: async_driver`인 모든 member와 `machine`인 member(GN-6ab)를 거부해서("wait async_driver is not generated
+  for WASM yet"), 그런 계약은 WASM 모듈을 생성하지 못했다. 이제 WASM은 `wasm_bindgen_futures::future_to_promise`의
+  promise를 돌려준다: 브라우저에서도 Node에서도 JavaScript의 event loop가 모듈의 스레드에서 future를 poll하며 tokio
+  runtime은 쓰지 않는다. WASM crate는 자기 `wasm-bindgen` 0.2.130과 `js-sys` 0.3.107의 release인 `wasm-bindgen-futures`
+  0.4.80에 의존하고 binding_core의 driver에는 의존하지 않는다(GN-6n). `machine`인 member는 `Driven` 객체를 돌려주며, 그
+  `advance()`는 그 스레드에서 machine의 call을 하고 기다림에는 `[false, promise]`를, 끝에는 `[true, result]`를 준다. ES
+  진입의 `drive`가 그것을 기다린 뒤 해제한다(GN-6ab). 그런 member의 ES 진입은 async 함수이고 선언은 `Promise`이며, 생성된
+  시험은 그것을 await한다. `tests/e2e/classes`는 future가 한 번 pending이고 tokio runtime이 필요 없는 `classes.settle`을
+  갖고, 단위 시험은 그 생성된 WASM 진입을 코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로
+  확인했다.
+- list parameter를 표의 타입으로 된 `Vec`으로 코어에 줘서, `&[usize]`, `&[u32]`나 더 좁은 정수의 tuple slice를 빌리는 코어는
+  컴파일되지 않았다. 이제 그런 list는 `IntoCore`를 거쳐 코어 항목 타입의 `Vec`으로 들어가고, 코어 호출은 `&values[..]`를
+  받는다. 코어 타입 밖의 항목은 kind `invalid_number`다(GN-6ad). Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `&[usize]`를
+  받는 `shapes.width_sum`과 `&[u32]`를 받는 `shapes.largest`를 갖고, 단위 시험은 그 fixture의 생성된 WASM 진입점을 그
+  코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로 확인했다.
+- PHP, Python, Node, WASM은 각 정수를 표의 타입(u64나 i64)으로 코어에 주고 결과는 u8, u16, u32에서만 넓혀서, `u32`,
+  `usize`, `[usize; 2]`를 받거나 `usize`를 돌려주는 코어는 컴파일되지 않았다. 이제 인자, record나 case의 field, tuple의
+  부분은 코어 호출이 대상을 정하는 `IntoCore`를 거쳐 코어에 들어간다: 정수는 `TryFrom`으로 좁히고 코어 타입 밖의 값은 kind
+  `invalid_number`이므로, 코어 `u32`와 wasm32의 `usize`에 대해 2^32를 거부한다. tuple은 Rust tuple이나 배열로 들어간다.
+  tuple 결과는 Rust tuple이나 배열에서 `partsN`으로 읽고, `usize`와 `isize`는 `const _: () = assert!(usize::BITS <= 64);`
+  뒤에 `as`로 넓힌다(GN-6ac). list parameter는 GN-6ad대로 넘기며, Go는 아직
+  바꾸지 않는다. `tests/e2e/shapes`는 `[usize; 2]`를 받는 `shapes.span_width`, `u32` parameter에 `[u32; 2]` 결과를 가진
+  `shapes.span_at`, 코어 struct가 `ends: [usize; 2]`와 `step: u32`를 가진 record `stride`를 받는 `shapes.stride_count`,
+  `u8` parameter에 `isize` 결과를 가진 `shapes.offset`을 갖는다. 2^32인 step과 256인 start는 kind `invalid_number`다.
+  GN-6ad의 컴파일 시험은 그들의 생성된 WASM 진입점을 코어와 함께 host와 wasm32에 대해 컴파일하며, 이 변경 전의 생성기에서는
+  실패한다. `packages/ts`의 `npm test`로 확인했다.
+- 기본값이 `{literal: null}`인 `optional` 타입의 case field를 거부해서("a field default of a case is not generated yet"),
+  template AST처럼 case에서 그런 field를 빼는 variant는 어떤 target도 생성하지 못했다. 이제 그런 field는 빠질 수 있고 빠지면
+  null이다: Python은 기본값 `None`인 dataclass field, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 선택적으로
+  선언하며, PHP는 생성자의 그 자리에서 null을 받는다. case 값은 그 키를 뺄 수 있다(GN-6v). case field의 그 밖의 기본값은
+  계속 이름으로 거부한다. `tests/e2e/variants`는 이 기본값을 가진 case `label`의 field `at`을 갖는다. `packages/ts`의
+  `npm test`로 확인했다.
+- Go는 tuple을 받는 member를 받았지만 PHP, Python, Node, WASM은 그것을 거부해서("no input conversion"), 그런 member를 가진
+  계약은 그 target들을 생성하지 못했다. 이제 tuple은 정확히 그 부분들로 된 열로 들어온다: Python `tuple`, Node와 WASM `Array`,
+  PHP list이고, 각 부분은 그 타입대로 바뀐다. 다른 값이나 항목 수가 다른 열은 kind `invalid_argument_type`이다(GN-6t).
+  `tests/e2e/shapes`는 tuple parameter, tuple의 list, 부분 타입이 다른 tuple인 `shapes.span_length`, `shapes.spans_total`,
+  `shapes.labelled`를 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/shapes`의 `make e2e`로 확인했다.
+- 생성기는 variant unit(T-9)과 `implements`를 가진 class unit을 거부해서, 둘 중 하나를 가진 계약은 어떤 target도 생성하지
+  않았다. 이제 variant는 그 `core_type`의 Rust enum이고 wildcard 없는 case의 match로 양방향으로 바뀐다. variant를 다시 담는
+  field는 상자에 담는다. 각 case는 Python dataclass, tag를 가진 Node·WASM 객체, variant의 interface를 구현하는 PHP final 클래스다
+  (GN-6v). 계약의 callback interface를 구현하는 class는 가진 값에 trait를 부르는 interface의 member를 갖고, 그 인스턴스는 case에서도
+  callback을 대신한다(GN-6w). Go는 둘을 이름으로 거부한다. `tests/e2e/variants`는 case `group`이 list, 상자, optional 상자에 figure를
+  담는 variant `figure`와 `tail`을 구현하는 class `ribbon`을 갖는다. `packages/ts`의 `npm test`와 `tests/e2e/variants`의 `make e2e`로
+  확인했다.
 - 콜백을 받는 함수처럼 언어 코드에 닿는 `wait: async_driver` member는 "a member with wait async_driver that reaches
   language code is not generated"로 거부되었다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
   부르게 되기 때문이다. 이제 그런 member는 `core`에 `"machine": true`를 적고, 그 코어 경로는 I/O 없는 state machine인
@@ -19,8 +63,7 @@
   JavaScript 스레드에서, 각 기다림은 napi의 tokio runtime에서 한다. `binding check`는 `machine`이 없는 그런 member와 다른
   member의 `machine`을 보고한다(CK-68). Go는 C ABI 호출 안에서 호출 스레드로 machine을 돌리며, 각 기다림은 block하고 각
   callback은 cgo로 부른다. machine은 인자를 값으로 받으므로, 생성 코드는 class parameter를 그 값의 clone으로 넘긴다.
-  생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method와 그런 member의 기본값이 있는 parameter를 거부하고,
-  WASM은 결함 82까지 `async_driver`인 모든 member를 거부한다(GN-6ab). end-to-end sample에 `sample.resolve_driven`을
+  생성기는 machine이 receiver를 빌리게 될 `machine`이 있는 method와 그런 member의 기본값이 있는 parameter를 거부한다(GN-6ab). end-to-end sample에 `sample.resolve_driven`을
   더했다. 그 machine은 I/O 단계, lookup의 call, 그 결과를 지나며, case는 찾은 key, 없는 key, 읽기가 실패한 경우다.
   lookup이 던지는 경우는 callback을 받는 각 member의 생성 테스트다. `make test-ts`와 `make test-rust`로 확인했고,
   `tests/machine.rs`는 `drive`와 `Driving`으로 machine을 돌린다.

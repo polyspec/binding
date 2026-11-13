@@ -11,6 +11,56 @@
   and the case `a_lookup_that_raises_a_recognized_error_refuses_the_key` of `sample.resolve_driven`, whose lookup
   raises that error unit in its call, so that every target expects the kind `refused` from the machine. Verified by
   `make test-ts`; the targets run the case in `make e2e`.
+- WASM refused every member with `wait: async_driver` ("wait async_driver is not generated for WASM yet"), a member
+  with `machine` (GN-6ab) with them, so such a contract generated no WASM module. WASM now returns a promise of
+  `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the future on the thread of the module,
+  in a browser as in Node, and no tokio runtime is used; the WASM crate depends on `wasm-bindgen-futures` 0.4.80, the
+  release of its `wasm-bindgen` 0.2.130 and `js-sys` 0.3.107, and not on the driver of binding_core (GN-6n). A member
+  with `machine` returns a `Driven` object whose `advance()` makes the calls of the machine on that thread and gives
+  `[false, promise]` for a wait or `[true, result]`, which the ES entry `drive` awaits and then frees (GN-6ab). The
+  ES entry of such a member is an async function, its declaration a `Promise`, and its generated tests await it.
+  `tests/e2e/classes` has `classes.settle`, whose future is pending once and needs no tokio runtime, and a unit test
+  compiles its generated WASM entry with its core with rustc for the host and for wasm32. Verified by `npm test` in
+  `packages/ts`.
+- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
+  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
+  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
+  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
+  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
+  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
+  only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
+  An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
+  target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
+  `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
+  array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
+  not convert yet. `tests/e2e/shapes` has
+  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
+  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
+  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
+  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
+  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
+- A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
+  generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
+  a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM
+  member that is missing or `undefined` and declared optional, and null at its place in the PHP constructor; a case
+  value may leave out its key (GN-6v). Any other default of a case field stays refused by name. `tests/e2e/variants`
+  has the field `at` of the case `label` with this default. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
+  contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
+  parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or
+  another number of items is kind `invalid_argument_type` (GN-6t). `tests/e2e/shapes` has `shapes.span_length`,
+  `shapes.spans_total` and `shapes.labelled`, a tuple parameter, a list of tuples and a tuple of different part
+  types. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
+  no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
+  wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of
+  its tag, and a PHP final class of the variant's interface (GN-6v). A class that implements a callback interface of
+  the contract has the members of the interface, which call the trait on the held value, and its instance stands for
+  the callback, also in a case (GN-6w). Go refuses both by name. `tests/e2e/variants` has the variant `figure`, whose
+  case `group` holds figures in a list, a box and an optional box, and the class `ribbon` that implements `tail`.
+  Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/variants`.
 - A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
   with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
   polls on its own threads would call the language code there. Such a member now names `"machine": true` in its
@@ -22,8 +72,7 @@
   `machine` and `machine` on any other member (CK-68). Go drives the machine on the calling thread inside the call of
   its C ABI, each wait blocked on and each callback called through cgo. A machine takes its arguments by value, so
   the generated code passes a class parameter as a clone of its value. The generator refuses a method with `machine`,
-  whose machine would borrow its receiver, and a parameter with a default of such a member, and WASM refuses every
-  member with `async_driver` until defect 82 (GN-6ab). The end-to-end sample adds `sample.resolve_driven`, whose
+  whose machine would borrow its receiver, and a parameter with a default of such a member (GN-6ab). The end-to-end sample adds `sample.resolve_driven`, whose
   machine passes an I/O step, a call of the lookup and its result, with the cases of a found key, a missing key and a
   failed read; a lookup that throws is the generated test of each member that takes a callback. Verified by
   `make test-ts` and `make test-rust`, whose `tests/machine.rs` drives a machine with `drive` and with `Driving`.

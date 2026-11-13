@@ -321,15 +321,6 @@
           ],
           "kind": "function",
           "visibility": "public",
-          "only": {
-            "targets": [
-              "php",
-              "python",
-              "node",
-              "go"
-            ],
-            "reason": "GN-6n"
-          },
           "parameters": [
             {
               "name": [

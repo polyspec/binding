@@ -67,7 +67,7 @@ function outcome(call) {
 `;
 
 // GN-6m: what a call that may wait gives: its result, or the class and the kind of its failure.
-const NODE_SETTLED = `
+export const NODE_SETTLED = `
 async function settled(call) {
   try {
     return { result: await call() };
@@ -79,7 +79,7 @@ async function settled(call) {
 
 // GN-6m: a test that calls a member that waits awaits it: the test is an async function, a failure is a rejection and
 // an outcome is settled.
-const awaitedTest = (block: string): string => {
+export const awaitedTest = (block: string): string => {
   if (!/\bawait /.test(block)) return block;
   return block
     .replace(/^(\ntest\('[^\n]*?'), \(\) => \{/, '$1, async () => {')
@@ -101,6 +101,8 @@ export function nodeTests(model: Model): string {
       return `{ ${(unit.members ?? []).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-6v: a case is an object of its tag and its fields.
+    variantNew: (variant, kase, fields) => `{ ${[`${langName('node', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.

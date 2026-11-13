@@ -6,7 +6,7 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ValueAlias, Unsupported, aliasOf, kindText, langName, objectUnit, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, leftOut } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -22,6 +22,9 @@ export interface Context {
   enumRef: (enumName: string, value: string) => string;
   // How the generated test makes the result form of a record (T-4) from its fields in contract order.
   recordNew: (unit: Unit, fields: string[]) => string;
+  // How the generated test makes a value of a case of a variant (T-9) from its fields in contract order: the result
+  // form of the case as a record, when the language gives none of its own.
+  variantNew?: (variant: Variant, kase: VariantCase, fields: string[]) => string;
   // GN-13: how the generated test makes an instance of an error unit with a kind and a message, as language code does.
   errorNew?: (unit: Unit, kind: string, message: string) => string;
   // How the generated test makes an object that implements a callback (U-3): every member returns null, or the
@@ -50,10 +53,19 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
+  // GN-6t: a value of a tuple is the sequence of the placeholders of its parts, a tuple in Python.
+  if ('tuple' in type) {
+    const parts = type.tuple.map((part) => placeholder(model, ctx, part, rich));
+    return ctx.lang === 'python' ? `(${parts.map((part) => `${part},`).join(' ')})` : `[${parts.join(', ')}]`;
+  }
   const unit = unitOf(model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return ctx.enumRef(langName('python', unit.name, 'class'), first.value);
   if (unit?.kind === 'record') return ctx.recordNew(unit, (unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
+  // GN-6v: a value of a variant is its first case that holds no Box of a value of its own type, whose fields are placeholders.
+  const variant = variantOf(model, type);
+  const plain = variant?.cases.find((kase) => caseFields(model, variant, kase).every((f) => f.boxed !== 'box'));
+  if (variant !== undefined && plain !== undefined) return caseNew(ctx, variant, plain, (plain.unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
   if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
   // U-7: a value of a value alias is the value that its first out row of a built-in form makes for this language.
   if (unit?.kind === 'alias') {
@@ -171,6 +183,37 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
     );
+  }
+  // G-5, GN-6v: a value of a variant is an object of its tag, whose value is the tag text of its case, and its fields.
+  const variant = variantOf(model, type);
+  if (variant !== undefined) {
+    const tag = langName('python', variant.unit.tag ?? [], 'variable');
+    const fields = typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    const kase = variant.cases.find((c) => c.value === fields?.[tag]);
+    if (fields === undefined || kase === undefined) throw new Error(`a case value of the variant ${variant.unit.id} is an object whose ${tag} is the text of one of its cases, not ${shown(value)}`);
+    const extra = Object.keys(fields).find((key) => key !== tag && !(kase.unit.fields ?? []).some((f) => langName('python', f.name, 'variable') === key));
+    if (extra !== undefined) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${extra}`);
+    return caseNew(ctx, variant, kase, (kase.unit.fields ?? []).map((f) => {
+      const key = langName('python', f.name, 'variable');
+      // GN-6v: a field that may be left out is null when the case value leaves it out.
+      if (!(key in fields) && leftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
+      if (!(key in fields)) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${key}`);
+      return fromJson(model, ctx, f.type, fields[key], out);
+    }));
+  }
+  // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
+  if (unit?.origin === 'callback' && libraryOf(type) === undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
+    const where = `a case value of ${unit.id}`;
+    const implementer = model.objects.find((o) => (o.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === unit.id) && (() => {
+      try {
+        instanceOf(model, o.unit.id, value, where);
+        return true;
+      } catch {
+        return false;
+      }
+    })());
+    if (implementer === undefined) throw new Error(`${where} is an instance value of no class that implements it (GN-13f, GN-6w)`);
+    return ctx.instanceNew(instanceOf(model, implementer.unit.id, value, where));
   }
   // GN-13f: the value of a class is an instance value, at any place of the case.
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
@@ -323,21 +366,37 @@ export function caseValue(model: Model, ctx: Context, arg: Arg, args: ReadonlyMa
 
 // Whether the language compares two results of the type by their values: a class instance holds a core value, which
 // only its members show, and a return of none shows nothing.
-function comparable(model: Model, type: Type): boolean {
+function comparable(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
   if (type === 'none' || type === 'never') return false;
   if (typeof type === 'string') return true;
-  if ('list' in type) return comparable(model, type.list);
-  if ('optional' in type) return comparable(model, type.optional);
-  if ('map' in type) return comparable(model, type.map);
-  if ('keyed_map' in type) return comparable(model, type.keyed_map);
-  if ('tuple' in type) return type.tuple.every((t) => comparable(model, t));
+  if ('list' in type) return comparable(model, type.list, seen);
+  if ('optional' in type) return comparable(model, type.optional, seen);
+  if ('map' in type) return comparable(model, type.map, seen);
+  if ('keyed_map' in type) return comparable(model, type.keyed_map, seen);
+  if ('tuple' in type) return type.tuple.every((t) => comparable(model, t, seen));
   if ('unit' in type) {
     if (objectUnit(model, type) !== undefined) return false;
     const unit = unitOf(model, type);
-    return unit?.kind !== 'record' || (unit.fields ?? []).every((f) => comparable(model, f.type));
+    // A record or a variant that holds itself is compared as far as it is not compared already.
+    if (unit === undefined || seen.has(unit.id)) return true;
+    seen.add(unit.id);
+    if (unit.kind === 'variant') return (unit.cases ?? []).every((c) => c.fields.every((f) => comparable(model, f.type, seen)));
+    return unit.kind !== 'record' || (unit.fields ?? []).every((f) => comparable(model, f.type, seen));
   }
   return false;
 }
+
+// GN-6v: a value of a case in the form of the language.
+// GN-6v: the value of a field that a case value of an input leaves out, which Python and JavaScript leave out of the
+// value they make, and PHP gives as null at its place in the constructor.
+const LEFT_OUT = '\u0000left out';
+const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
+  const all = kase.unit.fields ?? [];
+  const kept = ctx.lang === 'php' ? all : all.filter((_f, i) => fields[i] !== LEFT_OUT);
+  const values = ctx.lang === 'php' ? fields.map((v) => (v === LEFT_OUT ? 'null' : v)) : fields.filter((v) => v !== LEFT_OUT);
+  const unit = { ...kase.unit, fields: kept };
+  return ctx.variantNew === undefined ? ctx.recordNew(unit, values) : ctx.variantNew(variant, { ...kase, unit }, values);
+};
 
 // G-5: two calls of a member whose results the generated test requires to be the same (the outcome is the result, or
 // the class and kind of the failure): for each argument with a {literal}, {const} or {empty} default, the call that
@@ -667,20 +726,29 @@ export interface ResultCase {
 
 // GN-13e: whether the language compares a result of the type with the value of a case: a class has no case value
 // form, and a return of none or never has no result.
-export function comparableResult(model: Model, type: Type): string | undefined {
+export function comparableResult(model: Model, type: Type, seen: Set<string> = new Set()): string | undefined {
   if (type === 'none' || type === 'never') return 'a member that returns nothing has no result to compare';
   if (typeof type === 'string') return undefined;
-  if ('list' in type) return comparableResult(model, type.list);
-  if ('optional' in type) return comparableResult(model, type.optional);
-  if ('map' in type) return comparableResult(model, type.map);
-  if ('keyed_map' in type) return comparableResult(model, type.keyed_map);
-  if ('tuple' in type) return type.tuple.map((t) => comparableResult(model, t)).find((reason) => reason !== undefined);
+  if ('list' in type) return comparableResult(model, type.list, seen);
+  if ('optional' in type) return comparableResult(model, type.optional, seen);
+  if ('map' in type) return comparableResult(model, type.map, seen);
+  if ('keyed_map' in type) return comparableResult(model, type.keyed_map, seen);
+  if ('tuple' in type) return type.tuple.map((t) => comparableResult(model, t, seen)).find((reason) => reason !== undefined);
   if (objectUnit(model, type) !== undefined) return 'a class has no case value form';
   // A value alias is compared where its out rows make the built-in form of each kind (expectedText).
   if (aliasOf(model, type) !== undefined) return undefined;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return undefined;
-  if (unit?.kind === 'record') return (unit.fields ?? []).map((f) => comparableResult(model, f.type)).find((reason) => reason !== undefined);
+  // A record or a variant that holds itself is judged as far as it is not judged already.
+  if ((unit?.kind === 'record' || unit?.kind === 'variant') && seen.has(unit.id)) return undefined;
+  if (unit?.kind === 'record') {
+    seen.add(unit.id);
+    return (unit.fields ?? []).map((f) => comparableResult(model, f.type, seen)).find((reason) => reason !== undefined);
+  }
+  if (unit?.kind === 'variant') {
+    seen.add(unit.id);
+    return (unit.cases ?? []).flatMap((c) => c.fields).map((f) => comparableResult(model, f.type, seen)).find((reason) => reason !== undefined);
+  }
   return `a result of ${shown(type)} is not compared yet`;
 }
 
@@ -785,6 +853,8 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     if (unit?.origin !== 'callback') continue;
     const where = `the case ${id} of ${fn.member.id}`;
     const value = args.get(arg) as { callback?: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] } | null | undefined;
+    // GN-6w: an instance of a class that implements the interface stands for a fixture, as a value of the case.
+    if (isInstanceValue(value)) continue;
     if (typeof value !== 'object' || value === null || typeof value.callback !== 'object' || value.callback === null) {
       throw new Unsupported(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
     }

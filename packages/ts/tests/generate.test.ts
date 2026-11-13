@@ -12,7 +12,7 @@ import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
-import { closure } from '../src/generate/text.ts';
+import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -26,6 +26,8 @@ const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
+  // Go refuses the variant figure (GN-6v) and the class ribbon that implements tail (GN-6w).
+  variants: ['php', 'python', 'node', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
   classes: ['php', 'python', 'node', 'go', 'wasm'],
 };
@@ -1265,6 +1267,225 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+test('a tuple enters as the sequence of exactly its parts in each language (T-1, GN-6t)', () => {
+  const out = shaped();
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn in_tuple<'py, const N: usize>\(/);
+  assert.match(python, /in_tuple\(py, [a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(py, &part_0, "span"\)\?, in_uint\(py, &part_1, "span"\)\?\)\)\)/);
+  assert.match(python, /in_tuple\(py, [a-z_]+, "pair"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_text\(py, &part_0, "pair"\)\?, in_uint\(py, &part_1, "pair"\)\?\)\)\)/);
+  assert.match(python, /in_list\(py, [a-z_]+, "spans", \|py, item\| in_tuple\(py, item, "spans"\)/);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /fn in_tuple<'[a-z]+, const N: usize>\(/, path);
+    assert.match(rust, /in_tuple\([a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(part_0, "span"\)\?, in_uint\(part_1, "span"\)\?\)\)\)/, path);
+  }
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn in_tuple<const N: usize>\(value: &JsValue, subject: &str\) -> Result<\[JsValue; N\], Fail>/);
+  assert.match(wasm, /in_tuple\(&?[a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(&part_0, "span"\)\?, in_uint\(&part_1, "span"\)\?\)\)\)/);
+  // G-5: the case value of a tuple is the sequence of its parts in each language.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_length\(\(2, 5,\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.spanLength\(\[2, 5\]\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /Shapes\\spanLength\(\[2, 5\]\)/);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func SpanLength\(span \[2\]uint64\) \(uint64, error\)/m);
+});
+
+test('a value enters the core in its own integer and tuple type and leaves it from that type (T-1, GN-6ac)', () => {
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    // The trait narrows with TryFrom, so a value outside the core's type is kind invalid_number (B-2).
+    assert.match(rust, /trait IntoCore<T> \{\n {4}fn into_core\(self, subject: &str\) -> Result<T, BindingError>;/, path);
+    assert.match(rust, /into_core_narrow!\(u64, NumberType::Uint, u8, u16, u32, usize\);/, path);
+    assert.match(rust, /into_core_narrow!\(i64, NumberType::Int, i8, i16, i32, isize\);/, path);
+    assert.match(rust, /impl<A: IntoCore<T>, B: IntoCore<T>, T> IntoCore<\[T; 2\]> for \(A, B\)/, path);
+    // The core call chooses the type: a tuple parameter that the core holds as [usize; 2], and parameters of u32.
+    assert.match(rust, /let span = IntoCore::into_core\(span, "span"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::span_width\(&span\);/, path);
+    assert.match(rust, /let start = IntoCore::into_core\(start, "start"\)\.map_err\([^\n]*\)\?;\n\s*let length: u64 = /, path);
+    // A tuple result is read by partsN, from a Rust tuple or an array; a usize widens after the assertion of its width.
+    assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
+    assert.match(rust, /impl<T> Parts2<T, T> for \[T; 2\]/, path);
+    assert.match(rust, /const _: \(\) = assert!\(usize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6ac"\)\]\nimpl WideUint for usize \{/, path);
+    // A helper that no member uses is not generated.
+    assert.doesNotMatch(rust, /fn parts1</, path);
+  }
+  // B-2: the case of a start beyond 32 bits, the width of usize on wasm32, is kind invalid_number in each language.
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.spanAt\(4294967296, 1\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_at\(4294967296, 1\)/);
+});
+
+test('a list parameter whose items narrow is a Vec of the core type, whose slice the core borrows (T-1, GN-6ad)', () => {
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /let widths = IntoCore::into_core\(widths, "widths"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::width_sum\(&widths\[\.\.\]\);/, path);
+    assert.match(rust, /let values = IntoCore::into_core\(values, "values"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::largest\(&values\[\.\.\]\);/, path);
+    // A list of tuples narrows its parts the same way.
+    assert.match(rust, /let spans = IntoCore::into_core\(spans, "spans"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::spans_total\(&spans\[\.\.\]\);/, path);
+    // A list of items that do not narrow is passed as it is (GN-6).
+    assert.doesNotMatch(rust, /&[a-z_]+\[\.\.\]\)[^\n]*\n[^\n]*polyspec_shapes::(?!width_sum|largest|spans_total)/, path);
+  }
+  // B-2: an item beyond 32 bits is kind invalid_number in each language.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.largest\(\[1, 4294967296\]\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
+});
+
+test('the generated calls of the core compile against the core of tests/e2e/shapes for the host and for wasm32 (T-1, GN-6ac, GN-6ad)', () => {
+  // The bodies of the WASM entry points of the members below, as the generator writes them, with the core functions of
+  // the fixture's own source. An input conversion `let x: T = in_...;` becomes the parameter x: T, so each body runs
+  // on the values of the table's types; the stand-ins of binding_core and of the language are the few items they name.
+  const members = ['span_length', 'spans_total', 'span_width', 'span_at', 'width_sum', 'largest', 'stride_count', 'offset'];
+  // The record that stride_count takes, which the entry point builds as a struct literal of its fields.
+  const structs = ['Stride'];
+  const wasm = text(shaped(), 'packages/ts/wasm/generated/lib.rs');
+  const entries = [...wasm.matchAll(/pub fn (\w+)\([^)]*\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| \{\n([\s\S]*?)\n\s*\}\)\n\s*\.map_err\(throw\)/g)];
+  const calls = members.map((name) => {
+    const entry = entries.find((e) => e[1] === name);
+    assert.ok(entry !== undefined, `no WASM entry point ${name}`);
+    const params: string[] = [];
+    const body: string[] = [];
+    for (const line of (entry[2] ?? '').split('\n')) {
+      const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+      if (input === null) body.push(line);
+      else params.push(`${input[1]}: ${input[2]}`);
+    }
+    return `pub fn ${name}(${params.join(', ')}) -> Result<Out, BindingError> {\n${body.join('\n')}\n}\n`;
+  }).join('\n');
+  const core = readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/src/lib.rs', import.meta.url), 'utf8');
+  const coreFns = members.map((name) => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*#\\[must_use\\]\\npub (?:const )?fn ${name}\\([\\s\\S]*?\\n\\}\\n`).exec(core);
+    assert.ok(found !== null, `no core function ${name}`);
+    return found[0];
+  }).concat(structs.map((name) => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*pub struct ${name} \\{[\\s\\S]*?\\n\\}\\n`).exec(core);
+    assert.ok(found !== null, `no core struct ${name}`);
+    return found[0];
+  })).join('\n');
+  const stand = `
+pub enum NumberType {
+    Uint,
+    Int,
+}
+
+pub enum BindingError {
+    InvalidNumber { subject: String, expected: NumberType },
+}
+
+pub type Out = u64;
+
+fn binding_error(error: BindingError) -> BindingError {
+    error
+}
+
+fn out_uint(value: impl WideUint) -> Result<Out, BindingError> {
+    Ok(value.widen_uint())
+}
+
+fn out_int(value: impl WideInt) -> Result<Out, BindingError> {
+    Ok(value.widen_int().unsigned_abs())
+}
+
+fn out_tuple(items: &[Out]) -> Result<Out, BindingError> {
+    Ok(items.iter().sum())
+}
+
+pub mod polyspec_shapes {
+${coreFns}}
+`;
+  const source = `${usedHelpers(`${WIDEN}\n${INTO_CORE}\n${PARTS}`, `${stand}${calls}`)}\n${stand}\n${calls}`;
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-narrow-'));
+  try {
+    for (const target of [[], ['--target', 'wasm32-unknown-unknown']]) {
+      const run = spawnSync('rustc', ['--edition', '2021', '--crate-type', 'lib', '--crate-name', 'narrowing', '--emit', 'metadata', '-D', 'warnings', '--out-dir', where, ...target, '-'], { input: source, encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+      assert.equal(run.status, 0, `rustc ${target.join(' ')}: ${run.stderr}`);
+    }
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
+});
+
+// The repository of the end-to-end check that holds a variant and a class that implements a callback interface
+// (tests/e2e/variants).
+const variants = (change: (contract: any) => void = () => undefined, targets?: Inputs['targets']): Map<string, string | Buffer> => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  change(contract);
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles, ...(targets === undefined ? {} : { targets }) });
+};
+
+test('a variant is the core enum, converted by a match of its cases, and a union of its cases in each language (T-9, GN-6v)', () => {
+  const out = variants();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /fn in_figure\(/, path);
+    assert.match(rust, /fn out_figure/, path);
+    // A case without fields is a struct pattern, and a field that holds the variant again is boxed; a list is not.
+    assert.match(rust, /polyspec_variants::Figure::Dot \{\}/, path);
+    assert.match(rust, /let field_frame: Box<polyspec_variants::Figure> = [\s\S]*?Box::new\(in_figure\(/, path);
+    assert.match(rust, /let field_back: Option<Box<polyspec_variants::Figure>> = [\s\S]*?in_optional\([^\n]*\.map\(Box::new\)/, path);
+    assert.match(rust, /let field_items: Vec<polyspec_variants::Figure> = /, path);
+    assert.match(rust, /polyspec_variants::Figure::Group \{ items: field_items, frame: field_frame, back: field_back \}/, path);
+    assert.doesNotMatch(rust, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/, path);
+  }
+  const types = text(out, 'packages/python/generated/python/polyspec/variants/_types.py');
+  assert.match(types, /@dataclass\(frozen=True, kw_only=True\)\nclass FigureGroup:/);
+  assert.match(types, /^type Figure = FigureDot \| FigureCircle \| FigureLabel \| FigureGroup$/m);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    const dts = text(out, path);
+    assert.match(dts, /export interface FigureDot \{\n  readonly type: 'dot';\n\}/, path);
+    assert.match(dts, /export interface FigureGroup \{\n  readonly type: 'group';\n  readonly items: readonly \(Figure\)\[\];\n  readonly frame: Figure;\n  readonly back: Figure \| null;\n\}/, path);
+    assert.match(dts, /export type Figure = FigureDot \| FigureCircle \| FigureLabel \| FigureGroup;/, path);
+    assert.match(dts, /export declare function grown\(figure: Figure\): Figure;/, path);
+  }
+  const stub = text(out, 'packages/php-ext/generated/polyspec_variants.stub.php');
+  assert.match(stub, /interface Figure\n\s+\{\n\s+\}/);
+  assert.match(stub, /final class FigureCircle implements Figure\n/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /\.implements\(\(variant_figure, "\\\\Polyspec\\\\Variants\\\\Figure"\)\)/);
+  // G-5: a variant value of a case is the object of its tag and fields, which each target writes in its form.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureGroup\(items=\[pkg\.FigureCircle\(radius=1\.25\), pkg\.FigureLabel\(text="ab", at=2\)\], frame=pkg\.FigureDot\(\), back=None\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'group', items: \[\{ type: 'circle', radius: 1\.25 \}, \{ type: 'label', text: 'ab', at: 2 \}\], frame: \{ type: 'dot' \}, back: null \}\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /new \\Polyspec\\Variants\\FigureGroup\(/);
+  // GN-1: Go refuses the variant by name.
+  assert.throws(() => variants(undefined, ['go']), /figure: a variant unit is not generated for Go yet \(GN-6v\)/);
+  // GN-6v: what is not generated yet is refused by name.
+  assert.throws(() => variants((c) => { delete unitOf(c, 'figure').core_type; }), /figure: a variant names its core enum in core_type \(T-9\)/);
+  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].type = { unit: 'ribbon' }; }), /figure\.circle\.radius: a class in a case of a variant is not generated yet \(GN-6v\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
+});
+
+test('an optional field of a case whose default is {literal: null} may be left out, and is null (T-4, T-9, GN-6v)', () => {
+  const out = variants();
+  assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_types.py'), /class FigureLabel:\n[^\n]*\n\n    text: str\n    at: int \| None = None\n/);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.match(text(out, path), /readonly at\?: number \| null;/, path);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /let field_at: Option<u64> = in_default\(member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /let field_at: Option<u64> = in_default\(&member\(value, "at", subject\)\?, \|value\| in_optional\(value, \|value\| in_uint\(value, "at"\)\)\)\.map\(Option::flatten\)\?;/);
+  // G-5: a case value of an input may leave the field out; PHP gives null at its place, and a result holds null.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureLabel\(text="ok"\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'label', text: 'ok' \}\)\), ordered\(\{ type: 'label', text: 'OK', at: null \}\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /grown\(new \\Polyspec\\Variants\\FigureLabel\(text: "ok", at: null\)\)/);
+  // Any other default of a case field is refused by name.
+  assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[2].fields[0], { default: { literal: 'a' }, default_core: 'polyspec_variants::TEXT' }); }), /figure\.label\.text: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
+});
+
+test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {
+  const out = variants();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /<polyspec_variants::Ribbon as polyspec_variants::Tail>::last\((&self\.inner|this), count\)/, path);
+  }
+  assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_native.pyi'), /class Ribbon:[\s\S]*def last\(self, count: int\) -> bytes: \.\.\./);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    assert.match(text(out, path), /export declare class Ribbon implements Tail \{[\s\S]*last\(count: number\): Uint8Array;/, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_variants.stub.php'), /final class Ribbon implements \\Polyspec\\Variants\\Tail\n/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /#\[php\(implements\(ce = interface_tail, stub = "\\\\Polyspec\\\\Variants\\\\Tail"\)\)\]/);
+  // GN-13f: an instance value stands at the place of the callback that its class implements.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tail_of\(pkg\.Ribbon\("abc"\), 2\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tailOf\(new pkg\.Ribbon\('abc'\), 2\)/);
+  assert.throws(() => variants(undefined, ['go']), /ribbon: a class that implements an interface is not generated for Go yet \(GN-6w\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'tail').members[0].core.receiver = '&mut self'; }), /ribbon: the member tail\.last that it implements takes the receiver &mut self, which an implemented member is not generated for yet \(GN-6w\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'ribbon').abstract = true; }), /ribbon: an abstract class is not generated yet/);
+});
+
 // The Rust function `name` of a generated crate, from its line to the closing brace of its body.
 const rustFn = (code: string, name: string): string => {
   const start = code.search(new RegExp(`\\nfn ${name}[(<]`));
@@ -1729,7 +1950,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
   written.units.push(counter);
   const writing = text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/lib.rs');
-  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
+  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let amount = IntoCore::into_core\(amount, "amount"\)\.map_err\(binding_error\)\?;\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
   assert.match(writing, /static TABLE_COUNTER: RefCell<Table<binding_core::Exclusive<polyspec_sample::Counter>>>/);
   assert.match(text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/index.mjs'), /class Counter \{/);
   // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.
@@ -2257,13 +2478,124 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   }
   assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
   assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
-  // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
+  // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
+  // of binding_core and without a tokio runtime.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /awaited\(async move \{ polyspec_classes::settle\(&name\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(wasm, /wasm_bindgen_futures::future_to_promise\(async move \{ caught\(future\)\.await\.and_then\(give\)\.map_err\(throw\) \}\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /\nexport async function settle\(\.\.\.args\) \{/);
+  assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /export declare function settle\(name: string\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('GN-13e: settle a_name_is_settled', async \(\) => \{\n {2}assert\.deepStrictEqual\(ordered\(\(await pkg\.settle\('a'\)\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
+  assert.match(String(crates.get('packages/ts/wasm/Cargo.toml')), /\nwasm-bindgen-futures = "=0\.4\.80"\n/);
+  assert.doesNotMatch(String(crates.get('packages/ts/wasm/Cargo.toml')), /"driver"/);
+  // Go names such a member as not generated yet; a WASM method's future owns the guard of its receiver, and a
+  // constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
   };
   assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
-  assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
+  const wasmEverywhere = classes(everywhere, ['wasm']);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ polyspec_classes::Gate::enter_later\(&receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
+  assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.d.ts'), /\n {2}enterLater\(\): Promise<string>;/);
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
+});
+
+test('the generated WASM future of a member with wait async_driver compiles against the core of tests/e2e/classes for the host and for wasm32 (GN-6n)', () => {
+  // The entry point of classes.settle and the helpers that it uses, as the generator writes them, with the core
+  // function of the fixture's own source. The stand-ins are the items of wasm-bindgen, of binding_core and of the
+  // module that they name, each with the signature of the item it stands for: future_to_promise of
+  // wasm-bindgen-futures takes a future of Result<JsValue, JsValue> that is 'static.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const wasm = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  const entry = /pub fn settle\(name: JsValue\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| (?:shielded\(\|\| )?\{\n([\s\S]*?)\n\s*\}\)\)?\n\s*\.map_err\(throw\)/.exec(wasm);
+  assert.ok(entry !== null, 'no WASM entry point settle');
+  const params: string[] = [];
+  const body: string[] = [];
+  for (const line of (entry[1] ?? '').split('\n')) {
+    const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+    if (input === null) body.push(line);
+    else params.push(`${input[1]}: ${input[2]}`);
+  }
+  const helper = (name: string): string => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    assert.ok(found !== null, `no helper ${name}`);
+    return found[0];
+  };
+  const core = readFileSync(new URL('../../../tests/e2e/classes/packages/rust/src/lib.rs', import.meta.url), 'utf8');
+  const settle = /(?:\/\/\/[^\n]*\n)*pub async fn settle\([\s\S]*?\n\}\n/.exec(core);
+  const pending = /(?:\/\/\/[^\n]*\n)*#\[derive\(Default\)\]\nstruct Pending \{[\s\S]*?\nimpl std::future::Future for Pending \{[\s\S]*?\n\}\n/.exec(core);
+  assert.ok(settle !== null && pending !== null, 'no core function settle with its future Pending');
+  const source = `use std::panic::{catch_unwind, AssertUnwindSafe};
+
+pub struct JsValue;
+
+pub struct Promise;
+
+impl From<Promise> for JsValue {
+    fn from(_promise: Promise) -> Self {
+        Self
+    }
+}
+
+pub mod wasm_bindgen_futures {
+    pub fn future_to_promise<F>(future: F) -> super::Promise
+    where
+        F: std::future::Future<Output = Result<super::JsValue, super::JsValue>> + 'static,
+    {
+        drop(future);
+        super::Promise
+    }
+}
+
+pub enum BindingError {
+    Internal { detail: String },
+}
+
+pub struct Fail;
+
+fn throw(_fail: Fail) -> JsValue {
+    JsValue
+}
+
+fn binding_error(_error: BindingError) -> Fail {
+    Fail
+}
+
+fn core_error(_error: polyspec_classes::Error) -> Fail {
+    Fail
+}
+
+fn out_text(value: impl AsRef<str>) -> Result<JsValue, Fail> {
+    let _text: &str = value.as_ref();
+    Ok(JsValue)
+}
+
+pub mod polyspec_classes {
+    pub enum Error {
+        Missing { key: String },
+    }
+
+${settle[0]}
+${pending[0]}}
+
+${helper('awaited')}
+${helper('caught')}
+pub fn settle(${params.join(', ')}) -> Result<JsValue, Fail> {
+${body.join('\n')}
+}
+`;
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-future-'));
+  try {
+    for (const target of [[], ['--target', 'wasm32-unknown-unknown']]) {
+      const run = spawnSync('rustc', ['--edition', '2021', '--crate-type', 'lib', '--crate-name', 'awaiting', '--emit', 'metadata', '-D', 'warnings', '--out-dir', where, ...target, '-'], { input: source, encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+      assert.equal(run.status, 0, `rustc ${target.join(' ')}: ${run.stderr}`);
+    }
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
 });
 
 test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
@@ -2339,6 +2671,20 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(go, made);
   assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut machine, \|io\| driven\(${wait}\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
+  // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
+  // wait is a promise of the event loop of JavaScript.
+  const wasmOut = sample((c) => { delete member(c, 'sample.resolve_driven').only; }, ['wasm']);
+  const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|\| \{/);
+  assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
+  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(true, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
+  assert.match(wasm, /pub fn advance\(&mut self\) -> Result<JsValue, JsValue> \{/);
+  const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}for \(;;\) \{\n {6}const \[ended, value\] = enter\(Internal, \(\) => driven\.advance\(\)\);\n {6}if \(ended\) return value;\n {6}await value;\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
+  assert.match(mjs, /export async function resolveDriven\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveDriven lets the exception of a callback through', async \(\) => \{/);
   // A method with machine is refused by name.
   assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);
 });

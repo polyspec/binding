@@ -11,7 +11,8 @@ import { type Files, header } from './text.ts';
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // Every binding crate holds the core value of a class unit in the locks of the feature lock (GN-6h, GN-18a).
-// GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core.
+// GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core,
+// but WASM, whose futures the event loop of JavaScript polls (wasm-bindgen-futures) and which has no tokio runtime.
 const bindingCore = (driver: boolean): string =>
   `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock', ...(driver ? ['driver'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`;
 
@@ -127,7 +128,7 @@ panic-test = []
 ${testFeatures(contract, suffix, armed)}
 [dependencies]
 ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
-${bindingCore(drives(contract, suffix))}
+${bindingCore(suffix !== 'wasm' && drives(contract, suffix))}
 ${dependencies.join('\n')}
 
 [lints]
@@ -244,6 +245,8 @@ python-source = "generated/python"
       ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
+      // GN-6n: the promise of a member with wait async_driver; the release of wasm-bindgen and js-sys above.
+      ...(drives(contract, 'wasm') ? ['wasm-bindgen-futures = "=0.4.80"'] : []),
     ], '', false, { type: 'cdylib', core: `${'../'.repeat(wasmDepth + 1)}rust` }));
     files.set('packages/ts/wasm/src/lib.rs', entry(`The WebAssembly module of ${(contract.packages['node'] as { package: string }).package}.`, [MANY]));
   }

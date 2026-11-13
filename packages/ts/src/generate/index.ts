@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { collectModel, forLanguage, membersFor, refuseConsumers, Refusals } from './model.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
 import { php } from './php.ts';
@@ -93,11 +93,9 @@ export function generate(inputs: Inputs): Files {
     refuseForGo(membersFor(model, 'go'), refusals);
     refuseConsumers(membersFor(model, 'go'), 'Go', refusals);
   }
-  // GN-6n: WASM has no Promise form of a member with wait async_driver yet.
   if (targets.includes('wasm')) {
     const forWasm = membersFor(model, 'wasm');
-    for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)].filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for WASM yet (GN-6n)`);
-    // GN-6o, GN-6p: nor a method with the receiver self, nor the finalizer of a class unit with cleanup.
+    // GN-6o, GN-6p: WASM has no method with the receiver self and no finalizer of a class unit with cleanup yet.
     refuseConsumers(forWasm, 'WASM', refusals);
   }
   refusals.fail();
