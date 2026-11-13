@@ -746,7 +746,11 @@ the design ids are those of the binding design.
   (`document-order` is `document`, `order`), and the words are joined by `_` in Python and capitalized and joined in
   PHP and Go (`DocumentOrder`). Node and WASM name a test by a string, which holds the id as it is. Two ids of the
   cases of one member, or of one value alias, that give the same name refuse the target by name, PHP comparing names
-  without case as it does for its methods, so no test hides another.
+  without case as it does for its methods, so no test hides another. The parser of Python refuses an expression whose
+  brackets nest 200 deep ("too many nested parentheses"), and a case may nest a value deeper (a list past the depth
+  limit of its core). A Python case value whose brackets would nest more than 50 deep is therefore made step by step:
+  each value of it that reaches that depth is a local variable of a function of the test module, the next step takes
+  the variable, and the test calls the function, so the value of the case stays whole.
 - **GN-13f** A case of a method gives its receiver either as the arguments of a factory of its class among its own
   keys, or under the key `receiver` as an instance value, which earlier calls make:
   `{"new": "<member id>", "receiver": <instance value>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`

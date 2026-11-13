@@ -613,7 +613,10 @@
   (`document-order`는 `document`, `order`), 낱말은 Python에서 `_`로 잇고 PHP와 Go에서 첫 글자를 대문자로 해 잇는다
   (`DocumentOrder`). Node와 WASM은 시험을 문자열로 이름 지으므로 id를 그대로 담는다. 한 member의 case들이나 한 값 alias의
   case들의 두 id가 같은 이름을 내면 그 target을 이름을 대고 거부하며, PHP는 메서드처럼 대소문자 없이 이름을 비교한다. 그래서
-  어떤 시험도 다른 시험을 가리지 않는다.
+  어떤 시험도 다른 시험을 가리지 않는다. Python 파서는 괄호가 200단 중첩된 식을 거부하는데("too many nested parentheses"),
+  case는 값을 그보다 깊게 중첩할 수 있다(코어의 깊이 한계를 넘는 list). 그래서 괄호가 50단보다 깊게 중첩될 Python case 값은
+  단계별로 만든다. 그 깊이에 이른 값마다 시험 module 함수의 지역 변수가 되고, 다음 단계가 그 변수를 받으며, 시험은 그 함수를
+  부른다. 그래서 case 값은 온전히 남는다.
 - **GN-13f** 메서드의 case는 receiver를 자기 키 가운데 그 class의 factory 인자로 주거나, 키 `receiver` 아래에 앞선
   호출들이 만드는 인스턴스 값으로 준다:
   `{"new": "<member id>", "receiver": <인스턴스 값>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
