@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: f27bb3d457938b275620466e34b6e02f87a02c0f56cc440f1301b192db236f7a -->
+<!-- source-sha256: 89b15f9a267095fdc4fd3ed9dfe00702c88f4c3d4a906d29dc779ed7a3edc5b6 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- consumer sample의 계약 case "refused by the owner"는 alias에 callable을 주고 kind `unsupported`를 기대했는데, sample의
+  코어는 callable을 Native로 받는다(GN-6u). 그래서 그 case는 PHP, Python, Node, WASM에서 실패했다. 이제 그 case는 모든
+  target에서 소유자가 거부하는 두 값을 각각 `measure`, `pair`, `fetch`의 callback으로 준다. 하나는 key가 텍스트가 아닌
+  map이고, 다른 하나는 Unicode 텍스트가 아닌 텍스트다(PHP와 Go에서는 UTF-8이 아닌 바이트, Python, Node, WASM에서는 짝 없는
+  surrogate). Go에는 consumer의 계약 case가 없었다. 이제 `tests/e2e/consumer/cases_test.go`가 다른 네 runner와 같은 case를
+  돌린다.
 - end-to-end 검사의 relay가 드러낸 생성기의 네 텍스트. relay는 다른 저장소의 value class를 받고 돌려주며 kind를 가리키지
   않는다. Go를 뺀 모든 crate가 `failure_error`에 `core_error` 호출을 썼는데, kind가 없는 계약에는 그 함수가 없어서 crate가
   컴파일되지 않았다. `binding_core::Failure<()>`의 kind는 어떤 member도 주지 않는 unit이고, 이제 그 갈래는 kind

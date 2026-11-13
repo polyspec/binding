@@ -49,7 +49,11 @@ test('fetch raises its cases', () => {
 
 test('a value that the owner of the alias refuses is its kind in the class of this library', () => {
   const refused = (error) => error.constructor === consumer.ConsumerValueError && error.kind === 'unsupported' && error.status === null;
-  assert.throws(() => consumer.measure(() => 1), refused);
-  assert.throws(() => consumer.pair([() => 1]), refused);
-  assert.throws(() => consumer.fetch({ get: () => () => 1, set: () => {} }, 'a'), refused);
+  // The owner refuses a map with a key that is no text and a string with an unpaired surrogate; a function is data of
+  // the owner, which keeps it as a Native (GN-6u).
+  for (const value of [new Map([[5, 'x']]), '\ud800']) {
+    assert.throws(() => consumer.measure(value), refused);
+    assert.throws(() => consumer.pair([value]), refused);
+    assert.throws(() => consumer.fetch({ get: () => value, set: () => {} }, 'a'), refused);
+  }
 });

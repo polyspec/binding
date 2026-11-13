@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The contract case "refused by the owner" of the consumer sample gave the alias a callable and expected kind
+  `unsupported`, while the core of the sample takes a callable as a Native (GN-6u), so the case failed on PHP, Python,
+  Node and WASM. The case now gives two values that the owner refuses on every target, each through `measure`, `pair`
+  and the callback of `fetch`: a map with a key that is no text, and a text that is no Unicode text (bytes that are no
+  UTF-8 in PHP and Go, an unpaired surrogate in Python, Node and WASM). Go had no contract cases of consumer:
+  `tests/e2e/consumer/cases_test.go` now runs the same cases as the other four runners.
 - Four texts of the generator that the relay of the end-to-end check shows, which takes and gives the value class of
   another repository and names no kind. Every crate but the Go one wrote `failure_error` with a call of `core_error`,
   a function that a contract without kinds does not have, so the crate did not compile; the kind of
