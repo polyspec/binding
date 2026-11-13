@@ -23,8 +23,8 @@ mod lock;
 pub mod machine;
 mod map;
 pub mod naming;
-mod passthrough;
 mod native;
+mod passthrough;
 mod path;
 mod raised;
 mod value;
@@ -39,8 +39,8 @@ pub use keyed::{Key, KeyedMap};
 #[cfg(feature = "lock")]
 pub use lock::{Exclusive, Reading, Shared, Writing};
 pub use map::OrderedMap;
-pub use passthrough::Passthrough;
 pub use native::{Native, NativeObject};
+pub use passthrough::Passthrough;
 pub use path::{path_bytes, path_from_bytes};
 pub use raised::Raised;
 pub use value::{

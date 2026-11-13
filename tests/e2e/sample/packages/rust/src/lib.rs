@@ -107,7 +107,10 @@ impl Kinds for Error {
     fn errno(&self) -> Option<i32> {
         match self {
             Self::Unreadable { errno } => *errno,
-            Self::Missing { .. } | Self::Unsupported { .. } | Self::Refused | Self::Internal { .. } => None,
+            Self::Missing { .. }
+            | Self::Unsupported { .. }
+            | Self::Refused
+            | Self::Internal { .. } => None,
         }
     }
 }
@@ -154,7 +157,12 @@ pub fn resolve_slowly(
 /// by an I/O future, which fails with kind `unreadable` for an empty key, then finds its value through the lookup,
 /// which is language code that the driver calls on the thread that owns it, and ends.
 pub fn resolve_driven<L: Lookup>(lookup: L, key: String) -> ResolveDriven<L> {
-    ResolveDriven { lookup, key, read: false, found: None }
+    ResolveDriven {
+        lookup,
+        key,
+        read: false,
+        found: None,
+    }
 }
 
 /// The state machine of [`resolve_driven`], which owns its lookup and its key.
@@ -169,19 +177,30 @@ impl<L: Lookup> binding_core::machine::Machine for ResolveDriven<L> {
     type Io = Result<(), Error>;
     type Done = Result<String, Failure<Error>>;
 
-    fn resume(&mut self, io: Option<Result<(), Error>>) -> binding_core::machine::Step<Self::Io, Self::Done> {
+    fn resume(
+        &mut self,
+        io: Option<Result<(), Error>>,
+    ) -> binding_core::machine::Step<Self::Io, Self::Done> {
         use binding_core::machine::Step;
         if let Some(found) = self.found.take() {
             return Step::Done(match found {
                 Ok(Some(value)) => Ok(value),
-                Ok(None) => Err(Failure::Kind(Error::Missing { key: self.key.clone() })),
+                Ok(None) => Err(Failure::Kind(Error::Missing {
+                    key: self.key.clone(),
+                })),
                 Err(failure) => Err(failure),
             });
         }
         if !self.read {
             self.read = true;
             let empty = self.key.is_empty();
-            return Step::Io(Box::pin(async move { if empty { Err(Error::Unreadable { errno: None }) } else { Ok(()) } }));
+            return Step::Io(Box::pin(async move {
+                if empty {
+                    Err(Error::Unreadable { errno: None })
+                } else {
+                    Ok(())
+                }
+            }));
         }
         match io {
             Some(Err(error)) => Step::Done(Err(Failure::Kind(error))),
@@ -784,7 +803,9 @@ pub fn touch(_text: &str) {}
 type Entries = std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>;
 
 /// The entries of `entries`, also after a panic of another holder, whose writes are whole entries.
-fn entries_of(entries: &Entries) -> std::sync::MutexGuard<'_, std::collections::BTreeMap<String, String>> {
+fn entries_of(
+    entries: &Entries,
+) -> std::sync::MutexGuard<'_, std::collections::BTreeMap<String, String>> {
     match entries.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -901,7 +922,10 @@ pub struct Scoped<F> {
 impl<F> Scoped<F> {
     fn new(parent: Entries, function: F) -> Self {
         Self {
-            scope: Scope { parent, pending: Entries::default() },
+            scope: Scope {
+                parent,
+                pending: Entries::default(),
+            },
             function,
             stage: Stage::Begin,
             called: None,
@@ -910,9 +934,14 @@ impl<F> Scoped<F> {
     }
 
     /// Ends with the failure of an invariant of the machine.
-    fn broken(&mut self, detail: &str) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
+    fn broken(
+        &mut self,
+        detail: &str,
+    ) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
         self.stage = Stage::Ended;
-        binding_core::machine::Step::Done(Err(Failure::Kind(Error::Internal { detail: detail.to_owned() })))
+        binding_core::machine::Step::Done(Err(Failure::Kind(Error::Internal {
+            detail: detail.to_owned(),
+        })))
     }
 }
 
