@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8db78a2e181949c5cf872222aeffb80808be5562d1f9554fa359c4b725bc7c38 -->
+<!-- source-sha256: 5d1bd45c8ff830850382e7fd9cc46d547d7a6c8af5ca6b743308fff0549d58af -->
 # 생성기
 
 [English](generator.md)
@@ -927,7 +927,8 @@
   같은 포인터다. Go 이름이 패키지 binding의 타입 이름인 값 class는 이름으로 거부한다. 생성된 시험은 constructor와
   property의 case를 실행하고, constructor가 만든 instance에서 property를 읽으며, 그런 instance를 담은 결과를
   `reflect.DeepEqual`과 각 포인터가 처음 나타나는 순서로 비교한다. 그래서 case가 하나로 이름한 곳에 instance 둘을 담은
-  결과는 실패한다.
+  결과는 실패한다. case 값의 map, keyed map, 반복 list, instance는 시험의 문장이 만들고 채우는 local이다. `gofmt`는 함수
+  literal을 짧을 때만 한 줄로 두고, end-to-end 검사는 `gofmt`가 바꿀 생성 파일을 실패시키기 때문이다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는

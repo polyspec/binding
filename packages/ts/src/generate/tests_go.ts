@@ -115,6 +115,14 @@ const goKey = (key: unknown): string => caseKey(key, (kind, raw) => {
   return `binding.BytesKey(${hexBytes(raw, 'bytes')})`;
 });
 
+// A map or a keyed map of a test: a local that statements fill, because gofmt keeps a function literal on one line
+// only while it is short. sink takes the statements, and each of sets is the arguments of one Set.
+function mapLocal(b: Body, sink: string[], type: string, sets: string[]): string {
+  const local = b.fresh('entries');
+  sink.push(`${local} := &${type}{}`, ...sets.map((set) => `${local}.Set(${set})`));
+  return local;
+}
+
 // A case value (JSON) as a Go value of the contract type; an instance value makes its instance in the body.
 function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (json === null) return 'nil';
@@ -141,12 +149,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
-    const sets = (json as [unknown, unknown][]).map(([key, item]) => `m.Set(${goKey(key)}, ${value(v, b, type.keyed_map, item)}); `).join('');
-    return `func() ${typeName(v, type)} { m := &binding.KeyedMap[${typeName(v, type.keyed_map)}]{}; ${sets}return m }()`;
+    const sets = (json as [unknown, unknown][]).map(([key, item]) => `${goKey(key)}, ${value(v, b, type.keyed_map, item)}`);
+    return mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, type.keyed_map)}]`, sets);
   }
   if ('map' in type) {
-    const sets = Object.entries(json as Record<string, unknown>).map(([key, item]) => `m.Set(${goString(key)}, ${value(v, b, type.map, item)}); `).join('');
-    return `func() ${typeName(v, type)} { m := &binding.Map[${typeName(v, type.map)}]{}; ${sets}return m }()`;
+    const sets = Object.entries(json as Record<string, unknown>).map(([key, item]) => `${goString(key)}, ${value(v, b, type.map, item)}`);
+    return mapLocal(b, b.lines, `binding.Map[${typeName(v, type.map)}]`, sets);
   }
   const alias = aliasOf(v.model, type);
   if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`);
@@ -266,13 +274,19 @@ function aliasPart(model: Model, unit: Unit, json: unknown, where: string, makin
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
     if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
-    return `func() any { var inner any = ${aliasPart(model, unit, held, where, making)}; for range ${repeat} { inner = []any{inner} }; return inner }()`;
+    const inner = aliasPart(model, unit, held, where, making);
+    const local = making.b.fresh('list');
+    making.fills.push(`var ${local} any = ${inner}`, `for range ${repeat} {`, `\t${local} = []any{${local}}`, '}');
+    return local;
   }
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasPart(model, unit, item, where, making)).join(', ')}}`;
   if (kind === 'map' && Array.isArray(held)) {
     const entries = held as [unknown, unknown][];
     const keyed = (unit.out ?? []).some((row) => row.kind === 'map' && row.make['go'] === 'keyed_map') || entries.some(([key]) => typeof key !== 'string');
-    if (keyed) return `func() *binding.KeyedMap[any] { m := &binding.KeyedMap[any]{}; ${entries.map(([key, item]) => `m.Set(${goKey(key)}, ${aliasPart(model, unit, item, where, making)}); `).join('')}return m }()`;
+    if (keyed) {
+      const sets = entries.map(([key, item]) => `${goKey(key)}, ${aliasPart(model, unit, item, where, making)}`);
+      return mapLocal(making.b, making.fills, 'binding.KeyedMap[any]', sets);
+    }
     return `map[string]any{${entries.map(([key, item]) => `${goString(String(key))}: ${aliasPart(model, unit, item, where, making)}`).join(', ')}}`;
   }
   // GN-6af, GN-15c: an object is an instance of the value class that keeps a keyed map, and a reference one of the
@@ -615,11 +629,11 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
       if (keyedType.key.includes('int')) {
         // GN-12a: an int key outside the safe integers is kind invalid_number.
-        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
       }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
-        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(${key}, ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
+        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`${key}, ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
       }
     }
     const unit = unitOf(model, base);

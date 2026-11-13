@@ -1,0 +1,748 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "kept",
+  "core": {
+    "crate": "polyspec-kept",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/kept",
+      "namespace": "Polyspec\\Kept"
+    },
+    "python": {
+      "package": "polyspec-kept",
+      "module": "polyspec.kept"
+    },
+    "node": {
+      "package": "@polyspec/kept",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/kept/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Kept\\KeptValueError",
+        "python": "KeptValueError",
+        "node": "KeptValueError",
+        "wasm": "KeptValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Kept\\KeptTypeError",
+        "python": "KeptTypeError",
+        "node": "KeptTypeError",
+        "wasm": "KeptTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Kept\\KeptIoError",
+        "python": "KeptIoError",
+        "node": "KeptIoError",
+        "wasm": "KeptIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Kept\\KeptStoreError",
+        "python": "KeptStoreError",
+        "node": "KeptStoreError",
+        "wasm": "KeptStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Kept\\KeptBusyError",
+        "python": "KeptBusyError",
+        "node": "KeptBusyError",
+        "wasm": "KeptBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Kept\\KeptInternalError",
+        "python": "KeptInternalError",
+        "node": "KeptInternalError",
+        "wasm": "KeptInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_kept::Error::Unsupported",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "faults": [],
+  "units": [
+    {
+      "id": "kept",
+      "name": [
+        "kept"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "kept.echo",
+          "name": [
+            "same"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "data"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_kept::echo"
+        },
+        {
+          "id": "kept.count",
+          "name": [
+            "count"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_kept::count"
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "name": [
+        "data"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_kept::Data",
+      "core": {
+        "in": "polyspec_kept::data_from_host",
+        "out": "polyspec_kept::data_to_out"
+      },
+      "in_raises": [
+        "polyspec_kept::Error::Unsupported"
+      ],
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null",
+            "go": "null",
+            "wasm": "null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "bool",
+            "python": "bool",
+            "node": "bool",
+            "go": "bool",
+            "wasm": "bool"
+          }
+        },
+        {
+          "kind": "float",
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "text",
+            "python": "text",
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list",
+            "go": "list",
+            "wasm": "list"
+          }
+        },
+        {
+          "kind": "object",
+          "make": {
+            "php": "php_object",
+            "python": "bag.constructor",
+            "node": "bag.constructor",
+            "go": "bag.constructor",
+            "wasm": "bag.constructor"
+          }
+        },
+        {
+          "kind": "reference",
+          "make": {
+            "php": "php_reference",
+            "python": "boxed.constructor",
+            "node": "boxed.constructor",
+            "go": "boxed.constructor",
+            "wasm": "boxed.constructor"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "bag",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "bag.entries"
+            }
+          ]
+        },
+        {
+          "python": "boxed",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "boxed.value"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "bag",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "bag.entries"
+            }
+          ]
+        },
+        {
+          "node": "boxed",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "boxed.value"
+            }
+          ]
+        },
+        {
+          "go": "nil",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "go": "bool",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "float64",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]any",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "bag",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "bag.entries"
+            }
+          ]
+        },
+        {
+          "go": "boxed",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "boxed.value"
+            }
+          ]
+        },
+        {
+          "wasm": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "wasm": "boolean",
+          "cases": [
+            {
+              "kind": "bool",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "bag",
+          "cases": [
+            {
+              "kind": "object",
+              "read": "bag.entries"
+            }
+          ]
+        },
+        {
+          "wasm": "boxed",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "boxed.value"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bag",
+      "name": [
+        "bag"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "python",
+          "node",
+          "go",
+          "wasm"
+        ],
+        "reason": "Q-4"
+      },
+      "members": [
+        {
+          "id": "bag.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "entries"
+              ],
+              "type": {
+                "keyed_map": {
+                  "unit": "data"
+                },
+                "key": [
+                  "text"
+                ]
+              },
+              "default": {
+                "empty": "map"
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_kept::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": "polyspec_kept::check_bag"
+        },
+        {
+          "id": "bag.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "keyed_map": {
+              "unit": "data"
+            },
+            "key": [
+              "text"
+            ]
+          },
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "id": "boxed",
+      "name": [
+        "boxed"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "python",
+          "node",
+          "go",
+          "wasm"
+        ],
+        "reason": "Q-4"
+      },
+      "members": [
+        {
+          "id": "boxed.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "default": {
+                "literal": null
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_kept::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": "polyspec_kept::check_boxed"
+        },
+        {
+          "id": "boxed.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "unit": "data"
+          },
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "kept.echo",
+      "file": "contracts/cases.json",
+      "group": "echo"
+    },
+    {
+      "member": "kept.count",
+      "file": "contracts/cases.json",
+      "group": "count"
+    },
+    {
+      "alias": "data",
+      "file": "contracts/cases.json",
+      "group": "data_in"
+    },
+    {
+      "member": "bag.constructor",
+      "file": "contracts/cases.json",
+      "group": "bag_constructor"
+    },
+    {
+      "member": "bag.entries",
+      "file": "contracts/cases.json",
+      "group": "bag_entries"
+    },
+    {
+      "member": "boxed.constructor",
+      "file": "contracts/cases.json",
+      "group": "boxed_constructor"
+    },
+    {
+      "member": "boxed.value",
+      "file": "contracts/cases.json",
+      "group": "boxed_value"
+    }
+  ]
+}

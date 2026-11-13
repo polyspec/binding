@@ -1,11 +1,21 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bd3fb343e6ed70b2fe85d4e957dc39a689d53911ba718c95fe724368ddfccc16 -->
+<!-- source-sha256: 53f768bebc9107334ff93576e835ea57e997b6fce24867be5608de8606080023 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/kept`은 end-to-end 검사의 새 계약이다. 그 data의 object와 reference는 Python, Node, Go, WASM에서
+  `core_type` 없는 값 class `Bag`과 `Boxed`의 instance이고 PHP에서 `stdClass`와 reference다. 두 위치의 object와
+  reference, 서로를 담은 reference와 object, 두 class의 constructor와 property의 case를 갖는다. 생성된 Go 시험은 case
+  값의 map, keyed map, 반복 list를 한 줄의 함수 literal로 썼고, `gofmt`는 한도보다 긴 것을 나누므로 end-to-end 검사가
+  그런 파일을 실패시킨다. 새 계약의 byte string 값을 가진 keyed map 시험이 그랬다. 이제 각각은 시험의 문장이 만들고
+  채우는 local이다(GN-15c). `make test-ts`로 검증했다. 새 시험이 그 계약의 다섯 target을 생성하고 437개 중 437개가
+  통과한다. `gofmt -l`은 변경 전에 그 계약의 생성된 시험 파일을 보고했고, 변경 후에는 `kept`, `sample`, `classes`,
+  `shapes`, `variants`, `points`의 생성된 Go 파일을 하나도 보고하지 않는다. `binding check`는 실행이 쓰는 scaffold
+  파일과 lock만 보고한다. 계약의 코어는 `rustfmt`로 정렬했고 아직 컴파일하지 않았다. 그 계약의 end-to-end 검사가
+  그것을 컴파일하고 실행한다.
 - Go는 `core_type` 없는 값 class를 이름으로 거부했다. Go make가 그런 class의 constructor를 이름하는 값 alias의 `out`
   행은 그 target의 생성을 실패시켰다. 이제 생성기가 그것을 받는다(GN-6af, GN-15c). 그 class는 `internal/binding`의
   struct이고, 그 module의 패키지가 alias로 이름한다. 쓰기 가능한 property는 export된 field이고 그 밖의 property는

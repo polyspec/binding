@@ -1,0 +1,454 @@
+{
+  "echo": [
+    {
+      "id": "a_text_comes_back",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": {
+        "kind": "text",
+        "value": "x"
+      }
+    },
+    {
+      "id": "an_object_comes_back",
+      "value": {
+        "kind": "object",
+        "value": [
+          [
+            "a",
+            {
+              "kind": "text",
+              "value": "x"
+            }
+          ],
+          [
+            "b",
+            {
+              "kind": "null"
+            }
+          ]
+        ]
+      },
+      "result": {
+        "kind": "object",
+        "value": [
+          [
+            "a",
+            {
+              "kind": "text",
+              "value": "x"
+            }
+          ],
+          [
+            "b",
+            {
+              "kind": "null"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "an_object_at_two_places_is_one_object",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "object",
+            "id": 0,
+            "value": [
+              [
+                "a",
+                {
+                  "kind": "text",
+                  "value": "x"
+                }
+              ]
+            ]
+          },
+          {
+            "kind": "object",
+            "id": 0
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "object",
+            "id": 0,
+            "value": [
+              [
+                "a",
+                {
+                  "kind": "text",
+                  "value": "x"
+                }
+              ]
+            ]
+          },
+          {
+            "kind": "object",
+            "id": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_reference_at_two_places_is_one_reference",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          },
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0
+            }
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          },
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_reference_and_an_object_that_hold_each_other_come_back",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "object",
+                "id": 1,
+                "value": [
+                  [
+                    "self",
+                    {
+                      "kind": "reference",
+                      "value": {
+                        "id": 0
+                      }
+                    }
+                  ],
+                  [
+                    "again",
+                    {
+                      "kind": "object",
+                      "id": 1
+                    }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "object",
+                "id": 1,
+                "value": [
+                  [
+                    "self",
+                    {
+                      "kind": "reference",
+                      "value": {
+                        "id": 0
+                      }
+                    }
+                  ],
+                  [
+                    "again",
+                    {
+                      "kind": "object",
+                      "id": 1
+                    }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "count": [
+    {
+      "id": "a_text_holds_none",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": 0
+    },
+    {
+      "id": "an_object_at_two_places_counts_once",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "object",
+            "id": 0,
+            "value": [
+              [
+                "a",
+                {
+                  "kind": "text",
+                  "value": "x"
+                }
+              ]
+            ]
+          },
+          {
+            "kind": "object",
+            "id": 0
+          }
+        ]
+      },
+      "result": 1
+    },
+    {
+      "id": "a_reference_at_two_places_counts_once",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          },
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0
+            }
+          }
+        ]
+      },
+      "result": 1
+    },
+    {
+      "id": "two_objects_count_twice",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "object",
+            "value": []
+          },
+          {
+            "kind": "object",
+            "value": []
+          }
+        ]
+      },
+      "result": 2
+    },
+    {
+      "id": "a_reference_and_an_object_that_hold_each_other_count_twice",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "object",
+                "id": 1,
+                "value": [
+                  [
+                    "self",
+                    {
+                      "kind": "reference",
+                      "value": {
+                        "id": 0
+                      }
+                    }
+                  ],
+                  [
+                    "again",
+                    {
+                      "kind": "object",
+                      "id": 1
+                    }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "result": 2
+    }
+  ],
+  "data_in": [
+    {
+      "id": "bytes_that_are_no_text_are_not_data",
+      "value": {
+        "kind": "bytes",
+        "value": {
+          "hex": "ff"
+        }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "bag_constructor": [
+    {
+      "id": "entries_are_kept",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "no_entries_are_the_empty_map"
+    },
+    {
+      "id": "bytes_that_are_no_text_are_no_entry",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "bytes",
+            "value": {
+              "hex": "ff"
+            }
+          }
+        ]
+      ],
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "bag_entries": [
+    {
+      "id": "the_entries_are_kept",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ],
+      "result": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "no_entries_are_the_empty_map",
+      "result": []
+    }
+  ],
+  "boxed_constructor": [
+    {
+      "id": "a_text_is_boxed",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      }
+    },
+    {
+      "id": "nothing_is_boxed"
+    },
+    {
+      "id": "bytes_that_are_no_text_are_not_boxed",
+      "value": {
+        "kind": "bytes",
+        "value": {
+          "hex": "ff"
+        }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "boxed_value": [
+    {
+      "id": "the_value_is_kept",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": {
+        "kind": "text",
+        "value": "x"
+      }
+    },
+    {
+      "id": "nothing_is_null",
+      "result": {
+        "kind": "null"
+      }
+    }
+  ]
+}

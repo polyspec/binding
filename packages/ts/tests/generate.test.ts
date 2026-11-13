@@ -4269,6 +4269,26 @@ test('a value class without core_type keeps the language values that its constru
   assert.doesNotMatch(goLib, /polyspec_sample::Boxed\b/);
 });
 
+test('the kept contract of the end-to-end check generates its value classes for Go, and a map of a Go test is a local that statements fill (GN-6af, GN-15c, G-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/kept/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  assert.deepEqual(contract.targets, ['php', 'python', 'node', 'go', 'wasm']);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_kept', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: contract.targets });
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  // gofmt keeps a function literal on one line only while it is short, so no case value is one.
+  assert.doesNotMatch(goTests, /func\(\) [^\n]*\{ [^\n]*; return /);
+  assert.match(goTests, /\nfunc TestB4BagNewBytesThatAreNoTextAreNoEntry\(t \*testing\.T\) \{\n\tentries0 := &binding\.KeyedMap\[any\]\{\}\n\tentries0\.Set\(binding\.TextKey\("k"\), \[\]byte\("\\xff"\)\)\n\t_, err := NewBag\(entries0\)\n/);
+  // The object and the reference that hold each other are made, filled and compared by their places.
+  assert.match(goTests, /\nfunc TestGN13eSameAReferenceAndAnObjectThatHoldEachOtherComeBack\(t \*testing\.T\) \{\n\treference0 := must\(binding\.NewBoxed\(nil\)\)\n\tobject1 := must\(binding\.NewBag\(nil\)\)\n\tobject1\.Entries\.Set\(binding\.TextKey\("self"\), reference0\)\n\tobject1\.Entries\.Set\(binding\.TextKey\("again"\), object1\)\n\treference0\.Value = object1\n/);
+  assert.match(goTests, /places\(value0\) != places\(want\)/);
+  for (const name of ['TestGN13eBagNewNoEntriesAreTheEmptyMap', 'TestGN13eBagEntriesTheEntriesAreKept', 'TestB4BoxedNewBytesThatAreNoTextAreNotBoxed', 'TestGN13eBoxedValueNothingIsNull', 'TestGN13eCountAnObjectAtTwoPlacesCountsOnce']) {
+    assert.ok(goTests.includes(`\nfunc ${name}(t *testing.T) {`), name);
+  }
+  assert.doesNotMatch(goTests, /t\.Fatal\("/);
+  // PHP takes its own stdClass and references and holds nothing of the classes.
+  assert.doesNotMatch(text(out, 'packages/php-ext/generated/lib.rs'), /\b(Bag|Boxed)\b/);
+});
+
 test('the members of a value class without core_type and a primitive run their cases (GN-13, GN-6af, GN-13d)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const targets = ['python', 'node', 'wasm', 'go'];

@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- `tests/e2e/kept` is a new contract of the end-to-end check: data whose objects and references are instances of
+  the value classes `Bag` and `Boxed` without `core_type` on Python, Node, Go and WASM and `stdClass` and references
+  on PHP, with cases of an object and of a reference at two places, of a reference and an object that hold each
+  other, and of the constructors and the properties of the classes. A generated Go test wrote a map, a keyed map and
+  a repeated list of a case value as a function literal on one line, which `gofmt` splits when it is longer than
+  its limit, so the end-to-end check would fail such a file: the test of a keyed map with a byte string value of the
+  new contract was one. Each is now a local that statements of the test make and fill (GN-15c). Verified by `make
+  test-ts`, whose new test generates the five targets of the contract, 437 of 437 pass; `gofmt -l` reported the
+  generated test file of the contract before the change and reports no generated Go file of `kept`, `sample`,
+  `classes`, `shapes`, `variants` and `points` after it; `binding check` reports only the scaffold files and the
+  lock that the run writes. The core of the contract is formatted by `rustfmt` and is not compiled yet: the
+  end-to-end check of the contract compiles and runs it.
 - Go refused a value class without `core_type` by name: an `out` row of a value alias whose Go make names the
   constructor of such a class failed the generation of the target. The generator now takes it (GN-6af, GN-15c). The
   class is a struct of `internal/binding`, which the package of its module names as an alias; a writable property is

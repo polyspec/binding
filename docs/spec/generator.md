@@ -1125,7 +1125,10 @@ the design ids are those of the binding design.
   whose Go name is the name of a type of package binding is refused by name. The generated tests run the cases of
   the constructor and of the properties, read a property on an instance that the constructor makes, and compare a
   result that holds such instances by `reflect.DeepEqual` and by the order in which each pointer first appears, so a
-  result that holds two instances where the case names one fails.
+  result that holds two instances where the case names one fails. A map, a keyed map, a repeated list and an
+  instance of a case value are locals that statements of the test make and fill, because `gofmt` keeps a function
+  literal on one line only while it is short, and the end-to-end check fails a generated file that `gofmt` would
+  change.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
