@@ -1499,7 +1499,42 @@ test('fault injection points, the kinds of an alias and the point of another lib
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
-  assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'callable' }; }), /of the alias data: a value \{"host": \.\.\.\} is not generated yet/);
+});
+
+test('a case of an alias gives a value of the language that is no value of the alias by its sort, and an integer outside 64 bits runs in PHP as host values (G-5, GN-13)', () => {
+  const raises = { kind: 'unsupported', status: null, category: 'value' };
+  const out = sampleWith((c, cases) => {
+    cases.data_in.push(
+      { id: 'a_function', value: { host: 'callable' }, raises },
+      { id: 'a_date', value: { host: 'date' }, raises },
+      { id: 'an_object', value: { host: 'object' }, raises },
+      { id: 'a_wide_integer', value: { kind: 'int', value: '9223372036854775808' }, raises },
+    );
+  });
+  const python = text(out, pythonTests);
+  assert.match(python, /^import datetime\n/m);
+  assert.match(python, /_native\._alias_in_data\(lambda: None\)/);
+  assert.match(python, /_native\._alias_in_data\(datetime\.date\(1970, 1, 1\)\)/);
+  assert.match(python, /_native\._alias_in_data\(object\(\)\)/);
+  assert.match(python, /_native\._alias_in_data\(9223372036854775808\)/);
+  for (const [path, entry] of [[nodeTests, 'addon\\(\\)'], ['packages/ts/wasm/generated/tests/generated.test.mjs', 'glue']] as const) {
+    const js = text(out, path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(\\(\\) => null\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new Date\\(0\\)\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(new \\(class Other \\{\\}\\)\\(\\)\\)`), path);
+    assert.match(js, new RegExp(`${entry}\\.__aliasInData\\(9223372036854775808n\\)`), path);
+  }
+  const php = text(out, phpTests);
+  assert.match(php, /Internal\\aliasInData\(static fn \(\): null => null\);/);
+  assert.match(php, /Internal\\aliasInData\(new \\DateTimeImmutable\('@0'\)\);/);
+  assert.match(php, /Internal\\aliasInData\(new class \{\}\);/);
+  // PHP has no integer outside 64 bits: the case runs through the entry point of the feature case-test, which gives the
+  // in function of the alias the decimal token that Python and JavaScript describe for such an integer.
+  const entry = /public function testU7DataInAWideInteger\(\): void\n    \{\n        try \{\n            \\Polyspec\\Sample\\Internal\\caseTest(\d+)\(\);/.exec(php);
+  assert.ok(entry, php);
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(lib, new RegExp(`pub fn case_test_${entry[1] ?? ''}\\(\\)[\\s\\S]*?let value = HostValue::Number\\(String::from\\("9223372036854775808"\\)\\);`));
+  assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'socket' }; }), /the case bytes_that_are_no_text_are_not_data of the alias data: a value \{"host"\} is "callable", "date" or "object", not "socket" \(G-5\)/);
 });
 
 test('core.result says whether the core returns a Result, and a return of none is bound as the unit (E-1c)', () => {

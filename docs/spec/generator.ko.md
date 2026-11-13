@@ -539,7 +539,13 @@
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
-  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP reference는 배열이나 property의
+  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
+  Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
+  `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
+  `time.Unix(0, 0).UTC()`), `object`는 시험의 class의 인스턴스(Python `object()`, Node와 WASM `new (class Other {})()`,
+  PHP `new class {}`, Go `struct{}{}`)다. 다른 종류는 거부한다. Go는 alias kind의 시험을 아직 쓰지 않고 그 `codec-test`
+  진입점을 이름을 대고 거부하므로(U-7), 그 열은 아직 쓰지 않는다. PHP reference는 배열이나 property의
   자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`나 id를 가진 객체를 가진 PHP case 값은 closure
   안에서 만든다. closure는 id마다 변수 하나(객체면 새 `stdClass`)를 정하고, 각 객체를 채우고 각 참조를 정한 뒤, 그 자리가
   참조 변수를 reference로 받고 객체 변수를 받는 값을 돌려준다. Python, Node, WASM은 id마다 참조나 객체의 class(GN-6m)의
@@ -555,15 +561,16 @@
   이유를 적는다. case를 빼지도, 실패하는 시험으로 생성하지도 않는다. 빼면 그 target에서 코어 규칙이 검증되지 않고,
   실패로 두면 종단 검사가 영원히 통과하지 않기 때문이다. target에 그런 case가 있으면 crate는 `case-test = []`를 갖고,
   그 feature 없이 빌드한 결과에는 진입점이 없다(종단 검사가 `llvm-nm`으로 심볼을 읽는다). 지금까지: PHP에서는 배열이나
-  property의 자리가 아닌 reference(값 자체, 또는 reference의 값)를 host 값으로 만들어 그 alias의 `in` 함수에 준다. Go(예:
+  property의 자리가 아닌 reference(값 자체, 또는 reference의 값)와, PHP에 꼴이 없는 64비트 밖의 정수를 Python과
+  JavaScript가 그것에 기술하는 10진 token(`HostValue::Number`)으로, 각각 host 값으로 만들어 그 alias의 `in` 함수에
+  준다. member case의 값에도 alias case의 값에도 그렇게 한다. Go(예:
   `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
   거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
-  errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
-  GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
+  errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
   시험은 아직 실패를 장전하지 않는다), map·record field·callback 반환 안의 alias를 받는 member의 시험, 릴리스 빌드에 시험
   feature가 없다는 검사(`cargo tree`의 해석된 feature와 설치한 패키지의 export 목록). 이 검사 중 Go 부분은 e2e에
   있다(GN-13b).
