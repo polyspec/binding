@@ -292,7 +292,13 @@ function made(v: Values, b: Body, r: Receiver): string {
   for (const step of r.then ?? []) {
     const call = invoke(step.fn, callArgs(v, b, step.fn, (arg) => caseValue(v, b, arg, step.args)), local);
     const error = b.fresh('failure');
-    b.lines.push(`${[...Array.from({ length: goResultCount(step.fn) }, () => '_'), error].join(', ')} := ${call}`, `if ${error} != nil {`, `\tt.Fatalf("GN-13f: %v", ${error})`, '}');
+    b.lines.push(`${[...Array.from({ length: goResultCount(step.fn) }, () => '_'), error].join(', ')} := ${call}`);
+    if (step.raises === undefined) {
+      b.lines.push(`if ${error} != nil {`, `\tt.Fatalf("GN-13f: %v", ${error})`, '}');
+    } else {
+      // GN-13f: a call of then that the case expects to fail with a kind fails with it, and the test goes on.
+      b.lines.push(`if kinded, ok := ${error}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(step.raises)} {`, `\tt.Fatalf("GN-13f: %#v is not of kind ${step.raises}", ${error})`, '}');
+    }
   }
   return local;
 }

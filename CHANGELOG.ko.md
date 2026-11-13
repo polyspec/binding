@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Go 시험은 `then`의 호출에 `"raises": {"kind": <kind>}`가 있는 case의 인스턴스를 만들 때 그 호출이 성공하기를 요구해서,
+  `tests/e2e/classes`의 `TestB4GateEnterAGateClosedTwiceLetsNothingPass`가 case가 기대하는 실패인 "the gate of a is
+  closed"로 실패했다. 이제 Go 시험은 다른 target처럼 그 호출의 kind를 요구하고 다음 단계로 넘어간다(GN-13f).
+  `packages/ts`의 `npm test`로 확인했다.
 - CI와 release workflow 파일, 그리고 `config/release.json`은 GN-14b의 어느 목록에도 없었다. 그래서 이 파일들을 더한 뒤 종단 실행의
   입력 시험이 실패했다. 이제 이 파일들은 실행이 읽지 않는 파일로 각각 이유와 함께 목록에 있다(GN-14b).
 - origin value class를 받는 member의 case는 값을 `{"kind": "text", "value": ...}`로 주었고, 생성기는 어떤 항목도 대지 않는 예외

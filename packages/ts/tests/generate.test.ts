@@ -1781,7 +1781,8 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   // A call of then that the case expects to fail requires that kind, and the instance stays for the next step.
   const cases = read('contracts/cases.json');
   cases.gate_enter[2].receiver.then.push({ call: 'gate.close', raises: { kind: 'closed' } });
-  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'wasm'] });
+  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  assert.match(text(failing, 'packages/go/zz_generated_test.go'), /\tfailure\d+ := made\d+\.Close\(\)\n\tif kinded, ok := failure\d+\.\(interface\{ Kind\(\) string \}\); !ok \|\| kinded\.Kind\(\) != "closed" \{\n\t\tt\.Fatalf\("GN-13f: %#v is not of kind closed", failure\d+\)/);
   assert.match(text(failing, 'packages/ts/generated/tests/generated.test.mjs'), /  made1\.close\(\);\n  assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
