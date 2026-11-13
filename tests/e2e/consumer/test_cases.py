@@ -64,9 +64,18 @@ class ContractCaseTest(unittest.TestCase):
             with self.subTest(case=case["id"]):
                 with self.assertRaises(consumer.ConsumerValueError) as caught:
                     consumer.fetch(Holder({}), case["key"])
-                self.assertIs(type(caught.exception), consumer.ConsumerValueError)
+                # E-2, I-3: the kind has the class of its error unit, whose properties the core error gives.
+                self.assertIs(type(caught.exception), consumer.AbsentError)
                 self.assertEqual(caught.exception.kind, case["raises"]["kind"])
                 self.assertEqual(str(caught.exception), case["raises"]["message"])
+                self.assertEqual(caught.exception.key, case["key"])
+                self.assertEqual(caught.exception.length, len(case["key"]))
+                with self.assertRaises(AttributeError):
+                    caught.exception.key = "other"
+        with self.assertRaises(consumer.AbsentError) as caught:
+            consumer.fetch(Holder({}), "")
+        self.assertEqual(caught.exception.key, "")
+        self.assertIsNone(caught.exception.length)
 
     def test_refused_by_the_owner(self) -> None:
         """A value that the owner of the alias refuses is its kind in the class of this library."""

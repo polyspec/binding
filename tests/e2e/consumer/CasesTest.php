@@ -90,10 +90,21 @@ final class CasesTest extends TestCase
                 Consumer\fetch(new Held([]), $case['key']);
                 self::fail('no error: ' . $case['id']);
             } catch (Consumer\ConsumerValueError $error) {
-                self::assertSame(Consumer\ConsumerValueError::class, $error::class, $case['id']);
+                // E-2, I-3: the kind has the class of its error unit, whose properties the core error gives.
+                self::assertSame(Consumer\AbsentError::class, $error::class, $case['id']);
                 self::assertSame($case['raises']['kind'], $error->kind(), $case['id']);
+                self::assertNull($error->status(), $case['id']);
                 self::assertSame($case['raises']['message'], $error->getMessage(), $case['id']);
+                self::assertSame($case['key'], $error->key(), $case['id']);
+                self::assertSame(strlen($case['key']), $error->length(), $case['id']);
             }
+        }
+        try {
+            Consumer\fetch(new Held([]), '');
+            self::fail('no error');
+        } catch (Consumer\AbsentError $error) {
+            self::assertSame('', $error->key());
+            self::assertNull($error->length());
         }
     }
 

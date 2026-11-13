@@ -23,6 +23,22 @@ impl Error {
             Self::Absent { .. } => "absent",
         }
     }
+
+    /// The key that the error names.
+    #[must_use]
+    pub fn key(&self) -> &str {
+        match self {
+            Self::Absent { key } => key,
+        }
+    }
+
+    /// The length of the key in bytes, or `None` when the key is empty.
+    #[must_use]
+    pub fn length(&self) -> Option<u64> {
+        match self {
+            Self::Absent { key } => u64::try_from(key.len()).ok().filter(|length| *length > 0),
+        }
+    }
 }
 
 impl fmt::Display for Error {

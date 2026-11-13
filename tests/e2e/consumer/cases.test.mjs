@@ -39,8 +39,12 @@ test('fetch raises its cases', () => {
   assert.ok(cases.fetch.length > 0);
   for (const kase of cases.fetch) {
     assert.throws(() => consumer.fetch(holder(new Map()), kase.key), (error) =>
-      error.constructor === consumer.ConsumerValueError && error.kind === kase.raises.kind && error.message === kase.raises.message, kase.id);
+      // E-2, I-3: the kind has the class of its error unit, whose properties the core error gives.
+      error.constructor === consumer.AbsentError && error instanceof consumer.ConsumerValueError && error.name === 'AbsentError' &&
+      error.kind === kase.raises.kind && error.message === kase.raises.message && error.key === kase.key && error.length === kase.key.length &&
+      Object.getOwnPropertyDescriptor(error, 'key').writable === false, kase.id);
   }
+  assert.throws(() => consumer.fetch(holder(new Map()), ''), (error) => error.constructor === consumer.AbsentError && error.key === '' && error.length === null);
 });
 
 test('a value that the owner of the alias refuses is its kind in the class of this library', () => {

@@ -89,7 +89,8 @@
     "kinds": [
       {
         "variant": "polyspec_consumer::Error::Absent",
-        "category": "value"
+        "category": "value",
+        "class": "absent_error"
       }
     ],
     "binding": [],
@@ -304,6 +305,54 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_consumer::copy"
+        }
+      ]
+    },
+    {
+      "id": "absent_error",
+      "name": [
+        "absent",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": [
+        {
+          "id": "absent_error.key",
+          "name": [
+            "key"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "text",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_consumer::Error::key",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "absent_error.length",
+          "name": [
+            "length"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "optional": "uint"
+          },
+          "optional_reason": "E-2",
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_consumer::Error::length",
+            "receiver": "&self"
+          }
         }
       ]
     }
