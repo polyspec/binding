@@ -7,7 +7,7 @@ import type { Type, Unit } from '../contract.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, RECEIVER_GUARD, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
-import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
+import { aliasWasm, foreignFailureWasm, foreignRegistrationWasm, wasmHost } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -813,7 +813,7 @@ function libRust(model: Model): string {
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
-  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
+  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), wasmHost(model)];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -831,7 +831,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
@@ -1142,7 +1142,7 @@ const released = new FinalizationRegistry(([free, handle]) => {
   return `${header('//')}
 import load, * as glue from './${glue}.js';
 import { ${model.objects.length === 0 ? 'enter' : 'broken, enter'} } from './state.mjs';
-${classes}${units}
+${foreignRegistrationWasm(model).imports}${classes}${units}
 ${objectState}${objects === '' ? '' : `${objects}\n`}
 // GW-5: the import loads the WebAssembly module (top-level await), so no export runs before it is ready. A file: URL
 // is read from the file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
@@ -1151,7 +1151,7 @@ const source = url.protocol === 'file:' ? (await import('node:fs/promises')).rea
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
 glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class'))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
-
+${foreignRegistrationWasm(model).register}
 // T-7: a list parameter takes any iterable but a string; the module judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {
