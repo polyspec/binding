@@ -353,6 +353,7 @@ export function collectModel(
       const where = `${member.id}.${parameter.name.join('_')}`;
       if (parameter.rest === true) throw new Unsupported(`${where}: a rest parameter is not generated yet`);
       const type = parameter.type;
+      if (parameter.core !== undefined && typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: the borrow of an optional class is not generated yet`);
       const recordUnit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
       if (recordUnit?.kind === 'record') {
         // U-2 {empty: "object"}: a record parameter that is left out is the record with every field left out, which
@@ -682,7 +683,7 @@ export function collectModel(
 
 // B-5c: how the core takes a class parameter. The contract does not name the borrow of a parameter yet, so every class
 // parameter is borrowed shared, a read place; a contract that names `&mut` makes it a write place here.
-export const paramBorrow = (_parameter: Parameter): '&' | '&mut' | 'value' => '&';
+export const paramBorrow = (parameter: Parameter): '&' | '&mut' | 'value' => parameter.core ?? '&';
 
 const WRITE_RECEIVERS: ReadonlySet<string> = new Set(['&mut self', 'self']);
 const receiverOfMember = (member: Member): string | undefined => (typeof member.core === 'object' ? member.core.receiver : undefined);
@@ -966,7 +967,7 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
     // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
     const place = held.find((h) => h.param === p);
-    if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    if (place !== undefined) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `${place.write ? '&mut ' : '&'}${variable(p)}`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   if (fn.receiver === undefined) return args;

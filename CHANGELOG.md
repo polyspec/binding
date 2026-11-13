@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A class parameter always gave the core a shared borrow (`&guard`), so a core that takes `&mut Form` did not
+  compile, and a core that takes the class by value got no value. A parameter now names the borrow of the core in
+  `core` (`&`, `&mut` or `value`; absent, `&`): `&mut` is a write place, `value` gives a clone under the read guard,
+  and every crate asserts the borrows of such a member as the fn pointer type of its core path. `binding check`
+  reports a `core` of a parameter that is no class (CK-67), and the generator refuses the borrow of an optional class
+  by name (GN-6h). Verified by `npm test` in `packages/ts`.
 - A contract whose core error is a struct that holds a code enum, such as `FormError { code: FormErrorCode, .. }`,
   named the variants of the code in `errors.kinds`, and the generator refused it with "the kinds name 2 error enums"
   when a variant of the code held a code of a dependency, or wrote `match error` against the code variants, which does

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- class parameter는 늘 코어에 공유 빌림(`&guard`)을 주었다. 그래서 `&mut Form`을 받는 코어는 컴파일되지 않았고, class를 값으로
+  받는 코어는 값을 받지 못했다. 이제 parameter는 코어의 빌림을 `core`에 적는다(`&`, `&mut`, `value`. 없으면 `&`). `&mut`는 쓰기
+  쪽 자리이고, `value`는 읽기 guard 아래의 복제를 주며, 모든 crate는 그런 member의 빌림을 코어 경로의 fn pointer 타입으로
+  단언한다. `binding check`는 class가 아닌 parameter의 `core`를 보고하고(CK-67), 생성기는 optional class의 빌림을 이름을 대어
+  거부한다(GN-6h). `packages/ts`에서 `npm test`로 확인했다.
 - 코어 오류가 code enum을 담은 구조체(`FormError { code: FormErrorCode, .. }` 같은)인 계약은 `errors.kinds`에 code의 variant를
   적었다. code의 variant가 의존 레포의 code를 담으면 생성기는 "the kinds name 2 error enums"로 거부했고, 아니면 code의 variant에
   대해 `match error`를 써서 컴파일되지 않았다. 이제 `errors.code`가 오류의 타입과 code로 가는 투영을 적고, 모든 crate가 code를

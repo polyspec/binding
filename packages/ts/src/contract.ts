@@ -38,6 +38,8 @@ export interface Parameter {
   required?: true;
   default?: Default;
   default_core?: string;
+  // GN-6h: the borrow of a class instance that the core takes; absent, &.
+  core?: '&' | '&mut' | 'value';
   rest?: true;
   only?: Only;
 }

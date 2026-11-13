@@ -1733,6 +1733,15 @@ class Checker {
         this.report('CK-21', `${path}/exclusive`, `only a member with the receiver &self of a generated class is exclusive (U-6)`);
       }
     }
+    // CK-67, GN-6h: only an instance of a class is a place whose borrow the core takes.
+    for (const { member, path } of this.members.values()) {
+      for (const [i, parameter] of (member.parameters ?? []).entries()) {
+        if (parameter.core === undefined) continue;
+        const type = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+        const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? this.unit(type.unit) : undefined;
+        if (unit?.kind !== 'class') this.report('CK-67', `${path}/parameters/${i}/core`, `${member.id}.${parameter.name.join('_')} is no class or optional of a class, so the core takes no borrow of it (GN-6h)`);
+      }
+    }
   }
 
   // ---- CK-17: callbacks (U-3, T-3) ----
