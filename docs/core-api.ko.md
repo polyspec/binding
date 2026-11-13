@@ -11,7 +11,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 - 경로: 이 레포의 `packages/core/rust`. 패키지 `polyspec-binding-core`, 라이브러리 이름 `binding_core`, 버전 0.0.1, edition
   2021, rust-version 1.99.0, toolchain 1.99.0(`rust-toolchain.toml`).
 - 의존: 기본 feature 없는 `tokio-util` 0.7.20(`Cancel`의 상태), `std`만 켠 `indexmap` 2.14.2(`OrderedMap`의 항목), Unix에서 기본 feature 없는
-  `libc` 0.2.191(errno 기호의 값, `fault::errno`).
+  `libc` 0.2.191(errno 기호의 값, `errno::value`).
 - feature `lock`: `Exclusive`, `Shared`, `Reading`, `Writing`과 `sync`만 켠 의존 `tokio` 1.54.1을 더한다. Python·Node·PHP 바인딩
   crate가 켜고 코어 crate는 켜지 않는다(B-5c).
 - feature `driver`: `driver::block_on`, `driver::Caught`와 `rt-multi-thread`를 켠 의존 `tokio` 1.54.1을 더한다.
@@ -69,7 +69,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | `driver`가 있을 때. `future`를 프로세스의 runtime에서 돌린다. 이 runtime은 build의 모든 driver를 켠 multi-thread tokio runtime이며 첫 호출이 만든다. 호출 스레드는 future가 끝날 때까지 기다린다. runtime을 만들 수 없으면 `BindingError::Internal`이다. 그 runtime의 스레드는 이것을 부르지 않는다. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | `driver`가 있을 때. 출력이 `Result<F::Output, String>`인 future다. `future`의 poll이 panic하면 그 panic의 메시지로 끝나며, 생성 코드는 이것을 kind `internal`로 낸다. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | `fault-test`에서만. 그 장전에서 주입되지 않은 fault의 점 이름을 주고 장전을 잊는다. 생성 시험은 이것이 비었는지 확인한다. |
-| `fault::errno(symbol) -> Option<i32>` | G-5 | feature 없이. 대상에서 errno 기호가 갖는 값을 `arm`이 읽는 표에서 주고, 대상에 없는 기호에는 없음을 준다. PHP 확장은 이것을 시험에 `Internal\errnoOf`로 준다(GN-8a). |
+| `errno::value(symbol) -> Option<i32>` | G-5 | feature 없이. 대상에서 errno 기호가 갖는 값을 `arm`이 읽는 표에서 주고, 대상에 없는 기호에는 없음을 준다. PHP 확장은 이것을 시험에 `Internal\errnoOf`로 준다(GN-8a). |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`. `Display`, `std::error::Error`. |
 
 ## 아직 crate에 없는 것

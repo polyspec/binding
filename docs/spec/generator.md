@@ -378,7 +378,7 @@ the design ids are those of the binding design.
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
   gives the names of the points whose fault did not fire. The PHP extension of every contract has, with the feature
   `panic-test` that every test build turns on (GN-5), `Internal\errnoOf(symbol)`, the value of an errno symbol on the
-  machine that the extension runs on, read from the table that arms the faults (`binding_core::fault::errno`, which
+  machine that the extension runs on, read from the table that arms the faults (`binding_core::errno::value`, which
   needs no feature), and kind `internal` for a symbol that the machine does not have: PHP has no table of the errno
   symbols of its machine, so its test reads the value from the binding, as Python and Node read it from their
   language, also in a contract without fault injection points. The end-to-end check builds the PHP extension without

@@ -12,7 +12,7 @@ types of the design rules named below and no rule of any library.
   0.0.1, edition 2021, rust-version 1.99.0, toolchain 1.99.0 (`rust-toolchain.toml`).
 - Dependencies: `tokio-util` 0.7.20 without default features (the state of `Cancel`), `indexmap` 2.14.2 with `std` only
   (the entries of `OrderedMap`) and, on Unix, `libc` 0.2.191 without default features (the value of an errno symbol,
-  `fault::errno`).
+  `errno::value`).
 - Feature `lock`: adds `Exclusive`, `Shared`, `Reading` and `Writing` and the dependency `tokio` 1.54.1 with `sync`
   only. The binding crates of Python, Node and PHP enable it; a core crate does not (B-5c).
 - Feature `driver`: adds `driver::block_on` and `driver::Caught` and the dependency `tokio` 1.54.1 with `rt-multi-thread`.
@@ -70,7 +70,7 @@ types of the design rules named below and no rule of any library.
 | `driver::block_on(future) -> Result<F::Output, BindingError>` | GN-6n | With `driver`. Runs `future` on the runtime of the process, a multi-thread tokio runtime with every driver of the build, which the first call makes; the calling thread waits until the future ends. A runtime that cannot be made is `BindingError::Internal`. A thread of that runtime does not call it. |
 | `driver::Caught<F>`, `driver::Caught::new(future)` | GN-6n, B-7 | With `driver`. A future whose output is `Result<F::Output, String>`: a panic of a poll of `future` ends it with the message of the panic, which generated code gives as kind `internal`. |
 | `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | With `fault-test`. The points of the arming whose fault did not fire, and forgets the arming; a generated test requires it to be empty. |
-| `fault::errno(symbol) -> Option<i32>` | G-5 | Without a feature. The value of an errno symbol on the target, from the table that `arm` reads, and none for a symbol that the target does not have; the PHP extension gives it to its tests as `Internal\errnoOf` (GN-8a). |
+| `errno::value(symbol) -> Option<i32>` | G-5 | Without a feature. The value of an errno symbol on the target, from the table that `arm` reads, and none for a symbol that the target does not have; the PHP extension gives it to its tests as `Internal\errnoOf` (GN-8a). |
 | `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`; `Display`, `std::error::Error`. |
 
 ## Not yet in the crate
