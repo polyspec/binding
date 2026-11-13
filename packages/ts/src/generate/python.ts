@@ -600,13 +600,17 @@ const _: () = {
 impl ${struct} {${members}}
 ${object.cleanup === undefined ? '' : `
 /// GN-6p, B-10: an object finalized without its cleanup call warns with ResourceWarning, and dropping the value releases
-/// its resource.
+/// its resource; an exception that is being raised is kept across the warning.
 impl Drop for ${struct} {
     fn drop(&mut self) {
         if !self.inner.taken() {
             Python::attach(|py| {
+                let raising = PyErr::take(py);
                 if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {
                     error.write_unraisable(py, None);
+                }
+                if let Some(raising) = raising {
+                    raising.restore(py);
                 }
             });
         }
