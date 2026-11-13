@@ -122,6 +122,21 @@
       "result": "ab!"
     }
   ],
+  "joined": [
+    {
+      "id": "a_name_in_a_directory",
+      "dir": "a",
+      "name": "b",
+      "result": "a/b"
+    }
+  ],
+  "parent_of": [
+    {
+      "id": "the_directory_of_a_file",
+      "path": "a/b",
+      "result": "a"
+    }
+  ],
   "checksum": [
     {
       "id": "the_sum_of_two_bytes",

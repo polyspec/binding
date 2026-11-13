@@ -4,6 +4,7 @@
 
 use binding_core::Kinds;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
 #[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
@@ -229,6 +230,18 @@ pub fn pad(text: &str, fill: Option<&str>, options: &PadOptions) -> String {
     }
 }
 
+/// The path of the name inside the directory (T-1 `path`; SH-4: WASM has no OS path).
+#[must_use]
+pub fn joined(dir: &Path, name: &str) -> PathBuf {
+    dir.join(name)
+}
+
+/// The directory of a path, or no value for a path without one (T-1 `optional<path>`).
+#[must_use]
+pub fn parent_of(path: &Path) -> Option<PathBuf> {
+    path.parent().map(Path::to_path_buf)
+}
+
 /// The length and the emptiness of a text (T-4: a record with a bool field as a return).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Measure {
@@ -321,7 +334,8 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, frame, length, pad, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, PadOptions, Side, WrapOptions};
+    use super::{checksum, frame, joined, length, pad, parent_of, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, PadOptions, Side, WrapOptions};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn none_is_the_default() {
@@ -336,6 +350,9 @@ mod tests {
         assert_eq!(wrap("a", &WrapOptions::default()), "[a]");
         assert_eq!(wrap("a", &WrapOptions { left: Some(String::from("<")), right: None }), "<a]");
         assert_eq!(pad("ab", None, &PadOptions::default()), "ab");
+        assert_eq!(joined(Path::new("a"), "b"), PathBuf::from("a/b"));
+        assert_eq!(parent_of(Path::new("a/b")), Some(PathBuf::from("a")));
+        assert_eq!(parent_of(Path::new("")), None);
         assert_eq!(pad("ab", None, &PadOptions { width: Some(4), ..PadOptions::default() }), "  ab");
         assert_eq!(pad("ab", Some("."), &PadOptions { side: Some(Side::Right), width: Some(4), end: Some(String::from("!")) }), "ab..!");
     }

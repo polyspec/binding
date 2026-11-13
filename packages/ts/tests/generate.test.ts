@@ -1492,6 +1492,71 @@ test('a {literal: null} default of a value type is None without a constant, and 
   assert.doesNotMatch(python, /def test_u2_describe_value_takes_none_as_a_value/);
 });
 
+test('a path is the bytes of an OS path in every place, and each target judges it by binding_core (T-1, B-3, GN-6y)', () => {
+  // shapes.joined takes a path and a text and returns a path; shapes.parent_of returns an optional<path>. Both leave out WASM (CK-15).
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /let dir: std::path::PathBuf = in_path\(/, `${path}: a path parameter`);
+    assert.match(lib, /polyspec_shapes::joined\(&dir, &name\)/, `${path}: the core takes &Path`);
+    assert.match(rustFn(lib, 'in_path'), /binding_core::path_from_bytes\(/, `${path}: the bytes are judged by binding_core`);
+    assert.match(rustFn(lib, 'out_path'), /binding_core::path_bytes\(/, `${path}: the bytes that leave`);
+  }
+  // Python: os.fsencode and os.fsdecode; a TypeError of fsencode is invalid_argument_type, a UnicodeError invalid_path.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(rustFn(python, 'in_path'), /"fsencode"/);
+  assert.match(rustFn(python, 'in_path'), /PyUnicodeError/);
+  assert.match(rustFn(python, 'out_path'), /"fsdecode"/);
+  // Node: a string as its UTF-8 or a Uint8Array in; out a string when the bytes are UTF-8, else a Uint8Array.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(rustFn(node, 'out_path'), /from_utf8/);
+  // The declarations.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def joined\(dir: str \| bytes \| PathLike\[str\] \| PathLike\[bytes\], name: str\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def parent_of\(path: [^\n]*\) -> str \| None: \.\.\./);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function joined\(dir: string \| Uint8Array, name: string\): string \| Uint8Array;/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function joined\(mixed \$dir, mixed \$name\): string \{\}/);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func Joined\(dir string, name string\) \(string, error\)/m);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func ParentOf\(path string\) \(\*string, error\)/m);
+  // G-5: a NUL byte is kind invalid_path, a value of another type invalid_argument_type, in each language.
+  const pythonTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pythonTests, /def test_t1_joined_dir_refuses_a_nul_byte\(self\) -> None:\n[^\n]*\n\s+pkg\.joined\("a\\x00b", [^\n]*\n\s+self\.assertEqual\(caught\.exception\.kind, "invalid_path"\)/);
+  assert.match(pythonTests, /def test_t1_joined_dir_refuses_what_is_no_path\(self\) -> None:/);
+  const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(nodeTests, /test\('T-1: joined refuses a NUL byte in dir'/);
+  assert.match(nodeTests, /test\('B-3: joined refuses an unpaired surrogate in dir'/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function testT1JoinedDirRefusesANulByte\(\): void/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestT1JoinedRefusesANulByteInDir\(t \*testing\.T\)/);
+  // WASM has no OS path: the members are absent, and a path that reaches the target is refused by name.
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  assert.doesNotMatch(text(wasmOut, 'packages/ts/wasm/generated/lib.rs'), /joined/);
+  assert.throws(
+    () => { const { contract, caseFiles } = shapes(); delete member(contract, 'shapes.joined').only; generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['wasm'] }); },
+    /shapes\.joined: a path is not generated for WASM, which has no OS path \(Q-4, CK-15, GN-6y\)/,
+  );
+  // G-5: a case value of a path is resolved in the directory of the test, the input and the expected result alike.
+  assert.match(pythonTests, /pkg\.joined\(self\._case_path\("a"\), "b"\)/);
+  assert.match(pythonTests, /self\._case_path\("a\/b"\)/);
+  assert.match(pythonTests, /def _case_path\(self, relative: str\) -> str:/);
+  assert.match(nodeTests, /pkg\.joined\(casePath\('a'\), 'b'\)/);
+  assert.match(nodeTests, /afterEach\(/);
+  const phpTests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(phpTests, /joined\(\$this->casePath\("a"\), "b"\)/);
+  assert.match(phpTests, /protected function tearDown\(\): void/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Joined\(casePath\(t, "a"\), "b"\)/);
+  // G-4: a case path that would leave the directory of the test is refused by name.
+  for (const bad of ['/a', '../a', 'a/../b', '']) {
+    assert.throws(
+      () => {
+        const { contract, caseFiles } = shapes();
+        (caseFiles.get('contracts/cases.json') as any).joined[0].dir = bad;
+        generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+      },
+      /a case value of the type path is a relative path inside the directory of the test, without \.\. \(GN-6y\)/,
+      JSON.stringify(bad),
+    );
+  }
+});
+
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
   const out = shaped();
   const errors = text(out, 'packages/python/generated/python/polyspec/shapes/_errors.py');

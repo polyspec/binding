@@ -316,6 +316,77 @@
           "core": "polyspec_shapes::pad"
         },
         {
+          "id": "shapes.joined",
+          "name": [
+            "joined"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "dir"
+              ],
+              "type": "path",
+              "required": true
+            },
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "path",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::joined",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "SH-4"
+          }
+        },
+        {
+          "id": "shapes.parent_of",
+          "name": [
+            "parent",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "path"
+              ],
+              "type": "path",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "path"
+          },
+          "optional_reason": "SH-4",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::parent_of",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "SH-4"
+          }
+        },
+        {
           "id": "shapes.checksum",
           "name": [
             "checksum"
@@ -769,6 +840,16 @@
       "member": "shapes.pad",
       "file": "contracts/cases.json",
       "group": "pad"
+    },
+    {
+      "member": "shapes.joined",
+      "file": "contracts/cases.json",
+      "group": "joined"
+    },
+    {
+      "member": "shapes.parent_of",
+      "file": "contracts/cases.json",
+      "group": "parent_of"
     },
     {
       "member": "shapes.checksum",
