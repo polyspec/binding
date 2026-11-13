@@ -1185,9 +1185,11 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(lib, /let convert: Box<dyn Fn\(&str, &\[i64\]\) -> Result<String, binding_core::Failure<[^\n]+>> \+ Send \+ Sync> = in_function\(env, /);
   assert.match(lib, /fn in_function\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Native, Fail> \{\n    if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{/);
   // Each call runs on the owner thread, in the env of the owner table.
-  assert.match(lib, /let env = &native_env\(&native, "convert"\)\?;/);
-  assert.match(lib, /fn native_env\(native: &Native, subject: &str\) -> Result<Env, Thrown> \{/);
-  assert.match(lib, /BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}/);
+  assert.match(lib, /let env = match native_env\(&native, "convert"\) \{\n\s+Ok\(env\) => env,\n\s+Err\(error\) => return Err\(thrown_elsewhere\(error\)\),/);
+  assert.match(lib, /fn native_env\(native: &Native, subject: &str\) -> Result<Env, BindingError> \{/);
+  assert.match(lib, /return Err\(BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}\);/);
+  // A failure on another thread is kept as its BindingError, which the owner thread makes its error.
+  assert.match(lib, /static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new\(BTreeMap::new\(\)\);/);
   assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
   assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[napi\(js_name = "__threadTest"\)\]/);
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/ts/Cargo.toml')), /\nthread-test = \[\]\n/);
