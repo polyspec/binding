@@ -13,7 +13,7 @@ import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
 import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, machineFunction, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, passes, plainName, prefix, releaseSymbol, runsGo, valueClasses } from './go_rust.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, countsThrownGo, cSymbol, echoes, libRust, passes, plainName, prefix, releaseSymbol, runsGo, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goPassedTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -2212,6 +2212,40 @@ func PanicTestHeld(class, handle uint64) error {
 ` : ''}`;
 }
 
+// GN-6ae: the Go side of the count of what the table of what was thrown keeps, with the build tag
+// polyspec_thrown_count_test.
+function goBindingThrownCount(model: Model): string {
+  const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
+  return `${goHeader()}
+
+//go:build polyspec_thrown_count_test
+
+package binding
+
+/*
+${cDeclarations(model, [`${p}__thrown_count`])}
+*/
+import "C"
+
+// ThrownCount gives the count of the values that the static library keeps for a Raised (GN-6ae), or the failure of the
+// call.
+func ThrownCount() (uint64, error) {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__thrown_count(pointer, length, result)
+	}, nil)
+	if err != nil {
+		return 0, err
+	}
+	count := dec.Uint()
+	if err := dec.Finish(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+`;
+}
+
 // GN-6u: the Go side of the count of the live Natives, with the build tag polyspec_native_count_test.
 function goBindingNativeCount(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
@@ -2488,6 +2522,7 @@ export function go(model: Model, files: Files): void {
   if (passes(model)) files.set(`${BINDING}/zz_generated_passed_test.go`, goPassedTest(internalType(model)));
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
+  if (countsThrownGo(model)) files.set(`${BINDING}/zz_generated_thrown_count.go`, goBindingThrownCount(model));
   const echo = echoes(model);
   if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined) || numberTypes(model).length > 0) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));

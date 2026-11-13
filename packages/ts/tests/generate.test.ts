@@ -3470,7 +3470,7 @@ test('fault injection points, the kinds of an alias and the point of another lib
   const advances = (lib.match(/pub fn advance\(&mut self/g) ?? []).length;
   assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
-  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n/);
+  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
 });
@@ -3561,14 +3561,16 @@ test('the kinds of an alias are checked against its error, run alone and through
 test('a binding crate has the test features that its contract needs (GN-5)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const packages = trackedPackages(sample, '0.0.0');
-  assert.match(String(packages.get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n\[/);
+  assert.match(String(packages.get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nthrown-count-test = \[\]\n\n\[/);
   // GN-6u: a target that gives a Native back through a round trip counts the Natives that its table holds.
   for (const path of ['packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
-    assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\n\n\[/, path);
+    assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n\[/, path);
   }
   delete sample.faults;
   delete sample.units.find((u: any) => u.id === 'data').in_raises;
-  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\n\n\[dependencies\]/);
+  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nthrown-count-test = \[\]\n\n\[dependencies\]/);
+  // GN-6ae: the count of what was thrown is a feature of every crate of a contract that keeps it, and of no other.
+  assert.match(String(trackedPackages(load().contract, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\n\n\[dependencies\]/);
 });
 
 test('the generator reads the whole contract and names every refused item before it fails (G-4, P-4)', () => {
@@ -4408,13 +4410,13 @@ test('the PHP test writes a function fixture, the exception of raises callback a
   const tests = text(scopedSample(['php']), 'packages/php-ext/generated/tests/GeneratedTest.php');
   // A step calls a method on the argument at its position, a step that names a result requires it, and the function
   // returns its result, a value of GN-13.
-  assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatReturnsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("done"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return "done"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {4}\}/);
+  assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatReturnsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("done"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return "done"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(0, \\Polyspec\\Sample\\Internal\\thrownCount\(\)\);\n {4}\}/);
   // An argument of a function type of a step is again a function fixture.
   assert.match(tests, /\$args\[0\]->nested\(function \(mixed \.\.\.\$args\): mixed \{ self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); \$args\[0\]->put\("b", "2"\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return null; \}\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return 2; \}/);
   // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
   // after observes the receiver after the failed call.
   assert.match(tests, /private static \?\\Throwable \$raised = null;/);
-  assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAFunctionThatRaisesAreDropped\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n {8}try \{\n {12}\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); throw self::\$raised; \}\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\LogicException \$error\) \{\n {12}self::assertSame\(self::\$raised, \$error\);\n {8}\}\n {8}self::assertSame\(self::same\(null\), self::same\(\$receiver->get\("a"\)\)\);\n {4}\}/);
+  assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAFunctionThatRaisesAreDropped\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n {8}try \{\n {12}\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); throw self::\$raised; \}\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\LogicException \$error\) \{\n {12}self::assertSame\(self::\$raised, \$error\);\n {8}\}\n {8}self::assertSame\(self::same\(null\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(0, \\Polyspec\\Sample\\Internal\\thrownCount\(\)\);\n {4}\}/);
   // A value that is no callable is kind invalid_callback.
   assert.match(tests, /public function testGn6aeStoreTransactionWorkRefusesWhatIsNoCallable\(\): void\n {4}\{\n {8}try \{\n {12}new \\Polyspec\\Sample\\Store\(\)->transaction\(1\);\n {12}self::fail\('no error'\);\n {8}\} catch \(\\Polyspec\\Sample\\SampleTypeError \$error\) \{\n {12}self::assertSame\('invalid_callback', \$error->kind\(\)\);/);
 });
@@ -4607,6 +4609,7 @@ test('the Node test writes a function fixture, the exception of raises callback 
   const receiver = new pkg.Store();
   assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
+  assert.equal(addon().__thrownCount(), 0);
 });`);
   // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
   // that waits is async, so the member awaits the promise that it returns.
@@ -4620,6 +4623,7 @@ test('the Node test writes a function fixture, the exception of raises callback 
   const raised = new Error('raised by the function of the case');
   await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+  assert.equal(addon().__thrownCount(), 0);
 });`);
   // awaits with a raise: the promise of the async function rejects with the exception, which the caller gets.
   has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
@@ -4627,6 +4631,7 @@ test('the Node test writes a function fixture, the exception of raises callback 
   const raised = new Error('raised by the function of the case');
   await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+  assert.equal(addon().__thrownCount(), 0);
 });`);
   // A value that is no function is kind invalid_callback.
   has(`test('GN-6ae: Store.transaction refuses a work that is no function', async () => {
@@ -4725,6 +4730,7 @@ test('the WASM test writes a function fixture, the exception of raises callback 
   const receiver = new pkg.Store();
   assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
+  assert.equal(stepGlue.__thrownCount(), 0);
 });`);
   // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
   // that waits is async, so the member awaits the promise that it returns.
@@ -4738,6 +4744,7 @@ test('the WASM test writes a function fixture, the exception of raises callback 
   const raised = new Error('raised by the function of the case');
   await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+  assert.equal(stepGlue.__thrownCount(), 0);
 });`);
   // awaits with a raise: the promise of the async function rejects with the exception, which the caller gets.
   has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
@@ -4745,6 +4752,7 @@ test('the WASM test writes a function fixture, the exception of raises callback 
   const raised = new Error('raised by the function of the case');
   await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
   assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+  assert.equal(stepGlue.__thrownCount(), 0);
 });`);
   // A value that is no function is kind invalid_callback.
   has(`test('GN-6ae: Store.transaction refuses a work that is no function', async () => {
@@ -4756,7 +4764,7 @@ test('the WASM test writes a function fixture, the exception of raises callback 
 
 test('a function fixture with awaits is a plain function in PHP, which has no awaitable (GN-6ae, CK-22)', () => {
   const tests = text(scopedSample(['php']), 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatAwaitsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("awaited"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); \$args\[0\]->nested\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("b", "2"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return null; \}\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return "awaited"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(self::same\("2"\), self::same\(\$receiver->get\("b"\)\)\);\n {4}\}/);
+  assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatAwaitsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("awaited"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); \$args\[0\]->nested\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("b", "2"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return null; \}\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return "awaited"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(self::same\("2"\), self::same\(\$receiver->get\("b"\)\)\);\n {8}self::assertSame\(0, \\Polyspec\\Sample\\Internal\\thrownCount\(\)\);\n {4}\}/);
   assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAnAwaitableThatRaisesAreDropped\(\): void\n/);
 });
 
@@ -5985,4 +5993,90 @@ test('Node takes the exception of every callback out of the environment where it
   assert.match(plain, /\.map_err\(\|failure\| kept\(self\.env, failure\)\)/);
   // Every variant of Thrown and every method of Owned that the crate names is used in it.
   assert.doesNotMatch(plain.slice(plain.indexOf('struct Owned {'), plain.indexOf('impl Drop for Owned {')), /fn object</);
+});
+
+// GN-5, GN-6ae: the crate, its manifest and its generated tests of each target, for the count of what was thrown.
+const THROWN_COUNT_CRATES = [
+  ['node', 'packages/ts/Cargo.toml', 'packages/ts/generated/lib.rs'],
+  ['wasm', 'packages/ts/wasm/Cargo.toml', 'packages/ts/wasm/generated/lib.rs'],
+  ['php', 'packages/php-ext/Cargo.toml', 'packages/php-ext/generated/lib.rs'],
+  ['python', 'packages/python/Cargo.toml', 'packages/python/generated/lib.rs'],
+  ['go', 'packages/go/internal/ffi/Cargo.toml', 'packages/go/internal/ffi/generated/lib.rs'],
+] as const;
+
+test('a crate that keeps what was thrown has the entry point of thrown-count-test, which gives the count of the table (GN-5, GN-6ae)', () => {
+  const out = scopedSample(['php', 'python', 'node', 'go', 'wasm']);
+  // Node and PHP remove the keys that a drop on another thread queued, and then count the table of the thread.
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[napi\(js_name = "__thrownCount"\)\]\npub fn thrown_count\(\) -> u32 \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}u32::try_from\(count\)\.unwrap_or\(u32::MAX\)\n\}/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\thrownCount"\)\]\npub fn thrown_count\(\) -> i64 \{\n {4}release_dropped\(\);\n {4}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {4}i64::try_from\(count\)\.unwrap_or\(i64::MAX\)\n\}/);
+  assert.match(php, /#\[cfg\(feature = "thrown-count-test"\)\]\n {8}let module = module\.function\(wrap_function!\(thrown_count\)\);/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /#\[cfg\(feature = "thrown-count-test"\)\]\n {4}#\[wasm_bindgen\(js_name = "__thrownCount"\)\]\n {4}pub fn thrown_count\(\) -> u32 \{\n {8}let count = THROWN\.with_borrow\(\|map\| map\.len\(\)\);\n {8}u32::try_from\(count\)\.unwrap_or\(u32::MAX\)\n {4}\}/);
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[pyfunction\]\nfn _thrown_count\(\) -> usize \{\n {4}thrown_map\(\)\.len\(\)\n\}/);
+  assert.match(python, /#\[cfg\(feature = "thrown-count-test"\)\]\n {4}module\.add_function\(wrap_pyfunction!\(_thrown_count, module\)\?\)\?;/);
+  const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /#\[cfg\(feature = "thrown-count-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__thrown_count\(args: \*const u8, len: usize, result: \*mut Buffer\) -> i32 \{/);
+  assert.match(go, /uint_out\(&mut output, u64::try_from\(lock\(&THROWN\)\.len\(\)\)\.unwrap_or\(u64::MAX\)\);/);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_thrown_count.go');
+  assert.match(binding, /\n\/\/go:build polyspec_thrown_count_test\n/);
+  assert.match(binding, /func ThrownCount\(\) \(uint64, error\) \{\n\tdec, err := invoke\(func\(pointer \*C\.uint8_t, length C\.size_t, result \*C\.polyspec_sample_buffer\) C\.int32_t \{\n\t\treturn C\.polyspec_sample__thrown_count\(pointer, length, result\)/);
+});
+
+test('a manifest has the feature thrown-count-test exactly when its crate keeps the table of what was thrown (GN-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const plain = load();
+  const targets = ['php', 'python', 'node', 'go', 'wasm'] as const;
+  const crates = [
+    { name: 'the sample', keeps: true, packages: trackedPackages(sample, '0.0.0'), out: generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: [...targets] }) },
+    { name: 'a contract without a callback, a function type and a value alias', keeps: false, packages: trackedPackages(plain.contract, '0.0.0'), out: generate({ ...plain, version: '0.0.0', coreLib: 'polyspec_sample', targets: [...targets] }) },
+  ];
+  for (const { name, keeps, packages, out } of crates) {
+    for (const [lang, manifest, crate] of THROWN_COUNT_CRATES) {
+      const lib = text(out, crate);
+      assert.notEqual(lib, '', `${name}: ${crate}`);
+      assert.equal(/\nthrown-count-test = \[\]\n/.test(String(packages.get(manifest))), keeps, `${name}: the feature of ${lang}`);
+      assert.equal(/\n(?: {4})?static THROWN: /.test(lib), keeps, `${name}: the table of ${lang}`);
+      assert.equal(/#\[cfg\(feature = "thrown-count-test"\)\]/.test(lib), keeps, `${name}: the entry point of ${lang}`);
+    }
+    assert.equal(out.has('packages/go/internal/binding/zz_generated_thrown_count.go'), keeps, name);
+  }
+});
+
+test('the generated test of a case of a member that takes a callback or a function requires that nothing thrown is kept (GN-6ae)', () => {
+  const out = scopedSample(['php', 'python', 'node', 'go', 'wasm']);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  // A case whose callback raises and whose core answers it, with the fixture checks before the count.
+  assert.match(node, /test\('GN-13e: tolerant a_tolerant_key_whose_lookup_raises_what_it_does_not_recognize_gives_no_value', \(\) => \{\n[^\n]*\n {2}assert\.deepStrictEqual\(ordered\(pkg\.tolerant\(fixture0\.object, '\?a'\)\), ordered\(null\)\);\n {2}assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);\n {2}assert\.equal\(addon\(\)\.__thrownCount\(\), 0\);\n\}\);/);
+  // A case of a member with machine, after its call and the calls of after.
+  assert.match(node, /test\('GN-13e: Store\.attempt a_function_that_raises_after_it_wrote_is_an_attempt_that_did_not_hold', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n[^\n]*\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n {2}assert\.equal\(addon\(\)\.__thrownCount\(\), 0\);\n\}\);/);
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasm, /test\('GN-13e: tolerant a_tolerant_key_whose_lookup_raises_what_it_does_not_recognize_gives_no_value', \(\) => \{\n(?: {2}[^\n]*\n)+? {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);\n {2}assert\.equal\(stepGlue\.__thrownCount\(\), 0\);\n\}\);/);
+  assert.match(wasm, /test\('GN-13e: Store\.attempt a_function_that_raises_after_it_wrote_is_an_attempt_that_did_not_hold', async \(\) => \{\n(?: {2}[^\n]*\n)+? {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n {2}assert\.equal\(stepGlue\.__thrownCount\(\), 0\);\n\}\);/);
+  assert.match(wasm, /\nlet stepGlue;\nbefore\(async \(\) => \{\n {2}stepGlue = await glueModule\(\);\n\}\);\n/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /public function testGn13eStoreAttemptAFunctionThatRaisesAfterItWroteIsAnAttemptThatDidNotHold\(\): void\n {4}\{\n(?: {8}[^\n]*\n)+? {8}self::assertSame\(self::same\(null\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(0, \\Polyspec\\Sample\\Internal\\thrownCount\(\)\);\n {4}\}/);
+  assert.match(php, /public function testGn13etolerantATolerantKeyWhoseLookupRaisesWhatItDoesNotRecognizeGivesNoValue\(\): void\n {4}\{\n(?: {8}[^\n]*\n)+? {8}self::assertSame\(0, \\Polyspec\\Sample\\Internal\\thrownCount\(\)\);\n {4}\}/);
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_gn13e_tolerant_a_tolerant_key_whose_lookup_raises_what_it_does_not_recognize_gives_no_value\(self\) -> None:\n(?: {8}[^\n]*\n)+? {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)\n {8}self\.assertEqual\(_native\._thrown_count\(\), 0\)\n\n/);
+  assert.match(python, /def test_gn13e_store_attempt_a_function_that_raises_after_it_wrote_is_an_attempt_that_did_not_hold\(self\) -> None:\n(?: {8}[^\n]*\n)+? {8}self\.assertTrue\(_same\(after_0, expected_0\), [^\n]*\n {8}self\.assertEqual\(_native\._thrown_count\(\), 0\)\n\n/);
+  // Go: the test with the build tag runs the call of the case again; the file without a tag names no entry of a feature.
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /ThrownCount/);
+  const go = text(out, 'packages/go/zz_generated_thrown_count_test.go');
+  assert.match(go, /\n\/\/go:build polyspec_thrown_count_test\n/);
+  assert.match(go, /func TestGN13eStoreAttemptAFunctionThatRaisesAfterItWroteIsAnAttemptThatDidNotHoldKeepsNothingThrown\(t \*testing\.T\) \{\n(?:\t[^\n]*\n)+?\tvalue0, err := made0\.Attempt\(function2\)\n(?:\t[^\n]*\n)+?\tif count, err := binding\.ThrownCount\(\); err != nil \|\| count != 0 \{\n\t\tt\.Fatalf\("GN-6ae: %d values that were thrown are kept after the call \(%v\)", count, err\)\n\t\}\n\}/);
+  assert.match(go, /func TestGN13eTolerantATolerantKeyWhoseLookupRaisesWhatItDoesNotRecognizeGivesNoValueKeepsNothingThrown\(t \*testing\.T\) \{/);
+  // Every case of such a member has the count, and a member that takes neither has none.
+  const cases = (file: string, start: RegExp): string[] => file.split(start).slice(1);
+  for (const [name, file, start, count] of [
+    ['node', node, /\ntest\('(?=(?:B-4|GN-13e): (?:tolerant|Store\.attempt) )/, /__thrownCount\(\), 0\);\n\}\);/],
+    ['wasm', wasm, /\ntest\('(?=(?:B-4|GN-13e): (?:tolerant|Store\.attempt) )/, /__thrownCount\(\), 0\);\n\}\);/],
+  ] as const) {
+    const found = cases(file, start);
+    assert.ok(found.length >= 5, `${name}: ${found.length} cases`);
+    for (const one of found) assert.match(one.slice(0, one.indexOf('\n});') + 5), count, `${name}: ${one.slice(0, 120)}`);
+  }
+  const join = node.indexOf("test('GN-13e: join no_tag_is_the_empty_text'");
+  assert.notEqual(join, -1);
+  assert.doesNotMatch(node.slice(join, node.indexOf('\n});', join)), /__thrownCount/);
 });

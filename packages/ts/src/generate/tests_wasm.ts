@@ -1,7 +1,7 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction } from './model.ts';
+import { type Fn, type Model, callsCode, awaits, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction } from './model.ts';
 import { type After, FIXTURE_RAISED, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
@@ -121,6 +121,14 @@ export function wasmTests(model: Model): string {
     // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
     // awaits the call of a member that waits.
     return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+  };
+  // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
+  // was thrown, which the entry point of thrown-count-test counts.
+  const kept = (fn: Fn): string => {
+    if (!callsCode(model, fn)) return '';
+    usesGlue = true;
+    usesStepGlue = true;
+    return '\n  assert.equal(stepGlue.__thrownCount(), 0);';
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
@@ -290,7 +298,7 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
+    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
@@ -308,7 +316,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       out.push(`
 test('GN-6ae: ${name} ${kase.id}', () => {${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
-  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}
+  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -355,7 +363,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
+test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.

@@ -1,11 +1,23 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 633700c95c1230faa834590e5cebd504f7c62a09f69be08756cb26750ec67850 -->
+<!-- source-sha256: 15f5e41bd9de8e724e5d916cbe0a6ee34925a1bd1fe673186d6735e07304a1de -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 코어가 drop한 `Raised`가 던져진 것의 table을 떠나는지 확인하는 생성된 시험이 없었다. `sample.tolerant`처럼 코어가
+  callback의 예외에 응답하고 값을 돌려주는 member는 항목이 table에 남아도 case를 통과했다. 이제 member가 callback이나
+  함수 타입을 받거나 값 alias가 있는 계약의 crate는 시험 feature `thrown-count-test`를 갖고, 그 진입점은 table의 항목
+  수를 준다(Node와 WASM은 `__thrownCount`, PHP는 `<namespace>\Internal\thrownCount`, Python은 `_thrown_count`, Go는
+  `<prefix>__thrown_count`). Node와 PHP는 다른 스레드의 drop이 대기열에 넣은 key를 제거한 뒤에 센다(GN-5, GN-6ae).
+  callback이나 함수 타입을 받는 member의 case마다 생성된 시험은 그 case의 호출과 `after`의 호출 뒤에 수가 0일 것을
+  요구한다. Go에서는 그 case들을 build tag `polyspec_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에서
+  다시 실행하고, 실패를 주입하는 case는 `polyspec_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에서
+  다시 실행한다. 끝에서 끝까지 확인은 feature 없이 빌드한 정적 라이브러리에 없어야 하는 시험용 진입점에
+  `__thrown_count`를 더했다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 sample과, callback·함수 타입·값 alias가
+  없는 계약에 대해 각 manifest의 feature 줄을 그 crate의 table과 진입점에 비교하고, 다섯 target의 생성된 시험에서 수를
+  읽는 줄을 확인한다. 이 변경에서 생성된 crate와 시험은 컴파일하거나 실행하지 않았다.
 - machine이 없는 Node member는 코어가 callback의 예외에 응답하고 값을 돌려줘도 그 예외로 끝났다. 예외가 환경에
   pending으로 남았기 때문이다. machine이 소유하는 callback만 그것을 꺼냈다. 이제 모든 Node callback은 부르는 곳에서 예외를
   환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 key 아래에 보관하고, `failure_error`가 그것을 다시

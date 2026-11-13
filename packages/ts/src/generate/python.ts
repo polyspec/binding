@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction } from './model.ts';
+import { countsThrown, type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -1057,7 +1057,15 @@ fn keep_thrown(object: Py<PyAny>) -> binding_core::Raised {
     thrown_map().insert(key, object);
     binding_core::Raised::from_generated(binding_core::Native::new(ThrownKey { key }))
 }
-${!keepsThrown(model) && model.aliases.length === 0 ? '' : `
+${!countsThrown(model.contract, model.foreign) ? '' : `
+/// GN-6ae: the entry point of the generated tests of the cases that call Python code: the count of what the table
+/// keeps, on any thread.
+#[cfg(feature = "thrown-count-test")]
+#[pyfunction]
+fn _thrown_count() -> usize {
+    thrown_map().len()
+}
+`}${!keepsThrown(model) && model.aliases.length === 0 ? '' : `
 /// U-3: an exception of Python code, of a callback, of a function, of an awaitable, or of Python code while the core
 /// walks a value, as the Raised that the caller throws again.
 fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
@@ -1305,7 +1313,9 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
 ${classChecks}
 ${register}
     #[cfg(feature = "panic-test")]
-    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;${model.objects.some((o) => o.lock?.writes === true) ? `
+    module.add_function(wrap_pyfunction!(_panic_test, module)?)?;${!countsThrown(model.contract, model.foreign) || failureRust(model) === '' ? '' : `
+    #[cfg(feature = "thrown-count-test")]
+    module.add_function(wrap_pyfunction!(_thrown_count, module)?)?;`}${model.objects.some((o) => o.lock?.writes === true) ? `
     #[cfg(feature = "panic-test")]
     module.add_function(wrap_pyfunction!(${POISON_ENTRY.python}, module)?)?;` : ''}${aliasesWithKinds(model).map((alias) => `
     #[cfg(feature = "codec-test")]

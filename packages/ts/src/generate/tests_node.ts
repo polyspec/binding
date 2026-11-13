@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction, machineFunction } from './model.ts';
+import { type Model, callsCode, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction, machineFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
@@ -219,6 +219,13 @@ export function nodeTests(model: Model): string {
     // awaits the call of a member that waits.
     return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
   };
+  // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
+  // was thrown, which the entry point of thrown-count-test counts.
+  const kept = (fn: Fn): string => {
+    if (!callsCode(model, fn)) return '';
+    usesAddon = true;
+    return '\n  assert.equal(addon().__thrownCount(), 0);';
+  };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
     (after ?? []).map((call) => {
@@ -381,7 +388,7 @@ test('B-4: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${arming}
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
+    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
@@ -399,7 +406,7 @@ test('GN-6ae: ${name} ${kase.id}', () => {
       out.push(`
 test('GN-6ae: ${name} ${kase.id}', () => {${receiverMade.lines}
   const raised = new Error(${jsString(FIXTURE_RAISED)});
-  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}
+  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -445,7 +452,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
               : `\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(addon().__aliasRound${langName('node', expected.round, 'class')}(result)), expected);`
             : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);

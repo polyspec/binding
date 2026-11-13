@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- No generated test observed that a `Raised` that the core drops leaves the table of what was thrown: a member such as
+  `sample.tolerant`, whose core answers the exception of its callback and returns a value, passed its cases also when
+  the entry stayed in the table. A crate of a contract in which a member takes a callback or a function type, or which
+  has a value alias, now has the test feature `thrown-count-test`, whose entry point gives the count of the entries of
+  the table (`__thrownCount` in Node and WASM, `<namespace>\Internal\thrownCount` in PHP, `_thrown_count` in Python,
+  `<prefix>__thrown_count` in Go); Node and PHP remove the keys that a drop on another thread queued before they count
+  (GN-5, GN-6ae). The generated test of every case of a member that takes a callback or a function type requires the
+  count 0 after the call of the case and the calls of its `after`; in Go those cases run again in
+  `zz_generated_thrown_count_test.go` with the build tag `polyspec_thrown_count_test`, and a case that arms faults in
+  `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_fault_test`. The end-to-end check names
+  `__thrown_count` among the test entry points that a static library built without features must not hold. Verified
+  by `npm test` in `packages/ts`, whose tests compare the feature line of each manifest with the table and the entry
+  point of its crate, for the sample and for a contract without a callback, a function type and a value alias, and
+  read the count in the generated tests of the five targets. The generated crates and tests were not compiled or run
+  for this change.
 - A Node member without a machine whose core answered the exception of a callback and returned a value still ended
   with that exception, because the exception stayed pending in the environment: only the callback that a machine owns
   took it out. Every Node callback now takes its exception out of the environment where it is called

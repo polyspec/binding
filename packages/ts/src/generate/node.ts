@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction } from './model.ts';
+import { countsThrown, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1222,7 +1222,17 @@ thread_local! {
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
 ${THREAD_THROWN}
-${model.aliases.length > 0 || passing ? `/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
+${!countsThrown(model.contract, model.foreign) ? '' : `/// GN-6ae: the entry point of the generated tests of the cases that call JavaScript code: the count of what the table
+/// of this thread keeps, after the keys that a drop on another thread queued are removed.
+#[cfg(feature = "thrown-count-test")]
+#[napi(js_name = "__thrownCount")]
+pub fn thrown_count() -> u32 {
+    release_dropped();
+    let count = THROWN.with_borrow(|map| map.len());
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+`}${model.aliases.length > 0 || passing ? `/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
 fn raised(error: Thrown) -> binding_core::Raised {
     keep_thrown(error)
 }

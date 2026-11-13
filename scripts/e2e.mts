@@ -730,14 +730,14 @@ if (targets.includes('go')) {
     const crate = p.contract.core.crate;
     const goEnv = goEnvOf(p);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
-    // GN-13b, GN-6u: panic-test, codec-test and native-count-test are for tests only; the library built without features
+    // GN-13b, GN-6u, GN-6ae: panic-test, codec-test, native-count-test and thrown-count-test are for tests only; the library built without features
     // has no test entry point.
     if (stepOf(['go'], `llvm-nm: the static library${of} without features holds no test entry point`, () => {
       const release = join(work, 'target-release-check');
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|number_in)/.test(line));
+      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|thrown_count|number_in)/.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);

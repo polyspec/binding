@@ -220,6 +220,7 @@ the design ids are those of the binding design.
   | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
   | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | the count of the language objects that the owner table holds (GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
+  | `thrown-count-test` | the count of the entries of the table that keeps what was thrown (GN-6ae), in a crate of a contract in which a member takes a callback or a function type, or which has a value alias | `_thrown_count` | `__thrownCount` | `<namespace>\Internal\thrownCount` | `<prefix>__thrown_count`; WASM `__thrownCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
@@ -1107,7 +1108,12 @@ the design ids are those of the binding design.
     key for the thread that keeps it (Node, PHP). So no entry point records the `Raised` values of its call, and a
     machine of Node and WASM, which several entry points advance, keeps no list of them. A function of a machine
     makes its `Raised` by the function that a callback uses (`thrown`), and `failure_error` takes what was thrown
-    out of the table by the key of the `Raised`.
+    out of the table by the key of the `Raised`. The entry point of the feature `thrown-count-test` (GN-5) gives the
+    count of the entries of the table, in Node and PHP after it has removed the queued keys. The generated test of
+    every case of a member that takes a callback or a function type requires, after the call of the case and the
+    calls of its `after`, that the count is 0; the Go test of the count is in `zz_generated_thrown_count_test.go` with
+    the build tag `polyspec_thrown_count_test` and runs the call of each such case again, and a case that arms faults
+    is in `zz_generated_thrown_count_fault_test.go`, which also needs `polyspec_fault_test`.
   - PHP: the parameter takes a `callable` (`is_callable`; any other value is kind `invalid_callback`), declared in the
     stub as `@param callable(<parameters>): mixed`, and the result is `mixed`. The closure keeps a reference to the
     callable and calls it through `ZendCallable`; an exception of its code is taken from the executor and kept as the
@@ -1678,10 +1684,10 @@ the design ids are those of the binding design.
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
-  `panic-test`, `codec-test` and `native-count-test` are for tests only: the manifest that `binding scaffold` writes
+  `panic-test`, `codec-test`, `native-count-test` and `thrown-count-test` are for tests only: the manifest that `binding scaffold` writes
   turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`). With the build tag
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to

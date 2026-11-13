@@ -11,7 +11,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, DRIVEN, drivenCall, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, machineFunction, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, unitFn, libraryBlocks, resultLet, rustField, rustType, rustVariant,
+  countsThrown, heldParam, heldType, langName, libraryOf, lockLines, machineFunction, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, unitFn, libraryBlocks, resultLet, rustField, rustType, rustVariant,
   takesObject, unitOf,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
   errorMatched,
@@ -62,6 +62,9 @@ export const runsGo = (model: Model): boolean => model.callbacks.length > 0 || p
 
 // Whether the model calls back into Go: Go code that the core runs, or the walk of a value alias.
 export const callsBack = (model: Model): boolean => runsGo(model) || model.aliases.length > 0;
+// GN-5, GN-6ae: whether the crate has the entry point of thrown-count-test: the contract counts what was thrown, and
+// the crate writes the table (callBackRust).
+export const countsThrownGo = (model: Model): boolean => countsThrown(model.contract, model.foreign) && callsBack(model);
 
 // ---- conversions ----
 
@@ -1504,6 +1507,9 @@ function testEntries(model: Model): string {
   out.push(entry(model, `${p}__panic_test`, 'B-7: the entry point of the generated panic test.', ['        finish_input(input)?;', '        panic!("panic-test")'], 'panic-test'));
   if (nativeRoundTrip(model.contract, 'go') !== undefined) {
     out.push(entry(model, `${p}__native_count`, 'GN-6u: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
+  }
+  if (countsThrownGo(model)) {
+    out.push(entry(model, `${p}__thrown_count`, 'GN-6ae: the entry point of the generated tests of the cases that call Go code: the count of what the table of what was thrown keeps.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        uint_out(&mut output, u64::try_from(lock(&THROWN).len()).unwrap_or(u64::MAX));', '        Ok(output)'], 'thrown-count-test'));
   }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
   const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));

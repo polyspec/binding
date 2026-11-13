@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { awaitsNone, machineFunction, unitFn, libraryBlocks, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { countsThrown, awaitsNone, machineFunction, unitFn, libraryBlocks, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -1363,6 +1363,15 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
     #[wasm_bindgen(js_name = "__nativeCount")]
     pub fn native_count() -> u32 {
         let count = NATIVE.with_borrow(|native| native.values.len());
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
+`}${!countsThrown(model.contract, model.foreign) || !carriesThrown(model) ? '' : `    /// GN-6ae: the entry point of the generated tests of the cases that call JavaScript code: the count of what the table
+    /// of what was thrown keeps.
+    #[cfg(feature = "thrown-count-test")]
+    #[wasm_bindgen(js_name = "__thrownCount")]
+    pub fn thrown_count() -> u32 {
+        let count = THROWN.with_borrow(|map| map.len());
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 

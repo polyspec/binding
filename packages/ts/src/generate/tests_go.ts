@@ -17,7 +17,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { numberTypes } from './go_rust.ts';
+import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent,
@@ -26,6 +26,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
   objectUnit, places, pointName, pointed, unitOf, variantOf,
   nativeRoundTrip,
+  callsCode,
 } from './model.ts';
 import {
   type After, type Fixture, type RaisingCase, type Receiver, FIXTURE_RAISED, aliasCases, argsOf, callbackCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf,
@@ -528,8 +529,15 @@ interface Out {
   main: string[];
   fault: string[];
   held: string[];
+  // GN-6ae: the tests of the build tag polyspec_thrown_count_test, and those that also arm faults.
+  thrown: string[];
+  thrownFault: string[];
   callbacks: Set<CallbackUnit>;
 }
+
+// GN-6ae: the lines that require, after the call of a case and the calls of its after, that the static library keeps
+// nothing that was thrown.
+const KEPT_NOTHING = ['if count, err := binding.ThrownCount(); err != nil || count != 0 {', '\tt.Fatalf("GN-6ae: %d values that were thrown are kept after the call (%v)", count, err)', '}'];
 
 const labelOf = (fn: Fn): string => {
   const owner = goName(fn.unit.name);
@@ -707,6 +715,9 @@ func TestU2${label}Without${testName(goParam(arg.name, v.model))}IsTheCallWithIt
 ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err0, err1) {', '\tt.Fatalf("U-2: %#v, %v is not %#v, %v", value0, err0, value1, err1)', '}'], 1)}
 }`);
   }
+  // GN-6ae: a case of a member that takes a callback or a function runs again in a test of the build tag
+  // polyspec_thrown_count_test, which reads the count of what was thrown after it.
+  const counted = countsThrownGo(model) && callsCode(model, fn);
   // B-4: every case that raises.
   for (const kase of raisingCases(model, fn)) {
     const b = new Body();
@@ -734,6 +745,10 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
 }`);
+    if (counted) (kase.faults === undefined && !b.armed ? out.thrown : out.thrownFault).push(`
+func TestB4${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
+}`);
   }
   // GN-6ae: a case whose function fixture returns the error that the test holds gets the same error value.
   for (const kase of callbackCases(model, fn)) {
@@ -756,6 +771,10 @@ ${indent(lines, 1)}
     out.main.push(`
 func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
+}`);
+    if (counted && typeof call !== 'string') (b.armed ? out.thrownFault : out.thrown).push(`
+func TestGN6ae${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
 }`);
   }
   // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -804,6 +823,10 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
     (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
+}`);
+    if (counted && refused === undefined) (b.armed ? out.thrownFault : out.thrown).push(`
+func TestGN13e${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
 }`);
   }
   // N-4: the text of a stringify is the result of its case.
@@ -1050,7 +1073,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   checkCaseNames(model, casePascal, false);
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false, fixtures: new Set() };
-  const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
+  const out: Out = { main: [], fault: [], held: [], thrown: [], thrownFault: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
   // GN-6u: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
@@ -1110,6 +1133,8 @@ ${testImports(model, module, body, scope)}${body}`;
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
   if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
+  if (out.thrown.length > 0) files.push(['zz_generated_thrown_count_test.go', file('polyspec_thrown_count_test', out.thrown)]);
+  if (out.thrownFault.length > 0) files.push(['zz_generated_thrown_count_fault_test.go', file('polyspec_thrown_count_test && polyspec_fault_test', out.thrownFault)]);
   return files;
 }
 

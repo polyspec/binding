@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, unitFn, libraryBlocks, machineFunction, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { countsThrown, DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, unitFn, libraryBlocks, machineFunction, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -192,6 +192,23 @@ pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
     })
 }
 `;
+
+// GN-6ae: the entry point of the generated tests of the cases that call PHP code: the count of what the table of this
+// thread keeps, after the keys that a drop on another thread queued are removed.
+const THROWN_COUNT = (layout: PhpLayout): string => `/// GN-6ae: the entry point of the generated tests of the cases that call PHP code.
+#[cfg(feature = "thrown-count-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\thrownCount`)})]
+pub fn thrown_count() -> i64 {
+    release_dropped();
+    let count = THROWN.with_borrow(|map| map.len());
+    i64::try_from(count).unwrap_or(i64::MAX)
+}
+`;
+
+// GN-5: whether the crate has the entry point of thrown-count-test: the contract counts what was thrown, and the crate
+// writes the table (failureRust).
+const countsThrownPhp = (model: Model): boolean => countsThrown(model.contract, model.foreign) && failureRust(model) !== '';
 
 // GN-6u: the entry point of the generated release test: the count of the Natives that the table of this thread holds.
 const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6u: the entry point of the generated release test.
@@ -1674,7 +1691,7 @@ mod entry {
     #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_function and php_module macros of ext-php-rs")]
     use super::*;
 ${functions}
-${PANIC_TEST(layout)}${takesFunction(model) ? THREAD_TEST(layout) : ''}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : NATIVE_COUNT(layout)}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
+${PANIC_TEST(layout)}${takesFunction(model) ? THREAD_TEST(layout) : ''}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : NATIVE_COUNT(layout)}${countsThrownPhp(model) ? THROWN_COUNT(layout) : ''}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[php_function]
@@ -1708,7 +1725,9 @@ ${poisonRust(model, layout)}${caseTests.entries}
         #[cfg(feature = "thread-test")]
         let module = module.function(wrap_function!(thread_test));`}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : `
         #[cfg(feature = "native-count-test")]
-        let module = module.function(wrap_function!(native_count));`}
+        let module = module.function(wrap_function!(native_count));`}${!countsThrownPhp(model) ? '' : `
+        #[cfg(feature = "thrown-count-test")]
+        let module = module.function(wrap_function!(thrown_count));`}
         #[cfg(feature = "panic-test")]
         let module = module.function(wrap_function!(panic_test)).function(wrap_function!(errno_of));${model.objects.some((o) => o.lock?.writes === true) ? `
         #[cfg(feature = "panic-test")]

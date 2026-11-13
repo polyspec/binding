@@ -1892,6 +1892,45 @@ export const aliasFailureFn = (alias: ValueAlias): string =>
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
   model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);
 
+// GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
+// thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
+// contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts
+// that it names decide it, so that the manifest and the crate agree.
+export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): boolean {
+  const called = (type: Type): boolean => {
+    if (typeof type === 'string') return false;
+    if ('function' in type) return true;
+    if ('list' in type) return called(type.list);
+    if ('optional' in type) return called(type.optional);
+    if ('map' in type) return called(type.map);
+    if ('keyed_map' in type) return called(type.keyed_map);
+    if ('tuple' in type) return type.tuple.some(called);
+    if (!('unit' in type)) return false;
+    const owner = type.library === undefined ? contract : foreign.get(type.library);
+    return owner?.units.some((unit) => unit.id === type.unit && unit.origin === 'callback') === true;
+  };
+  return contract.units.some((unit) =>
+    (unit.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object')
+    || (unit.origin !== 'callback' && (unit.members ?? []).some((member) => (member.parameters ?? []).some((parameter) => called(parameter.type)))));
+}
+
+// GN-6ae: whether a member takes a callback unit or a function type, so that its call may keep what the language code
+// threw; the generated test of each of its cases reads the count of thrown-count-test after the call.
+export function callsCode(model: Model, fn: Fn): boolean {
+  const called = (type: Type): boolean => {
+    if (typeof type === 'string') return false;
+    if ('function' in type) return true;
+    if ('list' in type) return called(type.list);
+    if ('optional' in type) return called(type.optional);
+    if ('map' in type) return called(type.map);
+    if ('keyed_map' in type) return called(type.keyed_map);
+    if ('tuple' in type) return type.tuple.some(called);
+    if (!('unit' in type)) return false;
+    return [...model.callbacks, ...model.foreignCallbacks].some((callback) => callback.unit.id === type.unit && callback.library === type.library);
+  };
+  return countsThrown(model.contract, model.foreign) && fn.args.some((arg) => called(arg.type));
+}
+
 // GN-6u: the member whose generated test gives an object through a native row and back: a function without a receiver
 // that takes a value alias of this repository, with an out row of kind native in the target, as its one parameter and
 // returns it. The contract alone decides it, so that the manifest and the tests agree.

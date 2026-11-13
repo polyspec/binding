@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e69019e823ad8ec2b1d2bff5b4b7d8c5660414b5f65189361309b5fa8b9be26d -->
+<!-- source-sha256: 68d74c7123a8e7d6c54966f40decabbbe180501177ef6a38202c21232a11d1d2 -->
 # 생성기
 
 [English](generator.md)
@@ -180,6 +180,7 @@
   | `case-test` | 인자가 그 언어에서 꼴을 갖지 않는 case(GN-13) | 아직 없음 | 아직 없음 | `<namespace>\Internal\caseTest<n>` | 아직 없음. WASM도 아직 없음 |
   | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
+  | `thrown-count-test` | 던져진 것을 보관하는 table의 항목 수(GN-6ae). member가 callback이나 함수 타입을 받거나 값 alias가 있는 계약의 crate에 있다 | `_thrown_count` | `__thrownCount` | `<namespace>\Internal\thrownCount` | `<prefix>__thrown_count`. WASM은 `__thrownCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
@@ -912,7 +913,11 @@
     Python과 Go에서는 table의 mutex 뒤에서 항목을 제거하고, Node와 PHP에서는 그 key를 그것을 보관하는 스레드의 대기열에
     넣는다. 그래서 어느 진입점도 자기 호출의 `Raised`를 기록하지 않고, 여러 진입점이 advance하는 Node와 WASM의 machine도
     그 목록을 보관하지 않는다. machine의 함수는 callback이 쓰는 함수(`thrown`)로 `Raised`를 만들고, `failure_error`는
-    `Raised`의 key로 던져진 것을 table에서 꺼낸다.
+    `Raised`의 key로 던져진 것을 table에서 꺼낸다. feature `thrown-count-test`(GN-5)의 진입점은 table의 항목 수를 준다.
+    Node와 PHP에서는 대기열의 key를 제거한 뒤의 수다. callback이나 함수 타입을 받는 member의 case마다 생성된 시험은
+    그 case의 호출과 `after`의 호출 뒤에 그 수가 0일 것을 요구한다. Go에서 그 수의 시험은 build tag
+    `polyspec_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에 있고, 그런 case마다 호출을 다시 실행한다.
+    실패를 주입하는 case는 `polyspec_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에 있다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
@@ -1363,9 +1368,9 @@
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
   latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`, `codec-test`,
-  `native-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
+  `native-count-test`, `thrown-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
   끝에서 끝까지 확인은 feature 없이 정적 라이브러리를 빌드해 시험용 진입점(`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`, `__thrown_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
   crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
   `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 이 레포 alias의

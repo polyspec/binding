@@ -7,7 +7,7 @@
 import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
-import { holdsFunction, nativeRoundTrip, machineFunction } from './model.ts';
+import { countsThrown, holdsFunction, nativeRoundTrip, machineFunction } from './model.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
@@ -101,7 +101,7 @@ function coreFeatures(contract: Contract, suffix: string): string {
 // when the contract names fault injection points, and of each core of another library whose points a case arms (G-5);
 // codec-test adds the entry points that run the in function of a
 // value alias with in_raises alone (U-7); the Go crate has it always, for its round-trip entry points (GW-4, T-2).
-function testFeatures(contract: Contract, suffix: string, armed: string[]): string {
+function testFeatures(contract: Contract, suffix: string, armed: string[], foreign: ReadonlyMap<string, Contract>): string {
   const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
   const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
   const codec = suffix === 'go' || contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
@@ -113,12 +113,22 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
   // gives a Native back through a round trip.
   const lang = ({ node: 'node', 'php-ext': 'php', wasm: 'wasm', go: 'go' } as const)[suffix as 'node' | 'php-ext' | 'wasm' | 'go'];
   const count = lang !== undefined && nativeRoundTrip(contract, lang) !== undefined ? 'native-count-test = []\n' : '';
-  return `${faults}${codec}${thread}${count}`;
+  // GN-6ae: thrown-count-test adds the entry point that counts the entries of the table of what was thrown, in every
+  // crate that keeps that table.
+  const thrown = countsThrown(contract, foreign) ? 'thrown-count-test = []\n' : '';
+  return `${faults}${codec}${thread}${count}${thrown}`;
+}
+
+// What decides the test features of a manifest: the libraries whose points a case arms, and the contracts of the
+// libraries that the contract names.
+interface Tested {
+  armed: string[];
+  foreign: ReadonlyMap<string, Contract>;
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
 // staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm). libExtra: lines of [lib] after its type.
-function manifest(contract: Contract, version: string, armed: string[], suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
+function manifest(contract: Contract, version: string, { armed, foreign }: Tested, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -134,7 +144,7 @@ crate-type = ["${crate?.type ?? 'cdylib'}"]${libExtra}
 
 [features]
 panic-test = []
-${testFeatures(contract, suffix, armed)}
+${testFeatures(contract, suffix, armed, foreign)}
 [dependencies]
 ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
 ${bindingCore(suffix !== 'wasm' && drives(contract, suffix))}
@@ -206,6 +216,7 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
     if (crate === undefined) throw new Error(`a case arms a fault injection point of ${prefix}, whose crate ${contract.core.path}/Cargo.toml does not depend on (G-5)`);
     return crate.slice('polyspec-'.length);
   });
+  const tested: Tested = { armed, foreign };
   const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0, armed);
   // L-2a: the WASM crate is wasm/ of the Node package, native/wasm/ of a host Node package.
   const wasmDepth = isHost(contract, 'node') ? 2 : 1;
@@ -215,7 +226,7 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   };
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, version, tested, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
     files.set('packages/python/build.rs', PYTHON_BUILD);
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
@@ -238,7 +249,7 @@ python-source = "generated/python"
   }
   if (contract.targets.includes('node')) {
     const npm = (contract.packages['node'] as { package: string }).package;
-    files.set('packages/ts/Cargo.toml', manifest(contract, version, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
+    files.set('packages/ts/Cargo.toml', manifest(contract, version, tested, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       ...foreignOf('node'),
       // GN-6n: the future of a member with wait async_driver runs on the tokio runtime of napi.
       `napi = { version = "=3.16.2", default-features = false, features = [${['napi8', ...(drives(contract, 'node') ? ['tokio_rt'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`,
@@ -253,7 +264,7 @@ python-source = "generated/python"
     // L-1, P-5: the WASM crate is packages/ts/wasm in the npm package of Node; wasm-bindgen writes its module and glue
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
-    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, armed, 'wasm', `${extensionName(contract)}_wasm`, [
+    files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, tested, 'wasm', `${extensionName(contract)}_wasm`, [
       ...foreignCrates(contract, coreDependencies, wasmDepth, armed),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
@@ -266,7 +277,7 @@ python-source = "generated/python"
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, tested, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
       .replace('panic-test = []\n', caseTest.has('php') ? 'panic-test = []\ncase-test = []\n' : 'panic-test = []\n'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
@@ -290,7 +301,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n${goRequires(contract, coreDependencies, foreign)}`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, armed, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, tested, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2, armed), '', false, { type: 'staticlib', core: '../../../rust' }));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
       ['unsafe_code', 'B-8: the C ABI reads the argument buffer and writes the result buffer through raw pointers'],
     ]));
