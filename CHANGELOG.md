@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A case that gives a callback unit of another repository as an instance that a member of the owning repository
+  makes had a test that failed with "<member> is no member that the binding generates", because a case read only the
+  members of its own contract. The tests of Python, Node and PHP now make the instance by the members of the owner,
+  through the package of the owner: the factory with its receiver, its arguments and its calls of `then`, and Node
+  awaits a member of the owner that waits (GN-13f, GN-6s, row B2.135). A member that the owner leaves out of the
+  target by `only` or that the generator refuses in the contract of the owner, a function or an internal unit of the
+  owner, an argument that is an enum, a record, a variant or a callback of the owner, and the faults of a call of
+  `then` are not generated yet: each gives a test of the case that fails with its reason. Go and WASM refuse the
+  parameter itself, as before. Verified by `npm test` in `packages/ts`: the new test failed before the change. Not
+  run: a build of a generated crate and a run of a generated test, so no test of such a case has passed in a language.
 - A contract could not state that a core keeps a callback of a record field, a list or an `optional` after the
   call, so Node, which writes the lifetime `'env` of the call for such a callback, wrote
   `polyspec_x::Options<'env>` for a core that takes `Options<'static>`, and its crate did not compile. A parameter

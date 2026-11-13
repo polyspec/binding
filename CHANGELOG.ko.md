@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1fea60c48067838296c8f68a288789512c14086e015e9c3de15105cdb55b9f9d -->
+<!-- source-sha256: d1190074b891f69ef06915682802e63c19e0080705ad2a204ecb10adfcd770ff -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 레포의 callback unit을 소유 레포의 member가 만드는 인스턴스로 주는 case의 시험은 "<member> is no member that the
+  binding generates"로 실패했다. case가 자기 계약의 member만 읽었기 때문이다. 이제 Python, Node, PHP의 시험은 소유 패키지를
+  거쳐 소유 레포의 member로 그 인스턴스를 만든다: factory와 그 receiver, 인자, `then`의 호출이며, Node는 기다리는 소유
+  member를 await한다(GN-13f, GN-6s, 행 B2.135). 소유 레포가 `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서
+  거부하는 member, 소유 레포의 function이나 internal unit, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의
+  faults는 아직 생성하지 않는다: 각각 그 이유로 실패하는 case 시험이 된다. Go와 WASM은 전과 같이 그 parameter 자체를
+  거부한다. `packages/ts`의 `npm test`로 검증했다: 새 시험은 변경 전에 실패했다. 실행하지 않은 것: 생성된 crate의 빌드와
+  생성된 시험의 실행. 그래서 그런 case의 시험이 어느 언어에서도 통과한 적은 없다.
 - 계약은 코어가 record field, list, `optional`의 callback을 호출 뒤에도 갖는다는 것을 적을 수 없었다. 그래서 그런
   callback에 호출의 lifetime `'env`를 적는 Node는 `Options<'static>`을 받는 코어에 `polyspec_x::Options<'env>`를 적었고 그
   crate는 컴파일되지 않았다. 이제 parameter는 `keeps: true`를 적고(GN-6aa), `binding check`는 타입이 callback unit을 담지

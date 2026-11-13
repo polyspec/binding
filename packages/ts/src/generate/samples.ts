@@ -7,7 +7,7 @@ import type { Lang, Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Refusals, Unsupported, aliasOf, awaits, collectModel, hookCall, interfaceOf, implementorsOf, isInternal, caseFields, kindText, langName, libraryOf, membersFor, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -323,6 +323,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(model, unit, value, 'a case value')));
   }
   if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) {
+    // GN-13f, GN-6s: an instance value at the place of a callback unit of another repository names members of its owner.
+    const library = libraryOf(type);
+    if (library !== undefined) return ctx.instanceNew(foreignInstance(model, ctx.target ?? ctx.lang, library, unit, value, `a case value of ${unit.id} of ${library}`));
     const made = memberById(model, String((value as Record<string, unknown>)['new']))?.returns;
     const of = typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
     return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
@@ -1150,6 +1153,9 @@ export interface Receiver {
   // A call of then may fail with a kind, which the test requires before the next step; it may arm faults for itself
   // alone, as the JSON text that the arming entry point takes, and with on: receiver it calls the receiver of the value.
   then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string; faults?: string; on?: 'receiver' }[];
+  // GN-13f, GN-6s: the repository that owns the members of the value, when it is another repository: its library and
+  // its model as the target has it. The test calls those members through the package of the owner.
+  owner?: { library: string; model: Model };
 }
 
 // GN-13f: whether a receiver, or a receiver that it is made on, has a call of then that arms faults.
@@ -1161,7 +1167,7 @@ export type Pick = { field: string } | { index: number } | { tuple: number };
 
 // Whether a receiver is one factory call, which a test writes as one expression.
 export const isPlain = (receiver: Receiver): boolean =>
-  receiver.on === undefined && (receiver.pick ?? []).length === 0 && (receiver.then ?? []).length === 0 && ![...receiver.args.values()].some(isInstanceValue);
+  receiver.owner === undefined && receiver.on === undefined && (receiver.pick ?? []).length === 0 && (receiver.then ?? []).length === 0 && ![...receiver.args.values()].some(isInstanceValue);
 
 // G-5 (GN-13f): whether a case value is an instance value, {"new": ...} or {"from": ...}.
 export const isInstanceValue = (value: unknown): boolean =>
@@ -1269,6 +1275,115 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
 }
 
+// GN-13f, GN-6s: the model of another repository as a target has it, read from the contract of that repository: the
+// members that the generator takes and that the target has (Q-4 only), with the refusals of the others. One model per
+// set of contracts, library and target.
+const OWNERS = new WeakMap<object, Map<string, { model: Model; refused: readonly string[] }>>();
+function ownerModel(model: Model, library: string, lang: Lang): { model: Model; refused: readonly string[] } {
+  const known = OWNERS.get(model.foreign) ?? new Map<string, { model: Model; refused: readonly string[] }>();
+  OWNERS.set(model.foreign, known);
+  const key = `${lang}\n${library}`;
+  const found = known.get(key);
+  if (found !== undefined) return found;
+  const contract = model.foreign.get(library);
+  if (contract === undefined) throw new Unsupported(`the contract of ${library} is not read, so no member of it is called in a case (T-3, GN-13f)`);
+  const refusals = new Refusals();
+  let whole: Model;
+  try {
+    whole = collectModel(contract, model.version, '', new Map(), model.foreign, new Map(), refusals);
+  } catch (error) {
+    if (error instanceof Unsupported) throw error;
+    throw new Unsupported(`the contract of ${library} gives no model, so no member of it is called in a case: ${error instanceof Error ? error.message : String(error)} (GN-13f)`);
+  }
+  const made = { model: membersFor(whole, lang), refused: refusals.found };
+  known.set(key, made);
+  return made;
+}
+
+// GN-13f, GN-6s: the instance of an instance value at the place of a callback unit of another repository. `new` or
+// `from` names a member of the owner that gives a class of the owner that implements the unit; the receiver, the
+// arguments and the calls of then are members of the owner too. A member that the generator does not take from the
+// contract of the owner, or that the target has not, is refused with the reason of the owner's model.
+export function foreignInstance(model: Model, lang: Lang, library: string, callback: Unit, value: unknown, where: string): Receiver {
+  const fail = (message: string): never => {
+    throw new Unsupported(`${where}: ${message} (G-5, GN-13f, GN-6s)`);
+  };
+  if (lang === 'go' || lang === 'wasm') return fail(`a callback unit of another repository is not generated for ${lang}, so no instance of a class of ${library} is made for it`);
+  const owner = ownerModel(model, library, lang);
+  const record = value as Record<string, unknown>;
+  const id = String(record['new'] ?? record['from']);
+  const factory = memberById(owner.model, id);
+  if (factory === undefined) {
+    const unit = (model.foreign.get(library)?.units ?? []).find((u) => (u.members ?? []).some((member) => member.id === id));
+    if (unit === undefined) return fail(`${id} is no member of the contract of ${library}`);
+    // The reason of the owner's model: the refusal of the member, or of another member of its unit, which refuses the
+    // unit; without one, only leaves the member or its unit out of the target.
+    const named = (prefix: string): string | undefined => owner.refused.find((line) => [':', '.', ' '].some((end) => line.startsWith(`${prefix}${end}`)));
+    const reason = named(id) ?? named(unit.id);
+    return fail(`${id} is no member that the binding of ${library} generates for ${lang}: ${reason ?? `only leaves it out of ${lang}`}`);
+  }
+  const reached = pickedType(owner.model, factory.returns, 'from' in record && Array.isArray(record['pick']) ? record['pick'] : []);
+  const made = typeof reached === 'object' && 'unit' in reached && reached.library === undefined ? owner.model.objects.find((o) => o.unit.id === reached.unit) : undefined;
+  if (made === undefined || !(made.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === callback.id)) {
+    return fail(`${id} gives ${shown(reached)}, no class of ${library} that implements ${callback.id}`);
+  }
+  return { ...instanceOf(owner.model, made.unit.id, value, `${where}, by the members of ${library}`), owner: { library, model: owner.model } };
+}
+
+// GN-13f, GN-6s: the call of a member of another repository in the language of the test, through the package of the
+// owner that the test imports (GN-6x): a constructor, a static member, a method or a property of a public class.
+function foreignInvoke(ctx: Context, library: string, fn: Fn, args: string, receiver: string): string {
+  const named = ctx.foreignClass;
+  const lang = ctx.target ?? ctx.lang;
+  if (named === undefined) throw new Unsupported(`${fn.member.id}: ${lang} names no class of ${library} in a test, so the member is not called in a case (GN-13f, GN-6s)`);
+  if (fn.kind === 'function' || fn.kind === 'iterate' || isInternal(fn.unit)) {
+    throw new Unsupported(`${fn.member.id}: ${fn.kind === 'function' ? 'a function' : fn.kind === 'iterate' ? 'an iteration' : 'a member of an internal unit'} of ${library} is not called in a case yet (GN-13f, GN-6s)`);
+  }
+  const hook = hookCall(ctx.lang, fn, receiver);
+  if (hook !== undefined) return hook;
+  const cls = named(library, fn.unit);
+  const name = langName(lang, fn.member.name, 'callable');
+  const php = ctx.lang === 'php';
+  const call = fn.kind === 'constructor' ? (ctx.lang === 'python' ? `${cls}(${args})` : `new ${cls}(${args})`)
+    : fn.kind === 'static' ? `${cls}${php ? '::' : '.'}${name}(${args})`
+    // U-2: a property is a method in PHP.
+    : fn.kind === 'property' && !php ? `${receiver}.${name}`
+    : `${receiver}${php ? '->' : '.'}${name}(${args})`;
+  // GN-6m: Node awaits a call of a member that waits where it is made.
+  return ctx.lang === 'node' && awaits(fn) ? `(await ${call})` : call;
+}
+
+// GN-13f, GN-6s: the form of a language for the members of another repository: the calls go through the package of
+// the owner, and the values of the arguments are case values of the types of the owner. A value of an enum, a record,
+// a variant or a callback of the owner, and the faults of a call of then, are not written yet, each refused by name.
+function foreignForm(form: MadeForm, library: string, owner: Model): MadeForm {
+  const refused = (what: string) => (): never => {
+    throw new Unsupported(`a case value of ${what} of ${library} in the arguments of a member of ${library} is not written yet (GN-13f, GN-6s)`);
+  };
+  const outer = form.ctx;
+  const ctx: Context = {
+    lang: outer.lang,
+    ...(outer.target === undefined ? {} : { target: outer.target }),
+    ...(outer.foreignClass === undefined ? {} : { foreignClass: outer.foreignClass }),
+    ...(outer.casePath === undefined ? {} : { casePath: outer.casePath }),
+    enumRef: refused('an enum'),
+    recordNew: refused('a record'),
+    variantNew: refused('a variant'),
+    callbackNew: refused('a callback'),
+    objectNew: (factory, args) => foreignInvoke(outer, library, factory, args, ''),
+    // An instance value inside the arguments is an instance of the owner too.
+    ...(outer.instanceNew === undefined ? {} : { instanceNew: (receiver: Receiver) => (outer.instanceNew as (receiver: Receiver) => string)(receiver.owner === undefined ? { ...receiver, owner: { library, model: owner } } : receiver) }),
+  };
+  return {
+    ...form,
+    ctx,
+    invoke: (fn, args, receiver) => foreignInvoke(outer, library, fn, args, receiver),
+    arm: (_local, member) => {
+      throw new Unsupported(`a call of then of ${member} of ${library} arms faults, which a test of another repository does not arm yet (GN-13f, GN-6s)`);
+    },
+  };
+}
+
 // How a language writes the statements that make an instance (GN-13f).
 export interface MadeForm {
   ctx: Context;
@@ -1292,6 +1407,11 @@ export interface MadeForm {
 // makes, the receivers and the results that a pick reads from, is a local of the test, so none is reclaimed before the
 // test ends; a plain receiver is one expression.
 export function madeLines(model: Model, form: MadeForm, receiver: Receiver, prefix = 'made'): { lines: string[]; expr: string } {
+  // GN-13f, GN-6s: an instance of another repository is made by the members of its owner, through the owner's package.
+  if (receiver.owner !== undefined) {
+    const { owner, ...own } = receiver;
+    return madeLines(owner.model, foreignForm(form, owner.library, owner.model), own, prefix);
+  }
   const lines: string[] = [];
   let count = 0;
   const fresh = (): string => `${prefix}${count++}`;

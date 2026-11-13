@@ -2172,6 +2172,81 @@ test('a callback unit of another repository is refused by name in Go and WASM, a
   assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6s\)/);
 });
 
+// The classes of the sample that implement its callback lookup, as the owner of a callback unit declares them: rack
+// with a constructor and a method that fills it, and racks, which only leaves out of WASM, with a method that waits
+// and gives a rack, and gates, whose method takes the type cancel, which the generator does not take.
+const racked = (foreign: Map<string, any>): void => {
+  const method = (id: string, name: string, parameters: unknown[], returns: unknown, receiver: string, wait = 'none'): unknown =>
+    ({ id, name: [name], kind: 'method', visibility: 'public', parameters, returns, raises: [], wait, core: { path: `polyspec_sample::${id.replace('.', '::')}`, receiver } });
+  const text = (name: string): unknown => ({ name: [name], type: 'text', required: true });
+  foreign.get('sample').units.push(
+    {
+      id: 'rack', name: ['rack'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Rack', final: true, implements: [{ unit: 'lookup' }],
+      members: [
+        { id: 'rack.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], returns: 'self', raises: [], wait: 'none', core: { path: 'polyspec_sample::Rack::new' } },
+        { ...(method('rack.find', 'find', [text('key')], { optional: 'text' }, '&mut self') as object), optional_reason: 'U-3' },
+        method('rack.put', 'put', [text('key'), text('value')], 'none', '&mut self'),
+      ],
+    },
+    {
+      id: 'racks', name: ['racks'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Racks', final: true,
+      only: { targets: ['php', 'python', 'node', 'go'], reason: 'U-3' },
+      members: [
+        { id: 'racks.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['rows'], type: 'uint', default: { literal: 4 }, default_core: 'polyspec_sample::ROWS' }], returns: 'self', raises: [], wait: 'none', core: { path: 'polyspec_sample::Racks::new' } },
+        method('racks.open', 'open', [{ name: ['name'], type: { optional: 'latin1' }, required: true }], { unit: 'rack' }, '&self', 'blocking_io'),
+      ],
+    },
+    {
+      id: 'gates', name: ['gates'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Gates', final: true,
+      members: [
+        { id: 'gates.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], returns: 'self', raises: [], wait: 'none', core: { path: 'polyspec_sample::Gates::new' } },
+        method('gates.close', 'close', [{ name: ['cancel'], type: 'cancel', required: true }], { unit: 'rack' }, '&self'),
+      ],
+    },
+  );
+};
+
+test('an instance value at the place of a callback unit of another repository is made by the members of its owner, through the package of the owner (GN-13f, GN-6s)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  looking(contract, foreign);
+  racked(foreign);
+  contract.cases.push({ member: 'consumer.look', file: 'contracts/look.json', group: 'look' });
+  caseFiles.set('contracts/look.json', { look: [
+    { id: 'a_filled_rack', lookup: { new: 'rack.new', args: {}, then: [{ call: 'rack.put', args: { key: 'a', value: 'one' } }] }, key: 'a', result: 'one' },
+    { id: 'an_empty_rack', lookup: { new: 'rack.new', args: {}, then: [] }, key: 'a', result: null },
+    { id: 'an_opened_rack', lookup: { new: 'racks.open', receiver: { new: 'racks.new', args: { rows: 2 } }, args: { name: null } }, key: 'a', result: null },
+    { id: 'a_member_that_is_refused', lookup: { new: 'gates.close', receiver: { new: 'gates.new', args: {} }, args: { cancel: null } }, key: 'a', result: null },
+    { id: 'a_member_of_no_contract', lookup: { new: 'ladder.new', args: {} }, key: 'a', result: null },
+    { id: 'a_member_of_a_refused_unit', lookup: { new: 'gates.new', args: {} }, key: 'a', result: null },
+    { id: 'a_class_that_does_not_implement', lookup: { new: 'racks.new', args: {} }, key: 'a', result: null },
+  ] });
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /^import polyspec\.sample as foreign_sample$/m);
+  assert.match(python, /made0 = foreign_sample\.Rack\(\)\n\s+made0\.put\("a", "one"\)/);
+  assert.match(python, /\n    return foreign_sample\.Rack\(\)\n/);
+  assert.match(python, /pkg\.look\(_made_\d+\(\), "a"\)/);
+  assert.match(python, /made0 = foreign_sample\.Racks\(2\)\n\s+made1 = made0\.open\(None\)/);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /^import \* as foreign_sample from '@polyspec\/sample';$/m);
+  assert.match(node, /const made0 = new foreign_sample\.Rack\(\); made0\.put\('a', 'one'\); return made0;/);
+  assert.match(node, /pkg\.look\(\(\(\) => \{ +return new foreign_sample\.Rack\(\); \}\)\(\), 'a'\)/);
+  // GN-6m: a member of the owner that waits is awaited where it is called.
+  assert.match(node, /\(await \(async \(\) => \{ const made0 = new foreign_sample\.Racks\(2\); const made1 = \(await made0\.open\(null\)\); return made1; \}\)\(\)\)/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\$made0 = new \\Polyspec\\Sample\\Rack\(\); \$made0->put\("a", "one"\); return \$made0;/);
+  assert.match(php, /look\(\(function \(\) \{ +return new \\Polyspec\\Sample\\Rack\(\); \}\)\(\), "a"\)/);
+  assert.match(php, /\$made0 = new \\Polyspec\\Sample\\Racks\(2\); \$made1 = \$made0->open\(null\); return \$made1;/);
+  // GN-13e: a value that is not written fails the test of its case with the reason, and the other tests are written.
+  for (const [path, body] of [['packages/python/generated/tests/test_generated.py', python], ['packages/ts/generated/tests/generated.test.mjs', node], ['packages/php-ext/generated/tests/GeneratedTest.php', php]] as const) {
+    assert.match(body, /the case a_member_that_is_refused of consumer\.look: a case value of lookup of sample: gates\.close is no member that the binding of sample generates for (python|node|php): gates\.close\.cancel: the type cancel is not generated yet/, path);
+    assert.match(body, /the case a_member_of_a_refused_unit of consumer\.look: a case value of lookup of sample: gates\.new is no member that the binding of sample generates for (python|node|php): gates\.close\.cancel: /, path);
+    assert.match(body, /the case a_member_of_no_contract of consumer\.look: a case value of lookup of sample: ladder\.new is no member of the contract of sample \(G-5, GN-13f, GN-6s\)/, path);
+    assert.match(body, /the case a_class_that_does_not_implement of consumer\.look: a case value of lookup of sample: racks\.new gives \{\\?"unit\\?":\\?"racks\\?"\}, no class of sample that implements lookup/, path);
+    assert.doesNotMatch(body, /is no member that the binding generates/, path);
+  }
+});
+
 test('a callback unit of another repository carries language code, so a member that waits and takes it reaches language code (GN-6s, GN-6h, GN-6q, GN-6n)', () => {
   const waiting = (wait: string): Map<string, string | Buffer> => {
     const { contract, caseFiles, foreign } = consumerSample();
