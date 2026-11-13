@@ -241,6 +241,13 @@ export function releaseFindings(contract: Contract, coreDependencies: CoreDepend
   });
 }
 
+// GN-3e: the requirement of pyproject.toml on the Python package of another library: at the version of a release form of
+// the dependency line of the core, and the name alone for a development form, which the development install resolves.
+function pythonRequirement(library: string, dependencies: CoreDependencies): string {
+  const version = dependencyForm(dependencies.get(`polyspec-${library}`)).version;
+  return JSON.stringify(`polyspec-${library}${version === undefined ? '' : `==${version}`}`);
+}
+
 // What scaffold writes: the tracked files, and each package that it cannot write with its reason (GN-3e).
 export interface Tracked {
   files: Files;
@@ -304,7 +311,7 @@ build-backend = "maturin"
 name = ${JSON.stringify(python.package)}
 version = ${JSON.stringify(version)}
 requires-python = ">=3.14"${namedLibraries(contract).length === 0 ? '' : `
-dependencies = [${namedLibraries(contract).map((library) => JSON.stringify(`polyspec-${library}`)).join(', ')}]`}
+dependencies = [${namedLibraries(contract).map((library) => pythonRequirement(library, coreDependencies)).join(', ')}]`}
 
 [tool.maturin]
 module-name = ${JSON.stringify(`${python.module}._native`)}

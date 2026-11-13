@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- `binding scaffold` wrote the dependency of `pyproject.toml` on the Python package of another polyspec library as the
+  name alone, `dependencies = ["polyspec-<library>"]`, whatever the dependency line of the core named, so the package
+  of a release required no version of that library. The dependency now follows the form of the line (GN-3e): a tag
+  `vX.Y.Z` or the version `=X.Y.Z` gives `polyspec-<library>==X.Y.Z`, and a development form (a path, a branch, a
+  commit, a version range) keeps the name alone, which the development install resolves and which
+  `binding check --release` reports with its line (CK-70). A repository whose core names a tag or an exact version of
+  another library runs `binding scaffold` again, because CK-19 compares `pyproject.toml`. Verified by `make test-ts`:
+  the new test failed before the change (1 of 397), and 397 of 397 pass with it.
 - When the dependency line of the core on another polyspec library named a branch, a commit or a version range,
   `binding check`, `binding scaffold` and `binding generate` stopped for every target with a stack trace, because the
   Go module of that library had no version for `go.mod`. Such a line is now a development form (GN-3e): `go.mod`

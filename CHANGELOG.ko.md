@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9611201561cd3f409918bbbfa81084fba9f0f7e31a7d2be046676ad4dc5ad5b4 -->
+<!-- source-sha256: f219d2dee0d5c56d68b9dc606a56d7729498b13ffda9b04484b4d8c686ea949e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding scaffold`는 `pyproject.toml`이 다른 polyspec 라이브러리의 Python 패키지에 거는 의존을 코어의 의존 줄이 무엇을
+  적든 이름만으로, `dependencies = ["polyspec-<library>"]`로 썼다. 그래서 release의 패키지가 그 라이브러리의 버전을 요구하지
+  않았다. 이제 의존은 그 줄의 꼴을 따른다(GN-3e). tag `vX.Y.Z`나 버전 `=X.Y.Z`는 `polyspec-<library>==X.Y.Z`를 주고, 개발
+  꼴(path, branch, commit, 버전 범위)은 이름만 두며, 개발 설치가 그것을 해석하고 `binding check --release`가 그 줄과 함께
+  보고한다(CK-70). 코어가 다른 라이브러리의 tag나 정확한 버전을 적는 레포는 `binding scaffold`를 다시 실행한다. CK-19가
+  `pyproject.toml`을 비교하기 때문이다. `make test-ts`로 확인했다. 새 시험은 변경 전에 실패했고(397개 중 1개), 변경 뒤
+  397개 중 397개가 통과한다.
 - 코어의 다른 polyspec 라이브러리 의존 줄이 branch, commit, 버전 범위를 적으면 `binding check`, `binding scaffold`,
   `binding generate`가 모든 target에서 stack trace와 함께 멈췄다. 그 라이브러리의 Go module에 `go.mod`에 적을 버전이 없었기
   때문이다. 이제 그런 줄은 개발 꼴이다(GN-3e). `go.mod`는 `replace` 줄 없이 그 module을 `v0.0.0`으로 require하고, 개발
