@@ -534,6 +534,8 @@ test('the scaffolded manifests name the napi configuration, the module type and 
   const npm = JSON.parse(String(out.get('packages/ts/package.json')));
   // The napi CLI names the addon <binaryName>.<platform>.node, the file that the entry loads, and builds the triples.
   assert.deepEqual(npm.napi, { binaryName: 'sample', targets: ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'aarch64-apple-darwin'] });
+  // The release writes the platform packages into the packed manifest, so a workspace lock can be installed (GN-3c).
+  assert.equal(npm.optionalDependencies, undefined);
   // The .js glue of wasm-bindgen --target web is an ES module.
   assert.equal(npm.type, 'module');
   const composer = JSON.parse(String(out.get('packages/php-ext/composer.json')));
@@ -617,7 +619,8 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const missing = spawnSync(process.execPath, [cli, 'check', contract], { encoding: 'utf8' });
     assert.match(missing.stderr, /python\/pyproject\.toml: CK-19 build-system\.build-backend is missing/);
     assert.match(missing.stderr, /php\/composer\.json: CK-19 require\.ext-polyspec_sample is missing/);
-    assert.match(missing.stderr, /ts\/package\.json: CK-19 optionalDependencies\.@polyspec\/sample-linux-x64-gnu is missing/);
+    // GN-3c: the release writes the platform packages into the packed manifest; the source manifest does not name them.
+    assert.doesNotMatch(missing.stderr, /optionalDependencies/);
     // GN-3b: the host package is the package of a release, so it names the fields of GN-3c that a release reads.
     assert.match(missing.stderr, /ts\/package\.json: CK-19 type is missing, not "module"/);
     assert.match(missing.stderr, /ts\/package\.json: CK-19 napi\.binaryName is missing, not "sample"/);
@@ -625,17 +628,12 @@ test('a host package holds its native module in one form per language (L-2a)', (
     const pyproject = (module: string): string =>
       `[build-system]\nbuild-backend = "maturin"\n\n[tool.maturin]\nmanifest-path = "native/Cargo.toml"\npython-source = "src"\nmodule-name = "${module}"\n`;
     writeFileSync(join(root, 'packages/python/pyproject.toml'), pyproject('polyspec.sample._native'));
-    // T-2: the addon is in the package of each platform, which the host names at its own version.
+    // GN-3b: the host names its files and the fields of a release; the release writes the platform packages (GN-3c).
     const hostNpm = (targets: string[]): string => JSON.stringify({
       name: '@polyspec/sample',
       version: '1.2.3',
       type: 'module',
       files: ['dist', 'native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', 'native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'],
-      optionalDependencies: {
-        '@polyspec/sample-linux-x64-gnu': '1.2.3',
-        '@polyspec/sample-linux-arm64-gnu': '1.2.3',
-        '@polyspec/sample-darwin-arm64': '1.2.3',
-      },
       napi: { binaryName: 'sample', targets },
     });
     writeFileSync(join(root, 'packages/ts/package.json'), hostNpm(['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']));
