@@ -96,7 +96,9 @@
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
   있기 때문이다. Cargo는 workspace 표를 모든 구성원에 똑같이 적용하므로, 한 crate의 예외는 이유를 단 그 소스의
-  attribute(`#![allow(<lint>, reason = "...")]`)다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
+  attribute(`#![allow(<lint>, reason = "...")]`)다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다. 도우미를 쓰는 것은 코드가 그 이름으로
+  그것을 부르거나 넘길 때다. 같은 이름의 method(`map.insert(...)`)는 도우미 `insert`를 쓰는 것이 아니다. method만 그 이름을 적는
+  도우미는 죽은 코드이고, crate가 선언하지 않은 타입을 적을 수 있기 때문이다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는
