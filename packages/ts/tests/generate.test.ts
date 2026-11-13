@@ -430,6 +430,34 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextThatIsNotUTF8\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\xff"/);
 });
 
+test('Go: a Go value of another type at a number parameter reaches the conversion of its type through codec-test (GN-13g)', () => {
+  const { contract } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const member = contract.units[0].members[0];
+  member.parameters = [{ name: ['code'], type: 'int' }, { name: ['scale'], type: 'float' }];
+  member.returns = 'text';
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__number_in\(/);
+  // The value of the Go type passes the range of GN-12a, any other is kind invalid_number of its type.
+  assert.match(rust, /\(1, 1, Some\(word\)\) => in_safe_int\(&mut &word\[\.\.\], &subject\)\.map\(drop\),/);
+  assert.match(rust, /\(3, 3, Some\(_word\)\) => Ok\(\(\)\),/);
+  assert.match(rust, /\(1, _, _\) => Err\(invalid\(binding_core::NumberType::Int\)\),/);
+  assert.doesNotMatch(rust, /\(0, 1, Some/);
+  const codec = text(out, 'packages/go/internal/binding/zz_generated_codec.go');
+  assert.match(codec, /^func IntIn\(value any, subject string\) error \{ return numberIn\(1, value, subject\) \}$/m);
+  assert.match(codec, /^func FloatIn\(value any, subject string\) error \{ return numberIn\(3, value, subject\) \}$/m);
+  assert.doesNotMatch(codec, /func UintIn/);
+  const tests = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(tests, /func TestB2IntInRefusesAValueOfAnotherType\(t \*testing\.T\) \{/);
+  assert.match(tests, /for _, value := range \[\]any\{true, "7", 1\.5, math\.NaN\(\), math\.Inf\(1\), math\.Inf\(-1\), int64\(9007199254740992\), int64\(-9007199254740992\)\}/);
+  assert.match(tests, /func TestB2FloatInRefusesAValueOfAnotherType/);
+  assert.match(tests, /for _, value := range \[\]any\{1\.5, math\.NaN\(\), math\.Inf\(1\)\}/);
+});
+
 test('Go: a tuple parameter is read part by part, a Tuple<N> of different part types or an array of one (T-2, GN-16)', () => {
   const { contract } = load();
   contract.targets = ['go'];
