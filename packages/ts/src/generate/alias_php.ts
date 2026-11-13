@@ -226,10 +226,6 @@ impl HostValues for PhpHost<'_> {
     }
 }
 
-fn php_failed(error: ext_php_rs::error::Error) -> Fail {
-    binding_error(BindingError::Internal { detail: error.to_string() })
-}
-
 /// U-7: a container that the make has entered; one inside its own making is a cycle, which a PHP array cannot hold.
 fn php_enter(making: &mut BTreeSet<u64>, handle: Handle) -> Result<(), Fail> {
     if making.insert(handle.raw()) {
@@ -270,36 +266,6 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
         Ok(text) => out_text(text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
-}
-
-${ownedNatives('Zval', 'drop(references);')}
-/// GN-6o: a PHP value that a core may keep, as a Native of the table of this thread.
-fn php_native(value: &Zval) -> Result<Native, Fail> {
-    if OWNED.with_borrow(Option::is_none) {
-        let Some((owner, generation)) = native_owner() else {
-            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the table of the owners is poisoned") }));
-        };
-        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
-    }
-    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: this thread has no table") }))
-}
-
-/// GN-6o: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
-fn native_object(native: &Native) -> Result<Zval, Fail> {
-    let found = native.downcast::<OwnedNative>().and_then(|native| {
-        OWNED.with_borrow(|owned| match owned {
-            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(Zval::shallow_clone),
-            _ => None,
-        })
-    });
-    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") }))
-}
-
-/// GN-6o: the engine frees the values of a request when the request ends, so the request shutdown releases the table
-/// while the engine is alive.
-extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
-    clean_up_native();
-    0
 }
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
@@ -356,3 +322,69 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 `;
   }).join('');
 }
+
+// GN-6o, GN-6m: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
+// request shutdown, and the check of the thread of a call of a function.
+// usedHelpers splits helpers at blank lines, so a block keeps none inside it.
+export const PHP_NATIVE = (`${ownedNatives('Zval', 'drop(references);')}
+/// GN-6o: a PHP value that a core may keep, as a Native of the table of this thread.
+fn php_native(value: &Zval) -> Result<Native, Fail> {
+    if OWNED.with_borrow(Option::is_none) {
+        let Some((owner, generation)) = native_owner() else {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the table of the owners is poisoned") }));
+        };
+        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+    }
+    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: this thread has no table") }))
+}
+
+/// GN-6o: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
+fn native_object(native: &Native) -> Result<Zval, Fail> {
+    let found = native.downcast::<OwnedNative>().and_then(|native| {
+        OWNED.with_borrow(|owned| match owned {
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(Zval::shallow_clone),
+            _ => None,
+        })
+    });
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") }))
+}
+
+/// GN-6o: the engine frees the values of a request when the request ends, so the request shutdown releases the table
+/// while the engine is alive.
+extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
+    clean_up_native();
+    0
+}
+
+fn php_failed(error: ext_php_rs::error::Error) -> Fail {
+    binding_error(BindingError::Internal { detail: error.to_string() })
+}
+
+/// GN-6m: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
+fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
+    let closure = match value.object() {
+        Some(object) => object.get_class_name().map_err(php_failed)? == "Closure",
+        None => false,
+    };
+    if !closure {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a Closure") }));
+    }
+    php_native(value)
+}
+
+/// GN-6m: whether a call of the function of a Native may run here: a call on another thread is kind wrong_thread, and
+/// a call after the request of the function ended is kind internal. The failure is a BindingError, which any thread may
+/// keep, since a PHP error object is made on the owner thread only.
+fn native_thread(native: &Native, subject: &str) -> Result<(), BindingError> {
+    let Some(native) = native.downcast::<OwnedNative>() else {
+        return Err(BindingError::Internal { detail: String::from("GN-6o: a native value that no PHP value entered as") });
+    };
+    if OWNER.get() != Some(native.owner) {
+        return Err(BindingError::WrongThread { subject: subject.to_owned() });
+    }
+    if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
+        return Err(BindingError::Internal { detail: String::from("GN-6o: the request of the function has ended") });
+    }
+    Ok(())
+}
+`).replace(/\n\n(?=[ }])/g, '\n');

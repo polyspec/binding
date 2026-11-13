@@ -1219,9 +1219,9 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[php_function\]\n#\[php\(name = "Polyspec\\\\Shapes\\\\Internal\\\\threadTest"\)\]/);
   assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n\s+let module = module\.function\(wrap_function!\(thread_test\)\);/);
   assert.match(String(trackedPackages(contract, '0.0.0').get('packages/php-ext/Cargo.toml')), /\nthread-test = \[\]\n/);
-  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function apply\(\\Closure \$convert, string \$value\): string/);
-  const tests = [...out].filter(([path]) => path.endsWith('GeneratedTest.php')).map(([, body]) => String(body)).join('');
-  assert.match(tests, /\$function0 = new class\(\[\['call', \['a', \[1\]\], 'A', false\]\]\)/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /\* @param \\Closure \$convert\n/);
+  const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /\$function0 = new class\(\[\["call", \["a", \[1\]\], "A", false\]\]\)/);
   assert.ok(tests.includes('apply($function0->call(...), '), tests);
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });

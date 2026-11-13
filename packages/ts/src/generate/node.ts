@@ -3,6 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, NODE_NATIVE, aliasNode, foreignFailureNode } from './alias_node.ts';
+import { elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, usesNative, takesFunction, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
@@ -39,27 +40,6 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
-
-// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is kept
-// as its BindingError, which any thread may hold, under the handle of its Raised; the owner thread makes it its error.
-export const elsewhereRust = (model: Model): string => `
-static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new(BTreeMap::new());
-
-fn thrown_elsewhere(error: BindingError) -> binding_core::Failure<${model.coreError ?? '()'}> {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    if let Ok(mut map) = ELSEWHERE.lock() {
-        map.insert(handle, error);
-    }
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
-}
-
-fn elsewhere(raised: &binding_core::Raised) -> Fail {
-    match ELSEWHERE.lock().ok().and_then(|mut map| map.remove(&raised.handle().raw())) {
-        Some(error) => binding_error(error),
-        None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
-    }
-}
-`;
 
 // GN-6m, GN-6o: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the

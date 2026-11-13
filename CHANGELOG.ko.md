@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- PHP는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 Closure를 owner 표의 `Native`(GN-6o)로 갖고 `\Closure`로
+  선언한다. 다른 스레드의 호출은 kind `wrong_thread`이며 feature `thread-test`의 `Internal\threadTest`가 그것을 보이고,
+  Closure가 아닌 값은 kind `invalid_argument_type`이다. Node와 PHP에서 다른 스레드의 호출 중 바인딩의 실패는 모든 스레드가
+  닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만 만들어지므로, 호출이 실패할 때 owner가 그것을
+  만든다.
 - Node는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6o)로 갖고 parameter를
   TypeScript 함수 타입으로 선언한다. 호출은 owner 스레드에서 표의 env 안에서 실행되고, 다른 스레드의 호출은 kind
   `wrong_thread`이며, 새 feature `thread-test`의 진입점 `__threadTest`가 그것을 보인다. 함수가 아닌 값은 kind

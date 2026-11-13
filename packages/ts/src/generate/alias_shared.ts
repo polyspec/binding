@@ -222,3 +222,24 @@ fn clean_up_native() {
 }
 `;
 }
+
+// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is kept
+// as its BindingError, which any thread may hold, under the handle of its Raised; the owner thread makes it its error.
+export const elsewhereRust = (model: Model): string => `
+static ELSEWHERE: Mutex<BTreeMap<u64, BindingError>> = Mutex::new(BTreeMap::new());
+
+fn thrown_elsewhere(error: BindingError) -> binding_core::Failure<${model.coreError ?? '()'}> {
+    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = ELSEWHERE.lock() {
+        map.insert(handle, error);
+    }
+    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+}
+
+fn elsewhere(raised: &binding_core::Raised) -> Fail {
+    match ELSEWHERE.lock().ok().and_then(|mut map| map.remove(&raised.handle().raw())) {
+        Some(error) => binding_error(error),
+        None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+    }
+}
+`;

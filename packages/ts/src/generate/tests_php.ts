@@ -2,10 +2,10 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, takesFunction, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, functionFixturesOf, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -109,6 +109,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     usesFixture = true;
     return phpFixture(values);
   };
+  // GN-6m: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;
+  };
   let usesOutcome = false;
   let usesSame = false;
   for (const fn of callables(model)) {
@@ -119,6 +124,20 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const call = (override: Map<unknown, string>): string =>
       qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
+    // GN-6m: a value of a function type that is not a Closure is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      methods.push(`
+    public function testGn6m${name}Refuses${langName('php', functionArg.name, 'class')}ThatIsNotAClosure(): void
+    {
+        try {
+            ${call(new Map([[functionArg, '0']]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+    }
     for (const arg of reachable ? fn.args : []) {
       const argName = langName('php', arg.name, 'variable');
       const number = isNumber(arg.type);
@@ -207,7 +226,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
     // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
     const fixturesFor = (id: string, args: Map<Fn['args'][number], unknown>) => {
-      const fixtures = fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      // GN-6m: a function value of a case is the call of a fixture whose one member is the call, as a Closure.
+      const fixtures = [
+        ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) as { members: string[]; rows: string[][]; calls: string[][] | undefined }, use: `$fixture${i}` })),
+        ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `$function${i}`, values: { members: f.members, rows: f.rows, calls: undefined as string[][] | undefined }, use: `$function${i}->call(...)` })),
+      ];
       usesFixture ||= fixtures.length > 0;
       const before = fixtures
         .map(
@@ -225,7 +248,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
@@ -267,7 +290,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const receiverMade = receiverOfCase(kase.receiver);
       const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       }), receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
@@ -376,6 +399,15 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         $held = ${test.instance};${test.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(test.fn.member.id)}, ${phpText(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}${test.armed === undefined ? '' : `
         // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
+    }`);
+  }
+  // U-3, GN-6m: a function of the language called on a thread other than its owner is kind wrong_thread, through the
+  // entry point of the feature thread-test.
+  if (takesFunction(model)) {
+    methods.push(`
+    public function testU3AFunctionCalledOnAnotherThreadIsKindWrongThread(): void
+    {
+        self::assertSame('wrong_thread', \\${layout.namespace}\\Internal\\threadTest(static fn () => null));
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

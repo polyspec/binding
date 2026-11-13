@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- PHP refused a member that takes a function type (GN-6m). It now holds the Closure as a `Native` of its owner table
+  (GN-6o), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
+  feature `thread-test` shows, and a value that is not a Closure is kind `invalid_argument_type`. In Node and PHP a
+  failure of the binding in a call on another thread is kept as its `BindingError` in a table that every thread
+  reaches, because a language error object is made on the owner thread only, which makes it when the call fails.
 - Node refused a member that takes a function type (GN-6m). It now holds the JavaScript function as a `Native` of
   its owner table (GN-6o) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
   the env of the table, and a call on another thread is kind `wrong_thread`, which the entry point `__threadTest` of
