@@ -5304,6 +5304,57 @@ test('the entry of a member of a class of the WASM crate is a function of the mo
   assert.match(entry, /released\.register\(this, \[glue\.__free_Tag, this\.#handle\]\);/);
 });
 
+test('the C symbol and the function of package binding of a member of the Go crate separate the module, the class and the member, so that no two members have one name (GN-4c, GN-17)', () => {
+  // Before, the member new_x of the class tag and the member x of the class tag_new were both the symbol
+  // polyspec_sample_tag_new_x and the function TagNewX of package binding, the function x of a module tag was the
+  // symbol of the member x of the class tag, and the modules a/b_c and a_b/c gave their function x one symbol.
+  const out = scopedSample(['go'], (contract) => {
+    classNames(contract);
+    const tag = unitOf(contract, 'tag');
+    const method = tag.members.find((m: any) => m.id === 'tag.name');
+    tag.members.push({ ...JSON.parse(JSON.stringify(method)), id: 'tag.x', name: ['x'] });
+    const measure = unitOf(contract, 'sample').members.find((m: any) => m.id === 'sample.measure');
+    // The class k of the module tag and the class tag_k of the root, whose release functions of package binding were
+    // both ReleaseTagK.
+    for (const [id, name, module] of [['tag_k', ['tag', 'k'], ''], ['k', ['k'], 'tag']] as const) {
+      contract.units.push({ ...JSON.parse(JSON.stringify(unitOf(contract, 'tag_new'))), id, name, module, members: [{ ...JSON.parse(JSON.stringify(tag.members.find((m: any) => m.kind === 'constructor'))), id: `${id}.new` }] });
+    }
+    for (const [id, module] of [['tag_functions', 'tag'], ['first_functions', 'a/b_c'], ['second_functions', 'a_b/c']] as const) {
+      contract.units.push({ id, name: id.split('_'), module, kind: 'functions', visibility: 'public', origin: 'generated', members: [{ ...JSON.parse(JSON.stringify(measure)), id: `${id}.x`, name: ['x'] }] });
+    }
+  });
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  const symbols = [...lib.matchAll(/^pub (?:unsafe )?extern "C" fn (\w+)\(/gm)].map((m) => m[1] ?? '');
+  assert.deepEqual(symbols.filter((name, i) => symbols.indexOf(name) !== i), []);
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  const functions = [...binding.matchAll(/^func (\w+)\(/gm)].map((m) => m[1] ?? '');
+  assert.deepEqual(functions.filter((name, i) => functions.indexOf(name) !== i), []);
+  const declared = [...binding.matchAll(/^int32_t (\w+)\(/gm)].map((m) => m[1] ?? '');
+  assert.deepEqual(declared.filter((name, i) => declared.indexOf(name) !== i), []);
+  // The class and the member are separated by two underscores, a segment of a module ends with three, and the
+  // function of package binding has one underscore less in each separator.
+  const pairs = [
+    ['polyspec_sample_tag__new_x', 'Tag_NewX'], ['polyspec_sample_tag_new__x', 'TagNew_X'], ['polyspec_sample_tag__new', 'Tag_New'], ['polyspec_sample_tag_new__new', 'TagNew_New'],
+    ['polyspec_sample_tag__x', 'Tag_X'], ['polyspec_sample_tag___x', 'Tag__X'], ['polyspec_sample_a___b_c___x', 'A__BC__X'], ['polyspec_sample_a_b___c___x', 'AB__C__X'],
+    ['polyspec_sample_measure', 'Measure'],
+  ] as const;
+  for (const [symbol, name] of pairs) {
+    assert.ok(symbols.includes(symbol), symbol);
+    assert.ok(declared.includes(symbol), symbol);
+    assert.match(binding, new RegExp(`\\nfunc ${name}\\(args \\[\\]byte\\) \\(\\*Reader, error\\) \\{\\n[^}]*\\bC\\.${symbol}\\(`), name);
+  }
+  for (const name of ['ReleaseTagK', 'ReleaseK', 'ReleaseTag', 'ReleaseTagNew']) assert.ok(functions.includes(name), name);
+  assert.ok(symbols.includes('polyspec_sample_tag___k__new'));
+  // No symbol of a member joins two names of the contract by one underscore: a symbol of a member has its class
+  // before two underscores, and the symbols that are not members keep two underscores after the prefix.
+  assert.equal(symbols.includes('polyspec_sample_tag_new_x'), false);
+  assert.doesNotMatch(binding, /\bTagNewX\b/);
+  // The public package calls each function of package binding by its new name.
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /binding\.Tag_NewX\(/);
+  assert.match(text(out, 'packages/go/zz_generated_sample.go'), /binding\.TagNew_X\(/);
+  assert.match(text(out, 'packages/go/tag/zz_generated_tag.go'), /binding\.Tag__X\(/);
+});
+
 test('every entry point of the WASM crate is shielded once, and the entry of a member arms its core call once: with_faults, or armed_future around the wait of a machine (G-5, GN-8a)', () => {
   // The count of the arming calls of the whole crate equals the count of the shields only when each entry holds one of
   // each, which this test reads entry by entry. The advance of a Driven object is an entry point without a core call

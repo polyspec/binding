@@ -34,7 +34,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
-import { bindingLints } from './e2e-lint.mts';
+import { bindingLints, testEntrySymbol } from './e2e-lint.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
 
@@ -737,7 +737,8 @@ if (targets.includes('go')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`], { env: { CARGO_TARGET_DIR: release } });
       process.stdout.write('$ llvm-nm --defined-only (test entry points)\n');
       const symbols = execFileSync(llvmNm, ['--defined-only', join(release, `debug/lib${lib(p.contract, 'go')}.a`)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-      const leaked = symbols.split('\n').filter((line) => / [A-Z] _?polyspec_[a-z0-9_]*__(panic_test|echo_|arm_faults|fault_left|alias_in_|native_count|thrown_count|number_in)/.test(line));
+      const entry = testEntrySymbol(extensionOf(p.contract));
+      const leaked = symbols.split('\n').filter((line) => entry.test(line));
       if (leaked.length > 0) throw new Error(`the static library built without features holds test entry points: ${leaked.join(', ')}`);
       rmSync(release, { recursive: true, force: true });
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);

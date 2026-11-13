@@ -5,6 +5,24 @@
 
 ## Unreleased
 
+- The C symbol of a member of the Go crate joined the module, the class and the member with one underscore, and its
+  function of package `binding` joined them with nothing, so two members had one name: for a contract with the member
+  `new_x` of the class `tag` and the member `x` of the class `tag_new`, the static library defined
+  `polyspec_sample_tag_new_x` twice and package `binding` the function `TagNewX` twice; the function `x` of the
+  module `tag` had the symbol of the member `x` of the class `tag`, the function `x` of the modules `a/b_c` and
+  `a_b/c` one symbol, and the class `k` of the module `tag` and the class `tag_k` of the root one function
+  `ReleaseTagK`. Each member needs a symbol and a function of its own. The symbol is now `<prefix>_`, each segment of
+  the module followed by `___`, the class followed by `__`, and the member (`polyspec_sample_tag__new_x`,
+  `polyspec_sample_tag_new__x`, `polyspec_sample_tag___x`), and the function of package `binding` has the same parts
+  in CamelCase with one underscore less in each separator (`Tag_NewX`, `TagNew_X`, `Tag__X`); the release function of
+  a class names the class alone, `Release<Class>` (GN-4c, GN-17). The end-to-end check found a test entry point in
+  the static library built without features by a pattern that took any text between `polyspec_` and two underscores,
+  which reads the member `echo_x` of a class as the entry `__echo_`; it now reads the prefix of the contract of the
+  run, two underscores and the entry (`testEntrySymbol` of `scripts/e2e-lint.mts`). Verified by `make test-ts`: a
+  test generates the Go crate of the sample with these classes, functions and modules and requires that no C symbol,
+  no C declaration and no function of package `binding` is defined twice, and a test of the pattern requires each
+  test entry point and refuses the symbols of members. The generated crates were not compiled for this change.
+
 - No generated test observed that a `Raised` that the core drops leaves the table of what was thrown: a member such as
   `sample.tolerant`, whose core answers the exception of its callback and returns a value, passed its cases also when
   the entry stayed in the table. A crate of a contract in which a member takes a callback or a function type, or which

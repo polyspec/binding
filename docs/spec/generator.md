@@ -191,8 +191,8 @@ the design ids are those of the binding design.
   entry takes a prefix rather than a module of its own, because the prefix changes the name of the entry alone,
   where the attribute already gives the name of the language, while a module would change every path from an entry
   to a helper and the form in which each framework registers the entry. The entry of a function or of a member of the Go
-  crate is the C symbol `polyspec_<library>_<module>_<member>` (B-8), which Go code calls by that name, so its
-  family is `polyspec_`, with which no helper starts. The helper of a
+  crate is the C symbol of GN-17 (B-8), `<prefix>_<member>` with the module and the class before the member, which
+  Go code calls by that name, so its family is `polyspec_`, with which no helper starts. The helper of a
   function parameter of Node and WASM is `callable_in`, as that of PHP and Python is. A function takes any name, also
   `guard`, `pass`, `called`, `throw` or `in`, and an entry of the bare name is a second definition of the helper in
   the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
@@ -204,9 +204,19 @@ the design ids are those of the binding design.
   `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
   prefix inside the module of its class, because a member named as a helper, such as `guard`, would hide the helper
   there; no export of a member is `__free_<Class>`, because the name of a class starts with a capital letter. The
-  five crates apply the rule. Not applied yet (G-4): the C symbol of a member of a class of the Go crate,
-  `polyspec_<library>_<unit>_<member>`, and its function of package `binding` join the class and the member the same
-  way, so the two classes above give one symbol.
+  five crates apply the rule. The C symbol of a member of a class of the Go crate is `<prefix>_<unit>__<member>`,
+  with two underscores between the class and the member, and its function of package `binding` is
+  `<Unit>_<Member>`, with one underscore between the two names in CamelCase; a segment of a module ends with three
+  underscores in the symbol and with two in the function of package `binding` (GN-17). Why: the symbol
+  `<prefix>_<unit>_<member>` and the function `<Unit><Member>` read in two ways, so the two classes above gave one
+  symbol `<prefix>_tag_new_x` and one function `TagNewX`, and the function `x` of the module `tag` gave the symbol
+  of the member `x` of the class `tag`. A snake_case name has no empty word, so it holds no two underscores in a
+  row, and a name in CamelCase holds no underscore, so each separator is read in one way; the separator of a module
+  differs from that of a class, because a function of a module and a member of a class of the root both have two
+  names. The symbol is a `#[no_mangle]` function of the C ABI, which the lint `non_snake_case` does not read. The
+  release of a class is the symbol `<prefix>__release_<class>` and the function `Release<Class>` of package
+  `binding`, which name the class alone: with the words of the module before those of the class, the class `k` of
+  the module `tag` and the class `tag_k` of the root had one function `ReleaseTagK`.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
@@ -1358,7 +1368,14 @@ the design ids are those of the binding design.
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
   `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for every target (GN-10, GN-11, GN-12, GN-18).
-- **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
+- **GN-17** The C ABI (B-8): each function is `<symbol>(args, len, result) -> int32`, where `<prefix>` is
+  `polyspec_<repository>` and `<symbol>` is `<prefix>_`, then each segment of the module of the unit in snake_case
+  followed by `___`, then for a member of a class the name of the class followed by `__`, then the name of the
+  member, `new` for the constructor: `<prefix>_<function>`, `<prefix>_<unit>__<member>`,
+  `<prefix>_<segment>___<function>` and `<prefix>_<segment>___<unit>__<member>`. The function of package `binding`
+  that calls it has the same parts in CamelCase with one underscore less in each separator: `<Function>`,
+  `<Unit>_<Member>`, `<Segment>__<Function>` and `<Segment>__<Unit>_<Member>`. No two names of the contract are
+  joined by one underscore, so no two members of a contract have one symbol or one function (GN-4c).
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
   bytes) and bytes, a list its length and items, a record its fields in contract order, an enum its value text. The C
@@ -1366,7 +1383,7 @@ the design ids are those of the binding design.
   the failure (category index of E-1, message, kind, status, errno), is encoded the same way into a buffer that Rust
   allocates, writes into `result` and Go frees with `polyspec_<repository>__free`; the return is 0 for a result and 1
   for a failure. A buffer that does not follow the encoding is kind `internal`. The symbols that are not members
-  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no member name has. Every function runs under
+  (`__free`, `__panic_test`, `__echo_<type>`) have two underscores after the prefix, which no symbol of a member has, because a name of the contract follows the one underscore after its prefix. Every function runs under
   `catch_unwind`, so a panic never crosses the C ABI (B-7). A call of a member with wait `none` returns when the core
   returns.
 

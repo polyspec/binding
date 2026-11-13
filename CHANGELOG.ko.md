@@ -1,10 +1,25 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 15f5e41bd9de8e724e5d916cbe0a6ee34925a1bd1fe673186d6735e07304a1de -->
+<!-- source-sha256: e2c0e624b98509b5f80e20d62757f860fd50cc02a38d9ac919e1f03b48a6ce28 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Go crate의 member의 C 심볼은 module, class, member를 밑줄 하나로 이었고, package `binding`의 그 함수는 구분자 없이
+  이었다. 그래서 두 member가 한 이름을 가졌다. class `tag`의 member `new_x`와 class `tag_new`의 member `x`가 있는
+  계약에서 static library는 `polyspec_sample_tag_new_x`를 두 번, package `binding`은 함수 `TagNewX`를 두 번 정의했다.
+  module `tag`의 함수 `x`는 class `tag`의 member `x`의 심볼을 가졌고, module `a/b_c`와 `a_b/c`의 함수 `x`는 한 심볼을,
+  module `tag`의 class `k`와 root의 class `tag_k`는 한 함수 `ReleaseTagK`를 가졌다. member마다 자기 심볼과 자기 함수가
+  있어야 한다. 이제 심볼은 `<prefix>_`, `___`가 붙은 module의 각 segment, `__`가 붙은 class, member의 순서다
+  (`polyspec_sample_tag__new_x`, `polyspec_sample_tag_new__x`, `polyspec_sample_tag___x`). package `binding`의 함수는 같은
+  부분을 CamelCase로 쓰고 각 구분자의 밑줄이 하나 적다(`Tag_NewX`, `TagNew_X`, `Tag__X`). class의 해제 함수는 class만
+  이름하는 `Release<Class>`다(GN-4c, GN-17). end-to-end 검사는 feature 없이 빌드한 static library에서 시험 진입점을
+  `polyspec_`과 밑줄 둘 사이의 어떤 글자든 받는 패턴으로 찾았고, 그 패턴은 class의 member `echo_x`를 진입 `__echo_`로
+  읽는다. 이제 그 실행의 계약의 접두어, 밑줄 둘, 진입을 읽는다(`scripts/e2e-lint.mts`의 `testEntrySymbol`). `make test-ts`로
+  검증했다. 한 시험은 이 class, 함수, module을 넣은 sample의 Go crate를 생성하고 어떤 C 심볼도, C 선언도, package
+  `binding`의 함수도 두 번 정의되지 않음을 요구하며, 패턴의 시험은 각 시험 진입점을 요구하고 member의 심볼을 거부한다.
+  이 변경에서 생성된 crate는 컴파일하지 않았다.
 
 - 코어가 drop한 `Raised`가 던져진 것의 table을 떠나는지 확인하는 생성된 시험이 없었다. `sample.tolerant`처럼 코어가
   callback의 예외에 응답하고 값을 돌려주는 member는 항목이 table에 남아도 case를 통과했다. 이제 member가 callback이나

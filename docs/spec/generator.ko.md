@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 68d74c7123a8e7d6c54966f40decabbbe180501177ef6a38202c21232a11d1d2 -->
+<!-- source-sha256: f23b5dd114e5949ce08569060735408dd391b2946a8f8a30b0aa4bb4dc4d0eae -->
 # 생성기
 
 [English](generator.md)
@@ -154,7 +154,7 @@
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
   이름은 이미 attribute가 주지만, module은 진입에서 helper로 가는 모든 경로와 각 framework가 진입을 등록하는 형태를
-  바꾸기 때문이다. Go crate의 함수나 member의 진입은 C symbol `polyspec_<library>_<module>_<member>`(B-8)이고,
+  바꾸기 때문이다. Go crate의 함수나 member의 진입은 GN-17의 C symbol(B-8), 곧 member 앞에 module과 class를 둔 `<prefix>_<member>`이고,
   Go 코드가 그 이름으로 부른다. 그래서 그 계열은 `polyspec_`이며 어떤 helper도 그것으로 시작하지 않는다. Node와 WASM의 함수 parameter의 helper는 PHP와 Python처럼
   `callable_in`이다. 함수는 어떤 이름이든 가질 수 있고 `guard`, `pass`, `called`, `throw`, `in`도 그렇다. 이름 그대로의
   진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
@@ -164,9 +164,17 @@
   `new_x`와 class `a_new`의 member `x`가 한 함수 `class_a_new_x`였고, member `free`는 해제 `class_<unit>_free`와 그 export
   `__<Class>_free`였다. 밑줄 둘의 구분자는 snake_case 이름이 아니어서 lint가 거부한다. member는 자기 class의 module
   안에서도 접두어를 유지한다. `guard`처럼 helper와 같은 이름의 member가 그 안에서 helper를 가리기 때문이다. class의
-  이름은 대문자로 시작하므로 어떤 member의 export도 `__free_<Class>`가 아니다. 다섯 crate가 이 규칙을 적용한다. 아직
-  적용하지 않음(G-4): Go crate의 class의 member의 C 심볼 `polyspec_<library>_<unit>_<member>`와 package `binding`의 그
-  함수는 class와 member를 같은 방식으로 이으므로, 위의 두 class는 한 심볼을 준다.
+  이름은 대문자로 시작하므로 어떤 member의 export도 `__free_<Class>`가 아니다. 다섯 crate가 이 규칙을 적용한다. Go crate의
+  class의 member의 C 심볼은 class와 member 사이에 밑줄이 둘인 `<prefix>_<unit>__<member>`이고, package `binding`의 그
+  함수는 CamelCase의 두 이름 사이에 밑줄이 하나인 `<Unit>_<Member>`다. module의 segment는 심볼에서는 밑줄 셋으로,
+  package `binding`의 함수에서는 밑줄 둘로 끝난다(GN-17). 이유: 심볼 `<prefix>_<unit>_<member>`와 함수
+  `<Unit><Member>`는 두 가지로 읽힌다. 그래서 위의 두 class가 한 심볼 `<prefix>_tag_new_x`와 한 함수 `TagNewX`를
+  주었고, module `tag`의 함수 `x`가 class `tag`의 member `x`의 심볼을 주었다. snake_case 이름에는 빈 단어가 없어서
+  밑줄 둘이 이어지지 않고 CamelCase 이름에는 밑줄이 없으므로, 각 구분자는 한 가지로만 읽힌다. module의 함수와 root의
+  class의 member는 둘 다 이름이 둘이므로, module의 구분자는 class의 구분자와 다르다. 심볼은 C ABI의 `#[no_mangle]`
+  함수이고, lint `non_snake_case`는 그것을 읽지 않는다. class의 해제는 심볼 `<prefix>__release_<class>`와 package
+  `binding`의 함수 `Release<Class>`이고, 둘 다 class만 이름한다. module의 단어를 class의 단어 앞에 두면 module `tag`의
+  class `k`와 root의 class `tag_k`가 한 함수 `ReleaseTagK`를 가졌다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
@@ -1110,13 +1118,19 @@
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
   `map<T>`와 `keyed_map<T>`는 모든 target에 생성한다(GN-10, GN-11, GN-12, GN-18).
-- **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
+- **GN-17** C ABI(B-8): 함수마다 `<symbol>(args, len, result) -> int32`다. `<prefix>`는 `polyspec_<repository>`이고,
+  `<symbol>`은 `<prefix>_`, 그 뒤에 unit의 module의 각 segment를 snake_case로 쓰고 `___`를 붙인 것, 그 뒤에 class의
+  member이면 class의 이름과 `__`, 그 뒤에 member의 이름(생성자는 `new`)이다: `<prefix>_<function>`,
+  `<prefix>_<unit>__<member>`, `<prefix>_<segment>___<function>`, `<prefix>_<segment>___<unit>__<member>`. 그것을 부르는
+  package `binding`의 함수는 같은 부분을 CamelCase로 쓰고 각 구분자의 밑줄이 하나 적다: `<Function>`,
+  `<Unit>_<Member>`, `<Segment>__<Function>`, `<Segment>__<Unit>_<Member>`. 계약의 두 이름을 밑줄 하나로 잇지 않으므로,
+  한 계약의 두 member가 한 심볼이나 한 함수를 갖지 않는다(GN-4c). Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
   순서의 field, enum은 값 텍스트. C ABI는 디코딩하며 판정하고(T-8), 인자는 마지막 parameter에서 끝나야 한다. 코어의 결과나
   실패(E-1의 category 번호, 메시지, kind, status, errno)는 같은 방식으로 Rust가 할당한 버퍼에 인코딩해 `result`에 쓰고, Go는
   그것을 `polyspec_<repository>__free`로 해제한다. 반환은 결과면 0, 실패면 1이다. 인코딩을 따르지 않는 버퍼는 kind `internal`이다.
-  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member 이름도 그렇지 않다.
+  member가 아닌 심볼(`__free`, `__panic_test`, `__echo_<type>`)은 접두어 뒤에 밑줄이 둘이며, 어떤 member의 심볼도 그렇지 않다. 접두어 뒤의 밑줄 하나 다음에 계약의 이름이 오기 때문이다.
   모든 함수는 `catch_unwind` 아래에서 실행하므로 panic이 C ABI를 넘지 않는다(B-7). wait `none` member의 호출은 코어가 돌아올
   때 돌아온다.
 

@@ -92,9 +92,10 @@ export function goMemberName(fn: Fn): string {
   return member;
 }
 
-const moduleWordsOf = (module: string): Name => module.split('/').filter((s) => s !== '').flatMap((s) => s.split(/[^a-z0-9]+/));
-// The Go function of package binding that releases a value of a class unit (T-5).
-const releaseFn = (unit: Unit): string => `Release${goName([...moduleWordsOf(unit.module), ...unit.name])}`;
+// The Go function of package binding that releases a value of a class unit (T-5). It names the class alone, as the
+// symbol <prefix>__release_<class> does (GN-17): with the words of the module before those of the class, the class k of
+// the module tag and the class tag_k of the root had one function.
+const releaseFn = (unit: Unit): string => `Release${goName(unit.name)}`;
 
 // ---- Go types ----
 

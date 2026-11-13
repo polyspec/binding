@@ -27,18 +27,23 @@ import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
 
-const moduleWords = (module: string): Name => module.split('/').filter((s) => s !== '').flatMap((s) => s.split(/[^a-z0-9]+/));
-
-// The words of a member in the C ABI and in package binding: the module, the class of a member of a class unit, and
-// the member name (new for the constructor).
-export const fnWords = (fn: Fn): Name => [
-  ...moduleWords(fn.module),
-  ...(fn.kind === 'function' ? [] : fn.unit.name),
-  ...(fn.kind === 'constructor' ? ['new'] : fn.member.name),
-];
+// The segments of a module, each as its words.
+const moduleSegments = (module: string): Name[] => module.split('/').filter((s) => s !== '').map((s) => s.split(/[^a-z0-9]+/).filter((w) => w !== ''));
 const snake = (words: Name): string => words.map((w) => (typeof w === 'string' ? w : w.acronym.toLowerCase())).join('_');
-export const cSymbol = (model: Model, fn: Fn): string => `${prefix(model)}_${snake(fnWords(fn))}`;
-export const bindingFn = (fn: Fn): string => goName(fnWords(fn));
+// The name of a member in the C ABI and in package binding (new for the constructor).
+const memberWords = (fn: Fn): Name => (fn.kind === 'constructor' ? ['new'] : fn.member.name);
+
+// GN-17, GN-4c: the C symbol of a member: the prefix and one underscore, each segment of the module followed by three
+// underscores, the class of a member of a class unit followed by two, and the member. No two names of the contract
+// are joined by one underscore, so the member new_x of the class tag and the member x of the class tag_new, and the
+// function x of the module tag and the member x of the class tag, have a symbol each. The lint non_snake_case does
+// not read the name of a #[no_mangle] function of the C ABI.
+export const cSymbol = (model: Model, fn: Fn): string =>
+  `${prefix(model)}_${moduleSegments(fn.module).map((segment) => `${snake(segment)}___`).join('')}${fn.kind === 'function' ? '' : `${snake(fn.unit.name)}__`}${snake(memberWords(fn))}`;
+// GN-17, GN-4c: the function of package binding that calls the symbol: the same parts in CamelCase, whose words hold
+// no underscore, with one underscore less in each separator.
+export const bindingFn = (fn: Fn): string =>
+  `${moduleSegments(fn.module).map((segment) => `${goName(segment)}__`).join('')}${fn.kind === 'function' ? '' : `${goName(fn.unit.name)}_`}${goName(memberWords(fn))}`;
 
 // The snake_case name of a unit in the names that this file makes; a keyword needs no raw form inside a longer name.
 export const plainName = (unit: Unit): string => rustField(unit.name).replace(/^r#/, '');
