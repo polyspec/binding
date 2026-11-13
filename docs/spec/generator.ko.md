@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: cc9c0f703738c881fbc801fbdaa5e6b7224029fcab038c3b24412a3261367bad -->
+<!-- source-sha256: 9f2d252adccb995eee097959aac2d080a42a8b8fc8a37cab4a5f3f49bc7c6e59 -->
 # 생성기
 
 [English](generator.md)
@@ -634,10 +634,10 @@
     `a<name>`을 이름하는 message의 kind `invalid_callback`으로 한다. PHP와 Go에는 awaitable이 없다: driver는 값을 곧바로
     settle하므로 PHP나 Go 함수는 그 결과를 돌려준다.
   - Case: 함수 타입의 인자는 함수 fixture `{"function": {"calls": [<step>], "result": <case value>}}`이거나 `"result"`
-    대신 `"raise"`를 가진다. 생성된 함수는 인자에 각 단계 `{"on": "<parameter name>", "call": "<member id>", "args":
-    {...}}`를 차례로 하고(단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
+    대신 `"raise"`를 가진다. 생성된 함수는 인자에 각 단계 `{"on": "<위치>", "call": "<member id>", "args":
+    {...}}`를 차례로 하고(`on`은 parameter의 위치 `"0"`, `"1"`, ...이며(CK-22), 단계의 함수 타입 인자는 다시 함수 fixture다), `result`를 돌려주거나 `raise`의 오류 unit을
     던지거나(GN-13), `"raise": "exception"`이면 언어의 예외를 던지며, case는 그것을 `raises: "callback"`으로 기대한다.
-    `after`(c6 1.2)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
+    `after`(CK-22)는 호출 뒤의 receiver를 관찰하므로, case는 commit, 던진 뒤의 rollback, 중첩된 범위를 보인다.
   아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
   PHP는 그 member를 생성한다. 어느 시험 생성기도 아직 함수 fixture, `raises: "callback"`, `after`를 쓰지 않으며,
@@ -825,8 +825,7 @@
   레포는 fixture 코드를 쓰지 않는다. 호출은 그 member의 남은 행 가운데 인자가 호출의 인자와 같은 첫 행을 쓰고, 어떤 행도
   답하지 않는 호출은 기록되고 `UnexpectedCall`을 던진다. 시험 대상 호출 뒤에 시험은 그 기록이 비었는지 확인하므로 코어가 그
   예외를 삼켜도 시험은 실패하며, case가 `calls`를 적으면 호출이 그 순서의 그것들인지 확인한다. 다른 타입 안(record의 field, list의
-  항목, `optional`)의 callback도 같은 fixture로 주고, 함수는 `args`가 parameter의 위치(`"0"`, `"1"`, ...)인
-  `{"function": [<행>]}`로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
+  항목, `optional`)의 callback도 같은 fixture로 주고, 함수는 GN-6ae의 함수 fixture로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
   `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`, `json_encode`, Go에서는 내보내지 않은 `toJSON`을 부른다(Go의 stringify 시험이 `stringify`를 부르는 것과 같다). 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의

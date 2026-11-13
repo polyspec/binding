@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: d4ec857dbf52d479d1d73c3f7cbcf32427a4abfd3cc258b59720bc22323b0392 -->
+<!-- source-sha256: 18286895d8861b1e95bc8bd16647d0e4f68a9e6ef78845e386f3488b7e6efafc -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -167,8 +167,17 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
-  fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고, 그 행의 키는 `args`, `result`, `once`뿐이며
-  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다.
+  fixture 대신 올 수 있다. 함수 타입의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
+  <값>}}`이거나 `"result"` 자리에 `"raise"`를 둔 것이다. fixture의 키는 `function`뿐이고, 그 객체는 list `calls`와
+  `result`, `raise` 중 하나를 가지며 다른 키는 없다. step은 `{"on": "<위치>", "call": "<member id>", "args": {...}}`이고
+  다른 키는 없다. `on`은 함수의 parameter의 위치 `"0"`, `"1"` 등이다. 함수 타입의 parameter에는 이름이 없기 때문이다. 그
+  parameter의 타입은 이 계약의 class unit이다. `call`은 그 class의 method이고, `args`는 정확히 그 method의 parameter이며,
+  step의 함수 타입 인자는 다시 함수 fixture다. `raise`는 언어의 예외인 텍스트 `"exception"`이거나 함수가 인식하는(U-3) error
+  unit의 `{"error": <unit>, "kind": <kind>}`다. case의 `raises`는 텍스트 `"callback"`일 수 있다. 그 case는 인자의 함수
+  fixture가 `"raise": "exception"`으로 던지는 예외를 기대하며, step의 어느 깊이에도 그런 fixture가 없는 case는 거부된다.
+  method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
+  다른 키는 없다. 각 `call`은 receiver의 class의 method이고 `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
+  뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ec16bba634e0fe09e3be456cab0feb71da520ed2fb20c85c3b1f04a20fc05965 -->
+<!-- source-sha256: 13f6874ef266c98746660d212b9e75c3106f0b9e91c79849cddeda072c764c43 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약 검사는 함수 타입의 값을 `{"function": [<행>]}`으로 읽었다. 이 형식은 어느 생성기도 쓰지 않았고 class 인자를 줄 수
+  없었으며, GN-6ae는 함수 fixture를 적는다. 검사는 이제 함수 fixture `{"function": {"calls": [<step>], "result" |
+  "raise"}}`만 읽는다. step `{"on", "call", "args"}`는 위치 `on`의 parameter의 class의 method를 정확히 그 parameter로
+  호출하고, step의 함수 타입 인자는 다시 fixture이며, `raise`는 `"exception"`이거나 함수가 인식하는 error unit이다. case는
+  `raises: "callback"`을 기대할 수 있고, 그러려면 `"exception"`을 던지는 fixture가 있어야 한다. method의 case는 `after`,
+  곧 receiver의 method 호출과 그 `result`를 적을 수 있다(CK-22, GN-6ae). 행 형식을 가진 계약이나 case 파일은 없었다.
+  `packages/ts`의 `npm test`로 검증했다.
 - PHP는 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. PHP 바인딩은 이제 그것을
   생성한다. parameter는 `callable`을 받고(다른 값은 kind `invalid_callback`이다), 진입점은 그것으로 machine이 부르는
   closure를 만들며 각 class 인자는 그 class의 새 인스턴스가 된다. callable이 돌려준 값은 그 `Passthrough`의 handle

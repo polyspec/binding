@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The contract check read a value of a function type as `{"function": [<row>]}`, a form that no generator wrote and
+  that could not give a class argument, while GN-6ae names the function fixture. The check now reads only the function
+  fixture `{"function": {"calls": [<step>], "result" | "raise"}}`: a step `{"on", "call", "args"}` calls a method of
+  the class of the parameter at the position `on` with exactly its parameters, an argument of a function type of a
+  step is again a fixture, and `raise` is `"exception"` or an error unit that the function recognizes. A case may
+  expect `raises: "callback"`, which needs a fixture that raises `"exception"`, and a case of a method may name
+  `after`, calls of methods of the receiver with their `result` (CK-22, GN-6ae). No contract or case file held the form
+  of rows. Verified by `npm test` in `packages/ts`.
 - PHP refused a member with a parameter of a function type or a result `passthrough` by name. The PHP binding now
   generates it: the parameter takes a `callable` (any other value is kind `invalid_callback`), from which the entry
   makes the closure that the machine calls, with each class argument as a new instance of its class; the value that
