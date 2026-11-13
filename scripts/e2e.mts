@@ -39,7 +39,7 @@ import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints, testEntrySymbol } from './e2e-lint.mts';
 import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
-import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
+import { consumerFiles, debugSections, goRemote, goWork, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 
 const args = new Map<string, string>();
@@ -766,6 +766,7 @@ if (targets.includes('go')) {
     const goModule = at(p, 'packages/go');
     const crate = p.contract.core.crate;
     const goEnv = goEnvOf(p);
+    const goWorkFile = join(work, `go-${p.contract.library}.work`);
     const of = mains.length === 1 ? '' : ` of ${p.contract.library}`;
     // GN-13b, GN-6u, GN-6ae: panic-test, codec-test, native-count-test and thrown-count-test are for tests only; the library built without features
     // has no test entry point.
@@ -787,6 +788,18 @@ if (targets.includes('go')) {
       for (const d of dependencies.filter((d) => d.contract.targets.includes('go'))) {
         const module = (d.contract.packages['go'] as { module: string }).module;
         if (new RegExp(`^require ${module.replaceAll('.', '\\.')} |^\\t${module.replaceAll('.', '\\.')} `, 'm').test(goMod)) run('cargo', ['build', '--manifest-path', join(d.copy, 'Cargo.toml'), '-p', `${d.contract.core.crate}-go`, '--features', testFeatures(d, 'go')]);
+      }
+      // GN-14d: a dependency in the development form resolves to the Go module of its copy through the go.work of the
+      // run, as the untracked go.work of a development checkout resolves it; without one, no go.work of a directory
+      // above the copy is read.
+      const workspace = goWork(goMod, goModule, dependencies.filter((d) => d.contract.targets.includes('go')).map((d) => ({ module: (d.contract.packages['go'] as { module: string }).module, dir: at(d, 'packages/go') })));
+      rmSync(goWorkFile, { force: true });
+      rmSync(`${goWorkFile}.sum`, { force: true });
+      if (workspace === undefined) goEnv['GOWORK'] = 'off';
+      else {
+        writeFileSync(goWorkFile, workspace);
+        goEnv['GOWORK'] = goWorkFile;
+        process.stdout.write(`the go.work of the run (GOWORK, GN-14d) uses ${workspace.split('\n').filter((line) => line.startsWith('\t')).map((line) => line.trim()).join(', ')}\n`);
       }
       if (goCases && i === 0) {
         mkdirSync(join(goModule, 'tests'), { recursive: true });

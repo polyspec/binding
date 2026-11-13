@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The Go steps of the end-to-end check failed for a repository whose core depends on a repository of `DEPS` by a
+  branch: `go vet` gave "missing go.sum entry for module providing package
+  github.com/polyspec/http-media-type/packages/go/media_type", because the scaffold writes that dependency as a
+  require of `v0.0.0` without a `replace`, which a development checkout resolves through its untracked `go.work`, and
+  the run gave no `go.work`. The run now writes a `go.work` of its work directory that uses the Go module of the copy
+  and the Go module of the copy of each such dependency and gives it as `GOWORK`, or `GOWORK=off` without one
+  (GN-14d). Verified by `make test-ts`: the new test failed before the change.
 - A PHP member that takes a value class of another repository failed with "value_in: a description that no in row
   of value gives" for a value with an array: the read member of the case of the kind `list`, `value.items`, gives a
   PHP array, which the generated host described as a PHP array, while the walk of the owner reads the kind that the

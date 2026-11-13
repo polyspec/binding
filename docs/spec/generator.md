@@ -2235,8 +2235,13 @@ the design ids are those of the binding design.
   package of the platform is packed from the built addon and installed with the package of the library from their
   tarballs without the optional packages of other platforms (T-2), and the runners get the settings that the
   generated tests need: the test features of each crate (GN-5, GN-13b), `CGO_LDFLAGS` with the directory of the
-  static library, `GOFLAGS` with the tags of those features and `GOTOOLCHAIN=local` for Go, `--expose-gc` for WASM
-  (GN-18a), and `CASES` with the case file. Where `tests/e2e/<library>` holds `bench.mjs`, `bench.py` or `bench.php`,
+  static library, `GOFLAGS` with the tags of those features, `GOTOOLCHAIN=local` and `GOWORK` for Go, `--expose-gc` for WASM
+  (GN-18a), and `CASES` with the case file. `GOWORK` names a `go.work` of the work directory that uses the Go module of
+  the copy and the Go module of the copy of each repository of `DEPS` that its `go.mod` requires at `v0.0.0` without a
+  `replace`, the development form of GN-15f, and the run prints the modules that it uses; with no such dependency
+  `GOWORK` is `off`, so no `go.work` of a directory above the copy is read. Why: a development checkout resolves that
+  form through its untracked `go.work`, which no copy holds, and the run resolves every dependency of every target to
+  the packages of the copies of `DEPS`. Where `tests/e2e/<library>` holds `bench.mjs`, `bench.py` or `bench.php`,
   the run measures with each after the cases of Node, Python or PHP and gives it `BENCH_REPORT`, the file
   `var/report/bench/<library>-<language>.json` of the checkout (ignored), where it writes the median of a fixed number of
   runs of each measurement with the load average when it was taken; a measurement prints a `WARNING` above its limit

@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+- 코어가 `DEPS`의 레포에 branch로 의존하는 레포에서 end-to-end check의 Go 단계가 실패했다. `go vet`이 "missing go.sum entry
+  for module providing package github.com/polyspec/http-media-type/packages/go/media_type"를 냈다. scaffold는 그 의존을
+  `replace` 없는 `v0.0.0` require로 쓰고 개발 checkout은 그것을 추적되지 않는 `go.work`로 해소하는데, 실행은 `go.work`를
+  주지 않았기 때문이다. 이제 실행은 사본의 Go module과 그런 의존 각각의 사본의 Go module을 사용하는 `go.work`를 작업
+  디렉터리에 쓰고 `GOWORK`로 주며, 없으면 `GOWORK=off`를 준다(GN-14d). `make test-ts`로 검증했다: 새 시험이 변경 전에는
+  실패했다.
 - 다른 레포의 값 class를 받는 PHP member가 배열을 가진 값에서 "value_in: a description that no in row of value gives"로
   실패했다. kind가 `list`인 case의 read member `value.items`가 PHP 배열을 주는데 생성된 host는 그것을 PHP 배열로
   묘사했고, owner의 walk는 case가 적은 kind인 list를 읽는다. `tests/e2e/relay`의 생성된 시험 "carry a document of

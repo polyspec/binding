@@ -1807,7 +1807,11 @@
   생성 시험 옆에 복사하고(`cases_test.go`는 `packages/go/tests`로), 빌드한 addon에서 플랫폼의 npm 패키지를 묶어 라이브러리의
   패키지와 함께 그 tarball에서 다른 플랫폼의 선택 패키지 없이 설치하며(T-2), runner는 생성 시험이 필요로 하는 설정을 받는다:
   crate마다 시험 feature(GN-5, GN-13b), Go에는 정적 라이브러리 디렉터리를 가진 `CGO_LDFLAGS`, 그 feature의 tag를 가진 `GOFLAGS`,
-  `GOTOOLCHAIN=local`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `tests/e2e/<library>`에 `bench.mjs`, `bench.py`, `bench.php`가 있으면
+  `GOTOOLCHAIN=local`, `GOWORK`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `GOWORK`는 작업 디렉터리의
+  `go.work`를 가리키며, 그 파일은 사본의 Go module과, 그 `go.mod`가 `replace` 없이 `v0.0.0`으로 요구하는(GN-15f의 개발 형태)
+  `DEPS` 각 레포 사본의 Go module을 사용하고, 실행은 사용하는 module을 출력한다. 그런 의존이 없으면 `GOWORK`는 `off`이므로
+  사본 위 디렉터리의 `go.work`를 읽지 않는다. 이유: 개발 checkout은 그 형태를 추적되지 않는 `go.work`로 해소하는데 사본에는
+  그 파일이 없고, 실행은 모든 target의 모든 의존을 `DEPS` 사본의 패키지로 해소한다. `tests/e2e/<library>`에 `bench.mjs`, `bench.py`, `bench.php`가 있으면
   실행은 Node, Python, PHP의 case 뒤에 그것으로 측정하고, checkout의 파일 `var/report/bench/<library>-<language>.json`(무시됨)인
   `BENCH_REPORT`를 준다. 측정은 각 측정을 고정된 횟수만큼 실행한 중앙값과 그때의 load average를 그 파일에 쓰고, 한계를 넘으면
   `WARNING`을 출력할 뿐 실패하지 않는다. 그 빌드는 시험의 debug 빌드이므로, 측정이 보고하는 것은 같은 빌드의 두 경로의 비율이다(B2.87).
