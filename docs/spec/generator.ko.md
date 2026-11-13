@@ -410,10 +410,12 @@
   - Python은 객체가 finalize될 때 `ResourceWarning`으로 경고한다.
   - Node는 class가 finalize될 때 `process.emitWarning`으로 type `ResourceWarning`의 경고를 낸다.
   Go와 WASM은 finalizer(`runtime.SetFinalizer`, `FinalizationRegistry`)를 생성할 때까지 그런 unit을 이름을 대고 거부한다
-  (G-4). G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험과, 정리
-  member를 부르고 객체를 버린 뒤 경고가 없음을 요구하는 시험을 생성한다. PHP는 error handler 아래에서 객체를 unset하고,
-  Python은 `warnings.catch_warnings(record=True)` 아래에서 지우며, Node는 시험 파일을 `--expose-gc`로 돌려 `gc()`를 부르고
-  process의 `warning` event를 기다린다. 이유: 호출자가 닫지 않은 자원도 놓이고, 경고는 호출자가 빠뜨린 호출을 알려 준다.
+  (G-4). G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험을 생성하고,
+  PHP와 Python에서는 정리 member를 부르고 객체를 버린 뒤 경고가 없음을 요구하는 시험도 생성한다. PHP는 error handler
+  아래에서 객체를 unset하고, Python은 `warnings.catch_warnings(record=True)` 아래에서 지우며, Node는 `gc()`를 켜고
+  (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event를
+  기다린다. Node에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
+  잠금의 `taken`은 binding_core에서 시험한다. 이유: 호출자가 닫지 않은 자원도 놓이고, 경고는 호출자가 빠뜨린 호출을 알려 준다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

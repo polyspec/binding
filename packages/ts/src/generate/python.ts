@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -581,7 +581,21 @@ const _: () = {
 ` : ''}
 #[pymethods]
 impl ${struct} {${members}}
-
+${object.cleanup === undefined ? '' : `
+/// GN-6p, B-10: an object finalized without its cleanup call warns with ResourceWarning, and dropping the value releases
+/// its resource.
+impl Drop for ${struct} {
+    fn drop(&mut self) {
+        if !self.inner.taken() {
+            Python::attach(|py| {
+                if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {
+                    error.write_unraisable(py, None);
+                }
+            });
+        }
+    }
+}
+`}
 ${givesOut ? `
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
     Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
@@ -872,7 +886,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
+${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]

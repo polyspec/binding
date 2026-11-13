@@ -2,7 +2,7 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
@@ -383,6 +383,55 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         $held = ${test.instance};${test.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(test.fn.member.id)}, ${phpText(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}${test.armed === undefined ? '' : `
         // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
+    }`);
+  }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    methods.push(`
+    public function testGn6o${langName('php', fn.unit.name, 'class')}${langName('php', fn.member.name, 'class')}ConsumesItsObject(): void
+    {
+        $held = ${made(sample)};
+        try {
+            ${invoke(fn, args, '$held')};
+        } catch (\\Throwable) {
+            // GN-6o: the value is taken also when the core fails.
+        }${refused('type', 'consumed', invoke(fn, args, '$held'))}
+    }`);
+  }
+  // GN-6p, B-10: an object freed without its cleanup call raises E_WARNING, and after it none.
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    const label = `${langName('php', object.unit.name, 'class')}`;
+    const warned = (call: string, expected: string): string => `
+        $held = ${made(sample)};
+        $warnings = [];
+        set_error_handler(function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = [$level, $message];
+            return true;
+        });
+        try {${call}
+            unset($held);
+        } finally {
+            restore_error_handler();
+        }
+        self::assertSame(${expected}, $warnings);`;
+    methods.push(`
+    public function testB10${label}WarnsWithout${langName('php', cleanup.member.name, 'class')}(): void
+    {${warned('', `[[E_WARNING, ${phpText(cleanupWarning(label, memberName('php', cleanup)))}]]`)}
+    }
+
+    public function testB10${label}DoesNotWarnAfter${langName('php', cleanup.member.name, 'class')}(): void
+    {${warned(`
+            try {
+                ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), '$held')};
+            } catch (\\Throwable) {
+                // B-10: the cleanup call consumed the value whatever it gave.
+            }`, '[]')}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

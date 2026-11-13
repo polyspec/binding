@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
+  self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
+  binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
+  which leaves the object kind `consumed`, GN-6o), assert that the core type of a unit with `cleanup` implements
+  `binding_core::Cleanup` and that of another class unit does not, and warn when an object is destroyed without its
+  cleanup call: `E_WARNING`, `ResourceWarning`, or `process.emitWarning` of type `ResourceWarning` (GN-6p, B-10). The
+  generated tests require kind `consumed` after the call and the warning. Go and WASM refuse such members and units by
+  name. Verified by `make check`.
 - The end-to-end check of `tests/e2e/classes` at 8d9ed8c failed for Python, because `a<name>` built its tuple of
   arguments from a chained iterator, which `PyTuple::new` does not take (it needs an exact size), and for Node and
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
