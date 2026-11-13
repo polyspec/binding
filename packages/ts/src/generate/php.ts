@@ -993,6 +993,15 @@ ${unitProperties}`;
         .property(private_property("kind"))
         .property(private_property("status"))
         .property(private_property("errno"))
+        .method(
+            FunctionBuilder::new("__construct", error_construct)
+                .arg(Arg::new("message", DataType::String))
+                .arg(Arg::new("kind", DataType::String))
+                .not_required()
+                .arg(Arg::new("status", DataType::Long).allow_null().default("null"))
+                .arg(Arg::new("errno", DataType::Long).allow_null().default("null")),
+            MethodFlags::Public,
+        )
         .method(FunctionBuilder::new("kind", kind_method).returns(DataType::String, false, false), MethodFlags::Public)
         .method(FunctionBuilder::new("status", status_method).returns(DataType::Long, false, true), MethodFlags::Public)
         .method(FunctionBuilder::new("errno", errno_method).returns(DataType::Long, false, true), MethodFlags::Public)
@@ -1062,7 +1071,8 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use ext_php_rs::args::Arg;
+use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
@@ -1172,6 +1182,39 @@ fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     match in_scope(class, || this.get_property::<Option<i64>>(name)) {
         Ok(Some(number)) => retval.set_long(number),
         Ok(None) | Err(_) => retval.set_null(),
+    }
+}
+
+/// GN-10: the constructor of a category class, which an error unit inherits, so that PHP code makes an error with its
+/// kind. An error that the extension raises is made without it (B-4).
+fn construct_error(ex: &mut ExecuteData) {
+    let mut message = Arg::new("message", DataType::String);
+    let mut kind = Arg::new("kind", DataType::String);
+    let mut status = Arg::new("status", DataType::Long).allow_null();
+    let mut errno = Arg::new("errno", DataType::Long).allow_null();
+    if ex.parser().arg(&mut message).arg(&mut kind).not_required().arg(&mut status).arg(&mut errno).parse().is_err() {
+        return;
+    }
+    let (Some(message), Some(kind)) = (message.val::<String>(), kind.val::<String>()) else { return };
+    let status = status.val::<i64>();
+    let errno = errno.val::<i64>();
+    let Some(this) = ex.get_self() else { return };
+    let class = ${scopeOf('this.get_class_entry()')};
+    let written = in_scope(class, || -> ext_php_rs::error::Result<()> {
+        this.set_property("message", message)?;
+        this.set_property("kind", kind)?;
+        this.set_property("status", status)?;
+        this.set_property("errno", errno)?;
+        Ok(())
+    });
+    if let Err(error) = written {
+        PhpException::from_message(format!("B-4: the error could not be made: {error}")).throw();
+    }
+}
+
+ext_php_rs::zend_fastcall! {
+    extern fn error_construct(ex: &mut ExecuteData, _retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| construct_error(ex)));
     }
 }
 
@@ -1337,6 +1380,8 @@ function stub(model: Model, layout: PhpLayout): string {
 ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). */
     class ${c.name} extends \\${phpBase(c.category)}
     {
+        public function __construct(string $message, string $kind, ?int $status = null, ?int $errno = null) {}
+
         public function kind(): string {}
 
         public function status(): ?int {}

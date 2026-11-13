@@ -30,13 +30,9 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';
     return `new class { ${(unit.members ?? []).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
   };
-  // GN-13: an instance of an error unit with a kind, which PHP code sets in the scope of the class of its category,
-  // the class that declares kind, because no constructor of the classes takes a kind.
-  const errorNew = (unit: Unit, kind: string, message: string): string => {
-    const name = `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
-    const scope = `\\${layout.namespace}\\${model.classes.find((c) => c.category === unit.category)?.name ?? ''}`;
-    return `(static function (): ${name} { $error = new ${name}(${phpText(message)}); (static fn () => $error->kind = ${phpText(kind)})->bindTo(null, ${scope}::class)(); return $error; })()`;
-  };
+  // GN-13: an instance of an error unit with a kind, by the constructor of its category class (GN-10).
+  const errorNew = (unit: Unit, kind: string, message: string): string =>
+    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${phpText(message)}, ${phpText(kind)})`;
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, errorNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.

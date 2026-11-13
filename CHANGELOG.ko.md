@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 생성된 PHP 오류 클래스의 어떤 생성자도 kind를 받지 않아서, PHP 코드는 category 클래스의 scope에서 private 속성 `kind`를
+  적어야만 kind를 가진 오류를 만들 수 있었고, 그것은 공개 API가 아니며 raise 행의 fixture가 그렇게 했다. 이제 모든 category
+  클래스는 공개 생성자 `__construct(string $message, string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든
+  오류 unit이 이를 상속하고, raise 행의 fixture는 Python·Node·WASM처럼 그것으로 오류를 만든다(GN-10, GN-13). `packages/ts`에서
+  `npm test`와 `npm run typecheck`로 확인했다.
 - callback fixture에 raise 행이 있는 case(없는 파일을 알리는 loader 같은)는 "a raise row of a callback fixture is not
   generated yet"로 거부되었다. 이제 모든 target의 fixture가 그런 행에서 그 행의 오류 unit 인스턴스를 언어 코드가 만들듯이
   kind와 메시지 `G-5: <kind>`로 만들어 던진다. Go는 `internal/binding`의 `Raised<Unit>`로 만든다(GN-13). `packages/ts`에서

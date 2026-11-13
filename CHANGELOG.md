@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- No constructor of the generated PHP error classes took a kind, so PHP code could make an error with its kind only
+  by writing the private property `kind` in the scope of the category class, which is no public API, and the fixture
+  of a raise row did so. Each category class now has the public constructor `__construct(string $message, string
+  $kind, ?int $status = null, ?int $errno = null)`, which every error unit inherits, and the fixture of a raise row
+  makes its error by it, as Python, Node and WASM do (GN-10, GN-13). Verified by `npm test` and `npm run typecheck` in
+  `packages/ts`.
 - A case whose callback fixture has a raise row, such as a loader that reports a missing file, was refused with "a
   raise row of a callback fixture is not generated yet". The fixture of every target now throws, for such a row, an
   instance of the error unit of the row with its kind and the message `G-5: <kind>`, as language code makes one; Go
