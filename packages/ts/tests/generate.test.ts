@@ -22,6 +22,23 @@ import { parse } from 'smol-toml';
 // (GN-1b), with each target that the test adds after the five; a test that names its targets, or gives the contract
 // other targets, generates those. The fixture repository and tests/e2e/sample are both the library sample; the fixture
 // is the one whose first unit is words.
+// GN-6ar: the alias data of tests/e2e/sample names the classes box, cell and ratio of the sample. The tests of the
+// other rules read the sample without those classes and rows, which plainSample gives, so that each of them reads the
+// rule that it names alone; the test of GN-6ar reads the sample as it is.
+const CLASS_ROWS: ReadonlySet<string> = new Set(['box', 'cell', 'ratio']);
+const plainSample = (owner: any): any => {
+  owner.units = owner.units.filter((u: any) => !CLASS_ROWS.has(u.id));
+  owner.cases = owner.cases.filter((row: any) => !CLASS_ROWS.has(String(row.member).split('.')[0] ?? ''));
+  const data = owner.units.find((u: any) => u.id === 'data');
+  data.out = data.out.filter((row: any) => row.kind !== 'reference');
+  for (const row of data.out) for (const lang of Object.keys(row.make)) if (row.make[lang] === 'box.constructor') row.make[lang] = 'map';
+  data.in = data.in.filter((row: any) => !Object.values(row).some((named) => typeof named === 'string' && (CLASS_ROWS.has(named) || named === 'reference')));
+  return owner;
+};
+const plainSampleCases = (cases: any): any => {
+  cases.echo = cases.echo.filter((kase: any) => kase.id !== 'a_reference_comes_back');
+  return cases;
+};
 const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
 const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'go', 'wasm'],
@@ -184,7 +201,7 @@ const text = (out: Map<string, string | Buffer>, path: string): string => String
 const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext|go|ts)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
 // The case files of the sample of the end-to-end check (tests/e2e/sample).
 const sampleCases = (): Map<string, unknown> =>
-  new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  new Map([['contracts/cases.json', plainSampleCases(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8')))]]);
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
   const { contract, caseFiles } = load();
@@ -908,7 +925,7 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
 
 test('a value alias converts through its core functions in every language (U-7)', () => {
   // The sample has the value alias data, which its core judges and gives (tests/e2e/sample).
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   for (const [path, host] of [['packages/python/generated/lib.rs', 'PyHost'], ['packages/ts/generated/lib.rs', 'JsHost'], ['packages/php-ext/generated/lib.rs', 'PhpHost']] as const) {
     const lib = text(out, path);
@@ -919,7 +936,7 @@ test('a value alias converts through its core functions in every language (U-7)'
 });
 
 test('an out row of a value alias makes a keyed map of the keys it lists in every language (U-7, T-2, GN-6e)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'map' && r.when.is === false);
   for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = { keyed_map: { key: lang === 'php' ? ['int', 'bytes'] : ['int', 'text', 'bytes'] } };
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
@@ -930,7 +947,7 @@ test('an out row of a value alias makes a keyed map of the keys it lists in ever
 });
 
 test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e, GN-15c)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
   for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
@@ -972,7 +989,7 @@ test('an out row of a value alias makes an instance by a factory of a class of t
 
 test('a language object that a core may keep enters as a Native, which each target holds and releases by its rule (GN-6u)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
-  const sample = read('sample/packages/rust/interface.json');
+  const sample = plainSample(read('sample/packages/rust/interface.json'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   // Python holds the reference, which PyO3 releases at the drop or at its next acquisition of the GIL.
   const python = text(out, 'packages/python/generated/lib.rs');
@@ -1022,7 +1039,7 @@ test('a language object that a core may keep enters as a Native, which each targ
 });
 
 test('a drop on another thread wakes the Node owner through its unref threadsafe function, which the cleanup aborts under the lock of the owners (GN-6u)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'node'] });
   const node = text(out, 'packages/ts/generated/lib.rs');
   // The owner makes the function with its table, without a JavaScript function, and unrefs it.
@@ -1041,7 +1058,7 @@ test('a drop on another thread wakes the Node owner through its unref threadsafe
 });
 
 test('Go deletes the cgo.Handle of every func that a buffer gives before it decodes the buffer, whatever the decoding finds (GN-6u)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] });
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   // Rust lists the handles of a buffer first, and a func node is the index of its handle in the list.
@@ -1061,7 +1078,7 @@ test('Go deletes the cgo.Handle of every func that a buffer gives before it deco
 });
 
 test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6u)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const libs = [['python', 'packages/python/generated/lib.rs'], ['node', 'packages/ts/generated/lib.rs'], ['php', 'packages/php-ext/generated/lib.rs'], ['wasm', 'packages/ts/wasm/generated/lib.rs'], ['go', 'packages/go/internal/ffi/generated/lib.rs']] as const;
   for (const [lang, path] of libs) {
@@ -1084,7 +1101,7 @@ test('a Raised holds the key of the thrown object as a Native, whose last drop r
 
 test('a generated test gives an object through a native row and back, and counts that the binding released it (GN-6u)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
-  const sample = read('sample/packages/rust/interface.json');
+  const sample = plainSample(read('sample/packages/rust/interface.json'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /def test_gn6u_same_gives_back_the_same_object_and_releases_it\(self\) -> None:\n        pkg\.same\(_Subject\(\)\)\n        subject = _Subject\(\)\n        before = sys\.getrefcount\(subject\)\n        self\.assertIs\(pkg\.same\(subject\), subject\)\n        pkg\.same\(_Subject\(\)\)\n        self\.assertEqual\(sys\.getrefcount\(subject\), before\)\n        alive = weakref\.ref\(subject\)\n        del subject\n        self\.assertIsNone\(alive\(\)\)/);
@@ -1107,13 +1124,23 @@ test('a generated test gives an object through a native row and back, and counts
 });
 
 // The consumer sample of the end-to-end check, which names the value alias of the sample (tests/e2e/consumer).
-const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+// GN-6ar: the consumer of the end-to-end check as it is, whose owner gives its alias data the classes box, cell and
+// ratio. Go and WASM refuse those rows by name, so the tests of the other rules read consumerSample, which is the
+// same consumer whose owner has no such row.
+const consumerFixture = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   return {
     contract: read('consumer/packages/rust/interface.json'),
     caseFiles: new Map([['contracts/cases.json', read('consumer/contracts/cases.json')]]),
     foreign: new Map([['sample', read('sample/packages/rust/interface.json')]]),
   };
+};
+const consumerSample = (): ReturnType<typeof consumerFixture> => {
+  const parts = consumerFixture();
+  plainSample(parts.foreign.get('sample'));
+  const cases = parts.caseFiles.get('contracts/cases.json') as { pair: { id: string }[] };
+  cases.pair = cases.pair.filter((kase) => kase.id !== 'a_reference_of_the_owner_twice');
+  return parts;
 };
 
 // The plot of the end-to-end check, which takes and gives the record point of tests/e2e/points (GN-15f).
@@ -1656,6 +1683,37 @@ test('a value alias of another repository whose rows name a class of its owner m
   assert.throws(refused((data) => { data.in.find((row: any) => row.python === 'box').cases[0].read = 'box.none'; }), /data: the python in row of the class box of sample reads box\.none, which is no public property of the class \(GN-6ar\)/);
 });
 
+test('the consumer of the end-to-end check passes the classes of its owner both ways in Python and Node, and Go and WASM refuse its rows by name (GN-6ar, GN-13, GN-13e, BD-27)', () => {
+  const { contract, caseFiles, foreign } = consumerFixture();
+  const made = (target: 'python' | 'node' | 'php'): ReturnType<typeof generate> => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] });
+  // A case value of the kind reference is an instance of the class of the owner, and a result is read by the classes
+  // of the owner, both through the package of the owner.
+  const python = text(made('python'), 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /^import polyspec\.sample as foreign_sample$/m);
+  assert.match(python, /_KEPT = \(\(foreign_sample\.Box, "box", "entries"\), \(foreign_sample\.Cell, "cell", "value"\), \)/);
+  assert.match(python, /pkg\.pair\(\(r0 := foreign_sample\.Cell\(\), setattr\(r0, "value", "x"\), \[r0\]\)\[-1\]\)/);
+  assert.match(python, /\\"cell #0\\",\\"text 78\\",\\"list 1\\",\\"cell #1\\",\\"text 78\\"/);
+  const node = text(made('node'), 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /^import \* as foreign_sample from '@polyspec\/sample';$/m);
+  assert.match(node, /const KEPT = \[\[foreign_sample\.Box, 'box', 'entries'\], \[foreign_sample\.Cell, 'cell', 'value'\]\];/);
+  assert.match(node, /pkg\.pair\(\(\(\) => \{ const r0 = new foreign_sample\.Cell\(\); r0\.value = 'x'; return \[r0\]; \}\)\(\)\)/);
+  // No case of the consumer is a test that fails by name in Python, Node and PHP.
+  for (const body of [python, node, text(made('php'), 'packages/php-ext/generated/tests/GeneratedTest.php')]) assert.doesNotMatch(body, /(self\.fail|assert\.fail|self::fail)\(["']consumer\./);
+  // BD-27: the contract names the five targets, and Go and WASM refuse the rows of the owner by name.
+  assert.deepEqual([...contract.targets].sort(), ['go', 'node', 'php', 'python', 'wasm']);
+  for (const target of ['go', 'wasm'] as const) {
+    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), new RegExp(`data: the ${target} in row of the class box of sample is not generated yet \\(GN-6ar\\)`), target);
+  }
+  // The owner itself generates its classes for the five targets, PHP without box and cell (CK-78).
+  const owner = foreign.get('sample');
+  const ownerCases = new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
+  const sample = generate({ contract: owner, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: ownerCases });
+  assert.match(text(sample, 'packages/python/generated/lib.rs'), /polyspec_sample::check_box\(/);
+  assert.match(text(sample, 'packages/python/generated/lib.rs'), /polyspec_sample::check_cell\(/);
+  assert.match(text(sample, 'packages/ts/generated/lib.rs'), /polyspec_sample::Ratio::new\(/);
+  assert.doesNotMatch(text(sample, 'packages/php-ext/generated/lib.rs'), /check_box/);
+});
+
 // The consumer sample with the function relay, which takes and gives the value class of the owner fixture (GN-6x).
 const valueClassSample = (): ReturnType<typeof consumerSample> => {
   const parts = consumerSample();
@@ -1702,7 +1760,7 @@ test('a value class of another repository converts through the core of its owner
 });
 
 test('one host reads a value class without core_type and a value class of another repository (B-1, GN-6af, GN-6x)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const targets: Lang[] = ['python', 'node', 'wasm'];
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
@@ -2362,7 +2420,7 @@ test('an error unit extends its parent, and what is not generated is refused by 
 });
 
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const caseFiles = sampleCases();
   const paths = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs'];
   const taken = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
@@ -2375,7 +2433,7 @@ test('a class that no parameter takes has no conversion in, which would copy its
 });
 
 test('a stringify and a to_json are the hooks of each language, and never and only are generated (N-4, GN-6g)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /#\[php\(name = "__toString"\)\]/);
@@ -2427,7 +2485,7 @@ test('a stringify and a to_json are the hooks of each language, and never and on
 });
 
 test('a case gives a callback parameter as a fixture, which the B-4 test runs and reads (G-5, GN-13)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const python = text(out, 'packages/python/generated/tests/test_generated.py');
   assert.match(python, /\ndef _fixture\(members, rows\):/);
@@ -2479,7 +2537,7 @@ test('WASM: map<T> is a Map of string keys, which the module builds (T-2, GN-18)
 });
 
 test('a class with a write place holds its value in a tried lock, which each call takes for its places (B-5c, GN-6h)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const libs = { python: text(out, 'packages/python/generated/lib.rs'), node: text(out, 'packages/ts/generated/lib.rs'), php: text(out, 'packages/php-ext/generated/lib.rs') };
   for (const [lang, lib] of Object.entries(libs)) {
@@ -3445,7 +3503,7 @@ test('a {literal} default of an enum names its constant in default_core, which m
 
 test('a {literal: null} default of a value type is None without a constant, and null is a value (U-2, GN-6i)', () => {
   // sample.describe takes value: data = {literal: null}.
-  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const out = generate({ contract: plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'))), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     const lib = text(out, path);
     assert.match(lib, /let value: Option<polyspec_sample::Data> = default_in\(/, path);
@@ -4115,7 +4173,7 @@ test('the Python G-7 test of a constructor without parameters expects the words 
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   sample.targets.push(...targets);
   if (targets.includes('go')) sample.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   if (targets.includes('wasm')) {
@@ -4135,7 +4193,7 @@ function classSample(targets: string[]): any {
 }
 
 test('WASM: a value alias, its in_raises and a callback unit are generated as for Node (U-7, U-3, GN-18b, GN-18c)', () => {
-  const full = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const full = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: full, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['wasm'] });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
   // U-7: the value enters as the HostValue that the module describes, and leaves by the out rows.
@@ -4203,7 +4261,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
   // GN-18a, GN-6h: a member that writes its receiver takes the write guard of the lock that the table holds.
   const written = classSample(['wasm']);
-  const full2 = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const full2 = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const counter = full2.units.find((u: any) => u.id === 'counter');
   counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
   written.units.push(counter);
@@ -4234,7 +4292,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
 
 // The sample of the end-to-end check, with its case files, after a change.
 const sampleWith = (change: (contract: any, cases: any) => void, targets?: string[]): Map<string, string | Buffer> => {
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const files = sampleCases();
   change(contract, files.get('contracts/cases.json'));
   if (targets !== undefined) contract.targets = targets;
@@ -4374,7 +4432,7 @@ test('fault injection points and the point of another library are armed for the 
   // of the WASM crate reads this entry by entry; here the counts of the crate agree with it.
   const advances = (lib.match(/pub fn advance\(&mut self/g) ?? []).length;
   assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
   // GN-5: a point of another library is armed by the arming of the member, through the entry of this crate, in the
@@ -4474,7 +4532,7 @@ test('the kinds of an alias are checked against its error, run alone and through
 });
 
 test('a binding crate has the test features that its contract needs (GN-5)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const packages = trackedPackages(sample, '0.0.0');
   assert.match(String(packages.get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nthrown-count-test = \[\]\n\n\[/);
   // GN-6u: a target that gives a Native back through a round trip counts the Natives that its table holds.
@@ -4489,7 +4547,7 @@ test('a binding crate has the test features that its contract needs (GN-5)', () 
 });
 
 test('the generator reads the whole contract and names every refused item before it fails (G-4, P-4)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const functions = sample.units.find((u: any) => u.id === 'sample');
   // Refused items in a unit of functions, in a class, in a callback interface and among the kinds of the core error.
   functions.members.find((m: any) => m.id === 'sample.count').native = { python: 'count' };
@@ -4519,7 +4577,7 @@ test('the generator reads the whole contract and names every refused item before
 });
 
 test('the refusals of each target are named together, and a target generates alone what the whole generation writes for it (G-4, GN-1b)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const caseFiles = sampleCases();
   // The targets that the generator takes for the sample, generated at once and one by one.
   const whole = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
@@ -4714,7 +4772,7 @@ test('an error unit in a module is the class of the namespace or the module of i
 });
 
 test('a callback inside a list, an optional or a record parameter enters as a box of the core trait, passed by value (U-3, GN-6aa)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   for (const [path, life] of [
     ['packages/php-ext/generated/lib.rs', "'static"],
@@ -5218,7 +5276,7 @@ ${body.join('\n')}
 
 test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
   const sample = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
-    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     change(contract);
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
   };
@@ -5261,7 +5319,7 @@ test('a member with wait blocking_io that reaches language code runs where its l
 
 test('a member with wait async_driver that reaches language code drives the state machine of its core (GN-6ab)', () => {
   const sample = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
-    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     change(contract);
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
   };
@@ -5336,7 +5394,7 @@ test('a member with wait async_driver that reaches language code drives the stat
 });
 
 test('the generated test of a callback of a member that waits awaits it, and a Go fixture that expects no call reads the length of its calls (GN-6m, G-5)', () => {
-  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'go'] });
+  const out = generate({ contract: plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'))), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'go'] });
   // Each test of a block that awaits is an async function, not only the first.
   const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(node, /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{\n {2}const raised = new Error\('raised by the callback'\);\n {2}await assert\.rejects\(/);
@@ -5349,7 +5407,7 @@ test('the generated test of a callback of a member that waits awaits it, and a G
 
 test('a member with machine takes a function parameter and returns passthrough, which each target refuses by name until it generates them (GN-6ae)', () => {
   const sample = (change: (contract: any) => void, targets: string[]): Map<string, string | Buffer> => {
-    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     change(contract);
     return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: targets as Inputs['targets'] & string[] });
   };
@@ -5376,7 +5434,7 @@ test('a member with machine takes a function parameter and returns passthrough, 
 });
 
 test('a Go helper that only the entry points of a test feature use is compiled under that feature (GN-4)', () => {
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
   // out_list writes the points that a fault-test entry point gives back, and no member of the sample gives a list.
   assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn list_out</);
@@ -5512,7 +5570,7 @@ test('Go links the static library of each platform from its directory in the Go 
 // The sample with the classes store and scope of its core (GN-6ae): a transaction takes a function of a scope and
 // returns what the function returned.
 function scopedSample(targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> {
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   if (!contract.units.some((u: any) => u.id === 'store')) {
     const work = { function: { parameters: [{ unit: 'scope' }], returns: { passthrough: 'T' }, async_allowed: true } };
     const scopedMember = (unit: string, name: string): any => ({ id: `${unit}.${name}`, name: [name], kind: 'method', visibility: 'public', parameters: [{ name: ['work'], type: work, required: true }], returns: { passthrough: 'T' }, raises: [], wait: 'async_driver', core: { path: `polyspec_sample::${unit === 'store' ? 'Store' : 'Scope'}::${name}`, receiver: '&self', machine: true } });
@@ -6166,7 +6224,7 @@ test('no helper of a generated Node or WASM crate has a name of the conversions 
     assert.match(lib, /\nfn callable_in\(/, path);
     assert.match(lib, /\nfn passed_out(?:<'env>)?\(/, path);
     // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
-    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     const units = new Set(['default', 'callable', 'text', ...contract.units.map((u: any) => u.name.join('_'))]);
     const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
     assert.deepEqual(others, [], path);
@@ -6592,7 +6650,7 @@ test('a unit with only is generated for the targets that it lists and is absent 
 });
 
 test('a value class without core_type keeps the language values that its constructor judges and that a value alias reads and makes (U-1, U-7, GN-6af)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const targets = ['python', 'node', 'wasm', 'go'];
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
@@ -6671,7 +6729,7 @@ test('the kept contract of the end-to-end check generates its value classes for 
 });
 
 test('the members of a value class without core_type and a primitive run their cases (GN-13, GN-6af, GN-13d)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const targets = ['python', 'node', 'wasm', 'go'];
   sample.units.push({
     id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6af' },
@@ -6750,7 +6808,7 @@ test('the members of a value class without core_type and a primitive run their c
 });
 
 test('the PHP extension finds the classes of PHP at startup and has no panic (GN-10)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php'] });
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // Only the entry points of the panic test panic, and each allows it by B-7.
@@ -6763,7 +6821,7 @@ test('the PHP extension finds the classes of PHP at startup and has no panic (GN
 });
 
 test('a case value names a reference or an object by its id after its first place, which may make a cycle, and repeats an object (GN-13, G-5)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const targets = ['python', 'node', 'wasm', 'go'];
   const only = { targets, reason: 'the test of GN-6af' };
   sample.units.push(
@@ -6845,7 +6903,7 @@ test('a case value names a reference or an object by its id after its first plac
 });
 
 test('a result of a value alias is compared by the texts of its places in pre-order, which name the form, the identity and the cycles (GN-13e)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const only = { targets: ['python', 'node', 'wasm'], reason: 'the test of GN-13e' };
   sample.units.push(
     {
@@ -6929,7 +6987,7 @@ test('the result of an alias with the entry points of codec-test goes back throu
 });
 
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6af, GN-13)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const data = sample.units.find((u: any) => u.id === 'data');
   data.out.push({ kind: 'reference', make: { php: 'php_reference', python: 'null', node: 'null', go: 'null', wasm: 'null' } });
   const cases = sampleCases();
@@ -7072,7 +7130,7 @@ test('the count and the position of a handle are read by Result::unwrap_or, whic
 });
 
 test('the Python crate declares the cfg pyo3_disable_reference_pool that its generated code reads, in its build script (GN-6u)', () => {
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const out = trackedPackages(contract, '0.0.0');
   assert.match(String(out.get('packages/python/Cargo.toml')), /\npublish = false\nbuild = "build\.rs"\n/);
   assert.match(String(out.get('packages/python/build.rs')), /fn main\(\) \{\n    println!\("cargo::rustc-check-cfg=cfg\(pyo3_disable_reference_pool\)"\);\n\}\n$/);
@@ -7256,7 +7314,7 @@ test('Go reads the list of the handles of a buffer exactly when the Rust crate w
 
 test('a parameter whose callback the core keeps is refused by name in Node and changes no text of the other targets (GN-6aa, CK-90)', () => {
   const kept = (targets: Lang[], keeps: boolean): Map<string, string | Buffer> => {
-    const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     const seek = sample.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'sample.seek');
     if (keeps) seek.parameters[0].keeps = true;
     return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets });
@@ -7364,7 +7422,7 @@ test('the assertion of the borrows of a member names the Io token of wait blocki
 
 test('a Node or WASM member with machine binds the borrow of the guard of a class parameter before its core makes the machine (GN-6ab, GN-6h)', () => {
   const made = (targets: string[]): Map<string, string | Buffer> => {
-    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    const contract = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
     const m = contract.units.flatMap((u: any) => u.members ?? []).find((x: any) => x.id === 'sample.resolve_slowly');
     m.wait = 'async_driver';
     m.core = { path: 'polyspec_sample::resolve_slowly', machine: true };
@@ -7394,6 +7452,12 @@ test('the crates of every contract of the end-to-end check name their functions 
     const foreign = new Map<string, any>((dependencies[name] ?? []).map((library) => [library, read(`${library}/packages/rust/interface.json`)]));
     const units = new Set<string>([contract, ...foreign.values()].flatMap((c: any) => c.units.map((u: any) => u.name.join('_'))));
     for (const target of contract.targets as string[]) {
+      // GN-6ar, BD-27: Go and WASM refuse the rows of the alias of the sample that name its classes, so the consumer has
+      // no crate of those targets yet.
+      if (name === 'consumer' && (target === 'go' || target === 'wasm')) {
+        assert.throws(() => generateTargets({ contract: structuredClone(contract), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read(`${name}/contracts/cases.json`)]]), foreign, targets: [target] as Inputs['targets'] & string[] }), new RegExp(`data: the ${target} in row of the class box of sample is not generated yet \\(GN-6ar\\)`));
+        continue;
+      }
       const out = generateTargets({ contract: structuredClone(contract), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read(`${name}/contracts/cases.json`)]]), foreign, targets: [target] as Inputs['targets'] & string[] });
       const lib = text(out, libs[target] ?? '');
       crates += 1;
@@ -7422,8 +7486,9 @@ test('the crates of every contract of the end-to-end check name their functions 
       }
     }
   }
-  // HR-84: the test read the crates of the eight contracts, each for its five targets.
-  assert.equal(crates, 40);
+  // HR-84: the test read the crates of the eight contracts, each for its five targets, but the two of the consumer
+  // that are refused by name.
+  assert.equal(crates, 38);
 });
 
 test('Node takes the exception of every callback out of the environment where it is called, so a core that answers the Raised returns its value (U-3, GN-6ab)', () => {
@@ -7477,7 +7542,7 @@ test('a crate that keeps what was thrown has the entry point of thrown-count-tes
 });
 
 test('a manifest has the feature thrown-count-test exactly when its crate keeps the table of what was thrown (GN-5)', () => {
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   const plain = load();
   const targets = ['php', 'python', 'node', 'go', 'wasm'] as const;
   const crates = [
@@ -7604,7 +7669,7 @@ test('a case of a variant holds a unit of another repository, whose conversions 
   // The cases of the members run: a value of the class is made as at any other place.
   assert.match(text(packets, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: count many_values_count_each'/);
   // A value alias of this contract in a case stays refused by name.
-  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   sample.units.push({ id: 'held', name: ['held'], module: '', kind: 'variant', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::Held', tag: ['kind'], cases: [{ value: 'one', fields: [{ name: ['value'], type: { unit: 'data' }, required: true }] }] });
   assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /held\.one\.value: a value alias in a case of a variant is not generated yet \(GN-6v\)/);
   // A variant without an alias or a callback keeps the encoding without the call.

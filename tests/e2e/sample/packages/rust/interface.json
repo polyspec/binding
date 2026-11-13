@@ -988,10 +988,10 @@
           },
           "make": {
             "php": "php_object",
-            "python": "map",
-            "node": "map",
-            "go": "map",
-            "wasm": "map"
+            "python": "box.constructor",
+            "node": "box.constructor",
+            "go": "box.constructor",
+            "wasm": "box.constructor"
           }
         },
         {
@@ -1002,6 +1002,16 @@
             "node": "native",
             "go": "native",
             "wasm": "native"
+          }
+        },
+        {
+          "kind": "reference",
+          "make": {
+            "php": "php_reference",
+            "python": "cell.constructor",
+            "node": "cell.constructor",
+            "go": "cell.constructor",
+            "wasm": "cell.constructor"
           }
         }
       ],
@@ -1322,6 +1332,285 @@
               "kind": "native"
             }
           ]
+        },
+        {
+          "php": "reference",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "box",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "box.entries"
+            }
+          ]
+        },
+        {
+          "python": "cell",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "cell.value"
+            }
+          ]
+        },
+        {
+          "node": "box",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "box.entries"
+            }
+          ]
+        },
+        {
+          "node": "cell",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "cell.value"
+            }
+          ]
+        },
+        {
+          "node": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
+          "go": "box",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "box.entries"
+            }
+          ]
+        },
+        {
+          "go": "cell",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "cell.value"
+            }
+          ]
+        },
+        {
+          "wasm": "box",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "box.entries"
+            }
+          ]
+        },
+        {
+          "wasm": "cell",
+          "cases": [
+            {
+              "kind": "reference",
+              "read": "cell.value"
+            }
+          ]
+        },
+        {
+          "wasm": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "box",
+      "name": [
+        "box"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "python",
+          "node",
+          "go",
+          "wasm"
+        ],
+        "reason": "Q-4"
+      },
+      "members": [
+        {
+          "id": "box.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "entries"
+              ],
+              "type": {
+                "keyed_map": {
+                  "unit": "data"
+                },
+                "key": [
+                  "text"
+                ]
+              },
+              "default": {
+                "empty": "map"
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_sample::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::check_box"
+        },
+        {
+          "id": "box.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "keyed_map": {
+              "unit": "data"
+            },
+            "key": [
+              "text"
+            ]
+          },
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "id": "cell",
+      "name": [
+        "cell"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "only": {
+        "targets": [
+          "python",
+          "node",
+          "go",
+          "wasm"
+        ],
+        "reason": "Q-4"
+      },
+      "members": [
+        {
+          "id": "cell.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "default": {
+                "literal": null
+              }
+            }
+          ],
+          "raises": [
+            "polyspec_sample::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::check_cell"
+        },
+        {
+          "id": "cell.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "unit": "data"
+          },
+          "raises": [],
+          "wait": "none",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "id": "ratio",
+      "name": [
+        "ratio"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Ratio",
+      "members": [
+        {
+          "id": "ratio.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Ratio::new"
+        },
+        {
+          "id": "ratio.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Ratio::value",
+            "receiver": "&self"
+          }
         }
       ]
     },
@@ -2248,6 +2537,36 @@
       "member": "store.attempt",
       "file": "contracts/cases.json",
       "group": "store_attempt"
+    },
+    {
+      "member": "box.constructor",
+      "file": "contracts/cases.json",
+      "group": "box_constructor"
+    },
+    {
+      "member": "box.entries",
+      "file": "contracts/cases.json",
+      "group": "box_entries"
+    },
+    {
+      "member": "cell.constructor",
+      "file": "contracts/cases.json",
+      "group": "cell_constructor"
+    },
+    {
+      "member": "cell.value",
+      "file": "contracts/cases.json",
+      "group": "cell_value"
+    },
+    {
+      "member": "ratio.constructor",
+      "file": "contracts/cases.json",
+      "group": "ratio_constructor"
+    },
+    {
+      "member": "ratio.value",
+      "file": "contracts/cases.json",
+      "group": "ratio_value"
     }
   ]
 }

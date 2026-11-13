@@ -227,6 +227,39 @@
         "kind": "text",
         "value": "x"
       }
+    },
+    {
+      "id": "a_reference_comes_back",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          }
+        ]
+      }
     }
   ],
   "size": [
@@ -1372,6 +1405,127 @@
           "result": null
         }
       ]
+    }
+  ],
+  "box_constructor": [
+    {
+      "id": "entries_are_kept",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "no_entries_are_the_empty_map"
+    },
+    {
+      "id": "bytes_are_no_entry",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "bytes",
+            "value": {
+              "hex": "ff"
+            }
+          }
+        ]
+      ],
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "box_entries": [
+    {
+      "id": "the_entries_are_kept",
+      "entries": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ],
+      "result": [
+        [
+          "k",
+          {
+            "kind": "text",
+            "value": "x"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "no_entries_are_the_empty_map",
+      "result": []
+    }
+  ],
+  "cell_constructor": [
+    {
+      "id": "a_text_is_held",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      }
+    },
+    {
+      "id": "nothing_is_held"
+    },
+    {
+      "id": "bytes_are_not_held",
+      "value": {
+        "kind": "bytes",
+        "value": {
+          "hex": "ff"
+        }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "cell_value": [
+    {
+      "id": "the_value_is_kept",
+      "value": {
+        "kind": "text",
+        "value": "x"
+      },
+      "result": {
+        "kind": "text",
+        "value": "x"
+      }
+    },
+    {
+      "id": "nothing_is_null",
+      "result": {
+        "kind": "null"
+      }
+    }
+  ],
+  "ratio_constructor": [
+    {
+      "id": "a_float_is_held",
+      "value": 0.5
+    }
+  ],
+  "ratio_value": [
+    {
+      "id": "the_float_is_kept",
+      "value": 0.5,
+      "result": 0.5
     }
   ]
 }

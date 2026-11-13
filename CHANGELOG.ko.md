@@ -1,11 +1,26 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d1190074b891f69ef06915682802e63c19e0080705ad2a204ecb10adfcd770ff -->
+<!-- source-sha256: 504a5eebee2702bbc73d2e570f11b0838409bd61d444038555dc69f4f1f84032 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end 검사의 어느 fixture에도 owner의 class를 이름하는 값 alias의 행(GN-6ar)이 없었다. 그래서 Python과 Node의
+  constructor 호출과 인스턴스 검사는 어느 실행에서도 돌지 않았고, 생성 시험은 그런 값을 쓸 수 없었다: kind reference의
+  case 값은 "0 value classes keep one value"로 거부되었고, 그 alias의 모든 결과는 "the out form <class>.constructor of
+  <alias> is no class whose constructor takes one value that a property of its name gives back"로 이름을 대고
+  실패했다. 이제 Python과 Node의 생성 시험은 owner의 package를 거쳐 owner의 class의 인스턴스를 쓰고 결과를 owner의
+  class로 읽는다(GN-13, GN-13e, 행 B2.139). `tests/e2e/sample`은 class `box`, `cell`, `ratio`와 그 코어 함수 `check_box`,
+  `check_cell`, 타입 `Ratio`를 가진다: 그 alias `data`는 Python, Node, Go, WASM에서 key가 entry의 index인 map을 `box`로,
+  reference를 `cell`로 만들고, PHP는 자기 object와 reference를 만들며, Node와 WASM은 `ratio`를 그 float로 읽는다.
+  `tests/e2e/consumer`는 `consumer.pair`의 case에서 reference를 양방향으로 넘기고, Python과 Node의 손으로 쓴 시험에서
+  `box`, `cell`, `ratio`를 넘긴다. Go와 WASM은 그 행을 이름을 대고 거부하므로 consumer의 target go와 wasm은 이제부터 그
+  실행의 이름 있는 실패다(BD-27). 다른 규칙의 unit 시험은 owner에 그런 행이 없는 consumer를 읽는다. 다루지 않은 것:
+  `ratio`를 만드는 행이 없고, `box`를 넘기는 case가 없다. case가 index key의 PHP map을 list로 쓰기 때문이다.
+  `packages/ts`의 `npm test`로 검증했다. 시험 작성기를 바꾸기 전에는 fixture의 생성 시험에 `consumer.pair`의 이름 있는
+  실패가 있었다. 실행하지 않은 것: sample의 Rust 소스는 rustfmt로
+  형식만 맞췄고 아무것도 그것을 컴파일하지 않았으며, end-to-end 검사는 실행하지 않았다.
 - 다른 레포의 callback unit을 소유 레포의 member가 만드는 인스턴스로 주는 case의 시험은 "<member> is no member that the
   binding generates"로 실패했다. case가 자기 계약의 member만 읽었기 때문이다. 이제 Python, Node, PHP의 시험은 소유 패키지를
   거쳐 소유 레포의 member로 그 인스턴스를 만든다: factory와 그 receiver, 인자, `then`의 호출이며, Node는 기다리는 소유

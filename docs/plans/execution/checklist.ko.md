@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 19ef0cd1b98c2ee6aac775cd4f6d08dc55e38173e75fc0e3b3101cd91281b33d -->
+<!-- source-sha256: e46d3b5efc8bee2a030a7ef5f0bfa65390ace46d95015ac3ea7da00376d68914 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -50,3 +50,4 @@
 | B2.136 | WASM과 Go가 owner의 class를 이름하는 다른 레포의 값 alias의 행을 생성한다(GN-6ar). 둘 다 `out` 행과 `in` 행을 이름을 대고 거부한다 | `packages/ts/src/generate/alias_wasm.ts`, `packages/ts/src/generate/go.ts`, `packages/ts/src/generate/go_rust.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그런 alias를 주고받는 계약의 `make e2e`, 그 기록이 `evidence: true` | [ ] |
 | B2.137 | WASM과 Go가 다른 레포의 callback unit을 감싼다(GN-6s). 둘 다 그런 unit의 parameter를 이름을 대고 거부하고, Go는 그 타입을 "a unit of another repository other than a value alias or a record"로 거부한다 | `packages/ts/src/generate/wasm.ts`, `packages/ts/src/generate/go.ts`, `packages/ts/src/generate/go_rust.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; `tests/e2e/sample`의 callback을 받는 `make e2e REPO=tests/e2e/consumer`, 그 기록이 `evidence: true` | [ ] |
 | B2.138 | 결과 꼴을 가진 record의 기본값 있는 field를 빼도 되고, case 값이 그것을 뺀다(GN-6i, GN-6a, G-5). 생성기는 모든 field가 없는 record의 case 값을 거부하고, 결과 꼴은 모든 field를 받는다(기본값 없는 Python의 keyword와 PHP의 named argument). variant의 case에는 그 규칙이 이미 있다(GN-6v) | `packages/ts/src/generate/`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그런 record가 있는 `make e2e REPO=tests/e2e/shapes`, 그 기록이 `evidence: true` | [ ] |
+| B2.139 | end-to-end 검사가 owner의 class를 이름하는 값 alias 행의 fixture를 갖고, Python과 Node의 생성 시험이 그런 인스턴스를 쓰고 읽는다(GN-6ar, GN-13, GN-13e). 어느 fixture에도 그런 행이 없었고, 그런 alias의 kind reference인 case 값은 거부되었으며, 그 alias의 모든 결과는 이름을 대고 실패했다. `tests/e2e/sample`이 class `box`, `cell`, `ratio`를 갖고 `tests/e2e/consumer`가 그것들을 양방향으로 넘긴다. 그 target go와 wasm은 B2.136까지 이름 있는 실패다 | `tests/e2e/sample/`, `tests/e2e/consumer/`, `packages/ts/src/generate/samples.ts`, `tests_python.ts`, `tests_node.ts`, `tests_wasm.ts`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; `make e2e REPO=tests/e2e/sample`, 그리고 `make e2e REPO=tests/e2e/consumer DEPS=tests/e2e/sample`이며 그 기록이 php, python, node의 통과를 적는다 | [v] |

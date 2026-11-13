@@ -276,7 +276,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   }
   if (alias !== undefined) {
     if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
-    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
+    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`, alias.library);
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
@@ -597,23 +597,25 @@ export const raisesException = (value: unknown): boolean => {
 // its items; map n, then each key and its value; and an instance of a value class of the out rows, a PHP object and a
 // PHP reference, numbered together by their first place: `<unit> #k`, then its field, `php_object #k n`, then its
 // pairs, `php_reference #k`, then its value, and `<form> again k` at a later place.
-export type TokenForm = { unit: string; cls: string; field: string };
+export type TokenForm = { unit: string; cls: string; field: string; library?: string };
 
 // The value classes that the out rows of an alias name as `<unit>.constructor` in a language, with their field.
 export function aliasKept(model: Model, lang: Lang3, alias: Unit): TokenForm[] {
   const forms: TokenForm[] = [];
+  const library = model.aliases.find((a) => a.unit === alias)?.library;
   for (const row of alias.out ?? []) {
     const make = row.make[lang];
     if (typeof make !== 'string' || !make.endsWith('.constructor')) continue;
     const unit = make.slice(0, -'.constructor'.length);
     if (forms.some((f) => f.unit === unit)) continue;
     // The class of the form: its constructor takes one value, which a property of the same name gives back.
-    const cls = model.contract.units.find((u) => u.id === unit);
+    // GN-6ar: the class of a row of an alias of another repository is a class of the contract of the owner.
+    const cls = (library === undefined ? model.contract : model.foreign.get(library))?.units.find((u) => u.id === unit);
     const params = cls?.members?.find((m) => m.kind === 'constructor')?.parameters ?? [];
     const [param] = params;
     const property = param === undefined ? undefined : cls?.members?.find((m) => m.kind === 'property' && m.name.join('_') === param.name.join('_'));
     if (cls === undefined || param === undefined || params.length !== 1 || property === undefined) throw new Unsupported(`the out form ${make} of ${alias.id} is no class whose constructor takes one value that a property of its name gives back, with which a result is not compared yet`);
-    forms.push({ unit, cls: langName(lang, cls.name, 'class'), field: langName(lang, param.name, 'variable') });
+    forms.push({ unit, cls: langName(lang, cls.name, 'class'), field: langName(lang, param.name, 'variable'), ...(library === undefined ? {} : { library }) });
   }
   return forms;
 }
@@ -817,10 +819,10 @@ function keyedField(model: Model, unit: string): readonly string[] {
 // content, then filled, in an expression that names it: a closure in PHP, whose references are variables that the
 // places take by reference, an assignment expression of a tuple in Python and an arrow function in Node and WASM, so
 // every place of an id holds the same instance and a later place inside the first makes a cycle.
-function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
+function valueFromJson(model: Model, ctx: Context, value: unknown, where: string, library?: string): string {
   const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
   if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
-  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set() };
+  const making: Making = { made: [], fills: [], references: new Set(), objects: new Set(), ...(library === undefined ? {} : { library }) };
   const value_ = valueOf(model, ctx, value, where, making, false);
   if (making.made.length === 0 && making.fills.length === 0) return value_;
   if (ctx.lang === 'python') return `(${[...making.made, ...making.fills, value_].join(', ')})[-1]`;
@@ -844,6 +846,9 @@ interface Making {
   fills: string[];
   references: Set<number>;
   objects: Set<number>;
+  // GN-6ar: the library that owns the alias of the value, when it is another repository: an object and a reference
+  // are then instances of the classes of that repository, which the test names through the package of the owner.
+  library?: string;
 }
 
 // The id of a reference or of an object of a case value (G-5).
@@ -862,6 +867,14 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   const lang = ctx.lang;
   const keyOf = (key: unknown): string => caseKey(key, (keyKind, raw) => (keyKind === 'int' ? intKey(lang, raw) : fromJson(model, ctx, keyKind, raw)));
   const fieldOf = (cls: KeptClass): string => langName(lang === 'python' ? 'python' : 'node', cls.fields[0]?.name ?? [], 'variable');
+  // GN-6af, GN-6ar: the class that keeps the content, of this contract or of the owner of the alias, and its name in
+  // the test: through pkg, or through the package of the owner.
+  const keptClass = (holds: 'entries' | 'value'): KeptClass => keptOf(making.library === undefined ? model : ownerModel(model, making.library, ctx.target ?? ctx.lang).model, holds, where);
+  const classOf = (cls: KeptClass): string => {
+    if (making.library === undefined) return `pkg.${langName(lang === 'python' ? 'python' : 'node', cls.unit.name, 'class')}`;
+    if (ctx.foreignClass === undefined) throw new Unsupported(`a case value of ${where} is an instance of the class ${cls.unit.id} of ${making.library}, which this target does not name in a test (GN-6ar)`);
+    return ctx.foreignClass(making.library, cls.unit);
+  };
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
   if (kind === 'bool') return fromJson(model, ctx, 'bool', held);
   if (kind === 'text') return fromJson(model, ctx, 'text', held);
@@ -901,8 +914,8 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   // GN-6af: an object is an instance of the value class that keeps a keyed map, and a reference one of the class that
   // keeps one value; PHP takes its own stdClass and its own references, the places that take a variable by reference.
   if (kind === 'object') {
-    const cls = lang === 'php' ? undefined : keptOf(model, 'entries', where);
-    const empty = cls === undefined ? 'new \\stdClass()' : lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map())`;
+    const cls = lang === 'php' ? undefined : keptClass('entries');
+    const empty = cls === undefined ? 'new \\stdClass()' : lang === 'python' ? `${classOf(cls)}({})` : `new ${classOf(cls)}(new Map())`;
     const field = cls === undefined ? '' : fieldOf(cls);
     // G-5: n objects, each the one property key of the one around it; Python, Node and WASM make them from the
     // outermost in and fill each after it is made, so no constructor judges the objects inside it again.
@@ -940,7 +953,7 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
       return lang === 'python' ? `${k}: ${v}` : lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     if (cls === undefined) return `(object) [${entries.join(', ')}]`;
-    return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}({${entries.join(', ')}})` : `new pkg.${langName('node', cls.unit.name, 'class')}(new Map([${entries.join(', ')}]))`;
+    return lang === 'python' ? `${classOf(cls)}({${entries.join(', ')}})` : `new ${classOf(cls)}(new Map([${entries.join(', ')}]))`;
   }
   if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
     const ref = held as Record<string, unknown>;
@@ -957,9 +970,9 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
       making.fills.push(`$r${id} = ${valueOf(model, ctx, ref['value'], where, making, false)};`);
       return name;
     }
-    const cls = keptOf(model, 'value', where);
+    const cls = keptClass('value');
     const field = fieldOf(cls);
-    making.made.push(lang === 'python' ? `r${id} := pkg.${langName('python', cls.unit.name, 'class')}()` : `const r${id} = new pkg.${langName('node', cls.unit.name, 'class')}();`);
+    making.made.push(lang === 'python' ? `r${id} := ${classOf(cls)}()` : `const r${id} = new ${classOf(cls)}();`);
     const inner = valueOf(model, ctx, ref['value'], where, making, false);
     making.fills.push(lang === 'python' ? `setattr(r${id}, ${pyString(field)}, ${inner})` : `r${id}.${field} = ${inner};`);
     return name;
@@ -2067,18 +2080,32 @@ export function phpCaseTests(model: Model): CaseTest[] {
 // GN-13e: the value classes of the out rows of the aliases of the contract, which a result of an alias holds.
 export function tokenForms(model: Model, lang: Lang3): TokenForm[] {
   const forms: TokenForm[] = [];
-  for (const alias of model.aliases.filter((a) => a.library === undefined && a.unit.out !== undefined)) {
-    for (const form of aliasKept(model, lang, alias.unit)) if (!forms.some((f) => f.unit === form.unit)) forms.push(form);
+  // GN-6ar: a value alias of another repository gives the classes of its owner, a value class of another repository
+  // (GN-6x) gives none of these.
+  for (const alias of model.aliases.filter((a) => a.unit.kind !== 'class' && a.unit.out !== undefined)) {
+    let kept: TokenForm[];
+    try {
+      kept = aliasKept(model, lang, alias.unit);
+    } catch (error) {
+      // A row of an alias of another repository whose class has no such form refuses the result of each case that
+      // holds the alias by name (GN-13e), so it gives no form here.
+      if (alias.library === undefined || !(error instanceof Unsupported)) throw error;
+      kept = [];
+    }
+    for (const form of kept) if (!forms.some((f) => f.unit === form.unit && f.library === form.library)) forms.push(form);
   }
   return forms;
 }
+
+// The name of the module that holds the class of a form in a test: pkg, or the package of the owner (GN-6ar).
+const tokenOwner = (form: TokenForm): string => (form.library === undefined ? 'pkg' : `foreign_${form.library.replaceAll('-', '_')}`);
 
 // GN-13e: the tokens of a result in Node and WASM, as aliasTokens writes those of a case value.
 export function nodeTokens(forms: TokenForm[]): string {
   return `
 // GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
 // a container with its count, and an instance numbered by its first place.
-const KEPT = [${forms.map((f) => `[pkg.${f.cls}, ${jsString(f.unit)}, ${jsString(f.field)}]`).join(', ')}];
+const KEPT = [${forms.map((f) => `[${tokenOwner(f)}.${f.cls}, ${jsString(f.unit)}, ${jsString(f.field)}]`).join(', ')}];
 function tokens(top) {
   const out = [];
   const stack = [top];
@@ -2129,7 +2156,7 @@ export function pythonTokens(forms: TokenForm[]): string {
 
 # GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
 # a container with its count, and an instance numbered by its first place.
-_KEPT = (${forms.map((f) => `(pkg.${f.cls}, ${pyString(f.unit)}, ${pyString(f.field)}), `).join('')})
+_KEPT = (${forms.map((f) => `(${tokenOwner(f)}.${f.cls}, ${pyString(f.unit)}, ${pyString(f.field)}), `).join('')})
 
 
 def _tokens(top):

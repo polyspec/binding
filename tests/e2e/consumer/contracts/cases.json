@@ -37,6 +37,59 @@
           }
         ]
       }
+    },
+    {
+      "id": "a_reference_of_the_owner_twice",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "reference",
+            "value": {
+              "id": 0,
+              "value": {
+                "kind": "text",
+                "value": "x"
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "list",
+            "value": [
+              {
+                "kind": "reference",
+                "value": {
+                  "id": 0,
+                  "value": {
+                    "kind": "text",
+                    "value": "x"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "kind": "list",
+            "value": [
+              {
+                "kind": "reference",
+                "value": {
+                  "id": 1,
+                  "value": {
+                    "kind": "text",
+                    "value": "x"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "fetch": [

@@ -6,6 +6,7 @@ import os
 import unittest
 
 import polyspec.consumer as consumer
+import polyspec.sample as sample
 
 CASES = os.environ["CASES"]
 
@@ -94,6 +95,16 @@ class ContractCaseTest(unittest.TestCase):
                     self.assertIs(type(caught.exception), consumer.ConsumerValueError)
                     self.assertEqual(caught.exception.kind, "unsupported")
                     self.assertIsNone(caught.exception.status)
+
+    def test_classes_of_the_owner(self) -> None:
+        """An instance of a class of the owner that a row of the alias names crosses both ways (GN-6ar)."""
+        # The keys of a map without entries are the indexes of its entries, so the owner gives it as a box.
+        for box in consumer.pair(sample.Box({})):
+            self.assertIs(type(box), sample.Box)
+            self.assertEqual(box.entries, {})
+        for cell in consumer.pair(sample.Cell("x")):
+            self.assertIs(type(cell), sample.Cell)
+            self.assertEqual(cell.value, "x")
 
 
 if __name__ == "__main__":
