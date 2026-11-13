@@ -471,7 +471,7 @@
   U+0000~U+00FF의 rune이 바이트마다 하나인 Go 문자열이다(Go는 문자열을 UTF-8로 읽기 때문이다): C ABI는 UTF-8로 받아 U+00FF를
   넘는 rune을 kind `invalid_text`로 거부하고, 바이트는 같은 code point의 rune으로 나간다(B-8, 모든 언어와 같은 규칙). 코어의
   문자열은 UTF-8 바이트로 나간다. 상수가 아닌 enum 값은 kind
-  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지키며, GN-12a의 범위만은 예외로 C ABI가 안전 정수 밖의 `int`나 `uint`를 kind `invalid_number`로 거부한다. `Map[T]`는 T-2의 순서 있는 map이며,
+  `invalid_argument_type`이다. 코어를 부르는 함수는 마지막에 `error`를 돌려준다(E-7). B-2와 G-7은 Go 타입과 컴파일러가 지키며, GN-12a의 범위만은 예외로 C ABI가 안전 정수 밖의 `int`나 `uint`를 kind `invalid_number`로 거부한다. optional 값은 tag와 값으로 C ABI를 나가며, C ABI는 PHP, Python, Node처럼 그것을 코어 값의 참조의 `Option`(`as_ref`)으로 받는다. 그래서 값의 타입이 코어의 타입이 되고, int나 text 같은 값의 제네릭 출력 변환이 받을 타입이 하나로 정해진다. `Map[T]`는 T-2의 순서 있는 map이며,
   쓰는 패키지가 선언하는 `internal/binding.Map`의 별칭이다. 반복 순서가 무작위인 Go map이 아니다: `Set`은 새 key를 끝에
   두고 있는 key의 자리는 지키며, `Keys`는 순서대로 주고, 0값이나 nil `*Map`은 비어 있다. C ABI는 길이와 순서대로의 항목으로
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의

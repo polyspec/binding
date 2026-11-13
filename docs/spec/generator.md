@@ -570,7 +570,10 @@ the design ids are those of the binding design.
   the core leaves as its UTF-8 bytes. An enum value that is not one of the
   constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
   hold by the Go types and the compiler, except the range of GN-12a: the C ABI refuses an `int` or a `uint` outside the
-  safe integers as kind `invalid_number`. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
+  safe integers as kind `invalid_number`. An optional value leaves the C ABI as a tag and its value, and the C ABI
+  takes it as an `Option` of a reference to the value of the core (`as_ref`), as PHP, Python and Node do, so the type
+  of the value is the type of the core: a generic output conversion of the value, such as that of an int or a text,
+  then has one type to take. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
   package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
   others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
   crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
