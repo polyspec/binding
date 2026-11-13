@@ -41,6 +41,21 @@ test('a value that is no instance is kind invalid_argument_type (B-1)', () => {
   }
 });
 
+test('a generated interface takes the classes that implement it (GN-6ap)', () => {
+  const a = new pkg.Tag('a');
+  assert.equal(pkg.labelOf(a), '#a');
+  assert.equal(pkg.labelOf(a.gate()), 'gate of a');
+  assert.equal(pkg.labelOr(null, 'none'), 'none');
+  assert.equal(pkg.labelOr(a, 'none'), '#a');
+  assert.equal(a.names(a), true);
+  assert.equal(a.names(new pkg.Tag('b').gate()), false);
+  for (const bad of [null, undefined, 1, 'a', {}, Object.create(pkg.Tag.prototype)]) {
+    assert.throws(() => pkg.labelOf(bad), type);
+    assert.throws(() => a.names(bad), type);
+  }
+  assert.throws(() => pkg.labelOr(1, 'none'), type);
+});
+
 test('a static member and a method give the kind of the core (B-4)', () => {
   assert.throws(() => pkg.Tag.parse(''), missing);
   assert.throws(() => new pkg.Tag('a').withSuffix(''), missing);

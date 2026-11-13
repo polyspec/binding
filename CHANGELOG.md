@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- A generated interface unit was refused by name (`connection: a generated interface unit is not generated yet`), and
+  with it each class that `implements` it and each parameter typed by it. A generated interface without members is
+  now generated for PHP, Python, Node, Go and WASM (GN-6ap): `core_type` names the type that the core takes, the core
+  has `impl From<&C> for <core_type>` for the core type `C` of each implementing class, and a parameter typed by the
+  interface, or by an `optional` of it, takes an instance of an implementing class, whose value the binding reads and
+  gives the core as that `From`; any other value is `InvalidArgumentType`. The interface is a PHP interface of the
+  extension, a Python `abc.ABC` with which the package registers the classes, `export interface` in the declaration
+  files of Node and WASM, and a Go interface with one unexported method. `binding check` judges the unit, its
+  implementing classes, the places that name it and its case values (CK-77). A generated interface that declares
+  members and one of another repository stay refused by name. `tests/e2e/classes` has the interface `named` of `tag`
+  and `gate` with a function, a function with an optional and a method that take it. Verified by `make test-ts`: 7
+  of the 8 new tests failed on the generator without the change, and 421 of 421 pass with it.
 - The helpers `handle_count` and `handle_position` of the PHP, Python, Node and WASM crates matched the result of
   `try_from` by hand under an allow of `clippy::manual_unwrap_or`, whose reason named `unwrap_or` disallowed; R-1
   disallows that family for `Option` only, and the generated code calls `Result::unwrap_or` elsewhere. The eight

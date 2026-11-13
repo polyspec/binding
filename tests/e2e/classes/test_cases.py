@@ -50,6 +50,27 @@ class ContractCaseTest(unittest.TestCase):
                     call()
                 self.assertEqual(caught.exception.kind, "invalid_argument_type")
 
+    def test_a_generated_interface_takes_the_classes_that_implement_it(self) -> None:
+        # GN-6ap: Named is the abstract base class of Tag and Gate, and a parameter of it takes an instance of either.
+        a = pkg.Tag("a")
+        self.assertIsInstance(a, pkg.Named)
+        self.assertIsInstance(a.gate(), pkg.Named)
+        self.assertNotIsInstance(object(), pkg.Named)
+        self.assertEqual(pkg.label_of(a), "#a")
+        self.assertEqual(pkg.label_of(a.gate()), "gate of a")
+        self.assertEqual(pkg.label_or(None, "none"), "none")
+        self.assertEqual(pkg.label_or(a, "none"), "#a")
+        self.assertIs(a.names(a), True)
+        self.assertIs(a.names(pkg.Tag("b").gate()), False)
+        for bad in (None, 1, "a", {}, object()):
+            for call in (lambda: pkg.label_of(bad), lambda: a.names(bad)):
+                with self.assertRaises(pkg.ClassesTypeError) as caught:
+                    call()
+                self.assertEqual(caught.exception.kind, "invalid_argument_type")
+        with self.assertRaises(pkg.ClassesTypeError) as caught:
+            pkg.label_or(1, "none")
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")
+
     def test_a_static_member_and_a_method_give_the_kind_of_the_core(self) -> None:
         for call in (lambda: pkg.Tag.parse(""), lambda: pkg.Tag("a").with_suffix("")):
             with self.assertRaises(pkg.ClassesValueError) as caught:

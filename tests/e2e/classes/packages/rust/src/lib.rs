@@ -125,6 +125,12 @@ impl Tag {
         (0..count).map(|_index| self.clone()).collect()
     }
 
+    /// Whether the value has the name of the tag (GN-6ap: a method that takes a generated interface).
+    #[must_use]
+    pub fn names(&self, named: Named) -> bool {
+        named.name() == self.name
+    }
+
     /// The string form of the tag (N-4: stringify).
     #[must_use]
     pub fn label(&self) -> String {
@@ -336,6 +342,55 @@ async fn on_runtime() -> Result<(), Error> {
         Err(error) => Err(Error::Unsupported {
             what: format!("a call outside a tokio runtime: {error}"),
         }),
+    }
+}
+
+/// What has a label: a tag or a gate (GN-6ap: the type that the core takes for the classes of a generated interface).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Named {
+    /// A tag, whose label is its string form.
+    Tag(Tag),
+    /// A gate, whose label names its tag.
+    Gate(Gate),
+}
+
+impl From<&Tag> for Named {
+    fn from(tag: &Tag) -> Self {
+        Self::Tag(tag.clone())
+    }
+}
+
+impl From<&Gate> for Named {
+    fn from(gate: &Gate) -> Self {
+        Self::Gate(gate.clone())
+    }
+}
+
+impl Named {
+    /// The name that the value has: that of the tag, or of the tag of the gate.
+    fn name(&self) -> &str {
+        match self {
+            Self::Tag(tag) => &tag.name,
+            Self::Gate(gate) => &gate.tag,
+        }
+    }
+}
+
+/// The label of a tag or of a gate (GN-6ap: a parameter typed by a generated interface).
+#[must_use]
+pub fn label_of(named: Named) -> String {
+    match named {
+        Named::Tag(tag) => tag.label(),
+        Named::Gate(gate) => format!("gate of {}", gate.tag),
+    }
+}
+
+/// The label of a tag or of a gate, or the fallback when there is none (GN-6ap: an optional of a generated interface).
+#[must_use]
+pub fn label_or(named: Option<Named>, fallback: &str) -> String {
+    match named {
+        Some(named) => label_of(named),
+        None => fallback.to_owned(),
     }
 }
 

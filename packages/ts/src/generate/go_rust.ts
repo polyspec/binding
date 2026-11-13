@@ -17,6 +17,7 @@ import {
   errorMatched,
   recognizedFn,
   recognizedMatch,
+  interfaceOf, implementorsOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -90,6 +91,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
+  if (unit !== undefined && interfaceOf(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -591,6 +593,26 @@ fn alias_out_${plain}(output: &mut Vec<u8>, value: ${core}) {
     out_${plain}(output, value);
 }
 ${nested}`;
+}
+
+// GN-6ap: a value of a generated interface is the position of its class among the classes that implement the
+// interface, from 1, and the handle of the instance; the core takes the From of the value that the instance holds.
+function interfaceRust(model: Model, iface: Unit): string {
+  const goIface = langName('go', iface.name, 'class');
+  const core = iface.core_type ?? '';
+  return `
+/// GN-6ap: a value of the interface ${goIface} is an instance of a class that implements it, whose value the core takes
+/// as ${core}. Position 0 is a nil interface.
+fn in_${plainName(iface)}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
+    match in_uint(input)? {
+${implementorsOf(model, iface).map((o, i) => `        ${i + 1} => in_${plainName(o.unit)}(input, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held)),
+`).join('')}        _ => {
+            in_uint(input)?;
+            Err(type_error(subject, ${rustString(goIface)}))
+        }
+    }
+}
+`;
 }
 
 function objectStatics(model: Model, object: ObjectClass): string {
@@ -1473,6 +1495,7 @@ function rustUsed(model: Model): string {
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.variants.map((v) => variantRust(model, v)),
     ...model.objects.map((o) => objectHelpers(model, o)),
+    ...model.interfaces.map((i) => interfaceRust(model, i)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
   const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);

@@ -149,8 +149,8 @@ describe('CK-6 cycles', () => {
   test('an implements cycle', () =>
     fails('CK-6', '/units/', (c) => {
       c.units.push(
-        { id: 'a', name: ['a'], module: 'session', kind: 'interface', visibility: 'public', origin: 'generated', implements: [{ unit: 'b' }], members: [] },
-        { id: 'b', name: ['b'], module: 'session', kind: 'interface', visibility: 'public', origin: 'generated', implements: [{ unit: 'a' }], members: [] },
+        { id: 'a', name: ['a'], module: 'session', kind: 'interface', visibility: 'public', origin: 'host', implements: [{ unit: 'b' }], members: [] },
+        { id: 'b', name: ['b'], module: 'session', kind: 'interface', visibility: 'public', origin: 'host', implements: [{ unit: 'a' }], members: [] },
       );
     }));
 });
@@ -603,6 +603,39 @@ describe('CK-8 the kinds of an alias (U-7, E-5)', () => {
     fails('CK-8', `${at('value')}/in_raises`, (c) => { unit(c, 'value').in_raises = ['sample::Error::TooLarge']; }));
 });
 
+describe('CK-77 a generated interface', () => {
+  // The fixture with the generated interface holder, which the class session implements.
+  const held = (c: any): any => {
+    c.units.push({ id: 'holder', name: ['holder'], module: 'session', kind: 'interface', visibility: 'public', origin: 'generated', core_type: 'sample::Holder', members: [] });
+    unit(c, 'session').implements = [{ unit: 'holder' }];
+    return unit(c, 'holder');
+  };
+  test('a generated interface that a generated class implements is accepted', () => {
+    assert.deepEqual(findings((c) => { held(c); }), []);
+  });
+  test('a generated interface without core_type', () => {
+    const found = findings((c) => { delete held(c).core_type; });
+    assert.deepEqual(found.map((f) => [f.check, f.message]), [['CK-77', 'the generated interface holder names in core_type the type that the core takes (GN-6ap)']]);
+  });
+  test('a generated interface that no class implements', () => {
+    const found = findings((c) => { held(c); delete unit(c, 'session').implements; });
+    assert.deepEqual(found.map((f) => [f.check, f.message]), [['CK-77', 'no class of this contract implements the generated interface holder (GN-6ap)']]);
+  });
+  test('a return that names a generated interface', () =>
+    fails('CK-77', `${at('forms')}/members/0/returns`, (c) => { held(c); member(c, 'forms.parse').returns = { unit: 'holder' }; }));
+  test('a parameter that names a generated interface inside a list', () => {
+    const found = findings((c) => {
+      held(c);
+      member(c, 'forms.parse').parameters.push({ name: ['holders'], type: { list: { unit: 'holder' } }, default: { empty: 'list' } });
+    });
+    assert.ok(found.some((f) => f.check === 'CK-77' && /forms\.parse\.holders names the generated interface holder inside another type/.test(f.message)), JSON.stringify(found));
+  });
+  test('a field that names a generated interface', () => {
+    const found = findings((c) => { held(c); unit(c, 'session_options').fields.push({ name: ['holder'], type: { optional: { unit: 'holder' } }, default: { literal: null }, reason: 'U-1' }); });
+    assert.ok(found.some((f) => f.check === 'CK-77' && /a field of session_options names the generated interface holder/.test(f.message)), JSON.stringify(found));
+  });
+});
+
 describe('CK-67 the borrow of a class parameter', () => {
   test('a borrow of a parameter whose type is no class', () =>
     fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => { member(c, 'forms.parse').parameters[0].core = '&mut'; }));
@@ -889,6 +922,18 @@ describe('CK-22 every member names its cases (K-1)', () => {
     }
     return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
   };
+  test('a case gives a generated interface an instance value of a class that implements it (CK-77, GN-6ap)', () => {
+    const held = (c: any): void => {
+      c.units.push({ id: 'holder', name: ['holder'], module: 'session', kind: 'interface', visibility: 'public', origin: 'generated', core_type: 'sample::Holder', members: [] });
+      unit(c, 'memory_store').implements = [...(unit(c, 'memory_store').implements ?? []), { unit: 'holder' }];
+      unit(c, 'memory_store').members.push({ id: 'memory_store.new', name: ['new'], kind: 'constructor', visibility: 'public', wait: 'none', parameters: [], returns: 'self', raises: [], core: 'sample::MemoryStore::new' });
+    };
+    const holder = { name: ['holder'], type: { unit: 'holder' } };
+    assert.deepEqual(withParam(holder, 'holder', { new: 'memory_store.new' }, held).filter((f) => f.check === 'CK-22' && f.path === parseCases()), []);
+    for (const value of ['a', { new: 'session.new', args: {} }, { callback: {} }]) {
+      assert.match(withParam(holder, 'holder', value, held).map((f) => f.message).join('\n'), /holder is no instance value, made by new, of a class that implements the generated interface holder \(CK-77, GN-6ap\)/, JSON.stringify(value));
+    }
+  });
   const stores = { name: ['stores'], type: { list: { unit: 'store' } } };
   test('a case gives a callback inside another type as its fixture (G-5, GN-13)', () => {
     assert.deepEqual(withParam(stores, 'stores', [{ callback: { 'store.read': [row] } }]), []);

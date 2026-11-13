@@ -199,6 +199,7 @@ class Checker {
     this.awaitableNames();
     this.reservedNames();
     this.callbacks();
+    this.generatedInterfaces();
     this.packageNames();
     this.coreBuild();
     this.caseLinks();
@@ -1662,6 +1663,20 @@ class Checker {
     if ('function' in type) return this.functionValue(type.function.parameters, value, what, report);
     if (!('unit' in type) || type.library !== undefined) return;
     const unit = this.units.get(type.unit)?.value;
+    // CK-77, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
+    if (unit?.kind === 'interface' && unit.origin === 'generated') {
+      const instance = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+      const id = instance?.['new'] ?? instance?.['from'];
+      const made = typeof id === 'string' ? this.members.get(id) : undefined;
+      const returns = made?.member.returns;
+      // The class of an instance made by new: that of its constructor, or the class that its factory returns.
+      const at = made === undefined || instance?.['new'] === undefined ? undefined : returns === undefined || returns === 'self' ? made.unit.id : typeof returns === 'object' && 'unit' in returns && returns.library === undefined ? returns.unit : undefined;
+      const implementer = at === undefined ? undefined : this.units.get(at)?.value;
+      if (implementer === undefined || !(implementer.implements ?? []).some((ref) => ref.library === undefined && ref.unit === unit.id)) {
+        return report(`${what} is no instance value, made by new, of a class that implements the generated interface ${unit.id} (CK-77, GN-6ap)`);
+      }
+      return this.instanceValue(implementer.id, value, report, what);
+    }
     if (unit?.origin === 'callback') {
       // An instance of a class of this contract that implements the interface is given as an instance value (GN-13f).
       const instance = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -1782,6 +1797,8 @@ class Checker {
     if ('unit' in type && type.library === undefined && !seen.has(type.unit)) {
       const unit = this.units.get(type.unit)?.value;
       if (unit?.origin === 'callback') return true;
+      // CK-77: a value of a generated interface is an instance value, judged as a value of language code is.
+      if (unit?.kind === 'interface' && unit.origin === 'generated') return true;
       if (unit?.kind === 'record') return (unit.fields ?? []).some((f) => this.takesCode(f.type, new Set([...seen, type.unit])));
     }
     return false;
@@ -1860,6 +1877,50 @@ class Checker {
       const machine = typeof member.core === 'object' && member.core.machine === true;
       if (needs && !machine) this.report('CK-68', `${path}/core`, `${member.id} waits with async_driver and reaches language code, so its core path gives a state machine, which core names by machine: true (GN-6ab)`);
       if (machine && !needs) this.report('CK-68', `${path}/core/machine`, `${member.id} is no member with async_driver that reaches language code, so its core path gives no state machine (GN-6ab)`);
+    }
+  }
+
+  // ---- CK-77: generated interfaces (generator GN-6ap) ----
+
+  generatedInterfaces(): void {
+    const names = (type: unknown, id: string): boolean => {
+      if (Array.isArray(type)) return type.some((part) => names(part, id));
+      if (typeof type !== 'object' || type === null) return false;
+      const record = type as Record<string, unknown>;
+      if (record['unit'] === id && record['library'] === undefined) return true;
+      return Object.values(record).some((part) => names(part, id));
+    };
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'interface' || unit.origin !== 'generated') continue;
+      if (unit.core_type === undefined) this.report('CK-77', path, `the generated interface ${unit.id} names in core_type the type that the core takes (GN-6ap)`);
+      if (unit.core !== undefined) this.report('CK-77', `${path}/core`, `the generated interface ${unit.id} declares no core, because the core does not call it (GN-6ap)`);
+      let implemented = false;
+      for (const { value: other, path: at } of this.units.values()) {
+        const index = (other.implements ?? []).findIndex((ref) => ref.library === undefined && ref.unit === unit.id);
+        if (index < 0) continue;
+        implemented = true;
+        if (other.kind !== 'class' || other.origin !== 'generated' || other.core_type === undefined) {
+          this.report('CK-77', `${at}/implements/${index}`, `${other.id} implements the generated interface ${unit.id}, so it is a generated class with a core_type (GN-6ap)`);
+        }
+      }
+      if (!implemented) this.report('CK-77', path, `no class of this contract implements the generated interface ${unit.id} (GN-6ap)`);
+      const only = `the binding converts an instance to ${unit.core_type ?? 'the core type'} only as it enters a call (GN-6ap)`;
+      for (const { member, unit: owner, path: at } of this.members.values()) {
+        for (const [i, parameter] of (member.parameters ?? []).entries()) {
+          const inner = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+          const direct = typeof inner === 'object' && 'unit' in inner && inner.library === undefined && inner.unit === unit.id;
+          if (direct && owner.origin === 'callback') this.report('CK-77', `${at}/parameters/${i}/type`, `a member of a callback interface names the generated interface ${unit.id}; ${only}`);
+          else if (!direct && names(parameter.type, unit.id)) this.report('CK-77', `${at}/parameters/${i}/type`, `${member.id}.${parameter.name.join('_')} names the generated interface ${unit.id} inside another type; ${only}`);
+        }
+        for (const key of ['returns', 'type', 'yields'] as const) {
+          if (names(member[key], unit.id)) this.report('CK-77', `${at}/${key}`, `${member.id} names the generated interface ${unit.id} in its ${key}; ${only}`);
+        }
+      }
+      for (const { value: other, path: at } of this.units.values()) {
+        for (const located of this.unitFieldTypes(other, at)) {
+          if (names(located.value, unit.id)) this.report('CK-77', located.path, `a field of ${other.id} names the generated interface ${unit.id}; ${only}`);
+        }
+      }
     }
   }
 

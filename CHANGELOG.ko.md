@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a3a1d89c95eaf298c465ae713c702a24638613e5703f2bf6b8c27b0ccfdf489d -->
+<!-- source-sha256: fbf6ea32bd272060ba8e16660c8fc11a420b3bfd2367bd6f63cfb0d2c617d327 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- generated interface unit은 이름으로 거절되었고(`connection: a generated interface unit is not generated yet`), 그것을
+  `implements`하는 class와 그것으로 type된 parameter도 함께 거절되었다. member 없는 generated interface를 이제 PHP,
+  Python, Node, Go, WASM에 대해 생성한다(GN-6ap): `core_type`은 core가 받는 타입을 이름하고, core는 각 구현 class의
+  core 타입 `C`에 대해 `impl From<&C> for <core_type>`을 가지며, 그 interface나 그것의 `optional`로 type된 parameter는
+  구현 class의 instance를 받는다. binding은 그 값을 읽어 그 `From`으로 core에 주고, 그 밖의 값은
+  `InvalidArgumentType`이다. interface는 PHP에서 extension의 interface, Python에서 패키지가 class를 등록하는 `abc.ABC`,
+  Node와 WASM에서 선언 파일의 `export interface`, Go에서 export되지 않은 method 하나를 가진 interface다. `binding
+  check`는 그 unit, 구현 class, 그것을 이름하는 자리, case 값을 판정한다(CK-77). member를 선언하는 generated
+  interface와 다른 레포의 generated interface는 이름으로 거절된 채 남는다. `tests/e2e/classes`는 `tag`와 `gate`의
+  interface `named`와, 그것을 받는 함수, optional로 받는 함수, method를 가진다. `make test-ts`로 검증했다: 변경 없는
+  생성기에서 새 테스트 8개 가운데 7개가 실패했고, 변경과 함께 421개 가운데 421개가 통과한다.
 - PHP, Python, Node, WASM crate의 helper `handle_count`와 `handle_position`은 `clippy::manual_unwrap_or` allow 아래에서
   `try_from`의 결과를 손으로 match했고, 그 이유는 `unwrap_or`가 금지라고 했다. R-1은 그 계열을 `Option`에만 금지하고, 생성
   코드는 다른 곳에서 `Result::unwrap_or`를 부른다. 이제 여덟 helper는 allow 없이 `try_from(value).unwrap_or(MAX)`이고,

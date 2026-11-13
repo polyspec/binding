@@ -7,7 +7,7 @@ import type { Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut } from './model.ts';
+import { type Arg, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -92,6 +92,13 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   const variant = variantOf(model, type);
   const plain = variant?.cases.find((kase) => caseFields(model, variant, kase).every((f) => f.boxed !== 'box'));
   if (variant !== undefined && plain !== undefined) return caseNew(ctx, variant, plain, (plain.unit.fields ?? []).map((f) => placeholder(model, ctx, f.type)));
+  // GN-6ap: a value of a generated interface is an instance of the first class that implements it and has a factory.
+  const iface = interfaceOf(model, type);
+  if (iface !== undefined) {
+    const made = implementorsOf(model, iface).find((o) => o.members.some((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === o.unit)));
+    if (made === undefined) throw new Unsupported(`no placeholder for ${shown(type)}: no class that implements ${iface.id} has a factory (G-5, GN-6ap)`);
+    return placeholder(model, ctx, { unit: made.unit.id }, rich);
+  }
   if (unit?.origin === 'callback') return ctx.callbackNew(unit, { returns: 'null' });
   // U-7: a value of a value alias is the value that its first out row of a built-in form makes for this language.
   if (unit?.kind === 'alias') {
@@ -275,6 +282,9 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   if (unit?.origin === 'callback' && libraryOf(type) === undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(implementerInstance(model, unit, value));
   }
+  // GN-13f, GN-6ap: a value of a generated interface is an instance value of a class that implements it.
+  const iface = interfaceOf(model, type);
+  if (iface !== undefined && ctx.instanceNew !== undefined) return ctx.instanceNew(interfaceInstance(model, iface, value));
   // GN-13f: the value of a class is an instance value, at any place of the case.
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
   // value at a place of a callback is an instance of a class that implements it (GN-13f).
@@ -1029,6 +1039,21 @@ export function implementerInstance(model: Model, callback: Unit, value: unknown
   })());
   if (implementer === undefined) throw new Error(`${where} is an instance value of no class that implements it (GN-13f, GN-6w)`);
   return instanceOf(model, implementer.unit.id, value, where);
+}
+
+// GN-13f, GN-6ap: the instance of an instance value at the place of a generated interface, of the first class of the
+// target that implements the interface and that the factory of the value makes; a value that no such class makes is
+// not written, which fails the test of its case by name (GN-13e).
+export function interfaceInstance(model: Model, iface: Unit, value: unknown): Receiver {
+  const where = `a case value of ${iface.id}`;
+  for (const implementer of implementorsOf(model, iface)) {
+    try {
+      return instanceOf(model, implementer.unit.id, value, where);
+    } catch (error) {
+      if (!(error instanceof Unsupported)) throw error;
+    }
+  }
+  throw new Unsupported(`${where} is an instance value of no class of the target that implements it (G-5, GN-13f, GN-6ap)`);
 }
 
 export function instanceOf(model: Model, unitId: string, value: unknown, where: string): Receiver {

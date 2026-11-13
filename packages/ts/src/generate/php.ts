@@ -3,7 +3,7 @@
 import type { Name, Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -67,7 +67,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if ('function' in type) return functionIn(model, type.function, value, subject);
   if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
-  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
+  if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
@@ -828,6 +828,23 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 `;
 }
 
+// GN-6ap: a value of a generated interface is an instance of a class that implements it; the core takes the From of
+// the value that the instance holds.
+function interfaceRust(model: Model, iface: Unit): string {
+  const label = langName('php', iface.name, 'class');
+  const core = iface.core_type ?? '';
+  return `
+/// GN-6ap: a value of the interface ${label} is an instance of a class that implements it, whose value the core takes
+/// as ${core}.
+fn in_${rustField(iface.name)}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+${implementorsOf(model, iface).map((o) => `    if <&entry::Php${langName('php', o.unit.name, 'class')} as FromZval>::from_zval(value).is_some() {
+        return in_${rustField(o.unit.name)}(value, subject).map(|held| <${core} as From<&${o.unit.core_type ?? ''}>>::from(&held));
+    }
+`).join('')}    Err(type_error(subject, ${rustString(label)}))
+}
+`;
+}
+
 // U-3: a callback is a struct that holds the PHP object and implements the core trait; an exception of the PHP code, or
 // a failure of the binding in the callback, goes to the core as a Raised that the generated caller throws again.
 function callbackRust(model: Model, cb: CallbackUnit): string {
@@ -981,7 +998,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]${(object.unit.implements ?? []).flatMap((ref) => model.callbacks.filter((c) => ref.library === undefined && c.unit.id === ref.unit)).map((c) => `\n#[php(implements(ce = interface_${recordFn(c.unit)}, stub = ${rustString(`\\${phpNamespace(layout, c.unit.module)}\\${langName('php', c.unit.name, 'class')}`)}))]`).join('')}${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
+#[php(flags = ClassFlags::Final)]${(object.unit.implements ?? []).flatMap((ref) => [...model.callbacks.map((c) => c.unit), ...model.interfaces].filter((u) => ref.library === undefined && u.id === ref.unit)).map((u) => `\n#[php(implements(ce = interface_${recordFn(u)}, stub = ${rustString(`\\${phpNamespace(layout, u.module)}\\${langName('php', u.name, 'class')}`)}))]`).join('')}${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${heldType(object)},
 }
@@ -1080,6 +1097,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     }),
     ...model.objects.map((object) => objectOut(model, object)),
     ...[...model.callbacks, ...model.foreignCallbacks].map((c) => callbackRust(model, c)),
+    ...model.interfaces.map((i) => interfaceRust(model, i)),
     model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     failureRust(model),
     foreignFailurePhp(model),
@@ -1226,7 +1244,8 @@ ${unitProperties}`;
     }`).join('');
   // U-3: a callback interface is a PHP interface of the extension, which PHP code implements (or not: the extension
   // checks the methods of the object it receives).
-  const registerInterfaces = model.callbacks.map((cb) => {
+  // GN-6ap: a generated interface is an interface of the extension without a method, which its classes implement.
+  const registerInterfaces = [...model.callbacks, ...model.interfaces.map((unit) => ({ unit, members: [] as CallbackUnit['members'] }))].map((cb) => {
     const phpName = `${phpNamespace(layout, cb.unit.module)}\\${langName('php', cb.unit.name, 'class')}`;
     const methods = cb.members.map((m) => `
         .method(
@@ -1248,7 +1267,7 @@ ${unitProperties}`;
   const variantName = (unit: Unit): string => `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
   // GN-6v, GN-6w: the interfaces of the extension that a class of the extension implements: the variants, and the
   // callbacks that a class implements.
-  const ownInterfaces = [...model.variants.map((v) => v.unit), ...model.objects.flatMap((o) => (o.unit.implements ?? []).flatMap((ref) => model.callbacks.filter((c) => ref.library === undefined && c.unit.id === ref.unit).map((c) => c.unit)))].filter((u, i, all) => all.indexOf(u) === i);
+  const ownInterfaces = [...model.variants.map((v) => v.unit), ...model.objects.flatMap((o) => (o.unit.implements ?? []).flatMap((ref) => [...model.callbacks.map((c) => c.unit), ...model.interfaces].filter((u) => ref.library === undefined && u.id === ref.unit)))].filter((u, i, all) => all.indexOf(u) === i);
   // B-4: an interface that startup registered and does not find fails the start, as a missing class of PHP does.
   const found = (units: Unit[]): string => units.map((u) => `
     if builtin_class(${rustString(variantName(u))}).is_none() {
@@ -1358,7 +1377,7 @@ fn remember(index: usize, class: &'static ClassEntry) {
 }
 
 ${ownInterfaces.map((u) => `
-/// ${u.kind === 'variant' ? 'T-9: the interface of the variant, which the classes of its cases implement' : 'GN-6w: the interface of the callback, which a class of the extension implements'}.
+/// ${u.kind === 'variant' ? 'T-9: the interface of the variant, which the classes of its cases implement' : u.origin === 'generated' ? 'GN-6ap: the generated interface, which the classes of the extension that it names implement' : 'GN-6w: the interface of the callback, which a class of the extension implements'}.
 fn ${u.kind === 'variant' ? 'variant' : 'interface'}_${recordFn(u)}() -> &'static ClassEntry {
     own_interface(${rustString(`${phpNamespace(layout, u.module)}\\${langName('php', u.name, 'class')}`)})
 }
@@ -1696,7 +1715,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
   }
   const modules = [...new Set([
     ...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module),
-    ...model.resultRecords.map((u) => u.module), ...model.variants.map((v) => v.unit.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module),
+    ...model.resultRecords.map((u) => u.module), ...model.variants.map((v) => v.unit.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module), ...model.interfaces.map((i) => i.module),
   ])].sort();
   const method = (fn: Fn, indent: string): string => {
     // U-2: the declaration shows a {literal} or {const} default; null stands for a default whose value is the core's.
@@ -1775,6 +1794,13 @@ ${isInternal(cb.unit) ? '         * @internal\n' : ''}         */
       items.push(`${doc(cb.unit, 'U-3: a callback that PHP code implements.', '    ')}    interface ${langName('php', cb.unit.name, 'class')}
     {
 ${lines.join('\n')}    }
+`);
+    }
+    // GN-6ap: a generated interface, which the classes that implement it name.
+    for (const iface of model.interfaces.filter((i) => i.module === module)) {
+      items.push(`${doc(iface, 'GN-6ap: the interface of the classes that a parameter of it takes.', '    ')}    interface ${langName('php', iface.name, 'class')}
+    {
+    }
 `);
     }
     for (const object of model.objects.filter((o) => o.unit.module === module)) {

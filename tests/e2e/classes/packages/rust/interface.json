@@ -273,8 +273,77 @@
           ],
           "wait": "async_driver",
           "core": "polyspec_classes::settle"
+        },
+        {
+          "id": "classes.label_of",
+          "name": [
+            "label",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "named"
+              ],
+              "type": {
+                "unit": "named"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::label_of"
+        },
+        {
+          "id": "classes.label_or",
+          "name": [
+            "label",
+            "or"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "named"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "named"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "fallback"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::label_or"
         }
       ]
+    },
+    {
+      "id": "named",
+      "name": [
+        "named"
+      ],
+      "module": "",
+      "kind": "interface",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Named",
+      "members": []
     },
     {
       "id": "tag",
@@ -287,6 +356,11 @@
       "origin": "generated",
       "core_type": "polyspec_classes::Tag",
       "final": true,
+      "implements": [
+        {
+          "unit": "named"
+        }
+      ],
       "members": [
         {
           "id": "tag.new",
@@ -569,6 +643,32 @@
             "path": "polyspec_classes::Tag::gates",
             "receiver": "&self"
           }
+        },
+        {
+          "id": "tag.names",
+          "name": [
+            "names"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "named"
+              ],
+              "type": {
+                "unit": "named"
+              },
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::names",
+            "receiver": "&self"
+          }
         }
       ]
     },
@@ -584,6 +684,11 @@
       "core_type": "polyspec_classes::Gate",
       "final": true,
       "constructible": false,
+      "implements": [
+        {
+          "unit": "named"
+        }
+      ],
       "members": [
         {
           "id": "gate.enter",
@@ -859,6 +964,21 @@
       "member": "gate.enter_later",
       "file": "contracts/cases.json",
       "group": "gate_enter_later"
+    },
+    {
+      "member": "classes.label_of",
+      "file": "contracts/cases.json",
+      "group": "label_of"
+    },
+    {
+      "member": "classes.label_or",
+      "file": "contracts/cases.json",
+      "group": "label_or"
+    },
+    {
+      "member": "tag.names",
+      "file": "contracts/cases.json",
+      "group": "tag_names"
     }
   ]
 }
