@@ -67,7 +67,7 @@ function pointerTo(v: Values, type: Type, inner: string): string {
 
 const hexBytes = (value: unknown, what: string): string => {
   const hex = typeof value === 'object' && value !== null ? (value as { hex?: unknown }).hex : undefined;
-  if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${what} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+  if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Unsupported(`a case value of the type ${what} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
   return `[]byte(${goBytes((hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)))})`;
 };
 
@@ -76,12 +76,12 @@ const hexBytes = (value: unknown, what: string): string => {
 function textValue(value: unknown): string {
   if (typeof value === 'object' && value !== null && 'hex' in value) {
     const hex = (value as { hex?: unknown }).hex;
-    if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex) || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text, {"ill_formed": "<text>"} or {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+    if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex) || Object.keys(value).length !== 1) throw new Unsupported(`a case value of the type text is a text, {"ill_formed": "<text>"} or {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
     return `"${(hex.match(/../g) ?? []).map((pair) => `\\x${pair}`).join('')}"`;
   }
   if (typeof value === 'object' && value !== null) {
     const text = (value as { ill_formed?: unknown }).ill_formed;
-    if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
+    if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Unsupported(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
     return `${goString(text).slice(0, -1)}\\xff"`;
   }
   return goString(String(value));
@@ -91,7 +91,7 @@ function floatValue(value: unknown): string {
   if (typeof value === 'object' && value !== null) {
     const name = (value as { float?: unknown }).float;
     const form = typeof name === 'string' ? ({ nan: 'math.NaN()', inf: 'math.Inf(1)', '-inf': 'math.Inf(-1)' } as Record<string, string>)[name] : undefined;
-    if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+    if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
     return form;
   }
   return String(value);
@@ -115,7 +115,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (type === 'bytes') return hexBytes(json, type);
     // T-1: a source is a text or {"hex": ...}, both a []byte.
     if (type === 'source') return typeof json === 'string' ? `[]byte(${goString(json)})` : hexBytes(json, type);
-    throw new Error(`no Go case value of the type ${type}`);
+    throw new Unsupported(`no Go case value of the type ${type}`);
   }
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
@@ -134,7 +134,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
-    if (!isInstanceValue(json)) throw new Error(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} (GN-13f)`);
+    if (!isInstanceValue(json)) throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} (GN-13f)`);
     return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
   }
   const unit = unitOf(v.model, type);
@@ -148,13 +148,13 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
       const key = langName('python', f.name, 'variable');
       if (!(key in fields)) {
         if (f.default !== undefined) return `${goName(f.name)}: nil`;
-        throw new Error(`a case value of the record ${unit.id} has no field ${key}`);
+        throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
       }
       const inner = value(v, b, f.type, fields[key]);
       return `${goName(f.name)}: ${f.default === undefined || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
     }).join(', ')}}`;
   }
-  throw new Error(`no Go case value of the type ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
 }
 
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
@@ -163,7 +163,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
 function aliasValue(unit: Unit, json: unknown, where: string): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
-  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
+  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
   const held = record['value'];
   if (kind === 'null') return 'nil';
   if (kind === 'bool') return String(held === true);
@@ -175,7 +175,7 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   }
   if (kind === 'int') {
     const token = typeof held === 'bigint' || (typeof held === 'number' && Number.isSafeInteger(held)) ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
+    if (token === undefined) throw new Unsupported(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
     const wide = BigInt(token);
     if (wide >= -(2n ** 63n) && wide < 2n ** 63n) return `int64(${token})`;
     if (wide >= 0n && wide < 2n ** 64n) return `uint64(${token})`;
@@ -184,7 +184,7 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it.
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
+    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
     return `func() any { var inner any = ${aliasValue(unit, held, where)}; for range ${repeat} { inner = []any{inner} }; return inner }()`;
   }
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasValue(unit, item, where)).join(', ')}}`;
@@ -231,7 +231,7 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return `${typeName(v, type)}${goName(first.name)}`;
   if (unit?.kind === 'record') return `${typeName(v, type)}{${(unit.fields ?? []).map((f) => `${goName(f.name)}: ${f.default === undefined ? placeholder(v, b, f.type, rich) : 'nil'}`).join(', ')}}`;
-  throw new Error(`no Go placeholder for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go placeholder for ${JSON.stringify(type)}`);
 }
 
 // The call of a member as a Go expression: a function, a constructor or a static member by its name, any other member

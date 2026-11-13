@@ -1318,6 +1318,65 @@ test('the classes repository of the end-to-end check is generated for WASM too (
   }
 });
 
+// U-1: the classes repository with a class of origin value, token, whose out rows make each kind by a static member, and
+// a function that takes it, with a case of each kind.
+function tokenClasses(): { contract: any; caseFiles: Map<string, unknown> } {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const fiveOf = (member: string): Record<string, string> => Object.fromEntries(FIVE.map((t) => [t, member]));
+  const make = (id: string, name: string, parameters: any[]): any => ({ id: `token.${id}`, name: [name], kind: 'static', visibility: 'public', parameters, returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: `polyspec_classes::Token::${id}` } });
+  contract.units.push({ id: 'token_kind', name: ['token', 'kind'], module: '', kind: 'enum', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::TokenKind', variants: ['word', 'flag', 'none', 'list', 'pair'].map((v) => ({ name: [v], value: v })) });
+  contract.units.push({
+    id: 'token', name: ['token'], module: '', kind: 'class', visibility: 'public', origin: 'value', core_type: 'polyspec_classes::Token', constructible: false, final: true,
+    members: [
+      { id: 'token.kind', name: ['kind'], kind: 'property', visibility: 'public', returns: { unit: 'token_kind' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::kind', receiver: '&self' } },
+      make('word', 'word', [{ name: ['text'], type: 'text', required: true }]),
+      make('flag', 'flag', [{ name: ['value'], type: 'bool', required: true }]),
+      make('none', 'none', []),
+      make('list', 'list', [{ name: ['items'], type: { list: { unit: 'token' } }, required: true }]),
+      make('pair', 'pair', [{ name: ['left'], type: { unit: 'token' }, required: true }, { name: ['right'], type: { unit: 'token' }, required: true }]),
+    ],
+    out: [['text', 'token.word'], ['bool', 'token.flag'], ['null', 'token.none'], ['list', 'token.list'], ['map', 'token.pair']].map(([kind, member]) => ({ kind, make: fiveOf(member as string) })),
+    in: FIVE.map((t) => ({ [t]: 'token', by: 'token.kind', cases: [{ is: 'word', kind: 'text' }, { is: 'flag', kind: 'bool' }, { is: 'none', kind: 'null' }, { is: 'list', kind: 'list' }, { is: 'pair', kind: 'map' }] })),
+  });
+  const functions = contract.units.find((u: any) => u.kind === 'functions');
+  functions.members.push({ id: 'classes.show', name: ['show'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'token' }, required: true }], returns: 'text', raises: [], wait: 'none', core: 'polyspec_classes::show' });
+  contract.cases.push({ member: 'classes.show', file: 'contracts/cases.json', group: 'show' });
+  cases.show = [
+    { id: 'a_word', value: { kind: 'text', value: 'a' }, result: '"a"' },
+    { id: 'a_list', value: { kind: 'list', value: [{ kind: 'null' }, { kind: 'bool', value: true }] }, result: '[null,true]' },
+    { id: 'a_map', value: { kind: 'map', value: [] }, result: '{}' },
+  ];
+  return { contract, caseFiles: new Map([['contracts/cases.json', cases]]) };
+}
+
+test('a case value of a class of origin value is the call of the member that its out row of the kind names (U-1, GN-13)', () => {
+  const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /test\('GN-13e: show a_word', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.show\(pkg\.Token\.word\('a'\)\)\), ordered\('"a"'\)\);/);
+  assert.match(node, /pkg\.show\(pkg\.Token\.list\(\[pkg\.Token\.none\(\), pkg\.Token\.flag\(true\)\]\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.show\(pkg\.Token\.word\('a'\)\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.show\(pkg\.Token\.word\("a"\)\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /show\(\\Polyspec\\Classes\\ClassesToken::word\("a"\)\)|show\([^\n]*Token::word\("a"\)\)/);
+  // G-4, GN-13e: a kind whose member takes more than one value is not written, so its case fails by name and the other
+  // tests of the target run; the generation does not end with an exception.
+  assert.match(node, /test\('GN-13e: show a_map', \(\) => \{\n\s+assert\.fail\('the case a_map of classes\.show: the kind map of token is made by token\.pair, which takes more than one value, so a case value of it is not written \(U-1, G-5\)'\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_a_map\(self\) -> None:\n\s+self\.fail\("the case a_map of classes\.show: the kind map of token/);
+});
+
+test('a case value that the generator does not write fails the test of its case by name, not the generation (G-4, GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  (caseFiles.get('contracts/cases.json') as any).show.push({ id: 'no_kind', value: 'a', result: 'a' }, { id: 'raised', value: { kind: 'text', value: 1 }, raises: { kind: 'missing', status: null, category: 'value' } });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /assert\.fail\('the case no_kind of classes\.show: a case value of token is \{"kind": <value kind>, "value": \.\.\.\}, not "a" \(G-5\)'\);/);
+  // G-4: a value that no test can make, the placeholder of a class without a factory, refuses the target by name.
+  const gate = tokenClasses();
+  gate.contract.units.find((u: any) => u.kind === 'functions').members.find((m: any) => m.id === 'classes.show').parameters[0].type = { unit: 'gate' };
+  assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {

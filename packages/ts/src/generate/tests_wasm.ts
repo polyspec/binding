@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -20,7 +20,7 @@ export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
-  const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+  const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {
@@ -161,6 +161,14 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('B-4: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
+});`);
+        continue;
+      }
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
@@ -200,6 +208,14 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
         out.push(`
 test('GN-13e: ${name} ${kase.id}', () => {
   assert.fail(${jsString(kase.refused)});
+});`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
 });`);
         continue;
       }

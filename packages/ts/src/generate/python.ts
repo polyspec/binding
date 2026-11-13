@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -310,7 +310,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `in_${recordFn(unit ?? { name: [] }, aliasOf(model, type)?.library)}(py, ${value}, ${subject})`;
   }
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(py, ${value}, ${subject})`;
-  throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Python input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -333,7 +333,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(py, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(py, ${value})`;
-  throw new Error(`no Python output conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Python output conversion for ${JSON.stringify(type)}`);
 }
 
 function enumRust(model: Model, unit: Unit): string {

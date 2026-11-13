@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
+  generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
+  generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,
+  `Value.array` of the values of its list), and a case whose value the generator does not write, such as a kind made
+  by a member of two parameters, has a test that fails with the reason while the other tests of the target are
+  written. Every other value that the generator does not write refuses the target by name in place of an exception
+  (GN-13). Verified by `npm test` in `packages/ts`.
 - binding had no CI and no release. `.github/workflows/ci.yml` runs every target of `make check` and `make
   release-coverage` on `ubuntu-26.04-arm` for the push of `main` and a manual run, in the jobs `ts` and `rust`, and its
   last job `ci-passed` passes only when both passed. `.github/workflows/release.yml` tags the commit of such a run with
