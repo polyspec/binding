@@ -871,7 +871,10 @@ impl Store {
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped { audit: true, ..Scoped::new(self.entries, function) }
+        Scoped {
+            audit: true,
+            ..Scoped::new(self.entries, function)
+        }
     }
 
     /// Runs `function` with a new scope whose entries are dropped, and gives whether it returned: the core drops the
@@ -884,7 +887,10 @@ impl Store {
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         Attempted {
-            scope: Scope { parent: self.entries, pending: Entries::default() },
+            scope: Scope {
+                parent: self.entries,
+                pending: Entries::default(),
+            },
             function,
             begun: false,
             called: None,
@@ -985,7 +991,10 @@ impl<F> Scoped<F> {
     }
 
     /// Ends with `failure` at once, or, with an audit, after the wait that writes the entry `audited`.
-    fn failed(&mut self, failure: Failure<Error>) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
+    fn failed(
+        &mut self,
+        failure: Failure<Error>,
+    ) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
         if !self.audit {
             self.stage = Stage::Ended;
             return binding_core::machine::Step::Done(Err(failure));
@@ -1091,7 +1100,9 @@ fn dropped_elsewhere(raised: binding_core::Raised) -> Result<(), Error> {
     {
         std::thread::spawn(move || drop(raised))
             .join()
-            .map_err(|_panic| Error::Internal { detail: String::from("the drop of a Raised panicked") })
+            .map_err(|_panic| Error::Internal {
+                detail: String::from("the drop of a Raised panicked"),
+            })
     }
     #[cfg(target_family = "wasm")]
     {
@@ -1121,7 +1132,11 @@ where
                 Step::Done(Ok(true))
             }
             Some(Err(Failure::Raised(raised))) if !entries_of(&self.scope.pending).is_empty() => {
-                Step::Done(dropped_elsewhere(raised).map(|()| false).map_err(Failure::Kind))
+                Step::Done(
+                    dropped_elsewhere(raised)
+                        .map(|()| false)
+                        .map_err(Failure::Kind),
+                )
             }
             Some(Err(failure)) => Step::Done(Err(failure)),
         }
