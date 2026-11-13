@@ -3191,7 +3191,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, passed_out\(env, value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, passed_out\(env, result\)\?\)\)/);
   // A fulfilled value enters the table again, and a rejection is held as the exception of the function.
   assert.match(lib, /fn outcome_of\(env: &Env, settled: Unknown<'_>\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.get_type\(\)\.map_err\(internal\)\? == ValueType::Undefined \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = tuple_in\(settled, "settled"\)\?;\n {4}if bool_in\(fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(env, value\)\?\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Held\(Owned::boxed\(env, value\)\?\)\)\)\)\)\n\}/);
-  assert.match(lib, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(env, settled\)\?;\n\s+tuple_out\(env, vec!\[uint_out\(env, step\)\?, value\]\)/);
+  assert.match(lib, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let advanced = \(self\.advance\)\(env, settled\);\n\s+\/\/ U-3: [^\n]*\n\s+self\.raised\.append\(&mut raised_taken\(\)\);\n\s+if !matches!\(advanced, Ok\(\(0 \| 1, _\)\)\) \{\n\s+raised_released\(&std::mem::take\(&mut self\.raised\)\);\n\s+\}\n\s+let \(step, value\) = advanced\?;\n\s+tuple_out\(env, vec!\[uint_out\(env, step\)\?, value\]\)/);
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
@@ -3321,7 +3321,7 @@ test('WASM makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, passed_out\(value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, passed_out\(result\)\?\)\)/);
   // A fulfilled value enters the table again, and a rejection is kept as the exception of the function.
   assert.match(lib, /fn outcome_of\(settled: &JsValue\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.is_undefined\(\) \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = tuple_in\(settled, "settled"\)\?;\n {4}if bool_in\(&fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(value\)\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Js\(value\)\)\)\)\)\n\}/);
-  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(settled\)\?;\n\s+tuple_out\(&\[JsValue::from\(step\), value\]\)/);
+  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let advanced = \(self\.advance\)\(settled\);\n\s+\/\/ U-3: [^\n]*\n\s+self\.raised\.append\(&mut raised_taken\(\)\);\n\s+if !matches!\(advanced, Ok\(\(0 \| 1, _\)\)\) \{\n\s+raised_released\(&std::mem::take\(&mut self\.raised\)\);\n\s+\}\n\s+let \(step, value\) = advanced\?;\n\s+tuple_out\(&\[JsValue::from\(step\), value\]\)/);
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
   assert.match(mjs, /return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.__Store_transaction\(this\.#handle, args\[0\]\)\)\);/);
@@ -3549,7 +3549,7 @@ test('the Node and WASM crates of the sample define each function once and name 
   assert.match(node, /get_element\(index\)\.map_err\(js_raised\)\?;/);
   // clippy type_complexity: the boxed closure of an advance has a name.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /pub struct Driven \{\n\s+advance: Advance,\n\s+\}/);
+  assert.match(wasm, /pub struct Driven \{\n\s+advance: Advance,\n\s+\/\/\/ U-3: [^\n]*\n\s+raised: Vec<u64>,\n\s+\}/);
   assert.match(wasm, /type Advance = Box<dyn FnMut\(JsValue\) -> Result<\(u32, JsValue\), Fail>>;/);
 });
 
