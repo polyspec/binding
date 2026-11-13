@@ -1369,6 +1369,77 @@ test('the relay of the value class of json is generated for every target, Go inc
   assert.match(goMod, /\nrequire github\.com\/polyspec\/json\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/json\/packages\/go => \.\.\/\.\.\/\.\.\/json\/packages\/go\n$/);
 });
 
+// GN-6x, GN-13, GN-13b: the generated tests of the relay give carry an instance of the class of json, which the members
+// of its out rows make through the package of json; the text of each of the five tests is read here, because a test
+// that writes a built-in value in the place of the class raises no error of the generator.
+const RELAY_TESTS = {
+  python: 'packages/python/generated/tests/test_generated.py',
+  node: 'packages/ts/generated/tests/generated.test.mjs',
+  wasm: 'packages/ts/wasm/generated/tests/generated.test.mjs',
+  php: 'packages/php-ext/generated/tests/GeneratedTest.php',
+  go: 'packages/go/zz_generated_test.go',
+} as const;
+
+test('a case value of a value class of another repository is the call of the make member of its owner in the five targets (GN-6x, GN-13, GN-13b)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  const tests = Object.fromEntries(Object.entries(RELAY_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof RELAY_TESTS, string>;
+  for (const [target, file] of Object.entries(tests)) {
+    // No case of carry is a test that fails by name: every kind that the contract of json carries is written.
+    assert.doesNotMatch(file, /is not generated( for Go)? yet/, target);
+    assert.doesNotMatch(file, /the case \w+ of relay\.carry/, target);
+    assert.doesNotMatch(file, /a key of a keyed map in a case/, target);
+  }
+  // Python: the module of json is imported, and each kind is the static member of its out row.
+  assert.match(tests.python, /^import polyspec\.json as foreign_json$/m);
+  assert.match(tests.python, /def test_gn13e_carry_a_text\(self\) -> None:\n\s+pkg\.carry\(foreign_json\.Value\.string\("name\\xe9"\)\)/);
+  assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.from_units\(\[55296\]\)\)/);
+  assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.number\("123456789012345678901234567890"\)\)/);
+  // A map fills the class that the member of its row takes: the constructor, an insert for each pair, a key that the
+  // case writes as {kind, value} by its own kind, and the member on the filled instance.
+  assert.match(tests.python, /pkg\.carry\(\(lambda filled: \(filled\.insert\(foreign_json\.Value\.from_units\(\[56320\]\), foreign_json\.Value\.null\(\)\), filled\.insert\(foreign_json\.Value\.string\("k"\), foreign_json\.Value\.from_units\(\[55296\]\)\), foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)/);
+  assert.match(tests.python, /filled\.insert\(foreign_json\.Value\.string\("list"\), foreign_json\.Value\.array\(\[foreign_json\.Value\.boolean\(True\), foreign_json\.Value\.number\("-1\.5e3"\), foreign_json\.Value\.null\(\)\]\)\)/);
+  // Node and WASM: the same members by their names of JavaScript, through the package of json and its subpath ./wasm.
+  assert.match(tests.node, /^import \* as foreign_json from '@polyspec\/json';$/m);
+  assert.match(tests.wasm, /^import \* as foreign_json from '@polyspec\/json\/wasm';$/m);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.string\('name\\u00e9'\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.fromUnits\(\[55296\]\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.number\('123456789012345678901234567890'\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(\(\(\) => \{ const filled = new foreign_json\.OrderedMap\(\); filled\.insert\(foreign_json\.Value\.fromUnits\(\[56320\]\), foreign_json\.Value\.null\(\)\); filled\.insert\(foreign_json\.Value\.string\('k'\), foreign_json\.Value\.fromUnits\(\[55296\]\)\); return foreign_json\.Value\.object\(filled\); \}\)\(\)\)/, target);
+  }
+  // PHP: the classes by the namespace of json.
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::string\("name\\xc3\\xa9"\)\)/);
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\)/);
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::number\("123456789012345678901234567890"\)\)/);
+  assert.match(tests.php, /\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); \$filled->insert\(\\Polyspec\\Json\\Value::fromUnits\(\[56320\]\), \\Polyspec\\Json\\Value::null\(\)\); \$filled->insert\(\\Polyspec\\Json\\Value::string\("k"\), \\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)/);
+  // Go: each value is a local of the test that a function of the Go module of json makes, and carry takes the local,
+  // never a built-in value, which is no *json.Value.
+  assert.match(tests.go, /"github\.com\/polyspec\/json\/packages\/go"/);
+  assert.doesNotMatch(tests.go, /\bCarry\(("|nil\)|\[\]any|map\[string\]any|func\(\))/);
+  assert.match(tests.go, /func TestGN13eCarryAText\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.ValueString\("name\\u00e9"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure1\)\n\t\}\n\t_, err := Carry\(made0\)\n/);
+  assert.match(tests.go, /made0, failure1 := json\.ValueFromUnits\(\[\]uint64\{55296\}\)\n/);
+  assert.match(tests.go, /made0, failure1 := json\.ValueNumber\("123456789012345678901234567890"\)\n/);
+  assert.match(tests.go, /func TestGN13eCarryAKeyWithAnUnpairedSurrogate\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueFromUnits\(\[\]uint64\{56320\}\)\n[^]*?\tmade4, failure5 := json\.ValueNull\(\)\n[^]*?\t_, failure6 := made0\.Insert\(made2, made4\)\n\tif failure6 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure6\)\n\t\}\n[^]*?\tmade\d+, failure\d+ := json\.ValueObject\(made0\)\n/);
+  assert.match(tests.go, /json\.ValueArray\(\[\]\*json\.Value\{made\d+, made\d+, made\d+\}\)/);
+});
+
+test('a value class of another repository inside a list is made by the same members at each place (GN-6x, GN-13)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units[0].members.push({ id: 'relay.gather', name: ['gather'], kind: 'function', visibility: 'public', parameters: [{ name: ['values'], type: { list: 'json_value' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_relay::gather' });
+  contract.cases.push({ member: 'relay.gather', file: 'contracts/gather.json', group: 'gather' });
+  caseFiles.set('contracts/gather.json', { gather: [{ id: 'three_values', values: [{ kind: 'text', value: 'a' }, { kind: 'null' }, { kind: 'bool', value: true }], result: 3 }] });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  for (const [target, path] of Object.entries(RELAY_TESTS)) assert.doesNotMatch(text(out, path), /the case \w+ of relay\.gather/, target);
+  assert.match(text(out, RELAY_TESTS.python), /pkg\.gather\(\[foreign_json\.Value\.string\("a"\), foreign_json\.Value\.null\(\), foreign_json\.Value\.boolean\(True\)\]\)/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(text(out, RELAY_TESTS[target]), /pkg\.gather\(\[foreign_json\.Value\.string\('a'\), foreign_json\.Value\.null\(\), foreign_json\.Value\.boolean\(true\)\]\)/, target);
+  }
+  assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\gather\(\[\\Polyspec\\Json\\Value::string\("a"\), \\Polyspec\\Json\\Value::null\(\), \\Polyspec\\Json\\Value::boolean\(true\)\]\)/);
+  const go = text(out, RELAY_TESTS.go);
+  assert.match(go, /\tmade0, failure1 := json\.ValueString\("a"\)\n[^]*?\tmade2, failure3 := json\.ValueNull\(\)\n[^]*?\tmade4, failure5 := json\.ValueBoolean\(true\)\n[^]*?Gather\(\[\]\*json\.Value\{made0, made2, made4\}\)/);
+});
+
 test('a library without kinds that takes a value class of another repository calls no conversion of a core error that it does not have (E-1c, GN-6x)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {

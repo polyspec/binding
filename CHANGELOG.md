@@ -5,6 +5,23 @@
 
 ## Unreleased
 
+- The generated tests wrote a case value of a value class of another repository as a built-in value of the language.
+  For `tests/e2e/relay`, whose function `carry` takes the class `value` of json, the Python test called
+  `pkg.carry("name\xe9")`, which the binding refuses as `invalid_argument_type`; a case value of the kind `number` or
+  `text16` and a key of a pair written as `{kind, value}` became tests that fail by name; and the Go test called
+  `Carry` with a string, which is no `*json.Value`, so the test file did not compile. The five test writers now make
+  such a value by the members of the owner's contract that the out rows of the language name, through the owner's
+  package (GN-6x, GN-13, GN-13b): `foreignSteps` of `samples.ts` reads the case value into the calls of those members
+  once for every target, Python, Node, WASM and PHP write them as one expression of the owner's classes
+  (`foreign_json.Value.string(...)`, `\Polyspec\Json\Value::fromUnits([...])`, an `OrderedMap` that `insert` fills
+  for a kind `map`), and Go writes each as a local of the test (`json.ValueString(...)`, `json.NewOrderedMap()`,
+  `Insert`). The Go placeholder of such a class is the value of its out row of the kind `null`, as in the other
+  targets, instead of `nil`. The context of a test writer names a class of the owner (`foreignClass`) in place of the
+  call of one static member without arguments. A result that holds an instance of such a class has a test that fails
+  with the reason that no case value is compared with it; no case of `tests/e2e` has such a result. Verified by
+  `make test-ts`: the two new tests read the five generated tests of the relay, generated with the fixture of the
+  contract of json, and failed before the change. The generated Go, PHP, Node and WASM tests are not compiled or run
+  yet.
 - A run of the end-to-end check of a repository whose contract names a type of another repository installed no npm
   package of that repository: the npm step packed the contracts of the repository alone and the WASM step built their
   modules alone, so the generated entry of `tests/e2e/relay`, which imports `@polyspec/json` on Node and through

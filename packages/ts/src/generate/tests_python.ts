@@ -116,10 +116,10 @@ export function pythonTests(model: Model, module: string): string {
       const owner = library === undefined ? ref(unit) : `foreign_${library.replaceAll('-', '_')}.`;
       return `${owner}${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`;
     },
-    // GN-6x: a static member of a value class of another repository, through the module of the owner's package.
-    foreignValue: (library, unit, member) => {
+    // GN-6x: a class of another repository, through the module of the owner's package.
+    foreignClass: (library, unit) => {
       foreignModules.add(library);
-      return `foreign_${library.replaceAll('-', '_')}.${langName('python', unit.name, 'class')}.${langName('python', member.name, 'callable')}()`;
+      return `foreign_${library.replaceAll('-', '_')}.${langName('python', unit.name, 'class')}`;
     },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';

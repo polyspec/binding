@@ -111,10 +111,10 @@ export function nodeTests(model: Model): string {
   const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     casePath: (relative) => `casePath(${jsString(relative)})`,
-    // GN-6x: a static member of a value class of another repository, through the owner's package.
-    foreignValue: (library, unit, member) => {
+    // GN-6x: a class of another repository, through the owner's package.
+    foreignClass: (library, unit) => {
       foreignModules.add(library);
-      return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}.${langName('node', member.name, 'callable')}()`;
+      return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}`;
     },
     errorNew: (unit, kind, message) => `new pkg.${langName('node', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     callbackNew: (unit, how) => {

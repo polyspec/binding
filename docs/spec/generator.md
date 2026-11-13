@@ -1231,7 +1231,16 @@ the design ids are those of the binding design.
   kind `map` fill it: its constructor without parameters makes it, and its one member with the receiver `&mut self`
   and two parameters takes each pair in order, a text key as a value of kind `text` where that parameter is a class
   of origin value (`Value.object` of an `OrderedMap` that `OrderedMap.insert` fills). A case value of such a class at
-  any other place is the same list of pairs. A kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  any other place is the same list of pairs. A case value of a value class of another repository (GN-6x), at a
+  parameter, in a list and in a field, is written by the same rule in the five targets, with the members of the
+  owner's contract that the out rows of the language name and through the owner's package, which the test imports
+  (the Go module of the owner in Go, where each made value is a local of the test whose error fails it): the content
+  of a kind is the value of the one parameter of its member, a text for `number` and the list of the UTF-16 code units
+  for `text16`; a key of a pair is a text or a case value `{kind, value}` of the class; and `{"kind": "list",
+  "repeat": n, "value": <value>}` is the member of `list` called n times, each on the list of the one value before
+  it. No built-in value of the language stands at the place of such a class, because the binding refuses it as
+  `invalid_argument_type` and Go does not compile it. A result that holds an instance of such a class has no case
+  value to be compared with, and its case has a test that fails with that reason (GN-13e). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a

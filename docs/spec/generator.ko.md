@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7171e2608686a25dde7b7a7fb65701d973cc8ede9993bb6e598ff2349d269df5 -->
+<!-- source-sha256: 8662bf566242a55f31e571baa9f03f2f7f1dec60a4141f7964fe4e69ff209ce3 -->
 # 생성기
 
 [English](generator.md)
@@ -1006,7 +1006,14 @@
   그것을 채운다: parameter 없는 생성자가 만들고, receiver `&mut self`와 parameter 둘을 가진 하나뿐인 member가 각 쌍을 순서대로
   받으며, 그 parameter가 origin value class면 text key는 kind `text`의 값이다(`OrderedMap.insert`가 채운 `OrderedMap`의
   `Value.object`). 그런 class의 case 값은 다른
-  어느 자리에서도 같은 쌍의 list다. 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
+  어느 자리에서도 같은 쌍의 list다. 다른 레포의 value class(GN-6x)의 case 값은 parameter, list 안, field 어느 자리에서도
+  다섯 target이 같은 규칙으로 적는다. 그 언어의 out 행이 적은 owner 계약의 member를 쓰고, 시험이 import하는 owner의 패키지를
+  거친다(Go는 owner의 Go 모듈이며, 만든 값마다 시험의 local이고 그 오류는 시험을 실패시킨다). kind의 내용은 그 member의 하나뿐인
+  parameter의 값이며, `number`는 text, `text16`은 UTF-16 code unit의 list다. 쌍의 key는 text이거나 그 class의 case 값
+  `{kind, value}`다. `{"kind": "list", "repeat": n, "value": <값>}`은 `list`의 member를 n번 부르며, 매번 바로 앞의 값 하나를
+  담은 list를 준다. 그런 class의 자리에는 언어의 내장 값을 적지 않는다. binding이 그것을 `invalid_argument_type`으로 거부하고
+  Go는 컴파일하지 않기 때문이다. 그런 class의 instance를 담은 결과는 비교할 case 값이 없으므로, 그 case는 그 이유로 실패하는
+  시험을 갖는다(GN-13e). 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
   내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지

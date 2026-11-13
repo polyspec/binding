@@ -1,11 +1,25 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 06578821df4909be3040537bd1d8831638ed9fe2c1209d22df4b94d8df720750 -->
+<!-- source-sha256: 76f8ea266c2d83240f551ba3960c9eb131d5104a38a0049666909aa1c13662ab -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 시험이 다른 저장소의 value class의 case 값을 언어의 내장 값으로 썼다. 함수 `carry`가 json의 class `value`를
+  받는 `tests/e2e/relay`에서 Python 시험은 `pkg.carry("name\xe9")`를 불렀고, binding은 그것을
+  `invalid_argument_type`으로 거부한다. kind `number`나 `text16`의 case 값과 `{kind, value}`로 적은 쌍의 key는 이름을
+  대고 실패하는 시험이 되었다. Go 시험은 `*json.Value`가 아닌 문자열로 `Carry`를 불러 시험 파일이 컴파일되지 않았다.
+  이제 다섯 시험 작성기는 그런 값을 그 언어의 out 행이 적은 owner 계약의 member로, owner의 패키지를 거쳐
+  만든다(GN-6x, GN-13, GN-13b). `samples.ts`의 `foreignSteps`가 case 값을 그 member 호출로 한 번 읽어 모든 target이
+  쓴다. Python, Node, WASM, PHP는 그것을 owner class의 식 하나로 쓰고(`foreign_json.Value.string(...)`,
+  `\Polyspec\Json\Value::fromUnits([...])`, kind `map`은 `insert`가 채우는 `OrderedMap`), Go는 각각을 시험의 local로
+  쓴다(`json.ValueString(...)`, `json.NewOrderedMap()`, `Insert`). 그런 class의 Go placeholder는 `nil`이 아니라 다른
+  target처럼 kind `null`의 out 행이 만드는 값이다. 시험 작성기의 context는 인자 없는 static member 하나의 호출 대신
+  owner의 class를 이름으로 준다(`foreignClass`). 그런 class의 instance를 담은 결과는 비교할 case 값이 없다는 이유로
+  실패하는 시험을 가지며, `tests/e2e`의 어느 case도 그런 결과를 갖지 않는다. `make test-ts`로 확인했다. 새 시험 둘은
+  json 계약의 fixture로 생성한 relay의 생성된 시험 다섯을 읽으며, 변경 전에 실패했다. 생성된 Go, PHP, Node, WASM
+  시험은 아직 컴파일하거나 실행하지 않았다.
 - contract가 다른 저장소의 타입을 가리키는 저장소의 end-to-end 검사 실행이 그 저장소의 npm 패키지를 설치하지 않았다.
   npm 단계는 저장소의 contract만 pack했고 WASM 단계는 그 모듈만 빌드했다. 그래서 Node에서, 그리고 `./wasm`으로
   `@polyspec/json`을 import하는 `tests/e2e/relay`의 생성된 entry는 Node와 WASM 시험이 모두 `ERR_MODULE_NOT_FOUND`로

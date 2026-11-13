@@ -1732,12 +1732,12 @@ func ${p}__go_native(handle C.uint64_t) C.uint64_t {
 
 // GN-6x: the Go name of the type of a class of the owner of a value class of another repository, in the package of its
 // module, and the import of that package.
-const ownerType = (owner: Contract, unit: Unit): { pkg: string; path: string; name: string } =>
+export const ownerType = (owner: Contract, unit: Unit): { pkg: string; path: string; name: string } =>
   ({ pkg: goPackage(owner, unit.module), path: goImport(owner, unit.module), name: `${goPackage(owner, unit.module)}.${goName(unit.name)}` });
 
 // GN-6x: the Go call of a member of the owner: a method or a property on an instance, a static member or a constructor
 // of the package of its class.
-function ownerCall(owner: Contract, unit: Unit, member: Member, args: string, on?: string): string {
+export function ownerCall(owner: Contract, unit: Unit, member: Member, args: string, on?: string): string {
   const name = langName('go', member.name, 'callable');
   if (member.kind === 'constructor') return `${ownerType(owner, unit).pkg}.New${goName(unit.name)}(${args})`;
   if (member.kind === 'static') return `${ownerType(owner, unit).pkg}.${goName(unit.name)}${name}(${args})`;
