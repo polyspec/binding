@@ -2709,6 +2709,18 @@ test('a member with wait async_driver that reaches language code drives the stat
   }
 });
 
+test('the generated test of a callback of a member that waits awaits it, and a Go fixture that expects no call reads the length of its calls (GN-6m, G-5)', () => {
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'go'] });
+  // Each test of a block that awaits is an async function, not only the first.
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{\n {2}const raised = new Error\('raised by the callback'\);\n {2}await assert\.rejects\(/);
+  for (const found of node.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
+  // reflect.DeepEqual tells a nil slice from an empty one, so no expected call is read as the length 0.
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /func TestB4ResolveDrivenAnEmptyKeyFailsItsReadBeforeTheLookup\(t \*testing\.T\) \{[\s\S]*?\n\tif len\(fixture0\.calls\) != 0 \{\n\t\tt\.Fatalf\("G-5: the calls %v are not none", fixture0\.calls\)\n\t\}\n\}/);
+  assert.doesNotMatch(go, /want := \[\]\[\]any\{\}/);
+});
+
 test('a member with machine takes a function parameter and returns passthrough, which each target refuses by name until it generates them (GN-6ae)', () => {
   const sample = (change: (contract: any) => void, targets: string[]): Map<string, string | Buffer> => {
     const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
