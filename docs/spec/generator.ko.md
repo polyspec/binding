@@ -9,11 +9,11 @@
 
 ## 범위
 
-- **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`인 메서드와 property, kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
+- **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, error unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
-  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부한다(T-3, T-5, U-3). Go는 다른 타입 안의 서로
+  `self`, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부한다(T-3, T-5, U-3). Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
@@ -66,7 +66,9 @@
   코드의 unsafe 블록마다 이유를 단 allow가 있다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
-- **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다.
+- **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 쓰기 쪽 자리가 있는
+  class(GN-6h)를 가진 계약에서는 이 feature가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은 인스턴스를 받아 쓰기 guard를
+  얻고 panic한다: Python `_panic_test_held`, Node `__panicTestHeld`, PHP `<namespace>\Internal\panicTestHeld`.
 
 ## 코어 경계(T-1, I-2 (1))
 
@@ -88,9 +90,34 @@
   napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를 유지하지 않으므로, Node
   생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를 내보낸다(`instanceof`는
   proxy를 거쳐 클래스의 prototype을 읽는다). 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind `invalid_argument_type`)
-  코어는 그 값의 복사를 받으므로, member가 받는 클래스는 `Clone`이다. `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
+  코어는 가진 값을 빌린다(GN-6h). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는
   그런 클래스로 생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
+- **GN-6h** class unit의 잠금(U-2 busy, B-5c). class의 자리는 호출이 그 인스턴스를 받는 곳이다: member의 receiver, 또는 타입이
+  그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`다. 그 밖의 자리는 모두 읽기 쪽 자리이며, parameter는
+  계약이 그 빌림을 적기 전까지 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
+  unit의 member에 쓰기 쪽 자리가 있다, (2) 그 class의 값이 언어에서 들어온다(parameter, 그 안의 record field나 list 원소,
+  callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit, 함수 타입,
+  `host_value`, kind `native`인 `out` 행을 가진 값 alias, 언어 코드를 담는 class일 때이며, record field, `optional`, `list`,
+  `tuple`, map 값을 거쳐서도 그렇다. class가 언어 코드를 담는 것은 그 class를 receiver로 받는 member가 언어 코드를 담는
+  타입의 parameter를 갖거나, 그 class를 돌려주는 member가 그런 parameter를 갖거나 언어 코드를 담는 다른 class의 receiver를
+  가진 member일 때다. 생성기는 두 정의를 함께 만족하는 가장 작은 집합을 계산한다. member가 언어 코드에 닿는 것은 그
+  parameter 타입이나 receiver의 class가 언어 코드를 담을 때다. 쓰기 쪽 자리가 없는 class는 `binding_core::Shared`
+  (`Arc<tokio::sync::RwLock<_>>`)에 담고 읽기만 하므로 kind `busy`를 내지 않는다. 쓰기 쪽 자리가 있는 class는 receiver가
+  `&self`인 그 unit의 member가 기다리거나 언어 코드에 닿을 때, 또는 기다리는 member가 그 class를 parameter로 받을 때
+  `binding_core::Shared`에 담고, 그 밖에는 `binding_core::Exclusive`(`Arc<tokio::sync::Mutex<_>>`)에 담는다. `Shared`에 담는
+  class의 코어 타입은 `Sync`이며 생성 crate의 상수가 이를 단언한다. 모든 잠금은 `try` 연산으로 얻고 기다리지 않는다. 잠금을
+  얻지 못한 호출은 kind `busy`로 실패한다. callback 안에서 같은 객체로 다시 들어온 호출이 자기 자신을 기다리지 않고 실패하게
+  하기 위해서다(P-2). 읽기 쪽 자리는 읽기로(`try_read_owned`, mutex는 `try_lock_owned`), 쓰기 쪽 자리는 쓰기로
+  (`try_write_owned`, mutex는 `try_lock_owned`) 얻는다. 호출은 코어를 부르기 전에 모든 자리의 잠금을 얻고 결과를 변환할 때까지
+  쥔다. 한 호출의 읽기 쪽 자리들이 같은 인스턴스이면 잠금 하나를 함께 쓰고(`Arc::ptr_eq`), 한 호출이 같은 인스턴스를 쓰기
+  쪽 자리와 다른 자리에 함께 받으면 kind `busy`로 실패한다. 코어에 같은 값의 `&mut`와 다른 빌림을 함께 줄 수 없기
+  때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받는다. 다른 타입 안의 class 값(list 원소,
+  record field, callback의 반환)은 읽어서 복제하고 곧 놓으므로 그런 class는 `Clone`이다. 쓰기 쪽 자리가 있는 class의 잠금은
+  `poisoned` 표지를 가진다: 쓰기 쪽 자리의 guard를 쥔 동안 난 panic은 guard를 놓기 전에 표지를 세우고, 그 뒤 그 객체를 어느
+  자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을
+  수 있기 때문이다(P-2). 잠금은 `polyspec-binding-core`의 feature `lock`에 있으며 Python·Node·PHP 바인딩 crate의 manifest가
+  그것을 켠다.
 - **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
   PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node는 plain object를 주고받으며 선언은 field로 적는다. 바인딩
   crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
@@ -247,8 +274,12 @@
   판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
-  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다.
-- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-5c, B-6, B-10, 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
+  poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
+  parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
+  가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한다.
+- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
+  같은 객체로 다시 들어온 호출의 시험, 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4).
 

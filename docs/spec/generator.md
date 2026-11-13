@@ -11,12 +11,12 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
-  functions units, class units (constructor, static members, methods and properties with the receiver `&self`, and
+  functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
-  `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a dependency kind, the
+  `self`, `only` of a unit, `native`, a naming exception, a dependency kind, the
   type `source`) is refused by name
   before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
   repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
@@ -81,7 +81,9 @@ the design ids are those of the binding design.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
-  B-7 test.
+  B-7 test and, for a contract with a class that has a write place (GN-6h), the poison entry point of the B-5c test,
+  which takes an instance, takes its write guard and panics: Python `_panic_test_held`, Node `__panicTestHeld`, PHP
+  `<namespace>\Internal\panicTestHeld`.
 
 ## The core boundary (T-1, I-2 (1))
 
@@ -108,9 +110,38 @@ the design ids are those of the binding design.
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
   Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
   arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
-  instance of it (another value is kind `invalid_argument_type`) and the core gets a copy of the value it holds, so a
-  class that a member takes is `Clone`. A class of origin `value` whose `in` rows name only the class itself (U-1) is
+  instance of it (another value is kind `invalid_argument_type`) and the core borrows the held value (GN-6h). A class of origin `value` whose `in` rows name only the class itself (U-1) is
   generated as such a class, and a value type named in `types` is that unit.
+- **GN-6h** The lock of a class unit (U-2 busy, B-5c). A place of a class is where a call takes an instance of it: the
+  receiver of a member, or a parameter whose type is the class itself. A write place is a receiver `&mut self` or
+  `self`; every other place is a read place, and a parameter is a read place until the contract names its borrow. A
+  class unit holds its core value in a lock that is only tried when (1) a member of it has a write place, (2) a value
+  of the class comes in from the language (a parameter, a field of a record or an element of a list in one, or the
+  return of a callback), or (3) a member of it reaches language code. A type carries language code when it is a
+  callback unit, a function type, `host_value`, a value alias with an `out` row of kind `native`, or a class that
+  carries it, also through a field of a record, an `optional`, a `list`, a `tuple` or the value of a map. A class
+  carries language code when a member with a receiver of it has a parameter of a type that carries it, or when a
+  member that returns the class has such a parameter or is a member, with a receiver, of another class that carries
+  it; the generator computes the least set that satisfies both definitions. A member reaches language code when the
+  type of one of its parameters or the class of its receiver carries it. A class without a write place is held in
+  `binding_core::Shared` (an `Arc<tokio::sync::RwLock<_>>`) and only read, so it never gives kind `busy`. A class with
+  a write place is held in `binding_core::Shared` when a member of it with the receiver `&self` waits or reaches
+  language code, or when a member that waits takes the class as a parameter; any other class with a write place is
+  held in `binding_core::Exclusive` (an `Arc<tokio::sync::Mutex<_>>`). The core type of a class in `Shared` is `Sync`,
+  which a constant of the generated crate asserts. Every lock is taken with a `try` operation and never awaited: a
+  call that does not get the lock fails with kind `busy`, so a call that re-enters an object from a callback fails
+  rather than waits for itself (P-2). A read place reads (`try_read_owned`, or `try_lock_owned` of the mutex) and a
+  write place writes (`try_write_owned`, or `try_lock_owned`). A call takes the locks of all its places before it
+  calls the core and holds them until its result is converted; the read places of one call that are the same
+  instance share one lock (`Arc::ptr_eq`), and an instance that the call takes at a write place and at another place
+  fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
+  gets `&*guard` for a read place and `&mut *guard` for a write place. A value of the class inside another type (an
+  element of a list, a field of a record, the return of a callback) is read, cloned and released at once, so such a
+  class is `Clone`. The lock of a class with a write place holds a flag `poisoned`: a panic while the guard of a write
+  place is held sets it before the guard is released, and every later call that takes the object at any place fails
+  with kind `internal`, because the lock of tokio does not poison and the panic may have left the value half changed
+  (P-2). The locks are those of `polyspec-binding-core` with the feature `lock`, which the manifests of the Python,
+  Node and PHP binding crates turn on.
 - **GN-6c** A record of another repository (T-3) is that repository's class: Python imports it from that package
   (which the `pyproject.toml` lists as a dependency), PHP finds it in the class table by name (its extension is
   loaded), Node takes and gives a plain object, which the declarations write by its fields. Each binding crate depends
@@ -304,8 +335,13 @@ the design ids are those of the binding design.
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test.
-- **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
+  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
+  from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
+  member with the instance as the argument; for every member with a write receiver that takes its own class as a
+  parameter, a test passes the instance as that argument and requires kind `busy` of the busy class.
+- **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
+  overlaps a waiting call and of a call that re-enters an object from a callback; the identity of a default; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4).
 
