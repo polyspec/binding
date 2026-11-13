@@ -3261,17 +3261,38 @@ test('the Node entry awaits what the function returned and tells a rejected wait
 
 test('the Node test writes a function fixture, the exception of raises callback and the calls of after (GN-6ae, CK-22)', () => {
   const tests = text(scopedSample(['node']), 'packages/ts/generated/tests/generated.test.mjs');
-  // A step calls a method on the argument at its position, and the function returns its result, a value of GN-13;
-  // after observes the receiver that the case holds.
-  assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}assert\.deepStrictEqual\(ordered\(\(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); args\[0\]\.get\('a'\); return 'done'; \}\)\)\), ordered\('done'\)\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\('1'\)\);\n\}\);/);
+  const has = (lines: string): void => assert.ok(tests.includes(lines), lines);
+  // A step calls a method on the argument at its position, and a step that names a result requires it inside the
+  // function (CK-22); the function returns its result, a value of GN-13; after observes the receiver of the case.
+  has(`test('GN-13e: Store.transaction the_entries_of_a_function_that_returns_are_committed', async () => {
+  const receiver = new pkg.Store();
+  assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
+});`);
   // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
   // that waits is async, so the member awaits the promise that it returns.
-  assert.match(tests, /receiver\.transaction\(async \(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); \(await args\[0\]\.nested\(\(\.\.\.args\) => \{ args\[0\]\.put\('b', '2'\); return null; \}\)\); return 2; \}\)/);
+  has(`receiver.transaction(async (...args) => { args[0].put('a', '1'); (await args[0].nested((...args) => { assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return 2; })`);
+  // awaits: the function is async also where no step of it waits, so the member awaits its promise.
+  has(`(await args[0].nested(async (...args) => { args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return null; }));`);
   // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
   // after observes the receiver after the failed call.
-  assert.match(tests, /test\('GN-6ae: Store\.transaction the_entries_of_a_function_that_raises_are_dropped', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}const raised = new Error\('raised by the function of the case'\);\n {2}await assert\.rejects\(async \(\) => \(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); throw raised; \}\)\), \(error\) => error === raised\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n\}\);/);
+  has(`test('GN-6ae: Store.transaction the_entries_of_a_function_that_raises_are_dropped', async () => {
+  const receiver = new pkg.Store();
+  const raised = new Error('raised by the function of the case');
+  await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+});`);
+  // awaits with a raise: the promise of the async function rejects with the exception, which the caller gets.
+  has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
+  const receiver = new pkg.Store();
+  const raised = new Error('raised by the function of the case');
+  await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+});`);
   // A value that is no function is kind invalid_callback.
-  assert.match(tests, /test\('GN-6ae: Store\.transaction refuses a work that is no function', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(1\)\), \(error\) => error\.constructor === pkg\.SampleTypeError && error\.kind === 'invalid_callback'\);\n\}\);/);
+  has(`test('GN-6ae: Store.transaction refuses a work that is no function', async () => {
+  await assert.rejects(async () => (await new pkg.Store().transaction(1)), (error) => error.constructor === pkg.SampleTypeError && error.kind === 'invalid_callback');
+});`);
   // No test of a block that awaits is left a plain function.
   for (const found of tests.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
 });
@@ -3358,13 +3379,39 @@ test('the WASM entry awaits what the function returned, tells a rejected wait fr
 
 test('the WASM test writes a function fixture, the exception of raises callback and the calls of after (GN-6ae, CK-22)', () => {
   const tests = text(scopedSample(['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs');
-  assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}assert\.deepStrictEqual\(ordered\(\(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); args\[0\]\.get\('a'\); return 'done'; \}\)\)\), ordered\('done'\)\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\('1'\)\);\n\}\);/);
-  // A function whose step calls a member that waits is async, so the member awaits the promise that it returns.
-  assert.match(tests, /receiver\.transaction\(async \(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); \(await args\[0\]\.nested\(\(\.\.\.args\) => \{ args\[0\]\.put\('b', '2'\); return null; \}\)\); return 2; \}\)/);
-  // raises "callback": the caller gets the same object, and after observes the receiver after the failed call.
-  assert.match(tests, /test\('GN-6ae: Store\.transaction the_entries_of_a_function_that_raises_are_dropped', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}const raised = new Error\('raised by the function of the case'\);\n {2}await assert\.rejects\(async \(\) => \(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); throw raised; \}\)\), \(error\) => error === raised\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n\}\);/);
+  const has = (lines: string): void => assert.ok(tests.includes(lines), lines);
+  // A step calls a method on the argument at its position, and a step that names a result requires it inside the
+  // function (CK-22); the function returns its result, a value of GN-13; after observes the receiver of the case.
+  has(`test('GN-13e: Store.transaction the_entries_of_a_function_that_returns_are_committed', async () => {
+  const receiver = new pkg.Store();
+  assert.deepStrictEqual(ordered((await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return 'done'; }))), ordered('done'));
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered('1'));
+});`);
+  // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
+  // that waits is async, so the member awaits the promise that it returns.
+  has(`receiver.transaction(async (...args) => { args[0].put('a', '1'); (await args[0].nested((...args) => { assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return null; })); assert.deepStrictEqual(ordered(args[0].get('b')), ordered('2')); return 2; })`);
+  // awaits: the function is async also where no step of it waits, so the member awaits its promise.
+  has(`(await args[0].nested(async (...args) => { args[0].put('b', '2'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); return null; }));`);
+  // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
+  // after observes the receiver after the failed call.
+  has(`test('GN-6ae: Store.transaction the_entries_of_a_function_that_raises_are_dropped', async () => {
+  const receiver = new pkg.Store();
+  const raised = new Error('raised by the function of the case');
+  await assert.rejects(async () => (await receiver.transaction((...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+});`);
+  // awaits with a raise: the promise of the async function rejects with the exception, which the caller gets.
+  has(`test('GN-6ae: Store.transaction the_entries_of_an_awaitable_that_raises_are_dropped', async () => {
+  const receiver = new pkg.Store();
+  const raised = new Error('raised by the function of the case');
+  await assert.rejects(async () => (await receiver.transaction(async (...args) => { args[0].put('a', '1'); assert.deepStrictEqual(ordered(args[0].get('a')), ordered('1')); throw raised; })), (error) => error === raised);
+  assert.deepStrictEqual(ordered(receiver.get('a')), ordered(null));
+});`);
   // A value that is no function is kind invalid_callback.
-  assert.match(tests, /test\('GN-6ae: Store\.transaction refuses a work that is no function', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(1\)\), \(error\) => error\.constructor === pkg\.SampleTypeError && error\.kind === 'invalid_callback'\);\n\}\);/);
+  has(`test('GN-6ae: Store.transaction refuses a work that is no function', async () => {
+  await assert.rejects(async () => (await new pkg.Store().transaction(1)), (error) => error.constructor === pkg.SampleTypeError && error.kind === 'invalid_callback');
+});`);
+  // No test of a block that awaits is left a plain function.
   for (const found of tests.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
 });
 

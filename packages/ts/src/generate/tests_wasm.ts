@@ -89,9 +89,18 @@ export function wasmTests(model: Model): string {
   // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
   // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
   ctx.functionNew = (fixture) => {
-    const steps = fixture.steps.map((step) => `${invoke(step.fn, step.args, `args[${step.on}]`)}; `).join('');
+    const steps = fixture.steps.map((step) => {
+      const call = invoke(step.fn, step.args, `args[${step.on}]`);
+      // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
+      if (step.expected === undefined) return `${call}; `;
+      if ('refused' in step.expected) return `assert.fail(${jsString(step.expected.refused)}); `;
+      usesOrdered = true;
+      return `assert.deepStrictEqual(ordered(${call}), ordered(${step.expected.text})); `;
+    }).join('');
     const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
-    return `${/\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+    // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
+    // awaits the call of a member that waits.
+    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
   };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>

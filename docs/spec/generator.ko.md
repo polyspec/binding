@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7c6170f9db529170af150c365e25ebc55cb1f887ac496ea1488d09b8b2dfd198 -->
+<!-- source-sha256: 96bdc036e48e76621ae5f71abe03001e10f48209cc991b47607d6696d33a423d -->
 # 생성기
 
 [English](generator.md)
@@ -687,8 +687,9 @@
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
   PHP, Node, WASM은 그 member를 생성한다. PHP 시험, Node 시험, WASM 시험은 함수 fixture, 같은 예외 객체를 요구하는
   `raises: "callback"` case의 시험, `after`의 호출, callable이 아닌 값(Node와 WASM에서는 함수가 아닌 값)이 kind
-  `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직 쓰지 않는다. Node와 WASM fixture의 함수는 arrow 함수이고, 그 단계가 기다리는 member를
-  부르면 async 함수다. 그래서 sample의 중첩 case는 기다리는 단계를 promise로, 다른 case는 thenable이 아닌 값으로 돌린다.
+  `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직 쓰지 않는다. Node와 WASM fixture의 함수는 arrow 함수이고, 결과를 이름하는 단계는 함수 안에서
+  `assert.deepStrictEqual`로 그 결과를 요구하며, fixture가 `awaits`를 이름하거나 그 단계가 기다리는 member를 부르면 async
+  함수다. 그래서 sample의 중첩 case는 기다리는 단계를 promise로, 다른 case는 thenable이 아닌 값으로 돌린다.
   end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class

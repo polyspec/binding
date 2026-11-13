@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 654d690ed9d93a994dacac33a730ba4411ea1763c33fd95a7fb68ea87a903ad0 -->
+<!-- source-sha256: c2eb64670a360b3f287ea4199ecaae7ed3d1cd999e89d13d6fd1db65088c9ed6 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node와 WASM 시험은 함수 fixture의 step의 결과와 표시 `awaits`를 쓰지 않았다. 이제 결과를 이름하는 step은 함수 안에서
+  그 호출의 `assert.deepStrictEqual`이고, `awaits`가 있는 fixture는 async 함수다. 그래서 sample의 기다리는 두 case는
+  machine의 기다리는 step을 이행된 promise와 거부된 promise로 돌린다(GN-6ae, CK-22). `packages/ts`의 `npm test`로
+  검증했다. Node와 WASM fixture의 시험이 통과한다. Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의
+  거부로 여전히 실패한다.
 - WASM binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 Node처럼 그
   member를 생성한다(GN-6ae). machine은 함수를 `js_sys::Function`으로 소유하고, 모듈의 스레드에서 각 class 인자의
   class의 새 인스턴스와 함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 `JsValue`의 thread-local

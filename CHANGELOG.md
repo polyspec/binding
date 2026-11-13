@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Node and WASM tests did not write the result of a step of a function fixture nor the marker `awaits`. A step
+  that names a result is now `assert.deepStrictEqual` of its call inside the function, and a fixture with `awaits` is
+  an async function, so the two cases of the sample that await run the awaited step of the machine with a promise
+  that is fulfilled and with one that is rejected (GN-6ae, CK-22). Verified by `npm test` in `packages/ts`, whose
+  tests of the Node and WASM fixtures pass; the 20 tests that generate the sample for Python or Go still fail with the
+  refusal of those targets.
 - The WASM binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
   generates the member as Node does (GN-6ae): the machine owns the function as a `js_sys::Function` and calls it on
   the thread of the module with a new instance of the class of each class argument; the value that the function

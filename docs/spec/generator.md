@@ -832,8 +832,9 @@ the design ids are those of the binding design.
   yet"; PHP, Node and WASM generate the member. The PHP test, the Node test and the WASM test write the function
   fixture, the test of a case with `raises: "callback"`, which requires the same exception object, the calls of
   `after`, and a test that a value that is no callable, in Node and WASM no function, is kind `invalid_callback`; the
-  test of another target does not yet. The function of a Node or WASM fixture is an arrow function, an async one when
-  a step of it calls a member that waits,
+  test of another target does not yet. The function of a Node or WASM fixture is an arrow function, whose step that
+  names a result requires it with `assert.deepStrictEqual` inside the function, an async one when the fixture names
+  `awaits` or a step of it calls a member that waits,
   so the nested case of the sample runs the awaited step with a promise and its other cases with a value that is no
   thenable. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
