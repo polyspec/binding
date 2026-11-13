@@ -311,18 +311,25 @@ the design ids are those of the binding design.
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A member
-  that takes a callback has no B-4 tests (a case cannot give a callback) and the tests of K-2: an object without the
+  that takes a callback has the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
-  No B-4 test is generated for a member that takes a callback: B-4 runs a contract case, and a case is JSON, which
-  cannot give the object that implements the callback, so the case's failure cannot be reached from its keys. K-2 is
-  another requirement and does not stand in for it. A stringify and a to_json are run as the language runs the hook
+  K-2 is binding's own requirement and does not depend on a case. A case gives a callback parameter as a fixture,
+  `{"callback": {"<callback member id>": [<row>]}, "calls": [{"member": "<id>", "args": {...}}]}`: a row is
+  `{"args": {<parameter in snake_case>: <case value>}}` with `"result": <case value>` (absent when the member returns
+  none) and `"once": true` for a row that answers one call. The generated test of each language makes the fixture
+  from one implementation that binding writes into the test module, so a repository writes no fixture code: a call
+  takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
+  is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
+  core that swallows the exception still fails, and the calls to be those of `calls`, in order, when the case names
+  them. `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
+  with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
   test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
-  of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
-  closed set that each language's generated test implements.
+  of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
+  and a callback inside another type, each refused by name when a case gives it (G-4).
 
 - **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every

@@ -2,7 +2,7 @@
 
 import type { Model } from './model.ts';
 import { hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -12,6 +12,35 @@ const BAD_NUMBERS: Record<string, string[]> = {
   int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
   float: ['True', '"7"', '1'],
 };
+
+// G-5: the callback fixture. A call that no row answers is recorded and raises, so a core that swallows the exception
+// still fails the test, which reads the record.
+const PYTHON_FIXTURE = `
+
+class _UnexpectedCall(Exception):
+    """A call that no row of a callback fixture answers (G-5)."""
+
+
+def _fixture(members, rows):
+    unexpected = []
+    calls = []
+    left = list(rows)
+
+    def member(name):
+        def call(self, *args):
+            calls.append((name, args))
+            for row in left:
+                if row[0] == name and row[1] == args:
+                    if row[3]:
+                        left.remove(row)
+                    return row[2]
+            unexpected.append((name, args))
+            raise _UnexpectedCall(f"{name}{args!r}")
+
+        return call
+
+    return type("Fixture", (), {name: member(name) for name in members})(), unexpected, calls
+`;
 
 export function pythonTests(model: Model, module: string): string {
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
@@ -25,6 +54,7 @@ export function pythonTests(model: Model, module: string): string {
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
+  let usesFixture = false;
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
@@ -81,16 +111,28 @@ export function pythonTests(model: Model, module: string): string {
     }
     for (const kase of raisingCases(model, fn)) {
       const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => fromJson(model, ctx, arg.type, kase.receiver?.args.get(arg) ?? null));
+      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
+      const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
+      const after = fixtures
+        .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
+        .join('');
+      const caseArg = (arg: Fn['args'][number]): string => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : found.name;
+      };
       out.push(`
-    def test_b4_${name}_${kase.id}(self) -> None:
+    def test_b4_${name}_${kase.id}(self) -> None:${before}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
-            ${invoke(fn, callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null)), receiver)}
+            ${invoke(fn, callArgs(model, ctx, fn, caseArg), receiver)}
         error = caught.exception
         self.assertIs(type(error), pkg.${cls(kase.raises.category)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
-        self.assertIsNone(error.errno)`);
+        self.assertIsNone(error.errno)${after}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -138,7 +180,7 @@ import unittest
 
 import ${module} as pkg
 from ${module} import _native
-
+${usesFixture ? PYTHON_FIXTURE : ''}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

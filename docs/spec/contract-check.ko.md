@@ -98,8 +98,13 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
   kind마다 그 kind를 내는 case를 가진다. 어떤 입력도 닿지 않는 category `internal`과 `io`의 kind는 빠지지 않고, 코어의
   시험 feature가 두는 실패 주입점의 case 형식(G-5)을 기다린다고 지적된다.
-  callback interface나 함수 타입을 받으면서 raises가 있는 member는 JSON case가 callback을 줄 수 없으므로 callback
-  fixture의 case 형식(G-5, GN-13a)을 기다린다고 지적되며, 빠지지 않는다.
+  callback interface를 parameter로 받는 member의 case는 그것을 callback fixture로 준다(G-5, GN-13):
+  `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 그 member의
+  parameter를 정확히 주며, 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `result`와 `raise`를 함께 가진 행,
+  member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
+  객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. 함수 타입이나 다른 타입 안의 callback
+  interface를 받으면서 raises가 있는 member는 case가 아직 그것을 줄 수 없으므로 그 case 형식(GN-13a)을 기다린다고
+  지적되며, 빠지지 않는다.
 - **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,

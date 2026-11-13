@@ -116,8 +116,14 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
   reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
   in its `raises`. A kind of the category `internal` or `io`, which no input reaches, is reported as waiting for the
-  case form of a fault injection point that a test feature of the core gives (G-5), not left out. A member that raises and takes a callback interface or a function type is reported as waiting for the case
-  form of a callback fixture (G-5, GN-13a), because a JSON case cannot give the callback; it is not left out.
+  case form of a fault injection point that a test feature of the core gives (G-5), not left out. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
+  `{"callback": {<member id>: [<row>]}}` whose member ids are members of that interface, whose rows and `calls` give
+  in `args` exactly the parameters of their member, and whose rows have no key but `args`, `result`, `raise`, `once`
+  and `async`; a row with a `result` and a `raise`, a `raise` of an error unit that the member does not recognize
+  (U-3), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the
+  language (a class, a callback, a function, a host value), which a row cannot give, are reported. A member that
+  raises and takes a function type, or a callback interface inside another type, is reported as waiting for that case
+  form (GN-13a), because a case cannot give it yet; it is not left out.
 - **CK-23** Reserved words (N-2): the name that a target language gives a public unit, member, parameter or field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its

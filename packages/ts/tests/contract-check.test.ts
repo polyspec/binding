@@ -542,12 +542,48 @@ describe('CK-22 every member names its cases (K-1)', () => {
       assert.match(found[0]?.message ?? '', /the case form of a fault injection point is not decided/);
     }
   });
-  test('a raising member that takes a callback waits for the case form of a callback (G-5, GN-13a)', () => {
+  // forms.parse with the callback parameter store, and one case of it whose store is `store`.
+  const withStore = (store: unknown, change?: (c: any) => void): Finding[] => {
     const c = contract();
     member(c, 'forms.parse').parameters.push({ name: ['store'], type: { unit: 'store' }, required: true });
+    change?.(c);
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const row of c.cases) {
+      const document = files.get(row.file) ?? {};
+      document[row.group] = row.member === 'forms.parse' ? [{ id: 'too_large', body: { hex: '00' }, store, raises: { kind: 'too_large' } }] : [];
+      files.set(row.file, document);
+    }
+    return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
+  };
+  const parseCases = (): string => `/cases/${contract().cases.findIndex((kase: any) => kase.member === 'forms.parse')}`;
+  const row = { args: { key: 'a' }, result: null };
+  test('a case gives a callback parameter as its fixture (G-5)', () => {
+    assert.deepEqual(withStore({ callback: { 'store.read': [row, { args: { key: 'b' }, raise: { error: 'too_large', kind: 'too_large' }, once: true, async: true }] }, calls: [{ member: 'store.read', args: { key: 'a' } }] }), []);
+  });
+  test('a callback parameter that is no fixture, and a fixture that does not follow its callback unit', () => {
+    const refused: [unknown, RegExp][] = [
+      ['a', /store is not \{"callback"/],
+      [{ callback: { 'store.write': [row] } }, /store\.write is no member of store/],
+      [{ callback: { 'store.read': [{ args: { name: 'a' }, result: null }] } }, /the args of row 0 of store\.read are not the parameters key/],
+      [{ callback: { 'store.read': [{ args: { key: 'a' }, result: null, raise: { error: 'too_large', kind: 'too_large' } }] } }, /has a result and a raise/],
+      [{ callback: { 'store.read': [{ args: { key: 'a' }, raise: { error: 'store_error', kind: 'store' } }] } }, /raises store_error, which store\.read does not recognize/],
+      [{ callback: { 'store.read': [{ ...row, times: 2 }] } }, /row 0 of store\.read has no key times/],
+      [{ callback: { 'store.read': [row] }, calls: [{ member: 'store.read', args: {} }] }, /the args of call 0 are not the parameters key/],
+    ];
+    for (const [store, message] of refused) {
+      const found = withStore(store);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], String(message));
+      assert.match(found[0]?.message ?? '', message);
+    }
+    const sync = withStore({ callback: { 'store.read': [{ ...row, async: true }] } }, (c) => { c.units.find((u: any) => u.id === 'store').members[0].async_allowed = false; });
+    assert.match(sync.find((f) => f.check === 'CK-22')?.message ?? '', /is async, which store\.read does not allow/);
+  });
+  test('a raising member that takes a callback inside another type waits for its case form (G-5, GN-13a)', () => {
+    const c = contract();
+    member(c, 'forms.parse').parameters.push({ name: ['stores'], type: { list: { unit: 'store' } }, required: true });
     const found = withFiles(c, true);
     assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
-    assert.match(found[0]?.message ?? '', /the case form of a callback is not decided/);
+    assert.match(found[0]?.message ?? '', /a case cannot give the function, or the callback inside another type/);
   });
   test('a group that is not in its file', () => {
     const c = contract();

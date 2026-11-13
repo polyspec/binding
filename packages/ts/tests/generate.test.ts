@@ -559,6 +559,40 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   refused((members) => { special(members, 'to_json').raises = []; }, /a never return without raises/);
 });
 
+test('a case gives a callback parameter as a fixture, which the B-4 test runs and reads (G-5, GN-13)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\ndef _fixture\(members, rows\):/);
+  assert.match(python, /fixture_0, fixture_0_unexpected, fixture_0_calls = _fixture\(\("find",\), \[\("find", \("a",\), None, False\)\]\)\n {8}with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n {12}pkg\.resolve\(fixture_0, "a"\)/);
+  assert.match(python, /self\.assertEqual\(fixture_0_unexpected, \[\]\)\n {8}self\.assertEqual\(fixture_0_calls, \[\("find", \("a",\)\)\]\)/);
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /\nfunction fixture\(members, rows\) \{/);
+  assert.match(node, /const fixture0 = fixture\(\['find'\], \[\['find', \['a'\], null, false\]\]\);\n {2}assert\.throws\(\(\) => pkg\.resolve\(fixture0\.object, 'a'\)/);
+  assert.match(node, /assert\.deepEqual\(fixture0\.unexpected, \[\]\);\n {2}assert\.deepEqual\(fixture0\.calls, \[\['find', \['a'\]\]\]\);/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\$fixture0 = new class\(\[\["find", \["a"\], null, false\]\]\) \{/);
+  assert.match(php, /public function find\(mixed \.\.\.\$args\): mixed \{ return \$this->answer\("find", \$args\); \}/);
+  assert.match(php, /self::assertSame\(\[\], \$fixture0->unexpected\);\n {8}self::assertSame\(\[\["find", \["a"\]\]\], \$fixture0->calls\);/);
+  assert.match(php, /\nfinal class UnexpectedCall extends \\LogicException\n/);
+  // A module without a fixture holds no fixture code.
+  const { contract, caseFiles } = load();
+  const plain = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
+  assert.doesNotMatch(text(plain, 'packages/ts/generated/tests/generated.test.mjs'), /fixture|isDeepStrictEqual/);
+  assert.doesNotMatch(text(plain, 'packages/python/generated/tests/test_generated.py'), /_fixture/);
+  assert.doesNotMatch(text(plain, 'packages/php-ext/generated/tests/GeneratedTest.php'), /UnexpectedCall/);
+  // G-4: a row that the fixture cannot run yet is refused by name; a case without the fixture by its id.
+  const withRow = (row: unknown): (() => unknown) => () => {
+    const cases = sampleCases();
+    const document = cases.get('contracts/cases.json') as Record<string, any[]>;
+    document['resolve'] = [{ ...document['resolve']?.[0], lookup: row }];
+    return generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases });
+  };
+  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, raise: { error: 'x', kind: 'y' } }] } }), /a raise row of a callback fixture is not generated yet/);
+  assert.throws(withRow({ callback: { 'lookup.find': [{ args: { key: 'a' }, result: null, async: true }] } }), /an async row of a callback fixture is not generated yet/);
+  assert.throws(withRow('a'), /the case a_key_without_a_value_is_missing of sample\.resolve gives no \{"callback": \.\.\.\} for lookup/);
+});
+
 test('WASM: map<T> is a Map of string keys, through the entries of the ES module (T-2, GN-18)', () => {
   const { contract, caseFiles } = load();
   contract.targets = ['node', 'wasm'];

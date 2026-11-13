@@ -4,7 +4,7 @@
 import type { Unit } from '../contract.ts';
 import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -32,6 +32,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   const methods: string[] = [];
+  let usesFixture = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('php', fn, receiver);
     if (hook !== undefined) return hook;
@@ -102,11 +103,47 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     }
     for (const kase of raisingCases(model, fn)) {
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
+      // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const before = fixtures
+        .map(
+          (f) => `
+        ${f.name} = new class([${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
+            public array $unexpected = [];
+            public array $calls = [];
+            public function __construct(private array $rows) {}
+${f.values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
+            private function answer(string $name, array $args): mixed
+            {
+                $this->calls[] = [$name, $args];
+                foreach ($this->rows as $at => $row) {
+                    if ($row[0] === $name && $row[1] === $args) {
+                        if ($row[3]) {
+                            unset($this->rows[$at]);
+                        }
+                        return $row[2];
+                    }
+                }
+                $this->unexpected[] = [$name, $args];
+                throw new UnexpectedCall($name);
+            }
+        };`,
+        )
+        .join('');
+      const after = fixtures
+        .map((f) => `\n        self::assertSame([], ${f.name}->unexpected);${f.values.calls === undefined ? '' : `\n        self::assertSame([${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}], ${f.name}->calls);`}`)
+        .join('');
+      const caseArg = (arg: Fn['args'][number]): string => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : found.name;
+      };
       methods.push(`
     public function testB4${name}${id}(): void
-    {
+    {${before}
         try {
-            ${invoke(fn, callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null)), kase.receiver === undefined ? '' : made(kase.receiver))};
+            ${invoke(fn, callArgs(model, ctx, fn, caseArg), kase.receiver === undefined ? '' : made(kase.receiver))};
             self::fail('no error');
         } catch (${cls(kase.raises.category)} $error) {
             self::assertSame(${cls(kase.raises.category)}::class, $error::class);
@@ -114,7 +151,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
             self::assertNull($error->errno());
-        }
+        }${after}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -227,5 +264,10 @@ final class GeneratedTest extends TestCase
     }
 ${methods.join('\n')}
 }
-`;
+${usesFixture ? `
+/** A call that no row of a callback fixture answers (G-5). */
+final class UnexpectedCall extends \\LogicException
+{
+}
+` : ''}`;
 }
