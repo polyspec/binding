@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 016eef7fed7b1703b55606b2466ede638a07c16feb1d58192fad6a26b8a41d6e -->
+<!-- source-sha256: 0878d8d661f2bcacc9a9e00212002ce79e9590e242838888320990a0258cdf4e -->
 # 생성기
 
 [English](generator.md)
@@ -83,7 +83,7 @@
 - **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
   `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
   `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는
-  addon을 갖지 않는다. 플랫폼 패키지는 배포 도구가 빌드해 내고(K-3), 배포 도구는 패키지를 pack할 때 pack하는 manifest의
+  addon을 갖지 않는다. 플랫폼 패키지는 바인딩을 가진 레포의 release가 빌드해 내고(K-3), 그 release는 패키지를 pack할 때 pack하는 manifest의
   `optionalDependencies`에 모든 플랫폼 패키지를 그 release의 버전으로 적어 npm이 그 기계의 것을 설치하게 한다. source manifest와
   workspace의 lock은 그것을 적지 않는다. 한 버전의 플랫폼 패키지는 그 버전의 release가 만들므로, 그것을 적은 lock은 그 release
   전에는 설치할 수 없고, `npm ci`는 lock에 없는 의존을 적은 manifest를 거부한다.
@@ -92,13 +92,17 @@
   `optionalDependencies` 없이도 플랫폼 패키지를 찾는다.
   target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
   `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
-  플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. 이것이 없으면
-  배포가 그 패키지를 거부한다(kit K1189). `scaffold`가 쓰는 npm 패키지의 manifest는 모두 `"type": "module"`을 갖는다.
+  플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. release는 둘을
+  manifest에서 읽는다. napi CLI는 addon 파일의 이름을 `napi.binaryName`으로 짓고, `napi.targets`는 release가 패키지를 빌드하는
+  플랫폼을 적는다. `scaffold`가 쓰는 npm 패키지의 manifest는 모두 `"type": "module"`을 갖는다.
   패키지의 `.js` 파일은 `wasm-bindgen --target web`의 글루뿐이고 그것은 ES 모듈이며, Node 진입점은 확장자가 꼴을 정하는
   `.cjs`와 `.mjs`이기 때문이다. 이 필드가 없으면 Node는 ES 모듈인 `.js` 파일을 `MODULE_TYPELESS_PACKAGE_JSON` 경고와 함께
   읽는다. PHP 확장(type `php-ext`, GN-3b의 `<host package>-native`도)의 `composer.json`은 `php-ext.extension-name`과
   `php-ext.download-url-method` `["pre-packaged-binary"]`를 적는다. 그래서 PIE가 그 기계의 PHP와 플랫폼에 맞는 배포의
-  binary를 설치한다(kit K1189). `binding check`는 파일 전체를 비교하듯 이 필드도 비교한다(CK-19).
+  binary를 설치한다. `binding check`는 파일 전체를 비교하듯 이 필드도 비교한다(CK-19). 그런 release의 단계는 바인딩을 가진
+  레포의 recipe다. 공용 도구(`@polyspec/kit`)의 release utility는 `vX.Y.Z` tag를 달고 package manager 하나가 기계 하나에서
+  pack하는 archive를 만들며, 플랫폼 패키지도 PHP 확장의 binary도 Go 모듈의 commit(GN-15g)도 만들지 않는다. 이유: 바인딩의
+  release가 어떤 파일을 싣는지는 이 명세와 그 레포의 규칙이고, 레포의 recipe를 실행하는 도구는 레포의 규칙을 갖지 않는다.
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
   `macos`일 때 `cargo:rustc-cdylib-link-arg=-undefined`와 `cargo:rustc-cdylib-link-arg=dynamic_lookup`을 내고, 다른 target에서는
   아무것도 내지 않으며, 그 변수를 읽을 수 없으면 실패한다(P-3). 그 crate의 `[lib]`은 `test = false`와 `doctest = false`를
@@ -1373,13 +1377,13 @@
   라이브러리를 받고, 지시문의 디렉터리가 라이브러리 없는 tree에도 있다. 추적하는 tree는 라이브러리도 생성 파일도 담지
   않는다. checkout은 자기 라이브러리를 빌드하고 그 디렉터리를 `CGO_LDFLAGS`로 가리키며(GN-14), linker는 그 디렉터리를
   지시문의 디렉터리보다 먼저 찾는다.
-  Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. release 도구는 tag `vX.Y.Z`의 commit에서 target go의
+  Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. 레포의 release(GN-3c)는 tag `vX.Y.Z`의 commit에서 target go의
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이 빌드하고,
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
-  라이브러리를 더한다. 도구는 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
-  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담으면 도구는
+  라이브러리를 더한다. release는 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
+  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담으면 release는
   commit도 tag도 만들지 않는다. 어느 branch도 그 commit을 담지 않으며, 그 commit과 tag를 손으로 만들지 않는다. 소비자는
   `require <module> vX.Y.Z` 한 줄만 필요하다. `CGO_LDFLAGS`도 `replace`도 없고, 소비자의 `go.sum`이 모듈을 라이브러리와
   함께 고정한다. 다른 플랫폼의 빌드는 디렉터리를 가리키는 파일을 컴파일하지 않으므로, 그 링크는 찾지 못한 라이브러리로

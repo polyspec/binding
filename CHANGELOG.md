@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The generator specification named a rule of the shared tools as what refuses a package without the release fields
+  of GN-3c, and a release tool as what builds the platform packages and the commit of a Go module (GN-15g). The
+  shared tools 0.0.112 hold neither, so the specification now states who reads the fields (the napi CLI and PIE) and
+  that the steps of the release of a binding are recipes of the repository that holds it (B2.140).
 - `package.json` and `package-lock.json` pin `@polyspec/kit` 0.0.112, from 0.0.109. Every utility that a recipe of the
   Makefile runs is in that release and takes the arguments that the recipe gives. The release of binding, the npm
   archive of `packages/ts` and the tag of `binding_core`, uses nothing that 0.0.112 no longer holds: the per-platform

@@ -1,11 +1,14 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 9457c630a8837787b4a4afa8e1f7f92996067b2b2f786100e6e1c7d3fe9a3130 -->
+<!-- source-sha256: ae152b16255306c04700ad816efdd00aaaf84e832b7770cab602eafcdee60697 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성기 명세는 GN-3c의 release 필드가 없는 패키지를 거부하는 것으로 공용 도구의 규칙을, 플랫폼 패키지와 Go 모듈의
+  commit(GN-15g)을 만드는 것으로 release 도구를 적었다. 공용 도구 0.0.112에는 둘 다 없으므로, 명세는 이제 그 필드를 누가
+  읽는지(napi CLI와 PIE)와, 바인딩의 release 단계가 그것을 가진 레포의 recipe임을 적는다(B2.140).
 - `package.json`과 `package-lock.json`이 `@polyspec/kit`을 0.0.109에서 0.0.112로 고정한다. Makefile의 recipe가 실행하는
   utility는 모두 그 release에 있고 recipe가 주는 인자를 받는다. binding의 release, 곧 `packages/ts`의 npm archive와
   `binding_core`의 tag는 0.0.112에 더는 없는 것(플랫폼별 package kind, asset set, Go 모듈의 commit, release의 contract

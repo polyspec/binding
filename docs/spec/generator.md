@@ -109,7 +109,8 @@ the design ids are those of the binding design.
 - **GN-3c** The Node addon is in one npm package per platform of T-2 (plan), named `<npm package>-<platform>` with the
   napi-rs platform names `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64`; it holds `<npm name without scope>.
   <platform>.node` as its `main`, with `os`, `cpu` and `libc`. The npm package of the library, or its host package
-  (L-2a), holds no addon; release tooling builds and publishes the platform packages (K-3), and when it packs the
+  (L-2a), holds no addon; the release of the repository that holds the binding builds and publishes the platform
+  packages (K-3), and when it packs the
   package it writes every platform package into `optionalDependencies` of the packed manifest at the version of the
   release, so npm installs the one of the machine. The source manifest and the lock of a workspace do not name them:
   the platform packages of a version are made by the release of that version, so a lock that named them could not be
@@ -119,15 +120,20 @@ the design ids are those of the binding design.
   release does and installs both tarballs, so the entry finds the platform package without `optionalDependencies`. The `package.json` that `scaffold` writes for a library with the target
   `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
   which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
-  in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). Without them
-  the release refuses the package (kit K1189). Every manifest of an npm package that `scaffold` writes has `"type":
+  in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). A release reads
+  both from the manifest: the napi CLI names the addon file by `napi.binaryName`, and `napi.targets` names the
+  platforms whose packages the release builds. Every manifest of an npm package that `scaffold` writes has `"type":
   "module"`: the only `.js` files of the package are the glue of `wasm-bindgen --target web`, which is an ES module,
   and the Node entries are `.cjs` and `.mjs`, whose extension decides their form. Without the field Node reads a
   `.js` file that is an ES module with the warning `MODULE_TYPELESS_PACKAGE_JSON`. The `composer.json` of a PHP
   extension (type `php-ext`, also `<host package>-native` of GN-3b) names `php-ext.extension-name` and
   `php-ext.download-url-method` `["pre-packaged-binary"]`, so that PIE installs the binary of the release for the PHP
-  and the platform of the machine (kit K1189). `binding check` compares these fields as it compares the whole file
-  (CK-19).
+  and the platform of the machine. `binding check` compares these fields as it compares the whole file
+  (CK-19). The steps of such a release are recipes of the repository that holds the binding: the release utility of
+  the shared tools (`@polyspec/kit`) tags `vX.Y.Z` and packs the archives that one package manager packs on one
+  machine, and it builds no platform package, no binary of a PHP extension and no commit of a Go module (GN-15g).
+  Why: which files the release of a binding carries is a rule of this specification and of that repository, and a
+  tool that runs the recipes of a repository holds no rule of it.
 - **GN-3d** The PHP binding crate links on macOS by its `build.rs` alone (BD-9): the script emits
   `cargo:rustc-cdylib-link-arg=-undefined` and `cargo:rustc-cdylib-link-arg=dynamic_lookup` when `CARGO_CFG_TARGET_OS`
   is `macos`, emits nothing for another target, and fails when that variable cannot be read (P-3). The crate's `[lib]`
@@ -1671,7 +1677,7 @@ the design ids are those of the binding design.
   file. A checkout builds its library and names its directory by `CGO_LDFLAGS` (GN-14), which the linker searches
   before the directory of the directive.
   A release carries the Go module, because Go fetches a module as the source of a tag. From the commit of the tag
-  `vX.Y.Z` the release tooling writes the files of `binding generate` for the target go, builds the crate
+  `vX.Y.Z` the release of the repository (GN-3c) writes the files of `binding generate` for the target go, builds the crate
   `polyspec-<repository>-go` for each platform with the release profile and without a feature, removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
