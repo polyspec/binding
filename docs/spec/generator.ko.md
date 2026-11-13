@@ -9,11 +9,11 @@
 
 ## 범위
 
-- **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`인 메서드와 property), record(parameter와
+- **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`인 메서드와 property, kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, error unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
-  `&mut self`·`self`, class 타입 parameter, `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부한다(T-3, T-5, U-3). Go는 다른 타입 안의 서로
+  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부한다(T-3, T-5, U-3). Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
@@ -116,6 +116,17 @@
   항목이나 `[key, value]`에 대한 `Symbol.iterator`로 순회 가능하게 한다. PHP는 class를 `IteratorAggregate`로 만들고
   `getIterator`가 항목을 위치 아래에, 또는 값을 key 아래에 확장의 iterator `<namespace>\Internal\Pairs`로 준다. key가
   객체일 수 있기 때문이다. raises가 있는 iterate와 class의 두 번째 iterate는 이름을 대고 거부한다(G-4).
+- **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
+  코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
+  `toJSON`, PHP `jsonSerialize`이고 그 PHP class는 `\JsonSerializable`을 구현한다. Python에는 JSON hook이 없으므로 그
+  member가 없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
+  인터페이스를 주고, 그것을 한 번 더 적은 class를 확장이 로드될 때 거부하기 때문이다. stub은 그 인터페이스를 선언한다. Node의
+  hook은 진입 파일의 인자 검사(G-7) 없이 자기 이름을 가진 addon의 메서드다. 언어가 hook을 자기 규약의 인자로 부르기
+  때문이며(`JSON.stringify`는 `toJSON`에 key를 넘긴다) 메서드는 그 인자를 읽지 않는다. class의 두 번째 stringify·to_json,
+  parameter가 있는 것, text를 돌려주지 않는 stringify는 이름을 대고 거부한다(G-4). `never`를 돌려주는 member(T-1)는
+  `Result<Infallible, E>`를 돌려주는 코어를 부른다. 생성 코드는 실패를 돌려주고, 변형이 없는 그 값을 갈래 없는 match로
+  받는다. 선언은 PHP와 TypeScript에서 `never`, Python에서 `NoReturn`이며, `raises` 없는 `never` 반환은 이름을 대고
+  거부한다. `only`가 있는 member(Q-4)는 그것이 적은 target에만 생성하고, 다른 target의 바인딩·선언·시험에는 없다.
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `binding_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. binding은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
@@ -228,6 +239,9 @@
   kind다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다.
   callback을 받는 member에는 B-4 시험이 생성되지 않는다. B-4는 contract case를 실행하는데 case는 JSON이어서 callback을
   구현한 객체를 줄 수 없고, 그래서 case의 실패에 그 키로 도달할 수 없기 때문이다. K-2는 다른 요구이며 B-4를 대신하지 않는다.
+  stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
+  시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
+  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-5c, B-6, B-10, 기본값의 동일성, value unit 행의 왕복, callback을 받는
   member의 B-4(case가 닫힌 집합의 callback fixture를 가리키고 각 언어의 생성 시험이 그것을 구현한다).
 

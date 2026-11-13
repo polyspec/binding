@@ -1,8 +1,8 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { hookCall, langName, unitOf } from './model.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -30,6 +30,8 @@ export function pythonTests(model: Model, module: string): string {
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
   const invoke = (fn: Fn, args: string, receiver: string): string => {
+    const hook = hookCall('python', fn, receiver);
+    if (hook !== undefined) return hook;
     const member = langName('python', fn.member.name, 'callable');
     const cls = `pkg.${langName('python', fn.unit.name, 'class')}`;
     if (fn.kind === 'function') return `pkg.${member}(${args})`;
@@ -113,7 +115,13 @@ export function pythonTests(model: Model, module: string): string {
             ${with_({ returns: 'wrong' })}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
     }
-    if (fn.kind === 'property' || !reachable) continue;
+    for (const kase of stringCases(model, fn)) {
+      out.push(`
+    def test_n4_${name}_${kase.id}(self) -> None:
+        self.assertEqual(${invoke(fn, '', made(kase.receiver, (arg) => fromJson(model, ctx, arg.type, kase.receiver.args.get(arg) ?? null)))}, ${pyString(kase.result)})`);
+    }
+    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
+    if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     out.push(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.length === 0 ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):

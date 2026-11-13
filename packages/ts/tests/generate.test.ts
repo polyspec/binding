@@ -513,6 +513,51 @@ test('a class that no parameter takes has no conversion in, which would copy its
   for (const path of paths) assert.doesNotMatch(text(kept, path), /\nfn in_tag[(<]/, path);
 });
 
+test('a stringify and a to_json are the hooks of each language, and never and only are generated (N-4, GN-6g)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /#\[php\(name = "__toString"\)\]/);
+  assert.match(php, /#\[php\(name = "jsonSerialize"\)\]/);
+  // PHP gives Stringable to a class that has __toString and refuses the interface a second time.
+  assert.doesNotMatch(php, /stringable/i);
+  assert.match(php, /#\[php\(implements\(ce = json_serializable, stub = "\\\\JsonSerializable"\)\)\]/);
+  // T-1 never: the core's Infallible has no value.
+  assert.match(php, /match result \{\}/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_sample.stub.php');
+  assert.match(stub, /final class Tag implements \\IteratorAggregate, \\Stringable, \\JsonSerializable/);
+  assert.match(stub, /public function jsonSerialize\(\): never \{\}/);
+  const phpTests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(phpTests, /assertInstanceOf\(\\Stringable::class, new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.match(phpTests, /assertSame\("#a", \(string\) new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.match(phpTests, /\\json_encode\(new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  assert.doesNotMatch(phpTests, /testG7TagTo(String|Json)/);
+  // Q-4 only: to_json names php and node, and Python has no JSON hook.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn __str__</);
+  assert.doesNotMatch(python, /host_json/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /assertEqual\(str\(pkg\.Tag\("a"\)\), "#a"\)/);
+  // A Node hook is the addon's method under its own name: JSON.stringify passes the key to toJSON.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /#\[napi\(js_name = "toString", enumerable = false\)\]/);
+  assert.match(node, /#\[napi\(js_name = "toJSON", enumerable = false\)\]/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/index.cjs'), /toJSON|toString\(\.\.\.args\)/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /toString\(\): string;\n {2}toJSON\(\): never;/);
+  const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
+  assert.match(nodeTests, /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  // G-4: what N-4 does not allow is refused by name.
+  const refused = (change: (members: any[]) => void, message: RegExp): void => {
+    const contract = structuredClone(sample);
+    change(contract.units.find((u: any) => u.id === 'tag').members);
+    assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), message);
+  };
+  const special = (members: any[], kind: string): any => members.find((m: any) => m.kind === kind);
+  refused((members) => members.push({ ...special(members, 'stringify'), id: 'tag.again' }), /tag: a class has one stringify \(N-4\)/);
+  refused((members) => { special(members, 'stringify').returns = 'uint'; }, /a stringify returns text \(N-4\)/);
+  refused((members) => { special(members, 'to_json').raises = []; }, /a never return without raises/);
+});
+
 test('WASM: map<T> is a Map of string keys, through the entries of the ES module (T-2, GN-18)', () => {
   const { contract, caseFiles } = load();
   contract.targets = ['node', 'wasm'];

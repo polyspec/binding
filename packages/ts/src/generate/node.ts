@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -385,16 +385,9 @@ ${body}
 `;
 }
 
-// N-4: the JavaScript name of a member; the string form is toString and the JSON hook toJSON.
-function jsMemberName(fn: Fn): string {
-  if (fn.special === 'stringify') return 'toString';
-  if (fn.special === 'to_json') return 'toJSON';
-  return langName('node', fn.member.name, 'callable');
-}
-
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
-  const jsName = jsMemberName(fn);
+  const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
   for (const parameter of fn.params) {
@@ -438,7 +431,13 @@ ${lines.join('\n')}
   // G-7: napi-rs defines a class's methods as not configurable, so a method that takes arguments is the addon's
   // __<name>, not enumerable and not declared, and the JavaScript entry defines <name>, which checks the arguments and
   // calls it.
-  const attribute = fn.kind === 'property' ? `#[napi(getter, js_name = ${rustString(jsName)})]` : `#[napi(js_name = ${rustString(`__${jsMember}`)}, enumerable = false)]`;
+  // N-4: a stringify or a to_json is the addon's method under the name of the hook: the language calls it with the
+  // arguments of its protocol (JSON.stringify passes the key to toJSON), which the method does not read, so the entry
+  // does not count them.
+  const attribute =
+    fn.kind === 'property'
+      ? `#[napi(getter, js_name = ${rustString(jsName)})]`
+      : `#[napi(js_name = ${rustString(fn.special === undefined ? `__${jsMember}` : jsName)}, enumerable = false)]`;
   const self = fn.receiver === undefined ? '' : '&self, ';
   return `
     ${attribute}
@@ -800,8 +799,8 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
   // addon's __<name>, checking the arguments first (G-7), so an instance that the addon makes has them too.
   const objects = model.objects.map((o) => {
     const cls = langName('node', o.unit.name, 'class');
-    const wraps = o.members.filter((fn) => fn.kind === 'static' || fn.kind === 'method').map((fn) => {
-      const name = jsMemberName(fn);
+    const wraps = o.members.filter((fn) => (fn.kind === 'static' || fn.kind === 'method') && fn.special === undefined).map((fn) => {
+      const name = memberName('node', fn);
       const target = fn.kind === 'static' ? cls : `${cls}.prototype`;
       return `{
   const original = ${target}.__${name};
@@ -942,7 +941,7 @@ ${(u.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')
   const params = (fn: Fn): string => fn.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
-      const name = jsMemberName(fn);
+      const name = memberName('node', fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
       if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;

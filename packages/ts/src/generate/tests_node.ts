@@ -1,9 +1,9 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, langName, unitOf } from './model.ts';
+import { type Model, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -26,6 +26,8 @@ export function nodeTests(model: Model): string {
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
   const invoke = (fn: Fn, args: string, receiver: string): string => {
+    const hook = hookCall('node', fn, receiver);
+    if (hook !== undefined) return hook;
     const member = langName('node', fn.member.name, 'callable');
     const cls = `pkg.${langName('node', fn.unit.name, 'class')}`;
     if (fn.kind === 'function') return `pkg.${member}(${args})`;
@@ -105,7 +107,14 @@ test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });`);
     }
-    if (fn.kind === 'property' || !reachable) continue;
+    for (const kase of stringCases(model, fn)) {
+      out.push(`
+test('N-4: ${name} ${kase.id}', () => {
+  assert.equal(${invoke(fn, '', made(kase.receiver))}, ${jsString(kase.result)});
+});`);
+    }
+    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
+    if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     const record = fn.record;
     const recordTests = record === undefined ? '' : `
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('node', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };

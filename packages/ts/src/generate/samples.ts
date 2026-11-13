@@ -165,9 +165,9 @@ export interface RaisingCase {
 }
 
 // The callables whose tests are generated: the functions, then the members of each class unit.
-// An iterate has no arguments to test; it is iterated in the round trip of GN-13a. A stringify and a to_json are named
-// by each language (N-4) and take no arguments; their cases are an open item of GN-13a.
-export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate' && fn.special === undefined))];
+// An iterate has no arguments to test; it is iterated in the round trip of GN-13a. A stringify and a to_json are
+// called by the name of the language's hook (N-4, memberName).
+export const callables = (model: Model): Fn[] => [...model.functions, ...model.objects.flatMap((o) => o.members.filter((fn) => fn.kind !== 'iterate'))];
 
 export interface Receiver {
   factory: Fn;
@@ -215,6 +215,24 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
     }
   }
   return undefined;
+}
+
+// N-4: the cases of a stringify that do not raise, each with the instance of its factory arguments and the text that
+// the language's string form gives.
+export function stringCases(model: Model, fn: Fn): { id: string; receiver: Receiver; result: string }[] {
+  if (fn.special !== 'stringify') return [];
+  const out: { id: string; receiver: Receiver; result: string }[] = [];
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    const receiver = receiverOf(model, fn, record);
+    const result = record['result'];
+    if (receiver === undefined || typeof result !== 'string') {
+      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
+    }
+    out.push({ id: String(record['id']), receiver, result });
+  }
+  return out;
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {

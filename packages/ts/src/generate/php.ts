@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -459,7 +459,8 @@ impl PhpPairs {
 function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   if (fn.special === 'stringify') {
-    // N-4: __toString returns a string, which Stringable declares.
+    // N-4: __toString returns a string. The class names no Stringable: PHP adds it to a class that has __toString,
+    // and refuses the interface a second time when the class is registered (GN-6g).
     return `
     #[php(name = "__toString")]
     pub fn to_string_form(&self) -> Result<String, PhpException> {
@@ -467,7 +468,7 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
     }
 `;
   }
-  const callable = fn.special === 'to_json' ? 'jsonSerialize' : langName('php', fn.member.name, 'callable');
+  const callable = memberName('php', fn);
   const phpName = `${phpNamespace(layout, fn.module)}\\${callable}`;
   const variables = fn.args.map((a) => langName('php', a.name, 'variable'));
   const lines: string[] = [];
@@ -652,7 +653,7 @@ function objectRust(model: Model, layout: PhpLayout, object: ObjectClass): strin
 /// T-5: ${phpName}${object.constructible ? '' : ', which only its static methods make (U-1 constructible)'}.
 #[php_class]
 #[php(name = ${rustString(phpName)})]
-#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'stringify') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::stringable, stub = "\\\\Stringable"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
+#[php(flags = ClassFlags::Final)]${object.members.some((fn) => fn.kind === 'iterate') ? '\n#[php(implements(ce = ext_php_rs::zend::ce::aggregate, stub = "\\\\IteratorAggregate"))]' : ''}${object.members.some((fn) => fn.special === 'to_json') ? '\n#[php(implements(ce = json_serializable, stub = "\\\\JsonSerializable"))]' : ''}
 pub struct ${struct} {
     pub(crate) inner: ${object.unit.core_type ?? ''},
 }
@@ -1055,7 +1056,7 @@ ${indent} */
 ${indent}public function getIterator(): \\Iterator {}
 `;
     }
-    const name = fn.kind === 'constructor' ? '__construct' : fn.special === 'stringify' ? '__toString' : fn.special === 'to_json' ? 'jsonSerialize' : langName('php', fn.member.name, 'callable');
+    const name = fn.kind === 'constructor' ? '__construct' : memberName('php', fn);
     const prefix = fn.kind === 'function' ? 'function' : fn.kind === 'static' ? 'public static function' : 'public function';
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
     return `${indent}/**

@@ -11,12 +11,13 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
-  functions units, class units (constructor, static members, methods and properties with the receiver `&self`),
+  functions units, class units (constructor, static members, methods and properties with the receiver `&self`, and
+  the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), enums, constants and error classes.
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
-  `&mut self` or `self`, a parameter of a class, `only`, `native`, a naming exception, a dependency kind, the type
-  `source`) is refused by name
+  `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a dependency kind, the
+  type `source`) is refused by name
   before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
   repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
@@ -142,6 +143,20 @@ the design ids are those of the binding design.
   `getIterator` gives the items under their positions, or the values under their keys, through the extension's
   iterator `<namespace>\Internal\Pairs`, because a key may be an object. An iterate that raises, or a second
   iterate of a class, is refused by name (G-4).
+- **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
+  of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,
+  `toString` in Node and `__toString` in PHP. A to_json is `toJSON` in Node and `jsonSerialize` in PHP, whose class
+  implements `\JsonSerializable`; Python has no JSON hook, so the member is absent there. The PHP extension names no
+  `\Stringable` for a class with a stringify, because PHP gives that interface to every class that has `__toString`
+  and refuses a class that names it a second time when the extension loads; the stub declares it. A Node hook is the
+  addon's method under its own name, without the argument check of the entry (G-7), because the language calls a hook
+  with the arguments of its protocol (`JSON.stringify` passes the key to `toJSON`), which the method does not read. A
+  second stringify or to_json of a class, one with a parameter, and a stringify that does not return text are refused
+  by name (G-4). A member that returns `never` (T-1) calls a core that returns `Result<Infallible, E>`: the generated
+  code returns the failure and matches the value, which has no variant, without an arm; the declarations say `never`
+  in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
+  with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
+  the tests of every other target.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
@@ -279,7 +294,10 @@ the design ids are those of the binding design.
   and a result of another type is a binding kind; its other arguments are placeholders whose lists have one item.
   No B-4 test is generated for a member that takes a callback: B-4 runs a contract case, and a case is JSON, which
   cannot give the object that implements the callback, so the case's failure cannot be reached from its keys. K-2 is
-  another requirement and does not stand in for it.
+  another requirement and does not stand in for it. A stringify and a to_json are run as the language runs the hook
+  (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
+  (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
+  test of a to_json calls `JSON.stringify` or `json_encode`; neither has a G-7 test.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-5c, B-6 and B-10; the identity of a default; the round trip
   of a value unit's rows; and B-4 for members that take a callback, for which a case names a callback fixture of a
   closed set that each language's generated test implements.

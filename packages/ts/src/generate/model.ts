@@ -508,9 +508,27 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
 }
 
-// Q-4 only: the members that a language has; a member whose only names other targets is not generated there.
+// N-4: the name of a member in a language. A stringify and a to_json have the name of the language's hook, any other
+// member the converted name of the contract (N-2).
+export function memberName(lang: Lang, fn: Fn): string {
+  if (fn.special === 'stringify') return lang === 'python' ? '__str__' : lang === 'php' ? '__toString' : 'toString';
+  if (fn.special === 'to_json') return lang === 'php' ? 'jsonSerialize' : 'toJSON';
+  return langName(lang, fn.member.name, 'callable');
+}
+
+// N-4: how a language runs the hook of a stringify or a to_json on an instance, which is how a generated test calls
+// it: a hook is called by the language, with the arguments of the language's protocol.
+export function hookCall(lang: 'python' | 'node' | 'php', fn: Fn, receiver: string): string | undefined {
+  if (fn.special === 'stringify') return { python: `str(${receiver})`, node: `String(${receiver})`, php: `(string) ${receiver}` }[lang];
+  if (fn.special === 'to_json') return { python: undefined, node: `JSON.stringify(${receiver})`, php: `\\json_encode(${receiver})` }[lang];
+  return undefined;
+}
+
+// Q-4 only: the members that a language has; a member whose only names other targets is not generated there. N-4:
+// Python has no JSON hook, so a to_json is no member of Python.
 export function membersFor(model: Model, lang: Lang): Model {
-  const has = (fn: Fn): boolean => fn.member.only === undefined || fn.member.only.targets.includes(lang);
+  const has = (fn: Fn): boolean =>
+    (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json');
   return {
     ...model,
     functions: model.functions.filter(has),

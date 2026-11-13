@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -394,9 +394,8 @@ ${body}
 
 function functionRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
-  // N-4: Python has no JSON hook; the string form is __str__.
-  if (fn.special === 'to_json') return '';
-  const name = fn.special === 'stringify' ? '__str__' : langName('python', fn.member.name, 'callable');
+  // N-4: the string form is __str__.
+  const name = memberName('python', fn);
   const positional = fn.args.filter((a) => !a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const keyword = fn.args.filter((a) => a.field).map((a) => rustIdent(langName('python', a.name, 'variable')));
   const signature = keyword.length === 0 ? positional.join(', ') : [...positional, '*', ...keyword].join(', ');
@@ -828,12 +827,11 @@ function nativePyi(model: Model): string {
     return keyword.length === 0 ? positional : [...positional, '*', ...keyword];
   };
   const classes = model.objects.map((o) => {
-    const lines = o.members.filter((fn) => fn.special !== 'to_json').map((fn) => {
+    const lines = o.members.map((fn) => {
       const name = langName('python', fn.member.name, 'callable');
       if (fn.kind === 'constructor') return `    def __init__(${['self', ...params(fn)].join(', ')}) -> None: ...`;
       if (fn.kind === 'static') return `    @staticmethod\n    def ${name}(${params(fn).join(', ')}) -> ${pyType(model, fn.returns, false)}: ...`;
       if (fn.kind === 'property') return `    @property\n    def ${name}(self) -> ${pyType(model, fn.returns, false)}: ...`;
-      if (fn.special === 'to_json') return '';
       if (fn.special === 'stringify') return '    def __str__(self) -> str: ...';
       if (fn.kind === 'iterate') {
         const yields = fn.yields ?? { value: 'none' };
