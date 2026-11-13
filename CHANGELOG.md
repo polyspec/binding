@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A class result that the core gives by reference, such as `&OrderedMap` of `Value::members` or the `&Value` items of
+  `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
+  conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
+  reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
 - A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
   generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
   generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,

@@ -6,7 +6,7 @@ import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUni
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -811,8 +811,8 @@ fn held_${rustField(object.unit.name)}(value: &Zval, subject: &str) -> Result<${
     }
 }
 ` : ''}
-fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> Result<Zval, Fail> {
-    ZendClassObject::new(${struct} { inner: ${heldNew(object, 'value')} })
+fn out_${rustField(object.unit.name)}(value: impl CoreForm<${object.unit.core_type ?? ''}>) -> Result<Zval, Fail> {
+    ZendClassObject::new(${struct} { inner: ${heldNew(object, 'value.core_form()')} })
         .into_zval(false)
         .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
 }
@@ -836,7 +836,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);

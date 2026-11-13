@@ -187,7 +187,9 @@ the design ids are those of the binding design.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
   native module, Node a napi class exported by its JavaScript name, PHP a `php_class` with the flag final. A method or
   property calls the core path with the held value as its receiver; a static member or the constructor that returns
-  the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
+  the class wraps the value. A result of the class is a new instance whether the core gives it owned or borrowed (an
+  accessor gives `&T`, and an item of an optional or a list a reference to either): the conversion `out_<class>` takes
+  `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
   declarations, and the entry defines `<name>` over it with the checks of G-7. napi-rs keeps the classes it parsed in

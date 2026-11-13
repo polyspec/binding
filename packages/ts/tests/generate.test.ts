@@ -1384,9 +1384,9 @@ test('a class value that the core gives by reference leaves as a new instance of
     const lib = text(out, file);
     // An accessor of the core returns `&Token`, a computed value `Token`, and an item of an optional or a list a
     // reference to either; the conversion takes each of them and copies only a borrowed value.
-    assert.match(lib, /fn out_token\((?:py: Python<'_>, |env: &Env, )?value: impl Given<polyspec_classes::Token>\)/, file);
-    assert.match(lib, /trait Given<T> \{\n\s+fn given\(self\) -> T;\n\}/, file);
-    assert.match(lib, /impl<T: Clone> Given<T> for &&T \{/, file);
+    assert.match(lib, /fn out_token\((?:py: Python<'_>, |env: &Env, )?value: impl CoreForm<polyspec_classes::Token>\)/, file);
+    assert.match(lib, /trait CoreForm<T> \{\n\s+fn core_form\(self\) -> T;\n\}/, file);
+    assert.match(lib, /impl<T: Clone> CoreForm<T> for &&T \{/, file);
   }
 });
 

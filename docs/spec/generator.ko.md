@@ -154,7 +154,9 @@
   `invalid_argument_type`이다.
 - **GN-6b** class unit(T-5)은 코어 값을 가진 final 언어 클래스다: Python은 native module의 frozen `pyclass`, Node는 JavaScript
   이름으로 내보내는 napi 클래스, PHP는 final 플래그를 단 `php_class`. 메서드와 property는 가진 값을 receiver로 코어 경로를 부르고,
-  클래스를 돌려주는 static member나 생성자는 값을 감싼다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
+  클래스를 돌려주는 static member나 생성자는 값을 감싼다. 클래스의 결과는 코어가 소유한 값으로 주든 빌린 값으로 주든 새 인스턴스다(accessor는
+  `&T`를, optional이나 list의 항목은 그 둘 중 하나의 참조를 준다): 변환 `out_<class>`는 `impl CoreForm<T>`를 받아 소유한 값은 그대로 두고
+  빌린 값은 복제하므로, 인스턴스는 코어를 빌리지 않는다. `constructible: false`면 생성자가 없다(PHP는 private으로 선언).
   property는 Python과 Node에서 getter, PHP에서 메서드다(I-3). napi-rs는 클래스 메서드를 configurable하지 않게 정의하므로,
   napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를 유지하지 않으므로, Node
   생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를 내보낸다(`instanceof`는

@@ -110,6 +110,31 @@ macro_rules! wide_int {
 wide_int!(i8, i16, i32, i64, u8, u16, u32);
 `;
 
+// T-5, GN-6b: a value of a class reaches the binding owned or borrowed, as the core gives a result or takes an argument.
+// The trait turns it into the form that the place asks for: the value itself, or a copy of a borrowed value. One block,
+// as usedHelpers splits helpers at blank lines.
+export const CORE_FORM = `
+/// T-5, GN-6b: a class value in the form that its place asks for; only a borrowed value that is asked for owned is cloned.
+trait CoreForm<T> {
+    fn core_form(self) -> T;
+}
+impl<T> CoreForm<T> for T {
+    fn core_form(self) -> T {
+        self
+    }
+}
+impl<T: Clone> CoreForm<T> for &T {
+    fn core_form(self) -> T {
+        self.clone()
+    }
+}
+impl<T: Clone> CoreForm<T> for &&T {
+    fn core_form(self) -> T {
+        (*self).clone()
+    }
+}
+`;
+
 // A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure).
 export function closure(params: string[], body: string): string {
   const call = /^([a-z_][a-z_0-9]*)\((.*)\)$/.exec(body);
