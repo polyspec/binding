@@ -1845,6 +1845,52 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
 
+test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  // The future owns the converted arguments and the guards, and awaits the async fn of the core.
+  const future = /async move \{[^\n]*polyspec_classes::fetch\(&name\)\.await/;
+  const method = /async move \{[^\n]*polyspec_classes::Gate::enter_later\(&[a-z_]+\)\.await/;
+  // PHP: the calling thread blocks on the runtime of binding_core.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /binding_core::driver::block_on\(binding_core::driver::Caught::new\(/);
+  assert.match(php, future);
+  assert.match(php, method);
+  // Python: the future runs without the GIL, and a<name> runs <name> in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| binding_core::driver::block_on\(/);
+  assert.match(python, future);
+  assert.match(python, /#\[pyfunction\(name = "afetch", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /#\[pyo3\(name = "aenter_later", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /\nasync def afetch\(name: str\) -> str: \.\.\./);
+  // Node: a Promise of the future on the tokio runtime of napi, whose result is converted on the JavaScript thread.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /env\.spawn_future_with_callback\(binding_core::driver::Caught::new\(/);
+  assert.match(node, future);
+  assert.match(node, method);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function fetch\(name: string\): Promise<string>;/);
+  assert.match(dts, /\n {2}enterLater\(\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.fetch\('a'\)/);
+  // The binding crates turn on the driver of binding_core, and the Node crate the tokio runtime of napi.
+  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml']) {
+    assert.match(text(out, crate), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
+  }
+  assert.match(text(out, 'packages/ts/Cargo.toml'), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
+  // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
+  };
+  assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  assert.throws(() => classes(everywhere, ['wasm']), /classes\.fetch: wait async_driver is not generated for WASM yet \(GN-6n\)/);
+  assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
+});
+
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
