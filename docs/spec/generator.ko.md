@@ -285,8 +285,12 @@
   바이트가 아닌 곳(Windows)에서 UTF-8이 아닌 바이트는 kind `invalid_path`다. 바이트는
   `binding_core::path_from_bytes`와 `binding_core::path_bytes`가 바꾸므로 모든 target이 한 함수로 판정한다. WASM에는
   OS 경로가 없다. 계약은 `path`를 가진 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15). WASM target에 닿은 `path`는
-  이름으로 거부한다. 타입 `path`의 case 값은 이름으로 거부한다(G-4). 상대 경로를 시험마다의 임시 디렉터리에서 푸는
-  일을 아직 생성하지 않기 때문이다.
+  이름으로 거부한다. 타입 `path`의 case 값(G-5)은 부분 사이를 `/`로 적은 상대 경로다. 생성된 시험은 그것을 시험마다
+  새로 만든 임시 디렉터리 안에서 풀고, 시험이 끝나면 그 디렉터리를 지운다. Python은 시험의
+  `tempfile.TemporaryDirectory`, Node는 `mkdtempSync`와 `afterEach`, PHP는 `sys_get_temp_dir()` 아래 디렉터리와
+  `tearDown`, Go는 `t.TempDir()`을 쓴다. 한 시험의 입력과 기대 결과는 같은 디렉터리에서 풀리므로, 경로를 내는 결과는 그
+  디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
+  거부한다(G-4).
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
   코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는

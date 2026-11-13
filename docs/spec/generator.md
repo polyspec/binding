@@ -349,8 +349,12 @@ the design ids are those of the binding design.
   not UTF-8, are kind `invalid_path`. `binding_core::path_from_bytes` and `binding_core::path_bytes` convert the bytes,
   so every target judges them by one function. WASM has no OS path: the contract gives a member with `path` an `only`
   without `wasm` (Q-4, CK-15), and a `path` that reaches the WASM target is refused by name. A case value of type
-  `path` is refused by name (G-4), because the resolution of a relative path in a temporary directory of each test is
-  not generated yet.
+  `path` (G-5) is a relative path with `/` between its parts, which the generated test resolves inside a new temporary
+  directory of each test and removes with it: Python `tempfile.TemporaryDirectory` of the test, Node `mkdtempSync`
+  with `afterEach`, PHP a directory under `sys_get_temp_dir()` with `tearDown`, Go `t.TempDir()`. An input and the
+  expected result of one test resolve in the same directory, so a result that names the path is compared as the path
+  in that directory. An empty path, an absolute path and a path with a part `..` are refused by name (G-4), because
+  they would leave the directory of the test.
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
   does when `raises` names a variant of the contract's own core error or the member takes a callback. The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
