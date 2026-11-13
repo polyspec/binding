@@ -581,7 +581,9 @@
           "make": {
             "php": "null",
             "python": "null",
-            "node": "null"
+            "node": "null",
+            "go": "null",
+            "wasm": "null"
           }
         },
         {
@@ -589,7 +591,9 @@
           "make": {
             "php": "bool",
             "python": "bool",
-            "node": "bool"
+            "node": "bool",
+            "go": "bool",
+            "wasm": "bool"
           }
         },
         {
@@ -597,7 +601,9 @@
           "make": {
             "php": "float",
             "python": "float",
-            "node": "float"
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
           }
         },
         {
@@ -605,7 +611,9 @@
           "make": {
             "php": "text",
             "python": "text",
-            "node": "text"
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
           }
         },
         {
@@ -613,7 +621,9 @@
           "make": {
             "php": "list",
             "python": "list",
-            "node": "list"
+            "node": "list",
+            "go": "list",
+            "wasm": "list"
           }
         },
         {
@@ -625,7 +635,9 @@
           "make": {
             "php": "map",
             "python": "map",
-            "node": "map"
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
           }
         },
         {
@@ -637,7 +649,9 @@
           "make": {
             "php": "php_object",
             "python": "map",
-            "node": "map"
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
           }
         }
       ],

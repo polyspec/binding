@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- The value alias `data` of `tests/e2e/sample` declared the targets Go and WASM but its out rows made no Go and no
+  WASM value, so `binding check` failed every target of `tests/e2e/sample` and `tests/e2e/consumer` (CK-8). Each out
+  row now makes the Go and the WASM value of its kind. Verified by `npm test` in `packages/ts` and `make e2e`.
 - The generated tests ran only the contract cases that raise and compared no result: a member whose cases do not
   raise was called by no test. Every target now runs each such case and compares its result with the value of the
   case; the key of that value is the new `result` of the `cases` row, or `result`, and a case whose result has no
