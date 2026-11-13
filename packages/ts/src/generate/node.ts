@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -439,7 +439,9 @@ function variantRust(model: Model, variant: Variant): string {
     const fields = caseFields(model, variant, kase);
     const reads = fields.map((f) => {
       const memberName = langName('node', f.field.name, 'variable');
-      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName))}?`)};`;
+      // GN-6v: a field that may be left out is null when its member is missing or undefined.
+      const read = leftOut(f.field) ? `in_default(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};`;
     });
     const built = `Ok(${caseStruct(variant, kase, fields)})`;
     return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
@@ -1368,7 +1370,7 @@ export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) 
 /** T-9: the case ${kase.value} of the variant ${langName('node', v.unit.name, 'class')}. */
 export interface ${langName('node', kase.unit.name, 'class')} {
   readonly ${langName('node', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
-${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
+${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}${leftOut(f) ? '?' : ''}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
 
 /** T-9. */
 export type ${langName('node', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('node', kase.unit.name, 'class')).join(' | ')};`).join('\n');

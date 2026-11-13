@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
+  generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
+  a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM
+  member that is missing or `undefined` and declared optional, and null at its place in the PHP constructor; a case
+  value may leave out its key (GN-6v). Any other default of a case field stays refused by name. `tests/e2e/variants`
+  has the field `at` of the case `label` with this default. Verified by `npm test` in `packages/ts`.
 - PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
   contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
   parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or

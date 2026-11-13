@@ -514,8 +514,11 @@ export function collectModel(
           const where = `${unit.id}.${kase.value}.${field.name.join('_')}`;
           refused = refusals.attempt(() => {
             if (convert(field.name, 'rust', 'variable') === tag) throw new Unsupported(`${where}: a field has the name of the tag (GN-6v)`);
-            declaredDefault(field, where, true);
-            if (field.default !== undefined) throw new Unsupported(`${where}: a field default of a case is not generated yet (T-4, T-9)`);
+            // GN-6v: an optional field whose default is {literal: null} may be left out, which is the null it holds.
+            if (!leftOut(field)) {
+              declaredDefault(field, where, true);
+              if (field.default !== undefined) throw new Unsupported(`${where}: a field default of a case other than {literal: null} of an optional field is not generated yet (T-4, T-9)`);
+            }
             supportedType(field.type, units, where, foreign);
             const held = heldInCase(field.type, units);
             if (held !== undefined) throw new Unsupported(`${where}: a ${held} in a case of a variant is not generated yet (GN-6v)`);
@@ -1453,3 +1456,7 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
   const names = parts.map((_, i) => `part_${i}`);
   return `${taken}.and_then(|[${names.join(', ')}]| Ok((${parts.map((t, i) => `${part(t, names[i] ?? '')}?`).join(', ')}${parts.length === 1 ? ',' : ''})))`;
 };
+
+// T-9, GN-6v: an optional field of a case whose default is {literal: null} may be left out, and is then null.
+export const leftOut = (field: { type: Type; default?: Default }): boolean =>
+  typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;

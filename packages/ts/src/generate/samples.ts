@@ -6,7 +6,7 @@
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { type Arg, type Fn, type Model, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, leftOut } from './model.ts';
 import { kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -193,6 +193,8 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     if (extra !== undefined) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${extra}`);
     return caseNew(ctx, variant, kase, (kase.unit.fields ?? []).map((f) => {
       const key = langName('python', f.name, 'variable');
+      // GN-6v: a field that may be left out is null when the case value leaves it out.
+      if (!(key in fields) && leftOut(f)) return out ? fromJson(model, ctx, f.type, null, out) : LEFT_OUT;
       if (!(key in fields)) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${key}`);
       return fromJson(model, ctx, f.type, fields[key], out);
     }));
@@ -383,8 +385,16 @@ function comparable(model: Model, type: Type, seen: Set<string> = new Set()): bo
 }
 
 // GN-6v: a value of a case in the form of the language.
-const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string =>
-  ctx.variantNew === undefined ? ctx.recordNew(kase.unit, fields) : ctx.variantNew(variant, kase, fields);
+// GN-6v: the value of a field that a case value of an input leaves out, which Python and JavaScript leave out of the
+// value they make, and PHP gives as null at its place in the constructor.
+const LEFT_OUT = '\u0000left out';
+const caseNew = (ctx: Context, variant: Variant, kase: VariantCase, fields: string[]): string => {
+  const all = kase.unit.fields ?? [];
+  const kept = ctx.lang === 'php' ? all : all.filter((_f, i) => fields[i] !== LEFT_OUT);
+  const values = ctx.lang === 'php' ? fields.map((v) => (v === LEFT_OUT ? 'null' : v)) : fields.filter((v) => v !== LEFT_OUT);
+  const unit = { ...kase.unit, fields: kept };
+  return ctx.variantNew === undefined ? ctx.recordNew(unit, values) : ctx.variantNew(variant, { ...kase, unit }, values);
+};
 
 // G-5: two calls of a member whose results the generated test requires to be the same (the outcome is the result, or
 // the class and kind of the failure): for each argument with a {literal}, {const} or {empty} default, the call that
