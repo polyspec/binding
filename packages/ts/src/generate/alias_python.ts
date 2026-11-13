@@ -159,7 +159,7 @@ impl<'py> PyHost<'py> {
             // B-3: the code points, unpaired surrogates included.
             let encoded = value.call_method1("encode", ("utf-32-le", "surrogatepass"))?;
             let bytes: Vec<u8> = encoded.extract()?;
-            let points = bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+            let points = bytes.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect();
             return Ok(HostValue::Text(HostText::CodePoints(points)));
         }
         if value.is_exact_instance_of::<PyBytes>() {
