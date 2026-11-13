@@ -1190,8 +1190,8 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(lib, /BindingError::WrongThread \{ subject: subject\.to_owned\(\) \}/);
   assert.match(lib, /fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail> \{\n    release_queue\(\);/);
   assert.match(lib, /#\[cfg\(feature = "thread-test"\)\]\n#\[napi\(js_name = "__threadTest"\)\]/);
-  assert.match(text(out, 'packages/ts/Cargo.toml'), /\nthread-test = \[\]\n/);
-  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /convert: \(argument0: string, argument1: [^)]+\) => string/);
+  assert.match(String(trackedPackages(contract, '0.0.0').get('packages/ts/Cargo.toml')), /\nthread-test = \[\]\n/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /convert: \(\(argument0: string, argument1: readonly \(number\)\[\]\) => string\)/);
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.ok(tests.includes(`const function0 = fixture(['call'], [['call', ['a', [1]], 'A', false]]);`), tests);
   assert.ok(tests.includes('pkg.apply(function0.object.call, '), tests);

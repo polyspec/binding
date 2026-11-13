@@ -324,51 +324,6 @@ fn js_index(value: u64) -> Result<u32, Fail> {
     u32::try_from(value).map_err(|_wide| binding_error(BindingError::Internal { detail: format!("{value} is beyond the length of an array") }))
 }
 
-${ownedNatives('napi::UnknownRef<false>', 'release_references(references);')}
-thread_local! {
-    /// GN-6o: the env of the table of this thread, which releases its references.
-    static NATIVE_ENV: std::cell::Cell<napi::sys::napi_env> = const { std::cell::Cell::new(std::ptr::null_mut()) };
-}
-
-/// GN-6o: releases references of the env of this thread. A reference that napi cannot delete stays with the env,
-/// which frees it when it ends.
-fn release_references(references: Vec<napi::UnknownRef<false>>) {
-    let env = Env::from_raw(NATIVE_ENV.get());
-    for reference in references {
-        let _kept = reference.unref(&env);
-    }
-}
-
-/// GN-6o: a JavaScript value that a core may keep, as a Native of the table of this thread; the cleanup hook of the
-/// env is registered with the table.
-fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
-    if OWNED.with_borrow(Option::is_none) {
-        let Some((owner, generation)) = native_owner() else {
-            return Err(napi::Error::from_reason("GN-6o: the table of the owners is poisoned"));
-        };
-        env.add_env_cleanup_hook((), |()| clean_up_native())?;
-        NATIVE_ENV.set(env.raw());
-        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
-    }
-    // SAFETY: the value is a live value of this env; from_napi_value creates a reference to it.
-    let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }?;
-    keep_native(reference).ok_or_else(|| napi::Error::from_reason("GN-6o: this thread has no table"))
-}
-
-/// GN-6o: the JavaScript value that entered as the Native; one of an ended env, or of another thread, is kind internal.
-fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>, Fail> {
-    let found = native.downcast::<OwnedNative>().and_then(|native| {
-        OWNED.with_borrow(|owned| match owned {
-            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(|reference| reference.get_value(env)),
-            _ => None,
-        })
-    });
-    match found {
-        Some(value) => value.map_err(internal),
-        None => Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") })),
-    }
-}
-
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
 #[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_count(value: usize) -> u64 {
@@ -441,3 +396,75 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 `;
   }).join('');
 }
+
+// GN-6o, GN-6m: the Natives of Node, which a value alias and a function type hold: the owner table, the env that
+// releases its references and the call of a function on the owner thread.
+// usedHelpers splits helpers at blank lines, so a block keeps none inside it.
+export const NODE_NATIVE = (`${ownedNatives('napi::UnknownRef<false>', 'release_references(references);')}
+thread_local! {
+    /// GN-6o: the env of the table of this thread, which releases its references.
+    static NATIVE_ENV: std::cell::Cell<napi::sys::napi_env> = const { std::cell::Cell::new(std::ptr::null_mut()) };
+}
+
+/// GN-6o: releases references of the env of this thread. A reference that napi cannot delete stays with the env,
+/// which frees it when it ends.
+fn release_references(references: Vec<napi::UnknownRef<false>>) {
+    let env = Env::from_raw(NATIVE_ENV.get());
+    for reference in references {
+        let _kept = reference.unref(&env);
+    }
+}
+
+/// GN-6o: a JavaScript value that a core may keep, as a Native of the table of this thread; the cleanup hook of the
+/// env is registered with the table.
+fn js_native(env: &Env, value: Unknown<'_>) -> napi::Result<Native> {
+    if OWNED.with_borrow(Option::is_none) {
+        let Some((owner, generation)) = native_owner() else {
+            return Err(napi::Error::from_reason("GN-6o: the table of the owners is poisoned"));
+        };
+        env.add_env_cleanup_hook((), |()| clean_up_native())?;
+        NATIVE_ENV.set(env.raw());
+        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+    }
+    // SAFETY: the value is a live value of this env; from_napi_value creates a reference to it.
+    let reference = unsafe { <napi::UnknownRef<false> as FromNapiValue>::from_napi_value(env.raw(), value.raw()) }?;
+    keep_native(reference).ok_or_else(|| napi::Error::from_reason("GN-6o: this thread has no table"))
+}
+
+/// GN-6o: the JavaScript value that entered as the Native; one of an ended env, or of another thread, is kind internal.
+fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>, Fail> {
+    let found = native.downcast::<OwnedNative>().and_then(|native| {
+        OWNED.with_borrow(|owned| match owned {
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(|reference| reference.get_value(env)),
+            _ => None,
+        })
+    });
+    match found {
+        Some(value) => value.map_err(internal),
+        None => Err(binding_error(BindingError::Internal { detail: String::from("GN-6o: the native value is gone") })),
+    }
+}
+
+/// GN-6m: a value of a function type is a function (kind invalid_argument_type), held as a Native.
+fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
+    if value.get_type().map_err(internal)? != ValueType::Function {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+    }
+    js_native(env, value).map_err(internal)
+}
+
+/// GN-6m: the env of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
+/// and a call after the cleanup of the env is kind internal.
+fn native_env(native: &Native, subject: &str) -> Result<Env, Thrown> {
+    let Some(native) = native.downcast::<OwnedNative>() else {
+        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6o: a native value that no JavaScript value entered as") })));
+    };
+    if OWNER.get() != Some(native.owner) {
+        return Err(Thrown::Binding(binding_error(BindingError::WrongThread { subject: subject.to_owned() })));
+    }
+    if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
+        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6o: the env of the function has ended") })));
+    }
+    Ok(Env::from_raw(NATIVE_ENV.get()))
+}
+`).replace(/\n\n(?=[ }])/g, '\n');

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Node refused a member that takes a function type (GN-6m). It now holds the JavaScript function as a `Native` of
+  its owner table (GN-6o) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
+  the env of the table, and a call on another thread is kind `wrong_thread`, which the entry point `__threadTest` of
+  the new feature `thread-test` shows. A value that is not a function is kind `invalid_argument_type`. The generated
+  tests give a function value of a case as the call of a fixture.
 - The generated bindings kept every language object that entered as a handle in a table that only grew: Python and
   WASM for the life of the process, Node for the life of the thread, PHP until the request ended. A `Date` and an
   `Other` value were kept the same way, and Go walked a func only inside its call. A language object that a core may

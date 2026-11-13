@@ -930,6 +930,16 @@ export function holdsFunction(type: Type): boolean {
   return false;
 }
 
+// GN-6m: whether a member of the contract takes a function type.
+export function takesFunction(model: Model): boolean {
+  return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+}
+
+// GN-6o: whether the binding holds Natives: for a value alias, or for a function type.
+export function usesNative(model: Model): boolean {
+  return model.aliases.length > 0 || takesFunction(model);
+}
+
 // T-1: the type of a parameter of a callback member or of a function type: a type with two forms is borrowed, a Copy
 // type by value, a list as a slice, and any other type by reference.
 export function traitParam(model: Model, type: Type): string {

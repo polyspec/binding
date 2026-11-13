@@ -2,9 +2,9 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
+import { NODE_HOST, NODE_NATIVE, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, usesNative, takesFunction, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, traitParam, boxed, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -32,11 +32,36 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
   if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
+}
+
+// GN-6m, GN-6o: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
+// binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+  const argsType = `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
+  const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
+  return `in_function(env, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                let call = || -> Result<${result}, Thrown> {
+                    let env = &native_env(&native, ${subject})?;
+                    let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
+                    let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
+                    let returned = function.call(args).map_err(Thrown::Js)?;
+                    ${returned}
+                };
+                call().map_err(thrown)
+            })
+        })`;
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -787,6 +812,7 @@ function libRust(model: Model): string {
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
     model.aliases.length > 0 ? NODE_HOST : '',
+    usesNative(model) ? NODE_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -807,11 +833,11 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::${model.aliases.length > 0 ? '{Mutex, OnceLock}' : 'OnceLock'};${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
+${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::${usesNative(model) ? '{Mutex, OnceLock}' : 'OnceLock'};${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -898,7 +924,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${model.aliases.length > 0 ? '\n    release_queue();' : ''}
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -918,7 +944,22 @@ ${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${fu
 pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
-${aliasesWithKinds(model).map((alias) => `
+${takesFunction(model) ? `
+/// U-3, GN-6m: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+/// gives on another thread, whose drop of the Native the owner releases at its next entry point.
+#[cfg(feature = "thread-test")]
+#[napi(js_name = "__threadTest")]
+pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
+    let native = guard(|| in_function(env, value, "value")).map_err(|fail| throw(env, fail))?;
+    let kind = std::thread::spawn(move || match native_env(&native, "value") {
+        Ok(_env) => String::from("none"),
+        Err(Thrown::Binding(fail)) => fail.kind.to_owned(),
+        Err(Thrown::Js(error)) => error.reason,
+    })
+    .join();
+    kind.map_err(|_panic| napi::Error::from_reason("U-3: the thread of the test panicked"))
+}
+` : ''}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[napi(js_name = ${rustString(`__aliasIn${langName('node', alias.unit.name, 'class')}`)})]
@@ -966,6 +1007,8 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
+  // GN-6m: a function takes the arguments that the core gives and returns a value that the binding judges.
+  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {

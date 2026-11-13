@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Node는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6o)로 갖고 parameter를
+  TypeScript 함수 타입으로 선언한다. 호출은 owner 스레드에서 표의 env 안에서 실행되고, 다른 스레드의 호출은 kind
+  `wrong_thread`이며, 새 feature `thread-test`의 진입점 `__threadTest`가 그것을 보인다. 함수가 아닌 값은 kind
+  `invalid_argument_type`이다. 생성된 테스트는 case의 함수 값을 fixture의 call로 준다.
 - 생성된 바인딩은 handle로 들어온 모든 언어 객체를 커지기만 하는 표에 두었다. Python과 WASM은 프로세스가 끝날 때까지,
   Node는 스레드가 끝날 때까지, PHP는 요청이 끝날 때까지 두었다. `Date`와 `Other` 값도 같이 두었고, Go는 func를 그 호출
   안에서만 다루었다. 이제 코어가 보관할 수 있는 언어 객체는 `Native`로 들어오고, 마지막 drop이 target의 규칙으로 그것을

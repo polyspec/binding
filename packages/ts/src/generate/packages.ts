@@ -6,6 +6,7 @@
 
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
+import { holdsFunction } from './model.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
@@ -93,7 +94,11 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
   const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
   const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
   const codec = suffix === 'go' || contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
-  return `${faults}${codec}`;
+  // U-3, GN-6m: thread-test adds the entry point that calls a function of the language on another thread, in a target
+  // that holds a function on its owner thread.
+  const owned = suffix === 'node' || suffix === 'php-ext';
+  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type)))) ? 'thread-test = []\n' : '';
+  return `${faults}${codec}${thread}`;
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
