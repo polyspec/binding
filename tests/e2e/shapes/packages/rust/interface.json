@@ -241,6 +241,38 @@
           "core": "polyspec_shapes::frame"
         },
         {
+          "id": "shapes.wrap",
+          "name": [
+            "wrap"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "wrap_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::wrap"
+        },
+        {
           "id": "shapes.checksum",
           "name": [
             "checksum"
@@ -396,6 +428,40 @@
       ]
     },
     {
+      "id": "wrap_options",
+      "name": [
+        "wrap",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::WrapOptions",
+      "fields": [
+        {
+          "name": [
+            "left"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "["
+          },
+          "default_core": "polyspec_shapes::DEFAULT_LEFT"
+        },
+        {
+          "name": [
+            "right"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "]"
+          },
+          "default_core": "polyspec_shapes::DEFAULT_RIGHT"
+        }
+      ]
+    },
+    {
       "id": "text_measure",
       "name": [
         "text",
@@ -441,7 +507,7 @@
         "utf8",
         "error"
       ],
-      "module": "",
+      "module": "errors",
       "kind": "error",
       "visibility": "public",
       "origin": "generated",
@@ -575,6 +641,11 @@
       "member": "shapes.frame",
       "file": "contracts/cases.json",
       "group": "frame"
+    },
+    {
+      "member": "shapes.wrap",
+      "file": "contracts/cases.json",
+      "group": "wrap"
     },
     {
       "member": "shapes.checksum",

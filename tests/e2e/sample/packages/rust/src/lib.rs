@@ -388,7 +388,7 @@ impl Counter {
     ///
     /// Kind `internal` when the invariant of the sample is broken.
     pub fn draw(&mut self, other: &Self) -> Result<u64, Error> {
-        if binding_core::fault::point(fault::DRAW).is_some() {
+        if binding_core::fault::point!(fault::DRAW).is_some() {
             return Err(Error::Internal { detail: String::from("the total of a counter is unknown") });
         }
         self.total = self.total.saturating_add(other.total);
@@ -437,11 +437,11 @@ impl Ledger {
 ///
 /// Kind `unreadable` when the read fails, and kind `internal` when the invariant of the sample is broken.
 pub fn measure(text: &str) -> Result<u64, Error> {
-    if binding_core::fault::point(fault::INTERNAL).is_some() {
+    if binding_core::fault::point!(fault::INTERNAL).is_some() {
         return Err(Error::Internal { detail: String::from("the length of a text is unknown") });
     }
     let length = widen(text.len());
-    match binding_core::fault::point(fault::READ) {
+    match binding_core::fault::point!(fault::READ) {
         Some(binding_core::fault::Injected::Io { errno }) => Err(Error::Unreadable { errno }),
         Some(binding_core::fault::Injected::Short { bytes }) => Ok(length.min(bytes)),
         Some(binding_core::fault::Injected::Broken) | None => Ok(length),

@@ -963,9 +963,10 @@ describe('CK-64 integers of a case (T-1)', () => {
     const big = 9223372036854775807n;
     assert.deepEqual(run((c) => { c.repeat[0].times = big; }), [outside('/cases/1 the case twice_with_a_separator of shapes.repeat', 'the argument times', 'uint')]);
     const id: string = read('contracts/cases.json').total[0].id;
+    const row: number = read('packages/rust/interface.json').cases.findIndex((c: any) => c.member === 'shapes.total');
     assert.deepEqual(run((c) => { c.total[0].numbers = [1, big]; c.total[0].result = big; }), [
-      outside(`/cases/5 the case ${id} of shapes.total`, 'the argument numbers[1]', 'uint'),
-      outside(`/cases/5 the case ${id} of shapes.total`, 'the result result', 'uint'),
+      outside(`/cases/${row} the case ${id} of shapes.total`, 'the argument numbers[1]', 'uint'),
+      outside(`/cases/${row} the case ${id} of shapes.total`, 'the result result', 'uint'),
     ]);
   });
 });

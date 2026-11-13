@@ -39,9 +39,12 @@ the design ids are those of the binding design.
   another (GN-14c).
 - **GN-1c** `binding generate` generates each target that it is given, or each target of the contract, by itself
   (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
-  items, keeps the files of a refused target as they are, and then fails with status 2 when a target was refused.
-  Why: a contract that one target cannot take yet still gives the bindings of the other targets, and every target
-  that fails is named.
+  items and the targets that it generated, keeps the files of a refused target as they are, and then fails with
+  status 1 when a target was refused. A refusal, like any failure that is no error of the command line, prints no
+  usage line; only an error of the command line prints it, with status 2. A repository that builds and tests one
+  target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
+  one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
+  usage line would say that the command was written wrong when it was not.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
@@ -153,7 +156,9 @@ the design ids are those of the binding design.
   of each such library, and the crate depends on that core as the core does (T-3), because a Cargo feature turns on a
   feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
-  its name, and `binding check` compares the manifests with them (CK-19). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
+  its name, and `binding check` compares the manifests with them (CK-19). A point (`fault::point!`) is live only in a
+  crate whose own feature `fault-test` is on, because Cargo unifies the feature of binding_core across the build;
+  so the feature that this list leaves out keeps the points of that library off, and its cases fail. The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
   (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. Go has neither of
   the two yet: a contract with `in_raises` or with `faults` and Go is refused by name (G-4).
 
@@ -302,8 +307,12 @@ the design ids are those of the binding design.
   that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
   argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
   an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
-  with named arguments skips and the extension cannot tell the two apart. Refused by name (G-4): a default of the
-  record parameter itself (`{empty: "object"}`), a default of an `optional` type, a default of a type that is no
+  with named arguments skips and the extension cannot tell the two apart. A record parameter with the default
+  `{empty: "object"}` may be left out as a whole when every field of the record has a default: the core takes the
+  record, whose every field is then `None`. Python and PHP take the fields as keywords and named arguments, which are
+  then all left out; Node and WASM take the options record as a trailing argument that may be missing or `undefined`,
+  and the declarations make it optional. Refused by name (G-4): a record parameter with `{empty: "object"}` that has a
+  field without a default, any other default of a record parameter, a default of an `optional` type, a default of a type that is no
   number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
   a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
   also has the result form.
@@ -337,7 +346,9 @@ the design ids are those of the binding design.
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
   `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
-  an error unit in a module other than the root, and an error unit for Go are refused by name (G-4). WASM generates an
+  and an error unit for Go are refused by name (G-4). An error unit of a module other than the root is a class of the
+  namespace of its module in PHP (GN-10), a class of `<root>._errors` that `<root>.<module>` imports in Python (GN-11),
+  and an export of the entry by its name in Node and WASM, as every other name of a module is. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
@@ -388,8 +399,8 @@ the design ids are those of the binding design.
   text, and a decimal text key leaves as an int key.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
-  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
-  and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
+  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`,
+  which imports the error units of the module from `<root>._errors`, and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
   (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
   map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind

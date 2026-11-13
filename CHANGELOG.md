@@ -9,6 +9,31 @@
   under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
   now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
   `classes.join` and `tag.same`. Verified by `npm test` in `packages/ts`.
+- The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
+  registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
+  WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
+  `errors`, so the end-to-end check raises it through each target.
+- A record parameter with the default `{empty: "object"}` was refused for every target ("a default of a record
+  parameter is not generated yet"), so a contract with one, such as `parse(source, options = {})`, generated no
+  target. Such a parameter is generated when every field of the record has a default: the core takes the record with
+  every field `None`, Python and PHP leave out the keywords and named arguments of the fields, and Node and WASM take
+  the options record as a trailing argument that may be missing or `undefined`; a record with a field without a
+  default is refused by name (GN-6i). `tests/e2e/shapes` has the member `shapes.wrap` of this form. Verified by
+  `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
+  of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
+  with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
+  runs the three to their end and names each failed one.
+- `binding generate` ended a refused target, after it had written the other targets, with the usage line and status 2,
+  as if the command line were wrong, so a repository could not tell the refusal from a usage error. A refusal, a core
+  manifest that is not the crate of the contract and a failed `cargo metadata` now end with status 1 and no usage
+  line; only an error of the command line prints the usage with status 2 (GN-1c).
+- A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
+  so one core with `fault-test` turned on the points of every core: a binding crate that left
+  `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
+  is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
+  `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
+  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
 - A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
   form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
   positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value

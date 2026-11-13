@@ -27,7 +27,10 @@
   생성을 막지 않는다(GN-14c).
 - **GN-1c** `binding generate`는 받은 target 또는 계약의 target을 하나씩 따로 생성한다(GN-1b). 아무것도 거부하지 않은
   target의 파일은 모두 쓰고, 거부된 target은 거부한 항목과 함께 이름하며 그 파일은 그대로 두고, target이 하나라도 거부되면
-  상태 2로 실패한다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두 이름한다.
+  생성한 target도 적은 뒤 상태 1로 실패한다. 거부는 명령줄 오류가 아닌 다른 실패와 마찬가지로 usage 줄을 찍지 않는다. usage 줄은
+  명령줄 오류만 상태 2와 함께 찍는다. target 하나를 build하고 시험하는 저장소는 `--target`으로 그 target만 생성하므로, 다른
+  target의 거부에 막히지 않는다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두
+  이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
   쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
@@ -126,7 +129,9 @@
   `polyspec-<library>/fault-test`도 적고, crate는 코어가 하듯이 그 코어에 의존한다(T-3). Cargo feature는 직접 의존의
   feature만 켜기 때문이며, 계약의 코어가 그것을 적을 필요는 없다. `binding scaffold`는 case 파일의 지점에서 라이브러리를
   읽고, 코어가 의존하지 않는 라이브러리의 지점은 그 이름을 대고 scaffold를 멈추며, `binding check`는 manifest를 그것과
-  비교한다(CK-19). WASM crate의 시험은
+  비교한다(CK-19). 지점(`fault::point!`)은 자기 feature `fault-test`가 켜진 crate에서만 살아 있다. Cargo가 build 전체에서
+  binding_core의 feature를 합치기 때문이다. 그래서 이 목록이 빠뜨린 feature는 그 라이브러리의 지점을 꺼 둔 채로 두고, 그
+  case는 실패한다. WASM crate의 시험은
   `fault-test`와 `codec-test`(표가 Node에 적은 `__aliasIn<Alias>`)의 진입점에 wasm-bindgen이 쓰는 모듈로 닿는다. Go에는 둘 다
   아직 없다. `in_raises`나 `faults`를 가진 계약에 Go가 있으면 이름을 대고 거부한다(G-4).
 
@@ -247,8 +252,11 @@
   parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 이름을 대고 거부하는 것(G-4): record parameter
-  자신의 기본값(`{empty: "object"}`), `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
+  받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
+  빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
   기본값, `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
   결과 형태도 가진 record의 field 기본값.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
@@ -278,8 +286,10 @@
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
   다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, 루트가 아닌 module의 오류 unit, Go의
-  오류 unit은 이름으로 거부한다(G-4). WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
+  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, Go의 오류 unit은 이름으로 거부한다(G-4). 루트가
+  아닌 module의 오류 unit은 PHP에서는 그 module의 namespace에 있는 클래스이고(GN-10), Python에서는 `<root>.<module>`이
+  import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
+  내보낸다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
   category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
@@ -322,7 +332,8 @@
   그 십진 텍스트이고, 십진 텍스트 key는 int key로 나간다.
 - **GN-11** Python: native module `<root>._native`는 원시 값을 받고(T-8) record field는 keyword-only다. 런타임이 인자를 세고
   이름을 확인한다(G-7). category 클래스는 `<root>._errors`, enum은 `<root>._types`에 있고 native module이 로드될 때 그것을
-  import한다(B-4). 계약의 module은 `<root>.<module>`이고 `<root>`가 모든 공개 이름을 다시 내보낸다(P-3). enum은
+  import한다(B-4). 계약의 module은 `<root>.<module>`이고 그 module의 오류 unit을 `<root>._errors`에서 import하며, `<root>`가
+  모든 공개 이름을 다시 내보낸다(P-3). enum은
   `enum.StrEnum`이다(T-6). 패키지는 Python 3.14가 필요하다(abi3-py314). list parameter는
   list나 tuple을 받는다. `keyed_map<T>{key}`는 순서대로의 `dict`이며 key는 계약이 적은 종류의 `int`(`bool`이 아닌 것),
   `bytes`, `str`이다. 그 밖의 key는 kind `invalid_argument_type`이고, map은 같은 `dict`로 나간다(T-2). `polyspec`에는

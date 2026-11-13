@@ -215,6 +215,15 @@ fn member<'env>(record: Unknown<'env>, name: &str, subject: &str) -> Result<Unkn
     object.get_named_property::<Unknown<'env>>(name).map_err(internal)
 }
 
+/// U-2 {empty: "object"}: a member of an options record that may be left out; a record that is left out (undefined)
+/// leaves out each of its members.
+fn member_or_undefined<'env>(record: Unknown<'env>, name: &str, subject: &str) -> Result<Unknown<'env>, Fail> {
+    if record.get_type().map_err(internal)? == ValueType::Undefined {
+        return Ok(record);
+    }
+    member(record, name, subject)
+}
+
 fn out_text<'env>(env: &'env Env, value: impl AsRef<str>) -> Result<Unknown<'env>, Fail> {
     Ok(env.create_string(value.as_ref()).map_err(internal)?.to_unknown())
 }
@@ -460,7 +469,7 @@ function entryRust(model: Model, fn: Fn): string {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('node', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `member(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
+        const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
       }
       const recordType = fn.record.unit.core_type ?? '';
@@ -1014,8 +1023,8 @@ class ${name} extends ${parent} {
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
     const count = fn.params.length;
-    // U-2: the parameters that may be left out are the last ones; a record parameter is required.
-    const least = fn.params.filter((p) => p.default === undefined || (fn.record !== undefined && p === fn.record.param)).length;
+    // U-2: the parameters that may be left out are the last ones, a record parameter with {empty: "object"} too.
+    const least = fn.params.filter((p) => p.default === undefined).length;
     const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
     const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
     const passed = fn.params.map((p, i) => {
@@ -1170,7 +1179,7 @@ function indexDts(model: Model): string {
     const value = a === undefined ? undefined : declaredValue(model, a)?.value;
     return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
   };
-  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined || (fn.record !== undefined && p === fn.record.param) ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
     return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;

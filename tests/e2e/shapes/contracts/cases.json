@@ -73,6 +73,21 @@
       "result": ">A  "
     }
   ],
+  "wrap": [
+    {
+      "id": "options_left_out",
+      "text": "a",
+      "result": "[a]"
+    },
+    {
+      "id": "one_side_given",
+      "text": "a",
+      "options": {
+        "left": "<"
+      },
+      "result": "<a]"
+    }
+  ],
   "checksum": [
     {
       "id": "the_sum_of_two_bytes",
