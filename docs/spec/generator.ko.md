@@ -430,9 +430,9 @@
     JavaScript 진입은 GN-6m처럼 async 함수다.
   - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
   - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
-  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부하고, 언어 코드에 닿는
-  `async_driver` member도 이름을 대고 거부한다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
-  부르게 되기 때문이다. 그런 member에는 I/O 없는 state machine을 주는 코어가 필요하고, 그것은 아직 생성하지 않는다(G-4).
+  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다. 언어 코드에 닿는
+  `async_driver` member는 GN-6ab대로 생성한다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
+  부르게 되기 때문이다.
   이유: 네트워크 protocol을 쓰는 코어는 async이고, 호출자의 것을 빌리지 않는 future는 runtime의 어느 스레드에서도 돌 수
   있다. 그동안 각 언어의 호출자는 자기 언어의 꼴로 기다린다.
 - **GN-6o** 코어 receiver가 `self`인 method는 자기 객체의 코어 값을 소비한다(E-1a, B-5c). 그 receiver는 쓰기 자리이고, 생성
@@ -484,6 +484,35 @@
   호출은 pool에서 실행할 수 있다. 그것은 아직 생성하지 않는다. G-5는 그런 member에 대해 Python에서, 예외를 던지는
   callback(K-2)으로 `a<name>`을 `asyncio.run` 안에서 기다리고 callback의 예외를 요구하는 시험을 생성한다. 그래서 코어가
   `asyncio.to_thread`의 worker 스레드에서 부르는 callback이 그 스레드에서 실행됨을 본다.
+- **GN-6ab** 언어 코드에 닿는(GN-6q: parameter의 타입이나 receiver의 class가 언어 코드를 지닌다) `wait: async_driver`
+  member는 `core`에 `"machine": true`를 적고(CK-68), 그 코어 경로는 future 대신 I/O 없는 state machine을 돌려준다(c6
+  6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이다. `resume(io)`는 마지막 기다림의 출력(처음과
+  call 뒤에는 `None`)으로 machine을 진행시키고 한 단계를 준다:
+  - `Step::Io(future)`: 언어 코드에 닿지 않는 코어의 future. driver는 그것을 tokio runtime에서 poll하고 그 출력을 다음
+    `resume`에 준다;
+  - `Step::Call`: driver는 언어 코드를 소유한 스레드에서 machine의 `call()`을 부르고, machine은 거기서 callback(U-3)을
+    부르거나 `Native` 값에 닿는다;
+  - `Step::Done(result)`: member의 결과. member가 실패할 수 있으면 `Result<T, Failure<E>>`다(E-1c).
+  member의 fault는 GN-6n처럼 각 Io future의 poll 둘레에 설치한다. 각 언어는 자기 꼴로 machine을 돌린다:
+  - PHP는 호출 스레드에서 `binding_core::machine::drive`로 machine을 돌리고, 그것은 각 Io future를
+    `binding_core::driver::block_on`에서 기다리므로 callback은 그 객체의 스레드에서 돈다.
+  - Python: `<name>`은 PHP처럼 machine을 돌리고 각 Io future를 `py.detach`에서 기다리므로, 기다리는 동안 다른 Python
+    스레드가 돈다. `a<name>`은 GN-6m처럼 `<name>`을 `asyncio.to_thread`에서 돌린다. callback은 machine을 돌리는
+    스레드에서 GIL을 쥐고 불린다. Python 참조는 스레드가 아니라 GIL에 묶이므로 GN-6q가 이를 허용한다.
+  - Node: 진입은 JavaScript 스레드에서 machine을 만들고 addon의 `Driven` 객체를 돌려주며, async 함수인 JavaScript
+    진입은 machine이 끝날 때까지 그 `advance()`를 부른다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
+    JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
+    tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
+    돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
+  - Go는 `async_driver`인 모든 member처럼(GN-6n) 그런 member를 이름을 대고 거부한다. Io future를 기다릴 GN-6m의 완료
+    channel을 생성하지 않으며, 어느 스레드의 cgo 호출도 Go를 부를 수 있으므로 Go의 callback에는 owner 스레드가 필요
+    없다(c6 6.4). WASM은 `async_driver`인 모든 member와 함께 이를 이름을 대고 거부한다(GN-6n).
+  `machine`이 있는 method는 이름을 대고 거부한다. 단계들에 걸쳐 receiver를 빌리는 machine은 driver가 쥔 guard에서
+  빌리게 되는데, 코어는 그런 타입을 적을 수 없기 때문이다. 함수와 static member는 생성한다. 호출이 machine에 awaitable을
+  줄 `async_allowed: true`인 callback과 `core.reaches`(c6 6.3)는 아직 생성하지 않는다(G-4). 이유: runtime이 자기
+  스레드에서 poll하는 future는 그 스레드에서 언어 코드를 불러 Node나 PHP 참조의 owner를 어기고, `async_driver`인 다른
+  member를 부르는 callback은 runtime 안에서 `block_on`을 돌리게 되는데 tokio는 이를 거부한다. I/O 없는 machine이면 각
+  단계를 어디서 돌릴지는 각 언어의 runtime이 정하고, 코어는 자기 I/O를 tokio에 둔다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로

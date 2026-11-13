@@ -151,6 +151,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   parameter of a member, other than a member of a callback interface, whose type is a class unit of this contract with the
   origin `generated` or an `optional` of one, and on no other parameter, because only an instance of a class is a place whose borrow the
   core takes, and binding reads no Rust source to find it.
+- **CK-68** The state machine of a member that reaches language code (generator GN-6ab, c6 6.2): a member with `wait:
+  async_driver` that reaches language code, when the type of a parameter or the class of its receiver carries language
+  code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
+  the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
+  source to tell them apart.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
