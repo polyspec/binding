@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Python struct `PyNative` held its object in an unnamed field, which only an out row that gives a native value
+  back reads, so a crate without such a row carried `#[allow(dead_code)]` on the struct and a crate with one did
+  not: one struct had two texts. The field is now `_held`, the name of a field that is kept for its ownership, so the
+  struct is the same text in every crate and carries no allow (GN-6u). Verified by `make test-ts`: the test of the
+  crate of the relay failed for the allow and passes with the change. The Python crate is not compiled with this
+  change yet.
 - The generated tests wrote a case value of a value class of another repository as a built-in value of the language.
   For `tests/e2e/relay`, whose function `carry` takes the class `value` of json, the Python test called
   `pkg.carry("name\xe9")`, which the binding refuses as `invalid_argument_type`; a case value of the kind `number` or

@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 76f8ea266c2d83240f551ba3960c9eb131d5104a38a0049666909aa1c13662ab -->
+<!-- source-sha256: 694b2d8212ae55131c181310347d12ab8527419ed31a968aed186e1c911e3744 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python struct `PyNative`는 object를 이름 없는 field에 담았고, 그 field는 native 값을 돌려주는 out 행만 읽는다. 그래서
+  그런 행이 없는 crate는 struct에 `#[allow(dead_code)]`를 달았고 있는 crate는 달지 않아, struct 하나의 텍스트가 둘이었다.
+  이제 그 field는 소유를 위해 두는 field의 이름인 `_held`이며, struct는 모든 crate에서 같은 텍스트이고 allow가
+  없다(GN-6u). `make test-ts`로 확인했다. relay crate의 시험이 allow 때문에 실패했고 변경으로 통과한다. 이 변경의 Python
+  crate는 아직 컴파일하지 않았다.
 - 생성된 시험이 다른 저장소의 value class의 case 값을 언어의 내장 값으로 썼다. 함수 `carry`가 json의 class `value`를
   받는 `tests/e2e/relay`에서 Python 시험은 `pkg.carry("name\xe9")`를 불렀고, binding은 그것을
   `invalid_argument_type`으로 거부한다. kind `number`나 `text16`의 case 값과 `{kind, value}`로 적은 쌍의 key는 이름을

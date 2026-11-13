@@ -909,13 +909,13 @@ test('a language object that a core may keep enters as a Native, which each targ
   // Python holds the reference, which PyO3 releases at the drop or at its next acquisition of the GIL.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /#\[cfg\(pyo3_disable_reference_pool\)\]\ncompile_error!\(/);
-  assert.match(python, /struct PyNative\(Py<PyAny>\);/);
+  assert.match(python, /struct PyNative \{\n(?: {4}\/\/[^\n]*\n)* {4}_held: Py<PyAny>,\n\}/);
   assert.match(python, /impl NativeObject for PyNative \{\}/);
-  assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\)\)\);/);
-  assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\), type_name, json_serializable: false \}\)/);
+  assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\)\)\);/);
+  assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\), type_name, json_serializable: false \}\)/);
   // A value outside the closed set is valid for the call alone.
   assert.match(python, /HostValue::Other \{ type_name, handle: self\.mark\(\) \}/);
-  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\.0\.clone_ref\(py\)\.into_bound\(py\)\),/);
+  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\),/);
   // WASM holds the key of the table of its one thread; the drop removes it.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
@@ -1515,11 +1515,16 @@ test('a crate with a value class of another repository holds only what its in an
   // PHP makes a value class by the members of its owner, without the making of an alias of its own.
   assert.doesNotMatch(text(relay, 'packages/php-ext/generated/lib.rs'), /PhpMaking/);
   assert.match(text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/php-ext/generated/lib.rs'), /\nstruct PhpMaking \{\n/);
-  // Python reads the object of a PyNative only where an out row gives a native value back.
-  assert.match(text(relay, 'packages/python/generated/lib.rs'), /#\[derive\(Debug\)\]\n#\[allow\(dead_code, reason = "GN-6u: [^"]+"\)\]\nstruct PyNative\(Py<PyAny>\);/);
+  // GN-6u: Python reads the object of a PyNative only where an out row gives a native value back; the field is _held,
+  // the name of a field kept for its ownership, so the struct is the same text with and without such a row and carries
+  // no allow.
+  const held = /#\[derive\(Debug\)\]\nstruct PyNative \{\n(?: {4}\/\/[^\n]*\n)* {4}_held: Py<PyAny>,\n\}/;
+  assert.match(text(relay, 'packages/python/generated/lib.rs'), held);
+  assert.doesNotMatch(text(relay, 'packages/python/generated/lib.rs'), /allow\(dead_code/);
   const given = text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/python/generated/lib.rs');
   assert.match(given, /native\.downcast::<PyNative>\(\)/);
-  assert.match(given, /#\[derive\(Debug\)\]\nstruct PyNative\(Py<PyAny>\);/);
+  assert.match(given, /object\._held\.clone_ref\(py\)/);
+  assert.match(given, held);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
