@@ -3527,3 +3527,28 @@ test('a Node crate whose only language code is a function parameter has no varia
   for (const variant of variants) assert.match(lib, new RegExp(`(?:Err|raised|thrown)\\(Thrown::${variant}\\(|map_err\\(Thrown::${variant}\\)`), variant);
   assert.doesNotMatch(lib, /Thrown::Js/);
 });
+
+test('the Node and WASM crates of the sample define each function once and name the type of an advance (GN-4c, GN-6ae)', () => {
+  // A crate with a value alias and a function parameter holds the walk of a value and the exception of a function, and
+  // each keeps what was thrown through the one function raised; a second definition does not compile.
+  const out = scopedSample(['node', 'wasm']);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    // A function under a cfg attribute has a twin under the opposite one, so only the others are counted.
+    const lines = text(out, path).split('\n');
+    const names = lines.flatMap((line, at) => {
+      const name = /^(?:pub )?(?:const )?fn ([a-z0-9_]+)[<(]/.exec(line)?.[1];
+      let above = at - 1;
+      while (above >= 0 && /^(?:\/\/\/|#\[)/.test(lines[above] ?? '') && !(lines[above] ?? '').startsWith('#[cfg(')) above -= 1;
+      return name === undefined || (lines[above] ?? '').startsWith('#[cfg(') ? [] : [name];
+    });
+    assert.ok(names.includes('raised'), path);
+    assert.deepEqual(names.filter((name, index) => names.indexOf(name) !== index), [], path);
+  }
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /fn js_raised\(error: napi::Error\) -> binding_core::Raised \{\n {4}if error\.status == napi::Status::PendingException \{\n {8}raised\(Thrown::Js\(error\)\)\n {4}\} else \{\n {8}raised\(Thrown::Binding\(internal\(error\)\)\)\n {4}\}\n\}/);
+  assert.match(node, /get_element\(index\)\.map_err\(js_raised\)\?;/);
+  // clippy type_complexity: the boxed closure of an advance has a name.
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /pub struct Driven \{\n\s+advance: Advance,\n\s+\}/);
+  assert.match(wasm, /type Advance = Box<dyn FnMut\(JsValue\) -> Result<\(u32, JsValue\), Fail>>;/);
+});

@@ -209,29 +209,29 @@ impl HostValues for JsHost<'_> {
             _ => return Err(raised_binding("B-1: no such list")),
         };
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
-        let item: Unknown<'_> = array.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-        self.describe(item).map_err(|error| raised(Thrown::Js(error)))
+        let item: Unknown<'_> = array.get_element(index).map_err(js_raised)?;
+        self.describe(item).map_err(js_raised)
     }
 
     fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
         let index = js_index(index).map_err(|fail| raised(Thrown::Binding(fail)))?;
         let (key, value) = match self.held.get(handle_position(map.raw())) {
             Some(Held::Pairs(pairs)) => {
-                let pair: Object<'_> = pairs.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
-                let key: Unknown<'_> = pair.get_element(0).map_err(|error| raised(Thrown::Js(error)))?;
-                let value: Unknown<'_> = pair.get_element(1).map_err(|error| raised(Thrown::Js(error)))?;
+                let pair: Object<'_> = pairs.get_element(index).map_err(js_raised)?;
+                let key: Unknown<'_> = pair.get_element(0).map_err(js_raised)?;
+                let value: Unknown<'_> = pair.get_element(1).map_err(js_raised)?;
                 (key, value)
             }
             Some(Held::Properties(object, keys)) => {
-                let key: Unknown<'_> = keys.get_element(index).map_err(|error| raised(Thrown::Js(error)))?;
+                let key: Unknown<'_> = keys.get_element(index).map_err(js_raised)?;
                 // A getter runs here; its exception goes back to the caller unchanged (U-3).
-                let value: Unknown<'_> = object.get_property(key).map_err(|error| raised(Thrown::Js(error)))?;
+                let value: Unknown<'_> = object.get_property(key).map_err(js_raised)?;
                 (key, value)
             }
             _ => return Err(raised_binding("B-1: no such map")),
         };
-        let key = self.describe(key).map_err(|error| raised(Thrown::Js(error)))?;
-        let value = self.describe(value).map_err(|error| raised(Thrown::Js(error)))?;
+        let key = self.describe(key).map_err(js_raised)?;
+        let value = self.describe(value).map_err(js_raised)?;
         Ok((key, value))
     }
 
@@ -357,16 +357,14 @@ fn handle_position(value: u64) -> usize {
     }
 }
 
-/// U-3: an exception of JavaScript code, or a failure of the binding, while the core walks a value, as the Raised that
-/// the caller throws again.
-fn raised(error: Thrown) -> binding_core::Raised {
-    let error = match error {
-        Thrown::Js(error) if error.status != napi::Status::PendingException => Thrown::Binding(internal(error)),
-        other => other,
-    };
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+/// U-3: an exception of JavaScript code while the core walks a value, as the Raised that the caller throws again; an
+/// error of napi with no exception pending is a failure of the binding.
+fn js_raised(error: napi::Error) -> binding_core::Raised {
+    if error.status == napi::Status::PendingException {
+        raised(Thrown::Js(error))
+    } else {
+        raised(Thrown::Binding(internal(error)))
+    }
 }
 
 fn raised_binding(detail: &str) -> binding_core::Raised {

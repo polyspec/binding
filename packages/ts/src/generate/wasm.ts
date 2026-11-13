@@ -1081,8 +1081,12 @@ const MACHINE = `
 /// or [2, its result].
 #[wasm_bindgen]
 pub struct Driven {
-    advance: Box<dyn FnMut(JsValue) -> Result<(u32, JsValue), Fail>>,
+    advance: Advance,
 }
+
+/// GN-6ab, GN-6ae: one advance of the state machine of a call: its step, and the promise of its wait (0), the value
+/// that it awaits (1) or its result (2).
+type Advance = Box<dyn FnMut(JsValue) -> Result<(u32, JsValue), Fail>>;
 
 impl Driven {
     fn new(advance: impl FnMut(JsValue) -> Result<(u32, JsValue), Fail> + 'static) -> Self {

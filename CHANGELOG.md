@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The generated Node crate of a contract with a value alias and a member that takes a function parameter defined the
+  function `raised` twice, once for the walk of a value and once for the exception of a function, which does not
+  compile (E0428). The walk of a value now keeps an error of napi through `js_raised`, which holds a pending
+  exception as it is and any other error as a failure of the binding, and the crate has the one `raised`. The WASM
+  crate wrote the boxed closure of an advance as the type of a field of `Driven`, which clippy refuses
+  (`type_complexity`); the type now has the name `Advance` (GN-6ae). Found by the first compile of the generated
+  crates in `make e2e` of the sample. Verified by `npm test` in `packages/ts`, whose test found `raised` twice in the
+  Node crate of the sample before the change.
 - The Node crate of a contract whose only language code is a function parameter, with no callback unit and no value
   alias, held the variant `Thrown::Js` that nothing in the crate makes, which is dead code and fails the build with
   `-D warnings`. The variant and its arm are now written only for a contract with a callback unit or a value alias

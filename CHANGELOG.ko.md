@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ffb12a9f1bcf72e31396da16a85c09de5866dd72280f02c464da8273be4f546a -->
+<!-- source-sha256: 35811d25f792f8b9820aecc0bd0b518ce066c13d15aa8919858f364ed7c355c8 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- value alias와 함수 parameter를 받는 member가 함께 있는 계약의 Node 생성 crate는 함수 `raised`를 두 번 정의했다. 하나는
+  값의 walk를 위한 것이고 하나는 함수의 예외를 위한 것이며, 이는 컴파일되지 않는다(E0428). 이제 값의 walk는 napi의
+  error를 `js_raised`로 보관한다. `js_raised`는 pending 예외를 그대로 보관하고 다른 error는 binding의 실패로 보관하며,
+  crate에는 `raised`가 하나만 있다. WASM crate는 advance의 boxed closure를 `Driven`의 field 타입으로 직접 썼고 clippy가
+  이를 거부한다(`type_complexity`). 이제 그 타입의 이름은 `Advance`이다(GN-6ae). sample의 `make e2e`에서 생성 crate를
+  처음 컴파일하여 찾았다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에 sample의 Node crate에서 `raised`를
+  두 번 찾았다.
 - callback unit도 value alias도 없이 함수 parameter만 언어 코드인 계약의 Node crate는 crate 안에서 아무도 만들지 않는
   variant `Thrown::Js`를 가졌다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 이제 그 variant와 그 arm은
   callback unit이나 value alias가 있는 계약에만 쓴다(GN-6ae). `packages/ts`의 `npm test`로 검증했다. 그 시험은 callback
