@@ -529,8 +529,8 @@ the design ids are those of the binding design.
   kinds of an alias, each refused by name when a case gives it: a point of another library; an errno symbol in a PHP
   test, because PHP has no table of the errno symbols of its machine; a value of the language by its kind
   (`{"host": ...}`), whose kinds have no closed table; and a value of a value type of another kind than those of
-  GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because no test
-  compares the result of a case yet; the test of a member that takes an alias inside a map, a record field or the
+  GN-13. Not generated and not refused: the test of a case with `faults` that does not raise, because the test of
+  GN-13e arms no faults yet; the test of a member that takes an alias inside a map, a record field or the
   return of a callback; and the check that no release build has a test feature (the resolved features of
   `cargo tree`, and the export list of each installed package), of which the end-to-end check has the part of Go
   (GN-13b).
@@ -545,6 +545,17 @@ the design ids are those of the binding design.
   value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is
   caught as the class of its category. A case may leave out the key of a parameter with a default, which is then left
   out of the call.
+
+- **GN-13e** Every target runs each contract case of a member that does not raise, has no `faults` and is no hook
+  (N-4), and compares its result with the value of the case: Node and WASM with `assert.deepStrictEqual` after a
+  `Map` becomes its entries in order, Python by type and value with the items of a `dict` in order and NaN equal to
+  NaN, PHP with `assertSame` after an object becomes its class and properties, and Go with `reflect.DeepEqual` for
+  each part of a tuple return. The key of the case that holds the result is the `result` of its `cases` row, or
+  `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
+  tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
+  call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
+  value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
+  a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
 
 - **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The generated tests ran only the contract cases that raise and compared no result: a member whose cases do not
+  raise was called by no test. Every target now runs each such case and compares its result with the value of the
+  case; the key of that value is the new `result` of the `cases` row, or `result`, and a case whose result has no
+  case form fails its test by name (GN-13e, CK-22). Verified by `npm test` in `packages/ts`.
 - WASM generates the type `source` of a parameter, `bytes`, the defaults of parameters and record fields and error
   units, and a member with the receiver `&mut self`: the table of a class with a lock holds its value in that lock,
   and each place of a call takes its guard (GN-6h, GN-6i, GN-6j, GN-7a, GN-18, GN-18a). Every binding crate turns on

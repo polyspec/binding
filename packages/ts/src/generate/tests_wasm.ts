@@ -2,9 +2,10 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, errorUnitOfKind, hookCall, langName } from './model.ts';
-import { type Context, type Receiver, bytesKind, callArgs, callables, caseValue, isNumber, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type Context, type Receiver, bytesKind, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
+import { NODE_ORDERED } from './tests_node.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '-1', '2 ** 53'],
@@ -32,6 +33,7 @@ export function wasmTests(model: Model): string {
   };
   const out: string[] = [];
   let usesOutcome = false;
+  let usesOrdered = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
@@ -133,6 +135,17 @@ test('B-4: ${name} ${kase.id}', () => {
     error.errno === null);
 });`);
     }
+    // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
+    for (const kase of resultCases(model, fn)) {
+      const expected = kase.refused !== undefined ? { refused: kase.refused } : kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+      const call = kase.refused !== undefined ? '' : invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), kase.receiver === undefined ? '' : made(kase.receiver));
+      usesOrdered ||= expected !== undefined && 'text' in expected;
+      const check = expected === undefined ? `${call};` : 'refused' in expected ? `assert.fail(${jsString(expected.refused)});` : `assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {
+  ${check}
+});`);
+    }
     for (const kase of stringCases(model, fn)) {
       out.push(`
 test('N-4: ${name} ${kase.id}', () => {
@@ -161,7 +174,7 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as pkg from ${jsString(entry)};
-${usesOutcome ? `
+${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

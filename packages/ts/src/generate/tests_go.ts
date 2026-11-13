@@ -7,13 +7,14 @@
 import type { Type } from '../contract.ts';
 import { type Model, langName, unitOf } from './model.ts';
 import { goBytes, goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
-import { caseKey, raisingCases } from './samples.ts';
+import { caseKey, raisingCases, resultCases } from './samples.ts';
 
 
 interface Values {
   model: Model;
   pkg: string;
   usesPtr: boolean;
+  usesReflect?: boolean;
 }
 
 // A Go value of a contract type, as the external test package writes it.
@@ -47,6 +48,12 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     if (type === 'text' || type === 'latin1') return goString(String(value));
     if (type === 'bool') return String(value === true);
     if (['uint', 'int', 'int64', 'float'].includes(type)) return String(value);
+    // G-5: bytes are {"hex": ...}.
+    if (type === 'bytes') {
+      const hex = typeof value === 'object' && value !== null ? (value as { hex?: unknown }).hex : undefined;
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type bytes is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+      return `[]byte(${goBytes((hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)))})`;
+    }
     throw new Error(`no Go case value of the type ${type}`);
   }
   if ('optional' in type) {
@@ -56,6 +63,8 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     return `ptr(${typed})`;
   }
   if ('list' in type) return `${goTypeName(v, type)}{${(value as unknown[]).map((item) => fromJson(v, type.list, item)).join(', ')}}`;
+  // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
+  if ('tuple' in type) return `${goTypeName(v, type)}{${type.tuple.map((part, i) => fromJson(v, part, (value as unknown[])[i] ?? null)).join(', ')}}`;
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const sets = (value as [unknown, unknown][]).map(([key, item]) => {
@@ -186,18 +195,46 @@ func TestT6${name}Refuses${testName(slot.label.split('.'))}ThatIsNoConstant(t *t
 }`);
       }
     }
+    // The arguments of a case in the order of the parameters, a record parameter as its struct.
+    const caseArgs = (args: ReadonlyMap<{ name: unknown; field: boolean }, unknown>): string[] => fn.params.map((p) => {
+      const unit = unitOf(model, p.type);
+      if (unit?.kind === 'record') {
+        const fields = Object.fromEntries([...args].filter(([a]) => a.field).map(([a, value]) => [langName('python', a.name as never, 'variable'), value]));
+        return fromJson(v, p.type, fields);
+      }
+      const found = [...args].find(([a]) => !a.field && a.name === p.name);
+      return fromJson(v, p.type, found?.[1] ?? null);
+    });
+    // GN-13e: every case that does not raise runs, and each result is compared with the value that the case gives.
+    const parts = fn.returns === 'none' ? [] : typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : [fn.returns];
+    const runs = resultCases(model, fn).map((kase) => {
+      const values = parts.map((_, i) => `value${i}`);
+      let body: string;
+      if (kase.refused !== undefined) {
+        body = `\t\tt.Fatal(${goString(kase.refused)})`;
+      } else {
+        const compared = kase.expected === undefined ? [] : parts.map((type, i) => {
+          const given = parts.length === 1 ? kase.expected?.value : (kase.expected?.value as unknown[] | undefined)?.[i];
+          v.usesReflect = true;
+          return `\t\tif want := (${goTypeName(v, type)})(${fromJson(v, type, given ?? null)}); !reflect.DeepEqual(value${i}, want) {\n\t\t\tt.Fatalf("GN-13e: %#v is not %#v", value${i}, want)\n\t\t}`;
+        });
+        const names = kase.expected === undefined ? values.map(() => '_') : values;
+        body = `\t\t${[...names, 'err'].join(', ')} := ${pkg}.${name}(${caseArgs(kase.args).join(', ')})\n\t\tif err != nil {\n\t\t\tt.Fatalf("GN-13e: %v", err)\n\t\t}${compared.length === 0 ? '' : `\n${compared.join('\n')}`}`;
+      }
+      return `
+	t.Run(${goString(kase.id)}, func(t *testing.T) {
+${body}
+	})`;
+    });
+    if (runs.length > 0) {
+      out.push(`
+func TestGN13e${name}(t *testing.T) {${runs.join('')}
+}`);
+    }
     const cases = raisingCases(model, fn);
     if (cases.length > 0) {
       const runs = cases.map((kase) => {
-        const args = fn.params.map((p) => {
-          const unit = unitOf(model, p.type);
-          if (unit?.kind === 'record') {
-            const fields = Object.fromEntries([...kase.args].filter(([a]) => a.field).map(([a, value]) => [langName('python', a.name, 'variable'), value]));
-            return fromJson(v, p.type, fields);
-          }
-          const found = [...kase.args].find(([a]) => !a.field && a.name === p.name);
-          return fromJson(v, p.type, found?.[1] ?? null);
-        });
+        const args = caseArgs(kase.args);
         const type = Object.fromEntries(goErrorTypes(model.contract))[kase.raises.category] ?? '';
         const status = kase.raises.status === null ? 'if _, ok := failure.Status(); ok {' : `if status, ok := failure.Status(); !ok || status != ${kase.raises.status} {`;
         return `
@@ -221,7 +258,7 @@ func TestB4${name}(t *testing.T) {${runs.join('')}
     }
   }
   const own = [[goImport(model.contract, 'errors'), 'liberrors'], [goImport(model.contract, module), pkg]].sort(([a], [b]) => ((a ?? '') < (b ?? '') ? -1 : 1));
-  const imports = ['"errors"', '"testing"', '', ...own.map(([path, alias]) => `${alias ?? ''} "${path ?? ''}"`)];
+  const imports = ['"errors"', ...(v.usesReflect === true ? ['"reflect"'] : []), '"testing"', '', ...own.map(([path, alias]) => `${alias ?? ''} "${path ?? ''}"`)];
   const needsErrors = out.some((t) => t.includes('errors.As('));
   const list = imports.filter((i) => i !== '"errors"' || needsErrors);
   const ptr = v.usesPtr ? '\n\n// ptr is a pointer to a value, for an optional argument.\nfunc ptr[T any](value T) *T { return &value }' : '';

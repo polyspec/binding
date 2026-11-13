@@ -134,7 +134,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
   reads the case files: every group that `cases` names is in its file, and a member has a case that raises each kind
-  that the rows of its `raises` give. A case may arm fault injection points (G-5) in
+  that the rows of its `raises` give. The `cases` row of a member may name `result`, the snake_case key of its cases
+  that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
+  none (CK-1). A case may arm fault injection points (G-5) in
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<symbol>", "bytes": <n>,
   "nth": <n>}]`: `<library>` is the library name in snake_case, of this contract or of a library that the check was
   given, and `<id>` a point of that contract's `faults`; `kind` is one of the point's `inject`; `bytes` is given with

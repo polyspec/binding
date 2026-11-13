@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -56,6 +56,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const made = (receiver: Receiver): string =>
     invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
   let usesOutcome = false;
+  let usesSame = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -149,11 +150,10 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         );
     }`);
     }
-    for (const kase of raisingCases(model, fn)) {
-      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
-      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
-      // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+    // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
+    // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
+    const fixturesFor = (id: string, args: Map<Fn['args'][number], unknown>) => {
+      const fixtures = fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
       const before = fixtures
         .map(
@@ -183,6 +183,11 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const after = fixtures
         .map((f) => `\n        self::assertSame([], ${f.name}->unexpected);${f.values.calls === undefined ? '' : `\n        self::assertSame([${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}], ${f.name}->calls);`}`)
         .join('');
+      return { fixtures, before, after };
+    };
+    for (const kase of raisingCases(model, fn)) {
+      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
@@ -209,6 +214,32 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
             ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${String(errno.value)}, $error->errno());`}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}
+    }`);
+    }
+    // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
+    for (const kase of resultCases(model, fn)) {
+      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      if (kase.refused !== undefined) {
+        methods.push(`
+    public function testGn13e${name}${id}(): void
+    {
+        self::fail(${phpText(kase.refused)});
+    }`);
+        continue;
+      }
+      const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
+      const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+      }), kase.receiver === undefined ? '' : made(kase.receiver));
+      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+      usesSame ||= expected !== undefined && 'text' in expected;
+      const check = expected === undefined
+        ? `\n        ${call};\n        self::addToAssertionCount(1);`
+        : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
+      methods.push(`
+    public function testGn13e${name}${id}(): void
+    {${before}${check}${after}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -360,7 +391,25 @@ final class GeneratedTest extends TestCase
             self::assertSame($line, $error->getLine());
         }
     }
-${methods.join('\n')}${usesOutcome ? `
+${methods.join('\n')}${usesSame ? `
+
+    /**
+     * GN-13e: a result in a form that assertSame compares: an object other than an enum case is its class and its
+     * properties, and NaN is a text, because NaN is not identical to itself.
+     */
+    private static function same(mixed $value): mixed
+    {
+        if (\\is_float($value) && \\is_nan($value)) {
+            return 'NAN';
+        }
+        if (\\is_array($value)) {
+            return \\array_map(self::same(...), $value);
+        }
+        if (\\is_object($value) && !$value instanceof \\UnitEnum) {
+            return [$value::class, self::same(\\get_object_vars($value))];
+        }
+        return $value;
+    }` : ''}${usesOutcome ? `
 
     /**
      * G-5: what a call gives: its result, or the class and the kind of its failure, as the text that states the types.

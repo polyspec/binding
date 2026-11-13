@@ -234,6 +234,8 @@ export interface Model {
   cases: Map<string, unknown[]>;
   // The cases of the in function of each value alias, from the groups that `cases` names by `alias` (U-7).
   aliasCases: Map<string, unknown[]>;
+  // GN-13e: for each member, the key of each of its cases that holds its result (the `result` of the row of `cases`).
+  resultKeys?: Map<string, Map<unknown, string>>;
 }
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);

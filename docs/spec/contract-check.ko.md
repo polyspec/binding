@@ -112,7 +112,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
-  행이 내는 kind마다 그 kind를 내는 case를 가진다. case는 실패 주입점(G-5)을
+  행이 내는 kind마다 그 kind를 내는 case를 가진다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
+  snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case는 실패 주입점(G-5)을
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<기호>", "bytes": <n>,
   "nth": <n>}]`로 장전할 수 있다. `<library>`는 snake_case로 쓴 라이브러리 이름이며 이 계약이나 검사가 받은 라이브러리의
   것이고, `<id>`는 그 계약 `faults`의 점이다. `kind`는 그 점의 `inject` 중 하나다. `bytes`는 `short`에만, 그리고 `short`에는

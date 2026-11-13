@@ -63,6 +63,16 @@ describe('CK-1 schema', () => {
       c.extends = {};
     });
   });
+  test('a result key that is not a snake_case name (GN-13e)', () => {
+    fails('CK-1', '/cases/0/result', (c) => {
+      c.cases[0].result = 'Words';
+    });
+  });
+  test('a result key on the cases row of a value alias (GN-13e)', () => {
+    fails('CK-1', '/cases/', (c) => {
+      c.cases.push({ alias: 'forms.parse', file: 'contracts/forms.json', group: 'parse', result: 'value' });
+    });
+  });
   test('a parameter that is both required and defaulted', () => {
     fails('CK-1', '/units/', (c) => {
       member(c, 'forms.parse').parameters[0].default = { literal: 'x' };

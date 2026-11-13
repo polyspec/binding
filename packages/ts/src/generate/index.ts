@@ -54,6 +54,8 @@ export function generate(inputs: Inputs): Files {
   if (notDeclared.length > 0) throw new Error(`the contract has no target ${notDeclared.join(', ')}`);
   const cases = new Map<string, unknown[]>();
   const aliasCases = new Map<string, unknown[]>();
+  // GN-13e: the key of each case that holds the result of its member, by the row that names the group.
+  const resultKeys = new Map<string, Map<unknown, string>>();
   for (const kase of inputs.contract.cases) {
     const file = inputs.caseFiles.get(kase.file) as Record<string, unknown> | undefined;
     const group = file?.[kase.group];
@@ -62,9 +64,14 @@ export function generate(inputs: Inputs): Files {
     const into = kase.member === undefined ? aliasCases : cases;
     const id = kase.member ?? kase.alias;
     into.set(id, [...(into.get(id) ?? []), ...group]);
+    if (kase.member !== undefined) {
+      const keys = resultKeys.get(kase.member) ?? new Map<unknown, string>();
+      for (const item of group) keys.set(item, kase.result ?? 'result');
+      resultKeys.set(kase.member, keys);
+    }
   }
   const refusals = new Refusals();
-  const model = collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals);
+  const model = { ...collectModel(inputs.contract, inputs.version, inputs.coreLib, cases, inputs.foreign ?? new Map(), aliasCases, refusals), resultKeys };
   refuseForOthers(model, targets, refusals);
   // T-2: map<T> and keyed_map<T>. Go, Python and PHP take them anywhere; Node and WASM, whose JavaScript entry turns a
   // Map into its entries, take them as a whole parameter or return (or an optional one), a keyed map with integer and

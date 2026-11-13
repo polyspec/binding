@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -43,6 +43,27 @@ def _fixture(members, rows):
     return type("Fixture", (), {name: member(name) for name in members})(), unexpected, calls
 `;
 
+// GN-13e: whether a result is the value of a case: the same type at every level, a dict with the same entries in the
+// same order, NaN where the case has NaN, and a record with the same fields.
+const PYTHON_SAME = `
+
+def _same(actual, expected):
+    if isinstance(expected, float) and expected != expected:
+        return isinstance(actual, float) and actual != actual
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return len(actual) == len(expected) and all(
+            _same(key, other_key) and _same(value, other_value)
+            for (key, value), (other_key, other_value) in zip(actual.items(), expected.items())
+        )
+    if isinstance(expected, (list, tuple)):
+        return len(actual) == len(expected) and all(_same(item, other) for item, other in zip(actual, expected))
+    if dataclasses.is_dataclass(expected):
+        return all(_same(getattr(actual, field.name), getattr(expected, field.name)) for field in dataclasses.fields(expected))
+    return actual == expected
+`;
+
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 const PYTHON_OUTCOME = `
 
@@ -78,6 +99,7 @@ export function pythonTests(model: Model, module: string): string {
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
   let usesOutcome = false;
+  let usesSame = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
@@ -202,6 +224,32 @@ export function pythonTests(model: Model, module: string): string {
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
         ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}`);
     }
+    // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
+    for (const kase of resultCases(model, fn)) {
+      if (kase.refused !== undefined) {
+        out.push(`
+    def test_gn13e_${name}_${kase.id}(self) -> None:
+        self.fail(${pyString(kase.refused)})`);
+        continue;
+      }
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
+      const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
+      const after = fixtures
+        .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
+        .join('');
+      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => (kase.receiver === undefined ? undefined : caseValue(model, ctx, arg, kase.receiver.args)));
+      const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+      }), receiver);
+      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+      usesSame ||= expected !== undefined && 'text' in expected;
+      const check = expected === undefined ? `\n        ${call}` : 'refused' in expected ? `\n        self.fail(${pyString(expected.refused)})` : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
+      out.push(`
+    def test_gn13e_${name}_${kase.id}(self) -> None:${before}${check}${after}`);
+    }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
     const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
@@ -272,11 +320,11 @@ export function pythonTests(model: Model, module: string): string {
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesErrno ? 'import errno\n' : ''}import unittest
+${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
 
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

@@ -67,7 +67,9 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   throw new Error(`no placeholder for ${JSON.stringify(type)}`);
 }
 
-export function fromJson(model: Model, ctx: Context, type: Type, value: unknown): string {
+// `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
+// and a tuple a tuple in Python.
+export function fromJson(model: Model, ctx: Context, type: Type, value: unknown, out = false): string {
   const none = ctx.lang === 'python' ? 'None' : 'null';
   if (value === null) return none;
   if (typeof type === 'string') {
@@ -90,6 +92,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
       if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
       return form[ctx.lang];
     }
+    if (type === 'int64' && out && ctx.lang === 'node') return `${String(value)}n`;
     if (type === 'uint' || type === 'int' || type === 'int64' || type === 'float') return String(value);
     // G-5: bytes are {"hex": "<two hex digits per byte>"}; a source is its text or, for bytes that are no text, the same.
     if (type === 'bytes' || type === 'source') {
@@ -102,16 +105,21 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
     }
     throw new Error(`no case value of the type ${type}`);
   }
-  if ('optional' in type) return fromJson(model, ctx, type.optional, value);
+  if ('optional' in type) return fromJson(model, ctx, type.optional, value, out);
+  if ('tuple' in type) {
+    if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Error(`a case value of the tuple ${JSON.stringify(type)} is an array of ${type.tuple.length} values`);
+    const items = type.tuple.map((part, i) => fromJson(model, ctx, part, value[i], out));
+    return ctx.lang === 'python' ? `(${items.map((item) => `${item},`).join(' ')})` : `[${items.join(', ')}]`;
+  }
   if ('list' in type) {
-    const items = (value as unknown[]).map((item) => fromJson(model, ctx, type.list, item));
+    const items = (value as unknown[]).map((item) => fromJson(model, ctx, type.list, item, out));
     return `[${items.join(', ')}]`;
   }
   if ('map' in type) {
     // G-5: a case gives a map as an object of its entries in order.
     const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
       const k = fromJson(model, ctx, 'text', key);
-      const v = fromJson(model, ctx, type.map, item);
+      const v = fromJson(model, ctx, type.map, item, out);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
@@ -120,13 +128,16 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const entries = (value as [unknown, unknown][]).map(([key, item]) => {
       const k = caseKey(key, (kind, raw) => (kind === 'int' ? String(raw) : fromJson(model, ctx, kind, raw)));
-      const v = fromJson(model, ctx, type.keyed_map, item);
+      const v = fromJson(model, ctx, type.keyed_map, item, out);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
     });
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
   }
   const unit = unitOf(model, type);
-  if (aliasOf(model, type) !== undefined) return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
+  if (aliasOf(model, type) !== undefined) {
+    if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
+    return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
+  }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
     if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`a case value of the record ${unit.id} is not an object of its fields`);
@@ -136,11 +147,37 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
       (unit.fields ?? []).map((f) => {
         const key = langName('python', f.name, 'variable');
         if (!(key in fields)) throw new Error(`a case value of the record ${unit.id} has no field ${key}`);
-        return fromJson(model, ctx, f.type, fields[key]);
+        return fromJson(model, ctx, f.type, fields[key], out);
       }),
     );
   }
   throw new Error(`no case value of the type ${JSON.stringify(type)}`);
+}
+
+// GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
+// built-in form of each kind; a kind whose out rows make another form in the language is not compared yet.
+const BUILT: Readonly<Record<string, string>> = { null: 'null', bool: 'bool', int: 'int', float: 'float', text: 'text', bytes: 'bytes', list: 'list', map: 'map' };
+function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const kind = record?.['kind'];
+  if (typeof kind !== 'string') return;
+  for (const row of (unit.out ?? []).filter((r) => r.kind === kind)) {
+    const make = row.make[lang];
+    if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${JSON.stringify(make)}, with which a result is not compared yet`);
+  }
+  const held = record?.['value'];
+  if (kind === 'list' && Array.isArray(held)) for (const item of held) madeAsBuilt(unit, lang, item);
+  if (kind === 'map' && Array.isArray(held)) for (const pair of held) madeAsBuilt(unit, lang, (pair as unknown[])[1]);
+}
+
+// GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
+// test of the case fails with.
+export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+  try {
+    return { text: fromJson(model, ctx, fn.returns, value, true) };
+  } catch (error) {
+    return { refused: `${fn.member.id}: ${error instanceof Error ? error.message : String(error)} (GN-13e)` };
+  }
 }
 
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
@@ -390,6 +427,67 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
     if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
     out.push({ id: String(record['id']), args, raises, ...(faults === undefined ? {} : { faults: JSON.stringify(faults) }), ...(receiver === undefined ? {} : { receiver }) });
+  }
+  return out;
+}
+
+// GN-13e: a case that does not raise, with the arguments the case gives, its receiver and the result it expects: the
+// value of the key that the row of `cases` names (`result` by default), absent when the case has no such key. A case
+// that the generator cannot run carries the reason, which its test fails with (G-4).
+export interface ResultCase {
+  id: string;
+  args: Map<Arg, unknown>;
+  receiver?: Receiver;
+  expected?: { value: unknown };
+  refused?: string;
+}
+
+// GN-13e: whether the language compares a result of the type with the value of a case: a class has no case value
+// form, and a return of none or never has no result.
+export function comparableResult(model: Model, type: Type): string | undefined {
+  if (type === 'none' || type === 'never') return 'a member that returns nothing has no result to compare';
+  if (typeof type === 'string') return undefined;
+  if ('list' in type) return comparableResult(model, type.list);
+  if ('optional' in type) return comparableResult(model, type.optional);
+  if ('map' in type) return comparableResult(model, type.map);
+  if ('keyed_map' in type) return comparableResult(model, type.keyed_map);
+  if ('tuple' in type) return type.tuple.map((t) => comparableResult(model, t)).find((reason) => reason !== undefined);
+  if (objectUnit(model, type) !== undefined) return 'a class has no case value form';
+  // A value alias is compared where its out rows make the built-in form of each kind (expectedText).
+  if (aliasOf(model, type) !== undefined) return undefined;
+  const unit = unitOf(model, type);
+  if (unit?.kind === 'enum') return undefined;
+  if (unit?.kind === 'record') return (unit.fields ?? []).map((f) => comparableResult(model, f.type)).find((reason) => reason !== undefined);
+  return `a result of ${JSON.stringify(type)} is not compared yet`;
+}
+
+export function resultCases(model: Model, fn: Fn): ResultCase[] {
+  const out: ResultCase[] = [];
+  const keys = model.resultKeys?.get(fn.member.id);
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    // A hook's cases are its own tests (N-4), and a case with faults that does not raise is not generated yet (GN-13a).
+    if (record['raises'] !== undefined || record['faults'] !== undefined || fn.special !== undefined) continue;
+    const id = String(record['id']);
+    const key = keys?.get(kase) ?? 'result';
+    const args = argsOf(fn, record);
+    if (args === undefined) {
+      const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
+      out.push({ id, args: new Map(), refused: `the case ${id} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)` });
+      continue;
+    }
+    const receiver = receiverOf(model, fn, record);
+    if (fn.receiver !== undefined && receiver === undefined) {
+      out.push({ id, args, refused: `the case ${id} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)` });
+      continue;
+    }
+    const base = { id, args, ...(receiver === undefined ? {} : { receiver }) };
+    if (!(key in record)) {
+      out.push(base);
+      continue;
+    }
+    const reason = comparableResult(model, fn.returns);
+    out.push(reason === undefined ? { ...base, expected: { value: record[key] } } : { ...base, refused: `the case ${id} of ${fn.member.id} gives ${key}, but ${reason} (GN-13e)` });
   }
   return out;
 }

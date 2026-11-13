@@ -4,7 +4,7 @@
 import { type Model, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -38,6 +38,18 @@ function fixture(members, rows) {
     };
   }
   return { object, unexpected, calls };
+}
+`;
+
+// GN-13e: a result in a form that assert.deepStrictEqual compares with the order of a Map: a Map is its entries.
+export const NODE_ORDERED = `
+function ordered(value) {
+  if (value instanceof Map) return { entries: [...value].map(([key, item]) => [ordered(key), ordered(item)]) };
+  if (Array.isArray(value)) return value.map(ordered);
+  if (typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, ordered(item)]));
+  }
+  return value;
 }
 `;
 
@@ -88,6 +100,7 @@ export function nodeTests(model: Model): string {
   const made = (receiver: Receiver): string =>
     invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
   let usesOutcome = false;
+  let usesOrdered = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('node', fn.member.name, 'callable') : `${langName('node', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('node', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -193,6 +206,33 @@ test('B-4: ${name} ${kase.id}', () => {${before}${arming}
     error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}
 });`);
     }
+    // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
+    for (const kase of resultCases(model, fn)) {
+      if (kase.refused !== undefined) {
+        out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(kase.refused)});
+});`);
+        continue;
+      }
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
+      const after = fixtures
+        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
+        .join('');
+      const args = callArgs(model, ctx, fn, (arg) => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+      });
+      const call = invoke(fn, args, kase.receiver === undefined ? '' : made(kase.receiver));
+      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+      usesOrdered ||= expected !== undefined && 'text' in expected;
+      const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {${before}${check}${after}
+});`);
+    }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
     const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
@@ -270,7 +310,7 @@ import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } fro
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(npm)};
 
 const require = createRequire(import.meta.url);
-${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}
+${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

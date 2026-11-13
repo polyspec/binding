@@ -1498,3 +1498,24 @@ test('the Rust files of the thin packages are in the form that rustfmt gives the
     for (const found of (body as string).matchAll(/^#!\[allow\((.*)\)\]$/gm)) assert.ok((found[1] ?? '').length <= 70, `${path}: ${found[0]}`);
   }
 });
+
+test('every case that does not raise runs and compares its result in every target (GN-13e)', () => {
+  const { contract, caseFiles } = load();
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  contract.cases[0].result = 'words';
+  contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
+  cases.split[1].words = [['a', '0'], ['b', '2']];
+  cases.split.push({ id: 'unread', text: 'c', options: { max_words: null, mode: 'plain' } });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const compared = "ordered(pkg.splitWords('a b', { maxWords: null, mode: 'latin' })), ordered([['a', '0'], ['b', '2']])";
+  assert.ok(text(out, 'packages/ts/generated/tests/generated.test.mjs').includes(`assert.deepStrictEqual(${compared})`));
+  assert.ok(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs').includes(`assert.deepStrictEqual(${compared})`));
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /expected = \[\("a", "0",\), \("b", "2",\)\]\n\s+self\.assertTrue\(_same\(result, expected\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertSame\(self::same\(\[\["a", "0"\], \["b", "2"\]\]\), self::same\(\\Polyspec\\Sample\\splitWords\("a b"/);
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /func TestGN13eSplitWords\(t \*testing\.T\) \{\n\tt\.Run\("two"/);
+  assert.match(go, /!reflect\.DeepEqual\(value0, want\)/);
+  // A case without the result key runs the call alone, which must not raise.
+  assert.match(go, /t\.Run\("unread", func\(t \*testing\.T\) \{\n\t\t_, err := sample\.SplitWords\("c"/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: splitWords unread', \(\) => \{\n\s+pkg\.splitWords\('c'/);
+});

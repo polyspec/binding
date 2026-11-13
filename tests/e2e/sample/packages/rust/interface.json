@@ -1049,7 +1049,8 @@
     {
       "member": "sample.join",
       "file": "contracts/cases.json",
-      "group": "join"
+      "group": "join",
+      "result": "text"
     },
     {
       "member": "sample.resolve",
