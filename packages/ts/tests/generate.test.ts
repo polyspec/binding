@@ -1121,7 +1121,6 @@ test('a parameter or field with a default is None for the core when it is left o
   // G-4: each default that is not generated is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   const field = (c: any, name: string): any => unitOf(c, 'frame_options').fields.find((f: any) => f.name.join('_') === name);
-  assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /a default of a record parameter is not generated yet \(U-2 \{empty: "object"\}\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /a default of an optional type is not generated yet \(U-2\)/);
   assert.throws(() => shaped((c) => { delete parameter(c, 'shapes.repeat', 'separator').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { delete field(c, 'upper').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
@@ -1136,6 +1135,32 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.match(wasmLib, /const _: \(\) = assert!\(same_text\(polyspec_shapes::DEFAULT_SEPARATOR, ","\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 3\) \{\n {4}throw new TypeError\(`repeat\(\) takes 1 to 3 arguments/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
+});
+
+test('a record parameter whose every field has a default may be left out as a whole (U-2 {empty: "object"}, GN-6i)', () => {
+  const out = shaped();
+  // Python and PHP take the fields as keywords and named arguments, which are all left out with the record.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def wrap\(text: str, \*, left: str = "\[", right: str = "\]"\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function wrap\(mixed \$text, mixed \$left = "\[", mixed \$right = "\]"\): string \{\}/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_wrap_options_left_out\(self\) -> None:/);
+  // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
+  // each left out; the core gets the record with every field None.
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
+    assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
+    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = in_default\(member_or_undefined\(&?options, "left", "options"\)\?/);
+    const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
+    assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
+    // G-7: the text is required, so a call without arguments is too short.
+    assert.match(tests, /test\('G-7: wrap counts and names its arguments', \(\) => \{\n\s+assert\.throws\(\(\) => pkg\.wrap\(\)/);
+  }
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /if \(args\.length < 1 \|\| args\.length > 2\) \{\n {4}throw new TypeError\(`wrap\(\) takes 1 to 2 arguments/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 2\) \{\n {4}throw new TypeError\(`wrap\(\) takes 1 to 2 arguments/);
+  // G-4: a record with a field that has no default is not left out, because the core would get no value of that field.
+  const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
+  assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /shapes\.frame\.options: the default \{empty: "object"\} leaves out the record, but its field prefix has no default \(U-2\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.wrap', 'options').default = { empty: 'list' }; }), /shapes\.wrap\.options: the default \{empty: "list"\} of a record parameter is not generated \(U-2\)/);
 });
 
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
