@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The e2e run of `tests/e2e/sample` failed in Node and Go. Node: of the K-2 tests of `resolveSlowly`, only the first
+  test of the block became an async function, so the module of the generated tests did not parse (`await` in a
+  function that is not async); every test of a block that awaits is now async. Go: `out_list`, which only the entry
+  point of the feature `fault-test` uses, was compiled in the static library without features, which then denied it
+  as dead code; a helper that only the entry points of a test feature use is now compiled under those features (GN-4).
 - The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
   class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
   was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static
