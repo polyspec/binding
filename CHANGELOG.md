@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The Node binding of `tests/e2e/classes` did not compile (E0515, E0597): the call bound the borrow of the guard of its
+  receiver (`let receiver = &*receiver;`) before it moved the guard into the future of `Gate.enter_later` (async_driver)
+  and into the closure of the pool of `Gate.enter_slowly` (blocking_io), so the future and the closure held a borrow of
+  a local of the call. The future and the closure of the pool now own the guards and bind the borrows inside them
+  (GN-6h). Verified by `make e2e` of `tests/e2e/classes`, whose record is evidence and passed in every target (PHP 60
+  generated tests and 4 contract cases, Python 58 and 4, Node 63, Go 27 and WASM 42), and of `tests/e2e/sample`,
+  `tests/e2e/shapes` and `tests/e2e/consumer`, whose records are evidence and passed in every target.
 - `cargo test` of binding_core without features ran `tests/lock.rs` and `tests/driver.rs` with no test, because each
   file was gated by a crate-level `#![cfg(feature = ...)]`, and passed while it checked nothing. The two files are
   now `[[test]]` targets with `required-features`, which a run without the feature does not build (HR-84). Verified by
@@ -125,10 +132,9 @@
   `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
   `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
   requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
-  block had dropped because only that test entry uses it; the helper is now kept. Verified for Python and PHP by
-  `make e2e` of `tests/e2e/classes`, whose record is evidence: PHP passed 60 generated tests and 4 contract cases, and
-  Python 58 and 4; Go failed in that run because `held_lease` was unused without `panic-test`, which the entry above
-  fixes.
+  block had dropped because only that test entry uses it; the helper is now kept. Verified by `make e2e` of
+  `tests/e2e/classes`, whose record is evidence and passed in every target: PHP 60 generated tests and 4 contract
+  cases, Python 58 and 4, and Go 27.
 - A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
   ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
   and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
@@ -156,7 +162,9 @@
   an `Option<i64>` of an optional property of an error unit and the `&Option<String>` of an optional text field meet
   for two types `T`, and the generic `out_int` and `out_text` left `T` unknown. `out_optional` now takes `Option<T>`,
   given the `as_ref` of the value of the core, as in PHP, Python and Node (GN-16). Verified by `npm test` in
-  `packages/ts`: 280 of 280 pass.
+  `packages/ts`: 280 of 280 pass, and by `make e2e` of fsm, whose record is evidence: PHP, Python, Node and WASM passed
+  (557, 556, 557 and 556 tests), and Go compiled and failed only the 20 named `from_code` tests of defect 88, whose
+  input has no form in Go until the case-test entry point of GN-13 is generated.
 - The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
   safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
   277 of 277 pass.
@@ -367,8 +375,8 @@
   R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
   function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data
   value is the nearest float with the reason of U-7. Verified by `make e2e`
-  of `tests/e2e/shapes`, whose record is evidence and passed in every target (PHP 74, Python 86, Node 87, Go 50 and
-  WASM 85 tests), and of `tests/e2e/sample`, whose record is evidence and passed the lint of the core in every target.
+  of `tests/e2e/shapes`, whose record is evidence and passed in every target (PHP 66, Python 78, Node 79, Go 50 and
+  WASM 77 tests), and of `tests/e2e/sample`, whose record is evidence and passed the lint of the core in every target.
 - A case that armed a fault injection point of another library (`<library>.<id>`) ran against a binding crate whose
   `fault-test` turned on the feature of its own core alone, so the point of the other core was not compiled and the
   case could not arm it, and `binding check` did not report the manifest. `binding scaffold` now reads the libraries

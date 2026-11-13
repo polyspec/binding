@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e029a7812fc78be7f48d13c80e07a0028606d38e3fc2b3487a1ba4b1593d6b57 -->
+<!-- source-sha256: e2e9e82eff55a592b190823dcb3e5b7ca9018a754eb2cd9be094e8a3d31c915c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/classes`의 Node 바인딩이 컴파일되지 않았다(E0515, E0597): 호출이 receiver guard의 참조를
+  (`let receiver = &*receiver;`) 묶은 뒤 guard를 `Gate.enter_later`(async_driver)의 future와 `Gate.enter_slowly`
+  (blocking_io)의 pool closure로 옮겼으므로, future와 closure가 호출의 지역 변수를 빌린 참조를 쥐었다. 이제 future와 pool
+  closure가 guard를 소유하고 그 안에서 참조를 묶는다(GN-6h). `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거이며
+  모든 target에서 통과했다(PHP 생성 시험 60개와 contract case 4개, Python 58개와 4개, Node 63개, Go 27개, WASM 42개).
+  `tests/e2e/sample`, `tests/e2e/shapes`, `tests/e2e/consumer`의 `make e2e`도 증거인 기록에서 모든 target이 통과했다.
 - feature 없는 binding_core의 `cargo test`가 `tests/lock.rs`와 `tests/driver.rs`를 시험 없이 돌리고 통과했다. 각 파일이
   crate 수준의 `#![cfg(feature = ...)]`로 막혀 있었기 때문이다. 이제 두 파일은 `required-features`를 가진 `[[test]]`
   target이고, feature 없는 실행은 그것을 빌드하지 않는다(HR-84). `make check`로 확인했다: test-ts는 시험 290개를 돌려 모두
@@ -106,9 +112,9 @@
   남긴 `Lease`가 그 호출의 `TypeError`가 설정된 채 경고해서 호출이 `SystemError`로 끝났다. 이제 소멸자는 그 예외를 맡아
   두었다가 경고 뒤에 다시 설정한다. PHP: PHP가 메시지 앞에 실행 중인 함수를 붙이므로 경고는 `<function>(): Lease was
   destroyed …`이다. 그래서 B-10 시험은 그 글로 끝나는 메시지를 요구한다. Go: B-5c의 poison entry point가 `held_lease`를
-  불렀는데, 그것을 쓰는 것이 그 시험 entry뿐이라 helper 묶음이 그것을 뺐다. 이제 그 helper를 남긴다. Python과 PHP는
-  `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거다: PHP는 생성 시험 60개와 contract case 4개, Python은 58개와
-  4개가 통과했다. Go는 그 실행에서 `held_lease`가 `panic-test` 없이 쓰이지 않아 실패했고, 위 항목이 그것을 고친다.
+  불렀는데, 그것을 쓰는 것이 그 시험 entry뿐이라 helper 묶음이 그것을 뺐다. 이제 그 helper를 남긴다.
+  `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거이며 모든 target에서 통과했다: PHP는 생성 시험 60개와 contract
+  case 4개, Python은 58개와 4개, Go는 27개.
 - parameter나 receiver가 언어 코드를 지니는 `wait: blocking_io` member를 모든 target이 거부했다("a member with wait
   blocking_io that reaches language code is not generated (GN-6m)"). 그래서 host loader를 쓰는 template engine의
   `engine.load`, `prepare`, `prepare_bound`에 바인딩이 없었다. 이제 PHP와 Python은 GN-6m대로 생성한다. Python
@@ -132,7 +138,9 @@
 - fsm의 Go C ABI가 컴파일되지 않았다(E0283, type annotations needed): `out_optional`이 `impl Into<Option<T>>`를 받았는데,
   error unit의 optional property인 `Option<i64>`와 optional text field인 `&Option<String>`이 두 타입 `T`에 맞아서 제네릭
   `out_int`과 `out_text`가 `T`를 정하지 못했다. 이제 `out_optional`은 PHP, Python, Node처럼 코어 값의 `as_ref`를 받는
-  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과.
+  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과. fsm의 `make e2e`로도
+  검증했고, 그 기록은 증거다: PHP, Python, Node, WASM이 통과했고(557, 556, 557, 556개 시험), Go는 컴파일되었고 결함 88의 이름
+  붙은 `from_code` 시험 20개만 실패했다. 그 입력은 GN-13의 case-test 진입점이 생성될 때까지 Go에 형태가 없다.
 - Go tuple parameter 시험이 `uint` 부분에 `in_uint`을 요구했지만, GN-12a는 `uint` 부분을 `in_safe_uint`로 안전 정수에
   묶는다. 이제 시험은 `in_safe_uint`를 요구한다. `packages/ts`의 `npm test`로 확인했다: 277개 중 277개 통과.
 - 같은 `keyed_map` 정수 key가 두 결과를 냈다: Node와 WASM은 안전 정수가 아닌 number key를 `invalid_argument_type`으로
@@ -313,7 +321,7 @@
 - `tests/e2e/shapes`와 `tests/e2e/sample`의 코어는 길이와 index를 `as`로 변환했는데, 이제 그 workspace가 가진 R-1의 lint가
   이를 금하므로 코어의 lint가 모든 target을 실패시켰다. 길이는 변환의 이유를 단 함수 하나로 넓히고, index는
   `usize::try_from`으로 변환하며, data 값의 정수는 U-7의 이유를 단 가장 가까운 float다. `tests/e2e/shapes`의
-  `make e2e`로 검증했고, 그 기록은 증거이며 모든 target에서 통과했다(PHP 74, Python 86, Node 87, Go 50, WASM 85개 시험).
+  `make e2e`로 검증했고, 그 기록은 증거이며 모든 target에서 통과했다(PHP 66, Python 78, Node 79, Go 50, WASM 77개 시험).
   `tests/e2e/sample`의 `make e2e`도 증거인 기록에서 모든 target의 코어 lint를 통과했다.
 - 다른 라이브러리의 실패 주입점(`<library>.<id>`)을 장전하는 case는, `fault-test`가 자기 코어의 feature만 켜는 바인딩
   crate에서 돌았다. 그래서 다른 코어의 지점이 컴파일되지 않아 case가 그것을 장전하지 못했고, `binding check`는 그
