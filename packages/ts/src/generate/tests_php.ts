@@ -10,8 +10,8 @@ import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', 'null'],
-  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", 'null'],
+  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', '2 ** 53', 'null'],
+  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)', 'null'],
   float: ['true', "'7'", '1', 'null'],
 };
 

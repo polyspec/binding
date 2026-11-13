@@ -8,6 +8,7 @@
 // arm faults (G-5) have the build tag polyspec_fault_test and the poison tests polyspec_panic_test.
 //
 // What the Go types decide is no test: B-2 and T-7 (a uint64 holds no -1, NaN or fraction, a []byte no other type),
+// except the range of an int and a uint (GN-12a), which B-2 tests with 2^53 and -2^53,
 // G-7 (a call with a missing, extra or unknown argument does not compile), U-2 null as a value (nil is the absent
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
@@ -400,6 +401,11 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
       const outer = wrap;
       base = base.list;
       wrap = (text) => outer(`${listType}{${text}}`);
+    }
+    if (base === 'int' || base === 'uint') {
+      // GN-12a: an int or a uint outside the safe integers is kind invalid_number.
+      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('1 << 53'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-(1 << 53)'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
     }
     if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-3'));
     if (base === 'latin1') {

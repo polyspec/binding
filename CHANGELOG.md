@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- PHP and Python took an `int` argument of the range of i64 and the Go C ABI any `int64`, so a contract case with
+  9223372036854775807 for an `int` gave `invalid_number` in Node and the error of the core in PHP and Python. An `int`
+  is now a safe integer and a `uint` 0 to 2^53 - 1 in every target and at every place that the binding takes (an
+  argument, an item, a field), and an integer outside is kind `invalid_number` (GN-12a); an `int64` and a key of a
+  `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
+  (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
+  `blocking_io`), which this change does not touch.
 - The Go tests made the instance of a case whose call of `then` has `"raises": {"kind": <kind>}` by requiring that
   call to succeed, so `TestB4GateEnterAGateClosedTwiceLetsNothingPass` of `tests/e2e/classes` failed with "the gate of
   a is closed" where the case expects that failure. The Go test now requires the kind of that call and goes on to the

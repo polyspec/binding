@@ -8,8 +8,8 @@ import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**64'],
-  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
+  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
+  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**53', '-(2**53)', '2**63'],
   int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
   float: ['True', '"7"', '1'],
 };

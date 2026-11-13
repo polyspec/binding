@@ -56,7 +56,9 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     if (type === 'text') return `in_text(${input}, ${subject})`;
     if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
     // T-1: a source is a Go []byte, whose bytes the core judges.
-    const fn: Record<string, string> = { bytes: 'in_bytes', source: 'in_bytes', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
+    // GN-12a: an int or a uint of the contract is a safe integer, which the Go types do not hold to.
+    if (type === 'int' || type === 'uint') return `in_safe_${type}(${input}, ${subject})`;
+    const fn: Record<string, string> = { bytes: 'in_bytes', source: 'in_bytes', bool: 'in_bool', int64: 'in_int', float: 'in_float' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
     return `${name}(${input})`;
@@ -155,6 +157,22 @@ fn in_uint(input: &mut &[u8]) -> Result<u64, Fail> {
 
 fn in_int(input: &mut &[u8]) -> Result<i64, Fail> {
     Ok(i64::from_le_bytes(read_word(input)?))
+}
+
+/// B-2, GN-12a: a uint of the contract is 0 to 2^53 - 1; a larger one is kind invalid_number.
+fn in_safe_uint(input: &mut &[u8], subject: &str) -> Result<u64, Fail> {
+    match in_uint(input)? {
+        integer @ 0..=9_007_199_254_740_991 => Ok(integer),
+        _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint })),
+    }
+}
+
+/// B-2, GN-12a: an int of the contract is a safe integer; any other is kind invalid_number.
+fn in_safe_int(input: &mut &[u8], subject: &str) -> Result<i64, Fail> {
+    match in_int(input)? {
+        integer if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
+    }
 }
 
 fn in_float(input: &mut &[u8]) -> Result<f64, Fail> {
@@ -1149,7 +1167,7 @@ export function libRust(model: Model): string {
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure
 // in a buffer that Go copies and frees with ${prefix(model)}__free.
 
-use binding_core::{BindingError, Category, Kinds${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
+use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(all) ? ', NumberType' : ''}${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
 ${/Borrow</.test(all) ? 'use std::borrow::Borrow;\n' : ''}${usesMap ? 'use std::collections::BTreeMap;\n' : ''}use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length > 0 ? 'use std::sync::Arc;\n' : ''}${model.callbacks.length > 0 || model.aliases.length > 0 ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}${usesMutex ? 'use std::sync::{Mutex, MutexGuard};\n' : ''}
