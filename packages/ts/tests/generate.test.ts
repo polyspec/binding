@@ -1040,6 +1040,15 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.match(text(withHook, 'packages/ts/wasm/generated/lib.rs'), /match result \{\}/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/index.d.ts'), /toJSON\(\): never;/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  // GN-18a: a member that writes its receiver is refused by name; the table shares the value that a call reads.
+  const written = classSample(['wasm']);
+  const full2 = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const counter = full2.units.find((u: any) => u.id === 'counter');
+  counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
+  written.units.push(counter);
+  assert.throws(() => generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /counter\.add: the receiver &mut self is not generated for WASM yet \(B-5c, GN-18a\)/);
+  counter.members = counter.members.filter((m: any) => m.id !== 'counter.add');
+  assert.match(text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/index.mjs'), /class Counter \{/);
   // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.
   const alone = classSample(['wasm']);
   alone.units = alone.units.filter((u: any) => u.id === 'tag');

@@ -943,6 +943,9 @@ export function wasm(model: Model, files: Files): void {
   if (foreign !== undefined) throw new Unsupported(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
   const [callback] = model.callbacks;
   if (callback !== undefined) throw new Unsupported(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
+  // GN-18a: a table shares the value of an instance with the call that reads it, so the core cannot write it.
+  const writer = model.objects.flatMap((o) => o.members).find((m) => m.receiver === '&mut self');
+  if (writer !== undefined) throw new Unsupported(`${writer.member.id}: the receiver &mut self is not generated for WASM yet (B-5c, GN-18a)`);
   // L-2a: a host Node package keeps its binding crate in native/, where the WASM crate has no place yet.
   if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) throw new Unsupported('the WASM binding of a host Node package is not generated yet (L-2a)');
   files.set(`${ROOT}/lib.rs`, libRust(model));

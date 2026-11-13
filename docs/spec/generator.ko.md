@@ -341,6 +341,8 @@
   사본을 코어에 준다(GN-6b). 엔진이 회수한 인스턴스의 값은 `FinalizationRegistry`가 버리고 그 handle은 다시 쓰인다. 인스턴스에
   `free()`가 없으므로 어떤 호출도 놓인 값을 만나지 않는다. 이 class는 wasm-bindgen의 class가 아니다: wasm-bindgen은 Rust가
   `JsValue`에서 값을 꺼낼 때 인스턴스를 포기시키고, `free()` 뒤 그 인스턴스의 호출은 kind 없는 오류로 실패한다(P-2).
+  receiver가 `&mut self`인 member는 이름으로 거부한다: 호출은 읽는 값을 공유하므로 코어가 그 값에 쓸 수 없고, 쓰는
+  값을 쥐고 두 번째 자리를 kind `busy`로 거부하는 형태(B-5c, GN-6h)는 WASM에서 아직 생성하지 않는다.
   `cleanup`(B-10)이 있는 class unit은 모든 target과 같이 이름으로 거부한다(GN-1).
 
 ## 생성 시험(G-5)

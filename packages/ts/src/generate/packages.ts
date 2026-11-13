@@ -10,7 +10,7 @@ import { type Files, GENERATED_LINTS, header } from './text.ts';
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // The binding crates of Python, Node and PHP hold the core value of a class unit in the locks of the feature lock
-// (GN-6h); Go and WASM generate no class unit.
+// (GN-6h); Go generates no class unit, and WASM none with a write place (GN-18a).
 const bindingCore = (suffix: string): string =>
   `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', ...(suffix === 'go' || suffix === 'wasm' ? [] : ['lock'])].map((f) => JSON.stringify(f)).join(', ')}] }`;
 

@@ -410,8 +410,10 @@ the design ids are those of the binding design.
   a copy of the value (GN-6b). A `FinalizationRegistry` drops the value of an instance that the engine collected, and its
   handle is used again; an instance has no `free()`, so no call meets a released value. The class is not a class of
   wasm-bindgen: wasm-bindgen gives up the instance when Rust takes its value from a `JsValue`, and after its `free()` a
-  call of the instance fails with an error that has no kind (P-2). A class unit with `cleanup` (B-10) is refused by
-  name, as for every target (GN-1).
+  call of the instance fails with an error that has no kind (P-2). A member with the receiver `&mut self` is refused
+  by name: a call shares the value that it reads, which the core cannot write, and the form that holds a written
+  value and refuses its second place as kind `busy` (B-5c, GN-6h) is not generated for WASM yet. A class unit with
+  `cleanup` (B-10) is refused by name, as for every target (GN-1).
 
 ## Generated tests (G-5)
 
