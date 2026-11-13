@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The end-to-end check of `tests/e2e/classes` at 8d9ed8c failed for Python, because `a<name>` built its tuple of
+  arguments from a chained iterator, which `PyTuple::new` does not take (it needs an exact size), and for Node and
+  WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
+  clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
+  (GN-6m, GN-6n). Verified by `make e2e` of `tests/e2e/classes`.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
   runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,

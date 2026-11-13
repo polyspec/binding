@@ -553,7 +553,9 @@ function awaitedMethod(fn: Fn, name: string): string {
 const AWAITED = `
 /// GN-6m: an awaitable that runs a member that waits in a thread of asyncio, so that the event loop does not block.
 fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-    let all = PyTuple::new(py, std::iter::once(member).chain(args.iter()))?;
+    let mut all = vec![member];
+    all.extend(args.iter());
+    let all = PyTuple::new(py, all)?;
     py.import("asyncio")?.getattr("to_thread")?.call(all, kwargs)
 }
 `;

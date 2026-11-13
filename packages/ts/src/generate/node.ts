@@ -492,7 +492,7 @@ function entryRust(model: Model, fn: Fn): string {
     // is converted on the JavaScript thread.
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        driving(env, ${futureOf(model, fn, body)}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+    lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (waitsIo(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
@@ -501,7 +501,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${work}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+    lines.push(`        waiting(env, move || ${work}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
