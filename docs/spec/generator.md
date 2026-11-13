@@ -11,7 +11,7 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for public and internal units
-  (GN-6n):
+  (GN-6n), and nothing for a host unit (GN-6o):
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
@@ -467,6 +467,14 @@ the design ids are those of the binding design.
   internal unit as those of a public one (CK-23), because the generated code declares them. Why: the code of the
   repository (its hosts, its command tool and its cases) calls an internal unit through the binding as it calls a
   public one, while a user of a package reads it as no API (U-1, P-3).
+- **GN-6o** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
+  hand, and its source is its declaration (I-1, L-3). The generator writes nothing of it in any target: no entry
+  point, conversion, declaration, re-export or generated test, and the contract check requires no case of it (CK-22).
+  The host package exports it with its own entry (L-2a). A host unit takes a generated unit as a parameter (U-2 of the
+  design: a host operation on a generated unit is a function of a host functions unit), and a generated unit that
+  names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
+  generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
+  host unit would be a second declaration that could differ from its source.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

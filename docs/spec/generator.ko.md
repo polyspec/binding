@@ -12,7 +12,7 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓴다(GN-6n). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6n), host unit은 아무것도 쓰지 않는다(GN-6o). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
@@ -387,6 +387,12 @@
   그 꼴이 언어마다 다르고 아직 그런 member를 가진 계약이 없기 때문이다. 계약 검사는 internal unit의 이름을 public unit의
   이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
   internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
+- **GN-6o** origin이 `host`인 unit(U-1: class, functions unit, record)은 레포가 손으로 쓰는 코드이고, 그 소스가 선언이다(I-1, L-3).
+  생성기는 어느 target에도 그것을 쓰지 않는다. 진입점, 변환, 선언, 다시 내보내기, 생성 테스트가 없고, 계약 검사는 그 case를
+  요구하지 않는다(CK-22). host 패키지가 자기 진입점으로 그것을 내보낸다(L-2a). host unit은 생성 unit을 parameter로 받는다(설계의
+  U-2: 생성 unit에 대한 host 동작은 host functions unit의 함수다). 타입에 host unit을 적는 생성 unit은 이름을 대고 거부한다(G-4).
+  바인딩은 자기가 생성하는 타입만 변환하기 때문이다. 이유: host 코드가 바인딩을 부르고 바인딩은 host 코드를 부르지 않으므로,
+  host unit을 생성한 사본은 그 소스와 달라질 수 있는 두 번째 선언이 된다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
