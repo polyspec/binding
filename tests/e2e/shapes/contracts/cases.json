@@ -218,5 +218,54 @@
         "hex": "6162"
       }
     }
+  ],
+  "span_length": [
+    {
+      "id": "from_two_to_five",
+      "span": [
+        2,
+        5
+      ],
+      "result": 3
+    },
+    {
+      "id": "an_end_before_the_start",
+      "span": [
+        5,
+        2
+      ],
+      "result": 0
+    }
+  ],
+  "spans_total": [
+    {
+      "id": "two_spans",
+      "spans": [
+        [
+          0,
+          2
+        ],
+        [
+          4,
+          7
+        ]
+      ],
+      "result": 5
+    },
+    {
+      "id": "no_span",
+      "spans": [],
+      "result": 0
+    }
+  ],
+  "labelled": [
+    {
+      "id": "a_text_and_a_count",
+      "pair": [
+        "ab",
+        3
+      ],
+      "result": "ab×3"
+    }
   ]
 }

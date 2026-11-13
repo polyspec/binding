@@ -185,6 +185,13 @@ the design ids are those of the binding design.
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
   ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+- **GN-6t** A tuple (T-1) enters as a sequence of exactly its parts, and each part is converted as its type, so the
+  core gets the Rust tuple of the parts: Python takes a `tuple`, Node and WASM an `Array`, and PHP a list (an array
+  whose keys are 0 to n-1 in order). A value of another type, or a sequence with another number of items, is kind
+  `invalid_argument_type`. A tuple is taken at every place of an input: a parameter, an item of a list, a field of a
+  record parameter and inside an `optional`; the core takes a tuple parameter by reference (T-1). Go takes a tuple as
+  GN-16 states.
+  Why: a tuple leaves each language as that sequence, so a value that one call returns enters another call as it is.
 - **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
   that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
   contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a

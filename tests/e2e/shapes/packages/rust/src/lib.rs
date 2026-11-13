@@ -190,6 +190,24 @@ pub fn measure(text: &str) -> Measure {
     Measure { length: widen(text.chars().count()), empty: text.is_empty() }
 }
 
+/// The length of a span of a start and an end, none when the end is before the start (GN-6t: a tuple parameter).
+#[must_use]
+pub fn span_length(span: &(u64, u64)) -> u64 {
+    span.1.saturating_sub(span.0)
+}
+
+/// The lengths of the spans together (GN-6t: a list of a tuple).
+#[must_use]
+pub fn spans_total(spans: &[(u64, u64)]) -> u64 {
+    spans.iter().map(span_length).sum()
+}
+
+/// A text and a count as one text (GN-6t: a tuple of different part types).
+#[must_use]
+pub fn labelled(pair: &(String, u64)) -> String {
+    format!("{}×{}", pair.0, pair.1)
+}
+
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
 /// the largest.
 #[must_use]

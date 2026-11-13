@@ -1152,6 +1152,28 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+test('a tuple enters as the sequence of exactly its parts in each language (T-1, GN-6t)', () => {
+  const out = shaped();
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /fn in_tuple<'py, const N: usize>\(/);
+  assert.match(python, /in_tuple\(py, [a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(py, &part_0, "span"\)\?, in_uint\(py, &part_1, "span"\)\?\)\)\)/);
+  assert.match(python, /in_tuple\(py, [a-z_]+, "pair"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_text\(py, &part_0, "pair"\)\?, in_uint\(py, &part_1, "pair"\)\?\)\)\)/);
+  assert.match(python, /in_list\(py, [a-z_]+, "spans", \|py, item\| in_tuple\(py, item, "spans"\)/);
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /fn in_tuple<'[a-z]+, const N: usize>\(/, path);
+    assert.match(rust, /in_tuple\([a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(part_0, "span"\)\?, in_uint\(part_1, "span"\)\?\)\)\)/, path);
+  }
+  const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasm, /fn in_tuple<const N: usize>\(value: &JsValue, subject: &str\) -> Result<\[JsValue; N\], Fail>/);
+  assert.match(wasm, /in_tuple\(&?[a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(&part_0, "span"\)\?, in_uint\(&part_1, "span"\)\?\)\)\)/);
+  // G-5: the case value of a tuple is the sequence of its parts in each language.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_length\(\(2, 5,\)\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.spanLength\(\[2, 5\]\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /Shapes\\spanLength\(\[2, 5\]\)/);
+  assert.match(text(out, 'packages/go/zz_generated_shapes.go'), /^func SpanLength\(span \[2\]uint64\) \(uint64, error\)/m);
+});
+
 // The repository of the end-to-end check that holds a variant and a class that implements a callback interface
 // (tests/e2e/variants).
 const variants = (change: (contract: any) => void = () => undefined, targets?: Inputs['targets']): Map<string, string | Buffer> => {

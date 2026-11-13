@@ -152,6 +152,11 @@
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
   `invalid_argument_type`이다.
+- **GN-6t** tuple(T-1)은 정확히 그 부분들로 된 열로 들어오고, 각 부분은 그 타입대로 바뀌므로 코어는 부분들의 Rust tuple을
+  받는다: Python은 `tuple`, Node와 WASM은 `Array`, PHP는 list(키가 0부터 n-1까지 차례인 배열)를 받는다. 다른 타입의 값이나
+  항목 수가 다른 열은 kind `invalid_argument_type`이다. tuple은 입력의 모든 자리에서 받는다: parameter, list의 항목, record
+  parameter의 field, `optional`의 안. 코어는 tuple parameter를 참조로 받는다(T-1). Go는 GN-16대로 tuple을 받는다.
+  이유: tuple은 각 언어에서 그 열로 나가므로, 한 호출이 돌려준 값이 그대로 다른 호출에 들어간다.
 - **GN-6v** variant unit(T-9)은 그 `core_type`이 이름하는 Rust enum이고, 각 case는 그 enum의 struct variant다: case의 Rust
   이름은 그 값의 UpperCamelCase이고, 각 field는 계약의 이름으로 match하고 만들므로 field가 없는 case는 `Case {}`다. 타입이나
   그 `optional` 안의 타입이, unit의 field와 `optional`만 거쳐 자기를 가진 variant에 다시 닿는 unit인 field는 `Box<T>`(또는
