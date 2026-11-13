@@ -27,6 +27,8 @@ pub enum Error {
         /// The errno of the read that failed.
         errno: Option<i32>,
     },
+    /// The lookup refused the key: language code raised the error unit `refused_error`, which `find` recognizes (U-3).
+    Refused,
     /// An invariant of the sample does not hold (X-1).
     Internal {
         /// What does not hold.
@@ -55,6 +57,7 @@ impl Error {
             Self::Missing { .. } => "missing",
             Self::Unsupported { .. } => "unsupported",
             Self::Unreadable { .. } => "unreadable",
+            Self::Refused => "refused",
             Self::Internal { .. } => "internal",
         }
     }
@@ -66,12 +69,22 @@ impl fmt::Display for Error {
             Self::Missing { key } => write!(f, "no value for {key}"),
             Self::Unsupported { what } => write!(f, "not data: {what}"),
             Self::Unreadable { .. } => f.write_str("the text could not be read"),
+            Self::Refused => f.write_str("the lookup refused the key"),
             Self::Internal { detail } => write!(f, "the sample is broken: {detail}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    /// The core error of a kind that a callback member recognizes (U-3): the kind is the error, and the message of the
+    /// exception of language code is not kept, because the error states its own.
+    #[must_use]
+    pub fn recognized(kind: Self, _message: &str) -> Self {
+        kind
+    }
+}
 
 impl Kinds for Error {
     fn kind(&self) -> &'static str {
@@ -85,7 +98,7 @@ impl Kinds for Error {
     fn errno(&self) -> Option<i32> {
         match self {
             Self::Unreadable { errno } => *errno,
-            Self::Missing { .. } | Self::Unsupported { .. } | Self::Internal { .. } => None,
+            Self::Missing { .. } | Self::Unsupported { .. } | Self::Refused | Self::Internal { .. } => None,
         }
     }
 }

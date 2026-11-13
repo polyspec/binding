@@ -166,6 +166,39 @@
         "category": "io",
         "message": "the text could not be read"
       }
+    },
+    {
+      "id": "a_lookup_that_raises_a_recognized_error_refuses_the_key",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "raise": {
+                "error": "refused_error",
+                "kind": "refused"
+              }
+            }
+          ]
+        },
+        "calls": [
+          {
+            "member": "lookup.find",
+            "args": {
+              "key": "a"
+            }
+          }
+        ]
+      },
+      "key": "a",
+      "raises": {
+        "kind": "refused",
+        "status": null,
+        "category": "value",
+        "message": "the lookup refused the key"
+      }
     }
   ],
   "count": [],

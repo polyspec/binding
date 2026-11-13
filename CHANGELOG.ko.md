@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- end-to-end sample에는 예외를 던지는 callback의 계약 case가 없어서, callback을 받는 member가 언어 코드의 예외를 어떻게
+  다루는지는 각 target의 생성 테스트 K-2만 보였다. 이제 sample에는 `lookup.find`가 `Error::recognized`로 인식하는(U-3)
+  kind `refused`의 오류 unit `refused_error`가 있고, `sample.resolve_driven`의 case
+  `a_lookup_that_raises_a_recognized_error_refuses_the_key`에서는 lookup이 call에서 그 오류 unit을 던지므로, 모든
+  target이 machine에서 kind `refused`를 기대한다. `make test-ts`로 확인했고, target들은 `make e2e`에서 그 case를 실행한다.
 - 콜백을 받는 함수처럼 언어 코드에 닿는 `wait: async_driver` member는 "a member with wait async_driver that reaches
   language code is not generated"로 거부되었다. runtime이 자기 스레드에서 poll하는 future는 그 스레드에서 언어 코드를
   부르게 되기 때문이다. 이제 그런 member는 `core`에 `"machine": true`를 적고, 그 코어 경로는 I/O 없는 state machine인

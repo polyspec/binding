@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The end-to-end sample had no contract case of a callback that raises, so only the generated test K-2 of each
+  target showed what a member that takes a callback does with an exception of language code. The sample now has the
+  error unit `refused_error` of the kind `refused`, which `lookup.find` recognizes through `Error::recognized` (U-3),
+  and the case `a_lookup_that_raises_a_recognized_error_refuses_the_key` of `sample.resolve_driven`, whose lookup
+  raises that error unit in its call, so that every target expects the kind `refused` from the machine. Verified by
+  `make test-ts`; the targets run the case in `make e2e`.
 - A member with `wait: async_driver` that reaches language code, such as a function that takes a callback, was refused
   with "a member with wait async_driver that reaches language code is not generated", because a future that a runtime
   polls on its own threads would call the language code there. Such a member now names `"machine": true` in its

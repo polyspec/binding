@@ -115,12 +115,18 @@
         "category": "io"
       },
       {
+        "variant": "polyspec_sample::Error::Refused",
+        "category": "value",
+        "class": "refused_error"
+      },
+      {
         "variant": "polyspec_sample::Error::Internal",
         "category": "internal"
       }
     ],
     "binding": [],
-    "wrapped": []
+    "wrapped": [],
+    "recognized": "polyspec_sample::Error::recognized"
   },
   "faults": [
     {
@@ -198,9 +204,31 @@
           "core": {
             "path": "polyspec_sample::Lookup::find",
             "receiver": "&mut self"
+          },
+          "errors": {
+            "recognize": [
+              {
+                "unit": "refused_error"
+              }
+            ],
+            "reason": "U-3"
           }
         }
       ]
+    },
+    {
+      "id": "refused_error",
+      "name": [
+        "refused",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": []
     },
     {
       "id": "sample",
@@ -323,7 +351,8 @@
           "returns": "text",
           "raises": [
             "polyspec_sample::Error::Missing",
-            "polyspec_sample::Error::Unreadable"
+            "polyspec_sample::Error::Unreadable",
+            "polyspec_sample::Error::Refused"
           ],
           "wait": "async_driver",
           "core": {

@@ -1647,6 +1647,9 @@ function classSample(targets: string[]): any {
   // G-5: Go and WASM refuse a contract with fault injection points by name.
   delete sample.faults;
   sample.units = sample.units.filter((u: any) => u.id === 'sample' || u.id === 'tag');
+  // The kind that the lookup recognizes names its error unit, which this sample drops with the lookup (U-3).
+  sample.errors.kinds = sample.errors.kinds.filter((row: any) => row.class === undefined);
+  delete sample.errors.recognized;
   const owner = sample.units.find((u: any) => u.id === 'sample');
   owner.members = owner.members.filter((m: any) => ['sample.join', 'sample.shout'].includes(m.id));
   sample.cases = sample.cases.filter((row: any) => ['sample.join', 'sample.shout'].includes(row.member) || String(row.member).startsWith('tag.'));
