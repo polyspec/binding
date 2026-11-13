@@ -384,6 +384,149 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::negate"
+        },
+        {
+          "id": "shapes.span_length",
+          "name": [
+            "span",
+            "length"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::span_length"
+        },
+        {
+          "id": "shapes.spans_total",
+          "name": [
+            "spans",
+            "total"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "spans"
+              ],
+              "type": {
+                "list": {
+                  "tuple": [
+                    "uint",
+                    "uint"
+                  ]
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::spans_total"
+        },
+        {
+          "id": "shapes.labelled",
+          "name": [
+            "labelled"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "pair"
+              ],
+              "type": {
+                "tuple": [
+                  "text",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::labelled"
+        },
+        {
+          "id": "shapes.span_width",
+          "name": [
+            "span",
+            "width"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "span"
+              ],
+              "type": {
+                "tuple": [
+                  "uint",
+                  "uint"
+                ]
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::span_width"
+        },
+        {
+          "id": "shapes.span_at",
+          "name": [
+            "span",
+            "at"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "length"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": {
+            "tuple": [
+              "uint",
+              "uint"
+            ]
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::span_at"
         }
       ]
     },
@@ -691,6 +834,31 @@
       "member": "buffer.from_end",
       "file": "contracts/cases.json",
       "group": "buffer_from_end"
+    },
+    {
+      "member": "shapes.span_length",
+      "file": "contracts/cases.json",
+      "group": "span_length"
+    },
+    {
+      "member": "shapes.spans_total",
+      "file": "contracts/cases.json",
+      "group": "spans_total"
+    },
+    {
+      "member": "shapes.labelled",
+      "file": "contracts/cases.json",
+      "group": "labelled"
+    },
+    {
+      "member": "shapes.span_width",
+      "file": "contracts/cases.json",
+      "group": "span_width"
+    },
+    {
+      "member": "shapes.span_at",
+      "file": "contracts/cases.json",
+      "group": "span_at"
     }
   ]
 }
