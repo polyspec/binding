@@ -77,7 +77,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     }
     case 'native':
       return `match native.downcast::<PyNative>() {
-            Some(object) => Ok(object.0.clone_ref(py).into_bound(py)),
+            Some(object) => Ok(object._held.clone_ref(py).into_bound(py)),
             None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
         }`;
     default:
@@ -384,9 +384,9 @@ impl<'py> PyHost<'py> {
             return Ok(HostValue::Other { type_name, handle: self.mark() });
         }
         if value.is_callable() {
-            return Ok(HostValue::Callable(Native::new(PyNative(value.clone().unbind()))));
+            return Ok(HostValue::Callable(Native::new(PyNative { _held: value.clone().unbind() })));
         }
-        Ok(HostValue::Object { native: Native::new(PyNative(value.clone().unbind())), type_name, json_serializable: false })
+        Ok(HostValue::Object { native: Native::new(PyNative { _held: value.clone().unbind() }), type_name, json_serializable: false })
     }
 }
 
@@ -425,7 +425,11 @@ impl HostValues for PyHost<'_> {
 
 /// GN-6u: a Python object that a core may keep, released when the last Native that holds it is dropped.
 #[derive(Debug)]
-struct PyNative(Py<PyAny>);
+struct PyNative {
+    // The field is kept for its ownership: the object lives while a Native holds it, and only an out row that gives a
+    // native value back reads it.
+    _held: Py<PyAny>,
+}
 
 impl NativeObject for PyNative {}
 
@@ -477,15 +481,8 @@ fn failure_of_${library}(py: Python<'_>, failure: binding_core::Failure<${error.
 // found by its address while the walk holds it; read gives the property that the row names. GN-6x: an instance of a
 // value class of another repository is HostValue::Value too, held as Held::Foreign with the read member of its in case,
 // which read calls.
-export function pythonHost(model: Model): string {
-  // GN-6u: the object of a PyNative is read where an out row gives a native value back; without such a row the field
-  // only keeps the object for the core that holds the Native, which the lints name dead code.
-  const givenBack = model.aliases.some((a) => (a.unit.out ?? []).some((row) => row.kind === 'native'));
-  const held = '#[derive(Debug)]\nstruct PyNative(Py<PyAny>);';
-  return givenBack ? pythonHostAll(model) : pythonHostAll(model).replace(held, held.replace('\n', '\n#[allow(dead_code, reason = "GN-6u: the field keeps the object for the core that holds the Native; no out row of this contract gives it back")]\n'));
-}
 
-function pythonHostAll(model: Model): string {
+export function pythonHost(model: Model): string {
   const reads = valueReads(model, 'python');
   const foreign = model.aliases.some((a) => a.owner !== undefined);
   const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';

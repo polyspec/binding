@@ -205,7 +205,16 @@ the design ids are those of the binding design.
   hold the helper unused.
   A helper is used where the code calls it or passes it by its name; a method of the same name
   (`map.insert(...)`) is no use of the helper `insert`, because a helper that only a method names is dead code that
-  may name types the crate does not declare.
+  may name types the crate does not declare. The generator reads the uses from the tokens of the Rust code, not from
+  its words: a string, a comment and an attribute name no helper, and neither does a field (`name:`), a macro of the
+  name, an associated item of another path (`Type::name`), or a local of the function around it, which is a
+  parameter, a `let`, the pattern of a `for`, of an `if let` or of a match arm, or a parameter of a closure. The
+  helpers are groups of items, separated by the blank lines outside every bracket, so a function with a blank line in
+  its body and an `impl` block with its methods are each one group. A group is kept when the code, or a group that is
+  kept, uses a name that it declares (a function, a trait, a type, a static, a constant or a macro); a group of
+  `impl` blocks is kept with the type of the block that it is of, or with its trait when the block is of a type of the
+  code; and a group stays when an item of it is named from outside the Rust code that is read, because it is `pub`,
+  has an ABI (`extern "C" fn`) or carries an attribute of a macro, or when it declares no name.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
@@ -1718,7 +1727,16 @@ the design ids are those of the binding design.
   kind `map` fill it: its constructor without parameters makes it, and its one member with the receiver `&mut self`
   and two parameters takes each pair in order, a text key as a value of kind `text` where that parameter is a class
   of origin value (`Value.object` of an `OrderedMap` that `OrderedMap.insert` fills). A case value of such a class at
-  any other place is the same list of pairs. A kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  any other place is the same list of pairs. A case value of a value class of another repository (GN-6x), at a
+  parameter, in a list and in a field, is written by the same rule in the five targets, with the members of the
+  owner's contract that the out rows of the language name and through the owner's package, which the test imports
+  (the Go module of the owner in Go, where each made value is a local of the test whose error fails it): the content
+  of a kind is the value of the one parameter of its member, a text for `number` and the list of the UTF-16 code units
+  for `text16`; a key of a pair is a text or a case value `{kind, value}` of the class; and `{"kind": "list",
+  "repeat": n, "value": <value>}` is the member of `list` called n times, each on the list of the one value before
+  it. No built-in value of the language stands at the place of such a class, because the binding refuses it as
+  `invalid_argument_type` and Go does not compile it. A result that holds an instance of such a class has no case
+  value to be compared with, and its case has a test that fails with that reason (GN-13e). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
@@ -1970,7 +1988,13 @@ the design ids are those of the binding design.
   `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
   `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
   repository, because the Go program of the repository imports its Go module (GN-15f);
-  `DEPS` names each repository whose types the contract names; its packages are built and installed first)
+  `DEPS` names each repository whose types the contract names; its packages are built and installed first, each in
+  the copy of the run and none in a checkout: for Python its wheel, for PHP its extension, for Go the static library
+  of a Go module that `go.mod` requires, and for Node and WASM its npm package, with its addon as the package of the
+  platform and its WASM module with the glue, for each repository of `DEPS` that a contract whose npm package the run
+  packs names, directly or through another such repository, because the generated entry of that contract imports the
+  npm package of the owner on Node and through the subpath `./wasm`; a repository of `DEPS` that lacks the target
+  `node` or `wasm` for which a contract names it is a named failure of the targets `node` and `wasm`)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
   convention (GN-14d), generates for each target, lints the core and, on the host, each binding crate with the test features of its manifest

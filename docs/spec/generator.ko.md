@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d639a4ee3883db04ab67460c65140fc2c30602e4e8d2d862b4e7494f938df6d1 -->
+<!-- source-sha256: ffd0c4fc29d99ba17517ed0d3ecc8aacd4f32e31b1dbdc2706b44d5828e0e85e -->
 # 생성기
 
 [English](generator.md)
@@ -162,7 +162,14 @@
   때문이다.
   도우미를 쓰는 것은 코드가 그 이름으로 그것을 부르거나 넘길 때다. 같은 이름의 method(`map.insert(...)`)는 도우미
   `insert`를 쓰는 것이 아니다. method만 그 이름을 적는 도우미는 죽은 코드이고, crate가 선언하지 않은 타입을 적을 수 있기
-  때문이다.
+  때문이다. 생성기는 쓰임을 Rust 코드의 단어가 아니라 token에서 읽는다. 문자열, 주석, attribute는 도우미를 가리키지
+  않는다. field(`name:`), 그 이름의 macro, 다른 path의 연관 항목(`Type::name`), 그리고 둘러싼 함수의 local도 가리키지
+  않으며, local은 parameter, `let`, `for`·`if let`·match arm의 pattern, closure의 parameter다. 도우미는 item의
+  묶음이며, 모든 괄호 밖의 빈 줄이 묶음을 나눈다. 그래서 본문에 빈 줄이 있는 함수와 method를 가진 `impl` 블록은 각각
+  한 묶음이다. 묶음은 코드나 남는 다른 묶음이 그 묶음이 선언한 이름(함수, trait, 타입, static, 상수, macro)을 쓸 때
+  남는다. `impl` 블록의 묶음은 그 블록이 속한 타입과 함께 남고, 블록이 코드의 타입에 속하면 그 trait과 함께 남는다.
+  묶음의 item이 읽는 Rust 코드 밖에서 이름으로 불리면 그 묶음은 남는다. `pub`이거나, ABI를 갖거나(`extern "C" fn`),
+  macro의 attribute를 가진 경우다. 이름을 선언하지 않는 묶음도 남는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
 - **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는
@@ -1404,7 +1411,14 @@
   그것을 채운다: parameter 없는 생성자가 만들고, receiver `&mut self`와 parameter 둘을 가진 하나뿐인 member가 각 쌍을 순서대로
   받으며, 그 parameter가 origin value class면 text key는 kind `text`의 값이다(`OrderedMap.insert`가 채운 `OrderedMap`의
   `Value.object`). 그런 class의 case 값은 다른
-  어느 자리에서도 같은 쌍의 list다. 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
+  어느 자리에서도 같은 쌍의 list다. 다른 레포의 value class(GN-6x)의 case 값은 parameter, list 안, field 어느 자리에서도
+  다섯 target이 같은 규칙으로 적는다. 그 언어의 out 행이 적은 owner 계약의 member를 쓰고, 시험이 import하는 owner의 패키지를
+  거친다(Go는 owner의 Go 모듈이며, 만든 값마다 시험의 local이고 그 오류는 시험을 실패시킨다). kind의 내용은 그 member의 하나뿐인
+  parameter의 값이며, `number`는 text, `text16`은 UTF-16 code unit의 list다. 쌍의 key는 text이거나 그 class의 case 값
+  `{kind, value}`다. `{"kind": "list", "repeat": n, "value": <값>}`은 `list`의 member를 n번 부르며, 매번 바로 앞의 값 하나를
+  담은 list를 준다. 그런 class의 자리에는 언어의 내장 값을 적지 않는다. binding이 그것을 `invalid_argument_type`으로 거부하고
+  Go는 컴파일하지 않기 때문이다. 그런 class의 instance를 담은 결과는 비교할 case 값이 없으므로, 그 case는 그 이유로 실패하는
+  시험을 갖는다(GN-13e). 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
   내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
   그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
   없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지
@@ -1598,7 +1612,7 @@
   checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
   실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들고, 실행이 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 실행의
   모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는 아무것도 쓰지 않는다
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치하며, 모두 실행의 사본 안에서 하고 checkout에는 아무것도 쓰지 않는다: Python은 그 wheel, PHP는 그 확장, Go는 `go.mod`가 require하는 Go 모듈의 정적 라이브러리, Node와 WASM은 그 npm 패키지이며, addon은 플랫폼 패키지로, WASM 모듈은 glue와 함께 넣는다. npm 패키지는 실행이 npm 패키지를 pack하는 contract가 직접 또는 다른 그런 레포를 거쳐 가리키는 `DEPS`의 레포마다 만든다. 그 contract의 생성된 entry가 Node에서, 그리고 subpath `./wasm`으로 owner의 npm 패키지를 import하기 때문이다. contract가 가리키는 `DEPS`의 레포에 그 대상 `node`나 `wasm`이 없으면 대상 `node`와 `wasm`의 이름 있는 실패다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
   생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어를 lint하고 각 바인딩 crate를 host에서 그 매니페스트의 시험 feature로, 그리고 feature 없이 lint하고(시험 feature의 진입점만 쓰는 import나 helper는 feature 없는 빌드에서만 쓰이지 않기 때문이다, GN-5), 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.

@@ -14,8 +14,10 @@
 // verified while the run would look passed, and a target that the run adds hides that the contract lacks it.
 //
 // A repository whose contract names the types of another repository (T-3) needs that repository's packages: each
-// --dep checkout goes through the same steps first (without its tests), its Python wheel is installed beside and its
-// PHP extension loaded before. Each checkout is copied to <work>/<library>, so the relative paths between them hold.
+// --dep checkout goes through the same steps first (without its tests), its Python wheel is installed beside, its
+// PHP extension loaded before, its Go static library built beside, and its Node addon and WASM module packed and
+// installed as its npm package beside (scripts/e2e-npm.mts). Each checkout is copied to <work>/<library>, so the
+// relative paths between them hold.
 //
 // A checkout is only read: its committed tree is copied into the work directory. The copy gets only the changes that
 // take the binding of the run, as the repository does when it takes that binding (GN-14d): the tracked packages of
@@ -35,6 +37,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
 import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 import { bindingLints } from './e2e-lint.mts';
+import { npmPacked, type NpmPacked, type NpmSource } from './e2e-npm.mts';
 import { runIn, workOf } from './e2e-work.mts';
 import { consumerFiles, debugSections, goRemote, requiredVersion, type Required } from './go-release.mts';
 import { goPackageFailure, readGoTestEvents } from './go-test-events.mts';
@@ -99,7 +102,7 @@ const work = resolve(args.get('--work') ?? '');
 const { libraryParts } = await import('../packages/ts/src/check.ts');
 const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
 const { convert, libraryName } = await import('../packages/ts/src/names.ts');
-const { componentBase, isHost, place } = await import('../packages/ts/src/generate/packages.ts');
+const { componentBase, isHost, namedLibraries, place } = await import('../packages/ts/src/generate/packages.ts');
 const { GO_PLATFORMS } = await import('../packages/ts/src/generate/go.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
@@ -570,11 +573,28 @@ if (targets.includes('python')) {
 }
 
 const lib = (c: Contract, suffix: string): string => `${c.core.crate}-${suffix}`.replaceAll('-', '_');
+// GN-14: the npm packages of the run, those of the dependencies that a packed contract names first (npmPacked): the
+// generated entry of a contract that names a type of another repository imports the npm package of that repository, for
+// Node and through ./wasm, so the run builds, packs and installs it in the copy of the run. A dependency without the
+// target is the cause of the targets node and wasm.
+interface NpmOf extends NpmSource {
+  prepared: Prepared;
+}
+const npmSourceOf = (p: Prepared): NpmOf => ({ library: p.contract.library, targets: p.contract.targets, names: namedLibraries(p.contract), prepared: p });
+const npmPlanOf = (): NpmPacked<NpmOf>[] => {
+  let plan: NpmPacked<NpmOf>[] = [];
+  stepOf(targets.filter((t) => t === 'node' || t === 'wasm'), 'the npm packages of the run, those of the dependencies that the contracts name among them', () => {
+    plan = npmPacked(mains.map(npmSourceOf), dependencies.map(npmSourceOf));
+    for (const planned of plan) process.stdout.write(`${planned.source.library}: ${[planned.addon ? 'the Node addon' : '', planned.wasm ? 'the WASM module' : ''].filter((part) => part !== '').join(' and ')}\n`);
+  });
+  return plan;
+};
+const npmPlan = npmPlanOf();
 // Cargo names a cdylib lib<name>.so on Linux and lib<name>.dylib on macOS.
 const dylib = process.platform === 'darwin' ? 'dylib' : 'so';
 if (targets.includes('wasm')) {
-  stepOf(['wasm'], 'build the module and its glue with wasm-bindgen', () => {
-    for (const p of mainsOf('wasm')) {
+  stepOf(['wasm'], `build the module${npmPlan.filter((planned) => planned.wasm).length === 1 ? '' : 's'} and the glue with wasm-bindgen`, () => {
+    for (const p of npmPlan.filter((planned) => planned.wasm).map((planned) => planned.source.prepared)) {
       const wanted = /wasm-bindgen = "=([0-9.]+)"/.exec(readFileSync(at(p, 'packages/ts/wasm/Cargo.toml'), 'utf8'))?.[1];
       const tool = execFileSync(wasmBindgen, ['--version'], { encoding: 'utf8' }).trim();
       if (tool !== `wasm-bindgen ${wanted ?? ''}`) throw new Error(`${tool} of mise.toml is not the release of the crate, ${wanted ?? 'unknown'}`);
@@ -591,29 +611,32 @@ const nodeDir = join(work, 'node');
 let installed = false;
 if (targets.includes('node') || targets.includes('wasm')) {
   const owner: Lang[] = targets.includes('node') ? ['node'] : ['wasm'];
-  installed = stepOf(owner, `build the addon${mains.length === 1 ? '' : 's'}, pack and install the npm package${mains.length === 1 ? '' : 's'}`, () => {
+  installed = stepOf(owner, `build the addon${npmPlan.length === 1 ? '' : 's'}, pack and install the npm package${npmPlan.length === 1 ? '' : 's'}`, () => {
     rmSync(nodeDir, { recursive: true, force: true });
     mkdirSync(nodeDir, { recursive: true });
     // T-2: the addon is the npm package of this machine's platform, which a release names in optionalDependencies of
     // the manifest it packs (GN-3c); the run packs it as a release does and installs both tarballs.
     const platform = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
-    const packed = mains.filter((p) => p.contract.targets.includes('node') || p.contract.targets.includes('wasm'));
-    for (const p of packed) {
-      run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-node`, '--features', testFeatures(p, 'node')]);
+    for (const { source, addon } of npmPlan) {
+      const p = source.prepared;
       const npm = (p.contract.packages['node'] as { package: string }).package;
-      const platformDir = join(work, `node-platform-${p.contract.library}`);
-      rmSync(platformDir, { recursive: true, force: true });
-      mkdirSync(platformDir, { recursive: true });
-      const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
-      copyFileSync(join(target, `debug/lib${lib(p.contract, 'node')}.${dylib}`), join(platformDir, addonName));
-      const version = (JSON.parse(readFileSync(join(packageDir(p, 'ts'), 'package.json'), 'utf8')) as { version: string }).version;
-      writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
-      run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
+      if (addon) {
+        run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-node`, '--features', testFeatures(p, 'node')]);
+        const platformDir = join(work, `node-platform-${p.contract.library}`);
+        rmSync(platformDir, { recursive: true, force: true });
+        mkdirSync(platformDir, { recursive: true });
+        const addonName = `${npm.slice(npm.indexOf('/') + 1)}.${platform}.node`;
+        copyFileSync(join(target, `debug/lib${lib(p.contract, 'node')}.${dylib}`), join(platformDir, addonName));
+        const version = (JSON.parse(readFileSync(join(packageDir(p, 'ts'), 'package.json'), 'utf8')) as { version: string }).version;
+        writeFileSync(join(platformDir, 'package.json'), `${JSON.stringify({ name: `${npm}-${platform}`, version, os: [process.platform], cpu: [process.arch], main: addonName, files: [addonName] }, null, 2)}\n`);
+        run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: platformDir });
+      }
       run(npmTool, ['pack', '--pack-destination', nodeDir], { cwd: packageDir(p, 'ts') });
     }
     writeFileSync(join(nodeDir, 'package.json'), '{ "private": true }\n');
     const tarballs = readdirSync(nodeDir).filter((name) => name.endsWith('.tgz')).map((name) => join(nodeDir, name));
-    if (tarballs.length !== 2 * packed.length) throw new Error(`npm pack wrote ${tarballs.length} packages, not the ${2 * packed.length} of the contracts`);
+    const wanted = npmPlan.length + npmPlan.filter((planned) => planned.addon).length;
+    if (tarballs.length !== wanted) throw new Error(`npm pack wrote ${tarballs.length} packages, not the ${wanted} of the contracts and of their addons`);
     // The other platforms' packages are optional and absent, as on a machine of this platform.
     run(npmTool, ['install', '--no-audit', '--no-fund', '--omit=optional', ...tarballs], { cwd: nodeDir });
   });

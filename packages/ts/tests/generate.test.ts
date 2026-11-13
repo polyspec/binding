@@ -977,13 +977,13 @@ test('a language object that a core may keep enters as a Native, which each targ
   // Python holds the reference, which PyO3 releases at the drop or at its next acquisition of the GIL.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /#\[cfg\(pyo3_disable_reference_pool\)\]\ncompile_error!\(/);
-  assert.match(python, /struct PyNative\(Py<PyAny>\);/);
+  assert.match(python, /struct PyNative \{\n(?: {4}\/\/[^\n]*\n)* {4}_held: Py<PyAny>,\n\}/);
   assert.match(python, /impl NativeObject for PyNative \{\}/);
-  assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\)\)\);/);
-  assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative\(value\.clone\(\)\.unbind\(\)\)\), type_name, json_serializable: false \}\)/);
+  assert.match(python, /return Ok\(HostValue::Callable\(Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\)\)\);/);
+  assert.match(python, /Ok\(HostValue::Object \{ native: Native::new\(PyNative \{ _held: value\.clone\(\)\.unbind\(\) \}\), type_name, json_serializable: false \}\)/);
   // A value outside the closed set is valid for the call alone.
   assert.match(python, /HostValue::Other \{ type_name, handle: self\.mark\(\) \}/);
-  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\.0\.clone_ref\(py\)\.into_bound\(py\)\),/);
+  assert.match(python, /OutValue::Native\(native\) => match native\.downcast::<PyNative>\(\) \{\n\s+Some\(object\) => Ok\(object\._held\.clone_ref\(py\)\.into_bound\(py\)\),/);
   // WASM holds the key of the table of its one thread; the drop removes it.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /struct WasmNative \{\n    key: u64,\n\}/);
@@ -1741,6 +1741,77 @@ test('the relay of the value class of json is generated for every target, Go inc
   assert.match(goMod, /\nrequire github\.com\/polyspec\/json\/packages\/go v0\.0\.0\n\nreplace github\.com\/polyspec\/json\/packages\/go => \.\.\/\.\.\/\.\.\/json\/packages\/go\n$/);
 });
 
+// GN-6x, GN-13, GN-13b: the generated tests of the relay give carry an instance of the class of json, which the members
+// of its out rows make through the package of json; the text of each of the five tests is read here, because a test
+// that writes a built-in value in the place of the class raises no error of the generator.
+const RELAY_TESTS = {
+  python: 'packages/python/generated/tests/test_generated.py',
+  node: 'packages/ts/generated/tests/generated.test.mjs',
+  wasm: 'packages/ts/wasm/generated/tests/generated.test.mjs',
+  php: 'packages/php-ext/generated/tests/GeneratedTest.php',
+  go: 'packages/go/zz_generated_test.go',
+} as const;
+
+test('a case value of a value class of another repository is the call of the make member of its owner in the five targets (GN-6x, GN-13, GN-13b)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  const tests = Object.fromEntries(Object.entries(RELAY_TESTS).map(([target, path]) => [target, text(out, path)])) as Record<keyof typeof RELAY_TESTS, string>;
+  for (const [target, file] of Object.entries(tests)) {
+    // No case of carry is a test that fails by name: every kind that the contract of json carries is written.
+    assert.doesNotMatch(file, /is not generated( for Go)? yet/, target);
+    assert.doesNotMatch(file, /the case \w+ of relay\.carry/, target);
+    assert.doesNotMatch(file, /a key of a keyed map in a case/, target);
+  }
+  // Python: the module of json is imported, and each kind is the static member of its out row.
+  assert.match(tests.python, /^import polyspec\.json as foreign_json$/m);
+  assert.match(tests.python, /def test_gn13e_carry_a_text\(self\) -> None:\n\s+pkg\.carry\(foreign_json\.Value\.string\("name\\xe9"\)\)/);
+  assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.from_units\(\[55296\]\)\)/);
+  assert.match(tests.python, /pkg\.carry\(foreign_json\.Value\.number\("123456789012345678901234567890"\)\)/);
+  // A map fills the class that the member of its row takes: the constructor, an insert for each pair, a key that the
+  // case writes as {kind, value} by its own kind, and the member on the filled instance.
+  assert.match(tests.python, /pkg\.carry\(\(lambda filled: \(filled\.insert\(foreign_json\.Value\.from_units\(\[56320\]\), foreign_json\.Value\.null\(\)\), filled\.insert\(foreign_json\.Value\.string\("k"\), foreign_json\.Value\.from_units\(\[55296\]\)\), foreign_json\.Value\.object\(filled\),\)\[-1\]\)\(foreign_json\.OrderedMap\(\)\)\)/);
+  assert.match(tests.python, /filled\.insert\(foreign_json\.Value\.string\("list"\), foreign_json\.Value\.array\(\[foreign_json\.Value\.boolean\(True\), foreign_json\.Value\.number\("-1\.5e3"\), foreign_json\.Value\.null\(\)\]\)\)/);
+  // Node and WASM: the same members by their names of JavaScript, through the package of json and its subpath ./wasm.
+  assert.match(tests.node, /^import \* as foreign_json from '@polyspec\/json';$/m);
+  assert.match(tests.wasm, /^import \* as foreign_json from '@polyspec\/json\/wasm';$/m);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.string\('name\\u00e9'\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.fromUnits\(\[55296\]\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(foreign_json\.Value\.number\('123456789012345678901234567890'\)\)/, target);
+    assert.match(tests[target], /pkg\.carry\(\(\(\) => \{ const filled = new foreign_json\.OrderedMap\(\); filled\.insert\(foreign_json\.Value\.fromUnits\(\[56320\]\), foreign_json\.Value\.null\(\)\); filled\.insert\(foreign_json\.Value\.string\('k'\), foreign_json\.Value\.fromUnits\(\[55296\]\)\); return foreign_json\.Value\.object\(filled\); \}\)\(\)\)/, target);
+  }
+  // PHP: the classes by the namespace of json.
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::string\("name\\xc3\\xa9"\)\)/);
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\)/);
+  assert.match(tests.php, /\\Polyspec\\Relay\\carry\(\\Polyspec\\Json\\Value::number\("123456789012345678901234567890"\)\)/);
+  assert.match(tests.php, /\(static function \(\) \{ \$filled = new \\Polyspec\\Json\\OrderedMap\(\); \$filled->insert\(\\Polyspec\\Json\\Value::fromUnits\(\[56320\]\), \\Polyspec\\Json\\Value::null\(\)\); \$filled->insert\(\\Polyspec\\Json\\Value::string\("k"\), \\Polyspec\\Json\\Value::fromUnits\(\[55296\]\)\); return \\Polyspec\\Json\\Value::object\(\$filled\); \}\)\(\)/);
+  // Go: each value is a local of the test that a function of the Go module of json makes, and carry takes the local,
+  // never a built-in value, which is no *json.Value.
+  assert.match(tests.go, /"github\.com\/polyspec\/json\/packages\/go"/);
+  assert.doesNotMatch(tests.go, /\bCarry\(("|nil\)|\[\]any|map\[string\]any|func\(\))/);
+  assert.match(tests.go, /func TestGN13eCarryAText\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.ValueString\("name\\u00e9"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure1\)\n\t\}\n\t_, err := Carry\(made0\)\n/);
+  assert.match(tests.go, /made0, failure1 := json\.ValueFromUnits\(\[\]uint64\{55296\}\)\n/);
+  assert.match(tests.go, /made0, failure1 := json\.ValueNumber\("123456789012345678901234567890"\)\n/);
+  assert.match(tests.go, /func TestGN13eCarryAKeyWithAnUnpairedSurrogate\(t \*testing\.T\) \{\n\tmade0, failure1 := json\.NewOrderedMap\(\)\n[^]*?\tmade2, failure3 := json\.ValueFromUnits\(\[\]uint64\{56320\}\)\n[^]*?\tmade4, failure5 := json\.ValueNull\(\)\n[^]*?\t_, failure6 := made0\.Insert\(made2, made4\)\n\tif failure6 != nil \{\n\t\tt\.Fatalf\("GN-13: %v", failure6\)\n\t\}\n[^]*?\tmade\d+, failure\d+ := json\.ValueObject\(made0\)\n/);
+  assert.match(tests.go, /json\.ValueArray\(\[\]\*json\.Value\{made\d+, made\d+, made\d+\}\)/);
+});
+
+test('a value class of another repository inside a list is made by the same members at each place (GN-6x, GN-13)', () => {
+  const { contract, caseFiles, foreign } = relaySample();
+  contract.units[0].members.push({ id: 'relay.gather', name: ['gather'], kind: 'function', visibility: 'public', parameters: [{ name: ['values'], type: { list: 'json_value' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_relay::gather' });
+  contract.cases.push({ member: 'relay.gather', file: 'contracts/gather.json', group: 'gather' });
+  caseFiles.set('contracts/gather.json', { gather: [{ id: 'three_values', values: [{ kind: 'text', value: 'a' }, { kind: 'null' }, { kind: 'bool', value: true }], result: 3 }] });
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_relay', caseFiles, foreign });
+  for (const [target, path] of Object.entries(RELAY_TESTS)) assert.doesNotMatch(text(out, path), /the case \w+ of relay\.gather/, target);
+  assert.match(text(out, RELAY_TESTS.python), /pkg\.gather\(\[foreign_json\.Value\.string\("a"\), foreign_json\.Value\.null\(\), foreign_json\.Value\.boolean\(True\)\]\)/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(text(out, RELAY_TESTS[target]), /pkg\.gather\(\[foreign_json\.Value\.string\('a'\), foreign_json\.Value\.null\(\), foreign_json\.Value\.boolean\(true\)\]\)/, target);
+  }
+  assert.match(text(out, RELAY_TESTS.php), /\\Polyspec\\Relay\\gather\(\[\\Polyspec\\Json\\Value::string\("a"\), \\Polyspec\\Json\\Value::null\(\), \\Polyspec\\Json\\Value::boolean\(true\)\]\)/);
+  const go = text(out, RELAY_TESTS.go);
+  assert.match(go, /\tmade0, failure1 := json\.ValueString\("a"\)\n[^]*?\tmade2, failure3 := json\.ValueNull\(\)\n[^]*?\tmade4, failure5 := json\.ValueBoolean\(true\)\n[^]*?Gather\(\[\]\*json\.Value\{made0, made2, made4\}\)/);
+});
+
 test('a library without kinds that takes a value class of another repository calls no conversion of a core error that it does not have (E-1c, GN-6x)', () => {
   const out = generate({ ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
@@ -1816,11 +1887,16 @@ test('a crate with a value class of another repository holds only what its in an
   // PHP makes a value class by the members of its owner, without the making of an alias of its own.
   assert.doesNotMatch(text(relay, 'packages/php-ext/generated/lib.rs'), /PhpMaking/);
   assert.match(text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/php-ext/generated/lib.rs'), /\nstruct PhpMaking \{\n/);
-  // Python reads the object of a PyNative only where an out row gives a native value back.
-  assert.match(text(relay, 'packages/python/generated/lib.rs'), /#\[derive\(Debug\)\]\n#\[allow\(dead_code, reason = "GN-6u: [^"]+"\)\]\nstruct PyNative\(Py<PyAny>\);/);
+  // GN-6u: Python reads the object of a PyNative only where an out row gives a native value back; the field is _held,
+  // the name of a field kept for its ownership, so the struct is the same text with and without such a row and carries
+  // no allow.
+  const held = /#\[derive\(Debug\)\]\nstruct PyNative \{\n(?: {4}\/\/[^\n]*\n)* {4}_held: Py<PyAny>,\n\}/;
+  assert.match(text(relay, 'packages/python/generated/lib.rs'), held);
+  assert.doesNotMatch(text(relay, 'packages/python/generated/lib.rs'), /allow\(dead_code/);
   const given = text(generate({ ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' }), 'packages/python/generated/lib.rs');
   assert.match(given, /native\.downcast::<PyNative>\(\)/);
-  assert.match(given, /#\[derive\(Debug\)\]\nstruct PyNative\(Py<PyAny>\);/);
+  assert.match(given, /object\._held\.clone_ref\(py\)/);
+  assert.match(given, held);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
@@ -6517,6 +6593,149 @@ test('the WASM future that catches a panic of a poll is an async fn, which clipp
   assert.doesNotMatch(plain, /fn (?:caught|awaited)</);
   assert.equal(usedHelpers('\nasync fn later() {}\n\nfn now() {}\n', 'now();'), '\nfn now() {}\n');
   assert.equal(usedHelpers('\n/// Waits.\nasync fn later() {}\n', 'later().await;'), '\n/// Waits.\nasync fn later() {}\n');
+});
+
+test('a helper is kept by what the code calls, not by the words of the code (GN-4, B2.102)', () => {
+  const block = `
+/// Reads the code units of a text.
+fn units(value: &str) -> Vec<u16> {
+    value.encode_utf16().collect()
+}
+
+/// Names a member.
+fn member(name: &str) -> String {
+    name.to_owned()
+}
+
+/// Gives a value back.
+fn give(value: u64) -> u64 {
+    value
+}
+`;
+  const kept = (code: string): string[] => [...usedHelpers(block, code).matchAll(/^fn ([a-z_]+)/gm)].map((m) => m[1] ?? '');
+  // A word of a string literal, of a raw string, of a comment and of an attribute is no use.
+  assert.deepEqual(kept('fn f() -> String { String::from("the units of a member") }'), []);
+  assert.deepEqual(kept('fn f() -> &\'static str { r#"give "units""# }'), []);
+  assert.deepEqual(kept('/* units */ fn f() {} // member'), []);
+  assert.deepEqual(kept('#[pyo3(signature = (units, member=None))]\nfn f() {}'), []);
+  // A local of the function is no use: a parameter, a let, a closure parameter, the pattern of a match arm, of an if
+  // let and of a for.
+  assert.deepEqual(kept('fn f(units: Vec<u16>) -> usize { units.len() }'), []);
+  assert.deepEqual(kept('fn f() -> usize { let units = Vec::<u16>::new(); take(units) }'), []);
+  assert.deepEqual(kept('fn f(items: Vec<u8>) { items.iter().for_each(|member| drop(member)); }'), []);
+  assert.deepEqual(kept('fn f(v: Option<u8>) -> u8 { match v { Some(give) => give, None => 0 } }'), []);
+  assert.deepEqual(kept('fn f(v: Option<u8>) { if let Some(units) = v { drop(units); } for member in 0..3 { drop(member); } }'), []);
+  assert.deepEqual(kept('fn f(v: Wide) -> u8 { let Wide { units, member: give } = v; units + give }'), []);
+  // A field, a method, a macro and an associated function of another type are no use.
+  assert.deepEqual(kept('fn f(v: &Host) -> Fail { Fail { member: v.units(), ..v.give!() } }'), []);
+  assert.deepEqual(kept('fn f() -> Vec<u16> { Host::units() }'), []);
+  // A call, a call with its types, a call by a path of the crate and a passing by the name are uses; the local of
+  // another function hides nothing.
+  assert.deepEqual(kept('fn f() -> Vec<u16> { units("a") }'), ['units']);
+  assert.deepEqual(kept('fn f() -> u64 { give::<>(1) }'), ['give']);
+  assert.deepEqual(kept('fn f() -> String { crate::member("a") }'), ['member']);
+  assert.deepEqual(kept('fn f(items: Vec<u64>) -> Vec<u64> { items.into_iter().map(give).collect() }'), ['give']);
+  assert.deepEqual(kept('fn f(units: u8) -> u8 { units }\nfn g(items: Vec<&str>) -> Vec<Vec<u16>> { items.into_iter().map(units).collect() }'), ['units']);
+});
+
+test('the helpers are items, kept whole: a body with a blank line, and an impl with the type that it is of (GN-4, B2.102)', () => {
+  const block = `
+/// A table of values.
+struct Table {
+    made: Vec<u64>,
+}
+
+impl Table {
+    fn first(&self) -> Option<u64> {
+        self.made.first().copied()
+    }
+
+    fn set(&mut self, value: u64) {
+        self.made.push(value);
+    }
+}
+
+impl Drop for Table {
+    fn drop(&mut self) {}
+}
+
+/// Reads a value in two steps.
+fn read(table: &Table) -> u64 {
+    let first = table.first();
+
+    if let Some(index) = first {
+        return index;
+    }
+    0
+}
+
+/// The next key.
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`;
+  // Nothing of the block is used: no item, no half of a body and no method of an impl is left.
+  assert.equal(usedHelpers(block, 'fn f() -> &\'static str { "set the first Table, read NEXT" }'), '');
+  // The function is kept with its whole body, and through it the struct, with the impls of the struct and each of
+  // their methods at its indentation; the static and its function are not.
+  const read = usedHelpers(block, 'fn f(table: &Table) -> u64 { read(table) }');
+  assert.equal(read, `
+/// A table of values.
+struct Table {
+    made: Vec<u64>,
+}
+
+impl Table {
+    fn first(&self) -> Option<u64> {
+        self.made.first().copied()
+    }
+
+    fn set(&mut self, value: u64) {
+        self.made.push(value);
+    }
+}
+
+impl Drop for Table {
+    fn drop(&mut self) {}
+}
+
+/// Reads a value in two steps.
+fn read(table: &Table) -> u64 {
+    let first = table.first();
+
+    if let Some(index) = first {
+        return index;
+    }
+    0
+}
+`);
+  // A static is kept by the function that reads it.
+  assert.equal(usedHelpers(block, 'fn f() -> u64 { next_key() }'), `
+/// The next key.
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`);
+  // An impl of a type that the block does not declare is of the code, and stays.
+  assert.equal(usedHelpers('\nimpl core::Lookup for CbLookup {\n    fn set(&mut self) {}\n\n    fn get(&self) {}\n}\n', 'struct CbLookup;'), '\nimpl core::Lookup for CbLookup {\n    fn set(&mut self) {}\n\n    fn get(&self) {}\n}\n');
+  // A helper that only the code of a feature uses is compiled under the feature, each item of its group.
+  assert.equal(usedHelpers(block, 'fn f() {}', { 'codec-test': 'fn g() -> u64 { next_key() }' }), `
+/// The next key.
+#[cfg(feature = "codec-test")]
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Takes the next key.
+#[cfg(feature = "codec-test")]
+fn next_key() -> u64 {
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+`);
 });
 
 test('Go reads the list of the handles of a buffer exactly when the Rust crate writes it (GN-6u)', () => {

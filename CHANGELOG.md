@@ -5,6 +5,56 @@
 
 ## Unreleased
 
+- `usedHelpers`, which selects the helpers that a generated crate keeps, counted a helper as used where its name was a
+  word of the code, and split the helpers at every blank line. A word of a string literal or a local of the name of a
+  helper kept the helper, which the lints deny as dead code; and the methods of an `impl` block and the second half of
+  a body with a blank line were items of their own, written without their indentation, that stayed only while their
+  name was a word of the code (the method `set` of the callback of `tests/e2e/consumer` in PHP was such an item). The uses are now read from the tokens of the Rust code: a call, a path of the crate, a name that is
+  passed or named as a type, and a macro; no string, comment or attribute, no field, method or associated item of
+  another path, and no local of the function around it (a parameter, a `let`, a pattern, a parameter of a closure).
+  The helpers are groups of items, separated by the blank lines outside every bracket and kept whole: a group stays
+  when a name that it declares is used, a group of `impl` blocks with the type or the trait that it is of, and a group
+  whose item is `pub`, has an ABI or carries an attribute of a macro, or that declares no name, always (GN-4, row
+  B2.102). The generated crates of the contracts of `tests/e2e` hold the same helpers as before; their text differs
+  only in the indentation of the lines that the split had moved to the first column. Verified by `make test-ts`: the
+  two new tests failed before the change, with a helper whose name is only in a string literal among their cases, and
+  431 of 431 pass. No crate is compiled with this change yet.
+- The Python struct `PyNative` held its object in an unnamed field, which only an out row that gives a native value
+  back reads, so a crate without such a row carried `#[allow(dead_code)]` on the struct and a crate with one did
+  not: one struct had two texts. The field is now `_held`, the name of a field that is kept for its ownership, so the
+  struct is the same text in every crate and carries no allow (GN-6u). Verified by `make test-ts`: the test of the
+  crate of the relay failed for the allow and passes with the change. The Python crate is not compiled with this
+  change yet.
+- The generated tests wrote a case value of a value class of another repository as a built-in value of the language.
+  For `tests/e2e/relay`, whose function `carry` takes the class `value` of json, the Python test called
+  `pkg.carry("name\xe9")`, which the binding refuses as `invalid_argument_type`; a case value of the kind `number` or
+  `text16` and a key of a pair written as `{kind, value}` became tests that fail by name; and the Go test called
+  `Carry` with a string, which is no `*json.Value`, so the test file did not compile. The five test writers now make
+  such a value by the members of the owner's contract that the out rows of the language name, through the owner's
+  package (GN-6x, GN-13, GN-13b): `foreignSteps` of `samples.ts` reads the case value into the calls of those members
+  once for every target, Python, Node, WASM and PHP write them as one expression of the owner's classes
+  (`foreign_json.Value.string(...)`, `\Polyspec\Json\Value::fromUnits([...])`, an `OrderedMap` that `insert` fills
+  for a kind `map`), and Go writes each as a local of the test (`json.ValueString(...)`, `json.NewOrderedMap()`,
+  `Insert`). The Go placeholder of such a class is the value of its out row of the kind `null`, as in the other
+  targets, instead of `nil`. The context of a test writer names a class of the owner (`foreignClass`) in place of the
+  call of one static member without arguments. A result that holds an instance of such a class has a test that fails
+  with the reason that no case value is compared with it; no case of `tests/e2e` has such a result. Verified by
+  `make test-ts`: the two new tests read the five generated tests of the relay, generated with the fixture of the
+  contract of json, and failed before the change. The generated Go, PHP, Node and WASM tests are not compiled or run
+  yet.
+- A run of the end-to-end check of a repository whose contract names a type of another repository installed no npm
+  package of that repository: the npm step packed the contracts of the repository alone and the WASM step built their
+  modules alone, so the generated entry of `tests/e2e/relay`, which imports `@polyspec/json` on Node and through
+  `./wasm`, failed every Node and WASM test with `ERR_MODULE_NOT_FOUND`, while Python, PHP and Go had the wheel, the
+  extension and the static library of the dependency. `npmPacked` of the new `scripts/e2e-npm.mts` plans the packages
+  of a run from the contracts: each contract of the repository with the target `node` or `wasm`, and before them each
+  contract of `DEPS` that one of them names, directly or through another dependency, with the Node addon and the WASM
+  module that the targets of the naming contracts need; a dependency without such a target is a named failure. The
+  run builds the addon and the module of each planned contract in its copy, packs the package of the platform and the
+  npm package, and installs them together (GN-14). `scripts/e2e-inputs.mts` lists the new file among the files that a
+  run reads from the checkout (GN-14b). Verified by `make test-ts`: the tests of `e2e-npm.test.ts` failed 5 of 7
+  against a plan of the contracts of the repository alone and pass with the change. No end-to-end run of this change
+  is made yet.
 - The Go decoder of a result named the number 11 in two cases of its one switch when a contract takes a value class
   of another repository: node 11 was an instance of such a class (GN-6x) and also the func of a `Native` (GN-6u), so
   the generated `zz_generated_binding.go` did not compile. The func of a `Native` is now node 13 of a result, in the

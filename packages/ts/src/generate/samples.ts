@@ -3,7 +3,7 @@
 // snake_case, a record parameter is an object of its fields, an enum is its value text, latin1 is text of U+0000 to
 // U+00FF).
 
-import type { Name, Type } from '../contract.ts';
+import type { Lang, Name, Type } from '../contract.ts';
 import type { Member, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
@@ -41,8 +41,9 @@ export interface Context {
   functionNew?: (rows: string[][]) => string;
   // GN-6aa: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
   fixtureNew?: (values: { members: string[]; rows: string[][] }) => string;
-  // GN-6x: the call of a static member of a value class of another repository, through the owner's package.
-  foreignValue?: (library: string, unit: Unit, member: Member) => string;
+  // GN-6x: how the generated test names a class of another repository, through the owner's package, which the test
+  // imports: the value class and the classes that its out rows fill.
+  foreignClass?: (library: string, unit: Unit) => string;
   // GN-13e: the steps that make a deep case value in local variables (Python), at the depth of the values in making.
   steps?: Steps | undefined;
   // GN-6ae: how the generated test writes the function of a function fixture.
@@ -133,10 +134,10 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     }
   }
   // GN-6x: a value of a value class of another repository is the value that its out row of the kind null makes.
-  if (unit?.kind === 'class' && unit.origin === 'value' && typeof type === 'object' && 'unit' in type && type.library !== undefined && ctx.foreignValue !== undefined) {
+  if (unit?.kind === 'class' && unit.origin === 'value' && typeof type === 'object' && 'unit' in type && type.library !== undefined && ctx.foreignClass !== undefined) {
     const alias = model.aliases.find((a) => a.unit === unit && a.library === type.library);
     const empty = alias === undefined ? undefined : classMakes(alias, ctx.target ?? ctx.lang).find((m) => m.form === 'content' && m.params === 0);
-    if (empty !== undefined) return ctx.foreignValue(type.library, unit, empty.member);
+    if (empty !== undefined) return ownerCall(ctx, ctx.foreignClass(type.library, unit), empty.member, '');
   }
   // T-5: an instance of a class, made by its first factory whose arguments are placeholders.
   const object = model.objects.find((o) => o.unit === unit);
@@ -266,7 +267,14 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return { python: `{${entries.join(', ')}}`, node: `new Map([${entries.join(', ')}])`, php: `[${entries.join(', ')}]` }[ctx.lang];
   }
   const unit = unitOf(model, type);
-  if (aliasOf(model, type) !== undefined) {
+  const alias = aliasOf(model, type);
+  // GN-6x, GN-13: a value of a value class of another repository is an instance of the owner's class, which the
+  // members of its out rows make; a result that holds one is read through the members of the owner, not compared here.
+  if (alias?.library !== undefined && alias.unit.kind === 'class') {
+    if (out) throw new Unsupported(`a result that holds an instance of the class ${alias.unit.id} of ${alias.library} has no case value to compare it with: the instance is read through the members of its owner (GN-6x)`);
+    return foreignClassValue(model, ctx, alias, alias.library, value, `the class ${alias.unit.id} of ${alias.library}`);
+  }
+  if (alias !== undefined) {
     if (out && unit !== undefined) madeAsBuilt(unit, ctx.lang, value);
     return valueFromJson(model, ctx, value, `the alias ${String(unit?.id)}`);
   }
@@ -392,6 +400,102 @@ export function pairsReceiver(model: Model, filled: ObjectClass, held: unknown):
   const keyOf = (key: unknown): unknown => (typeof key === 'string' && keyUnit?.kind === 'class' && keyUnit.origin === 'value' ? { kind: 'text', value: key } : key);
   const then = (held as [unknown, unknown][]).map(([key, value]) => ({ fn: insert, args: new Map<Arg, unknown>([[keyArg, keyOf(key)], [valueArg, value]]) }));
   return { factory: constructor, args: new Map(), then };
+}
+
+// GN-6x: the call of a member of the owner on a class of the owner (a constructor or a static member) or on an instance
+// of it (any other member), in the language of the test.
+function ownerCall(ctx: Context, on: string, member: Member, args: string): string {
+  const name = langName(ctx.target ?? ctx.lang, member.name, 'callable');
+  if (member.kind === 'constructor') return ctx.lang === 'python' ? `${on}(${args})` : `new ${on}(${args})`;
+  if (member.kind === 'static') return `${on}${ctx.lang === 'php' ? '::' : '.'}${name}(${args})`;
+  return `${on}${ctx.lang === 'php' ? '->' : '.'}${name}(${args})`;
+}
+
+// The kinds of a case value and the content that each holds, as a case writes it (G-5).
+function foreignContent(kind: string, type: Type | undefined, held: unknown, where: string): void {
+  const fail = (what: string): never => {
+    throw new Unsupported(`a case value of the kind ${kind} of ${where} holds ${what}, not ${shown(held)} (G-5)`);
+  };
+  if (type === 'text' && typeof held !== 'string' && !(typeof held === 'object' && held !== null && 'ill_formed' in held)) fail('a text');
+  if (type === 'bool' && typeof held !== 'boolean') fail('true or false');
+  if (typeof type === 'object' && 'list' in type && type.list === 'uint' && !(Array.isArray(held) && held.every((unit) => typeof unit === 'number' && Number.isSafeInteger(unit) && unit >= 0))) fail('a list of integers of at least 0');
+}
+
+// GN-6x, GN-13: one step of the value of a case of a value class of another repository, which each target writes in
+// its own form: the call of the member of the out row of the kind on the content of the case, on the values of a list,
+// on one value n times (G-5: {"kind": "list", "repeat": n, "value": <value>}), or on an instance of the class that the
+// row fills, whose constructor without parameters makes it and whose member takes each [key, value] pair. A text key of
+// a pair is the value of the kind text, because that member takes two values of the class.
+export type ForeignStep =
+  | { form: 'content'; make: Member; type?: Type; held?: unknown }
+  | { form: 'list'; make: Member; items: ForeignStep[] }
+  | { form: 'repeat'; make: Member; repeat: number; inner: ForeignStep }
+  | { form: 'map'; make: Member; map: Unit; construct: Member; insert: Member; pairs: [ForeignStep, ForeignStep][] };
+
+export function foreignSteps(alias: ValueAlias, lang: Lang, value: unknown, where: string): ForeignStep {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const kind = record?.['kind'];
+  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
+  const makes = classMakes(alias, lang).filter((make) => make.kind === kind);
+  const [make] = makes;
+  if (make === undefined || makes.length > 1) throw new Unsupported(`the kind ${kind} of ${where} is made in ${lang} by ${makes.length === 0 ? 'no out row' : `${String(makes.length)} out rows`} of its owner, not by one member, so no case value of that kind is one of the class (GN-6x, G-5)`);
+  const held = record['value'];
+  if (make.form === 'content') {
+    if (make.params === 0) {
+      if ('value' in record) throw new Unsupported(`a case value of the kind ${kind} of ${where} has no value, because ${make.member.id} takes none (GN-6x, G-5)`);
+      return { form: 'content', make: make.member };
+    }
+    if (!('value' in record)) throw new Unsupported(`a case value of the kind ${kind} of ${where} holds the value that ${make.member.id} takes (GN-6x, G-5)`);
+    const type = make.member.parameters?.[0]?.type;
+    foreignContent(kind, type, held, where);
+    return { form: 'content', make: make.member, ...(type === undefined ? {} : { type }), held };
+  }
+  if (make.form === 'list') {
+    if (record['repeat'] !== undefined) {
+      const repeat = record['repeat'];
+      if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)} (G-5)`);
+      return { form: 'repeat', make: make.member, repeat, inner: foreignSteps(alias, lang, held, where) };
+    }
+    if (!Array.isArray(held)) throw new Unsupported(`a case value of the kind list of ${where} holds a list of values, not ${shown(held)} (G-5)`);
+    return { form: 'list', make: make.member, items: held.map((item) => foreignSteps(alias, lang, item, where)) };
+  }
+  if (!Array.isArray(held) || !held.every((pair) => Array.isArray(pair) && pair.length === 2)) throw new Unsupported(`a case value of the kind map of ${where} holds a list of [key, value] pairs, not ${shown(held)} (G-5)`);
+  const construct = (make.map.members ?? []).find((m) => m.kind === 'constructor' && (m.parameters ?? []).length === 0) as Member;
+  const pairs = (held as [unknown, unknown][]).map(([key, item]): [ForeignStep, ForeignStep] => [
+    foreignSteps(alias, lang, typeof key === 'string' ? { kind: 'text', value: key } : key, `a key of ${where}`),
+    foreignSteps(alias, lang, item, where),
+  ]);
+  return { form: 'map', make: make.member, map: make.map, construct, insert: make.insert, pairs };
+}
+
+// GN-6x, GN-13: a case value of a value class of another repository as one expression of Python, Node, WASM or PHP: the
+// calls of the owner's members through the owner's package, which the test imports.
+function foreignClassValue(model: Model, ctx: Context, alias: ValueAlias, library: string, value: unknown, where: string): string {
+  const sort = typeof value === 'object' && value !== null && 'host' in value ? (value as { host: unknown }).host : undefined;
+  if (typeof sort === 'string' && Object.hasOwn(HOST_VALUES, sort)) return HOST_VALUES[sort as keyof typeof HOST_VALUES][ctx.lang];
+  const named = ctx.foreignClass;
+  if (named === undefined) throw new Unsupported(`a case value of ${where} is an instance of the class of its owner, which this target does not name in a test (GN-6x)`);
+  const cls = named(library, alias.unit);
+  const local = (name: string): string => (ctx.lang === 'php' ? `$${name}` : name);
+  const write = (step: ForeignStep): string => {
+    if (step.form === 'content') return ownerCall(ctx, cls, step.make, step.type === undefined ? '' : fromJson(model, { ...ctx, steps: undefined }, step.type, step.held));
+    if (step.form === 'list') return ownerCall(ctx, cls, step.make, `[${step.items.map(write).join(', ')}]`);
+    if (step.form === 'repeat') {
+      const around = ownerCall(ctx, cls, step.make, `[${local('inner')}]`);
+      const inner = write(step.inner);
+      if (ctx.lang === 'python') return `__import__("functools").reduce(lambda inner, _: ${around}, range(${step.repeat}), ${inner})`;
+      if (ctx.lang === 'node') return `Array.from({ length: ${step.repeat} }).reduce((inner) => ${around}, ${inner})`;
+      return `array_reduce(array_fill(0, ${step.repeat}, null), fn ($inner) => ${around}, ${inner})`;
+    }
+    const filled = local('filled');
+    const made = ownerCall(ctx, named(library, step.map), step.construct, '');
+    const inserts = step.pairs.map(([key, item]) => ownerCall(ctx, filled, step.insert, `${write(key)}, ${write(item)}`));
+    const given = ownerCall(ctx, cls, step.make, filled);
+    if (ctx.lang === 'python') return `(lambda filled: (${[...inserts, given].map((call) => `${call},`).join(' ')})[-1])(${made})`;
+    if (ctx.lang === 'node') return `(() => { const filled = ${made}; ${inserts.map((call) => `${call}; `).join('')}return ${given}; })()`;
+    return `(static function () { $filled = ${made}; ${inserts.map((call) => `${call}; `).join('')}return ${given}; })()`;
+  };
+  return write(foreignSteps(alias, ctx.target ?? ctx.lang, value, where));
 }
 
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the

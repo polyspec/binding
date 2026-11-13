@@ -15,19 +15,19 @@
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
 
-import type { Type, Unit } from '../contract.ts';
+import type { Member, Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerType,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
   nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps,
 } from './samples.ts';
 
 interface Values {
@@ -169,6 +169,8 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     return mapLocal(b, b.lines, `binding.Map[${typeName(v, type.map)}]`, sets);
   }
   const alias = aliasOf(v.model, type);
+  // GN-6x, GN-13b: a value of a value class of another repository is an instance of the owner's class.
+  if (alias?.library !== undefined && alias.unit.kind === 'class') return foreignMade(v, b, alias, json);
   if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
@@ -228,6 +230,66 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     }).join(', ')}}`;
   }
   throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
+}
+
+// GN-6x, GN-13b: a case value of a value class of another repository, made by the functions of the Go module of its
+// owner that its out rows name, each result a local of the test whose error fails it: the function of the kind on the
+// content of the case, on the values of a list, on one value n times, or on an instance of the class that the row
+// fills, which its constructor makes and whose method takes each [key, value] pair.
+function foreignMade(v: Values, b: Body, alias: ValueAlias, json: unknown): string {
+  const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
+  const sort = record?.['host'];
+  if (typeof sort === 'string' && Object.hasOwn(GO_HOST_VALUES, sort)) return GO_HOST_VALUES[sort as keyof typeof GO_HOST_VALUES];
+  const owner = alias.owner;
+  if (owner === undefined) throw new Unsupported(`${alias.unit.id}: no owner contract of the value class (GN-6x)`);
+  const named = (unit: Unit): string => {
+    const type = ownerType(owner, unit);
+    (v.scope.foreignImports ??= new Map()).set(type.path, type.pkg);
+    return type.name;
+  };
+  const cls = named(alias.unit);
+  // The function of a member of the owner gives its result, when the member returns one, and its error.
+  const results = (member: Member): number => (member.kind !== 'constructor' && (member.returns === undefined || member.returns === 'none') ? 0 : 1);
+  const content = (step: Extract<ForeignStep, { form: 'content' }>): string => {
+    if (step.type === undefined) return '';
+    if (step.type === 'text') return textValue(step.held);
+    if (step.type === 'bool') return String(step.held === true);
+    if (typeof step.type === 'object' && 'list' in step.type && step.type.list === 'uint') return `[]uint64{${(step.held as number[]).map(String).join(', ')}}`;
+    throw new Unsupported(`${step.make.id} takes ${JSON.stringify(step.type)}, the content of a kind that the Go test does not write (GN-6x)`);
+  };
+  const write = (step: ForeignStep): string => {
+    if (step.form === 'content') return b.bind(ownerCall(owner, alias.unit, step.make, content(step)), 1, 'GN-13')[0] ?? '';
+    if (step.form === 'list') {
+      const items = step.items.map(write);
+      return b.bind(ownerCall(owner, alias.unit, step.make, `[]*${cls}{${items.join(', ')}}`), 1, 'GN-13')[0] ?? '';
+    }
+    if (step.form === 'repeat') {
+      const inner = b.fresh();
+      const next = b.fresh();
+      const error = b.fresh('failure');
+      b.lines.push(
+        `${inner} := ${write(step.inner)}`,
+        `for range ${step.repeat} {`,
+        `\t${next}, ${error} := ${ownerCall(owner, alias.unit, step.make, `[]*${cls}{${inner}}`)}`,
+        `\tif ${error} != nil {`,
+        `\t\tt.Fatalf("GN-13: %v", ${error})`,
+        '\t}',
+        `\t${inner} = ${next}`,
+        '}',
+      );
+      return inner;
+    }
+    named(step.map);
+    const filled = b.bind(ownerCall(owner, step.map, step.construct, ''), 1, 'GN-13')[0] ?? '';
+    for (const [key, item] of step.pairs) {
+      const k = write(key);
+      const i = write(item);
+      const error = b.fresh('failure');
+      b.lines.push(`${[...Array.from({ length: results(step.insert) }, () => '_'), error].join(', ')} := ${ownerCall(owner, step.map, step.insert, `${k}, ${i}`, filled)}`, `if ${error} != nil {`, `\tt.Fatalf("GN-13: %v", ${error})`, '}');
+    }
+    return b.bind(ownerCall(owner, alias.unit, step.make, filled), 1, 'GN-13')[0] ?? '';
+  };
+  return write(foreignSteps(alias, 'go', json, `the class ${alias.unit.id} of ${alias.library ?? ''}`));
 }
 
 // G-5: the Go column of the closed table of the values of a language that are no value of a value type (HOST_VALUES).
@@ -433,6 +495,8 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   if (callback !== undefined) return `raising${goName(callback.unit.name)}{}`;
   // U-7: the value of the first out row of a built-in form of Go.
   const alias = aliasOf(v.model, type);
+  // GN-6x: a value of a value class of another repository is the value that its out row of the kind null makes.
+  if (alias?.library !== undefined && alias.unit.kind === 'class' && (alias.unit.out ?? []).some((row) => row.kind === 'null')) return foreignMade(v, b, alias, { kind: 'null' });
   if (alias !== undefined) {
     const forms: Record<string, string> = { null: 'nil', bool: 'false', int: 'int64(0)', float: 'float64(0)', text: '"a"', bytes: '[]byte{}', list: '[]any{}', map: 'map[string]any{}' };
     for (const row of alias.unit.out ?? []) {

@@ -27,10 +27,10 @@ export function wasmTests(model: Model): string {
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
-    // GN-6x: a static member of a value class of another repository, through the owner's package.
-    foreignValue: (library, unit, member) => {
+    // GN-6x: a class of another repository, through the subpath ./wasm of the owner's package.
+    foreignClass: (library, unit) => {
       foreignModules.add(library);
-      return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}.${langName('wasm', member.name, 'callable')}()`;
+      return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}`;
     },
     errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,

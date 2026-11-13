@@ -1,11 +1,53 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bbfcc99971b37cfc98fe8eb155bc61cfeb0fefe47ce1a8d341508afcfae5e5c3 -->
+<!-- source-sha256: a4dfd26ec522d2238aadb5a737c33323c42a098006538c5a68d69f36bcc6c146 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 crate가 남기는 도우미를 고르는 `usedHelpers`는 도우미의 이름이 코드의 단어인 곳을 쓰임으로 세었고, 도우미를 빈
+  줄마다 나누었다. 문자열 literal의 단어나 도우미 이름의 local이 그 도우미를 남겼고, lint는 그것을 죽은 코드로 금한다.
+  `impl` 블록의 method와 빈 줄이 있는 본문의 뒤 절반은 들여쓰기 없이 적힌 별도의 item이 되어, 그 이름이 코드의 단어인
+  동안만 남았다(`tests/e2e/consumer`의 callback의 PHP method `set`이 그런 item이었다). 이제 쓰임은 Rust
+  코드의 token에서 읽는다. 호출, crate의 path, 넘기거나 타입으로 적은 이름, macro가 쓰임이다. 문자열, 주석, attribute,
+  field, method, 다른 path의 연관 항목, 둘러싼 함수의 local(parameter, `let`, pattern, closure의 parameter)은 쓰임이
+  아니다. 도우미는 모든 괄호 밖의 빈 줄로 나뉘는 item의 묶음이며 통째로 남는다. 묶음은 그것이 선언한 이름이 쓰일 때
+  남고, `impl` 블록의 묶음은 그것이 속한 타입이나 trait과 함께 남으며, item이 `pub`이거나 ABI를 갖거나 macro의
+  attribute를 가진 묶음과 이름을 선언하지 않는 묶음은 항상 남는다(GN-4, 행 B2.102). `tests/e2e`의 계약으로 생성한
+  crate는 전과 같은 도우미를 가지며, 텍스트는 나누기가 첫 열로 옮겼던 줄의 들여쓰기만 다르다. `make test-ts`로
+  확인했다. 새 시험 둘은 변경 전에 실패했고, 그 case에 이름이 문자열 literal에만 있는 도우미가 있으며, 431개 가운데
+  431개가 통과한다. 이 변경으로 컴파일한 crate는 아직 없다.
+- Python struct `PyNative`는 object를 이름 없는 field에 담았고, 그 field는 native 값을 돌려주는 out 행만 읽는다. 그래서
+  그런 행이 없는 crate는 struct에 `#[allow(dead_code)]`를 달았고 있는 crate는 달지 않아, struct 하나의 텍스트가 둘이었다.
+  이제 그 field는 소유를 위해 두는 field의 이름인 `_held`이며, struct는 모든 crate에서 같은 텍스트이고 allow가
+  없다(GN-6u). `make test-ts`로 확인했다. relay crate의 시험이 allow 때문에 실패했고 변경으로 통과한다. 이 변경의 Python
+  crate는 아직 컴파일하지 않았다.
+- 생성된 시험이 다른 저장소의 value class의 case 값을 언어의 내장 값으로 썼다. 함수 `carry`가 json의 class `value`를
+  받는 `tests/e2e/relay`에서 Python 시험은 `pkg.carry("name\xe9")`를 불렀고, binding은 그것을
+  `invalid_argument_type`으로 거부한다. kind `number`나 `text16`의 case 값과 `{kind, value}`로 적은 쌍의 key는 이름을
+  대고 실패하는 시험이 되었다. Go 시험은 `*json.Value`가 아닌 문자열로 `Carry`를 불러 시험 파일이 컴파일되지 않았다.
+  이제 다섯 시험 작성기는 그런 값을 그 언어의 out 행이 적은 owner 계약의 member로, owner의 패키지를 거쳐
+  만든다(GN-6x, GN-13, GN-13b). `samples.ts`의 `foreignSteps`가 case 값을 그 member 호출로 한 번 읽어 모든 target이
+  쓴다. Python, Node, WASM, PHP는 그것을 owner class의 식 하나로 쓰고(`foreign_json.Value.string(...)`,
+  `\Polyspec\Json\Value::fromUnits([...])`, kind `map`은 `insert`가 채우는 `OrderedMap`), Go는 각각을 시험의 local로
+  쓴다(`json.ValueString(...)`, `json.NewOrderedMap()`, `Insert`). 그런 class의 Go placeholder는 `nil`이 아니라 다른
+  target처럼 kind `null`의 out 행이 만드는 값이다. 시험 작성기의 context는 인자 없는 static member 하나의 호출 대신
+  owner의 class를 이름으로 준다(`foreignClass`). 그런 class의 instance를 담은 결과는 비교할 case 값이 없다는 이유로
+  실패하는 시험을 가지며, `tests/e2e`의 어느 case도 그런 결과를 갖지 않는다. `make test-ts`로 확인했다. 새 시험 둘은
+  json 계약의 fixture로 생성한 relay의 생성된 시험 다섯을 읽으며, 변경 전에 실패했다. 생성된 Go, PHP, Node, WASM
+  시험은 아직 컴파일하거나 실행하지 않았다.
+- contract가 다른 저장소의 타입을 가리키는 저장소의 end-to-end 검사 실행이 그 저장소의 npm 패키지를 설치하지 않았다.
+  npm 단계는 저장소의 contract만 pack했고 WASM 단계는 그 모듈만 빌드했다. 그래서 Node에서, 그리고 `./wasm`으로
+  `@polyspec/json`을 import하는 `tests/e2e/relay`의 생성된 entry는 Node와 WASM 시험이 모두 `ERR_MODULE_NOT_FOUND`로
+  실패했고, Python, PHP, Go는 의존 저장소의 wheel, 확장, 정적 라이브러리를 가졌다. 새 `scripts/e2e-npm.mts`의
+  `npmPacked`가 실행의 패키지를 contract에서 계획한다. 대상 `node`나 `wasm`을 가진 저장소의 contract마다, 그리고 그
+  앞에 그 가운데 하나가 직접 또는 다른 의존 저장소를 거쳐 가리키는 `DEPS`의 contract마다이며, 가리키는 contract의
+  대상이 필요로 하는 Node addon과 WASM 모듈을 정한다. 그 대상이 없는 의존 저장소는 이름 있는 실패다. 실행은 계획된
+  contract마다 addon과 모듈을 사본 안에서 빌드하고, 플랫폼 패키지와 npm 패키지를 pack해 함께 설치한다(GN-14).
+  `scripts/e2e-inputs.mts`는 새 파일을 실행이 checkout에서 읽는 파일에 적는다(GN-14b). `make test-ts`로 확인했다.
+  `e2e-npm.test.ts`의 시험은 저장소의 contract만 담은 계획에서 7개 가운데 5개가 실패했고 변경으로 통과한다. 이 변경의
+  end-to-end 실행은 아직 하지 않았다.
 - 계약이 다른 레포의 value class를 받으면 Go의 결과 decoder가 switch 하나의 두 case에 번호 11을 적었다. node 11이 그런
   class의 인스턴스(GN-6x)이면서 `Native`의 func(GN-6u)이기도 했고, 그래서 생성된 `zz_generated_binding.go`가 컴파일되지
   않았다. 이제 `Native`의 func는 결과의 node 13이며, Go 정적 라이브러리와 decoder가 그렇게 쓴다. `make test-ts`로
