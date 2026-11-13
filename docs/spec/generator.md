@@ -629,7 +629,8 @@ the design ids are those of the binding design.
     generation under that lock; a drop of an older generation discards its key and touches nothing of the language,
     whose environment is gone, neither a reference nor the threadsafe function, and the `out` of such a `Native` is
     kind `internal`.
-  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
+  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread. A `Native` that leaves in a result
+    is node 13 of the result, a number that no other node of a result has (11 is GN-6x, 12 is GN-6af).
   - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
     so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.
     Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread

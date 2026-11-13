@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 5b3e8bf6ee32915048a4cc55c09eb42c48e50cae331e67a98c93dad51ddabc49 -->
+<!-- source-sha256: bbfcc99971b37cfc98fe8eb155bc61cfeb0fefe47ce1a8d341508afcfae5e5c3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 계약이 다른 레포의 value class를 받으면 Go의 결과 decoder가 switch 하나의 두 case에 번호 11을 적었다. node 11이 그런
+  class의 인스턴스(GN-6x)이면서 `Native`의 func(GN-6u)이기도 했고, 그래서 생성된 `zz_generated_binding.go`가 컴파일되지
+  않았다. 이제 `Native`의 func는 결과의 node 13이며, Go 정적 라이브러리와 decoder가 그렇게 쓴다. `make test-ts`로
+  검증했다: GN-6x와 GN-15c의 시험이 decoder의 두 case가 한 번호를 적지 않기를 요구하며, 변경 전에는 case 11과 11로
+  실패했다. 실행하지 않은 것: 다른 레포의 value class가 있는 계약의 `make e2e`로 도는 Go 컴파일러.
 - `wait: process_wait`인 member의 Python `a<name>`은 `<name>`이 끝나기 전에 loop가 닫히면 `RuntimeError`가 자기
   thread를 벗어나게 했다. `loop.call_soon_threadsafe`가 거기서 그것을 내고 아무것도 잡지 않았기 때문이다. 이제
   thread는 `loop.is_closed()`가 참일 때에만 그 실패를 잡고, 아무것도 기다리지 않는 결과를 버린다. 그 thread는 여전히

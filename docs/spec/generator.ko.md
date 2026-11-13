@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 84bee0f749ffa7695fb412badc0f3748e2f9cfd9896f9e9b90808a448c3ed757 -->
+<!-- source-sha256: d639a4ee3883db04ab67460c65140fc2c30602e4e8d2d862b4e7494f938df6d1 -->
 # 생성기
 
 [English](generator.md)
@@ -514,7 +514,8 @@
     owner들의 lock 안에서 threadsafe function을 abort로 해제한다. drop은 그 lock 안에서 generation을 비교한다. 이전
     generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤 것도, 참조도 threadsafe function도 건드리지 않으며, 그런
     `Native`의 `out`은 kind `internal`이다.
-  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
+  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다. 결과로 나가는 `Native`는 결과의 node 13이며,
+    결과의 다른 어떤 node도 그 번호를 갖지 않는다(11은 GN-6x, 12는 GN-6af).
   - `Raised`(GN-6d)의 `Native`는 던져진 객체 표의 key를 갖고, 마지막 drop이 그 항목을 지운다. 그래서 코어가 돌려주지 않고
     버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
     둔다. 그 스레드의 drop은 항목을 곧바로 지우고, 다른 스레드의 drop은 그 스레드가 살아 있는 동안 key를 그 스레드의

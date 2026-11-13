@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Go decoder of a result named the number 11 in two cases of its one switch when a contract takes a value class
+  of another repository: node 11 was an instance of such a class (GN-6x) and also the func of a `Native` (GN-6u), so
+  the generated `zz_generated_binding.go` did not compile. The func of a `Native` is now node 13 of a result, in the
+  Go static library and in the decoder. Verified by `make test-ts`: the test of GN-6x and GN-15c requires that no two
+  cases of the decoder name one number, which failed before the change with the cases 11 and 11. Not run: the Go
+  compiler, by `make e2e` of a contract with a value class of another repository.
 - Python `a<name>` of a member with `wait: process_wait` let a `RuntimeError` escape its thread when the loop was
   closed before `<name>` ended, because `loop.call_soon_threadsafe` raises it there and nothing caught it. The
   thread now catches that failure only while `loop.is_closed()` holds and drops the result, which nothing awaits;
