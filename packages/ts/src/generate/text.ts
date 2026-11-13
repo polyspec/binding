@@ -56,35 +56,54 @@ export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) =>
 // The helper functions of a block of Rust items (each a function with its doc comment, the items separated by blank
 // lines and holding none) that `code` calls, directly or through another helper, in their order in the block; a crate holds no unused
 // helper, because its lints deny dead code.
-export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}): string {
-  const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
-  const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
+export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}, modules: Readonly<Record<string, string>> = {}): string {
+  // GN-4c: an item of the root has no module; an item of the block of a module is named from outside by its path.
+  const parse = (text: string, module: string): { item: string; name: string; module: string }[] =>
+    text.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '').map((item) => ({ item, module, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
+  const named = [...parse(block, ''), ...Object.entries(modules).flatMap(([module, text]) => parse(text, module))];
+  const paths = Object.keys(modules);
+  const outside = paths.length === 0 ? '' : `(?<!\\b(?:${paths.join('|')})::)`;
   // A helper is used where its name is a word of the code, called or passed; comments and a field of that name
-  // (`member: ...`) do not count.
+  // (`member: ...`) do not count. An item of a module is used where its path is, or its name in the text of its own
+  // module, where it also hides an item of the root of the same name.
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
-  const usedBy = (text: string): Set<string> => {
-    const used = new Set<string>();
-    let frontier = strip(text);
+  type Text = { text: string; module: string };
+  const uses = (from: Text, item: { name: string; module: string }): boolean => {
+    const bare = new RegExp(`${outside}\\b${item.name}\\b(?!\\s*:[^:])`);
+    if (item.module === '') return bare.test(from.text) && (from.module === '' || item.name === '' || !named.some((other) => other.module === from.module && other.name === item.name));
+    if (new RegExp(`\\b${item.module}::${item.name}\\b`).test(from.text)) return true;
+    return from.module === item.module && bare.test(from.text);
+  };
+  const usedBy = (text: string): Set<number> => {
+    const used = new Set<number>();
+    let frontier: Text[] = [{ text: strip(text), module: '' }];
     for (;;) {
-      const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\b(?!\\s*:[^:])`).test(frontier));
+      const added = named.flatMap((item, index) => (!used.has(index) && frontier.some((from) => uses(from, item)) ? [index] : []));
       if (added.length === 0) break;
-      for (const { name } of added) used.add(name);
-      frontier = strip(added.map(({ item }) => item).join('\n'));
+      for (const index of added) used.add(index);
+      frontier = added.map((index) => ({ text: strip(named[index]?.item ?? ''), module: named[index]?.module ?? '' }));
     }
     return used;
   };
   const always = usedBy(code);
   // GN-4: a helper that only the code of a feature uses is compiled under that feature, so no form holds it unused.
   const features = Object.entries(gated).map(([feature, text]) => ({ feature, used: usedBy(`${code}\n${text}`) }));
-  return named
-    .flatMap(({ item, name }) => {
-      if (always.has(name)) return [`\n${item}\n`];
-      const under = features.filter((f) => f.used.has(name)).map((f) => `feature = ${JSON.stringify(f.feature)}`);
-      if (under.length === 0) return [];
-      const cfg = `#[cfg(${under.length === 1 ? under[0] : `any(${under.join(', ')})`})]`;
-      return [`\n${item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1${cfg}\n`)}\n`];
-    })
-    .join('');
+  const kept = named.map(({ item }, index) => {
+    if (always.has(index)) return item;
+    const under = features.filter((f) => f.used.has(index)).map((f) => `feature = ${JSON.stringify(f.feature)}`);
+    if (under.length === 0) return undefined;
+    const cfg = `#[cfg(${under.length === 1 ? under[0] : `any(${under.join(', ')})`})]`;
+    return item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1${cfg}\n`);
+  });
+  const root = named.flatMap(({ module }, index) => (module === '' && kept[index] !== undefined ? [`\n${kept[index]}\n`] : [])).join('');
+  // GN-4c: the module of each library, whose functions the code of the crate names by their path.
+  const inModules = paths.map((path) => {
+    const items = named.flatMap(({ module }, index) => (module === path && kept[index] !== undefined ? [kept[index] ?? ''] : []));
+    if (items.length === 0) return '';
+    const body = items.map((item) => item.replace(/^((?:(?:\/\/\/|#\[)[^\n]*\n)*)fn /, '$1pub(super) fn ').split('\n').map((line) => (line === '' ? '' : `    ${line}`)).join('\n')).join('\n\n');
+    return `\n/// GN-4c: the conversions of the units of another library, which the code names by the path of this module.\nmod ${path} {\n    use super::*;\n\n${body}\n}\n`;
+  }).join('');
+  return `${root}${inModules}`;
 }
 
 // T-1: an integer return (uint, int, int64) may be a narrower Rust integer, which the generated code widens with From;
@@ -445,9 +464,10 @@ impl<T: Clone> CoreForm<T> for &&T {
 }
 `;
 
-// A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure).
+// A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure); the
+// function may be named by its path, as the conversion of a unit of another library is (GN-4c).
 export function closure(params: string[], body: string): string {
-  const call = /^([a-z_][a-z_0-9]*)\((.*)\)$/.exec(body);
+  const call = /^([a-z_][a-z_0-9]*(?:::[a-z_][a-z_0-9]*)*)\((.*)\)$/.exec(body);
   if (call !== null && call[2] === params.join(', ')) return call[1] ?? '';
   return `|${params.join(', ')}| ${body}`;
 }

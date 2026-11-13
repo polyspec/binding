@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The conversion of a unit of another repository was named `in_<library>_<name>`, which reads in two ways: the record
+  `a_b` of the library `c` and the record `b` of the library `c_a` were both `in_c_a_b`, two definitions of one
+  function, and an own unit `c_a_b` was a third. The conversions of the units of another repository (`in_`, `out_`,
+  and `make_` of a value alias) are now functions of the module `library_<library>` of the crate, and the code names
+  them by their path, `library_<library>::in_<name>` (GN-4c); one helper of the generator gives the name at every
+  use. The module is not named `<library>` alone, because a library named `std` would hide the crate `std` in the
+  whole generated crate. A closure that only calls a conversion is the conversion itself also by its path, and the
+  Node callback that gives an alias of another library keeps its own environment. Verified by `npm test` in
+  `packages/ts`: its test generates the five crates of a contract with the record `a_b` of the library `c`, the
+  record `b` of the library `c_a` and an own record `c_a_b`, and requires that no module defines a function twice.
+  The generated crates were not compiled for this change.
 - A `Raised` that the core dropped and did not return left what was thrown in the table of the PHP, Python and Go
   crates, because only the Node and WASM crates released it. The `guard` of every entry point of the three crates now
   opens a scope of its thread, the function that makes a `Raised` records its handle in the innermost scope, and the

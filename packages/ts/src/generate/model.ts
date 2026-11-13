@@ -1152,10 +1152,19 @@ export const unitOf = (model: Model, type: Type): Unit | undefined => {
 // The library that owns a unit type, undefined for this contract's own (T-3).
 export const libraryOf = (type: Type): string | undefined => (typeof type === 'object' && 'unit' in type ? type.library : undefined);
 
-// The Rust name of the conversion helpers of a record: in_<name> and out_<name>; a record of another repository is
-// prefixed with its library, so that two libraries' records of one name do not meet.
-export const recordFn = (unit: { name: Name }, library?: string): string =>
-  library === undefined ? rustField(unit.name) : `${library.replaceAll('-', '_')}_${rustField(unit.name)}`;
+// The snake_case name of a unit in the names of its conversions, in_<name> and out_<name>.
+export const recordFn = (unit: { name: Name }): string => rustField(unit.name);
+
+// GN-4c: the module of a generated crate that holds the conversions of the units of another library. The path names
+// the library and the unit apart, so the unit a_b of the library c and the unit b of the library c_a share no name,
+// and neither shares one with an own unit c_a_b. The module states its family first, as a function does, because a
+// library takes any name, also std, core or the name of a crate that the generated code uses.
+export const libraryModule = (library: string): string => `library_${library.replaceAll('-', '_')}`;
+
+// GN-4c: the path, from any module of the crate, of a function of a family (in, out, make) of a unit: the function
+// itself for an own unit, and the function of the module of its library for a unit of another library.
+export const unitFn = (family: string, unit: { name: Name }, library?: string): string =>
+  library === undefined ? `${family}_${recordFn(unit)}` : `${libraryModule(library)}::${family}_${recordFn(unit)}`;
 
 const RUST_KEYWORDS = new Set([
   'as', 'break', 'const', 'continue', 'crate', 'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
@@ -1544,9 +1553,22 @@ export function aliasKindsRust(model: Model): string {
   return asserts.length === 0 ? '' : `\n/// U-7, I-2: the kinds of in_raises are variants of the error of the alias's in function.\n${asserts.join('\n')}\n`;
 }
 
-// The Rust name of the conversions of a value alias, in_<name> and out_<name>: another repository's is prefixed with its
-// library, as its records are (recordFn).
-export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit, alias.library);
+// The name of a value alias in the names of its conversions, in_<name>, out_<name> and make_<name>, which are functions
+// of the module of its library when the alias is of another library (unitFn).
+export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit);
+
+// GN-4c: the conversions of the units of other libraries, as the blocks of usedHelpers: the text of the records and
+// of the value aliases of each library under the name of its module.
+export function libraryBlocks(model: Model, record: (unit: Unit, library: string) => string, alias: (alias: ValueAlias) => string): Record<string, string> {
+  const blocks: Record<string, string> = {};
+  const add = (library: string, text: string): void => {
+    const module = libraryModule(library);
+    blocks[module] = blocks[module] === undefined ? text : `${blocks[module]}\n${text}`;
+  };
+  for (const r of model.foreignRecords) add(r.library, record(r.unit, r.library));
+  for (const a of model.aliases) if (a.library !== undefined) add(a.library, alias(a));
+  return blocks;
+}
 
 // U-7 (a'): the Rust name of the function that turns a failure of the `in` of a library's alias into the language error.
 export const aliasFailureFn = (alias: ValueAlias): string =>

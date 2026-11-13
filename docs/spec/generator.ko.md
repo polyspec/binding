@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: ef92b4d4812775079c344f6dc6807377840b458eccb4fa48e6a9766d6320f17d -->
+<!-- source-sha256: d180b46552371caf296dfc55b3e40eca54fc7b4662e2cd1dea0905750d3866dd -->
 # 생성기
 
 [English](generator.md)
@@ -114,8 +114,14 @@
   거기서 멈춘다. WASM이 끄는 feature의 항목을 쓰는 member나 unit은 다른 target의 `only`다. 계약 검사는 Rust 소스를 읽지
   않으므로 그것은 계약 검사가 아니라 WASM 빌드가 판정한다.
 - **GN-4c** 생성된 crate의 함수 이름: `in_<name>`과 `out_<name>`은 계약의 unit의 변환이고, `<name>`은 unit 이름의
-  snake_case다(다른 레포의 unit은 `<library>_<name>`). crate의 다른 함수는 `in_`이나 `out_`으로 시작하는 이름을 갖지
-  않는다. helper는 방향을 끝에 적는다: 내장 타입의 변환은 `<type>_in`과 `<type>_out`이고(`text_in`, `list_out`),
+  snake_case다. crate의 다른 함수는 `in_`이나 `out_`으로 시작하는 이름을 갖지 않는다. 다른 레포의 unit의 변환인
+  `in_<name>`, `out_<name>`, 그리고 value alias의 `make_<name>`은 crate의 module `library_<library>`의 함수다. 그 module은
+  `use super::*;`를 갖고, 모든 module의 코드는 그 함수를 경로 `library_<library>::in_<name>`으로 부른다. 이유: 라이브러리와
+  unit을 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 라이브러리 `c`의 unit `a_b`와 라이브러리 `c_a`의 unit `b`가 한 함수
+  `in_c_a_b`였고, 자체 unit `c_a_b`가 세 번째였다. `::`는 어떤 이름에도 없으므로 경로는 한 가지로만 읽힌다. module은
+  함수처럼 계열을 먼저 적는다. 라이브러리는 어떤 이름이든 가질 수 있고 `std`, `core`, `exports`나 생성된 코드가 쓰는
+  crate의 이름도 그렇기 때문이다. 그 이름 그대로의 module은 그 crate를 가리거나, 생성된 코드의 module의 두 번째 정의가
+  된다. helper는 방향을 끝에 적는다: 내장 타입의 변환은 `<type>_in`과 `<type>_out`이고(`text_in`, `list_out`),
   default, callable, passthrough의 helper는 `default_in`, `callable_in`, `passed_out`이다. 새 helper도 같은 규칙을
   따른다. 이유: unit은 어떤 이름이든 가질 수 있고 `default`, `callable`, `text`, `list`, `scope`도 그렇다. `in_<word>`라는
   이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 계약에서 이름이 오는 모든
@@ -327,7 +333,7 @@
 - **GN-6k** 다른 레포의 값 alias(T-3, U-7 (a'))는 자기 레포의 alias(GN-6e)와 같은 방식으로 주고받는다. 바인딩이 언어 값을
   `HostValue`로 기술해 소유 코어의 `in` 함수를 부르고, 소유 코어의 `out` 함수가 주는 `OutValue`를 alias의 `out` 행으로
   만든다. `out` 행은 소유 레포의 계약에서 읽는다. 소유 코어의 두 함수가 유일한 변환이다(P-1). 변환의 이름은
-  `in_<library>_<alias>`와 `out_<library>_<alias>`다. 두 라이브러리의 같은 이름 alias가 겹치지 않게 하기 위해서다. `in`의
+  module `library_<library>`의 `in_<alias>`와 `out_<alias>`다(GN-4c). 두 라이브러리의 같은 이름 alias가 겹치지 않게 하기 위해서다. `in`의
   실패는 소유 레포 오류 enum의 변형이다. kind, status, errno는 소유 레포의 것이고(`Kinds`), 클래스는 소유 레포 E-1이 그
   변형에 준 category의 이 레포 클래스다(E-2). 그 클래스는 소유 레포 kinds에 대한 wildcard 없는 match로 고르므로, 소유 계약에
   없는 변형이 있으면 컴파일되지 않는다(I-2 (3)). 소유 코어가 값을 도는 동안 언어 코드가 던진 예외는 그대로 다시 던진다.
@@ -815,7 +821,7 @@
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
   `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
-  `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. unit 타입 field가 있는 다른 레포의 record와, 패키지
+  `library_<library>::in_<record>`와 `library_<library>::out_<record>`로 쓰고 읽는다(GN-4c). unit 타입 field가 있는 다른 레포의 record와, 패키지
   이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. `binding scaffold`는 `binding generate`처럼 계약이
   이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
   없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record를 이름하는 라이브러리마다 `go.mod`에

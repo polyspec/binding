@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 44c31b871683fd75b92fb3f1bd9e88d5684e77913954cb78dbe8cc0625afd18d -->
+<!-- source-sha256: 7aeab1f6952ff405572638479c01c9408a545046adbb7d6b379c953d074ad90b -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 레포의 unit의 변환은 `in_<library>_<name>`이었고, 이 이름은 두 가지로 읽힌다. 라이브러리 `c`의 record `a_b`와
+  라이브러리 `c_a`의 record `b`가 둘 다 `in_c_a_b`여서 한 함수의 두 정의였고, 자체 unit `c_a_b`가 세 번째였다. 이제 다른
+  레포의 unit의 변환(`in_`, `out_`, 그리고 value alias의 `make_`)은 crate의 module `library_<library>`의 함수이고, 코드는
+  경로 `library_<library>::in_<name>`으로 부른다(GN-4c). 생성기의 helper 하나가 모든 사용처에 그 이름을 준다. module의
+  이름은 `<library>`만으로 하지 않는다. `std`라는 라이브러리가 생성된 crate 전체에서 crate `std`를 가리기 때문이다.
+  변환만 부르는 closure는 경로로 불러도 그 변환 자체이고, 다른 라이브러리의 alias를 주는 Node callback은 자기 환경을
+  유지한다. `packages/ts`의 `npm test`로 검증했다. 그 테스트는 라이브러리 `c`의 record `a_b`, 라이브러리 `c_a`의 record
+  `b`, 자체 record `c_a_b`를 가진 계약의 다섯 crate를 생성하고, 어느 module도 함수를 두 번 정의하지 않기를 요구한다. 이
+  변경에 대해 생성된 crate는 컴파일하지 않았다.
 - 코어가 drop하고 반환하지 않은 `Raised`는 PHP, Python, Go crate의 table에 던져진 것을 남겼다. Node와 WASM crate만 그것을
   해제했기 때문이다. 이제 세 crate의 모든 진입점의 `guard`가 자기 스레드의 scope를 열고, `Raised`를 만드는 함수가 그
   handle을 가장 안쪽 scope에 기록하며, 진입점은 반환할 때 아무도 가져가지 않은 것을 table에서 제거한다(GN-6ae). PHP는

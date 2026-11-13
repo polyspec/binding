@@ -835,8 +835,10 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.match(pkg, /\nfunc Mirror\(point points\.Point\) \(points\.Point, error\) \{\n/);
   assert.match(pkg, /\tenc\.Int\(point\.X\)\n\tenc\.Int\(point\.Y\)\n/);
   const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
-  assert.match(lib, /\nfn in_points_point\(input: &mut &\[u8\]\) -> Result<polyspec_points::Point, Fail> \{\n/);
-  assert.match(lib, /\nfn out_points_point\(output: &mut Vec<u8>, value: impl Borrow<polyspec_points::Point>\) \{\n/);
+  assert.match(lib, /\nmod library_points \{\n {4}use super::\*;\n/);
+  assert.match(lib, /\n {4}pub\(super\) fn in_point\(input: &mut &\[u8\]\) -> Result<polyspec_points::Point, Fail> \{\n/);
+  assert.match(lib, /\n {4}pub\(super\) fn out_point\(output: &mut Vec<u8>, value: impl Borrow<polyspec_points::Point>\) \{\n/);
+  assert.match(lib, /\blibrary_points::in_point\(&mut input\)/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /points\.Point\{X: 1, Y: 2\}/);
   // binding scaffold requires the Go module of the library by the dependency line of the core.
   const goMod = (spec: unknown, of = contract, libraries = foreign): string => String(trackedPackages(of, '0.0.0', new Map([['polyspec-points', spec], ['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], libraries).get('packages/go/go.mod'));
@@ -901,16 +903,17 @@ test('a value alias of another repository converts through the core of its owner
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     const lib = text(out, path);
-    // The owner's two core functions are the conversion, under names that carry the library.
-    assert.match(lib, /\nfn in_sample_data[(<]/, path);
+    // The owner's two core functions are the conversion, functions of the module of the library (GN-4c), and the root
+    // of the crate has no conversion of that name.
+    assert.match(lib, /\nmod library_sample \{\n {4}use super::\*;\n\n(?: {4}[^\n]*\n|\n)*? {4}pub\(super\) fn in_data[(<]/, path);
     assert.match(lib, /let \(root, mut source\) = polyspec_sample::data_to_out\(value\.borrow\(\)\);/, path);
-    assert.doesNotMatch(lib, /\bfn (in|out)_data\b/, path);
+    assert.doesNotMatch(lib, /\nfn (in|out)_data\b/, path);
     // A failure of the owner's in is of the owner's enum; its class is this library's class of the owner's category.
     assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_of_sample\(/, path);
     assert.match(lib, /fn error_of_sample\([^)]*error: polyspec_sample::Error\)[^{]*\{\n    let class(: usize)? = match error \{\n        polyspec_sample::Error::Missing \{ \.\. \} => [^\n]*\n        polyspec_sample::Error::Unsupported \{ \.\. \} => [^\n]*\n(?:        polyspec_sample::Error::[^\n]*\n)*    \};/, path);
     // The callback gives the alias through the same conversions.
-    assert.match(lib, new RegExp(`${helperName(path, 'in_optional')}\\([^\\n]*in_sample_data\\(`), path);
-    assert.match(lib, /out_sample_data\((py|self\.env), value\)|out_sample_data\(value\)/, path);
+    assert.match(lib, new RegExp(`${helperName(path, 'in_optional')}\\([^\\n]*library_sample::in_data\\(`), path);
+    assert.match(lib, /library_sample::out_data\((py|self\.env), value\)|library_sample::out_data\(value\)/, path);
   }
   assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_sample::Error::Unsupported \{ \.\. \} => "ConsumerValueError",/);
   // The in_raises of the owner's alias give the consumer nothing: no entry point of codec-test, no assertion of the
@@ -3903,5 +3906,85 @@ test('a Raised of the PHP, Python and Go crates is released by the call that mad
     const lib = text(plain, path);
     assert.equal(/\bRAISING\b/.test(lib), /\bstatic THROWN\b/.test(lib), path);
     assert.equal(/fn raised_released\(/.test(lib), /\bstatic THROWN\b/.test(lib), path);
+  }
+});
+
+// GN-4c: the plot of the end-to-end check, whose two members take the record a_b of the library c and the record b of
+// the library c_a, with or without an own record named c_a_b.
+const twoLibraries = (): { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> } => {
+  const { contract, caseFiles, foreign } = plotSample();
+  const points = foreign.get('points');
+  const renamed = (library: string, name: string[]): any => {
+    const owner = JSON.parse(JSON.stringify(points));
+    owner.library = library;
+    const unit = unitOf(owner, 'point');
+    unit.id = name.join('_');
+    unit.name = name;
+    return owner;
+  };
+  const retype = (member: any, type: unknown): void => {
+    for (const parameter of member.parameters) if (typeof parameter.type === 'object') parameter.type = type;
+    member.returns = type;
+  };
+  const plot = unitOf(contract, 'plot');
+  retype(plot.members.find((m: any) => m.id === 'plot.mirror'), { unit: 'a_b', library: 'c' });
+  retype(plot.members.find((m: any) => m.id === 'plot.rise'), { unit: 'b', library: 'c_a' });
+  return { contract, caseFiles, foreign: new Map([['c', renamed('c', ['a', 'b'])], ['c_a', renamed('c_a', ['b'])]]) };
+};
+
+// The functions that each module of a generated crate defines, by the path of the module from the root of the crate.
+const definedIn = (lib: string): Map<string, string[]> => {
+  const defined = new Map<string, string[]>();
+  const open: { name: string; indent: number }[] = [];
+  for (const line of lib.split('\n')) {
+    const indent = line.length - line.trimStart().length;
+    const module = /^\s*(?:pub(?:\([a-z]+\))? )?mod ([a-z0-9_]+) \{$/.exec(line);
+    if (module !== null) open.push({ name: module[1] ?? '', indent });
+    else if (line.trim() === '}' && open.length > 0 && open[open.length - 1]?.indent === indent) open.pop();
+    const fn = /^(?:pub(?:\([a-z]+\))? )?(?:unsafe )?(?:extern "C" )?fn ([a-z0-9_]+)/.exec(line.trimStart());
+    if (fn !== null && indent === open.length * 4) {
+      const path = open.map((m) => m.name).join('::');
+      defined.set(path, [...(defined.get(path) ?? []), fn[1] ?? '']);
+    }
+  }
+  return defined;
+};
+
+test('the conversions of a unit of another library are functions of the module of the library, so two libraries and an own unit share no name (GN-4c)', () => {
+  // Before, the record a_b of the library c and the record b of the library c_a both had the conversions in_c_a_b and
+  // out_c_a_b, two definitions of one function, and an own record c_a_b had them a third time.
+  for (const own of [false, true]) {
+    const { contract, caseFiles, foreign } = twoLibraries();
+    if (own) {
+      const record = { ...JSON.parse(JSON.stringify(unitOf(foreign.get('c'), 'a_b'))), id: 'c_a_b', name: ['c', 'a', 'b'], core_type: 'polyspec_plot::Own' };
+      contract.units.push(record);
+      const plot = unitOf(contract, 'plot');
+      const mirror = plot.members.find((m: any) => m.id === 'plot.mirror');
+      plot.members.push({ ...JSON.parse(JSON.stringify(mirror)), id: 'plot.own', name: ['own'], parameters: [{ name: ['point'], type: { unit: 'c_a_b' }, required: true }], returns: { unit: 'c_a_b' }, core: 'polyspec_plot::own' });
+      contract.cases = contract.cases.filter((k: any) => k.member !== undefined);
+    }
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });
+    const libs = [...out].filter(([path]) => path.endsWith('generated/lib.rs'));
+    assert.equal(libs.length, 5, String(own));
+    for (const [path, lib] of libs) {
+      const defined = definedIn(String(lib));
+      for (const [module, names] of defined) {
+        assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), [], `${path} ${module}`);
+      }
+      assert.deepEqual((defined.get('library_c') ?? []).sort(), ['in_a_b', 'out_a_b'], path);
+      assert.deepEqual((defined.get('library_c_a') ?? []).sort(), ['in_b', 'out_b'], path);
+      assert.match(String(lib), /\nmod library_c \{\n {4}use super::\*;\n/, path);
+      assert.match(String(lib), /\n {4}pub\(super\) fn in_a_b\(/, path);
+      assert.match(String(lib), /\blibrary_c::in_a_b\(/, path);
+      assert.match(String(lib), /\blibrary_c::out_a_b\(/, path);
+      assert.match(String(lib), /\blibrary_c_a::in_b\(/, path);
+      assert.match(String(lib), /\blibrary_c_a::out_b\(/, path);
+      // A closure that only calls a conversion is the conversion itself, also by its path (clippy redundant_closure).
+      assert.doesNotMatch(String(lib), /\|(\w+)\| library_c(?:_a)?::\w+\(\1\)/, path);
+      // The conversions of an own unit stay functions of the root of the crate.
+      const root = defined.get('') ?? [];
+      assert.equal(root.includes('out_c_a_b'), own, path);
+      assert.equal(root.some((name) => /^(?:in|out)_(?:a_b|b)$/.test(name)), false, path);
+    }
   }
 });

@@ -10,7 +10,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, DRIVEN, drivenCall, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, objectUnit, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, objectUnit, poisoned, recordFn, unitFn, libraryBlocks, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
   variantPattern,
   errorMatched,
   recognizedFn,
@@ -86,10 +86,10 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   }
   if ('optional' in type) return `optional_in(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
   const alias = aliasOf(model, type);
-  if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
+  if (alias !== undefined) return `${unitFn('in', alias.unit, alias.library)}(${input})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${input})`;
+  if (unit?.kind === 'record') return `${unitFn('in', unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
@@ -113,9 +113,9 @@ export function convertOut(model: Model, type: Type, value: string): string {
   // GN-6ae: a result passthrough crosses the C ABI as the handle of its value in the table of package binding.
   if ('passthrough' in type) return `passed_out(output, ${value})`;
   const alias = aliasOf(model, type);
-  if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
+  if (alias !== undefined) return `${unitFn('out', alias.unit, alias.library)}(output, ${value})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${recordFn(unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `${unitFn('out', unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${plainName(unit)}(output, ${value})`;
   throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
 }
@@ -475,9 +475,10 @@ ${outArmsText}
 const rustBytes = (text: string): string => `b${rustString(text)}`;
 
 // T-4, U-2: a record, its fields in contract order; a field with a default is Option<T>, None when Go leaves it nil.
-// GN-15f: a record of another repository has the helpers in_<library>_<record> and out_<library>_<record>.
+// GN-15f, GN-4c: a record of another repository has the helpers in_<record> and out_<record> of the module of its
+// library.
 function recordRust(model: Model, unit: Unit, library?: string): string {
-  const name = recordFn(unit, library);
+  const name = recordFn(unit);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
@@ -1245,7 +1246,7 @@ function testEntries(model: Model): string {
   // U-7: the in function of a value alias with in_raises alone.
   for (const alias of aliasesWithKinds(model).filter((a) => a.library === undefined)) {
     out.push(entry(model, `${p}__alias_in_${aliasFn(alias)}`, `U-7: runs the in function of the alias ${alias.unit.id} alone, for the tests of its kinds.`, [
-      `        let _value: ${alias.unit.core_type ?? ''} = in_${aliasFn(alias)}(&mut input)?;`,
+      `        let _value: ${alias.unit.core_type ?? ''} = ${unitFn('in', alias.unit, alias.library)}(&mut input)?;`,
       '        finish_input(input)?;',
       '        Ok(Vec::new())',
     ], 'codec-test'));
@@ -1303,11 +1304,11 @@ function rustUsed(model: Model): string {
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
-    ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.objects.map((o) => objectHelpers(model, o)),
-    ...model.aliases.map((a) => aliasRust(model, a)),
+    ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
+  const libraries = libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasRust(model, a));
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model), libraries);
 }
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
@@ -1343,7 +1344,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 const testEntryUses = (model: Model): Record<string, string> => ({
   'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'uint_in' : '',
   'fault-test': model.faults.length > 0 ? 'uint_in uint_out text_in text_out list_out' : '',
-  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
+  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `${unitFn('in', a.unit, a.library)}`).join(' '),
 });
 
 export function libRust(model: Model): string {

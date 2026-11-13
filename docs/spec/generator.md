@@ -142,8 +142,15 @@ the design ids are those of the binding design.
   is `only` of the other targets; the WASM build, not the contract check, judges that, because the check reads no Rust
   source.
 - **GN-4c** The names of the functions of a generated crate: `in_<name>` and `out_<name>` are the conversions of
-  the units of the contract, where `<name>` is the snake_case name of the unit (`<library>_<name>` for a unit of
-  another repository), and no other function of the crate has a name that starts with `in_` or `out_`. A helper
+  the units of the contract, where `<name>` is the snake_case name of the unit, and no other function of the crate
+  has a name that starts with `in_` or `out_`. The conversions of a unit of another repository, `in_<name>`,
+  `out_<name>` and `make_<name>` of a value alias, are functions of the module `library_<library>` of the crate,
+  which holds `use super::*;`, and the code of every module names them by their path, `library_<library>::in_<name>`.
+  Why: a name that joins the library and the unit with `_` reads in two ways, so the unit `a_b` of the library `c`
+  and the unit `b` of the library `c_a` were one function `in_c_a_b`, and an own unit `c_a_b` a third; `::` is in no
+  name, so the path reads in one way. The module states its family first, as a function does, because a library
+  takes any name, also `std`, `core`, `exports` or the name of a crate that the generated code uses, and a module of
+  that bare name would hide the crate or be a second definition of a module of the generated code. A helper
   states its direction last: the conversion of a built-in type is `<type>_in` and `<type>_out` (`text_in`,
   `list_out`), and the helpers of a default, of a callable and of a passthrough are `default_in`, `callable_in` and
   `passed_out`. A new helper follows the same rule. Why: a unit takes any name, also `default`, `callable`, `text`,
@@ -404,7 +411,8 @@ the design ids are those of the binding design.
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
   owner's contract. The two core functions of the owner are the only conversion (P-1). The conversions are named
-  `in_<library>_<alias>` and `out_<library>_<alias>`, so that the aliases of two libraries with one name do not meet.
+  `in_<alias>` and `out_<alias>` of the module `library_<library>` (GN-4c), so that the aliases of two libraries
+  with one name do not meet.
   A failure of `in` is a variant of the owner's error enum: its kind, status and errno are the owner's (`Kinds`), and
   its class is this repository's class of the category that the owner's E-1 gives the variant (E-2), chosen by a
   match over the owner's kinds without a wildcard, so a variant that the owner's contract lacks does not compile
@@ -989,7 +997,7 @@ the design ids are those of the binding design.
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through
-  `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
+  `library_<library>::in_<record>` and `library_<library>::out_<record>` (GN-4c); a record of another repository with a field of a unit type, and
   one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
   of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
