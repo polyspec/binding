@@ -37,6 +37,9 @@ interface Values {
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
 class Body {
   lines: string[] = [];
+  // GN-13f: whether a call of then of an instance value of the body arms faults, so the test goes with the cases that
+  // arm faults and locks its goroutine to its thread.
+  armed = false;
   private count = 0;
   fresh(prefix = 'made'): string {
     return `${prefix}${this.count++}`;
@@ -289,10 +292,22 @@ function made(v: Values, b: Body, r: Receiver): string {
     b.lines.push(`${next} := ${expr}`);
     local = next;
   }
-  for (const step of r.then ?? []) {
-    const call = invoke(step.fn, callArgs(v, b, step.fn, (arg) => caseValue(v, b, arg, step.args)), local);
+  for (const [i, step] of (r.then ?? []).entries()) {
+    const call = invoke(step.fn, callArgs(v, b, step.fn, (arg) => caseValue(v, b, arg, step.args)), step.on === 'receiver' ? on : local);
+    // G-5: the faults of the call are armed for its member just before it, and every one must have fired after it.
+    const armed = step.faults === undefined ? undefined : b.fresh('armed');
+    if (armed !== undefined && step.faults !== undefined) {
+      b.armed = true;
+      const failed = b.fresh('armErr');
+      b.lines.push(`${armed}, ${failed} := binding.ArmFaults(${goString(step.fn.member.id)}, ${goString(step.faults)})`, `if ${failed} != nil {`, `\tt.Fatalf("G-5: %v", ${failed})`, '}');
+    }
     const error = b.fresh('failure');
     b.lines.push(`${[...Array.from({ length: goResultCount(step.fn) }, () => '_'), error].join(', ')} := ${call}`, `if ${error} != nil {`, `\tt.Fatalf("GN-13f: %v", ${error})`, '}');
+    if (armed !== undefined) {
+      const left = b.fresh('left');
+      const leftErr = b.fresh('leftErr');
+      b.lines.push(`if ${left}, ${leftErr} := binding.FaultLeft(${armed}); ${leftErr} != nil || len(${left}) != 0 {`, `\tt.Fatalf("G-5: the faults of then ${i} %v did not fire (%v)", ${left}, ${leftErr})`, '}');
+    }
   }
   return local;
 }
@@ -467,13 +482,13 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
     const receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
     const args = callArgs(v, b, fn, (arg) => fixtures.find((f) => f.fixture.arg === arg)?.name ?? caseValue(v, b, arg, kase.args));
     const lines = [...b.lines];
+    if (kase.faults !== undefined || b.armed) lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
     if (kase.faults !== undefined) {
-      lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
       lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(kase.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
     }
     lines.push(callLine(fn, invoke(fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
-    (kase.faults === undefined ? out.main : out.fault).push(`
+    (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
 }`);
@@ -509,9 +524,9 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       }
     }
     const lines = refused === undefined
-      ? [...b.lines, callLine(fn, invoke(fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b)]
+      ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...b.lines, callLine(fn, invoke(fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b)]
       : [`t.Fatal(${goString(refused)})`];
-    out.main.push(`
+    (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
 }`);
@@ -520,7 +535,8 @@ ${indent(lines, 1)}
   for (const kase of stringCases(model, fn)) {
     const b = new Body();
     const receiver = made(v, b, kase.receiver);
-    out.main.push(`
+    if (b.armed) b.lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
+    (b.armed ? out.fault : out.main).push(`
 func TestN4${label}${testName(kase.id)}(t *testing.T) {
 ${indent([...b.lines, `if text := ${receiver}.String(); text != ${goString(kase.result)} {`, '\tt.Fatalf("N-4: %q", text)', '}'], 1)}
 }`);

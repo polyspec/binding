@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- 앞선 호출의 실패가 뒤의 호출이 내도록 남기는 kind와, 인스턴스를 꺼낸 인스턴스의 호출 뒤에만 닿는 kind에는 case
+  꼴이 없었다. 그래서 그런 kind를 내는 계약은 CK-22를 통과할 수 없었다. case의 장전은 자기 호출에만 걸리고, `then`의
+  모든 호출은 인스턴스 자신에 불렸기 때문이다. 이제 `then`의 호출은 `faults`를 가질 수 있다. 그것은 그 호출 바로 앞에서
+  그 호출의 member에 장전되고 바로 뒤에서 발동했음이 요구된다. 또 `"on": "receiver"`를 가질 수 있다. 그것은 pick 뒤에 값의
+  `receiver`의 class의 메서드를 그 receiver에 부른다(GN-13f). `binding check`는 두 키를 받는다. 그런 호출의 faults는
+  case의 faults이고, 그것이 기대하는 실패는 그 점들의 kind이며, 인스턴스 값이 fault를 장전하는 case는 그 점들의 kind만
+  채운다(CK-22). PHP, Python, Node, WASM의 시험은 그 호출의 fault를 장전하고 확인하며(WASM은 시험 전의 hook이 읽는 glue
+  module로), Go는 그런 시험을 fault를 장전하는 case와 함께 두고 그 goroutine을 thread에 고정한다. 아무 receiver나 필요한
+  시험은 fault를 장전하는 receiver를 쓰지 않는다.
+
 - CI와 release workflow 파일, 그리고 `config/release.json`은 GN-14b의 어느 목록에도 없었다. 그래서 이 파일들을 더한 뒤 종단 실행의
   입력 시험이 실패했다. 이제 이 파일들은 실행이 읽지 않는 파일로 각각 이유와 함께 목록에 있다(GN-14b).
 - origin value class를 받는 member의 case는 값을 `{"kind": "text", "value": ...}`로 주었고, 생성기는 어떤 항목도 대지 않는 예외

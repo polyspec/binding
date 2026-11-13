@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- A kind that a failure of an earlier call leaves for a later call to give, and a kind that an instance reaches only
+  after a call of the instance it was picked from, had no case form, so a contract that gives them could not pass
+  CK-22: the arming of a case holds for its own call alone, and every call of `then` ran on the instance itself. A
+  call of `then` may now hold `faults`, armed for the member of that call just before it and required to have fired
+  just after it, and `"on": "receiver"`, which calls a method of the class of the `receiver` of the value on that
+  receiver after the pick (GN-13f). `binding check` takes both keys: the faults of such a call are the faults of a
+  case, a failure that it expects is a kind of its points, and a case whose instance values arm faults fills only the
+  kinds of their points (CK-22). The tests of PHP, Python, Node and WASM arm and check the faults of the call (WASM
+  through the glue module that a hook before the tests loads), and Go puts such a test with the cases that arm faults,
+  its goroutine locked to its thread. A test that needs any receiver takes none that arms faults.
+
 - The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
   the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
   each with its reason (GN-14b).

@@ -66,6 +66,8 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       return `self::assertStringContainsString(${phpText(`'kind' => '${kind}'`)}, self::outcome(fn () => ${expr}), ${phpText(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => ('field' in step ? `${expr}->${langName('php', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+    arm: (local, member, faults) => `$${local} = \\${layout.namespace}\\Internal\\armFaults(${phpText(member)}, ${phpText(faults)});`,
+    left: (local, what) => `self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($${local}), ${phpText(`G-5: ${what}`)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };

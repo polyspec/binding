@@ -115,6 +115,11 @@ export function nodeTests(model: Model): string {
       return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => ('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+    arm: (local, member, faults) => {
+      usesAddon = true;
+      return `const ${local} = addon().__armFaults(${jsString(member)}, ${jsString(faults)});`;
+    },
+    left: (local, what) => `assert.deepEqual(addon().__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };

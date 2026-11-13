@@ -38,6 +38,7 @@ export function wasmTests(model: Model): string {
   const out: string[] = [];
   let usesOutcome = false;
   let usesGlue = false;
+  let usesStepGlue = false;
   let usesOrdered = false;
   let usesFixture = false;
   let usesErrno = false;
@@ -67,6 +68,14 @@ export function wasmTests(model: Model): string {
       return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => ('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+    // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in
+    // calls that do not wait.
+    arm: (local, member, faults) => {
+      usesGlue = true;
+      usesStepGlue = true;
+      return `const ${local} = stepGlue.__armFaults(${jsString(member)}, ${jsString(faults)});`;
+    },
+    left: (local, what) => `assert.deepEqual(stepGlue.__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -293,7 +302,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   }
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
@@ -307,6 +316,12 @@ function outcome(call) {
 ` : ''}${usesGlue ? `
 // G-5: the module that wasm-bindgen writes, whose test entry points arm the faults of a case.
 const glueModule = () => import(new URL('./${wasmGlue(model)}.js', import.meta.resolve(${jsString(entry)})).href);
+` : ''}${usesStepGlue ? `
+// GN-13f: the module for the calls of then that arm faults, loaded before the tests.
+let stepGlue;
+before(async () => {
+  stepGlue = await glueModule();
+});
 ` : ''}${out.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.

@@ -151,6 +151,14 @@ interface Located<T> {
 // the calling thread, waiting for another process and network sockets.
 export const PLATFORM_FEATURES = ['fs', 'blocking-io', 'process', 'net'];
 
+// GN-13f: what the calls of then of the instance values of a case arm: the kinds that their points fill, the libraries
+// whose point internal they arm as broken, and whether any call arms a fault.
+interface ThenFaults {
+  fills: Set<string>;
+  broken: Set<string>;
+  any: boolean;
+}
+
 class Checker {
   readonly contract: Contract;
   readonly dependencies: ReadonlyMap<string, unknown>;
@@ -1227,7 +1235,7 @@ class Checker {
       this.caseFixtures(row.member, group, `/cases/${i}`);
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
-        this.caseInstances(row.member, record, `/cases/${i}`);
+        const armedThen = this.caseInstances(row.member, record, `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         const raises = record['raises'];
@@ -1237,11 +1245,14 @@ class Checker {
         if (typeof expected['errno'] === 'string' && !ERRNO_SYMBOL.test(expected['errno'])) {
           this.report('CK-22', `/cases/${i}`, `${where}: the errno ${expected['errno']} of raises is not the symbol of an errno, such as ENOSPC (G-5)`);
         }
-        if (record['faults'] === undefined) {
+        if (record['faults'] === undefined && !armedThen.any) {
           if (typeof kind === 'string') kinds.add(kind);
           continue;
         }
-        const armed = this.caseFaults(record['faults'], where, `/cases/${i}`);
+        // GN-13f: the points that the calls of then of its instance values arm are points that the case arms.
+        const armed = record['faults'] === undefined ? { fills: new Set<string>(), broken: new Set<string>() } : this.caseFaults(record['faults'], where, `/cases/${i}`);
+        for (const filled of armedThen.fills) armed.fills.add(filled);
+        for (const library of armedThen.broken) armed.broken.add(library);
         if (typeof kind !== 'string') continue;
         if (!armed.fills.has(kind)) {
           this.report('CK-22', `/cases/${i}`, `${where}: no point that the case arms fills the kind ${kind}, so only a case without faults gives it (G-5)`);
@@ -1292,9 +1303,12 @@ class Checker {
   // G-5 (GN-13f): the instance values of a case: its receiver, and an argument of a class type that is given as one.
   // The receiver of a method is an instance value or, without the key receiver, the arguments of a factory of its
   // class among the keys of the case.
-  caseInstances(memberId: string, record: Record<string, unknown>, path: string): void {
+  // Gives what the calls of then of the instance values of the case arm (GN-13f).
+  caseInstances(memberId: string, record: Record<string, unknown>, path: string): ThenFaults {
+    const armed: ThenFaults = { fills: new Set<string>(), broken: new Set<string>(), any: false };
     const found = this.members.get(memberId);
-    if (found === undefined) return;
+    if (found === undefined) return armed;
+    this.armedThen = armed;
     const where = `the case ${String(record['id'])} of ${memberId}`;
     const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5, GN-13f)`);
     const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
@@ -1303,7 +1317,12 @@ class Checker {
       else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
     }
     this.instanceArgs(found.member, record, report, 'the case');
+    this.armedThen = undefined;
+    return armed;
   }
+
+  // GN-13f: what the calls of then of the instance values of the case that caseInstances reads arm, or undefined.
+  private armedThen: ThenFaults | undefined;
 
   // CK-64: an integer of a case at a place of the contract type int or uint is a safe integer, the range of T-1 that
   // every target gives (a Node number); a case file gives a larger one as its JSON token, which cli reads as a bigint.
@@ -1432,12 +1451,33 @@ class Checker {
     if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
     for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (key !== 'call' && key !== 'args' && key !== 'raises') report(`then ${i} of ${what} has no key ${key}`);
+      for (const key of Object.keys(call)) if (!['call', 'args', 'raises', 'faults', 'on'].includes(key)) report(`then ${i} of ${what} has no key ${key}`);
       const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
       const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
-      if (step === undefined || step.unit.id !== unitId || !stepMethod) {
+      // A call with on: receiver is a method of the class of the receiver of the value, called on that receiver.
+      if (call['on'] !== undefined) {
+        if (call['on'] !== 'receiver') {
+          report(`then ${i} of ${what} calls on ${String(call['on'])}, but on names only receiver`);
+          continue;
+        }
+        if (record['receiver'] === undefined) {
+          report(`then ${i} of ${what} calls ${String(call['call'])} on its receiver, but ${member.id} gives the value without one`);
+          continue;
+        }
+        if (step === undefined || step.unit.id !== found.unit.id || !stepMethod) {
+          report(`then ${i} of ${what} calls ${String(call['call'])} on its receiver, which is no method of ${found.unit.id}`);
+          continue;
+        }
+      } else if (step === undefined || step.unit.id !== unitId || !stepMethod) {
         report(`then ${i} of ${what} calls ${String(call['call'])}, which is no method of ${unitId}`);
         continue;
+      }
+      // The faults that the call arms for itself alone, in the form of the faults of a case.
+      const faults = call['faults'] === undefined ? undefined : this.faultsOf(call['faults'], (message) => report(`the faults of then ${i} of ${what}: ${message}`));
+      if (faults !== undefined && this.armedThen !== undefined) {
+        this.armedThen.any = true;
+        for (const filled of faults.fills) this.armedThen.fills.add(filled);
+        for (const library of faults.broken) this.armedThen.broken.add(library);
       }
       args(step.member, call['args'], `then ${i} of ${what}`);
       // A call that fails with a kind of the member's raises; the instance stays for the next step.
@@ -1451,6 +1491,7 @@ class Checker {
         const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
         const kinds = (step.member.raises ?? []).flatMap((variant) => { const row = rows.get(variant); return row === undefined ? [] : kindsOf(row); });
         if (!kinds.includes(kind)) report(`then ${i} of ${what} expects ${step.member.id} to fail with ${kind}, which is no kind of its raises`);
+        else if (faults !== undefined && !faults.fills.has(kind)) report(`then ${i} of ${what} expects ${step.member.id} to fail with ${kind}, which no point that it arms fills`);
       }
     }
   }
@@ -1459,9 +1500,13 @@ class Checker {
   // of this contract or of the library that the name gives, and takes the injection of its kind. Gives the kinds that
   // the armed points fill and the libraries whose point internal is armed as broken (X-1).
   caseFaults(given: unknown, where: string, path: string): { fills: Set<string>; broken: Set<string> } {
+    return this.faultsOf(given, (message) => this.report('CK-22', path, `${where}: ${message} (G-5)`));
+  }
+
+  // G-5: the faults of a case or of a call of then (GN-13f), each finding given to report.
+  faultsOf(given: unknown, report: (message: string) => void): { fills: Set<string>; broken: Set<string> } {
     const fills = new Set<string>();
     const broken = new Set<string>();
-    const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5)`);
     if (!Array.isArray(given) || given.length === 0) {
       report('faults is not a list of {point, kind}');
       return { fills, broken };
