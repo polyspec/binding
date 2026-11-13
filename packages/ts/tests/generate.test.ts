@@ -3806,11 +3806,14 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.fetch\('a'\)/);
   // The binding crates turn on the driver of binding_core, and the Node crate the tokio runtime of napi.
   const crates = trackedPackages(read('packages/rust/interface.json'), '0.0.0');
-  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml']) {
+  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
     assert.match(String(crates.get(crate)), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
   }
   assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
-  assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
+  // A Go crate without such a member does not turn the driver on.
+  const withoutGo = read('packages/rust/interface.json');
+  for (const unit of withoutGo.units) for (const m of unit.members ?? []) if (m.wait === 'async_driver') m.only = { targets: ['php', 'python', 'node'], reason: 'GN-6n' };
+  assert.doesNotMatch(String(trackedPackages(withoutGo, '0.0.0').get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
   // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
   // of binding_core and without a tokio runtime.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
@@ -3835,9 +3838,6 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(goLib, /\nfn driven<T>\(/);
   assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc Fetch\(name string\) \(string, error\) \{/);
   assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Gate\) EnterLater\(\) \(string, error\) \{/);
-  const everywhereContract = read('packages/rust/interface.json');
-  everywhere(everywhereContract);
-  assert.match(String(trackedPackages(everywhereContract, '0.0.0').get('packages/go/internal/ffi/Cargo.toml')), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
