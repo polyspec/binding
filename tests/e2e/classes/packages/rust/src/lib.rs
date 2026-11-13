@@ -333,6 +333,16 @@ impl Gate {
         self.enter()
     }
 
+    /// What enters the gate, awaited as a wait for another process would be (B-5 (b): the token of wait
+    /// process_wait).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed.
+    pub fn enter_after(&self, _wait: binding_core::ProcessWait) -> Result<String, Error> {
+        self.enter()
+    }
+
     /// What enters the gate, awaited as an async driver would be (I-2 (4): wait async_driver).
     ///
     /// # Errors
@@ -371,6 +381,20 @@ pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
         });
     }
     Ok(format!("the text of {name}"))
+}
+
+/// The name, attended as a wait for another process would be (B-5 (b): the token of wait process_wait).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty.
+pub fn attend(_wait: binding_core::ProcessWait, name: &str) -> Result<String, Error> {
+    if name.is_empty() {
+        return Err(Error::Missing {
+            key: String::from("name"),
+        });
+    }
+    Ok(format!("{name} was attended"))
 }
 
 /// The text of a name, awaited as an async driver would be (I-2 (4): wait async_driver).

@@ -217,6 +217,38 @@
           "core": "polyspec_classes::read"
         },
         {
+          "id": "classes.attend",
+          "name": [
+            "attend"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "GN-6m"
+          },
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "process_wait",
+          "core": "polyspec_classes::attend"
+        },
+        {
           "id": "classes.fetch",
           "name": [
             "fetch"
@@ -667,6 +699,34 @@
           }
         },
         {
+          "id": "gate.enter_after",
+          "name": [
+            "enter",
+            "after"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node",
+              "go"
+            ],
+            "reason": "GN-6m"
+          },
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Closed"
+          ],
+          "wait": "process_wait",
+          "core": {
+            "path": "polyspec_classes::Gate::enter_after",
+            "receiver": "&self"
+          }
+        },
+        {
           "id": "gate.enter_later",
           "name": [
             "enter",
@@ -1027,6 +1087,11 @@
       "group": "read"
     },
     {
+      "member": "classes.attend",
+      "file": "contracts/cases.json",
+      "group": "attend"
+    },
+    {
       "member": "classes.fetch",
       "file": "contracts/cases.json",
       "group": "fetch"
@@ -1040,6 +1105,11 @@
       "member": "gate.enter_slowly",
       "file": "contracts/cases.json",
       "group": "gate_enter_slowly"
+    },
+    {
+      "member": "gate.enter_after",
+      "file": "contracts/cases.json",
+      "group": "gate_enter_after"
     },
     {
       "member": "gate.enter_later",

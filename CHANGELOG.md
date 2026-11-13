@@ -14,7 +14,9 @@
   the rule of that target, and CK-15 requires `only` without `wasm`. A constructor, a property, an iterate or a hook
   with `process_wait` is refused as one with `blocking_io` is. Verified by `make test-ts`: the test that required
   the refusal of `process_wait` held before the change, and the new test reads the token and the form of each
-  language; 436 of 436 pass. The Node and Python forms are compiled only by the end-to-end check.
+  language; 436 of 436 pass. The function `classes.attend` and the method `gate.enter_after` of `tests/e2e/classes`
+  wait with `process_wait` on PHP, Python, Node and Go, each with a case of its result and a case of its failure;
+  the Node and Python forms are compiled only by the end-to-end check of that repository.
 - The generated Go test of B-10 received one message of the standard logger from a channel after `runtime.GC()`: an
   object that the collection left made it wait without an end, a warning of an object of an earlier test failed
   it, and a second message blocked the logger, which holds its lock while it writes. The test now takes a

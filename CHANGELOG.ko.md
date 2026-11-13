@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 889181b6372fdba201b11cb36814e9ff57433704c6643b3ffa6fb4c1648bdd9c -->
+<!-- source-sha256: 8740957e15a8634aa79e53428e2fdc23509f346ca0e2d9ff96fc4e59bcfc68ae -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -14,7 +14,9 @@
   WASM에는 그런 member가 없고, 명세는 그것을 그 target의 규칙으로 적으며, CK-15가 `wasm`이 없는 `only`를 요구한다.
   `process_wait`인 constructor, property, iterate, hook은 `blocking_io`인 것처럼 거부한다. `make test-ts`로 검증했다.
   `process_wait`의 거부를 요구하던 시험은 변경 전에 성립했고, 새 시험은 각 언어의 token과 형태를 읽는다. 436개 중
-  436개가 통과한다. Node와 Python의 형태는 end-to-end 검사만 컴파일한다.
+  436개가 통과한다. `tests/e2e/classes`의 함수 `classes.attend`와 method `gate.enter_after`가 PHP, Python, Node, Go에서
+  `process_wait`로 기다리며, 각각 결과의 case 하나와 실패의 case 하나를 갖는다. Node와 Python의 형태는 그 저장소의
+  end-to-end 검사만 컴파일한다.
 - 생성된 Go의 B-10 시험은 `runtime.GC()` 뒤에 표준 logger의 메시지 하나를 channel에서 받았다. 수거가 남긴 객체는 그
   시험을 끝없이 기다리게 했고, 앞선 시험의 객체가 낸 경고는 그 시험을 실패시켰으며, 두 번째 메시지는 쓰는 동안 자기 lock을
   쥐는 logger를 막았다. 이제 시험은 자기 객체의 `weak.Pointer`를 얻어 수거가 객체를 남기면 곧바로 실패하고, writer는

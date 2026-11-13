@@ -314,6 +314,23 @@
       }
     }
   ],
+  "attend": [
+    {
+      "id": "a_name_is_attended",
+      "name": "a",
+      "result": "a was attended"
+    },
+    {
+      "id": "an_empty_name_is_missing_after_the_wait",
+      "name": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for name"
+      }
+    }
+  ],
   "fetch": [
     {
       "id": "a_name_is_fetched",
@@ -364,6 +381,44 @@
     },
     {
       "id": "a_closed_gate_lets_nothing_pass_after_a_wait",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
+    }
+  ],
+  "gate_enter_after": [
+    {
+      "id": "an_open_gate_lets_its_tag_pass_after_a_process",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a passes"
+    },
+    {
+      "id": "a_closed_gate_lets_nothing_pass_after_a_process",
       "receiver": {
         "new": "tag.gate",
         "receiver": {
