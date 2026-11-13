@@ -25,7 +25,7 @@ const TAKEN: Record<string, string[]> = {
   // Go refuses the tuple of two types in the list that words.split returns (a Go array has one element type).
   fixture: ['php', 'python', 'node', 'wasm'],
   sample: ['php', 'python', 'node'],
-  shapes: ['php', 'python', 'node'],
+  shapes: ['php', 'python', 'node', 'wasm'],
   consumer: ['php', 'python', 'node'],
   classes: ['php', 'python', 'node', 'wasm'],
 };
@@ -674,7 +674,7 @@ test('a value alias of another repository is refused by name where it is not gen
     change(parts);
     return generate({ contract: parts.contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles: parts.caseFiles, foreign: parts.foreign });
   };
-  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go'], ['wasm', undefined, 'WASM']] as const) {
+  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go']] as const) {
     assert.throws(generated(({ contract }) => {
       contract.targets.push(target);
       if (entry !== undefined) contract.packages.go = entry;
@@ -767,7 +767,7 @@ test('an error unit extends its parent, and what is not generated is refused by 
   refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
   // E-1b (a): a row that forwards the kind of another library.
   refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Sample', library: 'sample' }); }, /polyspec_consumer::Error::Sample: a kind of another library \(E-1b \(a\)\) is not generated yet/);
-  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go'], ['wasm', undefined, 'WASM']] as const) {
+  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go']] as const) {
     refused((contract) => {
       contract.targets.push(target);
       if (entry !== undefined) contract.packages.go = entry;
@@ -966,14 +966,13 @@ test('the classes that carry language code are the least set of both definitions
   assert.equal(found.carries({ list: { unit: 'bare' } }), false);
 });
 
-test('the binding crates of Python, Node and PHP turn on the locks of binding_core, and Go and WASM do not (GN-6h)', () => {
+test('every binding crate turns on the locks of binding_core (GN-6h, GN-18a)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
   contract.targets = ['php', 'python', 'node', 'go', 'wasm'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   const files = trackedPackages(contract, '0.0.0');
   const core = (path: string): string => /^polyspec-binding-core = .*$/m.exec(files.get(path) ?? '')?.[0] ?? '';
-  for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) assert.match(core(path), /features = \["construct", "lock"\] \}$/, path);
-  for (const path of ['packages/go/internal/ffi/Cargo.toml', 'packages/ts/wasm/Cargo.toml']) assert.match(core(path), /features = \["construct"\] \}$/, path);
+  for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml', 'packages/ts/wasm/Cargo.toml']) assert.match(core(path), /features = \["construct", "lock"\] \}$/, path);
 });
 
 // The repository of the end-to-end check that holds a source, defaults and error units (tests/e2e/shapes).
@@ -1073,7 +1072,14 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.throws(() => shaped((c) => { member(c, 'shapes.repeat').parameters.push({ name: ['last'], type: 'uint', required: true }); }), /shapes\.repeat: the required last follows a parameter with a default, which is not generated yet \(U-2\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.total', 'numbers').default = { empty: 'map' }; }), /the default \{empty: "map"\} of the type \{"list":"uint"\} is not generated \(U-2\)/);
   assert.throws(() => shaped((c) => { member(c, 'shapes.frame').returns = { unit: 'frame_options' }; }), /frame_options\.upper: a field default of a record with the result form is not generated yet \(T-4\)/);
-  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'wasm']; member(c, 'shapes.length').parameters[0].type = 'text'; }), /shapes\.repeat\.times: a default is not generated for wasm yet \(U-2, T-4\)/);
+  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; c.packages.go = { module: 'github.com/polyspec/shapes/packages/go' }; member(c, 'shapes.length').parameters[0].type = 'text'; }), /shapes\.repeat\.times: a default is not generated for go yet \(U-2, T-4\)/);
+  // WASM: a parameter or field that may be left out is undefined when it is, and the ES module counts it.
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasmLib, /let times: Option<u64> = in_default\(&times, \|value\| in_uint\(value, "times"\)\)\?;/);
+  assert.match(wasmLib, /const _: \(\) = assert!\(same_text\(polyspec_shapes::DEFAULT_SEPARATOR, ","\)\);/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.mjs'), /if \(args\.length < 1 \|\| args\.length > 3\) \{\n {4}throw new TypeError\(`repeat\(\) takes 1 to 3 arguments/);
+  assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
 });
 
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
@@ -1203,10 +1209,11 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   const sample = classSample(['wasm']);
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
   const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(lib, /static TABLE_TAG: RefCell<Table<polyspec_sample::Tag>> = const \{ RefCell::new\(Table::new\(\)\) \};/);
+  assert.match(lib, /static TABLE_TAG: RefCell<Table<binding_core::Shared<polyspec_sample::Tag>>> = const \{ RefCell::new\(Table::new\(\)\) \};/);
   // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn class_tag_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
-  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let this: &polyspec_sample::Tag = &held;\n {12}let result = polyspec_sample::Tag::name\(this\);/);
+  // GN-6h: a value of the class comes in from the language, so the class holds it in a lock that each call reads.
+  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let result = polyspec_sample::Tag::name\(&receiver\);/);
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_free"\)\]/);
   assert.match(lib, /\nfn in_tag\(value: &JsValue, subject: &str\) -> Result<polyspec_sample::Tag, Fail> \{\n {4}let handle = handle_of\(0, value\)\?/);
   assert.match(lib, /pub fn register\(classes: Vec<Function>, makers: Vec<Function>, readers: Vec<Function>\)/);
@@ -1237,14 +1244,15 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.match(text(withHook, 'packages/ts/wasm/generated/lib.rs'), /match result \{\}/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/index.d.ts'), /toJSON\(\): never;/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
-  // GN-18a: a member that writes its receiver is refused by name; the table shares the value that a call reads.
+  // GN-18a, GN-6h: a member that writes its receiver takes the write guard of the lock that the table holds.
   const written = classSample(['wasm']);
   const full2 = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const counter = full2.units.find((u: any) => u.id === 'counter');
   counter.members = counter.members.filter((m: any) => ['counter.new', 'counter.total', 'counter.add'].includes(m.id));
   written.units.push(counter);
-  assert.throws(() => generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), /counter\.add: the receiver &mut self is not generated for WASM yet \(B-5c, GN-18a\)/);
-  counter.members = counter.members.filter((m: any) => m.id !== 'counter.add');
+  const writing = text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(writing, /let held = held_counter\(this\)\?;\n[^\n]*\n {12}let mut receiver = held\.write\("Counter"\)\.map_err\(binding_error\)\?;/);
+  assert.match(writing, /static TABLE_COUNTER: RefCell<Table<binding_core::Exclusive<polyspec_sample::Counter>>>/);
   assert.match(text(generate({ contract: written, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() }), 'packages/ts/wasm/generated/index.mjs'), /class Counter \{/);
   // T-5: a class that no parameter takes has no conversion in; U-1: one without a constructor is made by the module only.
   const alone = classSample(['wasm']);
@@ -1477,5 +1485,16 @@ test('generate --target writes the directories of those targets alone, the files
   } finally {
     rmSync(whole, { recursive: true, force: true });
     rmSync(parts, { recursive: true, force: true });
+  }
+});
+
+test('the Rust files of the thin packages are in the form that rustfmt gives them (GN-3a)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const files = trackedPackages(contract, '0.0.0');
+  // An allow whose arguments are wider than attr_fn_like_width (70) has each argument on a line of its own.
+  assert.match(files.get('packages/go/internal/ffi/src/lib.rs') as string, /\n#!\[allow\(\n {4}unsafe_code,\n {4}reason = "B-8: [^"\n]*"\n\)\]\n/);
+  for (const [path, body] of files) {
+    if (!path.endsWith('.rs')) continue;
+    for (const found of (body as string).matchAll(/^#!\[allow\((.*)\)\]$/gm)) assert.ok((found[1] ?? '').length <= 70, `${path}: ${found[0]}`);
   }
 });

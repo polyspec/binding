@@ -10,11 +10,11 @@
 ## 범위
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
-  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP는 parameter의 타입 `source`(GN-6j)와
+  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit, 다른 레포의 record, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit, 다른 레포의 record, 다른 레포의 값 alias를 거부하고(T-3, U-3, GN-6k), Go는 타입 `source`, 기본값, 오류 unit(GN-7a)도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 아무것도 쓰지 않고
   실패한다(G-4). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -41,7 +41,9 @@
 - **GN-3a** 바인딩마다 최종 자리에 추적하는 얇은 package가 있다: `packages/<python|ts|php-ext>/Cargo.toml`, crate의 속성을
   갖고 `generated/lib.rs`를 include하는 진입 `src/lib.rs`(include된 파일은 그 속성을 가질 수 없다), 언어의 manifest
   (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
-  가리키는 Node와 PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). 코어가
+  가리키는 Node와 PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
+  rustfmt가 주는 꼴이므로 레포의 `cargo fmt --all --check`가 통과한다: allow 속성은 그 인자가 `attr_fn_like_width`(70자)에
+  들어가면 한 줄이고, 아니면 인자마다 한 줄이다. 코어가
   `packages/<component>/rust`이면(L-1) 바인딩 package와 생성 디렉터리는 `packages/<component>/<python|ts|php-ext>`이고,
   `scaffold`와 `generate`는 그 계약을 `--contract`로 받는다.
   `scaffold`는 `--out`이 있으면 그 아래에 쓰고, 아직 `todo`인 unit(CK-2)이 있어도 멈추지 않는다. 얇은 package는 패키지·이름
@@ -250,8 +252,9 @@
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
   다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, 루트가 아닌 module의 오류 unit, Go나 WASM의
-  오류 unit은 이름으로 거부한다(G-4).
+  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`, 루트가 아닌 module의 오류 unit, Go의
+  오류 unit은 이름으로 거부한다(G-4). WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
+  category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
   컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
@@ -356,7 +359,10 @@
   패키지가 내보내지 않는 모듈 `state.mjs`를 거쳐 호출하며, 이 모듈은 `WebAssembly.RuntimeError`를 internal 클래스의 kind
   `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. 모듈을 다시 인스턴스화하지
   않는다. 그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
-  `internal`을 낸다(B-7).
+  `internal`을 낸다(B-7). `bytes`는 양방향 모두 `Uint8Array`이고 `source`는 Node와 같이 문자열(그 UTF-8) 또는
+  `Uint8Array`를 받는다(GN-6j, T-7). 기본값이 있는 parameter나 field(GN-6i)는 Node와 같이 생략한다: 빠진 뒤쪽 인자, 옵션
+  record에 없는 member, 또는 `undefined`이며 모듈은 이를 `None`으로 넘긴다. ES 모듈은 인자 개수를 필수 인자 수부터 전체
+  수까지 센다.
 - **GN-18a** WASM의 class unit(T-5): ES 모듈이 정의하는 class이며 Node class의 member(GN-6b, GN-6f, GN-6g: 생성자, static
   member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
   그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
@@ -368,8 +374,9 @@
   사본을 코어에 준다(GN-6b). 엔진이 회수한 인스턴스의 값은 `FinalizationRegistry`가 버리고 그 handle은 다시 쓰인다. 인스턴스에
   `free()`가 없으므로 어떤 호출도 놓인 값을 만나지 않는다. 이 class는 wasm-bindgen의 class가 아니다: wasm-bindgen은 Rust가
   `JsValue`에서 값을 꺼낼 때 인스턴스를 포기시키고, `free()` 뒤 그 인스턴스의 호출은 kind 없는 오류로 실패한다(P-2).
-  receiver가 `&mut self`인 member는 이름으로 거부한다: 호출은 읽는 값을 공유하므로 코어가 그 값에 쓸 수 없고, 쓰는
-  값을 쥐고 두 번째 자리를 kind `busy`로 거부하는 형태(B-5c, GN-6h)는 WASM에서 아직 생성하지 않는다.
+  lock이 있는 class(GN-6h)의 값은 표가 그 lock(모든 바인딩 crate가 켜는 feature `lock`의 `binding_core::Exclusive` 또는
+  `Shared`)에 담아 두고, 호출의 자리마다 호출 동안 그 guard를 잡는다. 그래서 receiver가 `&mut self`인 member는 값에 쓰고,
+  같은 값의 두 번째 자리는 kind `busy`다(B-5c). panic은 trap이 되므로(GW-7) WASM 시험은 lock을 poison하지 않는다.
   `cleanup`(B-10)이 있는 class unit은 모든 target과 같이 이름으로 거부한다(GN-1).
 
 ## 생성 시험(G-5)
@@ -432,7 +439,7 @@
   비교하는 시험이 아직 없다), map·record field·callback 반환 안의 alias를 받는 member의 시험, 릴리스 빌드에 시험
   feature가 없다는 검사(`cargo tree`의 해석된 feature와 설치한 패키지의 export 목록). 이 검사 중 Go 부분은 e2e에
   있다(GN-13b).
-- **GN-13d** Python, Node, PHP는 GN-6i, GN-6j, GN-7a의 형태에 대해 다음도 확인한다. U-2: `{literal}`·`{const}`·`{empty}`
+- **GN-13d** Python, Node, PHP, WASM은 GN-6i, GN-6j, GN-7a의 형태에 대해 다음도 확인한다. U-2: `{literal}`·`{const}`·`{empty}`
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
   member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. Python과 Node에서 그런

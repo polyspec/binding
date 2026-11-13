@@ -82,10 +82,10 @@ export function defaultCaseValue(model: Model, arg: Arg): { value: unknown } | u
 // Whether a type names a source anywhere (T-1).
 const hasSource = (type: Type): boolean => JSON.stringify(type).includes('"source"');
 
-// G-4: Go and WASM generate none of a source, a default and an error unit yet; a contract with one of them and such a
-// target is refused by the name of the item.
+// G-4: Go generates none of a source, a default and an error unit yet; a contract with one of them and the target Go is
+// refused by the name of the item.
 export function refuseForOthers(model: Model, targets: readonly string[], refusals: Refusals): void {
-  const others = targets.filter((t) => t === 'go' || t === 'wasm');
+  const others = targets.filter((t) => t === 'go');
   if (others.length === 0) return;
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   for (const fn of fns) {

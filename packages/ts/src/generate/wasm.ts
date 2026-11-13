@@ -4,7 +4,8 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Fn, type Model, type ObjectClass, type Refusals, Unsupported, borrowedItem, coreCallArgs, langName, memberName, objectUnit, rustField, rustType, rustVariant, takesObject, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, argType, borrowedItem, coreCallArgs, errorProperties, heldNew, heldParam, heldType, langName, lockLines, memberName, objectUnit, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
@@ -19,7 +20,7 @@ export const wasmGlue = (model: Model): string => `${model.contract.library.repl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no WASM input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -42,7 +43,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(JsValue::UNDEFINED)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', bytes: 'out_bytes' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no WASM output conversion for ${type}`);
     return `${name}(${value})`;
@@ -88,6 +89,32 @@ fn in_latin1(value: &JsValue, subject: &str) -> Result<Vec<u8>, Fail> {
         .iter()
         .map(|unit| u8::try_from(unit).map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 })))
         .collect()
+}
+
+/// T-7: bytes are a Uint8Array; a typed array of another element type, or any other value, is refused.
+fn in_bytes(value: &JsValue, subject: &str) -> Result<Vec<u8>, Fail> {
+    value.dyn_ref::<Uint8Array>().map(Uint8Array::to_vec).ok_or_else(|| type_error(subject, "Uint8Array"))
+}
+
+/// T-1 source: a string, as its UTF-8 (B-3), or the bytes of a Uint8Array.
+fn in_source(value: &JsValue, subject: &str) -> Result<Vec<u8>, Fail> {
+    if value.is_string() {
+        return in_text(value, subject).map(String::into_bytes);
+    }
+    in_bytes(value, subject).map_err(|_other| type_error(subject, "string or Uint8Array"))
+}
+
+/// U-2: undefined is an argument that the caller left out, whose value the core decides; any other value is converted.
+fn in_default<T>(value: &JsValue, item: impl FnOnce(&JsValue) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+    if value.is_undefined() {
+        return Ok(None);
+    }
+    item(value).map(Some)
+}
+
+/// T-7: bytes leave as a Uint8Array of their copy.
+fn out_bytes(value: impl AsRef<[u8]>) -> Result<JsValue, Fail> {
+    Ok(Uint8Array::from(value.as_ref()).into())
 }
 
 fn in_bool(value: &JsValue, subject: &str) -> Result<bool, Fail> {
@@ -335,6 +362,20 @@ const tableName = (unit: Unit): string => `TABLE_${plainName(unit).toUpperCase()
 const rustExport = (fn: Fn): string =>
   fn.kind === 'function' ? rustField(fn.member.name) : `class_${plainName(fn.unit)}_${fn.kind === 'constructor' ? 'new' : rustField(fn.member.name).replace(/^r#/, '')}`;
 
+// GN-6h: whether the class of a member holds its value in a lock.
+const locked = (model: Model, fn: Fn): boolean => model.objects.find((o) => o.unit === fn.unit)?.lock !== undefined;
+
+// GN-6h: the name of a class in the message of kind busy and of a poisoned object.
+const classLabel = (object: ObjectClass): string => langName('wasm', object.unit.name, 'class');
+
+// T-5, GN-6h: the lines that read the value of the receiver: the reference itself, or the lock whose guard the lines
+// of lockLines take.
+function receiverLines(model: Model, fn: Fn): string[] {
+  const lines = [`        let held = held_${plainName(fn.unit)}(this)?;`];
+  if (!locked(model, fn)) return [...lines, `        let this: &${fn.unit.core_type ?? ''} = &held;`];
+  return lines;
+}
+
 // N-4 iterate: the export gives the items, or [key, value] for the entries, as an array converted when the iteration
 // starts (a snapshot of the class's value); the ES module makes it the class's Symbol.iterator.
 function iterateRust(model: Model, fn: Fn): string {
@@ -349,10 +390,9 @@ function iterateRust(model: Model, fn: Fn): string {
 #[wasm_bindgen(js_name = ${rustString(exportName(fn))})]
 pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
-        let held = held_${plainName(fn.unit)}(this)?;
-        let this: &${fn.unit.core_type ?? ''} = &held;
+${[...receiverLines(model, fn), ...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel)].join('\n')}
         let items = Array::new();
-        for item in ${fn.corePath}(this) {
+        for item in ${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'}) {
 ${body}
         }
         Ok(items.into())
@@ -368,26 +408,36 @@ function functionRust(model: Model, fn: Fn): string {
   // T-5: a method or property takes the handle of its instance first, which the ES module reads from the instance.
   const params = [...(fn.receiver === undefined ? [] : ['this: u32']), ...fn.params.map((p) => `${rustField(p.name)}: JsValue`)].join(', ');
   const lines: string[] = [];
-  if (fn.receiver !== undefined) {
-    lines.push(`        let held = held_${plainName(fn.unit)}(this)?;`, `        let this: &${fn.unit.core_type ?? ''} = &held;`);
-  }
+  if (fn.receiver !== undefined) lines.push(...receiverLines(model, fn));
+  // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
+  const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string): string =>
+    arg?.default === undefined ? convertIn(model, type, raw, subject) : `in_default(${raw}, ${closure(['value'], convertIn(model, type, 'value', subject))})`;
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
       for (const field of fn.record.unit.fields ?? []) {
         const name = langName('wasm', field.name, 'variable');
+        const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `&member(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${rustType(model, field.type)} = ${convertIn(model, field.type, raw, rustString(name))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
       }
       const recordType = fn.record.unit.core_type ?? '';
       lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${(fn.record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')} };`);
+    } else if (heldParam(model, parameter.type) !== undefined) {
+      // GN-6h: a parameter of a class with a lock is the value that its instance holds, whose lock the call takes.
+      const object = heldParam(model, parameter.type);
+      lines.push(`        let ${variable} = held_param_${plainName(object?.unit ?? fn.unit)}(&${variable}, ${rustString(langName('wasm', parameter.name, 'variable'))})?;`);
     } else {
-      lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
+      const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
+      lines.push(`        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
     }
   }
-  // The receiver is the reference above, the first argument of the core path (U-2 core.receiver).
+  // GN-6h: the guards of the places of the call, the receiver's first.
+  lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel));
+  // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2
+  // core.receiver).
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
-  const call = `${fn.corePath}(${(fn.receiver === undefined ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`;
+  const call = `${fn.corePath}(${(fn.receiver === undefined || locked(model, fn) ? callArgs : ['this', ...callArgs.slice(1)]).join(', ')})`;
   if (fn.fallible) {
     lines.push(`        let result = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(core_error(error)),\n        };`);
   } else if (fn.returns === 'none') {
@@ -419,15 +469,23 @@ function objectHelpers(model: Model, object: ObjectClass, index: number): string
   const core = object.unit.core_type ?? '';
   const table = tableName(object.unit);
   return `
-/// T-5: the value that an instance of ${jsClass} holds. A handle that names none is a fault of the ES module: kind internal.
-fn held_${plain}(handle: u32) -> Result<Rc<${core}>, Fail> {
+/// T-5: the value that an instance of ${jsClass} holds${object.lock === undefined ? '' : ', in its lock (GN-6h)'}. A handle that names none is a fault of the ES
+/// module: kind internal.
+fn held_${plain}(handle: u32) -> Result<Rc<${heldType(object)}>, Fail> {
     ${table}.with(|table| table.borrow().get(handle)).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("T-5: no value of ${jsClass} has this handle") }))
 }
 
 /// T-5: keeps a value of ${jsClass} and gives its handle.
 fn insert_${plain}(value: ${core}) -> Result<u32, Fail> {
-    ${table}.with(|table| table.borrow_mut().insert(value))
+    ${table}.with(|table| table.borrow_mut().insert(${heldNew(object, 'value')}))
 }
+${takesHeld(model, object) ? `
+/// T-5, GN-6h: a parameter of the class ${jsClass} takes an instance of it, whose lock the call takes.
+fn held_param_${plain}(value: &JsValue, subject: &str) -> Result<Rc<${heldType(object)}>, Fail> {
+    let handle = handle_of(${index}, value)?.ok_or_else(|| type_error(subject, ${rustString(jsClass)}))?;
+    held_${plain}(handle)
+}
+` : ''}
 
 /// T-5: a value of ${jsClass} leaves as a new instance, which the ES module makes around the handle of the value.
 fn out_${name}(value: ${core}) -> Result<JsValue, Fail> {
@@ -438,7 +496,9 @@ ${takesObject(model, object) ? `
 /// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
     let handle = handle_of(${index}, value)?.ok_or_else(|| type_error(subject, ${rustString(jsClass)}))?;
-    held_${plain}(handle).map(|held| ${core}::clone(&held))
+    ${object.lock === undefined ? `held_${plain}(handle).map(|held| ${core}::clone(&held))` : `let held = held_${plain}(handle)?;
+    let value = held.read(${rustString(jsClass)}, &[]).map_err(binding_error)?;
+    Ok(${core}::clone(&value))`}
 }
 ` : ''}`;
 }
@@ -473,7 +533,7 @@ fn handle_of(class: usize, value: &JsValue) -> Result<Option<u32>, Fail> {
 function objectState(model: Model, used: string): string {
   if (model.objects.length === 0) return '';
   const tables = model.objects.map((o) => `    /// T-5: the values of the instances of ${langName('wasm', o.unit.name, 'class')}.
-    static ${tableName(o.unit)}: RefCell<Table<${o.unit.core_type ?? ''}>> = const { RefCell::new(Table::new()) };`).join('\n');
+    static ${tableName(o.unit)}: RefCell<Table<${heldType(o)}>> = const { RefCell::new(Table::new()) };`).join('\n');
   const get = /\bheld_[a-z_0-9#]+\(/.test(used) ? `
     fn get(&self, handle: u32) -> Option<Rc<T>> {
         self.values.get(&handle).cloned()
@@ -536,13 +596,23 @@ pub fn class_${name}_free(this: u32) {
 `;
 }
 
+// E-2: the index of the class of a kind in CLASSES: the class of its error unit, after the classes of the categories,
+// or the class of its category.
+const kindClass = (model: Model, k: Model['kinds'][number]): number =>
+  k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
+
+// I-3: whether an error unit of the contract has a property, which the failure then carries.
+const hasProperties = (model: Model): boolean => model.errorUnits.some((u) => errorProperties(u).length > 0);
+
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
-  return `
-/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n');
+  const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
+  if (!hasProperties(model)) {
+    return `
+${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
 ${arms}
@@ -550,17 +620,46 @@ ${arms}
     Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error) }
 }
 `;
+  }
+  // E-2, I-3: the kind of an error unit with properties is an instance of its class with them, read from the core
+  // error by a second match without a wildcard.
+  const propertyArms = model.kinds.map((k) => {
+    const properties = k.unit === undefined ? [] : errorProperties(k.unit);
+    const values = properties.map(({ property }) => `(${rustString(langName('wasm', property.member.name, 'variable'))}, ${convertOut(model, property.returns, `${property.corePath}(&error)`)})`);
+    return `        ${k.variant} { .. } => ${values.length === 0 ? 'Vec::new()' : `vec![${values.join(', ')}]`},`;
+  }).join('\n');
+  return `
+${doc}
+fn core_error(error: ${model.coreError}) -> Fail {
+    let class: usize = match error {
+${arms}
+    };
+    let converted: Vec<(&'static str, Result<JsValue, Fail>)> = match error {
+${propertyArms}
+    };
+    let mut properties = Vec::new();
+    for (name, value) in converted {
+        match value {
+            Ok(value) => properties.push((name, value)),
+            Err(fail) => return fail,
+        }
+    }
+    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error), properties }
+}
+`;
 }
 
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
+  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o))].join('');
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...objectUnits].join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, functions);
+  // I-3: the conversions of the properties of the error units count as uses.
+  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
-  const jsTypes = ['Array', 'JsString', 'Object'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`));
+  const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
   const registered = model.objects.length === 0 ? '' : `
         MAKERS.with(|registered| registered.replace(makers));
         READERS.with(|registered| registered.replace(readers));`;
@@ -574,7 +673,7 @@ use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::${/\.dyn_ref::/.test(used) ? '{JsCast, JsValue}' : 'JsValue'};
+use wasm_bindgen::${/\.dyn_ref::/.test(used) || hasProperties(model) ? '{JsCast, JsValue}' : 'JsValue'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -586,7 +685,9 @@ struct Fail {
     message: String,
     kind: &'static str,
     status: Option<u16>,
-    errno: Option<i32>,
+    errno: Option<i32>,${hasProperties(model) ? `
+    // I-3: the properties of an error unit, which its instance takes as read-only own properties.
+    properties: Vec<(&'static str, JsValue)>,` : ''}
 }
 
 thread_local! {
@@ -607,8 +708,21 @@ fn throw(fail: Fail) -> JsValue {
     };
     let args = Array::of4(&JsValue::from_str(&fail.message), &JsValue::from_str(fail.kind), &status, &errno);
     CLASSES.with(|classes| match classes.borrow().get(fail.class) {
-        Some(class) => match Reflect::construct(class, &args) {
-            Ok(error) | Err(error) => error,
+        Some(class) => match Reflect::construct(class, &args) {${hasProperties(model) ? `
+            Ok(error) => {
+                for (name, value) in fail.properties {
+                    let descriptor = Object::new();
+                    let defined = Reflect::set(&descriptor, &JsValue::from_str("value"), &value)
+                        .and_then(|_set| Reflect::set(&descriptor, &JsValue::from_str("enumerable"), &JsValue::TRUE))
+                        .and_then(|_set| Reflect::define_property(error.unchecked_ref::<Object>(), &JsValue::from_str(name), &descriptor));
+                    if let Err(thrown) = defined {
+                        return thrown;
+                    }
+                }
+                error
+            }
+            Err(error) => error,` : `
+            Ok(error) | Err(error) => error,`}
         },
         None => JsValue::from_str(&format!("B-4: the library classes are not registered: {}", fail.message)),
     })
@@ -624,7 +738,7 @@ fn binding_error(error: BindingError) -> Fail {
         Category::Busy => ${classIndex('busy')},
         Category::Internal => ${classIndex('internal')},
     };
-    Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno() }
+    Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno()${hasProperties(model) ? ', properties: Vec::new()' : ''} }
 }
 ${coreErrorRust(model)}${raisesAssertions(model)}
 /// B-7: a panic of the call reaches the caller as kind internal where the module unwinds; a module built with
@@ -652,8 +766,8 @@ mod exports {
     /// B-4: the module keeps the library classes when it loads; a missing class fails the load.
     #[wasm_bindgen(js_name = "__register")]
     pub fn register(classes: Vec<Function>${model.objects.length === 0 ? '' : ', makers: Vec<Function>, readers: Vec<Function>'}) -> Result<(), JsValue> {
-        if classes.len() != ${model.classes.length} {
-            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length} library classes, {} given", classes.len())));
+        if classes.len() != ${model.classes.length + model.errorUnits.length} {
+            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length + model.errorUnits.length} library classes, {} given", classes.len())));
         }
         CLASSES.with(|registered| registered.replace(classes));${registered}
         Ok(())
@@ -681,7 +795,7 @@ const jsBase = (category: string): string => ({ value: 'RangeError', type: 'Type
 
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', none: 'void', never: 'never' };
+    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
@@ -707,16 +821,32 @@ export class ${c.name} extends globalThis.${jsBase(c.category)} {
     });
   }
 }`).join('\n');
+  // E-2: an error unit extends the class of its parent or of its category; the module defines its properties (I-3).
+  const units = model.errorUnits.map((u) => {
+    const name = langName('wasm', u.unit.name, 'class');
+    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('wasm', u.parent.unit.name, 'class');
+    return `
+export class ${name} extends ${parent} {
+  constructor(message, kind, status, errno) {
+    super(message, kind, status, errno);
+    Object.defineProperty(this, 'name', { value: ${jsString(name)}, configurable: true, writable: true });
+  }
+}`;
+  }).join('\n');
   const internal = model.classes.find((c) => c.category === 'internal')?.name ?? '';
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7); then the
   // call of the module, with the handle of the instance first for a member that has a receiver (T-5).
   const checked = (fn: Fn, label: string, exported: string, wrap: (call: string) => string): string => {
     const count = fn.params.length;
-    const lines = [`  if (args.length !== ${count}) {`, `    throw new TypeError(\`${label} takes ${count} argument${count === 1 ? '' : 's'}, \${args.length} given\`);`, '  }'];
+    // U-2: the parameters that may be left out are the last ones; a record parameter is required.
+    const least = fn.params.filter((p) => p.default === undefined || (fn.record !== undefined && p === fn.record.param)).length;
+    const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
+    const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
     const passed = fn.params.map((p, i) => {
       if (fn.record !== undefined && p === fn.record.param) {
         const names = (fn.record.unit.fields ?? []).map((f) => langName('wasm', f.name, 'variable'));
-        lines.push(`  checkRecord(${jsString(label)}, ${jsString(langName('wasm', p.name, 'variable'))}, args[${i}], [${names.map(jsString).join(', ')}]);`);
+        const required = (fn.record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => langName('wasm', f.name, 'variable'));
+        lines.push(`  checkRecord(${jsString(label)}, ${jsString(langName('wasm', p.name, 'variable'))}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
@@ -807,7 +937,7 @@ const released = new FinalizationRegistry(([free, handle]) => {
   return `${header('//')}
 import load, * as glue from './${glue}.js';
 import { ${model.objects.length === 0 ? 'enter' : 'broken, enter'} } from './state.mjs';
-${classes}
+${classes}${units}
 ${objectState}${objects === '' ? '' : `${objects}\n`}
 // GW-5: the import loads the WebAssembly module (top-level await), so no export runs before it is ready. A file: URL
 // is read from the file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
@@ -815,7 +945,7 @@ const url = new URL('./${glue}_bg.wasm', import.meta.url);
 const source = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
-glue.__register([${model.classes.map((c) => c.name).join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
+glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class'))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
 
 // T-7: a list parameter takes any iterable but a string; the module judges anything else.
 function toList(value) {
@@ -837,14 +967,14 @@ function fromEntries(value) {
   return value === null ? null : new Map(value);
 }
 
-// G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent; a value
-// that is not an object is judged by the module.
-function checkRecord(fn, name, record, fields) {
+// G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent, which
+// only a field with a default may be (U-2); a value that is not an object is judged by the module.
+function checkRecord(fn, name, record, fields, required) {
   if (typeof record !== 'object' || record === null) return;
   for (const key of Object.keys(record)) {
     if (!fields.includes(key)) throw new TypeError(\`\${fn}: \${name} has no member \${key}\`);
   }
-  for (const field of fields) {
+  for (const field of required) {
     if (record[field] === undefined) throw new TypeError(\`\${fn}: \${name} lacks the member \${field}\`);
   }
 }
@@ -888,20 +1018,27 @@ export declare class ${c.name} extends ${jsBase(c.category)} {
   readonly status: number | null;
   readonly errno: number | null;
 }`).join('\n');
+  const errorUnits = model.errorUnits.map((u) => `
+/** The errors of the unit ${u.unit.id} (E-2). */
+export declare class ${langName('wasm', u.unit.name, 'class')} extends ${u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('wasm', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('wasm', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
+}`).join('\n');
+  // U-2: the declaration shows a {literal} or {const} default.
+  const shown = (a: Arg): string => {
+    const value = declaredValue(model, a)?.value;
+    return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
+  };
   const enums = model.enums.map((u) => `
 /** T-6. */
 export type ${langName('wasm', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
   const records = model.records.map((u) => `
 /** T-4: the options record; a member whose value is undefined is absent. */
 export interface ${langName('wasm', u.name, 'class')} {
-${(u.fields ?? []).map((f) => `  readonly ${langName('wasm', f.name, 'variable')}: ${tsType(model, f.type, true)};`).join('\n')}
+${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('wasm', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
 }`).join('\n');
-  const fns = model.functions.map((fn) => {
-    const params = fn.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, true)}`);
-    return `export declare function ${langName('wasm', fn.member.name, 'callable')}(${params.join(', ')}): ${tsType(model, fn.returns, false)};`;
-  }).join('\n');
+  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('wasm', p.name, 'variable')}${p.default === undefined || (fn.record !== undefined && p === fn.record.param) ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const fns = model.functions.map((fn) => `export declare function ${langName('wasm', fn.member.name, 'callable')}(${fn.params.map((p) => param(fn, p)).join(', ')}): ${tsType(model, fn.returns, false)};`).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('wasm', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
-  const params = (fn: Fn): string => fn.params.map((p) => `${langName('wasm', p.name, 'variable')}: ${tsType(model, p.type, true)}`).join(', ');
+  const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
   const objects = model.objects.map((o) => {
     const lines = o.members.map((fn) => {
       const name = memberName('wasm', fn);
@@ -923,7 +1060,7 @@ ${lines.join('\n')}
 }`;
   }).join('\n');
   return `${header('//')}
-${classes}
+${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
 ${records}${objects === '' ? '' : `\n${objects}`}
 
@@ -941,10 +1078,6 @@ export function refuseForWasm(model: Model, refusals: Refusals): void {
   }
   for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for WASM yet`);
   for (const callback of model.callbacks) refusals.refuse(`${callback.unit.id}: a callback unit is not generated for WASM yet`);
-  // GN-18a: a table shares the value of an instance with the call that reads it, so the core cannot write it.
-  for (const writer of model.objects.flatMap((o) => o.members).filter((m) => m.receiver === '&mut self')) {
-    refusals.refuse(`${writer.member.id}: the receiver &mut self is not generated for WASM yet (B-5c, GN-18a)`);
-  }
   // L-2a: a host Node package keeps its binding crate in native/, where the WASM crate has no place yet.
   if ((model.contract.packages['node'] as { host?: boolean } | undefined)?.host === true) refusals.refuse('the WASM binding of a host Node package is not generated yet (L-2a)');
 }

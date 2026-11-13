@@ -15,15 +15,15 @@ the design ids are those of the binding design.
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
   repository, GN-6k), enums, constants, error classes and error units (GN-7a),
-  and for Python, Node and PHP the type `source` of a parameter (GN-6j) and the defaults of parameters and record fields
-  (GN-6i).
+  and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
+  fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit, a record of
-  another repository and a value alias of another repository (T-3, U-3, GN-6k), and the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  another repository and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything (G-4). An item (a unit, a member, a field, a row of the kinds) is named with the
@@ -56,7 +56,10 @@ the design ids are those of the binding design.
   entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
   them), the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
   needs beside the crate, and a file of the crate that does not depend on the contract (the `build.rs` of Node and of
-  PHP, which the manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
+  PHP, which the manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. Each Rust
+  file is in the form that rustfmt gives it, so `cargo fmt --all --check` of the repository passes: an allow attribute
+  is on one line while its arguments fit `attr_fn_like_width` (70 characters) and else has each argument on a line of
+  its own. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
   `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
   `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
@@ -302,7 +305,9 @@ the design ids are those of the binding design.
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
   `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
-  an error unit in a module other than the root, and an error unit for Go or WASM are refused by name (G-4).
+  an error unit in a module other than the root, and an error unit for Go are refused by name (G-4). WASM generates an
+  error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
+  the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
   core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
@@ -427,7 +432,10 @@ the design ids are those of the binding design.
   allow. The standard library of `wasm32-unknown-unknown` is built with `panic=abort`, so `catch_unwind` catches no
   panic there and a panic traps (GW-7): every export runs its call through `state.mjs`, a module that the package does
   not export, which turns a `WebAssembly.RuntimeError` into kind `internal` of the internal class and marks the
-  instance broken; every later call fails with the same kind. The module is not instantiated again, because the state
+  instance broken; every later call fails with the same kind. `bytes` is a `Uint8Array` both ways and a `source` takes a
+  string, as its UTF-8, or a `Uint8Array`, as in Node (GN-6j, T-7). A parameter or a field with a default (GN-6i) is left
+  out as in Node: a missing trailing argument, a missing member of the options record, or `undefined`, which the module
+  passes as `None`; the ES module counts the arguments from the required ones to all of them. The module is not instantiated again, because the state
   that earlier handles point to would be gone. Where the module unwinds, `catch_unwind` gives kind `internal` as in
   every binding (B-7).
 - **GN-18a** WASM, a class unit (T-5): a class that the ES module defines, with the members of the Node class (GN-6b,
@@ -443,9 +451,11 @@ the design ids are those of the binding design.
   a copy of the value (GN-6b). A `FinalizationRegistry` drops the value of an instance that the engine collected, and its
   handle is used again; an instance has no `free()`, so no call meets a released value. The class is not a class of
   wasm-bindgen: wasm-bindgen gives up the instance when Rust takes its value from a `JsValue`, and after its `free()` a
-  call of the instance fails with an error that has no kind (P-2). A member with the receiver `&mut self` is refused
-  by name: a call shares the value that it reads, which the core cannot write, and the form that holds a written
-  value and refuses its second place as kind `busy` (B-5c, GN-6h) is not generated for WASM yet. A class unit with
+  call of the instance fails with an error that has no kind (P-2). The table holds the value of a class that has a lock
+  (GN-6h) in that lock (`binding_core::Exclusive` or `Shared`, of the feature `lock` that every binding crate turns on),
+  and each place of a call takes its guard for the call, so a member with the receiver `&mut self` writes the value
+  and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
+  class unit with
   `cleanup` (B-10) is refused by name, as for every target (GN-1).
 
 ## Generated tests (G-5)
@@ -524,7 +534,7 @@ the design ids are those of the binding design.
   return of a callback; and the check that no release build has a test feature (the resolved features of
   `cargo tree`, and the export list of each installed package), of which the end-to-end check has the part of Go
   (GN-13b).
-- **GN-13d** Python, Node and PHP also check, for the shapes of GN-6i, GN-6j and GN-7a: U-2, for every parameter or
+- **GN-13d** Python, Node, PHP and WASM also check, for the shapes of GN-6i, GN-6j and GN-7a: U-2, for every parameter or
   field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language

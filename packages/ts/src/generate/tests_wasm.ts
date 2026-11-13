@@ -1,8 +1,8 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, hookCall, langName } from './model.ts';
-import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, errorUnitOfKind, hookCall, langName } from './model.ts';
+import { type Context, type Receiver, bytesKind, callArgs, callables, caseValue, isNumber, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 
@@ -25,7 +25,13 @@ export function wasmTests(model: Model): string {
     },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
+  const exactClass = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : langName('wasm', unit.unit.name, 'class');
+  };
   const out: string[] = [];
+  let usesOutcome = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
@@ -40,7 +46,7 @@ export function wasmTests(model: Model): string {
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
   const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
+    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -75,6 +81,27 @@ test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
+      if (arg.default !== undefined) {
+        out.push(`
+test('U-2: ${name} takes null in ${argName} as a value', () => {
+  assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
+});`);
+      }
+      const bytes = bytesKind(arg.type);
+      if (bytes !== undefined) {
+        out.push(`
+test('T-7: ${name} refuses a ${argName} that is not ${bytes === 'source' ? 'a string or a Uint8Array' : 'a Uint8Array'}', () => {
+  for (const bad of [1, new Uint16Array(1), [1]${bytes === 'source' ? '' : ", 'a'"}]) {
+    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+  }
+});`);
+      }
+      if (bytes === 'source') {
+        out.push(`
+test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
+});`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
@@ -84,13 +111,22 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
 });`);
       }
     }
+    for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
+      usesOutcome = true;
+      const argName = langName('wasm', pair.arg.name, 'variable');
+      out.push(`
+test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
+  assert.deepStrictEqual(outcome(() => ${target(callArgs(model, ctx, fn, pair.left))}), outcome(() => ${target(callArgs(model, ctx, fn, pair.right))}));
+});`);
+    }
     for (const kase of raisingCases(model, fn)) {
-      const args = callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null));
+      const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
       const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
       out.push(`
 test('B-4: ${name} ${kase.id}', () => {
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
-    error.constructor === pkg.${cls(kase.raises.category)} &&
+    error.constructor === pkg.${exactClass(kase.raises)} &&
+    error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
@@ -111,12 +147,12 @@ test('N-4: ${name} ${kase.id}', () => {
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('wasm', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
   const positional = [${fn.args.filter((a) => !a.field).map(values).join(', ')}];
   assert.throws(() => ${target('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
-  for (const field of Object.keys(fields)) {
+  for (const field of [${(record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => jsString(langName('wasm', f.name, 'variable'))).join(', ')}]) {
     const lacking = { ...fields, [field]: undefined };
     assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     out.push(`
-test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 0 ? '' : `
+test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined && p !== fn.record?.param) ? '' : `
   assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
@@ -125,7 +161,16 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as pkg from ${jsString(entry)};
-${out.join('\n')}
+${usesOutcome ? `
+// G-5: what a call gives: its result, or the class and the kind of its failure.
+function outcome(call) {
+  try {
+    return { result: call() };
+  } catch (error) {
+    return { error: error.constructor, kind: error.kind };
+  }
+}
+` : ''}${out.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.
 test('B-7: a panic is kind internal, and a trap breaks the instance for every later call', async () => {
