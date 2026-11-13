@@ -1326,7 +1326,7 @@ test('a tuple enters as the sequence of exactly its parts in each language (T-1,
 
 test('a value enters the core in its own integer and tuple type and leaves it from that type (T-1, GN-6u)', () => {
   const out = shaped();
-  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
     const rust = text(out, path);
     // The trait narrows with TryFrom, so a value outside the core's type is kind invalid_number (B-2).
     assert.match(rust, /trait IntoCore<T> \{\n {4}fn into_core\(self, subject: &str\) -> Result<T, BindingError>;/, path);
