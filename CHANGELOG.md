@@ -5,6 +5,92 @@
 
 ## Unreleased
 
+- The check of a class without `core_type` on a target that does not generate it has the id CK-78; it had the id of
+  another check. The specification, the finding and the tests name CK-78, and the rule of the check is unchanged.
+  Verified by `make test-ts`: the two tests of its finding failed before the check reported the new id.
+- The generated Node and WASM tests of B-10 took the first `ResourceWarning` of the process after `gc()` and
+  compared its message, so a contract with two classes with `cleanup` failed when the collection finalized an
+  object of an earlier test first: the end-to-end check of `tests/e2e/classes` failed once on Node with the warning
+  of `Stall` in the test of `Lease`. Each test now awaits the warning whose message is the warning of its class
+  (GN-6p). Verified by `make test-ts`, whose test reads the generated tests of both targets.
+- A member with `wait: process_wait` was refused by name on every target. The generator now takes it (GN-6m): the
+  core call gets `binding_core::ProcessWait::for_generated_call()` in the place of the `Io` token; PHP, Python
+  `<name>` and Go wait on the calling thread as for `blocking_io`; Python `a<name>` runs `<name>` on a thread of its
+  own, which settles a future of the running loop, and not in `asyncio.to_thread`, whose executor every `to_thread`
+  shares; Node runs the core call on a thread of its own and settles the promise on the JavaScript thread
+  (`Env::create_deferred`), and not on the libuv pool. WASM has no such member, which the specification states as
+  the rule of that target, and CK-15 requires `only` without `wasm`. A constructor, a property, an iterate or a hook
+  with `process_wait` is refused as one with `blocking_io` is. Verified by `make test-ts`: the test that required
+  the refusal of `process_wait` held before the change, and the new test reads the token and the form of each
+  language; 436 of 436 pass. The function `classes.attend` and the method `gate.enter_after` of `tests/e2e/classes`
+  wait with `process_wait` on PHP, Python, Node and Go, each with a case of its result and a case of its failure;
+  the Node and Python forms are compiled only by the end-to-end check of that repository.
+- The generated Go test of B-10 received one message of the standard logger from a channel after `runtime.GC()`: an
+  object that the collection left made it wait without an end, a warning of an object of an earlier test failed
+  it, and a second message blocked the logger, which holds its lock while it writes. The test now takes a
+  `weak.Pointer` of its object and fails at once when the collection left the object, the writer keeps every
+  message and never blocks, and the test reads the messages until the warning of its class (GN-6p). A cleanup
+  function that ran without its warning would still leave the test waiting; the unit test of the generator reads
+  that function. `make test-rust` and `make lint-rust` pass with `clean` and `cleaned` of the locks of
+  binding_core. Verified by `make test-ts`: the test of the generated Go test failed before the change.
+- The contract check reported less than the generator refused, and the checks of the waiting constructor, of a
+  constructible class, of the core enum of a variant and of a cleanup that leaves its object have the ids CK-73,
+  CK-74, CK-75 and CK-76. CK-73 now judges a host unit too: a `constructor`, a `property`, an `iterate` or a hook of
+  a host unit with a `wait` other than `none` is a finding, because the language has no awaited form of them in
+  code written by hand either; the test that held the exemption read a contract that failed the schema, so it
+  judged nothing. CK-78 is new: a class without `core_type` whose targets, those of its `only` or of the contract,
+  hold PHP or Go is a finding that names the unit and those targets, because only Python, Node and WASM generate
+  such a class (GN-6af). The specification states that the core type of a class with `cleanup` releases its
+  resources in its `Drop`, and that the contract check, which reads no Rust source, does not verify it (GN-6p,
+  CK-76); the finding of CK-76 says so. The classes without `core_type` of the fixture of the contract check name
+  `only` or their `core_type`. Verified by `make test-ts`: the five changed or new tests of a finding failed before
+  the change, and 419 of 419 pass.
+- A class unit whose `cleanup` names a method with the core receiver `&mut self` was refused by every target as "no
+  method with the receiver self". The generator now takes both forms (GN-6p): a cleanup with `self` consumes its
+  object as before, and a cleanup with `&mut self` leaves the object, whose core decides what a later member gives.
+  The call of such a cleanup marks the lock of the object when it holds the write guard (`clean` of
+  `binding_core::Exclusive` and `Shared`, with `cleaned`), and the destructor of each of the five targets warns only
+  for an object that is neither consumed nor marked. No destructor calls the cleanup member, so a cleanup that waits
+  is never called where nothing can wait; the `Drop` of the core type releases the resource. The contract check
+  requires a case that calls such a cleanup a second time without a failure (CK-76). The class `stall` of
+  `tests/e2e/classes` has such a cleanup, a case of its second call and a case of a member that fails with kind
+  `shut` after it. Verified by `make test-ts`: the two tests of the finding of CK-76 failed before the check was
+  written, and 414 of 414 pass.
+- Go and WASM refused a method with the receiver `self` and a class unit with `cleanup` by name. Both now generate
+  them as PHP, Python and Node do: the place of the receiver takes the value out of the lock that the table of the
+  class keeps under the handle, a later place of that object is kind `consumed`, and the binding crate asserts
+  `binding_core::Cleanup` (GN-6o, GN-6p). An object collected without its cleanup call warns with the message of
+  B-10: the function of `runtime.AddCleanup` in Go through `log.Print` of the standard logger, and the callback of the
+  `FinalizationRegistry` in WASM through `process.emitWarning` with the type `ResourceWarning`, or `console.warn` in a
+  host without it; the cleanup member is the explicit release, and no second member is generated. The Go `Ref` of an
+  instance holds a pointer, because the cleanup of an object without one runs only when every object of its
+  allocation block is unreachable. G-5 generates the test of kind `consumed` and the B-10 test for both targets. The
+  members of `lease` of `tests/e2e/classes` name the five targets. Verified by `make test-ts`: the test of GN-6o and
+  GN-6p failed with the four refusals before the change.
+- A Go member with `wait: async_driver` was refused by name. Go now generates it as PHP does: the cgo call of the
+  member runs the future in `binding_core::driver::block_on` on the OS thread of the calling goroutine, the entry
+  point holds the guards of its places until the result is converted, and a member with `machine` is driven by
+  `binding_core::machine::drive` on that thread; the runtime is the one of the process, which no object owns (GN-6n,
+  GN-6ab). The Go crate of a contract with such a member turns on the feature `driver` of binding_core. The members
+  `classes.fetch`, `classes.settle` and `gate.enter_later` of `tests/e2e/classes` name Go. Verified by `make test-ts`.
+- A Go member with `wait: blocking_io` was refused by name. Go now generates it: the cgo call of the member calls
+  the core on the OS thread of the calling goroutine and returns when the core returns, the entry point of the C ABI
+  holds the locks of its places across the wait, and the member has the form of a member that does not wait (GN-6m);
+  a member that reaches language code calls its callback on that thread (GN-6q). The members `classes.read` and
+  `gate.enter_slowly` of `tests/e2e/classes` name Go, and the class `usher` with the callback `guide` is a member with
+  `blocking_io` that reaches language code; `cases_test.go` of that repository calls one usher from two goroutines,
+  the second while the guide of the first holds its call inside the core, and requires both results. Verified by
+  `make test-ts`: the tests of GN-6m and GN-6q failed with the refusal before the change. The end-to-end check of
+  `tests/e2e/classes` is the evidence of the five targets.
+- A contract error that `binding check` passed was first reported by `binding generate` as a refusal. The contract
+  check now reports three of them. CK-73: a `constructor`, a `property`, an `iterate` or a hook (`stringify`,
+  `to_json`, `primitive`) of a unit that is no host unit with a `wait` other than `none` is a finding that names the
+  member, its wait and the member that can wait in its place, a static member that makes the instance or a method
+  that gives the value or the items (GN-6m, GN-6n, N-4). CK-74: a class with `core_type` that has no constructor and
+  no `constructible: false`, or `constructible: false` and a constructor, is a finding (U-1). CK-75: a `variant` unit
+  of the origin `generated` without `core_type` is a finding (T-9). The refusals of the generator stay. Verified by
+  `npm test` in `packages/ts`: the 12 new tests of a finding failed before the change, each for its missing finding,
+  and `tests/contract-check.test.ts` passes 246 of 246 with it.
 - The end-to-end check ran on macOS alone: `.github/workflows/ci.yml` ran no end-to-end check, so no run tested the five
   targets, or the released form of the Go module, on Linux, where a release is built and used. The workflow now has the
   job `e2e`, which runs `make e2e` of each repository of `tests/e2e` (classes, consumer with sample, plot with points,

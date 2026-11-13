@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
@@ -966,8 +966,14 @@ func ${bindingFn(fn)}(args []byte) (*Reader, error) {
 }
 `).join('');
   const releases = model.objects.map((o) => `
-// ${releaseFn(o.unit)} releases the value of an instance of ${goName(o.unit.name)} (T-5).
-func ${releaseFn(o.unit)}(handle uint64) { C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) }
+// ${releaseFn(o.unit)} releases the value of an instance of ${goName(o.unit.name)} (T-5).${o.cleanup === undefined ? `
+func ${releaseFn(o.unit)}(handle uint64) { C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) }` : `
+// GN-6p, B-10: a value that its cleanup call did not consume is released here, and the standard logger warns.
+func ${releaseFn(o.unit)}(handle uint64) {
+	if C.${releaseSymbol(model, o.unit)}(C.uint64_t(handle)) != 0 {
+		log.Print(${goString(cleanupWarning(goName(o.unit.name), goMemberName(o.cleanup)))})
+	}
+}`}
 `).join('');
   const types = goErrorTypes(model.contract).map(([category, name]) => `
 // ${name} is an error of category ${category} (E-7).
@@ -1027,10 +1033,10 @@ func Recognize${goName(u.unit.name)}(err error) error {
   const back = callsBack(model);
   const others = [
     `void ${p}__free(${p}_buffer buffer);`,
-    ...model.objects.map((o) => `void ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
+    ...model.objects.map((o) => `${o.cleanup === undefined ? 'void' : 'int32_t'} ${releaseSymbol(model, o.unit)}(uint64_t handle);`),
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 ? ['errors'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1090,12 +1096,17 @@ func invoke(fn entry, args []byte) (*Reader, error) {
 }
 ${calls}${releases}${model.objects.length === 0 ? '' : `
 // Ref is the handle of the value of an instance of a class unit (T-5), which the release function frees when the Go
-// runtime finds the Ref unreachable.
-type Ref struct{ handle uint64 }
+// runtime finds the Ref unreachable. It keeps the release function, a pointer, so that the runtime allocates it on its
+// own: an object without a pointer shares a block with other small objects, and its cleanup runs only when every
+// object of the block is unreachable.
+type Ref struct {
+	handle  uint64
+	release func(uint64)
+}
 
 // NewRef holds a handle that a call gave and releases it with release.
 func NewRef(handle uint64, release func(uint64)) *Ref {
-	ref := &Ref{handle: handle}
+	ref := &Ref{handle: handle, release: release}
 	runtime.AddCleanup(ref, release, handle)
 	return ref
 }
@@ -2295,10 +2306,6 @@ import (
 // G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
 // that a member names.
 export function refuseForGo(model: Model, refusals: Refusals): void {
-  // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
-  for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
-  // GN-6n: so does a Go member with wait async_driver.
-  for (const fn of callablesOf(model).filter(waitsAsync)) refusals.refuse(`${fn.member.id}: wait async_driver is not generated for Go yet (GN-6n)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records, ...model.variants.map((v) => v.unit)].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {

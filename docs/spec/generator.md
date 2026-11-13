@@ -18,8 +18,8 @@ the design ids are those of the binding design.
   repository, GN-6k), enums, constants, error classes and error units (GN-7a), variant units (GN-6v), the callback
   interfaces of this contract that a class implements (GN-6w),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
-  `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
+  fields (GN-6i), a method with the receiver `self` (GN-6o) and a class unit with
+  `cleanup` (GN-6p), and for Python, Node, PHP and Go a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
   callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, an abstract class, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
@@ -863,13 +863,35 @@ the design ids are those of the binding design.
     `internal` (B-7). The JavaScript entry of the member is an async function, so that every failure, also one of the
     arguments, rejects the promise and none is thrown at the call. The declarations name `Promise<T>`, and the
     generated tests await the call.
-  - Go hands the work to the core in a cgo call that returns at once; the calling goroutine waits on the completion
-    channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
-    thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
+  - Go calls the core in the cgo call of the member, on the OS thread of the calling goroutine, and the call returns
+    when the core returns (B-8). The Go runtime treats a cgo call as a blocking call: the goroutine keeps its thread
+    until the call returns, and the runtime runs the other goroutines on other threads, so a call that waits holds one
+    OS thread and stops no other goroutine. The entry point of the C ABI takes the locks of its places on that thread
+    before the core call and holds them until the result is converted (GN-6h): the class of a member with the receiver
+    `&self` that waits is held in `Shared`, so two goroutines wait in one object at the same time, and a call that
+    needs a write place of that object while a call waits in it fails with kind `busy`. Go has one form of a function,
+    so the member has the name and the results of a member that does not wait, and its caller starts a goroutine where
+    it must not wait. No call is cancelled: the token `Io` carries no cancellation, and the type `cancel` is not
+    generated (GN-13), so the member takes no `context.Context`.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
-  hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
+  hook in its own protocol, which awaits nothing.
+  A member with `wait: process_wait` (B-5 (b)) waits until another process acts, so its wait may last as long as that
+  process. It passes `binding_core::ProcessWait::for_generated_call()` in the place of the `Io` token and has the
+  forms of a member with `blocking_io`, also where it reaches language code (GN-6q), except where that form waits on a
+  thread of a pool that other calls share:
+  - Python: `a<name>` runs `<name>` on a thread of its own (`threading.Thread`), which gives its result or its
+    exception to a future of the running loop through `loop.call_soon_threadsafe`, and not in `asyncio.to_thread`,
+    because every `to_thread` of the program shares the threads of the default executor, and a wait that lasts as long
+    as a process would hold one of them. A future that was cancelled takes no result.
+  - Node: the core call runs on a thread of its own (`std::thread`), and its result or error settles the promise on
+    the JavaScript thread (`Env::create_deferred`), and not on the libuv pool, whose threads the file system and DNS
+    calls of the program share. A panic of the call rejects the promise with kind `internal` (B-7).
+  - PHP, Python `<name>` and Go wait on the calling thread, as for `blocking_io`.
+  - WASM has no such member, and this is the rule of that target and no gap of the generator: a WebAssembly module
+    has no processes and cannot block its one thread, so the contract gives the member `only` without `wasm` (Q-4,
+    CK-15).
 - **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
   generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs;
   WASM, which has no tokio runtime, runs it on the event loop of JavaScript.
@@ -884,7 +906,13 @@ the design ids are those of the binding design.
   - Node returns a `Promise`: the future runs on the tokio runtime of napi (`Env::spawn_future_with_callback`, the
     napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
-  - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
+  - Go runs the future in `binding_core::driver::block_on` in the cgo call of the member, on the OS thread of the
+    calling goroutine, as PHP does: that thread polls the future, the tasks that the core starts run on the worker
+    threads of the runtime, and the call returns when the future ends, so the goroutine keeps its thread as GN-6m
+    states. The entry point holds the guards of its places until the result is converted. The runtime is the one of
+    the process, which `block_on` makes at the first such call and which lives until the process ends: no object owns
+    it, so the release of the last object stops no thread, and a connection that a core keeps is closed by the drop of
+    the core value that holds it. No call is cancelled, as GN-6m states.
   - WASM returns a `Promise` of `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the
     future on the thread of the module, in a browser as in Node, and its result or error is converted when it ends,
     so a failure rejects the promise. The WASM crate depends on `wasm-bindgen-futures` of the release that pins its
@@ -903,14 +931,27 @@ the design ids are those of the binding design.
   from the call on. Every later place of that object, as the receiver or as a parameter, fails with kind `consumed` of
   category `type` (E-1a), before any argument reaches the core. A member that waits takes the value on the calling
   thread and moves it into its work or its future (GN-6m, GN-6n). G-5 generates for each such member a test that calls
-  it and then another member of the same object, which fails with kind `consumed`. PHP, Python and Node generate it;
-  Go and WASM refuse such a member by name until their wrapper takes the value (G-4). Why: a value that the core owns
+  it and then another member of the same object, which fails with kind `consumed`. Every target generates it: in Go
+  and WASM the table of the class keeps the emptied lock under the handle of the object until the object is
+  collected, so a later place of that handle is kind `consumed`. Why: a value that the core owns
   after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
-- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o); another
-  member is refused by name. The binding crate asserts at compile time that the core type of such a unit implements
+- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o) or
+  `&mut self`; another member is refused by name. A cleanup with `self` consumes the object, and every later use of it
+  is kind `consumed` (GN-6o). A cleanup with `&mut self` leaves the object: the core keeps that the cleanup was made
+  and decides what each later member gives, by a kind of its own, and a caller may call the cleanup again, so the
+  contract holds a case in which a second call of the cleanup does nothing (CK-76). The generated call of such a
+  cleanup marks the lock of the object (`clean` of `binding_core::Exclusive` or `Shared`) when it holds the write
+  guard of the receiver, before the core call and whatever the core then gives. The destructor of no target calls the
+  cleanup member: a cleanup may wait (`blocking_io`), and a destructor has no place to wait, because PHP frees an
+  object inside any statement, Python and Node finalize where the interpreter must not block, the Go runtime runs
+  every cleanup function on one goroutine, and the callback of a `FinalizationRegistry` is a task of the event loop.
+  The release at destruction is the `Drop` of the core type, which takes no token, and a cleanup that waits is called
+  as any member that waits (GN-6m). So the core type of a class with `cleanup` releases in its `Drop` every resource
+  that the cleanup member would release, when the cleanup was not called; this is the duty of the core, which the
+  contract check does not verify, because it reads no Rust source (CK-76). The binding crate asserts at compile time that the core type of such a unit implements
   `binding_core::Cleanup` and that the core type of every other class unit does not (an ambiguous trait implementation,
   which fails to compile when the type implements it), so that a resource that needs a cleanup call is not missing
-  from the contract. When an object whose value was not consumed is destroyed, its destructor drops the core value,
+  from the contract. When an object whose value was not consumed and whose lock is not marked is destroyed, its destructor drops the core value,
   whose `Drop` releases the resource, and warns that the cleanup call was not made, with the message
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)`:
   - PHP raises `E_WARNING` when the object is freed, and PHP puts the name of the running function before the message
@@ -919,12 +960,26 @@ the design ids are those of the binding design.
     raised while it runs (the object may be a temporary of the failed call) and sets it again after the warning, because
     a warning call with an exception set fails;
   - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
-  Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
-  generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
+  - Go: the function that `runtime.AddCleanup` runs when the struct is collected (GN-15a) releases the value through
+    `<prefix>__release_<class>`, which answers whether the lock still held its value, and then warns with `log.Print`
+    of the standard logger, whose output a program sets with `log.SetOutput`. Go collects an object at a time that the
+    program does not choose, and a program may end before it, so the cleanup member is the explicit release of the
+    class; no second member such as `Close` is generated.
+  - WASM: the callback of the `FinalizationRegistry` of the ES module (GN-18a) drops the value through
+    `__<Class>_free`, which answers whether the lock still held its value, and then warns with `process.emitWarning`
+    and the type `ResourceWarning` where the host has that function (Node), as the Node binding does, and with
+    `console.warn` where it has not (a browser). An engine may never run the callback, so the cleanup member is the
+    explicit release there too.
+  G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
   drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
   member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
   under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
-  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process. Node has no test of the absent
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process whose message is the warning of its class, because the
+  objects of earlier tests warn in the same collection, and WASM does the same with the `gc()` of its test run; Go sets the output of the standard logger to a writer that keeps each message and
+  never blocks, because the logger holds its lock while it writes, takes a `weak.Pointer` of the object, calls
+  `runtime.GC()` once and fails at once when the weak pointer still gives the object, because the cleanup of an
+  object that the collection left never runs; then it reads the messages until the warning of its class, which the
+  cleanup of the collected object writes, the objects of earlier tests warning before it. Node, WASM and Go have no test of the absent
   warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
   reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
   names the call that the caller left out.
@@ -944,7 +999,11 @@ the design ids are those of the binding design.
     entry is an async function, and the declarations name `Promise<T>`, as GN-6m states, so the language form of the
     member does not depend on whether it reaches language code. The JavaScript thread waits while the core waits for
     I/O; the specification of each core states this cost for such a member.
-  - Go refuses a member with `blocking_io` by name (GN-6m), and WASM has no such member (GN-6m).
+  - Go calls the core on the thread of the calling goroutine, as GN-6m states, and the core calls a callback through
+    the export `<prefix>__go_callback` on that thread (GN-15b), which is the thread that gave the callback, so a
+    callback with `thread: owner` is called on its thread as in a call that does not wait. A callback that waits for
+    another goroutine holds the locks of its call until it returns.
+  - WASM has no such member (GN-6m).
   Why not another thread of Node: a callback object of napi is valid only on the JavaScript thread, and a pool thread
   that hands each callback call to that thread through a thread-safe function and waits for its answer holds a thread
   of the libuv pool for the whole call, and it never ends when the JavaScript thread waits for that pool. A core that
@@ -976,7 +1035,8 @@ the design ids are those of the binding design.
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
-  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e). PHP makes the form
+  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e), so the contract
+  check requires that such a class names `only` without PHP and Go (CK-78). PHP makes the form
   `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
   byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
   string key of those bytes. An object and a reference are made before their content and are the same object or
@@ -1044,9 +1104,9 @@ the design ids are those of the binding design.
     of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
     future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
     on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
-  - Go refuses such a member by name, as it refuses every member with `async_driver` (GN-6n): the completion channel of
-    GN-6m, which would wait for an Io future, is not generated, and Go needs no owner thread for a callback, because a
-    cgo call from any thread may call Go (c6 6.4).
+  - Go drives the machine as PHP does, with `binding_core::machine::drive` in the cgo call of the member on the thread
+    of the calling goroutine, which waits for each Io future in `binding_core::driver::block_on`, so a callback is
+    called on the thread that gave it (GN-6q).
   - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
     module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
     `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
@@ -1078,7 +1138,9 @@ the design ids are those of the binding design.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
-  through `<prefix>__release_<class>` when Go collects the struct. A constructor is `New<Class>` (none when
+  through `<prefix>__release_<class>` when Go collects the struct; the reference holds a pointer, because the cleanup
+  of an object without one, which shares its allocation block with other small objects, runs only when every object
+  of the block is unreachable. A constructor is `New<Class>` (none when
   `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
@@ -1264,7 +1326,7 @@ the design ids are those of the binding design.
   and each place of a call takes its guard for the call, so a member with the receiver `&mut self` writes the value
   and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
   class unit with
-  `cleanup` (B-10) and a method with the receiver `self` are refused by name (GN-6o, GN-6p).
+  `cleanup` (B-10) and a method with the receiver `self` are generated as GN-6o and GN-6p state.
 - **GN-18b** WASM, a value alias with `core: {in, out}` (U-7), also of another repository (GN-6k): the value is taken
   and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
   rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16
@@ -1429,8 +1491,7 @@ the design ids are those of the binding design.
   member and the value of a case of the alias alike; Go (the argument of a kind that the Go type of the parameter does not
   hold, such as a text for an `int64`) is generated by the Go generator and refused by name until then; Python, Node
   and WASM have no such case yet.
-- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; B-10 in Go and WASM, which refuse a class unit
-  with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
+- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of the rows of a value unit without the entry points of `codec-test`, which GN-13e runs for an alias with them; and, of the callback fixture, an `async` row, a function value

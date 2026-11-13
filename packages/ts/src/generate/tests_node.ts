@@ -504,7 +504,7 @@ test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.me
 });`);
   }
   // GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning; the test turns on gc() and
-  // awaits the warning event of the process.
+  // awaits the warning event of the process with the message of its class, because the objects of earlier tests warn too.
   let usesGc = false;
   for (const object of model.objects) {
     const cleanup = object.cleanup;
@@ -514,9 +514,10 @@ test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.me
     const label = langName('node', object.unit.name, 'class');
     out.push(`
 test('B-10: ${label} warns when it is destroyed without ${memberName('node', cleanup)}()', async () => {
+  const expected = ${jsString(cleanupWarning(label, memberName('node', cleanup)))};
   const warned = new Promise((resolve) => {
     const listener = (warning) => {
-      if (warning.name !== 'ResourceWarning') return;
+      if (warning.name !== 'ResourceWarning' || warning.message !== expected) return;
       process.off('warning', listener);
       resolve(warning);
     };
@@ -526,8 +527,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('node', cle
     ${made(sample)};
   })();
   gc();
-  const warning = await warned;
-  assert.equal(warning.message, ${jsString(cleanupWarning(label, memberName('node', cleanup)))});
+  assert.equal((await warned).message, expected);
 });`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

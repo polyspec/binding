@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, libraryOf, membersFor, refuseConsumers, Refusals, unitOf, waitsAsync, holdsFunction } from './model.ts';
+import { type Model, collectModel, forLanguage, libraryOf, membersFor, Refusals, unitOf, waitsAsync, holdsFunction } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -130,12 +130,9 @@ export function generate(inputs: Inputs): Files {
   }
   if (targets.includes('go')) {
     refuseForGo(membersFor(model, 'go'), refusals);
-    refuseConsumers(membersFor(model, 'go'), 'Go', refusals);
   }
   if (targets.includes('wasm')) {
     const forWasm = membersFor(model, 'wasm');
-    // GN-6o, GN-6p: WASM has no method with the receiver self and no finalizer of a class unit with cleanup yet.
-    refuseConsumers(forWasm, 'WASM', refusals);
     // GN-6y: WASM has no OS path; the contract leaves such a member out by only (Q-4, CK-15).
     for (const fn of [...forWasm.functions, ...forWasm.objects.flatMap((o) => o.members)]) {
       if ([...fn.args.map((a) => a.type), fn.returns].some((type) => holdsPath(model, type, new Set()))) refusals.refuse(`${fn.member.id}: a path is not generated for WASM, which has no OS path (Q-4, CK-15, GN-6y)`);

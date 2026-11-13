@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 5385d6f40b3c0410affde7a9c91f0a54942bd982d387a90e68208fedd322b8a7 -->
+<!-- source-sha256: fa066dc78ee89d46636993f17204d889354ec649ee7009a894d114f515d8cfcd -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -167,6 +167,30 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-73** 기다리지 않는 member(generator GN-6m, GN-6n, N-4): `constructor`, `property`,
+  `iterate`, hook(`stringify`, `to_json`, `primitive`)은 `none`이 아닌 `wait`를 갖지 않는다. 어느 언어에도 constructor,
+  property, 순회를 await하는 형태가 없고, 언어는 hook을 자기 프로토콜로 호출하며 그 호출은 아무것도 await하지 않기
+  때문이다. finding은 그 member와 wait, 그리고 그 자리에서 기다릴 수 있는 member를 적는다: constructor에는 인스턴스를
+  만드는 `static` member, 나머지에는 값이나 항목을 주는 `method`다. host unit도 다른 unit처럼 판정한다. 그 코드는 손으로
+  쓰지만(L-2a) 거기에도 언어에는 이 member들을 await하는 형태가 없으므로, 코드를 쓰기 전에 검사가 그것을 보고한다.
+- **CK-74** 생성할 수 있는 class(U-1): `core_type`을 적고 `abstract`가 아닌 origin `generated`나 `value`의 class는
+  생성할 수 있을 때에만 `constructor` member를 가지며, `constructible: false`를 적지 않으면 생성할 수 있다. 그래서
+  constructor가 없고 `static` member가 인스턴스를 만드는 class는 `constructible: false`를 적고, `constructible: false`인
+  class는 constructor를 갖지 않는다. 모든 언어가 class를 constructor와 함께 쓰거나 생성을 막아서 쓰기 때문이다.
+- **CK-75** variant의 코어 enum(T-9): origin `generated`인 `variant` unit은 `core_type`에 자기 Rust enum을 적는다. 각
+  case는 그 enum의 struct variant로 생성되고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-76** 객체를 남기는 cleanup(생성기 GN-6p): class unit의 `cleanup`이 코어 receiver가 `&mut self`인 method이면, 그
+  member의 case 하나는 receiver의 `then`에서 같은 member를 `raises` 없이 부르고 case 자신도 `raises`를 적지 않는다. 그래서
+  그 case는 cleanup을 두 번째로 부르고 그것이 아무것도 하지 않기를 요구한다. 이유: 그런 cleanup 뒤에는 객체가 남으므로
+  호출자나, 호출자가 닫은 것을 다시 닫는 wrapper가 그것을 다시 부른다. 거기서 실패하거나 두 번 해제하는 코어는 자기
+  case로 드러난다. `cleanup`이 있는 class의 코어 타입은 자기 `Drop`에서 자원을 놓는다(생성기 GN-6p). 어느 소멸자도
+  cleanup member를 부르지 않기 때문이다. `binding check`는 Rust 소스를 읽지 않으므로 그 `Drop`을 검증하지 않는다. 그것은
+  코어의 의무이며, 이 검사의 finding이 그렇게 적는다.
+- **CK-78** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
+  `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM이 그것을
+  생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e), Go는 아직 생성하지 않는다. finding은 그 unit과 그런
+  target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
+  보고한다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

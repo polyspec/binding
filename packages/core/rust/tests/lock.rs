@@ -112,6 +112,21 @@ fn a_guard_goes_to_another_thread_with_its_work() -> Result<(), BindingError> {
 }
 
 #[test]
+fn a_cleaned_object_keeps_its_value_and_its_mark_in_every_handle() -> Result<(), BindingError> {
+    // GN-6p: the cleanup member with the receiver &mut self marks the object, which keeps its value.
+    let exclusive = Exclusive::new(String::from("a"));
+    let shared = Shared::new(String::from("b"));
+    assert!(!exclusive.cleaned() && !shared.cleaned());
+    exclusive.clone().clean();
+    shared.clone().clean();
+    assert!(exclusive.cleaned() && shared.cleaned());
+    assert!(!exclusive.taken() && !shared.taken());
+    assert_eq!(*exclusive.read("Body", &[])?, "a");
+    assert_eq!(*shared.read("Body", &[])?, "b");
+    Ok(())
+}
+
+#[test]
 fn a_taken_value_leaves_the_object_consumed() -> Result<(), BindingError> {
     // GN-6o: the place of the receiver self takes the value; every later place of the object is kind consumed.
     let exclusive = Exclusive::new(String::from("a"));

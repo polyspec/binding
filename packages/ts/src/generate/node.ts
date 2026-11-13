@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -576,6 +576,8 @@ const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, ent
 // GN-6m, GN-6q: a member with wait blocking_io runs its core call on the libuv pool, unless it reaches language code,
 // which only the JavaScript thread may call; then the call runs on that thread and the entry still returns a promise.
 const pooled = (fn: Fn): boolean => waitsIo(fn) && fn.reaches !== true;
+// GN-6m, B-5 (b): the work of a member that waits for another process runs on a thread of its own, and not on the pool.
+const pooledBy = (fn: Fn): string => (waitsProcess(fn) ? 'waiting_apart' : 'waiting');
 
 function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
@@ -654,7 +656,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+    lines.push(`        ${pooledBy(fn)}(env, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -703,6 +705,34 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 // GN-6m: the work of a member that waits, which runs on the libuv pool. Its result, or its failure, is converted on the
 // JavaScript thread; a panic of the work is a failure of kind internal (B-7).
 const WAITING = `
+/// GN-6m, B-5 (b): starts the work of a member that waits for another process on a thread of its own and gives its
+/// promise, which the JavaScript thread settles with the converted result or the error.
+fn waiting_apart<'env, W, O>(env: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+where
+    W: FnOnce() -> Result<O, Fail> + Send + 'static,
+    O: Send + 'static,
+{
+    let (deferred, promise) = env.create_deferred::<Settled, _>().map_err(internal)?;
+    let started = std::thread::Builder::new().spawn(move || {
+        let output = guard(work);
+        deferred.resolve(move |env| {
+            let value = output.and_then(|value| give(&env, value)).map_err(|fail| throw(&env, fail))?;
+            Ok(Settled(value.raw()))
+        });
+    });
+    match started {
+        Ok(_thread) => Ok(promise.to_unknown()),
+        Err(error) => Err(binding_error(BindingError::Internal { detail: format!("GN-6m: the thread of a wait did not start: {error}") })),
+    }
+}
+/// GN-6m: the converted result of a call, which the JavaScript thread made and the promise takes as it is.
+struct Settled(napi::sys::napi_value);
+impl ToNapiValue for Settled {
+    unsafe fn to_napi_value(_env: napi::sys::napi_env, value: Self) -> napi::Result<napi::sys::napi_value> {
+        Ok(value.0)
+    }
+}
+
 /// GN-6m: starts the work of a member that waits on the libuv pool and gives its promise.
 fn waiting<'env, W, O>(env: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
 where
@@ -1000,7 +1030,7 @@ ${object.cleanup === undefined ? '' : `
     /// releases its resource.
     impl ObjectFinalize for ${struct} {
         fn finalize(self, env: Env) -> napi::Result<()> {
-            if self.inner.taken() {
+            if self.inner.${cleanupMade(object)}() {
                 return Ok(());
             }
             let process: Object<'_> = env.get_global()?.get_named_property("process")?;

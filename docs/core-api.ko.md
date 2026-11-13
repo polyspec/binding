@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: 3af7712d7a1bd4badcc8612a443218268029f836b978ca8eb4108f11eceec4b1 -->
+<!-- source-sha256: 286137f123be33e93c2ab6ee50449d85ea5842789913b2a7389ae205330ecbea -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -41,7 +41,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Cancel::on_cancel(&self, wake: impl FnOnce() + Send + 'static) -> CancelGuard` | B-5 (b) | 호출자가 취소하면 trigger의 스레드에서 `wake`를 한 번 부르고, 이미 취소했으면 바로 부른다. 그래서 블로킹 대기(`Condvar`, park한 스레드)가 폴링 없이 깨어난다. `wake`는 막히면 안 된다. |
 | `CancelGuard` | B-5 (b) | 버리면 아직 불리지 않은 함수를 뺀다. |
 | `CancelTrigger` | T-1 `cancel` | `cancel(&self)`, 여러 번 불러도 같다. 상태를 취소한 뒤 등록된 함수를 부른다. |
-| `Exclusive<T>`, `Shared<T>` | U-2 busy, B-5c | `lock`이 있을 때. try로만 얻는 잠금에 담은 class unit의 코어 값: `Exclusive`는 `Arc<tokio::sync::Mutex<T>>`, `Shared`는 `Arc<tokio::sync::RwLock<T>>`이며 각각 `poisoned` 표지를 가진다. `new(T)`, `Clone`(같은 값의 다른 handle), `read(&self, class, beside: &[Option<&Reading<_>>]) -> Result<Reading<_>, BindingError>`(읽기 쪽 자리의 guard. `beside`에 같은 인스턴스의 guard가 있으면 함께 쓴다), `write(&self, class) -> Result<Writing<_>, BindingError>`(쓰기 쪽 자리의 guard), `take(&self, class) -> Result<T, BindingError>`(receiver `self`인 자리의 값. 잠금을 비운다, GN-6o). 잡힌 잠금은 kind `busy`, poisoned 객체는 kind `internal`, 값을 꺼낸 객체는 그 뒤 모든 `read`·`write`·`take`에서 kind `consumed`다. 어떤 호출도 기다리지 않는다. `taken(&self) -> bool`은 소멸자에게 값을 꺼냈는지 알려 준다(GN-6p). |
+| `Exclusive<T>`, `Shared<T>` | U-2 busy, B-5c | `lock`이 있을 때. try로만 얻는 잠금에 담은 class unit의 코어 값: `Exclusive`는 `Arc<tokio::sync::Mutex<T>>`, `Shared`는 `Arc<tokio::sync::RwLock<T>>`이며 각각 `poisoned` 표지를 가진다. `new(T)`, `Clone`(같은 값의 다른 handle), `read(&self, class, beside: &[Option<&Reading<_>>]) -> Result<Reading<_>, BindingError>`(읽기 쪽 자리의 guard. `beside`에 같은 인스턴스의 guard가 있으면 함께 쓴다), `write(&self, class) -> Result<Writing<_>, BindingError>`(쓰기 쪽 자리의 guard), `take(&self, class) -> Result<T, BindingError>`(receiver `self`인 자리의 값. 잠금을 비운다, GN-6o), `taken(&self) -> bool`, `clean(&self)`(receiver가 `&mut self`인 cleanup member가 불렸음을 그 값의 모든 handle에 표시한다, GN-6p), `cleaned(&self) -> bool`. 잡힌 잠금은 kind `busy`, poisoned 객체는 kind `internal`, 값을 꺼낸 객체는 그 뒤 모든 `read`·`write`·`take`에서 kind `consumed`다. 어떤 호출도 기다리지 않는다. `taken(&self) -> bool`은 소멸자에게 값을 꺼냈는지 알려 준다(GN-6p). |
 | `Reading<G>`, `Writing<G>` | B-5c | `lock`이 있을 때. 읽기 쪽 자리의 owned guard(`Deref`, `Clone`, 마지막 복제와 함께 놓인다)와 쓰기 쪽 자리의 owned guard(`Deref`, `DerefMut`). 둘 다 값과 함께 `Send`다. panic이 `Writing`을 거쳐 풀리면 잠금을 놓기 전에 `poisoned`를 세운다. |
 | `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |

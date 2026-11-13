@@ -71,7 +71,7 @@ export function dependency(): any {
       { id: 'dep_part', name: ['part'], module: 'reader', kind: 'record', visibility: 'public', origin: 'generated', fields: [{ name: ['size'], type: 'uint', required: true }] },
       {
         id: 'dep_parser', name: ['parser'], module: 'parser', kind: 'class', visibility: 'public', origin: 'generated',
-        members: [],
+        core_type: 'forms_dep::Parser', constructible: false, members: [],
       },
     ],
     changes: [],
@@ -139,6 +139,8 @@ export function contract(): any {
       },
       {
         id: 'value', name: ['value'], module: 'value', kind: 'class', visibility: 'public', origin: 'value',
+        // GN-6af, CK-78: the targets that generate a class without core_type.
+        only: { targets: ['python', 'node', 'wasm'], reason: 'Q-4' },
         members: [
           { id: 'value.new', name: ['new'], kind: 'constructor', visibility: 'public', parameters: [], wait: 'none' },
           { id: 'value.type_of', name: ['type', 'of'], kind: 'method', visibility: 'public', returns: { unit: 'value_type' }, wait: 'none' },
@@ -208,7 +210,7 @@ export function contract(): any {
       },
       {
         id: 'memory_store', name: ['memory', 'store'], module: 'session', kind: 'class', visibility: 'public', origin: 'generated',
-        implements: [{ unit: 'store' }],
+        core_type: 'sample::MemoryStore', constructible: false, implements: [{ unit: 'store' }],
         members: [{ id: 'memory_store.read', name: ['read'], kind: 'method', visibility: 'public', wait: 'async_driver', returns: { optional: 'bytes' }, optional_reason: 'HY-104' }],
       },
       {

@@ -136,9 +136,9 @@ test('a generation leaves no file of an earlier one', () => {
 
 test('an item that is not generated yet is refused by its name (G-4)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
-  contract.units[0].members[0].wait = 'process_wait';
+  contract.units[0].members[0].native = { node: { signature: 'split(text: string): string[]' }, reason: 'G-4' };
   const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]);
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait process_wait is not generated yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: native is not generated yet/);
 });
 
 test('a contract that fails the check is not generated', () => {
@@ -4281,25 +4281,77 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   // GN-6p: PHP puts the name of the running function before the message of a warning.
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertCount\(1, \$warnings\);\n {8}self::assertSame\(E_WARNING, \$warnings\[0\]\[0\]\);\n {8}self::assertStringEndsWith\("Lease was destroyed without release\(\), so its destructor released it \(B-10\)", \$warnings\[0\]\[1\]\);/);
   // B-5c: the Go poison entry point reaches each of its classes through a helper that the C ABI defines.
-  const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  const goOut = classes(() => undefined, ['go']);
+  const goLib = text(goOut, 'packages/go/internal/ffi/generated/lib.rs');
   for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
-  // The poison entry point takes the instances of the classes that Go makes: Go makes neither Gate nor Lease here, so
-  // the C ABI and the Go package have no poison entry point.
-  assert.doesNotMatch(goLib, /held_lease|panic_test_held/);
-  assert.doesNotMatch(text(classes(() => undefined, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /PanicTestHeld/);
+  // Go: the receiver self takes the value, the crate asserts Cleanup, and the release of the handle answers whether the
+  // value was still held, for which the function of runtime.AddCleanup warns through the standard logger.
+  assert.match(goLib, /\.take\("Lease"\)/);
+  assert.match(goLib, /polyspec_classes::Lease::release\(receiver\)/);
+  assert.match(goLib, /cleanup::<polyspec_classes::Lease>/);
+  assert.match(goLib, /<polyspec_classes::Gate as NotCleanup<_>>::not_cleanup/);
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_lease\(handle: u64\) -> i32 \{\n {4}let released = lock\(&TABLE_LEASE\)\.values\.remove\(&handle\);\n {4}i32::from\(released\.is_some_and\(\|held\| !held\.taken\(\)\)\)\n\}/);
+  assert.match(goLib, /pub extern "C" fn polyspec_classes__release_gate\(handle: u64\) \{/);
+  const goBinding = text(goOut, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(goBinding, /int32_t polyspec_classes__release_lease\(uint64_t handle\);/);
+  assert.match(goBinding, /void polyspec_classes__release_gate\(uint64_t handle\);/);
+  assert.ok(goBinding.includes(`func ReleaseLease(handle uint64) {\n\tif C.polyspec_classes__release_lease(C.uint64_t(handle)) != 0 {\n\t\tlog.Print("Lease was destroyed without Release(), so its destructor released it (B-10)")\n\t}\n}`), 'Go warns in the function of runtime.AddCleanup');
+  assert.match(goBinding, /\n\t"log"\n/);
+  assert.match(text(goOut, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Lease\) Release\(\) \(string, error\) \{/);
+  const goTests = text(goOut, 'packages/go/zz_generated_test.go');
+  assert.ok(goTests.includes(`func TestGN6oLeaseReleaseConsumesItsObject(t *testing.T) {`), 'Go tests the consumed object');
+  assert.match(goTests, /failure\.Kind\(\) != "consumed"/);
+  assert.ok(goTests.includes(`func TestB10LeaseWarnsWithoutRelease(t *testing.T) {`), 'Go tests the warning');
+  // B-10: the test fails at once when the collection left the object, and reads the messages of the logger, which never
+  // blocks its writer, until the warning of its class; no time orders them.
+  assert.match(goTests, /warned := newWarnings\(\)\n\tlog\.SetOutput\(warned\)\n\tdefer log\.SetOutput\(os\.Stderr\)\n\tgone := func\(\) weak\.Pointer\[Lease\] \{\n[\s\S]*?\t\treturn weak\.Make\([^\n]+\)\n\t\}\(\)\n\truntime\.GC\(\)\n\tif gone\.Value\(\) != nil \{\n\t\tt\.Fatalf\("B-10: the collection left the object, so its cleanup does not run"\)\n\t\}\n\twarned\.await\("Lease was destroyed without Release\(\), so its destructor released it \(B-10\)"\)\n\}/);
+  assert.ok(goTests.includes('func (w *warnings) Write(message []byte) (int, error) {\n\tw.lock.Lock()\n\tw.messages = append(w.messages, string(message))\n\tw.lock.Unlock()\n\tselect {\n\tcase w.written <- struct{}{}:\n\tdefault:\n\t}\n\treturn len(message), nil\n}'), 'the writer of the Go logger does not block');
+  assert.match(goTests, /import \([^)]*\t"testing"\n\t"weak"\n/);
+  // WASM: the same in the module, and the callback of the FinalizationRegistry warns as Node does, or with console.warn.
+  const wasmOut = classes(() => undefined, ['wasm']);
+  const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
+  assert.match(wasmLib, /\.take\("Lease"\)/);
+  assert.match(wasmLib, /polyspec_classes::Lease::release\(receiver\)/);
+  assert.match(wasmLib, /cleanup::<polyspec_classes::Lease>/);
+  assert.match(wasmLib, /pub fn class_lease_free\(this: u32\) -> bool \{\n\s+TABLE_LEASE\.with\(\|table\| table\.borrow_mut\(\)\.remove\(this\)\)\.is_some_and\(\|held\| !held\.taken\(\)\)\n\s*\}/);
+  const wasmEntry = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
+  assert.ok(wasmEntry.includes(`released.register(this, [glue.__Lease_free, this.#handle, 'Lease was destroyed without release(), so its destructor released it (B-10)']);`), 'WASM registers the warning of Lease');
+  assert.match(wasmEntry, /if \(enter\(ClassesInternalError, \(\) => free\(handle\)\) === true\) warn\(warning\);/);
+  assert.match(wasmEntry, /typeof globalThis\.process\?\.emitWarning === 'function' \? globalThis\.process\.emitWarning\(message, 'ResourceWarning'\) : console\.warn\(message\)/);
+  const wasmTests = text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasmTests, /test\('GN-6o: Lease\.release consumes its object'/);
+  assert.match(wasmTests, /error\.kind === 'consumed'/);
+  assert.match(wasmTests, /test\('B-10: Lease warns when it is destroyed without release\(\)', async \(\) => \{/);
+  // B-10: the objects of earlier tests warn too, so each test awaits the warning with the message of its class.
+  for (const [path, tests] of [['node', text(out, 'packages/ts/generated/tests/generated.test.mjs')], ['wasm', wasmTests]] as const) {
+    assert.match(tests, /const expected = 'Lease was destroyed without release\(\), so its destructor released it \(B-10\)';\n[\s\S]*?if \(warning\.name !== 'ResourceWarning' \|\| warning\.message !== expected\) return;/, path);
+  }
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /'warning'/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /consumed/);
-  // Go and WASM refuse the unit and the receiver self by name; a cleanup that is not a method with the receiver self is
-  // refused.
-  const everywhere = (contract: any): void => {
-    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.only?.reason === 'GN-6p') delete member.only;
-  };
-  assert.throws(() => classes(everywhere, ['go']), /lease: a class unit with cleanup is not generated for Go yet \(GN-6p\)/);
-  assert.throws(() => classes(everywhere, ['wasm']), /lease\.release: a method with the receiver self is not generated for WASM yet \(GN-6o\)/);
-  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self \(GN-6p\)/);
+  // GN-6p: a cleanup with the receiver &mut self leaves its object: its call marks the lock when it holds the write
+  // guard, and the destructor of each target reads the mark where that of a consuming cleanup reads taken.
+  for (const [lang, path, cell] of [['php', 'packages/php-ext/generated/lib.rs', 'self\\.inner'], ['python', 'packages/python/generated/lib.rs', 'self\\.inner'], ['node', 'packages/ts/generated/lib.rs', 'self\\.inner'], ['go', 'packages/go/internal/ffi/generated/lib.rs', 'held'], ['wasm', 'packages/ts/wasm/generated/lib.rs', 'held']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, new RegExp(`let mut receiver = ${cell}\\.write\\("Stall"\\)[^\\n]*\\?;\\n\\s+${cell}\\.clean\\(\\);\\n`), `${lang} marks the stall`);
+    assert.match(lib, /polyspec_classes::Stall::shut\(receiver\)/, lang);
+    assert.match(lib, /cleanup::<polyspec_classes::Stall>/, lang);
+    assert.equal([...lib.matchAll(/\.clean\(\);/g)].length, 1, `${lang} marks in the cleanup call alone`);
+    assert.equal([...lib.matchAll(/\.cleaned\(\)/g)].length, 1, `${lang} reads the mark in the destructor of Stall`);
+    assert.equal([...lib.matchAll(/\.taken\(\)/g)].length, 1, `${lang} reads taken in the destructor of Lease`);
+    assert.ok(lib.includes('Stall was destroyed without') || lang === 'go' || lang === 'wasm', `${lang} warns`);
+  }
+  assert.ok(goBinding.includes('log.Print("Stall was destroyed without Shut(), so its destructor released it (B-10)")'), 'Go warns for Stall');
+  assert.ok(wasmEntry.includes(`'Stall was destroyed without shut(), so its destructor released it (B-10)'`), 'WASM warns for Stall');
+  assert.ok(goTests.includes('func TestB10StallWarnsWithoutShut(t *testing.T) {'), 'Go tests the warning of Stall');
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /testB10StallDoesNotWarnAfterShut/);
+  // A cleanup that waits marks its object on the calling thread, before its work leaves it.
+  const waiting = text(classes((c) => { const shut = member(c, 'stall.shut'); shut.wait = 'blocking_io'; shut.only = { targets: ['node'], reason: 'the test of GN-6p' }; shut.core.path = 'polyspec_classes::Stall::shut'; }, ['node']), 'packages/ts/generated/lib.rs');
+  assert.match(waiting, /self\.inner\.clean\(\);\n\s+waiting\(env, move \|\| \{ let receiver = &mut \*receiver; [^\n]*polyspec_classes::Stall::shut\(receiver, binding_core::Io::for_generated_call\(\)\)/);
+  // A cleanup that is not a method with the receiver self or &mut self is refused.
+  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self or &mut self \(GN-6p\)/);
 });
 
 test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {
@@ -4338,11 +4390,14 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.fetch\('a'\)/);
   // The binding crates turn on the driver of binding_core, and the Node crate the tokio runtime of napi.
   const crates = trackedPackages(read('packages/rust/interface.json'), '0.0.0');
-  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml']) {
+  for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/go/internal/ffi/Cargo.toml']) {
     assert.match(String(crates.get(crate)), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
   }
   assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
-  assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
+  // A Go crate without such a member does not turn the driver on.
+  const withoutGo = read('packages/rust/interface.json');
+  for (const unit of withoutGo.units) for (const m of unit.members ?? []) if (m.wait === 'async_driver') m.only = { targets: ['php', 'python', 'node'], reason: 'GN-6n' };
+  assert.doesNotMatch(String(trackedPackages(withoutGo, '0.0.0').get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
   // WASM: a Promise of the future, which the event loop of JavaScript polls (wasm-bindgen-futures), without the driver
   // of binding_core and without a tokio runtime.
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
@@ -4354,12 +4409,19 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
   assert.match(String(crates.get('packages/ts/wasm/Cargo.toml')), /\nwasm-bindgen-futures = "=0\.4\.80"\n/);
   assert.doesNotMatch(String(crates.get('packages/ts/wasm/Cargo.toml')), /"driver"/);
-  // Go names such a member as not generated yet; a WASM method's future owns the guard of its receiver, and a
-  // constructor that awaits is refused by name.
+  // A WASM method's future owns the guard of its receiver, and a constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
   };
-  assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  // Go: the cgo call of the member blocks on the runtime of binding_core, on the thread of the calling goroutine, with
+  // the guard of the receiver held by the entry point.
+  const go = classes(everywhere, ['go']);
+  const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goLib, /driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(async move \{ polyspec_classes::fetch\(&name\)\.await \}\)\)\)\.map_err\(binding_error\)\?/);
+  assert.match(goLib, /let receiver = held\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+let receiver = &\*receiver;\n[^\n]*block_on\([^\n]*polyspec_classes::Gate::enter_later\(receiver\)\.await/);
+  assert.match(goLib, /\nfn driven<T>\(/);
+  assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc Fetch\(name string\) \(string, error\) \{/);
+  assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Gate\) EnterLater\(\) \(string, error\) \{/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
@@ -4493,12 +4555,15 @@ test('a member with wait blocking_io that reaches language code runs where its l
   // Node and PHP keep the check of a callback with thread owner.
   assert.match(node, /BindingError::WrongThread/);
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
-  // Go refuses a member with blocking_io by name; a member with async_driver that reaches language code is refused.
+  // A member with async_driver that reaches language code is refused without machine.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
   };
-  assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  const goSample = sample(everywhere, ['go']);
+  // Go: the core calls the callback in the cgo call of the member, on the thread of the calling goroutine.
+  assert.match(text(goSample, 'packages/go/internal/ffi/generated/lib.rs'), /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut \{ lookup \}, &key\)/);
+  assert.match(text(goSample, 'packages/go/zz_generated_sample.go'), /\nfunc ResolveSlowly\(lookup Lookup, key string\) \(string, error\) \{/);
   const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
   assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code names machine: true in its core \(GN-6ab, CK-68\)/);
 });
@@ -4550,7 +4615,9 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{/);
   // Go refuses it with every member with async_driver; a method with machine is refused by name.
-  assert.throws(() => sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), /sample\.resolve_slowly: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  // Go drives the machine in the cgo call, on the thread of the calling goroutine, as PHP does.
+  const goMachine = text(sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goMachine, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(/);
   assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);
 });
 
@@ -4561,6 +4628,44 @@ test('a Go helper that only the entry points of a test feature use is compiled u
   assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
   // A helper of the members is compiled in every form.
   assert.match(lib, /\nfn in_text\(/);
+});
+
+test('a member with wait process_wait passes the ProcessWait token and waits on no shared pool (GN-6m, B-5 (b))', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (targets: string[], change: (contract: any) => void = () => undefined, wait = 'process_wait'): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    for (const id of waits) contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).wait = wait;
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: targets as Inputs['targets'] & string[] });
+  };
+  // Every member of the contract that waits in a blocking call of its core.
+  const waits = ['classes.read', 'gate.enter_slowly', 'classes.attend', 'gate.enter_after'];
+  const token = 'binding_core::ProcessWait::for_generated_call()';
+  const out = classes(['php', 'python', 'node', 'go']);
+  // PHP and Go wait on the calling thread.
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.ok(text(out, path).includes(`polyspec_classes::read(${token}, `), path);
+    assert.ok(text(out, path).includes(`polyspec_classes::Gate::enter_slowly(receiver, ${token})`), path);
+  }
+  // Python: <name> waits without the GIL, and a<name> runs it on a thread of its own, not in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.ok(python.includes(`polyspec_classes::read(${token}, `));
+  assert.match(python, /fn aread<'py>\([^\n]+\n {4}awaited_apart\(py, wrap_pyfunction!\(read, py\)\?\.into_any\(\), args, kwargs\)/);
+  assert.match(python, /fn member_aenter_slowly<'py>\([^\n]+\n {8}awaited_apart\(slf\.py\(\), /);
+  assert.match(python, /\nfn awaited_apart<'py>\([\s\S]*?threading\.Thread\(target=run\)\.start\(\)\n {4}return await future\n"#;/);
+  assert.match(python, /loop\.call_soon_threadsafe\(settle, result, None\)/);
+  // Node: the work runs on a thread of its own, and the JavaScript thread settles the promise.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.ok(node.includes(`waiting_apart(env, move || `) && node.includes(`polyspec_classes::read(${token}, `));
+  assert.match(node, /\nfn waiting_apart<'env, W, O>\([\s\S]*?env\.create_deferred::<Settled, _>\(\)[\s\S]*?std::thread::Builder::new\(\)\.spawn\(move \|\| \{\n {8}let output = guard\(work\);\n {8}deferred\.resolve\(/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function read\(name: string\): Promise<string>;/);
+  // A crate holds the helper of the wait that its members use, and no other.
+  assert.doesNotMatch(node, /\nfn waiting</);
+  const io = classes(['python', 'node'], () => undefined, 'blocking_io');
+  assert.doesNotMatch(text(io, 'packages/ts/generated/lib.rs'), /waiting_apart|Settled/);
+  assert.doesNotMatch(text(io, 'packages/python/generated/lib.rs'), /awaited_apart/);
+  // A constructor does not wait for a process either.
+  assert.throws(() => classes(['php'], (c) => { const made = c.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.kind === 'constructor'); made.wait = 'process_wait'; }), /a constructor with wait process_wait is not generated \(GN-6m\)/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
@@ -4595,13 +4700,28 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(tests, /await pkg\.read\('a'\)/);
   assert.match(tests, /await assert\.rejects\(/);
-  // WASM has no member that waits (only, Q-4); Go names it as not generated yet.
+  // WASM has no member that waits (only, Q-4).
   assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\(/);
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
   };
-  assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  // GN-6u: only a value alias gives a func, so the C ABI of a contract with a callback unit and no value alias writes
+  // no list of handles before a buffer, and the Go package reads none.
+  assert.doesNotMatch(text(classes(everywhere, ['go']), 'packages/go/internal/ffi/generated/lib.rs'), /given_first/);
+  assert.match(text(classes(everywhere, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /\nfunc readerOf\(bytes \[\]byte\) \*Reader \{ return NewReader\(bytes\) \}\n/);
+  // Go: the cgo call of the member calls the core on the thread of the calling goroutine and returns its result; the
+  // member has the form of a member that does not wait.
+  const go = classes(everywhere, ['go']);
+  const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.ok(goLib.includes(`polyspec_classes::read(${token}, `), 'Go passes the token to read');
+  // GN-6h: the entry point holds the read guard of the receiver across the core call, and the class is in Shared.
+  assert.match(goLib, /let receiver = held\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+let receiver = &\*receiver;\n[^\n]*polyspec_classes::Gate::enter_slowly\(receiver, binding_core::Io::for_generated_call\(\)\)/);
+  assert.match(goLib, /static TABLE_GATE: Mutex<Table<binding_core::Shared<polyspec_classes::Gate>>>/);
+  const goPackage = text(go, 'packages/go/zz_generated_classes.go');
+  assert.match(goPackage, /\nfunc Read\(name string\) \(string, error\) \{/);
+  assert.match(goPackage, /\nfunc \(this \*Gate\) EnterSlowly\(\) \(string, error\) \{/);
+  assert.doesNotMatch(goPackage, /context\.Context/);
   // A constructor that waits has no awaited form: refused by name.
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
 });

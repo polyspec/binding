@@ -197,6 +197,34 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   code (generator GN-6q), names `"machine": true` in its `core` object, and no other member names `machine`, because
   the generated code drives such a core path as a state machine and any other as a future, and binding reads no Rust
   source to tell them apart.
+- **CK-73** Members that do not wait (generator GN-6m, GN-6n, N-4): a `constructor`,
+  a `property`, an `iterate` and a hook (`stringify`, `to_json`, `primitive`) have no `wait` other than `none`,
+  because no language has an awaited form of a constructor, of a property or of an iteration, and a language calls a
+  hook in its own protocol, which awaits nothing. The finding names the member, its wait and the member that can
+  wait in its place: a `static` member that makes the instance for a constructor, and a `method` that gives the value
+  or the items for the others. A host unit is judged as any other unit: its code is written by hand (L-2a), and the
+  language has no awaited form of these members there either, so the check reports it before any code is written.
+- **CK-74** Constructible classes (U-1): a class of the origin `generated` or `value` that names `core_type` and is
+  not `abstract` has a `constructor` member exactly when it is constructible, and it is constructible unless it
+  declares `constructible: false`. A class without a constructor, whose instances its `static` members make, so
+  declares `constructible: false`, and a class with `constructible: false` has no constructor, because every
+  language writes the class either with a constructor or closed to construction.
+- **CK-75** The core enum of a variant (T-9): a `variant` unit of the origin `generated` names its Rust enum in
+  `core_type`, because each case is generated as a struct variant of that enum and binding reads no Rust source to
+  find it.
+- **CK-76** A cleanup that leaves its object (generator GN-6p): when the `cleanup` of a class unit is a method whose
+  core receiver is `&mut self`, a case of that member has a receiver whose `then` calls the same member without
+  `raises`, and the case itself names no `raises`, so that the case calls the cleanup a second time and requires that
+  it does nothing. Why: the object stays after such a cleanup, so a caller, or a wrapper that closes what its caller
+  closed, calls it again, and a core that fails or releases twice there is found by its own case. The core type of
+  a class with `cleanup` releases its resources in its `Drop` (generator GN-6p), because no destructor calls the
+  cleanup member. `binding check` reads no Rust source, so it does not verify that `Drop`: it is the duty of the
+  core, and the finding of this check says so.
+- **CK-78** A class without `core_type` on a target that does not generate it (generator GN-6af): a class of the
+  origin `generated` or `value` that names no `core_type` names `only` (Q-4) with none of the targets that generate
+  no such class. Python, Node and WASM generate it; PHP takes its own `stdClass` and references (generator GN-6e),
+  and Go does not generate it yet. The finding names the unit and each such target. Why: the generator refuses the
+  unit for such a target, and a contract error is reported by the check before the generator runs.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

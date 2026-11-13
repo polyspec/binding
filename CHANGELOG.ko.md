@@ -1,11 +1,86 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e1887e18b56d3ac63d172fb1ec32f2c9fd2bdcd05c49a57a8e0bca860274a733 -->
+<!-- source-sha256: f7272e0618ef38e4d276ffd075efda5967b9e563ebf09df77d7daa3b31b3fc91 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성하지 않는 target의 `core_type` 없는 class를 판정하는 검사의 id는 CK-78이다. 이전에는 다른 검사의 id를 썼다.
+  명세, finding, 시험이 CK-78을 적고, 검사의 규칙은 바뀌지 않았다. `make test-ts`로 검증했다. 그 finding의 시험 둘은
+  검사가 새 id를 보고하기 전에 실패했다.
+- 생성된 Node와 WASM의 B-10 시험은 `gc()` 뒤 프로세스의 첫 `ResourceWarning`을 받아 그 메시지를 비교했다. 그래서
+  `cleanup`이 있는 class가 둘인 계약은 수거가 앞선 시험의 객체를 먼저 finalize하면 실패했다. `tests/e2e/classes`의
+  end-to-end 검사가 Node에서 한 번, `Lease`의 시험에서 `Stall`의 경고로 실패했다. 이제 각 시험은 메시지가 자기 class의
+  경고인 warning을 기다린다(GN-6p). `make test-ts`로 검증했고, 그 시험이 두 target의 생성된 시험을 읽는다.
+- `wait: process_wait`인 member를 모든 target이 이름을 대고 거부했다. 이제 생성기가 그것을 받는다(GN-6m). 코어 호출은
+  `Io` token의 자리에 `binding_core::ProcessWait::for_generated_call()`을 받는다. PHP, Python `<name>`, Go는
+  `blocking_io`처럼 호출한 thread에서 기다린다. Python `a<name>`은 `<name>`을 자기 thread에서 돌리고 그 thread가 실행
+  중인 loop의 future를 정한다. 모든 `to_thread`가 executor를 함께 쓰는 `asyncio.to_thread`는 쓰지 않는다. Node는 코어
+  호출을 자기 thread에서 돌리고 JavaScript thread에서 promise를 정하며(`Env::create_deferred`), libuv pool은 쓰지 않는다.
+  WASM에는 그런 member가 없고, 명세는 그것을 그 target의 규칙으로 적으며, CK-15가 `wasm`이 없는 `only`를 요구한다.
+  `process_wait`인 constructor, property, iterate, hook은 `blocking_io`인 것처럼 거부한다. `make test-ts`로 검증했다.
+  `process_wait`의 거부를 요구하던 시험은 변경 전에 성립했고, 새 시험은 각 언어의 token과 형태를 읽는다. 436개 중
+  436개가 통과한다. `tests/e2e/classes`의 함수 `classes.attend`와 method `gate.enter_after`가 PHP, Python, Node, Go에서
+  `process_wait`로 기다리며, 각각 결과의 case 하나와 실패의 case 하나를 갖는다. Node와 Python의 형태는 그 저장소의
+  end-to-end 검사만 컴파일한다.
+- 생성된 Go의 B-10 시험은 `runtime.GC()` 뒤에 표준 logger의 메시지 하나를 channel에서 받았다. 수거가 남긴 객체는 그
+  시험을 끝없이 기다리게 했고, 앞선 시험의 객체가 낸 경고는 그 시험을 실패시켰으며, 두 번째 메시지는 쓰는 동안 자기 lock을
+  쥐는 logger를 막았다. 이제 시험은 자기 객체의 `weak.Pointer`를 얻어 수거가 객체를 남기면 곧바로 실패하고, writer는
+  모든 메시지를 간직하며 결코 막히지 않고, 시험은 자기 class의 경고가 나올 때까지 메시지를 읽는다(GN-6p). cleanup 함수가
+  경고 없이 돌았다면 시험은 여전히 기다린다. 그 함수는 생성기의 단위 시험이 읽는다. binding_core lock의 `clean`과
+  `cleaned`를 넣은 상태에서 `make test-rust`와 `make lint-rust`가 통과한다. `make test-ts`로 검증했다. 생성된 Go 시험을
+  읽는 시험은 변경 전에 실패했다.
+- 계약 검사가 생성기가 거부하는 것보다 적게 보고했다. 그리고 기다리는 constructor, 생성할 수 있는 class, variant의 코어
+  enum, 객체를 남기는 cleanup의 검사는 id CK-73, CK-74, CK-75, CK-76을 갖는다. CK-73은 이제 host unit도 판정한다. host
+  unit의 `constructor`, `property`, `iterate`, hook이 `none`이 아닌 `wait`를 가지면 finding이다. 손으로 쓰는 코드에도
+  언어에는 그것들을 await하는 형태가 없기 때문이다. 그 예외를 지키던 시험은 schema에 실패하는 계약을 읽었으므로 아무것도
+  판정하지 않았다. CK-78은 새 검사다. `core_type`이 없는 class의 target, 곧 그 `only`의 target이나 계약의 target에 PHP나
+  Go가 있으면 그 unit과 그 target들을 적는 finding이다. Python, Node, WASM만 그런 class를 생성하기 때문이다(GN-6af).
+  명세는 `cleanup`이 있는 class의 코어 타입이 자기 `Drop`에서 자원을 놓는다는 것과, Rust 소스를 읽지 않는 계약 검사가
+  그것을 검증하지 않는다는 것을 적는다(GN-6p, CK-76). CK-76의 finding이 그렇게 적는다. 계약 검사 fixture의 `core_type`
+  없는 class들은 `only`나 `core_type`을 적는다. `make test-ts`로 검증했다. finding을 요구하는 바뀌었거나 새로운 시험
+  다섯은 변경 전에 실패했고, 419개 중 419개가 통과한다.
+- `cleanup`이 코어 receiver가 `&mut self`인 method를 가리키는 class unit을 모든 target이 "no method with the receiver
+  self"로 거부했다. 이제 생성기가 두 꼴을 다 받는다(GN-6p). `self`인 cleanup은 전처럼 객체를 소비하고, `&mut self`인
+  cleanup은 객체를 남기며 그 뒤 member가 무엇을 주는지는 코어가 정한다. 그런 cleanup의 호출은 쓰기 guard를 쥐었을 때
+  객체의 lock에 표시하고(`binding_core::Exclusive`와 `Shared`의 `clean`, 그리고 `cleaned`), 다섯 target 각각의 소멸자는
+  소비되지도 표시되지도 않은 객체에만 경고한다. 어느 소멸자도 cleanup member를 부르지 않으므로, 기다리는 cleanup이
+  기다릴 수 없는 곳에서 불리는 일이 없다. 자원은 코어 타입의 `Drop`이 놓는다. 계약 검사는 그런 cleanup을 실패 없이 두
+  번째로 부르는 case를 요구한다(CK-76). `tests/e2e/classes`의 class `stall`이 그런 cleanup과, 그 두 번째 호출의 case와,
+  그 뒤 kind `shut`으로 실패하는 member의 case를 갖는다. `make test-ts`로 검증했다. CK-76의 finding을 요구하는 시험 둘은
+  검사를 쓰기 전에 실패했고, 414개 중 414개가 통과한다.
+- Go와 WASM은 receiver가 `self`인 method와 `cleanup`이 있는 class unit을 이름을 대고 거부했다. 이제 둘 다 PHP, Python,
+  Node처럼 생성한다. receiver의 자리가 class의 table이 handle 아래에 둔 lock에서 값을 꺼내고, 그 객체의 뒤 자리는 kind
+  `consumed`이며, binding crate는 `binding_core::Cleanup`을 단언한다(GN-6o, GN-6p). 정리 호출 없이 수거된 객체는 B-10의
+  메시지로 경고한다. Go에서는 `runtime.AddCleanup`의 함수가 표준 logger의 `log.Print`로, WASM에서는
+  `FinalizationRegistry`의 callback이 type `ResourceWarning`의 `process.emitWarning`으로, 그것이 없는 host에서는
+  `console.warn`으로 경고한다. 정리 member가 명시적 해제이고 두 번째 member는 생성하지 않는다. 인스턴스의 Go `Ref`는
+  pointer를 갖는다. pointer가 없는 객체의 cleanup은 그 할당 block의 모든 객체가 닿을 수 없을 때에만 돌기 때문이다.
+  G-5는 두 target에 kind `consumed`의 시험과 B-10 시험을 생성한다. `tests/e2e/classes`의 `lease`의 member가 다섯
+  target을 적는다. `make test-ts`로 검증했다. GN-6o와 GN-6p의 시험은 변경 전에 네 거부로 실패했다.
+- `wait: async_driver`인 Go member를 이름을 대고 거부했다. 이제 Go가 PHP처럼 그것을 생성한다. member의 cgo 호출이
+  호출 goroutine의 OS 스레드에서 `binding_core::driver::block_on`으로 future를 돌리고, 진입점은 결과를 변환할 때까지
+  자기 자리의 guard를 쥐며, `machine`이 있는 member는 그 스레드에서 `binding_core::machine::drive`가 돌린다. runtime은
+  process의 것이고 어떤 객체도 그것을 소유하지 않는다(GN-6n, GN-6ab). 그런 member가 있는 계약의 Go crate는
+  binding_core의 feature `driver`를 켠다. `tests/e2e/classes`의 member `classes.fetch`, `classes.settle`,
+  `gate.enter_later`가 Go를 적는다. `make test-ts`로 검증했다.
+- `wait: blocking_io`인 Go member를 이름을 대고 거부했다. 이제 Go가 그것을 생성한다. member의 cgo 호출이 호출
+  goroutine의 OS 스레드에서 코어를 부르고 코어가 돌아올 때 돌아오며, C ABI의 진입점은 기다리는 동안 자기 자리의 lock을
+  쥐고, 그 member는 기다리지 않는 member의 꼴을 갖는다(GN-6m). 언어 코드에 닿는 member는 그 스레드에서 callback을
+  부른다(GN-6q). `tests/e2e/classes`의 member `classes.read`와 `gate.enter_slowly`가 Go를 적고, callback `guide`를 받는
+  class `usher`는 언어 코드에 닿는 `blocking_io` member다. 그 레포의 `cases_test.go`는 두 goroutine에서 usher 하나를
+  부른다. 첫 호출의 guide가 그 호출을 코어 안에 붙잡아 둔 동안 둘째 호출을 하고, 두 결과를 모두 요구한다.
+  `make test-ts`로 검증했다. GN-6m과 GN-6q의 시험은 변경 전에 그 거부로 실패했다. 다섯 target의 증거는
+  `tests/e2e/classes`의 end-to-end 검사다.
+- `binding check`가 통과시킨 계약 오류를 `binding generate`가 거부로 처음 보고했다. 이제 계약 검사가 그 가운데 셋을
+  보고한다. CK-73: host unit이 아닌 unit의 `constructor`, `property`, `iterate`, hook(`stringify`, `to_json`,
+  `primitive`)이 `none`이 아닌 `wait`를 적으면 finding이고, 그 member와 wait, 그 자리에서 기다릴 수 있는 member를
+  적는다. 인스턴스를 만드는 static member, 또는 값이나 항목을 주는 method다(GN-6m, GN-6n, N-4). CK-74: `core_type`이
+  있는 class에 constructor도 `constructible: false`도 없거나, `constructible: false`와 constructor가 함께 있으면
+  finding이다(U-1). CK-75: `core_type`이 없는 origin `generated`의 `variant` unit은 finding이다(T-9). 생성기의 거부는
+  그대로 둔다. `packages/ts`의 `npm test`로 검증했다. finding을 요구하는 새 시험 12개가 변경 전에는 각각 그 finding이
+  없어서 실패했고, 변경 후 `tests/contract-check.test.ts`는 246개 중 246개가 통과한다.
 - end-to-end 검사는 macOS에서만 실행되었다: `.github/workflows/ci.yml`이 end-to-end 검사를 실행하지 않아서, release가
   빌드되고 쓰이는 Linux에서 다섯 target과 Go 모듈의 release 형태를 시험한 실행이 없었다. 이제 workflow에 job `e2e`가 있다.
   이 job은 `tests/e2e`의 각 레포(classes, sample과 함께 consumer, points와 함께 plot, sample, shapes)의 `make e2e`를

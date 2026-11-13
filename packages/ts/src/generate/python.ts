@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -623,7 +623,7 @@ fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
 ${lines.join('\n')}
     })
 }
-${awaits(fn) ? awaitedFunction(name) : ''}`;
+${awaits(fn) ? awaitedFunction(fn, name) : ''}`;
   }
   // GN-6: the Rust name of a method is member_<name> and its Python name an attribute, so that no name of a member meets
   // a naming convention of the lints for methods (from_*, to_*, into_*, is_*, the names of std traits); a hook keeps
@@ -646,12 +646,16 @@ ${awaits(fn) ? awaitedMethod(fn, name) : ''}`;
 export const awaitedName = (fn: Fn): string => `a${memberName('python', fn)}`;
 
 // GN-6m: a<name> of a function runs <name> in asyncio.to_thread; the arguments are judged when <name> runs.
-const awaitedFunction = (name: string): string => `
+const awaitedFunction = (fn: Fn, name: string): string => `
 #[pyfunction(name = ${rustString(`a${name}`)}, signature = (*args, **kwargs))]
 fn a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-    awaited(py, wrap_pyfunction!(${name}, py)?.into_any(), args, kwargs)
+    ${awaitedBy(fn)}(py, wrap_pyfunction!(${name}, py)?.into_any(), args, kwargs)
 }
 `;
+
+// GN-6m: asyncio.to_thread runs a member that waits for I/O, and a thread of its own a member that waits for another
+// process, which would hold a thread of the executor that every to_thread shares.
+const awaitedBy = (fn: Fn): string => (waitsProcess(fn) ? 'awaited_apart' : 'awaited');
 
 // GN-6m: a<name> of a method or a static method runs the bound <name> in asyncio.to_thread.
 function awaitedMethod(fn: Fn, name: string): string {
@@ -661,14 +665,14 @@ function awaitedMethod(fn: Fn, name: string): string {
     #[staticmethod]
     ${attribute}
     fn member_a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-        awaited(py, py.get_type::<Self>().getattr(${rustString(name)})?, args, kwargs)
+        ${awaitedBy(fn)}(py, py.get_type::<Self>().getattr(${rustString(name)})?, args, kwargs)
     }
 `;
   }
   return `
     ${attribute}
     fn member_a${name}<'py>(slf: &Bound<'py, Self>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-        awaited(slf.py(), slf.getattr(${rustString(name)})?, args, kwargs)
+        ${awaitedBy(fn)}(slf.py(), slf.getattr(${rustString(name)})?, args, kwargs)
     }
 `;
 }
@@ -681,6 +685,37 @@ fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, Py
     all.extend(args.iter());
     let all = PyTuple::new(py, all)?;
     py.import("asyncio")?.getattr("to_thread")?.call(all, kwargs)
+}
+
+/// GN-6m, B-5 (b): an awaitable that runs a member that waits for another process on a thread of its own, which gives
+/// its result or its exception to a future of the running loop; a future that was cancelled takes none. The source is
+/// compiled at each call, which costs little beside a wait for a process.
+fn awaited_apart<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+    let source = cr#"
+import asyncio
+import threading
+async def awaited_apart(member, args, kwargs):
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    def settle(result, error):
+        if future.cancelled():
+            return
+        if error is None:
+            future.set_result(result)
+        else:
+            future.set_exception(error)
+    def run():
+        try:
+            result = member(*args, **(kwargs or {}))
+        except BaseException as error:
+            loop.call_soon_threadsafe(settle, None, error)
+        else:
+            loop.call_soon_threadsafe(settle, result, None)
+    threading.Thread(target=run).start()
+    return await future
+"#;
+    let module = PyModule::from_code(py, source, c"awaited_apart.py", c"awaited_apart")?;
+    module.getattr("awaited_apart")?.call1((member, args, kwargs))
 }
 `;
 
@@ -710,7 +745,7 @@ ${object.cleanup === undefined ? '' : `
 /// its resource; an exception that is being raised is kept across the warning.
 impl Drop for ${struct} {
     fn drop(&mut self) {
-        if !self.inner.taken() {
+        if !self.inner.${cleanupMade(object)}() {
             Python::attach(|py| {
                 let raising = PyErr::take(py);
                 if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {

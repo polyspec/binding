@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -661,7 +661,7 @@ fn held_param_${plain}(value: &JsValue, subject: &str) -> Result<Rc<${heldType(o
 /// T-5: a value of ${jsClass} leaves as a new instance, which the ES module makes around the handle of the value.
 fn out_${name}(value: impl CoreForm<${core}>) -> Result<JsValue, Fail> {
     let handle = insert_${plain}(value.core_form())?;
-    make_instance(${index}, handle).inspect_err(|_fail| ${table}.with(|table| table.borrow_mut().remove(handle)))
+    make_instance(${index}, handle).inspect_err(|_fail| drop(${table}.with(|table| table.borrow_mut().remove(handle))))
 }
 ${takesObject(model, object) ? `
 /// T-5: a value of the class ${jsClass} is an instance of it; the core takes a copy of the value it holds.
@@ -737,10 +737,12 @@ impl<T> Table<T> {
         Ok(handle)
     }
 ${get}
-    fn remove(&mut self, handle: u32) {
-        if self.values.remove(&handle).is_some() {
+    fn remove(&mut self, handle: u32) -> Option<Rc<T>> {
+        let removed = self.values.remove(&handle);
+        if removed.is_some() {
             self.free.push(handle);
         }
+        removed
     }
 }
 
@@ -759,11 +761,17 @@ function objectRust(model: Model, object: ObjectClass): string {
   const jsClass = langName('wasm', object.unit.name, 'class');
   const name = plainName(object.unit);
   return `${object.members.map((fn) => functionRust(model, fn)).join('')}
-/// T-5: drops the value of an instance of ${jsClass} that the engine collected (the FinalizationRegistry of the ES module).
+/// T-5: drops the value of an instance of ${jsClass} that the engine collected (the FinalizationRegistry of the ES module).${object.cleanup === undefined ? `
 #[wasm_bindgen(js_name = ${rustString(`__${jsClass}_free`)})]
 pub fn class_${name}_free(this: u32) {
-    ${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this));
-}
+    drop(${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this)));
+}` : `
+/// GN-6p, B-10: the answer is true when the cleanup call did not consume the value, so that this call dropped it and
+/// the ES module warns.
+#[wasm_bindgen(js_name = ${rustString(`__${jsClass}_free`)})]
+pub fn class_${name}_free(this: u32) -> bool {
+    ${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this)).is_some_and(|held| !held.${cleanupMade(object)}())
+}`}
 `;
 }
 
@@ -1156,7 +1164,7 @@ fn binding_error(error: BindingError) -> Fail {
     };
     Fail { class, message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno()${failRest(model)} }
 }
-${coreErrorRust(model)}${raisesAssertions(model)}
+${coreErrorRust(model)}${raisesAssertions(model)}${cleanupAsserts(model)}
 /// B-7: a panic of the call reaches the caller as kind internal where the module unwinds; a module built with
 /// panic=abort, the default of wasm32-unknown-unknown, traps instead (GN-18).
 fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
@@ -1378,7 +1386,7 @@ export class ${cls} {
 
   constructor(...args) {
 ${construct}
-    released.register(this, [glue.${`__${cls}_free`}, this.#handle]);
+    released.register(this, [glue.${`__${cls}_free`}, this.#handle${o.cleanup === undefined ? '' : `, ${jsString(cleanupWarning(cls, memberName('wasm', o.cleanup)))}`}]);
   }
 ${members.join('\n')}
 
@@ -1396,15 +1404,18 @@ const makers = [];
 const readers = [];
 // T-5: the value of an instance that the engine collected is dropped. A trap in the drop is kept by state.mjs, so every
 // later call is kind internal; the callback of a registry has no caller to throw to.
-const released = new FinalizationRegistry(([free, handle]) => {
+const released = new FinalizationRegistry(([free, handle${model.objects.some((o) => o.cleanup !== undefined) ? ', warning' : ''}]) => {
   if (broken()) return;
   try {
-    enter(${internal}, () => free(handle));
+    ${model.objects.some((o) => o.cleanup !== undefined) ? `if (enter(${internal}, () => free(handle)) === true) warn(warning);` : `enter(${internal}, () => free(handle));`}
   } catch {
     // kept by state.mjs
   }
 });
-`;
+${model.objects.some((o) => o.cleanup !== undefined) ? `// GN-6p, B-10: the warning of an instance collected without its cleanup call: the warning of Node where the host has
+// it, and console.warn in a host without it (a browser).
+const warn = (message) => (typeof globalThis.process?.emitWarning === 'function' ? globalThis.process.emitWarning(message, 'ResourceWarning') : console.warn(message));
+` : ''}`;
   const kept = model.kept.map((k) => keptClassWasm(k, internal)).join('\n');
   const constants = model.constants.map((c) => `export const ${langName('wasm', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   const driving = !drivesMachine(model) ? '' : `

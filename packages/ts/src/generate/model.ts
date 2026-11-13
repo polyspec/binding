@@ -482,11 +482,11 @@ export function collectModel(
   const carrying = carriers(contract.units, foreign);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
-    // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
-    // wait is not yet.
-    if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io' && member.wait !== 'async_driver') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    // GN-6m, GN-6n: a member with wait blocking_io, process_wait or async_driver is generated in the form of each
+    // language; another wait is not.
+    if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io' && member.wait !== 'process_wait' && member.wait !== 'async_driver') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
     let reachesCode = false;
-    if (member.wait === 'blocking_io' || member.wait === 'async_driver') {
+    if (member.wait === 'blocking_io' || member.wait === 'process_wait' || member.wait === 'async_driver') {
       const rule = WAIT_RULE[member.wait];
       if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait ${member.wait} is not generated (${rule})`);
       reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
@@ -577,7 +577,7 @@ export function collectModel(
       failure: (typeof core === 'object' ? core.failure : undefined) ?? takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
-      ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
+      ...(reachesCode && (member.wait === 'blocking_io' || member.wait === 'process_wait') ? { reaches: true as const } : {}),
       ...(reachesCode && member.wait === 'async_driver' ? { machine: true as const } : {}),
     };
   };
@@ -692,7 +692,7 @@ export function collectModel(
           if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
           if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
           // GN-6m, GN-6n: the language calls a hook in its own protocol, which awaits nothing.
-          if (member.wait === 'blocking_io' || member.wait === 'async_driver') throw new Unsupported(`${member.id}: a ${member.kind} with wait ${member.wait} is not generated (${WAIT_RULE[member.wait]})`);
+          if (member.wait === 'blocking_io' || member.wait === 'process_wait' || member.wait === 'async_driver') throw new Unsupported(`${member.id}: a ${member.kind} with wait ${member.wait} is not generated (${WAIT_RULE[member.wait]})`);
           members.push({ ...toFn(unit, member, 'method'), special: member.kind });
           return true;
         }
@@ -725,9 +725,9 @@ export function collectModel(
       if (constructible !== members.some((m) => m.kind === 'constructor')) {
         throw new Unsupported(`${unit.id}: a constructible class has one constructor and another none (U-1 constructible)`);
       }
-      // GN-6p: the cleanup call of a class is its method that consumes the value.
+      // GN-6p: the cleanup call of a class is its method that consumes the value, or one that writes it and leaves it.
       const cleanup = unit.cleanup === undefined ? undefined : members.find((m) => m.member.id === unit.cleanup);
-      if (unit.cleanup !== undefined && (cleanup?.kind !== 'method' || cleanup.receiver !== 'self')) throw new Unsupported(`${unit.id}: the cleanup ${unit.cleanup} is no method with the receiver self (GN-6p)`);
+      if (unit.cleanup !== undefined && (cleanup?.kind !== 'method' || (cleanup.receiver !== 'self' && cleanup.receiver !== '&mut self'))) throw new Unsupported(`${unit.id}: the cleanup ${unit.cleanup} is no method with the receiver self or &mut self (GN-6p)`);
       objects.push({ unit, members, constructible, ...(cleanup === undefined ? {} : { cleanup }) });
       return;
     }
@@ -1225,6 +1225,8 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     }
     if (place.write) {
       lines.push(`        let mut ${name} = ${cell}.write(${text}).map_err(${fail})?;`);
+      // GN-6p: a cleanup with the receiver &mut self marks its object once it holds the write guard, whatever the core gives.
+      if (place.param === undefined && place.object.cleanup?.member.id === fn.member.id) lines.push(`        ${cell}.clean();`);
       continue;
     }
     const beside = reads.get(place.object.unit) ?? [];
@@ -1422,8 +1424,9 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     if (held.some((h) => h.param === p)) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined || ownOption(p) ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
-  // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
-  if (waitsIo(fn)) args.unshift(IO_TOKEN);
+  // GN-6m, I-2 (4): the core function of a member with wait blocking_io or process_wait takes its token first after
+  // its receiver.
+  if (waitsIo(fn)) args.unshift(waitsProcess(fn) ? PROCESS_TOKEN : IO_TOKEN);
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
   // GN-6o: the receiver self is the value that its place took; any other receiver is the borrow that lockLines bound.
@@ -1451,25 +1454,24 @@ impl<T: ?Sized + binding_core::Cleanup> NotCleanup<u8> for T {}
 `;
 }
 
-// GN-6o, GN-6p: a target whose wrapper does not take the value yet refuses a method with the receiver self, and a
-// class unit with cleanup that has a member for it, by name (G-4).
-export function refuseConsumers(model: Model, target: string, refusals: Refusals): void {
-  for (const object of model.objects) {
-    if (object.unit.cleanup !== undefined && object.members.length > 0) refusals.refuse(`${object.unit.id}: a class unit with cleanup is not generated for ${target} yet (GN-6p)`);
-    for (const fn of object.members.filter((m) => m.receiver === 'self')) refusals.refuse(`${fn.member.id}: a method with the receiver self is not generated for ${target} yet (GN-6o)`);
-  }
-}
+// GN-6p: the question of the lock that tells the destructor of a class with cleanup that the cleanup call was made: the
+// value was taken (receiver self), or the object was marked (receiver &mut self).
+export const cleanupMade = (object: ObjectClass): string => (object.cleanup?.receiver === 'self' ? 'taken' : 'cleaned');
 
 // GN-6p: the message of the warning of an object destroyed without its cleanup call (B-10).
 export const cleanupWarning = (className: string, cleanupName: string): string =>
   `${className} was destroyed without ${cleanupName}(), so its destructor released it (B-10)`;
 
 // GN-6m: whether a member waits on blocking I/O, and the token that its core function takes.
-export const waitsIo = (fn: Fn): boolean => fn.member.wait === 'blocking_io';
-export const IO_TOKEN = 'binding_core::Io::for_generated_call()';
+// GN-6m: a member that waits in a blocking call of its core, for I/O or for another process.
+export const waitsIo = (fn: Fn): boolean => fn.member.wait === 'blocking_io' || fn.member.wait === 'process_wait';
+// GN-6m, B-5 (b): a member that waits for another process, which no pool of threads that other calls share runs.
+export const waitsProcess = (fn: Fn): boolean => fn.member.wait === 'process_wait';
+const IO_TOKEN = 'binding_core::Io::for_generated_call()';
+const PROCESS_TOKEN = 'binding_core::ProcessWait::for_generated_call()';
 
 // GN-6m, GN-6n: the rule of each wait that the generator takes.
-const WAIT_RULE = { blocking_io: 'GN-6m', async_driver: 'GN-6n' } as const;
+const WAIT_RULE = { blocking_io: 'GN-6m', process_wait: 'GN-6m', async_driver: 'GN-6n' } as const;
 
 // GN-6n: whether a member awaits an async fn of the core, and whether a contract has such a member.
 export const waitsAsync = (fn: Fn): boolean => fn.member.wait === 'async_driver';

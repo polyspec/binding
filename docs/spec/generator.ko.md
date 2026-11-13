@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f5a1bbd5eebba5edcbc17fbdceb7c32f70079622e89585935ef6f109d99337e1 -->
+<!-- source-sha256: 285bcbca42afe79532a7f69b6220ce368b1f31af0521b0d70e90eae587c6c819 -->
 # 생성기
 
 [English](generator.md)
@@ -12,7 +12,7 @@
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
-  parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
+  parameter와 record field의 기본값(GN-6i)에 대해, receiver가 `self`인 method(GN-6o)와 `cleanup`이 있는 class unit(GN-6p)에 대해, Python·Node·PHP·Go는 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
   callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
   Go는 variant unit과 interface를 구현하는 class를 GN-6v와 GN-6w대로 생성한다.
@@ -702,13 +702,33 @@
     호출을 libuv 풀에서 돌리고(`ScopedTask`의 `Env::spawn`), 결과나 오류를 JavaScript 스레드에서 바꾼다. 호출의 panic은
     kind `internal`로 promise를 거부한다(B-7). member의 JavaScript 진입은 async 함수다. 그래서 인자의 실패를 포함한 모든
     실패가 promise를 거부하고, 호출 자리에서 던져지는 실패는 없다. 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
-  - Go는 cgo 호출로 작업을 코어에 넘기고 곧바로 돌아오며, 호출 goroutine은 그 작업의 완료 channel에서 기다린다. 코어는
-    export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
-    `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
+  - Go는 member의 cgo 호출 안에서, 호출 goroutine의 OS 스레드에서 코어를 부르고, 코어가 돌아올 때 호출이 돌아온다(B-8).
+    Go runtime은 cgo 호출을 막는 호출로 다룬다. goroutine은 호출이 돌아올 때까지 자기 스레드를 쥐고, runtime은 다른
+    goroutine을 다른 스레드에서 돌린다. 그래서 기다리는 호출은 OS 스레드 하나를 쥐고 다른 goroutine을 멈추지 않는다.
+    C ABI의 진입점은 코어를 부르기 전에 그 스레드에서 자기 자리의 lock을 잡고 결과를 변환할 때까지 쥔다(GN-6h).
+    receiver가 `&self`이고 기다리는 member의 class는 `Shared`에 담기므로 두 goroutine이 한 객체 안에서 동시에 기다리고,
+    어떤 호출이 그 객체 안에서 기다리는 동안 그 객체의 쓰기 자리가 필요한 호출은 kind `busy`로 실패한다. Go에는 함수의
+    꼴이 하나뿐이므로 그 member는 기다리지 않는 member와 같은 이름과 결과를 갖고, 기다리면 안 되는 호출자는 goroutine을
+    띄운다. 어떤 호출도 취소되지 않는다. token `Io`는 취소를 지니지 않고 타입 `cancel`은 생성하지 않으므로(GN-13)
+    그 member는 `context.Context`를 받지 않는다.
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
-  때문이다. `process_wait`도 이름을 대고 거부한다(G-4).
+  때문이다.
+  `wait: process_wait`인 member(B-5 (b))는 다른 프로세스가 움직일 때까지 기다리므로, 그 기다림은 그 프로세스만큼 길 수
+  있다. 그 member는 `Io` token의 자리에 `binding_core::ProcessWait::for_generated_call()`을 넘기고, 언어 코드에 닿는
+  경우(GN-6q)를 포함해 `blocking_io`인 member의 형태를 갖는다. 다만 그 형태가 다른 호출과 함께 쓰는 pool의 thread에서
+  기다리는 곳은 다르다:
+  - Python: `a<name>`은 `<name>`을 자기 thread(`threading.Thread`)에서 돌리고, 그 thread는 결과나 예외를
+    `loop.call_soon_threadsafe`로 실행 중인 loop의 future에 준다. `asyncio.to_thread`를 쓰지 않는다. 프로그램의 모든
+    `to_thread`가 기본 executor의 thread를 함께 쓰며, 프로세스만큼 긴 기다림은 그 하나를 붙잡기 때문이다. 취소된 future는
+    결과를 받지 않는다.
+  - Node: 코어 호출은 자기 thread(`std::thread`)에서 돌고, 그 결과나 오류는 JavaScript thread에서 promise를
+    정한다(`Env::create_deferred`). libuv pool을 쓰지 않는다. 그 thread는 프로그램의 파일 시스템 호출과 DNS 호출이 함께
+    쓰기 때문이다. 호출의 panic은 kind `internal`로 promise를 reject한다(B-7).
+  - PHP, Python `<name>`, Go는 `blocking_io`처럼 호출한 thread에서 기다린다.
+  - WASM에는 그런 member가 없다. 이것은 생성기의 빈틈이 아니라 그 target의 규칙이다. WebAssembly module에는 프로세스가
+    없고 하나뿐인 thread를 막을 수 없으므로, 계약은 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
 - **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
   tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. tokio runtime이 없는
   WASM은 그것을 JavaScript의 event loop에서 돌린다. 진입점은 GN-6m처럼 호출
@@ -722,7 +742,12 @@
   - Node는 `Promise`를 돌려준다. future는 napi의 tokio runtime에서 돌고(`Env::spawn_future_with_callback`, napi feature
     `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
     JavaScript 진입은 GN-6m처럼 async 함수다.
-  - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - Go는 PHP처럼 member의 cgo 호출 안에서, 호출 goroutine의 OS 스레드에서 `binding_core::driver::block_on`으로 future를
+    돌린다. 그 스레드가 future를 poll하고, 코어가 시작한 task는 runtime의 worker 스레드에서 돌며, future가 끝날 때 호출이
+    돌아온다. 그래서 goroutine은 GN-6m대로 자기 스레드를 쥔다. 진입점은 결과를 변환할 때까지 자기 자리의 guard를 쥔다.
+    runtime은 process의 것이다. `block_on`이 그런 첫 호출에서 만들고 process가 끝날 때까지 산다. 어떤 객체도 그것을
+    소유하지 않으므로 마지막 객체의 해제는 어떤 스레드도 멈추지 않고, 코어가 쥔 연결은 그것을 담은 코어 값의 drop이
+    닫는다. GN-6m대로 어떤 호출도 취소되지 않는다.
   - WASM은 `wasm_bindgen_futures::future_to_promise`의 `Promise`를 돌려준다. 브라우저에서도 Node에서도 JavaScript의
     event loop가 모듈의 스레드에서 future를 poll하고, 끝나면 그 결과나 오류를 변환하므로 실패는 promise를 reject한다.
     WASM crate는 자기 `wasm-bindgen`과 `js-sys`를 고정한 release의 `wasm-bindgen-futures`에 의존하고 binding_core의
@@ -739,13 +764,25 @@
   코어가 실패해도 그렇다. 호출 때부터 값은 코어의 것이기 때문이다. 그 뒤 그 객체가 receiver나 parameter로 들어가는 모든
   자리는, 어느 인자도 코어에 닿기 전에 category `type`의 kind `consumed`로 실패한다(E-1a). 기다리는 member는 호출
   스레드에서 값을 꺼내 자기 작업이나 future로 옮긴다(GN-6m, GN-6n). G-5는 그런 member마다, 그것을 부른 뒤 같은 객체의
-  다른 member를 불러 kind `consumed`로 실패하는지 보는 시험을 생성한다. PHP·Python·Node가 생성하고, Go와 WASM은 wrapper가
-  값을 꺼낼 때까지 그런 member를 이름을 대고 거부한다(G-4). 이유: 호출 뒤 코어가 가진 값에는 그 객체로 다시 닿을 수 없고,
+  다른 member를 불러 kind `consumed`로 실패하는지 보는 시험을 생성한다. 모든 target이 그것을 생성한다. Go와 WASM에서는
+  객체가 수거될 때까지 class의 table이 비워진 lock을 그 객체의 handle 아래에 두므로, 그 handle의 뒤 자리는 kind
+  `consumed`다. 이유: 호출 뒤 코어가 가진 값에는 그 객체로 다시 닿을 수 없고,
   kind가 호출자에게 객체가 왜 거부하는지 알려 준다.
-- **GN-6p** `cleanup`이 있는 class unit(B-10)은 코어 receiver가 `self`인 그 unit의 method를 가리킨다(GN-6o). 다른 member는
-  이름을 대고 거부한다. binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
+- **GN-6p** `cleanup`이 있는 class unit(B-10)은 코어 receiver가 `self`(GN-6o)이거나 `&mut self`인 그 unit의 method를
+  가리킨다. 다른 member는 이름을 대고 거부한다. `self`인 cleanup은 객체를 소비하고, 그 뒤 그 객체의 모든 사용은 kind
+  `consumed`다(GN-6o). `&mut self`인 cleanup은 객체를 남긴다. 코어가 cleanup이 있었다는 것을 간직하고 그 뒤 각 member가
+  무엇을 주는지를 자기 kind로 정하며, 호출자는 cleanup을 다시 부를 수 있다. 그래서 계약은 cleanup의 두 번째 호출이
+  아무것도 하지 않는 case를 갖는다(CK-76). 그런 cleanup의 생성된 호출은 receiver의 쓰기 guard를 쥐었을 때, 코어를 부르기
+  전에, 그 뒤 코어가 무엇을 주든 객체의 lock에 표시한다(`binding_core::Exclusive`나 `Shared`의 `clean`). 어느 target의
+  소멸자도 cleanup member를 부르지 않는다. cleanup은 기다릴 수 있고(`blocking_io`) 소멸자에는 기다릴 자리가 없기
+  때문이다. PHP는 어느 문장 안에서든 객체를 해제하고, Python과 Node는 interpreter가 막히면 안 되는 곳에서 finalize하며,
+  Go runtime은 모든 cleanup 함수를 goroutine 하나에서 돌리고, `FinalizationRegistry`의 callback은 event loop의 task다.
+  소멸 때의 해제는 token을 받지 않는 코어 타입의 `Drop`이고, 기다리는 cleanup은 기다리는 여느 member처럼
+  불린다(GN-6m). 그래서 `cleanup`이 있는 class의 코어 타입은 cleanup이 불리지 않았을 때 cleanup member가 놓았을 모든
+  자원을 자기 `Drop`에서 놓는다. 이것은 코어의 의무이며, 계약 검사는 Rust 소스를 읽지 않으므로 그것을 검증하지
+  않는다(CK-76). binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
   unit의 코어 타입은 구현하지 않는다는 것을 컴파일 때 단언한다(모호한 trait 구현이며, 타입이 그것을 구현하면 컴파일이
-  실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않은 객체가 사라지면 그
+  실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않았고 lock에 표시도 없는 객체가 사라지면 그
   소멸자가 코어 값을 drop하고, 그 `Drop`이 자원을 놓으며, 정리 호출이 없었다는 경고를
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)` 메시지로 낸다:
   - PHP는 객체가 해제될 때 `E_WARNING`을 낸다. PHP는 메시지 앞에 실행 중인 함수의 이름을 붙이므로(`php_error_docref`)
@@ -754,12 +791,23 @@
     실패한 호출의 임시 값일 수 있다)를 맡아 두었다가 경고 뒤에 다시 설정한다. 예외가 설정된 채 부른 경고 호출은 실패하기
     때문이다.
   - Node는 class가 finalize될 때 `process.emitWarning`으로 type `ResourceWarning`의 경고를 낸다.
-  Go와 WASM은 finalizer(`runtime.SetFinalizer`, `FinalizationRegistry`)를 생성할 때까지 그런 unit을 이름을 대고 거부한다
-  (G-4). G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험을 생성하고,
+  - Go: struct가 수거될 때 `runtime.AddCleanup`이 돌리는 함수(GN-15a)가 `<prefix>__release_<class>`로 값을 놓는다. 그
+    함수는 lock이 아직 값을 쥐고 있었는지 답하고, 그렇다면 표준 logger의 `log.Print`로 경고한다. 프로그램은 그 출력을
+    `log.SetOutput`으로 정한다. Go는 프로그램이 고르지 않는 때에 객체를 수거하고 프로그램은 그 전에 끝날 수 있으므로,
+    정리 member가 그 class의 명시적 해제다. `Close` 같은 두 번째 member는 생성하지 않는다.
+  - WASM: ES 모듈의 `FinalizationRegistry`의 callback(GN-18a)이 `__<Class>_free`로 값을 drop한다. 그 함수는 lock이 아직
+    값을 쥐고 있었는지 답하고, 그렇다면 host에 `process.emitWarning`이 있는 곳(Node)에서는 Node binding처럼 그 함수와
+    type `ResourceWarning`으로, 없는 곳(브라우저)에서는 `console.warn`으로 경고한다. engine은 그 callback을 끝내 돌리지
+    않을 수 있으므로, 거기서도 정리 member가 명시적 해제다.
+  G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험을 생성하고,
   PHP와 Python에서는 정리 member를 부르고 객체를 버린 뒤 경고가 없음을 요구하는 시험도 생성한다. PHP는 error handler
   아래에서 객체를 unset하고, Python은 `warnings.catch_warnings(record=True)` 아래에서 지우며, Node는 `gc()`를 켜고
-  (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event를
-  기다린다. Node에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
+  (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event 가운데 메시지가
+  자기 class의 경고인 것을 기다린다. 앞선 시험의 객체들이 같은 수거에서 경고하기 때문이다. WASM은 자기 시험 실행의 `gc()`로 같은 일을 한다. Go는 표준 logger의 출력을 각 메시지를 간직하고 결코 막히지
+  않는 writer로 정한다. logger가 쓰는 동안 자기 lock을 쥐기 때문이다. 시험은 객체의 `weak.Pointer`를 얻고 `runtime.GC()`를
+  한 번 부른 뒤, weak pointer가 여전히 객체를 주면 곧바로 실패한다. 수거가 남긴 객체의 cleanup은 돌지 않기 때문이다.
+  그다음 자기 class의 경고가 나올 때까지 메시지를 읽는다. 그 경고는 수거된 객체의 cleanup이 쓰며, 앞선 시험의 객체들이
+  그보다 먼저 경고할 수 있다. Node, WASM, Go에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
   잠금의 `taken`은 binding_core에서 시험한다. 이유: 호출자가 닫지 않은 자원도 놓이고, 경고는 호출자가 빠뜨린 호출을 알려 준다.
 - **GN-6q** parameter의 타입이나 receiver의 class가 언어 코드를 지니면(GN-6h) `wait: blocking_io`인 member는 언어 코드에
   닿는다. 호출 중에 코어가 callback(U-3)을 부르거나 언어 코드 값의 `Native`를 만질 수 있다는 뜻이다. 코어는 호출을 실행하는
@@ -776,7 +824,10 @@
     실패로 정해지는 promise를 돌려준다. JavaScript entry는 async function이고 선언은 GN-6m대로 `Promise<T>`를 적는다. 그래서
     member의 언어 꼴은 언어 코드에 닿는지에 따라 달라지지 않는다. 코어가 I/O를 기다리는 동안 JavaScript 스레드도 기다린다.
     각 코어의 spec은 그런 member에 대해 이 비용을 적는다.
-  - Go는 `blocking_io`인 member를 이름을 대고 거부하고(GN-6m), WASM에는 그런 member가 없다(GN-6m).
+  - Go는 GN-6m대로 호출 goroutine의 스레드에서 코어를 부르고, 코어는 그 스레드에서 export `<prefix>__go_callback`으로
+    callback을 부른다(GN-15b). 그 스레드는 callback을 넘긴 스레드이므로 `thread: owner`인 callback은 기다리지 않는
+    호출에서처럼 자기 스레드에서 불린다. 다른 goroutine을 기다리는 callback은 돌아올 때까지 자기 호출의 lock을 쥔다.
+  - WASM에는 그런 member가 없다(GN-6m).
   Node에서 다른 스레드를 쓰지 않는 이유: napi의 callback 객체는 JavaScript 스레드에서만 유효하다. callback 호출마다
   thread-safe function으로 그 스레드에 넘기고 답을 기다리는 pool 스레드는 호출 내내 libuv pool의 스레드 하나를 잡고, JavaScript
   스레드가 그 pool을 기다리면 끝나지 않는다. 호출마다 언어 코드에 닿는지 판단하는 코어(`core.reaches`)가 있으면 닿지 않는
@@ -804,7 +855,8 @@
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
-  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). 그래서 계약 검사는 그런 class가 PHP와 Go가 없는 `only`를
+  적기를 요구한다(CK-78). PHP는 형식 `php_object`를 entry들을 property로 가진 새
   `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
   가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
   그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는
@@ -858,9 +910,9 @@
     JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
     tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
     돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
-  - Go는 `async_driver`인 모든 member처럼(GN-6n) 그런 member를 이름을 대고 거부한다. Io future를 기다릴 GN-6m의 완료
-    channel을 생성하지 않으며, 어느 스레드의 cgo 호출도 Go를 부를 수 있으므로 Go의 callback에는 owner 스레드가 필요
-    없다(c6 6.4).
+  - Go는 PHP처럼 member의 cgo 호출 안에서, 호출 goroutine의 스레드에서 `binding_core::machine::drive`로 machine을
+    돌리고, 그것은 각 Io future를 `binding_core::driver::block_on`에서 기다린다. 그래서 callback은 그것을 넘긴
+    스레드에서 불린다(GN-6q).
   - WASM: Node처럼 진입은 모듈의 스레드에서 machine을 만들고 모듈의 `Driven` 객체를 돌려주며, async 함수인 ES 진입은
     machine이 끝날 때까지 그 `advance()`를 부른 뒤 그것을 해제한다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
     모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[false, promise]`를, 끝에서는
@@ -887,7 +939,7 @@
   parameter는 lower camel case이고 Go 예약어, 생성 본문의 이름, 계약 module의 패키지 이름과 같으면 끝에 `_`를 붙인다.
 - **GN-15a** Go class unit(T-5, GN-6h): class unit은 그 module 패키지의 struct `<Class>`이며, 내보내지 않은 참조에 C ABI의
   handle을 담는다. C ABI는 코어 값을 그 handle 아래 표에 GN-6h의 lock 뒤로 두고(handle 0은 값이 없으며 kind
-  `invalid_argument_type`), Go가 struct를 회수하면 `runtime.AddCleanup`이 `<prefix>__release_<class>`로 놓는다. 생성자는
+  `invalid_argument_type`), Go가 struct를 회수하면 `runtime.AddCleanup`이 `<prefix>__release_<class>`로 놓는다. 그 참조는 pointer를 갖는다. pointer가 없는 객체는 다른 작은 객체와 할당 block을 나누어 쓰고, 그 cleanup은 block의 모든 객체가 닿을 수 없을 때에만 돌기 때문이다. 생성자는
   `New<Class>`(`constructible`이 false이면 없음), static member는 함수 `<Class><Member>`(CK-13), method와 property는
   호출이 끝날 때까지 receiver를 살려 두는(`runtime.KeepAlive`) `*<Class>`의 method다. iterate는 C ABI가 모은 항목에 대한
   `iter.Seq[T]`나 `iter.Seq2[K, V]`를 돌려주고, stringify는 `String()`이며 `fmt.Stringer`에 오류 결과가 없으므로 코어의
@@ -1033,7 +1085,7 @@
   lock이 있는 class(GN-6h)의 값은 표가 그 lock(모든 바인딩 crate가 켜는 feature `lock`의 `binding_core::Exclusive` 또는
   `Shared`)에 담아 두고, 호출의 자리마다 호출 동안 그 guard를 잡는다. 그래서 receiver가 `&mut self`인 member는 값에 쓰고,
   같은 값의 두 번째 자리는 kind `busy`다(B-5c). panic은 trap이 되므로(GW-7) WASM 시험은 lock을 poison하지 않는다.
-  `cleanup`(B-10)이 있는 class unit과 receiver가 `self`인 method는 이름을 대고 거부한다(GN-6o, GN-6p).
+  `cleanup`(B-10)이 있는 class unit과 receiver가 `self`인 method는 GN-6o와 GN-6p대로 생성한다.
 - **GN-18b** WASM의 `core: {in, out}` 값 alias(U-7), 다른 레포의 것(GN-6k) 포함: 값은 Node와 같이 받고 준다(GN-6e). 모듈은
   JavaScript 값을 Node의 규칙대로 한 단계씩 `HostValue`로 기술한다: number는 `UntypedNumber`, bigint는 `Int`(`i64` 밖이면
   그 십진 token), string은 UTF-16 단위, Array, Map(`Array.from`의 항목), plain object(prototype이 `Object.prototype`이나
@@ -1164,8 +1216,7 @@
   준다. member case의 값에도 alias case의 값에도 그렇게 한다. Go(예:
   `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
   거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
-- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, 그리고 `cleanup`이 있는 class unit을 이름으로 거부하는 Go와 WASM의
-  B-10(PHP, Python, Node는 그것을 생성한다, GN-6p), B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
+- **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
   거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점,

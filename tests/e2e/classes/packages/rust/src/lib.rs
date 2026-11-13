@@ -1,7 +1,7 @@
 //! A library for the end-to-end check of binding: a class unit with a constructor, a static member, methods, a
 //! property, an iteration and the hooks of N-4 (T-5, U-2), without a unit that the WASM generator refuses.
 
-use binding_core::Kinds;
+use binding_core::{Failure, Kinds};
 use std::fmt;
 
 /// The errors of the library.
@@ -16,6 +16,11 @@ pub enum Error {
     Unsupported {
         /// What the value is.
         what: String,
+    },
+    /// A stall that is shut has no keeper.
+    Shut {
+        /// The name of the tag of the stall.
+        tag: String,
     },
     /// A gate that is closed lets nothing pass and does not close again.
     Closed {
@@ -32,6 +37,7 @@ impl Error {
             Self::Missing { .. } => "missing",
             Self::Unsupported { .. } => "unsupported",
             Self::Closed { .. } => "closed",
+            Self::Shut { .. } => "shut",
         }
     }
 }
@@ -42,6 +48,7 @@ impl fmt::Display for Error {
             Self::Missing { key } => write!(f, "no value for {key}"),
             Self::Unsupported { what } => write!(f, "not data: {what}"),
             Self::Closed { tag } => write!(f, "the gate of {tag} is closed"),
+            Self::Shut { tag } => write!(f, "the stall of {tag} is shut"),
         }
     }
 }
@@ -164,6 +171,15 @@ impl Tag {
         }
     }
 
+    /// A stall of the tag, which a call shuts (GN-6p).
+    #[must_use]
+    pub fn stall(&self) -> Stall {
+        Stall {
+            tag: self.name.clone(),
+            shut: false,
+        }
+    }
+
     /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
     #[must_use]
     pub fn gates(&self, count: u64) -> Vec<Gate> {
@@ -203,6 +219,89 @@ impl Lease {
     }
 }
 
+/// A stall of a tag, whose cleanup shuts it and leaves the object (GN-6p: a cleanup with the receiver `&mut self`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stall {
+    tag: String,
+    shut: bool,
+}
+
+impl binding_core::Cleanup for Stall {}
+
+impl Stall {
+    /// The name of the tag that keeps the stall.
+    ///
+    /// # Errors
+    ///
+    /// Kind `shut` when the stall is shut.
+    pub fn keeper(&self) -> Result<String, Error> {
+        if self.shut {
+            return Err(Error::Shut {
+                tag: self.tag.clone(),
+            });
+        }
+        Ok(self.tag.clone())
+    }
+
+    /// Shuts the stall; a second call does nothing.
+    pub fn shut(&mut self) {
+        self.shut = true;
+    }
+}
+
+/// Who leads a guest to a seat, which language code implements (U-3).
+pub trait Guide {
+    /// The guest that the guide leads for a name.
+    ///
+    /// # Errors
+    ///
+    /// The failure of the implementation.
+    fn lead(&mut self, tag: &str) -> Result<String, Failure<Error>>;
+}
+
+/// An usher, whose guide is language code that the core calls while the call waits (GN-6q): calls of one usher only
+/// read it, so they run at the same time (GN-6h).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Usher {
+    name: String,
+}
+
+impl Usher {
+    /// An usher with a name.
+    #[must_use]
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+        }
+    }
+
+    /// The name of the usher.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Whom the usher seats: the guest that the guide leads, asked as a blocking I/O call would be (B-5 (a): the
+    /// token of wait blocking_io).
+    ///
+    /// # Errors
+    ///
+    /// Kind `missing` when the guide leads nobody, and the failure of the guide.
+    pub fn seat(
+        &self,
+        _io: binding_core::Io,
+        guide: &mut dyn Guide,
+    ) -> Result<String, Failure<Error>> {
+        let guest = guide.lead(&self.name)?;
+        if guest.is_empty() {
+            return Err(Failure::Kind(Error::Missing {
+                key: String::from("guest"),
+            }));
+        }
+        Ok(format!("{} seats {guest}", self.name))
+    }
+}
+
 /// A gate of a tag, which a call closes (G-5: a receiver that an earlier call prepares).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gate {
@@ -231,6 +330,16 @@ impl Gate {
     ///
     /// Kind `closed` when the gate is closed.
     pub fn enter_slowly(&self, _io: binding_core::Io) -> Result<String, Error> {
+        self.enter()
+    }
+
+    /// What enters the gate, awaited as a wait for another process would be (B-5 (b): the token of wait
+    /// process_wait).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed.
+    pub fn enter_after(&self, _wait: binding_core::ProcessWait) -> Result<String, Error> {
         self.enter()
     }
 
@@ -272,6 +381,20 @@ pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
         });
     }
     Ok(format!("the text of {name}"))
+}
+
+/// The name, attended as a wait for another process would be (B-5 (b): the token of wait process_wait).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty.
+pub fn attend(_wait: binding_core::ProcessWait, name: &str) -> Result<String, Error> {
+    if name.is_empty() {
+        return Err(Error::Missing {
+            key: String::from("name"),
+        });
+    }
+    Ok(format!("{name} was attended"))
 }
 
 /// The text of a name, awaited as an async driver would be (I-2 (4): wait async_driver).

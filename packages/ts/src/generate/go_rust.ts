@@ -12,7 +12,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf,
+  takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
   errorMatched,
   recognizedFn,
@@ -605,12 +605,19 @@ const _: () = {
     sync::<${object.unit.core_type ?? ''}>();
 };
 ` : ''}
-/// T-5: releases the value of an instance of ${goClass} that the Go runtime found unreachable (runtime.AddCleanup).
+/// T-5: releases the value of an instance of ${goClass} that the Go runtime found unreachable (runtime.AddCleanup).${object.cleanup === undefined ? `
 #[no_mangle]
 pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) {
     let released = lock(&${tableName(object.unit)}).values.remove(&handle);
     drop(released);
-}
+}` : `
+/// GN-6p, B-10: the answer is 1 when the cleanup call did not consume the value, so that this release dropped it and
+/// Go warns.
+#[no_mangle]
+pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) -> i32 {
+    let released = lock(&${tableName(object.unit)}).values.remove(&handle);
+    i32::from(released.is_some_and(|held| !held.${cleanupMade(object)}()))
+}`}
 `;
 }
 
@@ -718,7 +725,8 @@ function functionRust(model: Model, fn: Fn): string {
     lines.push('        }', '        Ok(buffer)');
     return entry(model, cSymbol(model, fn), doc, lines);
   }
-  const call = armedCall(model, fn, coreCall(model, fn));
+  // GN-6n: the thread of the calling goroutine blocks on the future of an async member, on the runtime of binding_core.
+  const call = waitsAsync(fn) ? drivenCall(model, fn, coreCall(model, fn), (wait) => wait, 'binding_error') : armedCall(model, fn, coreCall(model, fn));
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -1479,7 +1487,7 @@ function rustUsed(model: Model): string {
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
   const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
-  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
+  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
 }
 
 // GN-6x: the value classes of other repositories of the model, in the order of their numbers in node 11 of a result.
@@ -1600,7 +1608,7 @@ struct Fail {
 fn binding_error(error: BindingError) -> Fail {
     Fail { category: error.category(), message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno(), class: 0, properties: Vec::new(), raised: None }
 }
-${coreErrorRust(model)}${raisesAssertions(model)}${aliasKindsRust(model)}
+${coreErrorRust(model)}${raisesAssertions(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}
 /// B-7, B-8: a panic of the call reaches Go as kind internal and never crosses the C ABI.
 fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {
     match catch_unwind(AssertUnwindSafe(body)) {

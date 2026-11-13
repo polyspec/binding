@@ -198,6 +198,11 @@ class Checker {
     this.wasmOnly();
     this.awaitableNames();
     this.reservedNames();
+    this.waitingMembers();
+    this.constructibleClasses();
+    this.keptClassTargets();
+    this.variantCores();
+    this.cleanupCases();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
@@ -1142,6 +1147,95 @@ class Checker {
       if (only === undefined || only.targets.includes('wasm')) {
         const cause = blocking ? `wait ${member.wait}` : 'a path';
         this.report('CK-15', path, `${member.id} has ${cause}, so it needs only without wasm and a reason (Q-4)`);
+      }
+    }
+  }
+
+  // ---- CK-73: members that do not wait (GN-6m, GN-6n, N-4) ----
+
+  waitingMembers(): void {
+    // The member that can wait in the place of each kind that cannot.
+    const instead: Readonly<Record<string, string>> = {
+      constructor: 'make the instance by a static member, which can wait',
+      property: 'give the value by a method, which can wait',
+      iterate: 'give the items by a method, which can wait',
+    };
+    const hooks = ['stringify', 'to_json', 'primitive'];
+    const rules = { blocking_io: 'GN-6m', process_wait: 'GN-6m', async_driver: 'GN-6n' } as const;
+    for (const { member, unit, path } of this.members.values()) {
+      // A host unit is judged too: its code is written by hand (L-2a), and the language has no awaited form there either.
+      if (member.wait === undefined || member.wait === 'none') continue;
+      const hook = hooks.includes(member.kind);
+      const remedy = hook ? 'the language calls this hook in its own protocol, so give the value by a method, which can wait' : instead[member.kind];
+      if (remedy === undefined) continue;
+      const article = member.kind === 'iterate' ? 'an' : 'a';
+      this.report('CK-73', `${path}/wait`, `${member.id}: ${article} ${member.kind} does not wait (wait ${member.wait}); ${remedy} (${hook ? 'N-4, ' : ''}${rules[member.wait]})`);
+    }
+  }
+
+  // ---- CK-74: constructible classes (U-1) ----
+
+  constructibleClasses(): void {
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'class' || (unit.origin !== 'generated' && unit.origin !== 'value')) continue;
+      if (unit.core_type === undefined || unit.abstract === true) continue;
+      const made = (unit.members ?? []).find((m) => m.kind === 'constructor');
+      if (unit.constructible !== false && made === undefined) {
+        this.report('CK-74', path, `${unit.id}: a class without a constructor declares constructible: false, or one constructor (U-1)`);
+      }
+      if (unit.constructible === false && made !== undefined) {
+        this.report('CK-74', `${path}/constructible`, `${unit.id}: a class with constructible: false has no constructor, so the constructor ${made.id} is a static member, or the class is constructible (U-1)`);
+      }
+    }
+  }
+
+  // ---- CK-78: a class without core_type on a target that does not generate it (GN-6af) ----
+
+  keptClassTargets(): void {
+    // GN-6af: Python, Node and WASM generate a class that keeps language values; PHP takes its own stdClass and
+    // references (GN-6e), and Go generates no such class yet.
+    const generated: readonly string[] = ['python', 'node', 'wasm'];
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'class' || (unit.origin !== 'generated' && unit.origin !== 'value') || unit.core_type !== undefined) continue;
+      const missing = (unit.only?.targets ?? this.contract.targets).filter((target) => !generated.includes(target)).join(', ');
+      if (missing === '') continue;
+      this.report('CK-78', unit.only === undefined ? path : `${path}/only`, `${unit.id}: a class without core_type is not generated for ${missing}, so the unit names only without ${missing} and a reason (GN-6af, Q-4)`);
+    }
+  }
+
+  // ---- CK-75: the core enum of a variant (T-9) ----
+
+  variantCores(): void {
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind === 'variant' && unit.origin === 'generated' && unit.core_type === undefined) {
+        this.report('CK-75', path, `${unit.id}: a variant names its core enum in core_type (T-9)`);
+      }
+    }
+  }
+
+  // ---- CK-76: a cleanup that leaves its object (GN-6p) ----
+
+  cleanupCases(): void {
+    const files = this.caseFiles;
+    // The rule reads the cases, so a check without the case files does not judge it.
+    if (files === undefined) return;
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'class' || unit.cleanup === undefined) continue;
+      const cleanup = this.members.get(unit.cleanup)?.member;
+      if (cleanup === undefined || typeof cleanup.core !== 'object' || cleanup.core.receiver !== '&mut self') continue;
+      const again = this.contract.cases.filter((row) => row.member === cleanup.id).some((row) => {
+        const document = files.get(row.file);
+        const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
+        return (Array.isArray(group) ? group : []).some((kase: unknown) => {
+          const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
+          const receiver = typeof record['receiver'] === 'object' && record['receiver'] !== null ? (record['receiver'] as Record<string, unknown>) : {};
+          const then = Array.isArray(receiver['then']) ? (receiver['then'] as unknown[]) : [];
+          const calls = then.some((step) => typeof step === 'object' && step !== null && (step as Record<string, unknown>)['call'] === cleanup.id && (step as Record<string, unknown>)['raises'] === undefined);
+          return calls && record['raises'] === undefined;
+        });
+      });
+      if (!again) {
+        this.report('CK-76', `${path}/cleanup`, `${unit.id}: the cleanup ${cleanup.id} leaves its object (receiver &mut self), so a case of ${cleanup.id} calls it a second time in the then of its receiver and names no raises; binding check reads no Rust source, so that the Drop of the core type releases the resource of an object whose cleanup was not called is the duty of the core (GN-6p)`);
       }
     }
   }
