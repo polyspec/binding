@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Go C ABI of a contract with fault injection points gave the points left through the closure
+  `|output, item| out_text(output, item)`, so `cargo clippy -D warnings` of `polyspec-sample-go` failed with
+  `redundant_closure` and the Go target of `tests/e2e/sample` ran no test. The entry now passes `out_text` itself.
+  Verified by `npm test` in `packages/ts` and `cargo clippy` of the Go crate of the sample with its test features.
 - The Go refusal of a record of another repository named no row that states how Go would generate it. GN-15f now
   states the design, in which `binding scaffold` writes the Go module of that repository in `go.mod` by the dependency
   line of the core, and marks it as not implemented; the refusal names GN-15f. Verified by `npm test` in

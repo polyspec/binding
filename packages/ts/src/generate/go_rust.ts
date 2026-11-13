@@ -1120,7 +1120,7 @@ function testEntries(model: Model): string {
       '        finish_input(input)?;',
       '        let left = binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;',
       '        let mut buffer = Vec::new();',
-      '        out_list(&mut buffer, left, |output, item| out_text(output, item));',
+      '        out_list(&mut buffer, left, out_text);',
       '        Ok(buffer)',
     ], 'fault-test'));
   }
