@@ -14,6 +14,7 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'Makefile', why: 'make e2e runs its recipe, which sets the environment of mise and the PATH of var/tools' },
   { path: 'scripts/e2e.mts', why: 'the script of the checkout writes the tree of the commit and starts the script of that tree' },
   { path: 'scripts/e2e-inputs.mts', why: 'the script of the checkout reads this list' },
+  { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
   { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
   { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },
@@ -31,4 +32,8 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
 
 export const NOT_READ: readonly Input[] = [
   { path: '.gitattributes', why: 'git archive reads the attributes of the tree of the commit, and git diff --name-only names a file whatever its attributes' },
+  { path: '.github/actions/bootstrap/action.yml', why: 'GitHub runs it in a job of CI or of the release; a run of make e2e does not start it' },
+  { path: '.github/workflows/ci.yml', why: 'GitHub runs it on a push or a manual run; a run of make e2e does not read it' },
+  { path: '.github/workflows/release.yml', why: 'GitHub runs it after a successful CI run; a run of make e2e does not read it' },
+  { path: 'config/release.json', why: 'the release targets of the Makefile read it to classify and pack the package files; a run of make e2e does not' },
 ];

@@ -306,6 +306,11 @@ describe('CK-13 Go names', () => {
       member(c, 'forms.parse').name = ['new', 'session'];
       unit(c, 'forms').module = 'session';
     }));
+  test('a function with the name of the function that makes an instance of a handle (GN-15a)', () =>
+    fails('CK-13', '/units/', (c) => {
+      member(c, 'forms.parse').name = ['session', 'from', 'handle'];
+      unit(c, 'forms').module = 'session';
+    }));
   test('a Go naming exception that makes a name collide', () =>
     fails('CK-13', '/units/', (c) => {
       c.naming.exceptions.push({ lang: 'go', unit: 'memory_store', name: 'Session', reason: 'S1' });
@@ -1008,5 +1013,22 @@ describe('CK-22 values of the type cancel (GN-13)', () => {
       assert.deepEqual(run(value).filter((m) => m.includes('the argument cancel')).length, 1, JSON.stringify(value));
       assert.match(run(value).join('\n'), /the argument cancel is \{"cancel": "fired" \| "open"\}/);
     }
+  });
+});
+
+describe('CK-16 the awaitable of a member that waits (GN-6m)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (contract: any) => void): string[] => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) }).filter((f) => f.check === 'CK-16').map((f) => `${f.path} ${f.message}`);
+  };
+  const waiting = (contract: any): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'gate.enter_slowly');
+  test('the classes repository passes', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('an awaitable that is the name of another member, or a reserved word', () => {
+    assert.match(run((c) => { c.units.find((u: any) => u.id === 'gate').members.find((m: any) => m.id === 'gate.close').name = ['aenter', 'slowly']; }).join('\n'), /the Python awaitable aenter_slowly of gate\.enter_slowly is the name of gate\.close/);
+    assert.match(run((c) => { waiting(c).name = ['wait']; }).join('\n'), /the Python awaitable await of gate\.enter_slowly is a reserved word of Python/);
   });
 });

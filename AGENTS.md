@@ -61,3 +61,27 @@ rules of this repository.
   commit, so the two can differ and the result belongs to no commit that a push or a merge carries.
   Enforced by: none, the end-to-end check needs every target with its runner, which no unit test owns; the record names
   the commit of each run.
+- Own: `.github/workflows/ci.yml` runs on the push of `main` and on a manual run, one job per matrix entry: `ts` runs
+  `typecheck-ts`, `unit-ts` and `release-coverage`, and `rust` runs `test-rust-features`, `test-rust-plain`,
+  `clippy-rust-features`, `clippy-rust` and `fmt-rust`, so the jobs run every target of `make check` once. Each job runs
+  them with `make ci-targets`, which runs every target to its end and writes the report `var/ci/<name>/`, and the last
+  job `ci-passed` passes only when every other job passed. The jobs run on `ubuntu-26.04-arm`, pin every action by its
+  commit, set no `timeout-minutes` and run every command of a step as one make target, and `.github/actions/bootstrap` is
+  the bootstrap of every job. The end-to-end check is no job of the workflow: it needs a checkout of each repository that
+  it checks, and the rule above requires its run of a commit before that commit is pushed or merged. Why: a release takes
+  the id of a run whose every job passed, and a step that runs a tool directly would miss the settings of the Makefile.
+  Enforced by: none, the workflow is read in review; `make ci-passed` judges the jobs of a run.
+- Own: `config/release.json` classifies every package file (`make release-coverage`). A tag `vX.Y.Z` releases the
+  generator `packages/ts` as the npm archive `polyspec-binding-X.Y.Z.tgz` of the GitHub Release, which `npm pack` builds
+  with the prepack script `npm run build`, and the crate `binding_core` of `packages/core/rust` as the Git tag, which a
+  Cargo dependency names with `tag = "vX.Y.Z"`; no registry holds either, because until version 0.1 a repository takes
+  another polyspec repository by a GitHub tag or a release asset. The version-bump commit `chore(release): Release X.Y.Z`
+  sets X.Y.Z in `packages/ts/package.json` with its lock and in `packages/core/rust/Cargo.toml`, and renames
+  `## Unreleased` of both changelogs to `## X.Y.Z`, with a new empty `## Unreleased` above it. When the CI run of that
+  push to `main` succeeds, `.github/workflows/release.yml` starts by itself, and `gh workflow run release.yml -f run=<id>`
+  starts it again: `make release-tag` creates and pushes the annotated tag `vX.Y.Z` at that commit, and `make
+  release-assets`, `make release-publish` and `make release-undraft` build the archive and create the GitHub Release. No
+  tag is created by hand. Why: the release is the commit that a successful run checked, and its version is the version of
+  every manifest that it releases.
+  Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
+  release-tag`, which tags only the commit of a successful run.

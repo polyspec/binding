@@ -2,16 +2,16 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, nativeRoundTrip, takesFunction, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, functionFixturesOf, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', 'null'],
-  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", 'null'],
+  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', '2 ** 53', 'null'],
+  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)', 'null'],
   float: ['true', "'7'", '1', 'null'],
 };
 
@@ -128,7 +128,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
     if (functionArg !== undefined && reachable) {
       methods.push(`
-    public function testGn6m${name}Refuses${langName('php', functionArg.name, 'class')}ThatIsNotAClosure(): void
+    public function testGn6z${name}Refuses${langName('php', functionArg.name, 'class')}ThatIsNotAClosure(): void
     {
         try {
             ${call(new Map([[functionArg, '0']]))};
@@ -168,6 +168,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (${cls('type')} $error) {
             self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        methods.push(`
+    public function testB2${name}${argName}RefusesAKeyOutsideTheSafeIntegers(): void
+    {
+        try {
+            ${call(new Map([[arg, unsafeKey]]))};
+            self::fail('no error');
+        } catch (${cls('value')} $error) {
+            self::assertSame('invalid_number', $error->kind());
         }
     }`);
       }
@@ -245,6 +258,15 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     };
     for (const kase of raisingCases(model, fn)) {
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        methods.push(`
+    public function testB4${name}${id}(): void
+    {
+        self::fail(${phpText(refusal)});
+    }`);
+        continue;
+      }
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
@@ -283,6 +305,15 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     public function testGn13e${name}${id}(): void
     {
         self::fail(${phpText(kase.refused)});
+    }`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        methods.push(`
+    public function testGn13e${name}${id}(): void
+    {
+        self::fail(${phpText(refusal)});
     }`);
         continue;
       }
@@ -408,7 +439,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   if (roundFn !== undefined) {
     const same = (value: string): string => invoke(roundFn, value, '');
     methods.push(`
-    public function testGn6o${langName('php', roundFn.member.name, 'class')}GivesBackTheSameObjectAndReleasesIt(): void
+    public function testGn6u${langName('php', roundFn.member.name, 'class')}GivesBackTheSameObjectAndReleasesIt(): void
     {
         ${same('new class {}')};
         $before = \\${layout.namespace}\\Internal\\nativeCount();
@@ -425,6 +456,58 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     public function testU3AFunctionCalledOnAnotherThreadIsKindWrongThread(): void
     {
         self::assertSame('wrong_thread', \\${layout.namespace}\\Internal\\threadTest(static fn () => null));
+    }`);
+  }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    methods.push(`
+    public function testGn6o${langName('php', fn.unit.name, 'class')}${langName('php', fn.member.name, 'class')}ConsumesItsObject(): void
+    {
+        $held = ${made(sample)};
+        try {
+            ${invoke(fn, args, '$held')};
+        } catch (\\Throwable) {
+            // GN-6o: the value is taken also when the core fails.
+        }${refused('type', 'consumed', invoke(fn, args, '$held'))}
+    }`);
+  }
+  // GN-6p, B-10: an object freed without its cleanup call raises E_WARNING, and after it none.
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    const label = `${langName('php', object.unit.name, 'class')}`;
+    const warned = (call: string, expected: string): string => `
+        $held = ${made(sample)};
+        $warnings = [];
+        set_error_handler(function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = [$level, $message];
+            return true;
+        });
+        try {${call}
+            unset($held);
+        } finally {
+            restore_error_handler();
+        }
+        ${expected}`;
+    // GN-6p: PHP puts the name of the running function before the message of a warning, which ends with the B-10 text.
+    methods.push(`
+    public function testB10${label}WarnsWithout${langName('php', cleanup.member.name, 'class')}(): void
+    {${warned('', `self::assertCount(1, $warnings);
+        self::assertSame(E_WARNING, $warnings[0][0]);
+        self::assertStringEndsWith(${phpText(cleanupWarning(label, memberName('php', cleanup)))}, $warnings[0][1]);`)}
+    }
+
+    public function testB10${label}DoesNotWarnAfter${langName('php', cleanup.member.name, 'class')}(): void
+    {${warned(`
+            try {
+                ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), '$held')};
+            } catch (\\Throwable) {
+                // B-10: the cleanup call consumed the value whatever it gave.
+            }`, 'self::assertSame([], $warnings);')}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

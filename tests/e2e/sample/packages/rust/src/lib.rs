@@ -112,6 +112,16 @@ pub fn resolve(lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Err
     }
 }
 
+/// The value of a key, which the lookup must hold, resolved as a blocking I/O call would be (B-5 (a): the token of wait
+/// blocking_io); the lookup is language code that the core calls during the call (GN-6q).
+///
+/// # Errors
+///
+/// Kind `missing` when the lookup holds no value, and the failure of the lookup.
+pub fn resolve_slowly(_io: binding_core::Io, lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Error>> {
+    resolve(lookup, key)
+}
+
 /// The number of the keys that the lookup holds.
 ///
 /// # Errors

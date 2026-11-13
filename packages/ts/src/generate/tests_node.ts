@@ -1,11 +1,11 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Arg, type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, nativeRoundTrip, takesFunction, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, type Arg, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, functionFixturesOf, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -65,6 +65,27 @@ function outcome(call) {
 }
 `;
 
+// GN-6m: what a call that may wait gives: its result, or the class and the kind of its failure.
+const NODE_SETTLED = `
+async function settled(call) {
+  try {
+    return { result: await call() };
+  } catch (error) {
+    return { error: error.constructor, kind: error.kind };
+  }
+}
+`;
+
+// GN-6m: a test that calls a member that waits awaits it: the test is an async function, a failure is a rejection and
+// an outcome is settled.
+const awaitedTest = (block: string): string => {
+  if (!/\bawait /.test(block)) return block;
+  return block
+    .replace(/^(\ntest\('[^\n]*?'), \(\) => \{/, '$1, async () => {')
+    .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ')
+    .replaceAll('outcome(() => ', 'await settled(async () => ');
+};
+
 export function nodeTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them, as host code does; the package's own
@@ -90,7 +111,9 @@ export function nodeTests(model: Model): string {
   let usesFixture = false;
   let usesErrno = false;
   let usesAddon = false;
-  const invoke = (fn: Fn, args: string, receiver: string): string => {
+  // GN-6m: a call of a member that waits is awaited where it is made.
+  const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
+  const called = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('node', fn.member.name, 'callable');
@@ -125,7 +148,9 @@ export function nodeTests(model: Model): string {
   const made = (receiver: Receiver): string => {
     if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
     const built = madeLines(model, form, receiver);
-    return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
+    const body = `${built.lines.join(' ')} return ${built.expr};`;
+    // GN-6m: a receiver that a call that waits makes is awaited.
+    return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
   };
   ctx.instanceNew = made;
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
@@ -180,6 +205,13 @@ test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
       }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
+});`);
+      }
       if (arg.default !== undefined) {
         out.push(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
@@ -227,6 +259,14 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('B-4: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
+});`);
+        continue;
+      }
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
@@ -266,6 +306,14 @@ test('B-4: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${arming}
         out.push(`
 test('GN-13e: ${name} ${kase.id}', () => {
   assert.fail(${jsString(kase.refused)});
+});`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
 });`);
         continue;
       }
@@ -375,6 +423,46 @@ test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the
   assert.equal(addon().__nativeCount(), before);
 });`);
   }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    usesOutcome = true;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    out.push(`
+test('GN-6o: ${langName('node', fn.unit.name, 'class')}.${langName('node', fn.member.name, 'callable')} consumes its object', () => {
+  const held = ${made(sample)};
+  outcome(() => ${invoke(fn, args, 'held')});
+  assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
+});`);
+  }
+  // GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning; the test turns on gc() and
+  // awaits the warning event of the process.
+  let usesGc = false;
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    usesGc = true;
+    const label = langName('node', object.unit.name, 'class');
+    out.push(`
+test('B-10: ${label} warns when it is destroyed without ${memberName('node', cleanup)}()', async () => {
+  const warned = new Promise((resolve) => {
+    const listener = (warning) => {
+      if (warning.name !== 'ResourceWarning') return;
+      process.off('warning', listener);
+      resolve(warning);
+    };
+    process.on('warning', listener);
+  });
+  (() => {
+    ${made(sample)};
+  })();
+  gc();
+  const warning = await warned;
+  assert.equal(warning.message, ${jsString(cleanupWarning(label, memberName('node', cleanup)))});
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesAddon = true;
@@ -383,15 +471,18 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   assert.throws(() => addon().__aliasIn${langName('node', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
 });`);
   }
+  const blocks = out.map(awaitedTest);
+  usesOutcome = blocks.some((block) => block.includes('outcome('));
+  const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesOrdered ? NODE_ORDERED : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {
@@ -411,7 +502,7 @@ test('the CommonJS and the ESM entries share their classes', () => {
   const cjs = require(${jsString(cjsEntry)});
   assert.equal(cjs.${cls('value')}, pkg.${cls('value')});
 });
-${out.join('\n')}
+${blocks.join('\n')}
 `;
 }
 

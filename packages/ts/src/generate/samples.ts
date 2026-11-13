@@ -27,6 +27,8 @@ export interface Context {
   callbackNew: (unit: Unit, how: CallbackHow) => string;
   // How the generated test calls a factory of a class (a static member or the constructor) with its arguments (T-5).
   objectNew?: (factory: Fn, args: string) => string;
+  // The target whose rows of make a value takes, when it is not lang: WASM writes its tests as Node does.
+  target?: 'wasm';
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
   // GN-6z: the expression of a function value of a case from its rows, where the test reads no record of its calls.
@@ -80,7 +82,7 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if (factory !== undefined && ctx.objectNew !== undefined) {
     return ctx.objectNew(factory, callArgs(model, ctx, factory, (arg) => placeholder(model, ctx, arg.type, rich)));
   }
-  throw new Error(`no placeholder for ${shown(type)}`);
+  throw new Unsupported(`no placeholder for ${shown(type)} is written yet (G-5)`);
 }
 
 // `out`: the value as the binding gives it back, for the comparison of a result (GN-13e): an int64 is a bigint in Node
@@ -93,7 +95,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     // text holds, an unpaired surrogate where a text is code points or UTF-16 and the byte 0xFF where it is bytes.
     if (type === 'text' && typeof value === 'object') {
       const text = (value as { ill_formed?: unknown }).ill_formed;
-      if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${shown(value)}`);
+      if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Unsupported(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${shown(value)}`);
       if (ctx.lang === 'python') return `${pyString(text)} + "\\ud800"`;
       if (ctx.lang === 'node') return `${jsString(text)} + '\\uD800'`;
       return `${phpText(text)} . "\\xFF"`;
@@ -114,7 +116,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
         '-inf': { python: 'float("-inf")', node: '-Infinity', php: '-INF' },
       };
       const form = typeof name === 'string' ? forms[name] : undefined;
-      if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${shown(value)}`);
+      if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${shown(value)}`);
       return form[ctx.lang];
     }
     // T-1: an int64 is a bigint in Node, which takes a number of the safe integers too; a case gives an integer outside
@@ -125,16 +127,16 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     if (type === 'bytes' || type === 'source') {
       if (type === 'source' && typeof value === 'string') return ctx.lang === 'python' ? pyString(value) : ctx.lang === 'node' ? jsString(value) : phpText(value);
       const hex = typeof value === 'object' ? (value as { hex?: unknown }).hex : undefined;
-      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${shown(value)}`);
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Unsupported(`a case value of the type ${type} is {"hex": "<lower-case hex>"}, not ${shown(value)}`);
       if (ctx.lang === 'python') return `bytes.fromhex(${pyString(hex)})`;
       if (ctx.lang === 'node') return `new Uint8Array(Buffer.from(${jsString(hex)}, 'hex'))`;
       return `hex2bin(${phpText(hex)})`;
     }
-    throw new Error(`no case value of the type ${type}`);
+    throw new Unsupported(`no case value of the type ${type}`);
   }
   if ('optional' in type) return fromJson(model, ctx, type.optional, value, out);
   if ('tuple' in type) {
-    if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Error(`a case value of the tuple ${shown(type)} is an array of ${type.tuple.length} values`);
+    if (!Array.isArray(value) || value.length !== type.tuple.length) throw new Unsupported(`a case value of the tuple ${shown(type)} is an array of ${type.tuple.length} values`);
     const items = type.tuple.map((part, i) => fromJson(model, ctx, part, value[i], out));
     return ctx.lang === 'python' ? `(${items.map((item) => `${item},`).join(' ')})` : `[${items.join(', ')}]`;
   }
@@ -167,13 +169,13 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   }
   if (unit?.kind === 'enum') return ctx.enumRef(langName('python', unit.name, 'class'), String(value));
   if (unit?.kind === 'record') {
-    if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`a case value of the record ${unit.id} is not an object of its fields`);
+    if (typeof value !== 'object' || Array.isArray(value)) throw new Unsupported(`a case value of the record ${unit.id} is not an object of its fields`);
     const fields = value as Record<string, unknown>;
     return ctx.recordNew(
       unit,
       (unit.fields ?? []).map((f) => {
         const key = langName('python', f.name, 'variable');
-        if (!(key in fields)) throw new Error(`a case value of the record ${unit.id} has no field ${key}`);
+        if (!(key in fields)) throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
     );
@@ -194,7 +196,35 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
-  throw new Error(`no case value of the type ${shown(type)}`);
+  // U-1, GN-13: a value of a class of origin value is made by the member that its out row of the kind names.
+  if (unit?.kind === 'class' && unit.origin === 'value' && !out) return valueClassFromJson(model, ctx, unit, value);
+  throw new Unsupported(`no case value of the type ${shown(type)} is written yet (G-5)`);
+}
+
+// U-1, GN-13: a case value {"kind": <value kind>, "value": ...} of a class of origin value, as the call of the static
+// member or constructor that the out row of the kind names for the language: a member without parameters for a kind
+// without a value (null), and otherwise a member of one parameter, which takes the value of the case as a case value of
+// its type (a list of the class for a list). A kind that no row makes by such a member is refused by name (G-4).
+function valueClassFromJson(model: Model, ctx: Context, unit: Unit, value: unknown): string {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const kind = record?.['kind'];
+  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${unit.id} is {"kind": <value kind>, "value": ...}, not ${shown(value)} (G-5)`);
+  const lang = ctx.target ?? ctx.lang;
+  const makes = [...new Set((unit.out ?? []).filter((row) => row.kind === kind).map((row) => row.make[lang]))];
+  const make = makes[0];
+  if (makes.length !== 1 || typeof make !== 'string') throw new Unsupported(`the kind ${kind} of ${unit.id} is made in ${lang} by ${makes.length === 0 ? 'no out row' : shown(makes)}, not by one member, so a case value of it is not written (U-1, G-5)`);
+  const factory = model.objects.find((o) => o.unit === unit)?.members.find((m) => m.member.id === make && (m.kind === 'static' || m.kind === 'constructor'));
+  if (factory === undefined || ctx.objectNew === undefined) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which is no static member or constructor of ${unit.id} (U-1, G-5)`);
+  const given = 'value' in record;
+  const held = record['value'];
+  if (factory.args.length === 0) {
+    if (given) throw new Unsupported(`a case value of the kind ${kind} of ${unit.id} has no value, because ${make} takes none (U-1, G-5)`);
+    return ctx.objectNew(factory, '');
+  }
+  const [arg, ...rest] = factory.args;
+  if (arg === undefined || rest.length > 0 || arg.field) throw new Unsupported(`the kind ${kind} of ${unit.id} is made by ${make}, which takes more than one value, so a case value of it is not written (U-1, G-5)`);
+  if (!given) throw new Unsupported(`a case value of the kind ${kind} of ${unit.id} holds the value that ${make} takes (U-1, G-5)`);
+  return ctx.objectNew(factory, callArgs(model, ctx, factory, () => fromJson(model, ctx, arg.type, held)));
 }
 
 // GN-13e: a result of a value alias is compared with the value that valueFromJson makes, which is the value of the
@@ -230,7 +260,7 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
-  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
+  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${shown(value)}`);
   const held = record['value'];
   const lang = ctx.lang;
   if (kind === 'null') return lang === 'python' ? 'None' : 'null';
@@ -243,7 +273,7 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   }
   if (kind === 'int') {
     const token = typeof held === 'number' && Number.isSafeInteger(held) ? String(held) : typeof held === 'bigint' ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${shown(held)}`);
+    if (token === undefined) throw new Unsupported(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${shown(held)}`);
     if (typeof held === 'number' || lang === 'python') return token;
     if (lang === 'node') return `${token}n`;
     const wide = BigInt(token);
@@ -254,7 +284,7 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
+    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
     const inner = valueFromJson(model, ctx, held, where);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
@@ -452,7 +482,7 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
 // on the instance in order. The binding check reports every value that breaks this (CK-22); here it is an error.
 export function instanceOf(model: Model, unitId: string, value: unknown, where: string): Receiver {
   const fail = (message: string): never => {
-    throw new Error(`${where}: ${message} (G-5, GN-13f)`);
+    throw new Unsupported(`${where}: ${message} (G-5, GN-13f)`);
   };
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : fail('an instance value is {"new" | "from": <member id>, ...}');
   const id = record['new'] ?? record['from'];
@@ -596,11 +626,27 @@ export function stringCases(model: Model, fn: Fn): { id: string; receiver: Recei
     const receiver = receiverOf(model, fn, record);
     const result = record['result'];
     if (receiver === undefined || typeof result !== 'string') {
-      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
+      throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives ${receiver === undefined ? `no arguments of a factory of ${fn.unit.id}` : 'no text as its result'} (G-5, N-4)`);
     }
     out.push({ id: String(record['id']), receiver, result });
   }
   return out;
+}
+
+// G-4, GN-13e: the reason why the generator cannot write the receiver or an argument of a case in the
+// language, which the test of the case fails with, so that one value that is not written yet fails its own test by
+// name and the other tests of the target run; undefined when every value of the case is written.
+export function caseRefusal(model: Model, ctx: Context, fn: Fn, kase: { id: string; args: Map<Arg, unknown>; receiver?: Receiver }, receiver: (made: Receiver | undefined) => unknown): string | undefined {
+  // A row of a callback fixture that is not generated yet refuses the target (G-4), as the emitters read the fixtures.
+  const fixed = new Set(fixturesOf(model, fn, kase.id, kase.args).map((fixture) => fixture.arg));
+  try {
+    receiver(kase.receiver);
+    for (const arg of fn.args) if (!fixed.has(arg)) caseValue(model, ctx, arg, kase.args);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof Unsupported)) throw error;
+    return `the case ${kase.id} of ${fn.member.id}: ${error.message}`;
+  }
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
@@ -612,14 +658,14 @@ export function raisingCases(model: Model, fn: Fn): RaisingCase[] {
     const args = argsOf(fn, record);
     if (args === undefined) {
       const missing = fn.args.map((a) => langName('python', a.name, 'variable')).filter((name) => !(name in record));
-      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)`);
+      throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} has no ${missing.join(', ') || 'record field'} (G-5: case keys are the parameter names in snake_case)`);
     }
     const receiver = receiverOf(model, fn, record);
     if (fn.receiver !== undefined && receiver === undefined) {
-      throw new Error(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)`);
+      throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} gives no arguments of a factory of ${fn.unit.id} (G-5, T-5)`);
     }
     const faults = record['faults'];
-    if (faults !== undefined && model.faults.length === 0) throw new Error(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
+    if (faults !== undefined && model.faults.length === 0) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id} arms faults, but the contract names no fault injection point (G-5)`);
     const own = `${model.contract.library.replaceAll('-', '_')}.`;
     const other = (Array.isArray(faults) ? faults : []).map((fault) => String((fault as Record<string, unknown> | null)?.['point'])).find((point) => !point.startsWith(own));
     if (other !== undefined) throw new Unsupported(`the case ${String(record['id'])} of ${fn.member.id}: the point ${other} of another library is not armed yet (G-5)`);
@@ -729,6 +775,14 @@ export function refusedKeyMap(model: Model, ctx: Context, type: Type): { kind: s
   return kind === undefined ? undefined : { kind, value: literals[ctx.lang][kind] ?? '' };
 }
 
+// GN-12a: a keyed_map parameter whose contract lists int keys, given the key 2^53, which is no safe integer.
+export function unsafeKeyMap(model: Model, ctx: Context, type: Type): string | undefined {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  if (typeof base !== 'object' || !('keyed_map' in base) || !base.key.includes('int')) return undefined;
+  const value = placeholder(model, ctx, base.keyed_map);
+  return { python: `{2**53: ${value}}`, node: `new Map([[2 ** 53, ${value}]])`, php: `[2 ** 53 => ${value}]` }[ctx.lang];
+}
+
 // U-3: the first parameter of a member that is a callback, for the tests of K-2.
 // G-5 callback fixture: the value of a callback parameter in a case, {"callback": {<callback member id>: [<row>]},
 // "calls": [{"member", "args"}]}. A row is {"args": {...}} with "result" (absent for a return of none) and "once".
@@ -750,9 +804,9 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     const unit = unitOf(model, arg.type);
     if (unit?.origin !== 'callback') continue;
     const where = `the case ${id} of ${fn.member.id}`;
-    const value = args.get(arg);
-    if (typeof value !== 'object' || value === null || typeof (value as { callback?: unknown }).callback !== 'object') {
-      throw new Error(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
+    const value = args.get(arg) as { callback?: unknown } | null | undefined;
+    if (typeof value !== 'object' || value === null || typeof value.callback !== 'object' || value.callback === null) {
+      throw new Unsupported(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
     }
     out.push({ arg, ...fixtureOf(unit, value, where) });
   }
@@ -765,13 +819,13 @@ export function fixtureOf(unit: Unit, given: unknown, where: string): Omit<Fixtu
   const members = unit.members ?? [];
   const position = (memberId: string): number => {
     const found = members.findIndex((m) => m.id === memberId);
-    if (found < 0) throw new Error(`${where} names ${memberId}, which is no member of ${unit.id} (G-5)`);
+    if (found < 0) throw new Unsupported(`${where} names ${memberId}, which is no member of ${unit.id} (G-5)`);
     return found;
   };
   const ordered = (member: number, args: Record<string, unknown> | undefined): unknown[] =>
     (members[member]?.parameters ?? []).map((p) => {
       const key = langName('python', p.name, 'variable');
-      if (args === undefined || !(key in args)) throw new Error(`${where} gives no ${key} in the args of ${members[member]?.id ?? ''} (G-5)`);
+      if (args === undefined || !(key in args)) throw new Unsupported(`${where} gives no ${key} in the args of ${members[member]?.id ?? ''} (G-5)`);
       return args[key];
     });
   const rows: Fixture['rows'] = [];
@@ -864,7 +918,7 @@ export function caseKey<T>(key: unknown, make: (kind: 'int' | 'text' | 'bytes', 
   if (typeof key === 'string') return make('text', key);
   if (typeof key === 'object' && key !== null && 'int' in key && Number.isSafeInteger((key as { int: unknown }).int)) return make('int', (key as { int: number }).int);
   if (typeof key === 'object' && key !== null && 'hex' in key) return make('bytes', key);
-  throw new Error(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${shown(key)}`);
+  throw new Unsupported(`a key of a keyed map in a case is a text, {"int": n} or {"hex": ...}, not ${shown(key)}`);
 }
 
 // G-5: the errno that a raising case expects: none, a number, or the symbol of an errno, whose value each language
@@ -874,7 +928,7 @@ export function expectedErrno(kase: RaisingCase): { symbol: string } | { value: 
   if (errno === undefined || errno === null) return null;
   if (typeof errno === 'string') return { symbol: errno };
   if (typeof errno === 'number') return { value: errno };
-  throw new Error(`the errno of the case ${kase.id} is neither a symbol nor a number (G-5)`);
+  throw new Unsupported(`the errno of the case ${kase.id} is neither a symbol nor a number (G-5)`);
 }
 
 // U-7: a case of the in function of a value alias: the value that the alias refuses and the kind it gives, with the
@@ -895,7 +949,7 @@ export function aliasCases(model: Model): AliasCase[] {
       const where = `the case ${String(record['id'])} of the alias ${alias.unit.id}`;
       const kind = (record['raises'] as Record<string, unknown> | undefined)?.['kind'];
       const row = model.contract.errors.kinds.find((k) => typeof kind === 'string' && k.library === undefined && kindsOf(k).includes(kind));
-      if (typeof kind !== 'string' || row?.category === undefined) throw new Error(`${where} raises no kind of errors.kinds (U-7)`);
+      if (typeof kind !== 'string' || row?.category === undefined) throw new Unsupported(`${where} raises no kind of errors.kinds (U-7)`);
       const value = record['value'];
       // G-5: a value of the language by its kind, {"host": ...}, waits for the closed table of those kinds.
       if (typeof value === 'object' && value !== null && 'host' in value) throw new Unsupported(`${where}: a value {"host": ...} is not generated yet (G-5)`);

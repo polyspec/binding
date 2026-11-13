@@ -8,6 +8,7 @@
 // arm faults (G-5) have the build tag polyspec_fault_test and the poison tests polyspec_panic_test.
 //
 // What the Go types decide is no test: B-2 and T-7 (a uint64 holds no -1, NaN or fraction, a []byte no other type),
+// except the range of an int and a uint (GN-12a), which B-2 tests with 2^53 and -2^53,
 // G-7 (a call with a missing, extra or unknown argument does not compile), U-2 null as a value (nil is the absent
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
@@ -16,10 +17,10 @@ import type { Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goType,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
   objectUnit, places, pointName, unitOf,
   nativeRoundTrip,
 } from './model.ts';
@@ -70,7 +71,7 @@ function pointerTo(v: Values, type: Type, inner: string): string {
 
 const hexBytes = (value: unknown, what: string): string => {
   const hex = typeof value === 'object' && value !== null ? (value as { hex?: unknown }).hex : undefined;
-  if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type ${what} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+  if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Unsupported(`a case value of the type ${what} is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
   return `[]byte(${goBytes((hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)))})`;
 };
 
@@ -79,12 +80,12 @@ const hexBytes = (value: unknown, what: string): string => {
 function textValue(value: unknown): string {
   if (typeof value === 'object' && value !== null && 'hex' in value) {
     const hex = (value as { hex?: unknown }).hex;
-    if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex) || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text, {"ill_formed": "<text>"} or {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+    if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex) || Object.keys(value).length !== 1) throw new Unsupported(`a case value of the type text is a text, {"ill_formed": "<text>"} or {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
     return `"${(hex.match(/../g) ?? []).map((pair) => `\\x${pair}`).join('')}"`;
   }
   if (typeof value === 'object' && value !== null) {
     const text = (value as { ill_formed?: unknown }).ill_formed;
-    if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Error(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
+    if (typeof text !== 'string' || Object.keys(value).length !== 1) throw new Unsupported(`a case value of the type text is a text or {"ill_formed": "<text>"}, not ${JSON.stringify(value)}`);
     return `${goString(text).slice(0, -1)}\\xff"`;
   }
   return goString(String(value));
@@ -94,7 +95,7 @@ function floatValue(value: unknown): string {
   if (typeof value === 'object' && value !== null) {
     const name = (value as { float?: unknown }).float;
     const form = typeof name === 'string' ? ({ nan: 'math.NaN()', inf: 'math.Inf(1)', '-inf': 'math.Inf(-1)' } as Record<string, string>)[name] : undefined;
-    if (form === undefined) throw new Error(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
+    if (form === undefined) throw new Unsupported(`a case value of the type float is a number or {"float": "nan" | "inf" | "-inf"}, not ${JSON.stringify(value)}`);
     return form;
   }
   return String(value);
@@ -118,12 +119,16 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     if (type === 'bytes') return hexBytes(json, type);
     // T-1: a source is a text or {"hex": ...}, both a []byte.
     if (type === 'source') return typeof json === 'string' ? `[]byte(${goString(json)})` : hexBytes(json, type);
-    throw new Error(`no Go case value of the type ${type}`);
+    throw new Unsupported(`no Go case value of the type ${type}`);
   }
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
   // T-2: a tuple inside another type is a Go array; its case value is the array of its parts.
-  if ('tuple' in type) return `${typeName(v, type)}{${type.tuple.map((part, i) => value(v, b, part, (json as unknown[])[i] ?? null)).join(', ')}}`;
+  if ('tuple' in type) {
+    const parts = type.tuple.map((part, i) => value(v, b, part, (json as unknown[])[i] ?? null));
+    // GN-16: a Tuple<N> of different part types is written by its fields.
+    return `${typeName(v, type)}{${goTupleArray(v.scope, type.tuple) ? parts.join(', ') : parts.map((part, i) => `P${i}: ${part}`).join(', ')}}`;
+  }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
     const sets = (json as [unknown, unknown][]).map(([key, item]) => `m.Set(${goKey(key)}, ${value(v, b, type.keyed_map, item)}); `).join('');
@@ -137,7 +142,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
   const object = objectUnit(v.model, type);
   if (object !== undefined) {
-    if (!isInstanceValue(json)) throw new Error(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} (GN-13f)`);
+    if (!isInstanceValue(json)) throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} (GN-13f)`);
     return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
   }
   const unit = unitOf(v.model, type);
@@ -157,13 +162,13 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
       const key = langName('python', f.name, 'variable');
       if (!(key in fields)) {
         if (f.default !== undefined) return `${goName(f.name)}: nil`;
-        throw new Error(`a case value of the record ${unit.id} has no field ${key}`);
+        throw new Unsupported(`a case value of the record ${unit.id} has no field ${key}`);
       }
       const inner = value(v, b, f.type, fields[key]);
       return `${goName(f.name)}: ${f.default === undefined || fields[key] === null ? inner : pointerTo(v, f.type, inner)}`;
     }).join(', ')}}`;
   }
-  throw new Error(`no Go case value of the type ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
 }
 
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
@@ -172,7 +177,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
 function aliasValue(unit: Unit, json: unknown, where: string): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
-  if (record === undefined || typeof kind !== 'string') throw new Error(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
+  if (record === undefined || typeof kind !== 'string') throw new Unsupported(`a case value of ${where} is {"kind": <value kind>, "value": ...}, not ${JSON.stringify(json)}`);
   const held = record['value'];
   if (kind === 'null') return 'nil';
   if (kind === 'bool') return String(held === true);
@@ -184,7 +189,7 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   }
   if (kind === 'int') {
     const token = typeof held === 'bigint' || (typeof held === 'number' && Number.isSafeInteger(held)) ? String(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? held : undefined;
-    if (token === undefined) throw new Error(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
+    if (token === undefined) throw new Unsupported(`a case value of the kind int of ${where} is a safe integer or a decimal text, not ${JSON.stringify(held)}`);
     const wide = BigInt(token);
     if (wide >= -(2n ** 63n) && wide < 2n ** 63n) return `int64(${token})`;
     if (wide >= 0n && wide < 2n ** 64n) return `uint64(${token})`;
@@ -193,7 +198,7 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it.
   if (kind === 'list' && record['repeat'] !== undefined) {
     const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
+    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
     return `func() any { var inner any = ${aliasValue(unit, held, where)}; for range ${repeat} { inner = []any{inner} }; return inner }()`;
   }
   if (kind === 'list' && Array.isArray(held)) return `[]any{${held.map((item) => aliasValue(unit, item, where)).join(', ')}}`;
@@ -205,10 +210,6 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated for Go yet (GN-13)`);
 }
-
-// T-5: the member that makes an instance of the class: a constructor or a static member that returns it.
-const factoryOf = (model: Model, object: ObjectClass): Fn | undefined =>
-  object.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
 
 // A value of the type that the binding converts without failing; rich: a list has one item, so that a member that
 // calls a callback per item calls it (K-2).
@@ -234,20 +235,25 @@ function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   if (object !== undefined) {
     const factory = factoryOf(v.model, object);
     if (factory === undefined) throw new Unsupported(`no placeholder of the class ${object.unit.id}, which has no constructor or static member that makes it (T-5)`);
-    return b.bind(invoke(factory, callArgs(v, b, factory, (a) => (a.default === undefined ? placeholder(v, b, a.type, rich) : undefined)), ''), 1, 'GN-13f')[0] ?? '';
+    return b.bind(invoke(v, factory, callArgs(v, b, factory, (a) => (a.default === undefined ? placeholder(v, b, a.type, rich) : undefined)), ''), 1, 'GN-13f')[0] ?? '';
   }
   const unit = unitOf(v.model, type);
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return `${typeName(v, type)}${goName(first.name)}`;
   if (unit?.kind === 'record') return `${typeName(v, type)}{${(unit.fields ?? []).map((f) => `${goName(f.name)}: ${f.default === undefined ? placeholder(v, b, f.type, rich) : 'nil'}`).join(', ')}}`;
-  throw new Error(`no Go placeholder for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go placeholder for ${JSON.stringify(type)}`);
 }
 
 // The call of a member as a Go expression: a function, a constructor or a static member by its name, any other member
-// on its receiver. A stringify is called by its unexported form, which returns its error.
-function invoke(fn: Fn, args: string[], receiver: string): string {
-  const name = fn.special === 'stringify' ? 'stringify' : goMemberName(fn);
-  if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') return `${name}(${args.join(', ')})`;
+// on its receiver. A stringify or a to_json is called by its unexported form, which returns its error.
+function invoke(v: Values, fn: Fn, args: string[], receiver: string): string {
+  const name = fn.special === 'stringify' ? 'stringify' : fn.special === 'to_json' ? 'toJSON' : goMemberName(fn);
+  if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
+    // GN-15a: a function of another module is named by its package.
+    if (fn.module === v.module) return `${name}(${args.join(', ')})`;
+    v.scope.imports.add(fn.module);
+    return `${goPackage(v.model.contract, fn.module)}.${name}(${args.join(', ')})`;
+  }
   return `${receiver}.${name}(${args.join(', ')})`;
 }
 
@@ -283,7 +289,7 @@ function caseValue(v: Values, b: Body, arg: Arg, args: ReadonlyMap<Arg, unknown>
 function made(v: Values, b: Body, r: Receiver): string {
   const on = r.on === undefined ? '' : made(v, b, r.on);
   const args = callArgs(v, b, r.factory, (arg) => caseValue(v, b, arg, r.args));
-  const names = b.bind(invoke(r.factory, args, on), goResultCount(r.factory), 'GN-13f');
+  const names = b.bind(invoke(v, r.factory, args, on), goResultCount(r.factory), 'GN-13f');
   let picks = r.pick ?? [];
   let local = names[0] ?? '';
   if (names.length > 1) {
@@ -299,9 +305,15 @@ function made(v: Values, b: Body, r: Receiver): string {
     local = next;
   }
   for (const step of r.then ?? []) {
-    const call = invoke(step.fn, callArgs(v, b, step.fn, (arg) => caseValue(v, b, arg, step.args)), local);
+    const call = invoke(v, step.fn, callArgs(v, b, step.fn, (arg) => caseValue(v, b, arg, step.args)), local);
     const error = b.fresh('failure');
-    b.lines.push(`${[...Array.from({ length: goResultCount(step.fn) }, () => '_'), error].join(', ')} := ${call}`, `if ${error} != nil {`, `\tt.Fatalf("GN-13f: %v", ${error})`, '}');
+    b.lines.push(`${[...Array.from({ length: goResultCount(step.fn) }, () => '_'), error].join(', ')} := ${call}`);
+    if (step.raises === undefined) {
+      b.lines.push(`if ${error} != nil {`, `\tt.Fatalf("GN-13f: %v", ${error})`, '}');
+    } else {
+      // GN-13f: a call of then that the case expects to fail with a kind fails with it, and the test goes on.
+      b.lines.push(`if kinded, ok := ${error}.(interface{ Kind() string }); !ok || kinded.Kind() != ${goString(step.raises)} {`, `\tt.Fatalf("GN-13f: %#v is not of kind ${step.raises}", ${error})`, '}');
+    }
   }
   return local;
 }
@@ -386,11 +398,11 @@ function memberTests(v: Values, out: Out, fn: Fn): void {
     const args = callArgs(v, b, fn, (a) => (a === arg ? given(b) : a.default === undefined ? placeholder(v, b, a.type, rich) : undefined));
     out.main.push(`
 func Test${rule.replace('-', '')}${label}${testName(what)}(t *testing.T) {
-${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
+${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)}
 }`);
   };
   for (const arg of reachable && fn.special === undefined ? fn.args : []) {
-    const argName = goParam(arg.name);
+    const argName = goParam(arg.name, v.model);
     let base = arg.type;
     let wrap = (text: string): string => text;
     if (typeof base === 'object' && 'optional' in base) {
@@ -404,6 +416,11 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
       base = base.list;
       wrap = (text) => outer(`${listType}{${text}}`);
     }
+    if (base === 'int' || base === 'uint') {
+      // GN-12a: an int or a uint outside the safe integers is kind invalid_number.
+      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+    }
     if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-3'));
     if (base === 'latin1') {
       single('B-8', `refuses ${argName} above U+00FF`, arg, () => wrap('"\\u0100"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-8'));
@@ -413,6 +430,10 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
       // T-2: a key of a kind that the contract does not list is kind invalid_argument_type.
       const keyedType = base;
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
+      if (keyedType.key.includes('int')) {
+        // GN-12a: an int key outside the safe integers is kind invalid_number.
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
         single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(${key}, ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
@@ -438,7 +459,7 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), ...check], 1)}
       out.main.push(`
 func TestK2${label}LetsTheErrorOf${testName(argName)}Through(t *testing.T) {
 	raised := errors.New("raised by the callback")
-${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), 'if err != raised {', '\tt.Fatalf("K-2: %#v is not the error of the callback", err)', '}'], 1)}
+${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), 'if err != raised {', '\tt.Fatalf("K-2: %#v is not the error of the callback", err)', '}'], 1)}
 }`);
     }
   }
@@ -458,14 +479,14 @@ ${indent([...b.lines, callLine(fn, invoke(fn, args, receiver)), 'if err != raise
         if (base !== undefined) return caseValue(v, b, a, base.args);
         return a.default === undefined ? placeholder(v, b, a.type) : undefined;
       });
-      return invoke(fn, args, receiver);
+      return invoke(v, fn, args, receiver);
     };
     const left = side(true);
     b.lines.push(`value0, err0 := ${left}`);
     const right = side(false);
     b.lines.push(`value1, err1 := ${right}`);
     out.main.push(`
-func TestU2${label}Without${testName(goParam(arg.name))}IsTheCallWithItsDefault(t *testing.T) {
+func TestU2${label}Without${testName(goParam(arg.name, v.model))}IsTheCallWithItsDefault(t *testing.T) {
 ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err0, err1) {', '\tt.Fatalf("U-2: %#v, %v is not %#v, %v", value0, err0, value1, err1)', '}'], 1)}
 }`);
   }
@@ -480,7 +501,7 @@ ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err
       lines.unshift('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
       lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(kase.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
     }
-    lines.push(callLine(fn, invoke(fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b));
+    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
     (kase.faults === undefined ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
@@ -518,7 +539,7 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       }
     }
     const lines = refused === undefined
-      ? [...b.lines, callLine(fn, invoke(fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b)]
+      ? [...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b)]
       : [`t.Fatal(${goString(refused)})`];
     out.main.push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
@@ -567,7 +588,7 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
   const callables = callablesOf(model).filter((m) => m.kind !== 'iterate' && m.special === undefined && m.module === v.module);
   // A call in a block of its own, which requires err to be of the type with the kind, or nil.
   const check = (b: Body, fn: Fn, receiver: string, arg: Arg | undefined, held: string, expect: [string, string, string] | undefined): void => {
-    const call = invoke(fn, callArgs(v, b, fn, (a) => (a === arg ? held : a.default === undefined ? placeholder(v, b, a.type) : undefined)), receiver);
+    const call = invoke(v, fn, callArgs(v, b, fn, (a) => (a === arg ? held : a.default === undefined ? placeholder(v, b, a.type) : undefined)), receiver);
     const after = expect === undefined ? ['\tif err != nil {', '\t\tt.Fatalf("B-5c: the refused call left a lock: %v", err)', '\t}'] : expectKind(...expect).map((l) => `\t${l}`);
     b.lines.push('{', `\t${callLine(fn, call)}`, ...after, '}');
   };
@@ -576,7 +597,7 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
     object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
     object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
   for (const object of objects) {
-    if (object.lock?.writes !== true || factoryOf(model, object) === undefined) continue;
+    if (!poisoned(model, object)) continue;
     const name = goName(object.unit.name);
     const receiverFn = onReceiver(object);
     const paramFn = callables.find((fn) => {
@@ -632,9 +653,9 @@ function callbackTypes(v: Values, cb: CallbackUnit): string {
   const name = goName(cb.unit.name);
   const methods = cb.members.map((m) => {
     const method = langName('go', m.member.name, 'callable');
-    const params = m.params.map((p) => `${goParam(p.name)} ${typeName(v, p.type)}`).join(', ');
+    const params = m.params.map((p) => `${goParam(p.name, v.model)} ${typeName(v, p.type)}`).join(', ');
     const result = m.returns === 'none' ? undefined : typeName(v, m.returns);
-    const args = m.params.map((p) => goParam(p.name));
+    const args = m.params.map((p) => goParam(p.name, v.model));
     const raising = result === undefined
       ? `func (r raising${name}) ${method}(${params}) error { return r.err }`
       : `func (r raising${name}) ${method}(${params}) (${result}, error) {\n\tvar zero ${result}\n\treturn zero, r.err\n}`;
@@ -714,6 +735,8 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
     ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
+    // GN-15f: the packages of other repositories whose records the tests name.
+    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path]) => `"${path}"`),
   ];
   return goImportBlock(std, own);
 }
@@ -730,21 +753,21 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id && f.module === module);
   const native = roundFn === undefined ? [] : [`
 func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
-	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
+	if _, err := ${invoke(v, roundFn, ['func() {}'], '')}; err != nil {
 		t.Fatalf("GN-6u: %v", err)
 	}
 	before, err := binding.NativeCount()
 	if err != nil {
 		t.Fatalf("GN-6u: %v", err)
 	}
-	got, err := ${invoke(roundFn, ['func() {}'], '')}
+	got, err := ${invoke(v, roundFn, ['func() {}'], '')}
 	if err != nil {
 		t.Fatalf("GN-6u: %v", err)
 	}
 	if _, ok := got.(func()); !ok {
 		t.Fatalf("GN-6u: %#v is no func", got)
 	}
-	if _, err := ${invoke(roundFn, ['func() {}'], '')}; err != nil {
+	if _, err := ${invoke(v, roundFn, ['func() {}'], '')}; err != nil {
 		t.Fatalf("GN-6u: %v", err)
 	}
 	after, err := binding.NativeCount()

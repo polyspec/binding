@@ -96,7 +96,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   record's field names, after conversion and exceptions, differ from the member's other parameter names.
 - **CK-13** Go names (E-7, P-2): an error unit's Go name is not a category error type (`ValueError`, `TypeError`,
   `IoError`, `StoreError`, `BusyError`, `InternalError`); in one Go package (a module), the type names, the functions of
-  `functions` units and the `New<Unit>` constructors are distinct. Host units are not counted, because their Go code is
+  `functions` units, the `New<Unit>` constructors, the functions `<Class><Member>` of static members, and the functions
+  `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` that another module reaches a unit through (GN-15a)
+  are distinct. Host units are not counted, because their Go code is
   a package of its own (L-1).
 - **CK-14** Modules (L-1): the first segment of a module is not `host` or `tests`, the folders of hand-written Go code,
   nor `internal`, the folder of the C ABI layer of the Go binding (GN-15). The empty module is the root of the package
@@ -105,7 +107,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   records and variants too) or whose wait is `blocking_io` or `process_wait` has an `only` without `wasm`, on itself or
   on its unit, with its rule id.
 - **CK-16** Python awaitables (N-5, U-3): the name `a<name>` of a member whose wait is not `none`, or of a callback
-  member with `async_allowed: true`, is not the Python name of another member of the unit.
+  member with `async_allowed: true`, is not the Python name of another member of the unit and is no reserved word of
+  Python, so that the awaitable of GN-6m can be generated.
 - **CK-17** Callbacks (U-3, T-3): only callback members have `async_allowed` and `errors`, and every callback member
   states `async_allowed` and names its trait method and receiver in `core: {path, receiver}` with the receiver `&self`
   or `&mut self`, because the generated struct implements the trait and binding reads no Rust source; `recognize`

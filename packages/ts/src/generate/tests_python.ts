@@ -1,15 +1,15 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, nativeRoundTrip, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, functionFixturesOf, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Arg, Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**64'],
-  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
+  uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
+  int: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**53', '-(2**53)', '2**63'],
   int64: ['float("nan")', 'float("inf")', '1.5', 'True', '"7"', '2**63'],
   float: ['True', '"7"', '1'],
 };
@@ -143,6 +143,7 @@ export function pythonTests(model: Model, module: string): string {
     return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
   };
   let usesOutcome = false;
+  let usesAsyncio = false;
   let usesSame = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('python', fn, receiver);
@@ -183,6 +184,14 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${call(new Map([[arg, refused.value]]))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        out.push(`
+    def test_b2_${name}_${argName}_refuses_a_key_outside_the_safe_integers(self) -> None:
+        with self.assertRaises(pkg.${cls('value')}) as caught:
+            ${call(new Map([[arg, unsafeKey]]))}
+        self.assertEqual(caught.exception.kind, "invalid_number")`);
       }
       if (arg.default !== undefined) {
         out.push(`
@@ -237,6 +246,13 @@ export function pythonTests(model: Model, module: string): string {
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+    def test_b4_${name}_${kase.id}(self) -> None:
+        self.fail(${pyString(refusal)})`);
+        continue;
+      }
       const receiverMade = receiverOfCase(kase.receiver);
       const receiver = receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
@@ -275,6 +291,13 @@ export function pythonTests(model: Model, module: string): string {
         out.push(`
     def test_gn13e_${name}_${kase.id}(self) -> None:
         self.fail(${pyString(kase.refused)})`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+    def test_gn13e_${name}_${kase.id}(self) -> None:
+        self.fail(${pyString(refusal)})`);
         continue;
       }
       const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
@@ -318,12 +341,24 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
             ${with_({ returns: 'wrong' })}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
+      // GN-6q: a member that reaches language code calls the callback on the worker thread of asyncio.to_thread.
+      if (fn.reaches === true) {
+        usesAsyncio = true;
+        const args = callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, { raise: 'raised' }) : placeholder(model, ctx, arg.type, true)));
+        const awaited = invoke(fn, args, recv).replace(/(\.)([a-z_0-9]+)\(/, (_all, dot: string, member: string) => `${dot}a${member}(`);
+        out.push(`
+    def test_gn6q_${name}_awaits_a_callback_on_the_thread_of_to_thread(self) -> None:
+        raised = LookupError("raised by the callback")
+        with self.assertRaises(LookupError) as caught:
+            asyncio.run(${awaited})
+        self.assertIs(caught.exception, raised)`);
+      }
     }
     // GN-6z: a value of a function type that is not callable is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
     if (functionArg !== undefined && reachable) {
       out.push(`
-    def test_gn6m_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
+    def test_gn6z_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
         with self.assertRaises(pkg.${cls('type')}) as caught:
             ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type, true))))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
@@ -364,6 +399,48 @@ export function pythonTests(model: Model, module: string): string {
         # GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self.assertEqual(_native._fault_left(armed), [])`}`);
   }
+  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
+  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
+    const sample = sampleReceiver(model, fn);
+    if (sample === undefined) continue;
+    usesOutcome = true;
+    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
+    out.push(`
+    def test_gn6o_${langName('python', fn.unit.name, 'variable')}_${langName('python', fn.member.name, 'callable')}_consumes_its_object(self) -> None:
+        held = ${made(sample, (arg) => caseValue(model, ctx, arg, sample.args))}
+        _outcome(lambda: ${invoke(fn, args, 'held')})
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${invoke(fn, args, 'held')}
+        self.assertEqual(caught.exception.kind, "consumed")`);
+  }
+  // GN-6p, B-10: an object destroyed without its cleanup call warns with ResourceWarning, and after it does not.
+  let usesWarnings = false;
+  for (const object of model.objects) {
+    const cleanup = object.cleanup;
+    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
+    if (cleanup === undefined || sample === undefined) continue;
+    usesWarnings = true;
+    usesOutcome = true;
+    const variable = langName('python', object.unit.name, 'variable');
+    const callName = langName('python', cleanup.member.name, 'callable');
+    const recv = made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
+    const warned = 'self.assertEqual([str(w.message) for w in caught if issubclass(w.category, ResourceWarning)], ';
+    out.push(`
+    def test_b10_${variable}_warns_without_${callName}(self) -> None:
+        held = ${recv}
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            del held
+        ${warned}[${pyString(cleanupWarning(langName('python', object.unit.name, 'class'), memberName('python', cleanup)))}])
+
+    def test_b10_${variable}_does_not_warn_after_${callName}(self) -> None:
+        held = ${recv}
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _outcome(lambda: ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), 'held')})
+            del held
+        ${warned}[])`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     out.push(`
@@ -380,7 +457,7 @@ export function pythonTests(model: Model, module: string): string {
     const name = langName('python', roundFn.member.name, 'variable');
     const same = (value: string): string => invoke(roundFn, value, '');
     out.push(`
-    def test_gn6o_${name}_gives_back_the_same_object_and_releases_it(self) -> None:
+    def test_gn6u_${name}_gives_back_the_same_object_and_releases_it(self) -> None:
         ${same('_Subject()')}
         subject = _Subject()
         before = sys.getrefcount(subject)
@@ -394,8 +471,8 @@ export function pythonTests(model: Model, module: string): string {
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest${roundFn === undefined ? '' : '\nimport weakref'}
-
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest
+${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${helpers.join('')}

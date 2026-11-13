@@ -10,12 +10,12 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, lockLines, nativeRoundTrip, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, nativeRoundTrip, objectUnit, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
+import { header, closure, optionRef, rustString, usedHelpers, WIDEN } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -56,12 +56,18 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     if (type === 'text') return `in_text(${input}, ${subject})`;
     if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
     // T-1: a source is a Go []byte, whose bytes the core judges.
-    const fn: Record<string, string> = { bytes: 'in_bytes', source: 'in_bytes', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float' };
+    // GN-12a: an int or a uint of the contract is a safe integer, which the Go types do not hold to.
+    if (type === 'int' || type === 'uint') return `in_safe_${type}(${input}, ${subject})`;
+    const fn: Record<string, string> = { bytes: 'in_bytes', source: 'in_bytes', bool: 'in_bool', int64: 'in_int', float: 'in_float' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
     return `${name}(${input})`;
   }
   if ('list' in type) return `in_list(${input}, ${closure(['input'], boxed(model, type.list, convertIn(model, type.list, 'input', subject)))})`;
+  if ('tuple' in type) {
+    // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
+    return `in_tuple${type.tuple.length}(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
+  }
   if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
@@ -72,7 +78,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
   if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${input}, ${subject})`;
-  if (unit?.kind === 'record') return `in_${rustField(unit.name)}(${input})`;
+  if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${input})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   if (callbackOf(model, type) !== undefined && unit !== undefined) return `in_${plainName(unit)}(${input}, ${subject})`;
   throw new Unsupported(`no Go input conversion for ${JSON.stringify(type)}`);
@@ -90,12 +96,13 @@ export function convertOut(model: Model, type: Type, value: string): string {
   // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
   if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `out_optional(output, ${value}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
+  // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
+  if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
   const unit = unitOf(model, type);
-  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${rustField(unit.name)}(output, ${value})`;
+  if (unit?.kind === 'enum' || unit?.kind === 'record') return `out_${recordFn(unit, unit.kind === 'record' ? libraryOf(type) : undefined)}(output, ${value})`;
   if (unit !== undefined && objectUnit(model, type) !== undefined) return `out_${plainName(unit)}(output, ${value})`;
   throw new Unsupported(`no Go output conversion for ${JSON.stringify(type)}`);
 }
@@ -155,6 +162,22 @@ fn in_uint(input: &mut &[u8]) -> Result<u64, Fail> {
 
 fn in_int(input: &mut &[u8]) -> Result<i64, Fail> {
     Ok(i64::from_le_bytes(read_word(input)?))
+}
+
+/// B-2, GN-12a: a uint of the contract is 0 to 2^53 - 1; a larger one is kind invalid_number.
+fn in_safe_uint(input: &mut &[u8], subject: &str) -> Result<u64, Fail> {
+    match in_uint(input)? {
+        integer @ 0..=9_007_199_254_740_991 => Ok(integer),
+        _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint })),
+    }
+}
+
+/// B-2, GN-12a: an int of the contract is a safe integer; any other is kind invalid_number.
+fn in_safe_int(input: &mut &[u8], subject: &str) -> Result<i64, Fail> {
+    match in_int(input)? {
+        integer if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
+    }
 }
 
 fn in_float(input: &mut &[u8]) -> Result<f64, Fail> {
@@ -248,6 +271,10 @@ fn in_keyed_map<'a, T>(
         if !kinds.contains(&tag) {
             return Err(type_error(subject, expected));
         }
+        // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+        if matches!(key, binding_core::Key::Int(integer) if integer.unsigned_abs() > 9_007_199_254_740_991) {
+            return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int }));
+        }
         let value = item(input)?;
         if map.insert(key, value).is_some() {
             return Err(malformed());
@@ -333,8 +360,8 @@ fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: i
 }
 
 /// An optional value, owned or borrowed (\`&Option<T>\` is an \`Option<&T>\`).
-fn out_optional<T>(output: &mut Vec<u8>, value: impl Into<Option<T>>, item: impl FnOnce(&mut Vec<u8>, T)) {
-    match value.into() {
+fn out_optional<T>(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce(&mut Vec<u8>, T)) {
+    match value {
         Some(value) => {
             output.push(1);
             item(output, value);
@@ -362,7 +389,7 @@ fn held<T>(table: &Mutex<Table<T>>, handle: u64, subject: &str, class: &str) -> 
 }
 
 /// T-5: keeps a value in a table and gives its handle, which is never 0.
-fn insert<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
+fn insert_held<T>(table: &Mutex<Table<T>>, value: T) -> u64 {
     let mut table = lock(table);
     table.next += 1;
     let handle = table.next;
@@ -435,8 +462,9 @@ ${outArmsText}
 const rustBytes = (text: string): string => `b${rustString(text)}`;
 
 // T-4, U-2: a record, its fields in contract order; a field with a default is Option<T>, None when Go leaves it nil.
-function recordRust(model: Model, unit: Unit): string {
-  const name = rustField(unit.name);
+// GN-15f: a record of another repository has the helpers in_<library>_<record> and out_<library>_<record>.
+function recordRust(model: Model, unit: Unit, library?: string): string {
+  const name = recordFn(unit, library);
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
@@ -451,7 +479,7 @@ function recordRust(model: Model, unit: Unit): string {
   const entersOnly = fields.some((f) => unitOf(model, f.type)?.origin === 'callback');
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
-fn in_${name}(input: &mut &[u8]) -> Result<${rustType(model, { unit: unit.id })}, Fail> {
+fn in_${name}(input: &mut &[u8]) -> Result<${entersOnly ? rustType(model, { unit: unit.id }) : core}, Fail> {
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
 }
@@ -490,7 +518,15 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
 fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+}
+
+/// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
+/// the handle of a new instance, which the package of the class makes.
+fn alias_out_${plain}(output: &mut Vec<u8>, value: ${core}) {
+    output.push(10);
+    out_uint(output, ${model.objects.indexOf(object)}u64);
+    out_${plain}(output, value);
 }
 ${nested}`;
 }
@@ -625,6 +661,9 @@ function functionRust(model: Model, fn: Fn): string {
   }
   if (fn.returns === 'none') {
     lines.push('        Ok(Vec::new())');
+  } else if (fn.returns === 'never') {
+    // T-2 never: the core's Infallible has no value, so the call has failed before.
+    lines.push('        match result {}');
   } else {
     lines.push('        let mut buffer = Vec::new();', '        let output = &mut buffer;', `        ${convertOut(model, fn.returns, 'result')};`, '        Ok(buffer)');
   }
@@ -887,7 +926,8 @@ ${failureFn}${hosts}${callbackCall}`;
 
 // The Go form of a built-in make form, written from the content of the matched OutValue (the nodes of package binding:
 // 0 nil, 1 bool, 2 int64, 3 float64, 4 string, 5 []byte, 6 []any, 7 map[string]any, 8 a container made before, 9
-// *KeyedMap[any], 10 the func of a Native by a new cgo.Handle, 255 no Go form).
+// *KeyedMap[any], 10 an instance of a class that a member makes, 11 the func of a Native by a new cgo.Handle, 255 no Go
+// form).
 function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string): string {
   switch (form) {
     case 'null':
@@ -970,7 +1010,7 @@ function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string):
       // GN-6u: the bytes outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
       return `match native.downcast::<GoNative>() {
             Some(object) => {
-                output.push(10);
+                output.push(11);
                 // SAFETY: the handle is the cgo.Handle of the Native, which is alive while the Native is.
                 out_uint(output, unsafe { ${prefix(model)}__go_native(object.handle) });
             }
@@ -982,15 +1022,18 @@ function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string):
   throw new Unsupported(`${alias.unit.id}: the Go form ${form} of the kind ${kind} is not generated yet`);
 }
 
+// U-7, GN-15c: the classes whose instances the Go out rows of a value alias make by a member.
+export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
+  const makes = new Set((alias.unit.out ?? []).map((row) => row.make['go']).filter((make): make is string => typeof make === 'string' && make.includes('.')));
+  return model.objects.filter((o) => o.members.some((fn) => makes.has(fn.member.id)));
+}
+
 function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
-  // U-7: a Go value leaves the core as a value of a built-in form; a make by a member would give a class instance
-  // through the C ABI, whose handle the alias conversion does not write.
-  const byMember = (alias.unit.out ?? []).find((row) => typeof row.make['go'] === 'string' && row.make['go'].includes('.'));
-  if (byMember !== undefined) throw new Unsupported(`${alias.unit.id}: a Go make by a member (${String(byMember.make['go'])}) is not generated yet (U-7)`);
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', '');
+  // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1134,7 +1177,7 @@ function testEntries(model: Model): string {
     out.push(entry(model, `${p}__native_count`, 'GN-6u: the entry point of the generated release test: the count of the live Natives.', ['        finish_input(input)?;', '        let mut output = Vec::new();', '        out_uint(&mut output, NATIVE_COUNT.load(Ordering::SeqCst));', '        Ok(output)'], 'native-count-test'));
   }
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
-  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => o.lock?.writes === true);
+  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));
   if (written.length > 0) {
     const arms = written.map(({ o, index }) => `            ${index} => {
                 let held = held_${plainName(o.unit)}(handle, "held")?;
@@ -1163,7 +1206,7 @@ function testEntries(model: Model): string {
       '        finish_input(input)?;',
       '        let left = binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;',
       '        let mut buffer = Vec::new();',
-      '        out_list(&mut buffer, left, |output, item| out_text(output, item));',
+      '        out_list(&mut buffer, left, out_text);',
       '        Ok(buffer)',
     ], 'fault-test'));
   }
@@ -1185,15 +1228,44 @@ function rustUsed(model: Model): string {
   const units = [
     ...model.enums.map(enumRust),
     ...model.records.map((u) => recordRust(model, u)),
+    ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+}
+
+// T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
+// names are left out.
+function tupleReaders(model: Model): string {
+  const arities = new Set<number>();
+  const visit = (type: Type): void => {
+    if (typeof type === 'string') return;
+    if ('tuple' in type) {
+      arities.add(type.tuple.length);
+      type.tuple.forEach(visit);
+      return;
+    }
+    for (const key of ['list', 'optional', 'map', 'keyed_map'] as const) if (key in type) visit((type as Record<string, Type>)[key] as Type);
+  };
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
+  for (const unit of model.records) for (const f of unit.fields ?? []) visit(f.type);
+  for (const cb of model.callbacks) for (const m of cb.members) visit(m.returns);
+  return [...arities].sort((a, b) => a - b).map((n) => {
+    const names = Array.from({ length: n }, (_, i) => `T${i}`);
+    return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
+fn in_tuple${n}<'a, ${names.join(', ')}>(
+    input: &mut &'a [u8],
+${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, Fail>,`).join('\n')}
+) -> Result<(${names.join(', ')}${n === 1 ? ',' : ''}), Fail> {
+    Ok((${names.map((_, i) => `part${i}(input)?`).join(', ')}${n === 1 ? ',' : ''}))
+}`;
+  }).join('\n\n');
 }
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
@@ -1210,7 +1282,7 @@ export function libRust(model: Model): string {
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure
 // in a buffer that Go copies and frees with ${prefix(model)}__free.
 
-use binding_core::{BindingError, Category, Kinds${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
+use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(all) ? ', NumberType' : ''}${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
 ${/Borrow</.test(all) ? 'use std::borrow::Borrow;\n' : ''}${usesMap ? 'use std::collections::BTreeMap;\n' : ''}use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length > 0 ? 'use std::sync::Arc;\n' : ''}${model.callbacks.length > 0 || model.aliases.length > 0 ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}${usesMutex ? 'use std::sync::{Mutex, MutexGuard};\n' : ''}
