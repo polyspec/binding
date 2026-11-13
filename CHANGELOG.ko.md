@@ -1,11 +1,25 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c726f1687c4ac6e2ec300eb559a9b512acacfa332a67d704a881082d6afaf3ef -->
+<!-- source-sha256: bd3fb343e6ed70b2fe85d4e957dc39a689d53911ba718c95fe724368ddfccc16 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Go는 `core_type` 없는 값 class를 이름으로 거부했다. Go make가 그런 class의 constructor를 이름하는 값 alias의 `out`
+  행은 그 target의 생성을 실패시켰다. 이제 생성기가 그것을 받는다(GN-6af, GN-15c). 그 class는 `internal/binding`의
+  struct이고, 그 module의 패키지가 alias로 이름한다. 쓰기 가능한 property는 export된 field이고 그 밖의 property는
+  method다. `New<Class>`는 인자를 묘사해 C ABI의 entry에 주고, 그 entry는 코어의 판정 함수만 부른다. default가 있는
+  인자의 nil은 생략한 인자다. 패키지 binding은 그 struct의 포인터를 `in` 행의 kind와 call 안에서 포인터마다 하나인
+  handle을 담은 node 11로 묘사하고, 질문 read가 보관된 값을 준다. `*KeyedMap[any]`는 entry들을 순서대로 담은 map으로
+  묘사하며, 이전에는 다른 타입의 값으로 묘사했다. `out` 행은 결과의 node 12에서 내용보다 먼저 struct를 만들므로 같은
+  handle의 뒤 위치는 같은 포인터다. 생성된 Go 시험은 constructor와 property의 case를 실행하고, kind `object`와
+  `reference`의 case 값을 각 instance를 만든 뒤 채우는 문장으로 쓰며, 결과를 `reflect.DeepEqual`과 instance의 위치로
+  비교한다. CK-78은 그런 class에 Go를 받아들이고, 그 규칙은 PHP가 그런 class를 생성하지 않는다고 적는다.
+  `make test-ts`로 검증했다. 그 class의 시험은 변경 전에 Go의 거부를 요구했고, CK-78 finding의 시험 둘은 검사가 Go를
+  받아들이기 전에 실패했다. 436개 중 436개가 통과한다. `gofmt -l`은 그 시험의 fixture와 계약 `sample`, `classes`,
+  `shapes`, `variants`, `points`의 생성된 Go 파일을 하나도 보고하지 않는다. 이 변경의 Go와 Rust 파일은 아직 컴파일하지
+  않았다. end-to-end 검사가 그것을 컴파일한다.
 - 생성하지 않는 target의 `core_type` 없는 class를 판정하는 검사의 id는 CK-78이다. 이전에는 다른 검사의 id를 썼다.
   명세, finding, 시험이 CK-78을 적고, 검사의 규칙은 바뀌지 않았다. `make test-ts`로 검증했다. 그 finding의 시험 둘은
   검사가 새 id를 보고하기 전에 실패했다.

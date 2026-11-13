@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 668f06e59acbee35cd2a02eead9d41d57a6a01f5f1da70bbaf7c40bbbcd6742c -->
+<!-- source-sha256: bbed0606748224a10088722aefe1db37a4900da901bef46e34a4d90e90fcf848 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -168,8 +168,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   cleanup member를 부르지 않기 때문이다. `binding check`는 Rust 소스를 읽지 않으므로 그 `Drop`을 검증하지 않는다. 그것은
   코어의 의무이며, 이 검사의 finding이 그렇게 적는다.
 - **CK-78** 생성하지 않는 target의 `core_type` 없는 class(생성기 GN-6af): `core_type`을 적지 않은 origin `generated`나
-  `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM이 그것을
-  생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e), Go는 아직 생성하지 않는다. finding은 그 unit과 그런
+  `value`의 class는 그런 class를 생성하지 않는 target이 하나도 없는 `only`(Q-4)를 적는다. Python, Node, WASM, Go가 그것을
+  생성한다. PHP는 자기 `stdClass`와 참조를 쓰고(생성기 GN-6e) 그런 class를 생성하지 않는다. 이것은 그 target의 규칙이며
+  생성기의 현재 상태가 아니므로, 두 origin 어느 쪽의 class도 PHP를 적지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
   보고한다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의

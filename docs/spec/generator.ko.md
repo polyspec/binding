@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 8e26bf50c242c60c2d56f5bb600f298cfa6fcd30c7f50ade9315f486dbdac2e5 -->
+<!-- source-sha256: 8db78a2e181949c5cf872222aeffb80808be5562d1f9554fa359c4b725bc7c38 -->
 # 생성기
 
 [English](generator.md)
@@ -792,9 +792,9 @@
   것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
-  handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
-  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). 그래서 계약 검사는 그런 class가 PHP와 Go가 없는 `only`를
-  적기를 요구한다(CK-78). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM, Go가 이 class를 생성하며, Go는 GN-15c가 적은
+  대로 생성한다. PHP는 자기 `stdClass`와 reference를 받으므로(GN-6e) 그런 class를 생성하지 않는다. 이것은 그 target의
+  규칙이며 생성기의 현재 상태가 아니다. 그래서 계약 검사는 그런 class가 PHP가 없는 `only`를 적기를 요구한다(CK-78). PHP는 형식 `php_object`를 entry들을 property로 가진 새
   `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
   가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
   그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는
@@ -911,7 +911,23 @@
   map의 entry들. 패키지 binding은 행이
   이름하는 owner의 export 함수를 그 내용으로 부르며, map은 constructor로 만들고 insert method로 채운 map class의
   인스턴스로 준다. 그 함수의 오류는 호출의 오류다. 다른 타입의 Go 값은 위 규칙대로 묘사하므로 owner의 `in` 함수가
-  판정한다.
+  판정한다. `core_type` 없는 값 class(GN-6af)는 `internal/binding`의 struct `<Class>`이고, 그 module의 패키지가 alias로
+  이름한다. 패키지 binding이 그 instance를 묘사하고 만들며, 그 패키지를 import하지 않기 때문이다. 쓰기 가능한 property는
+  struct의 export된 field이고, 쓰기 가능하지 않은 property는 export되지 않은 field와 그 이름의 method다.
+  `New<Class>`는 각 parameter를 그 Go 타입(`any`, `[]any`, `*KeyedMap[any]`)으로 받는다. default가 있는 parameter는
+  포인터 형식을 갖지 않는다(GN-15e). 그 nil이 생략한 인자다. nil은 Go의 null이고 nil list나 keyed map은 비어 있으며,
+  이것이 GN-6af의 default가 주는 값이기 때문이다. 그때 instance는 nil, 새 빈 slice, 새 빈 `*KeyedMap[any]`를 보관한다.
+  constructor는 call과, parameter마다 값의 묘사, list 각 항목의 묘사, keyed map 각 key와 값의 묘사를 C ABI의 entry에
+  쓰고, 그 entry는 코어의 판정 함수를 부르며 아무것도 돌려주지 않는다. 패키지 binding은 그런 struct의 포인터를 그
+  class의 Go `in` 행대로 행의 kind와 handle을 담은 node 11로 묘사한다. handle은 한 call 안에서 같은 포인터에 대해 같고,
+  그 handle의 질문 read(op 2)는 행이 이름한 property의 보관된 값을 묘사한다. `*KeyedMap[any]`는 그 entry들을 순서대로
+  담은 map으로 묘사하며, 각 key는 정수, text, byte string이다. make가 그 constructor를 이름하는 `out` 행은 계약의
+  `core_type` 없는 값 class들 가운데 그 class의 번호를 담은 결과의 node 12이고, 그 뒤에 reference의 값, 또는 object나
+  map의 개수와 entry들이 온다. 패키지 binding은 내용을 읽기 전에 struct를 만들고, 같은 handle의 뒤 위치는 node 8이므로
+  같은 포인터다. Go 이름이 패키지 binding의 타입 이름인 값 class는 이름으로 거부한다. 생성된 시험은 constructor와
+  property의 case를 실행하고, constructor가 만든 instance에서 property를 읽으며, 그런 instance를 담은 결과를
+  `reflect.DeepEqual`과 각 포인터가 처음 나타나는 순서로 비교한다. 그래서 case가 하나로 이름한 곳에 instance 둘을 담은
+  결과는 실패한다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
@@ -1047,7 +1063,8 @@
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
   case의 factory 인자를 쓴다. `core_type`이 없는 value class(GN-6af)도 Python, Node, WASM에서 그런 class다. 그 생성자와
-  property는 이 시험을 가지며, property는 생성자가 case의 parameter 키로 만든 인스턴스에서 읽는다. callback을 받는 member에는 K-2 시험이 있다:
+  property는 이 시험을 가지며, property는 생성자가 case의 parameter 키로 만든 인스턴스에서 읽는다. Go는 GN-15c가 적은 대로
+  생성자와 property의 case를 실행한다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
   거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.

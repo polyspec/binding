@@ -793,7 +793,7 @@ function intKey(lang: Lang3, raw: unknown): string {
 
 // GN-6af: the value class without core_type that keeps the content of a case value: a keyed map (an object) or one value
 // (a reference).
-function keptOf(model: Model, holds: 'entries' | 'value', where: string): KeptClass {
+export function keptOf(model: Model, holds: 'entries' | 'value', where: string): KeptClass {
   const found = model.kept.filter((k) => {
     const [field, ...more] = k.fields;
     if (field === undefined || more.length > 0) return false;

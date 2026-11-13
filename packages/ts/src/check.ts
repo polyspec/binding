@@ -1193,9 +1193,9 @@ class Checker {
   // ---- CK-78: a class without core_type on a target that does not generate it (GN-6af) ----
 
   keptClassTargets(): void {
-    // GN-6af: Python, Node and WASM generate a class that keeps language values; PHP takes its own stdClass and
-    // references (GN-6e), and Go generates no such class yet.
-    const generated: readonly string[] = ['python', 'node', 'wasm'];
+    // GN-6af: Python, Node, WASM and Go generate a class that keeps language values. PHP takes its own stdClass and
+    // references (GN-6e) and generates no such class, which is the rule of that target.
+    const generated: readonly string[] = ['python', 'node', 'wasm', 'go'];
     for (const { value: unit, path } of this.units.values()) {
       if (unit.kind !== 'class' || (unit.origin !== 'generated' && unit.origin !== 'value') || unit.core_type !== undefined) continue;
       const missing = (unit.only?.targets ?? this.contract.targets).filter((target) => !generated.includes(target)).join(', ');

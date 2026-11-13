@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+- Go refused a value class without `core_type` by name: an `out` row of a value alias whose Go make names the
+  constructor of such a class failed the generation of the target. The generator now takes it (GN-6af, GN-15c). The
+  class is a struct of `internal/binding`, which the package of its module names as an alias; a writable property is
+  an exported field and any other property a method. `New<Class>` describes its arguments to an entry of the C ABI
+  that only calls the judging function of the core, and a nil argument with a default is the argument left out.
+  Package binding describes a pointer to the struct as node 11 with the kind of its `in` row and one handle per
+  pointer of a call, whose kept value the question read gives, and a `*KeyedMap[any]` as a map of its entries in
+  their order, which it described as a value of another type before. An `out` row makes the struct from node 12 of
+  the result before its content, so a later place of its handle is the same pointer. The generated Go tests run the
+  cases of the constructor and of the properties, write a case value of the kinds `object` and `reference` as
+  statements that make each instance and then fill it, and compare a result by `reflect.DeepEqual` and by the
+  places of its instances. CK-78 accepts Go for such a class, and its rule states that PHP never generates one.
+  Verified by `make test-ts`: the test of the class required the refusal of Go before the change, and the two
+  tests of the finding of CK-78 failed before the check accepted Go; 436 of 436 pass. `gofmt -l` reports no
+  generated Go file of the fixture of that test and of the contracts `sample`, `classes`, `shapes`, `variants` and
+  `points`. No Go or Rust file of this change is compiled yet: the end-to-end check compiles them.
 - The check of a class without `core_type` on a target that does not generate it has the id CK-78; it had the id of
   another check. The specification, the finding and the tests name CK-78, and the rule of the check is unchanged.
   Verified by `make test-ts`: the two tests of its finding failed before the check reported the new id.

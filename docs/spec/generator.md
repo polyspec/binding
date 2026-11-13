@@ -957,9 +957,10 @@ the design ids are those of the binding design.
   path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
-  content and is the same instance at every position of its handle (U-7 (d)). Python, Node and WASM generate these
-  classes; Go refuses them by name (G-4), and PHP takes its own `stdClass` and references (GN-6e), so the contract
-  check requires that such a class names `only` without PHP and Go (CK-78). PHP makes the form
+  content and is the same instance at every position of its handle (U-7 (d)). Python, Node, WASM and Go generate these
+  classes, Go as GN-15c states. PHP generates no such class, because it takes its own `stdClass` and references
+  (GN-6e); that is the rule of the target and no state of the generator, so the contract check requires that such a
+  class names `only` without PHP (CK-78). PHP makes the form
   `php_object` as a new `stdClass` whose properties are the entries, each name the bytes of its key, which may hold any
   byte, and the form `php_reference` as a new reference whose value is the made value; an array key of bytes is a
   string key of those bytes. An object and a reference are made before their content and are the same object or
@@ -1105,7 +1106,26 @@ the design ids are those of the binding design.
   `text16` as a list of `uint64`, the items, or the entries of a map; package binding calls the exported function of the owner that the row names on that content, a map
   as an instance of the map class that its constructor makes and its insert method fills, and an error of that
   function is the error of the call. A Go value of another type is described by the rules above, so the owner's `in`
-  function judges it.
+  function judges it. A value class without `core_type` (GN-6af) is a struct `<Class>` of `internal/binding`, which the package
+  of its module names as an alias, because package binding describes and makes its instances and does not import
+  that package. A writable property is an exported field of the struct, and a property that is not writable is an
+  unexported field with a method of its name. `New<Class>` takes each parameter by its Go type (`any`, `[]any`,
+  `*KeyedMap[any]`). A parameter with a default has no pointer form (GN-15e): its nil is the argument left out,
+  because nil is the null of Go and a nil list or keyed map is empty, which is what the defaults of GN-6af give; the
+  instance then keeps nil, a new empty slice or a new empty `*KeyedMap[any]`. The constructor writes the call and, per
+  parameter, the description of the value, of each item of a list, or of each key and value of a keyed map, to an
+  entry of the C ABI, which calls the judging function of the core and returns nothing. Package binding describes a
+  pointer to such a struct by the `in` row of the class for Go as node 11 with the kind of the row and a handle,
+  which is the same for the same pointer within one call, and the question read (op 2) of that handle describes the
+  kept value of the property that the row names. A `*KeyedMap[any]` is described as a map of its entries in their
+  order, each key an integer, a text or a byte string. An `out` row whose make names the constructor is node 12 of
+  the result with the number of the class among the value classes without `core_type` of the contract, then the
+  value of a reference, or the count and the entries of an object or a map. Package binding makes the struct before
+  it reads the content, and a later position of the same handle is node 8, so it is the same pointer. A value class
+  whose Go name is the name of a type of package binding is refused by name. The generated tests run the cases of
+  the constructor and of the properties, read a property on an instance that the constructor makes, and compare a
+  result that holds such instances by `reflect.DeepEqual` and by the order in which each pointer first appears, so a
+  result that holds two instances where the case names one fails.
 - **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
   pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
   through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
@@ -1283,7 +1303,7 @@ the design ids are those of the binding design.
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A value
   class without `core_type` (GN-6af) is such a class in Python, Node and WASM: its constructor and its properties have
   these tests, and a property is read on an instance that the constructor makes from the case's keys of its
-  parameters. A member
+  parameters; Go runs the cases of the constructor and of the properties as GN-15c states. A member
   that takes a callback has the tests of K-2: an object without the
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's

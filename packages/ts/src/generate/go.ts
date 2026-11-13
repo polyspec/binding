@@ -12,8 +12,8 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, isInternal, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type KeptClass, type KeptField, type Model, isInternal, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, keptReads, libRust, plainName, prefix, readsValues, releaseSymbol, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -815,6 +815,7 @@ function goPackageFile(model: Model, module: string, reachedFrom: Set<string>, s
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
     ...objects.flatMap((o) => [goClass(model, o.unit), ...o.members.map((f) => goCallable(scope, f)), goImplements(scope, o)]),
+    ...model.kept.filter((k) => k.unit.module === module).map((k) => goKeptAlias(scope, k)),
     ...callbacks.filter((c) => reachedFrom.has(c.unit.id)).map((c) => goReachable(scope, c.unit, true)),
     ...objects.filter((o) => reachedFrom.has(o.unit.id)).map((o) => goReachable(scope, o.unit, false)),
   ].join('');
@@ -832,7 +833,7 @@ ${made.map((o) => `	case ${model.objects.indexOf(o)}:
 	return nil
 }
 `;
-  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || model.variants.some((v) => v.unit.module === module) || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true || (scope.usesTuples?.size ?? 0) > 0;
+  const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || model.kept.some((k) => k.unit.module === module) || model.variants.some((v) => v.unit.module === module) || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true || (scope.usesTuples?.size ?? 0) > 0;
   const tuples = [...(scope.usesTuples ?? [])].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
     return `
@@ -1030,7 +1031,7 @@ package binding
 #cgo LDFLAGS: -l${lib}
 #cgo linux LDFLAGS: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
 #cgo darwin LDFLAGS: -lSystem -lc -lm
-${cDeclarations(model, fns.map((fn) => cSymbol(model, fn)), others)}
+${cDeclarations(model, [...fns, ...model.kept.map((k) => k.constructor)].map((fn) => cSymbol(model, fn)), others)}
 */
 import "C"
 
@@ -1393,7 +1394,7 @@ func (r *Reader) Key() Key {
 	r.failed = true
 	return Key{}
 }
-${GO_TOKEN}${model.aliases.length === 0 ? '' : valueClasses(model).length === 0 ? GO_VALUE : `${GO_VALUE.replace('\tcase 255:\n', '\tcase 11:\n\t\treturn r.valueClass(made, instance)\n\tcase 255:\n')}${goValueClassReader(model)}`}
+${GO_TOKEN}${model.aliases.length === 0 ? '' : valueClasses(model).length === 0 ? goValue(model) : `${goValue(model).replace('\tcase 255:\n', '\tcase 11:\n\t\treturn r.valueClass(made, instance)\n\tcase 255:\n')}${goValueClassReader(model)}`}${model.kept.map((k) => goKept(model, k)).join('')}
 // failure is the data of every error type: the message, the kind, the status and the errno of the core (E-7).
 type failure struct {
 	message   string
@@ -1475,13 +1476,16 @@ function goCallBack(model: Model): string {
 // Callback runs a member of a Go callback for the core (U-3): the decoded arguments in, the encoded result out.
 type Callback func(call *Call, member uint32, dec *Reader, enc *Writer) error
 
-// held is a Go value whose children the core may ask for (U-7), with the keys of a map in their order.${valueClasses(model).length === 0 ? `
+// held is a Go value whose children the core may ask for (U-7), with the keys of a map in their order; a
+// *KeyedMap[any] is its entries in their order.${!readsValues(model) ? `
 type held struct {
-	value reflect.Value
-	keys  []reflect.Value
+	value   reflect.Value
+	keys    []reflect.Value
+	entries [][2]reflect.Value
 }` : ` An instance of
-// a value class of another repository is the read member of its in case, and an instance of a class of its owner that
-// iterates keys and values is the entries of that iteration (GN-6x).
+// a value class is the read of its in case, the read member of a class of another repository (GN-6x) or the kept
+// value of a class without core_type (GN-6af), and an instance of a class of an owner that iterates keys and values
+// is the entries of that iteration (GN-6x).
 type held struct {
 	value   reflect.Value
 	keys    []reflect.Value
@@ -1497,7 +1501,8 @@ type Call struct {
 	handle    cgo.Handle
 	held      []held
 	callbacks []Callback
-	raised    []error
+	raised    []error${keptReads(model).length === 0 ? '' : `
+	seen      map[any]uint64`}
 }
 
 // NewCall is a call, which Close ends.
@@ -1538,6 +1543,9 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 	if c.describeClass(enc, value) {
 		return
 	}`}
+	if c.describeOwn(enc, value) {
+		return
+	}
 	switch value.Kind() {
 	case reflect.Bool:
 		enc.bytes = append(enc.bytes, 1)
@@ -1592,7 +1600,7 @@ func (c *Call) hold(value held) uint64 {
 }
 
 // host answers a question of the core about a value: the item of a list (op 0) or the key and the value of the entry
-// of a map (op 1)${valueClasses(model).length === 0 ? '' : ', or the content of an instance of a value class of another repository (op 2, GN-6x)'}.
+// of a map (op 1)${!readsValues(model) ? '' : ', or the content of an instance of a value class (op 2, GN-6x, GN-6af)'}.
 func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	if handle == 0 || handle > uint64(len(c.held)) {
 		return nil, false
@@ -1606,10 +1614,10 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 		c.describe(enc, value.Index(int(index)))
 	case op == 1 && value.Kind() == reflect.Map && index < uint64(len(keys)):
 		c.describe(enc, keys[index])
-		c.describe(enc, value.MapIndex(keys[index]))${valueClasses(model).length === 0 ? '' : `
+		c.describe(enc, value.MapIndex(keys[index]))
 	case op == 1 && index < uint64(len(held.entries)):
 		c.describe(enc, held.entries[index][0])
-		c.describe(enc, held.entries[index][1])
+		c.describe(enc, held.entries[index][1])${!readsValues(model) ? '' : `
 	case op == 2 && held.read != nil:
 		content, err := held.read()
 		coded := held.coded
@@ -1643,7 +1651,7 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 	return enc.Done(), true
 }
 
-${goValueClassCall(model)}// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
+${goValueClassCall(model)}${goDescribeOwn(model)}// run runs a callback of the call: 0 and the encoded result, 1 and the index of the error that it returned, or 2 and the
 // index, the kind and the message of an error that the member recognizes (U-3).
 func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) {
 	if callback == 0 || callback > uint64(len(c.callbacks)) {
@@ -1757,6 +1765,87 @@ function valueClassImports(model: Model): string[] {
   return [...paths].map((path) => goString(path));
 }
 
+// GN-6af, GN-15c: the description of the values of package binding itself: a *KeyedMap[any] as a map of its entries
+// in their order, and a pointer to a value class without core_type as node 11 with the kind of its in row and one
+// handle per pointer of a call, whose kept value the question read gives.
+function goDescribeOwn(model: Model): string {
+  const reads = keptReads(model);
+  const cases = reads.map((r) => {
+    const kept = r.kept;
+    if (kept === undefined) return '';
+    const name = goName(kept.unit.unit.name);
+    const kind = GO_VALUE_KINDS.indexOf(r.variant.replace('ValueKind::', ''));
+    if (kind < 0) throw new Unsupported(`${kept.unit.unit.id}: the kind ${r.kind} of the Go in row of a value class without core_type is not generated (GN-15c)`);
+    return `	case *${name}:
+		if found == nil {
+			return false
+		}
+		c.describeKept(enc, ${kind}, found, func() (any, error) { return found.${keptField(kept.field)}, nil })
+		return true
+`;
+  }).join('');
+  return `// describeOwn describes a value of a type of this package: a *KeyedMap[any] as a map of its entries in their order,
+// each key an integer, a text or a byte string${reads.length === 0 ? '' : ', and a pointer to a value class without core_type by the in row of\n// its class (GN-6af)'}.
+func (c *Call) describeOwn(enc *Writer, value reflect.Value) bool {
+	if !value.CanInterface() {
+		return false
+	}
+	switch found := value.Interface().(type) {
+	case *KeyedMap[any]:
+		var pairs [][2]reflect.Value
+		for _, key := range found.Keys() {
+			item, _ := found.Get(key)
+			var described any = key.text
+			switch key.kind {
+			case 0:
+				described = key.integer
+			case 1:
+				described = []byte(key.text)
+			}
+			pairs = append(pairs, [2]reflect.Value{reflect.ValueOf(described), reflect.ValueOf(item)})
+		}
+		enc.bytes = append(enc.bytes, 8)
+		enc.Uint(c.hold(held{entries: pairs}))
+		enc.Uint(uint64(len(pairs)))
+		return true
+${cases}	}
+	return false
+}
+
+${reads.length === 0 ? '' : `// describeKept writes node 11: an instance of a value class without core_type, the number of the kind of its in row
+// and the handle under which the question read gives its kept value; one pointer has one handle in a call, so the
+// core sees one object at each of its places (GN-6af, U-7 (d)).
+func (c *Call) describeKept(enc *Writer, kind byte, instance any, read func() (any, error)) {
+	handle, ok := c.seen[instance]
+	if !ok {
+		handle = c.hold(held{read: read})
+		if c.seen == nil {
+			c.seen = map[any]uint64{}
+		}
+		c.seen[instance] = handle
+	}
+	enc.bytes = append(enc.bytes, 11, kind)
+	enc.Uint(handle)
+}
+
+${valueClasses(model).length > 0 ? '' : RAISE_IN}`}`;
+}
+
+// GN-6x, GN-6af: node 12 of a description, the error that a read of a value class returned.
+const RAISE_IN = `// raiseIn writes node 12: the error that a member of the owner of a value class returned, which the call keeps under
+// its index, so that the function returns it (GN-6x).
+func (c *Call) raiseIn(enc *Writer, err error) {
+	c.raised = append(c.raised, err)
+	enc.bytes = append(enc.bytes, 12)
+	enc.Uint(uint64(c.handle))
+	enc.Uint(uint64(len(c.raised) - 1))
+}
+
+`;
+
+// GN-15c: the Go field of a kept value: exported when its property is writable.
+export const keptField = (field: KeptField): string => (field.writable ? goName(field.name) : `k${goName(field.name)}`);
+
 // GN-6x, GN-15c: the description of an instance of a value class of another repository by the in row of its class,
 // node 11 with the number of the kind of its case and a handle that the question read opens, and node 12 for an error
 // of a member of the owner.
@@ -1833,16 +1922,7 @@ func (c *Call) describeValue(enc *Writer, kind byte, read, units func() (any, er
 	enc.Uint(c.hold(held{read: read, units: units, coded: kind == ${GO_VALUE_KINDS.indexOf('Text16')}}))
 }
 
-// raiseIn writes node 12: the error that a member of the owner of a value class returned, which the call keeps under
-// its index, so that the function returns it (GN-6x).
-func (c *Call) raiseIn(enc *Writer, err error) {
-	c.raised = append(c.raised, err)
-	enc.bytes = append(enc.bytes, 12)
-	enc.Uint(uint64(c.handle))
-	enc.Uint(uint64(len(c.raised) - 1))
-}
-
-`;
+${RAISE_IN}`;
 }
 
 // GN-6x, GN-15c: the making of an instance of a value class of another repository from node 11 of a result: the
@@ -2052,6 +2132,135 @@ func (r *Reader) fail(problem string) {
 	r.failed = true
 }
 `;
+
+// GN-6af, GN-15c: the decoder of a value with node 12, an instance of a value class without core_type: the number of
+// the class, then the value that it keeps or the entries of its keyed map. The struct is made and remembered before
+// its content, so node 8 of a later place gives the same pointer.
+function goValue(model: Model): string {
+  if (model.kept.length === 0) return GO_VALUE;
+  const arms = model.kept.map((kept, position) => {
+    const name = goName(kept.unit.name);
+    const [field, ...more] = kept.fields;
+    if (field === undefined || more.length > 0) return '';
+    const type = field.type;
+    if (typeof type === 'object' && 'keyed_map' in type) {
+      return `	case ${position}:
+		entries := &KeyedMap[any]{}
+		kept := &${name}{${keptField(field)}: entries}
+		*made = append(*made, kept)
+		for at, n := 0, r.Len(); at < n; at++ {
+			var key Key
+			switch found := r.value(made, instance).(type) {
+			case int64:
+				key = IntKey(found)
+			case string:
+				key = TextKey(found)
+			case []byte:
+				key = BytesKey(found)
+			default:
+				r.fail("GN-6af: a key of the entries of ${name} that is no integer, byte string or text")
+				return nil
+			}
+			entries.Set(key, r.value(made, instance))
+		}
+		return kept
+`;
+    }
+    if (typeof type === 'object' && 'unit' in type) {
+      return `	case ${position}:
+		kept := &${name}{}
+		*made = append(*made, kept)
+		kept.${keptField(field)} = r.value(made, instance)
+		return kept
+`;
+    }
+    return '';
+  }).join('');
+  return `${GO_VALUE.replace('\tcase 255:\n', '\tcase 12:\n\t\treturn r.kept(made, instance)\n\tcase 255:\n')}
+// kept makes an instance of a value class without core_type from node 12 of a result (GN-6af): the number of the
+// class, then the value that it keeps or the entries of its keyed map.
+func (r *Reader) kept(made *[]any, instance func(class uint64, handle uint64) any) any {
+	class := r.Uint()
+	if r.failed {
+		return nil
+	}
+	switch class {
+${arms}	}
+	r.failed = true
+	return nil
+}
+`;
+}
+
+// GN-6af, GN-15c: a value class without core_type: a struct of package binding that keeps the Go values that its
+// constructor judged through the core. A writable property is an exported field; any other is read by its method.
+function goKept(model: Model, kept: KeptClass): string {
+  const name = goName(kept.unit.name);
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const fn = kept.constructor;
+  const fields = kept.fields.map((f) => ({ f, field: keptField(f), param: goParam(f.name, model), type: goType(scope, f.type) }));
+  const width = Math.max(0, ...fields.map((x) => x.field.length));
+  const describe = (x: (typeof fields)[number], depth: string): string[] => {
+    const type = x.f.type;
+    if (typeof type === 'object' && 'keyed_map' in type) {
+      return [`${depth}enc.Len(${x.param}.Len())`, `${depth}for _, key := range ${x.param}.Keys() {`, `${depth}\titem, _ := ${x.param}.Get(key)`, `${depth}\tenc.Key(key)`, `${depth}\tcall.describe(enc, reflect.ValueOf(item))`, `${depth}}`];
+    }
+    if (typeof type === 'object' && 'list' in type) {
+      return [`${depth}enc.Len(len(${x.param}))`, `${depth}for _, item := range ${x.param} {`, `${depth}\tcall.describe(enc, reflect.ValueOf(item))`, `${depth}}`];
+    }
+    return [`${depth}call.describe(enc, reflect.ValueOf(${x.param}))`];
+  };
+  const lines = fields.flatMap((x) => (x.f.default === undefined
+    ? describe(x, '\t')
+    : [`\tif ${x.param} == nil {`, '\t\tenc.Tag(false)', '\t} else {', '\t\tenc.Tag(true)', ...describe(x, '\t\t'), '\t}']));
+  const defaults = fields.flatMap((x) => {
+    if (x.f.default === 'map') return [`\tif ${x.param} == nil {`, `\t\t${x.param} = &${x.type.slice(1)}{}`, '\t}'];
+    if (x.f.default === 'list') return [`\tif ${x.param} == nil {`, `\t\t${x.param} = ${x.type}{}`, '\t}'];
+    return [];
+  });
+  const getters = fields.filter((x) => !x.f.writable).map((x) => `
+// ${goName(x.f.name)} is the property ${x.f.property?.id ?? ''} (GN-6af): the value that the ${name} keeps.
+func (v *${name}) ${goName(x.f.name)}() ${x.type} { return v.${x.field} }
+`).join('');
+  return `
+// ${name} is the value class ${kept.unit.id} (GN-6af): it keeps the Go values that New${name} judged, and no value of
+// the core is behind it.${fields.some((x) => x.f.writable) ? ' A value that a field is set to is judged where a call reads the instance.' : ''}
+type ${name} struct {
+${fields.map((x) => `\t${pad(x.field, width)} ${x.type}`).join('\n')}
+}
+${getters}
+// New${name} judges its arguments through ${fn.corePath} (contract member ${fn.member.id}) and keeps them.${fields.some((x) => x.f.default !== undefined) ? ' A nil\n// argument with a default is left out: the instance keeps the default.' : ''}
+func New${name}(${fields.map((x) => `${x.param} ${x.type}`).join(', ')}) (*${name}, error) {
+	call := NewCall()
+	defer call.Close()
+	enc := NewWriter()
+	enc.Uint(uint64(call.handle))
+${lines.join('\n')}
+	if _, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *C.${prefix(model)}_buffer) C.int32_t {
+		return C.${cSymbol(model, fn)}(pointer, length, result)
+	}, enc.Done()); err != nil {
+		return nil, err
+	}
+${defaults.length === 0 ? '' : `${defaults.join('\n')}\n`}	return &${name}{${fields.map((x) => `${x.field}: ${x.param}`).join(', ')}}, nil
+}
+`;
+}
+
+// GN-15c: the alias and the constructor of a value class without core_type in the package of its module.
+function goKeptAlias(scope: GoScope, kept: KeptClass): string {
+  const name = goName(kept.unit.name);
+  const fields = kept.fields.map((f) => ({ param: goParam(f.name, scope.model), type: goType(scope, f.type) }));
+  return `
+// ${name} is the value class ${kept.unit.id} (GN-6af): it keeps the Go values that New${name} judged.${internalDoc(scope.model, kept.unit)}
+type ${name} = binding.${name}
+
+// New${name} judges its arguments through ${kept.constructor.corePath} (contract member ${kept.constructor.member.id}) and keeps them; a nil
+// argument with a default is left out.${internalDoc(scope.model, kept.unit)}
+func New${name}(${fields.map((x) => `${x.param} ${x.type}`).join(', ')}) (*${name}, error) {
+	return binding.New${name}(${fields.map((x) => x.param).join(', ')})
+}
+`;
+}
 
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
@@ -2316,7 +2525,19 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
       check(cb.unit.module, m.returns);
     }
   }
+  // GN-15c: a value class without core_type is a struct of package binding, beside the types of that package.
+  const taken = new Set([...BINDING_TYPES, ...goErrorTypes(model.contract).map(([, name]) => name), ...model.errorUnits.map((u) => goName(u.unit.name))]);
+  for (const kept of model.kept) {
+    refusals.attempt(() => {
+      const name = goName(kept.unit.name);
+      if (taken.has(name) || /^Tuple[0-9]+$/.test(name)) throw new Unsupported(`${kept.unit.id}: the Go type ${name} of a value class without core_type has the name of a type of package binding (GN-15c)`);
+      taken.add(name);
+    });
+  }
 }
+
+// GN-15c: the types that package binding declares for every contract.
+const BINDING_TYPES = ['Call', 'Callback', 'Key', 'KeyedMap', 'Map', 'Reader', 'Ref', 'Token', 'Writer'];
 
 // GN-15a: Go refuses packages that import each other, so modules whose packages would are refused by name.
 function importCycle(imports: Map<string, Set<string>>): void {
@@ -2339,7 +2560,7 @@ function importCycle(imports: Map<string, Set<string>>): void {
 // The Go generated files of a module, the binding package, package errors, and the source of the C ABI crate, of a
 // model that refuseForGo refused nothing of.
 export function go(model: Model, files: Files): void {
-  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module)])];
+  const modules = [...new Set([...callablesOf(model).map((f) => f.module), ...model.constants.map((c) => c.module), ...model.enums.map((u) => u.module), ...model.records.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.kept.map((k) => k.unit.module)])];
   // GN-15a: a first pass finds the units that other modules reach and the modules that each package imports.
   const reachedFrom = new Set<string>();
   const imports = new Map<string, Set<string>>();

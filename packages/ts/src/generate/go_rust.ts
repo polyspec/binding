@@ -9,7 +9,7 @@ import { variantPattern } from '../contract.ts';
 import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
+  type Arg, type CallbackUnit, type Fn, type KeptClass, type KeptField, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
   takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync,
@@ -20,7 +20,7 @@ import {
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
-import { container, outArms } from './alias_shared.ts';
+import { type ValueRead, container, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
 import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
@@ -916,7 +916,7 @@ struct GoHost {
 
 impl GoHost {
     /// The descriptions that Go gives for a question: the item of a list (op 0), the key and the value of an entry of
-    /// a map (op 1), or the content of an instance of a value class of another repository (op 2, GN-6x).
+    /// a map (op 1), or the content of an instance of a value class (op 2, GN-6x, GN-6af).
     fn ask(&self, op: u32, handle: Handle, index: u64, count: usize) -> Result<Vec<HostValue>, Raised> {
         let mut buffer = Buffer { ptr: std::ptr::null_mut(), len: 0, cap: 0 };
         // SAFETY: the call is alive while the entry point that named it runs, and the buffer is writable.
@@ -952,9 +952,9 @@ impl HostValues for GoHost {
         }
     }
 
-${valueClasses(model).length === 0 ? `    fn read(&mut self, _value: Handle) -> Result<HostValue, Raised> {
+${!readsValues(model) ? `    fn read(&mut self, _value: Handle) -> Result<HostValue, Raised> {
         Err(thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-1: Go gives no value of a value class") }))))
-    }` : `    /// GN-6x: the content of an instance of a value class of another repository, which its read member gives (op 2).
+    }` : `    /// GN-6x, GN-6af: the content of an instance of a value class, which its read member or its kept value gives (op 2).
     fn read(&mut self, value: Handle) -> Result<HostValue, Raised> {
         let mut values = self.ask(2, value, 0, 1)?;
         values.pop().ok_or_else(|| thrown(Thrown::Binding(malformed())))
@@ -1159,13 +1159,77 @@ export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
   return model.objects.filter((o) => o.members.some((fn) => makes.has(fn.member.id)));
 }
 
+// GN-6af, GN-15c: an instance of a value class without core_type leaves as node 12 with the number of the class and
+// its content; the handle is marked before the content, so a later place of it is node 8, the same pointer in Go.
+function keptMakeGo(model: Model, kept: KeptClass, field: KeptField, holds: 'entries' | 'value', head: string): string {
+  const position = model.kept.indexOf(kept);
+  if (holds === 'value' && !field.writable) throw new Unsupported(`${kept.unit.id}: a reference makes an instance of a value class whose property keeps the value it holds, which is writable (GN-6af)`);
+  const first = `${head === '' ? '' : `${head}\n            `}if let Some(index) = made.get(&handle.raw()) {
+                output.push(8);
+                write_length(output, *index);
+                return;
+            }
+            made.insert(handle.raw(), made.len());
+            output.push(12);
+            out_uint(output, ${position}u64);`;
+  if (holds === 'value') {
+    return `{
+            ${first}
+            make(output, *value, source, made);
+        }`;
+  }
+  return `{
+            ${first}
+            out_uint(output, len);
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                make(output, key, source, made);
+                make(output, item, source, made);
+            }
+        }`;
+}
+
+// GN-6af, GN-15c: the C ABI of the constructor of a value class without core_type: the call that walks the Go values,
+// then each argument as package binding describes it, which the core judges; the entry returns nothing, because Go
+// keeps the values.
+function keptRust(model: Model, kept: KeptClass): string {
+  const fn = kept.constructor;
+  const lines = ['        let call = in_uint(&mut input)?;'];
+  for (const f of kept.fields) {
+    const subject = rustString(goSubject(f.name));
+    const type = f.type;
+    let read = 'read_host(input)';
+    let rust = 'HostValue';
+    if (typeof type === 'object' && 'keyed_map' in type) {
+      const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
+      read = `in_keyed_map(input, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, read_host)`;
+      rust = 'binding_core::KeyedMap<HostValue>';
+    } else if (typeof type === 'object' && 'list' in type) {
+      read = 'in_list(input, read_host)';
+      rust = 'Vec<HostValue>';
+    }
+    lines.push(f.default === undefined
+      ? `        let ${rustField(f.name)}: ${rust} = ${read.replace('(input', '(&mut input')}?;`
+      : `        let ${rustField(f.name)}: Option<${rust}> = in_optional(&mut input, ${closure(['input'], read)})?;`);
+  }
+  lines.push(
+    '        finish_input(input)?;',
+    '        let mut host = GoHost { call };',
+    `        if let Err(failure) = ${fn.corePath}(&mut host, ${kept.fields.map((f) => rustField(f.name)).join(', ')}) {`,
+    '            return Err(failure_error(failure));',
+    '        }',
+    '        Ok(Vec::new())',
+  );
+  return entry(model, cSymbol(model, fn), `GN-6af: the C ABI of ${fn.corePath}, which judges the arguments of the constructor of ${goName(kept.unit.name)} (contract member ${fn.member.id}).`, lines);
+}
+
 function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   if (alias.owner !== undefined) return valueClassRust(model, alias, name, core, failure);
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', undefined, 'alias_out_');
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', (kept, field, holds, head) => keptMakeGo(model, kept, field, holds, head), 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -1469,6 +1533,7 @@ function entries(model: Model): string {
   return [
     ...model.functions.map((fn) => functionRust(model, fn)),
     ...model.objects.flatMap((o) => o.members.map((fn) => functionRust(model, fn))),
+    ...model.kept.map((k) => keptRust(model, k)),
   ].join('');
 }
 
@@ -1483,7 +1548,7 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
+  const helpers = !readsValues(model) ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
   return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
 }
 
@@ -1491,7 +1556,15 @@ function rustUsed(model: Model): string {
 export const valueClasses = (model: Model): ValueAlias[] => model.aliases.filter((a) => a.owner !== undefined);
 
 // GN-6x, GN-15c: the binding_core::ValueKind of each number of node 11 of a description.
-export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object', 'Text16'];
+export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object', 'Text16', 'Reference'];
+
+// GN-6af, GN-15c: the in rows of Go that name a value class without core_type, whose instances package binding
+// describes as node 11.
+export const keptReads = (model: Model): ValueRead[] => (model.kept.length === 0 ? [] : valueReads(model, 'go').filter((r) => r.kept !== undefined));
+
+// GN-6x, GN-6af: whether package binding describes an instance of a value class, of another repository or without
+// core_type, which the question read (op 2) opens.
+export const readsValues = (model: Model): boolean => valueClasses(model).length > 0 || keptReads(model).length > 0;
 
 // GN-6x, GN-15c: node 11, an instance of a value class of another repository with the kind of its in case and its
 // handle, and node 12, the error that a member of the owner returned, kept by Go in the call under its index.
