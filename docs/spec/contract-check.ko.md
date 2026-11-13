@@ -41,8 +41,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-6** 순환(P-4): `implements`와 오류 `parent`는 순환하지 않는다.
 - **CK-8** value unit(U-1, U-7):
   - value alias는 `HostValue`로 설명한 언어 값을 판정하는 코어 함수(`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`)와
-    코어 값을 `OutValue`로 주는 코어 함수(`&T`를 받아 `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. value class는 `in`
-    행이 그 member를 읽으므로 그런 `core`를 갖지 않는다.
+    코어 값을 `OutValue`로 주는 코어 함수(`&T`를 받아 `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. 값 타입을 대표하는
+    value class는 그런 `core`와 `core_type`을 적을 수 있고, 다른 레포는 그 함수로 그 값을 주고받는다(GN-6x). 자기 바인딩은
+    그 함수를 부르지 않는다. `in` 행이 그 member를 읽고, 자기 레포는 native 객체를 꺼내기 때문이다(T-3). 그 밖의 unit은
+    `core: {in, out}`을 갖지 않는다.
   - 값 타입을 대표하는 unit이 `out`과 `in`을 갖는다. alias가 모으지 않는 `value` class이거나 `alias`(origin `value`)다.
     alias가 모으는 class(alias의 `in` 행이 그것을 가리킨다)는 둘 다 갖지 않는다. alias의 구성원은 그 `in` 행의 언어
     타입이다(U-7 (a)).

@@ -275,6 +275,30 @@ the design ids are those of the binding design.
   give this repository nothing to generate: the cases of the alias, the assertions of its kinds and the entry point
   of the feature `codec-test` (GN-5, GN-13) belong to the binding of the owner, which runs them once, and the crate of
   this repository has that feature only for an alias of its own.
+- **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
+  (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
+  it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a
+  description of its instance that the generated code turned into the core value itself would be a second
+  implementation of the owner's rules (P-1). In: the parameter takes an instance of the owner's language class,
+  imported from the owner's package (T-3); any other value is kind `invalid_argument_type`. The generated code calls
+  the `by` member of the `in` row of its language through the language API of the owner, and describes the instance as
+  `HostValue::Value` with the kind of the case whose `is` is the result, without opening it. `HostValues::read` of its
+  handle calls the `read` member of that case and describes the result one level at a time: a list as a list, each
+  item again by these rules; an instance of a generated class of the owner whose `iterate` member yields `{key,
+  value}` as a map of the entries of that iteration, a snapshot taken when the map is described (GN-6f); an instance
+  of the value class again as `HostValue::Value`; and a text or a bool as the `HostValue` of that kind. The owner's
+  `in` function judges the description; its failure and an exception of language code are reported as GN-6k states.
+  Out: the owner's `out` function gives the core value as `OutValue`, and the generated code makes the language value
+  by the `out` rows of the class for its language, each `make` a public `constructor` or `static` member of the owner
+  called through the language API of the owner's package: a member whose one parameter is the content of the kind is
+  called on that content (a bool, a text, and for the kind `number` the literal of `OutValue::Number`); a member of
+  the kind `list` whose one parameter is a list of the value type is called on the items, each made by these rows; and
+  a member of the kind `map` whose one parameter is a generated class of the owner is called on an instance of that
+  class made by its public constructor without parameters, to which the generated code gives each entry in order
+  through its public method that takes a key and a value of the value type, the key made by the row of the kind
+  `text`. Any other `make` is refused by name (G-4). Python, Node and PHP take and give it so; WASM takes and gives it
+  as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go refuses it by name until the
+  case form of an instance value is generated (GN-13f).
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
