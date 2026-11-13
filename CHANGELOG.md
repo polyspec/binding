@@ -23,6 +23,30 @@
   is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
   `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
   `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
+- A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
+  form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
+  positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value
+  of a class that implements the interface; `binding check` judges each as it judges a fixture (CK-22, GN-13). The
+  generator still refuses a function type and a callback inside another type by name (GN-13a). Verified by `npm test`
+  in `packages/ts`.
+- A call of `then` in an instance value that fails stopped the test as a failure of its preparation, so a kind that
+  only an instance after a failed call reaches, such as a failure that a body gives again, had no case. A call of
+  `then` may name `"raises": {"kind": <kind>}`, a kind of its member's `raises`, which `binding check` judges and every
+  target requires before the next step (GN-13f, CK-22). `tests/e2e/classes` has such a case of `gate.enter`. Verified
+  by `npm test` in `packages/ts`.
+- A case gave any value at a place of the type `cancel` without a finding, so a kind that only a cancellation that
+  fired before the call reaches had no case form. A case gives it as `{"cancel": "fired"}`, or `{"cancel": "open"}`
+  for one that does not fire, and `binding check` reports any other value (CK-22). Verified by `npm test` in
+  `packages/ts`.
+- An `out` row of a value alias whose `make` names a member was refused, so a value whose language form is an
+  instance of a class of the contract had no binding. A row by a constructor or static member of a generated class
+  whose one parameter is the content of the kind and which cannot fail now calls its core path on that content, and
+  the value leaves as an instance of the class; any other member is refused by name (GN-6e). Verified by `npm test`
+  in `packages/ts`.
+- An `out` row of a value alias whose `make` is `{"keyed_map": {"key": [...]}}` was refused as a form that is not
+  generated, so a value alias that gives a map of keys that are no sequence as a keyed map had no binding in any
+  language. The row is now made as a map whose keys, of the kinds it lists, are made by the rows of the alias as its
+  items are (GN-6e). Verified by `npm test` in `packages/ts`.
 - The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
   9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
   refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a

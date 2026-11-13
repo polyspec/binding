@@ -675,6 +675,40 @@ test('a value alias converts through its core functions in every language (U-7)'
   }
 });
 
+test('an out row of a value alias makes a keyed map of the keys it lists in every language (U-7, T-2, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'map' && r.when.is === false);
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = { keyed_map: { key: lang === 'php' ? ['int', 'bytes'] : ['int', 'text', 'bytes'] } };
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The entries are made as those of a map: each key and each item through the rows of the alias.
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /OutValue::Map\(value\) => if out\.predicate\(Predicate::SequenceKeys\) == Some\(false\) \{ \{\n {12}let handle = value\.handle\(\);/, path);
+  }
+});
+
+test('an out row of a value alias makes an instance by a factory of a class of the contract (U-7, T-5, GN-6e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const row = sample.units.find((u: any) => u.id === 'data').out.find((r: any) => r.kind === 'text');
+  for (const lang of ['php', 'python', 'node', 'wasm']) row.make[lang] = 'tag.new';
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  // The content of the kind is the one argument of the factory's core path, whose value leaves as an instance.
+  for (const [path, made] of [
+    ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+    ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value))'],
+    ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
+  ] as const) {
+    assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
+    assert.match(text(out, path), /\nfn out_tag\(/, path);
+  }
+  // A factory whose parameter is not the content of the kind, or that fails, is refused by name.
+  row.kind = 'bool';
+  row.make = { php: 'bool', python: 'bool', node: 'tag.new', go: 'bool', wasm: 'bool' };
+  const bools = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r.kind === 'bool');
+  sample.units.find((u: any) => u.id === 'data').out = sample.units.find((u: any) => u.id === 'data').out.filter((r: any) => r === row || !bools.includes(r));
+  assert.throws(() => generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node'] }), /data: the node make tag\.new of the kind bool takes text, not the content of the kind/);
+});
+
 test('PHP: the values that entered as handles are released at the request shutdown (GN-6e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const lib = (repository: string, foreign?: Map<string, any>): string => text(generate({
@@ -1609,6 +1643,14 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const made1 = made0\.gates\(2\);\n  const made2 = made1\[1\];\n  assert\.deepStrictEqual\(ordered\(made2\.enter\(\)\), ordered\('b\. passes'\)\);/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0 = pkg\.Tag\("a"\)\n        made1 = made0\.gate\(\)\n        made1\.close\(\)\n        with self\.assertRaises/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0 = new \\Polyspec\\Classes\\Tag\("a"\);\n        \$made1 = \$made0->gate\(\);\n        \$made1->close\(\);/);
+  // A call of then that the case expects to fail requires that kind, and the instance stays for the next step.
+  const cases = read('contracts/cases.json');
+  cases.gate_enter[2].receiver.then.push({ call: 'gate.close', raises: { kind: 'closed' } });
+  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(failing, 'packages/ts/generated/tests/generated.test.mjs'), /  made1\.close\(\);\n  assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
+  assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
+  assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
+  assert.match(text(failing, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made1->close\(\);\n        self::assertStringContainsString\("'kind' => 'closed'", self::outcome\(fn \(\) => \$made1->close\(\)\), "G-5: then 1 fails with closed"\);\n[^]*private static function outcome/);
   // The tests that need any receiver call a function that makes it.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);

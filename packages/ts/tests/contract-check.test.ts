@@ -759,12 +759,50 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const sync = withStore({ callback: { 'store.read': [{ ...row, async: true }] } }, (c) => { c.units.find((u: any) => u.id === 'store').members[0].async_allowed = false; });
     assert.match(sync.find((f) => f.check === 'CK-22')?.message ?? '', /is async, which store\.read does not allow/);
   });
-  test('a raising member that takes a callback inside another type waits for its case form (G-5, GN-13a)', () => {
+  // forms.parse with one more parameter, and one case of it that gives the parameter the value.
+  const withParam = (parameter: object, key: string, value: unknown, change?: (c: any) => void): Finding[] => {
     const c = contract();
-    member(c, 'forms.parse').parameters.push({ name: ['stores'], type: { list: { unit: 'store' } }, required: true });
-    const found = withFiles(c, true);
-    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', `${at('forms')}/members/0/raises/0`]]);
-    assert.match(found[0]?.message ?? '', /a case cannot give the function, or the callback inside another type/);
+    member(c, 'forms.parse').parameters.push({ ...parameter, required: true });
+    change?.(c);
+    const files = new Map<string, Record<string, unknown[]>>();
+    for (const kase of c.cases) {
+      const document = files.get(kase.file) ?? {};
+      document[kase.group] = kase.member === 'forms.parse' ? [{ id: 'too_large', body: { hex: '00' }, [key]: value, raises: { kind: 'too_large' } }] : [];
+      files.set(kase.file, document);
+    }
+    return checkContract(c, { dependencies: new Map([['forms-dep', dependency()]]), caseFiles: files });
+  };
+  const stores = { name: ['stores'], type: { list: { unit: 'store' } } };
+  test('a case gives a callback inside another type as its fixture (G-5, GN-13)', () => {
+    assert.deepEqual(withParam(stores, 'stores', [{ callback: { 'store.read': [row] } }]), []);
+    const found = withParam(stores, 'stores', [{ callback: { 'store.write': [row] } }]);
+    assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]]);
+    assert.match(found[0]?.message ?? '', /store\.write is no member of store/);
+    assert.match(withParam(stores, 'stores', ['a']).map((f) => f.message).join('\n'), /stores\[0\] is not \{"callback"/);
+    // An instance of a class that implements the interface is an instance value (GN-13f).
+    const constructible = (c: any): void => {
+      unit(c, 'memory_store').members.push({ id: 'memory_store.new', name: ['new'], kind: 'constructor', visibility: 'public', wait: 'none', parameters: [], returns: 'self', raises: [], core: 'sample::MemoryStore::new' });
+    };
+    assert.deepEqual(withParam(stores, 'stores', [{ new: 'memory_store.new' }], constructible).filter((f) => f.check === 'CK-22' && f.path === parseCases()), []);
+    assert.match(withParam(stores, 'stores', [{ new: 'session.new', args: {} }]).map((f) => f.message).join('\n'), /stores\[0\] is an instance value of session, which does not implement store/);
+  });
+  test('a case gives a function as its rows, whose args are the positions of its parameters (G-5, GN-13)', () => {
+    const takes = (parameters: unknown[]): object => ({ name: ['convert'], type: { function: { parameters, returns: 'text', async_allowed: false } } });
+    assert.deepEqual(withParam(takes(['text']), 'convert', { function: [{ args: { 0: 'a' }, result: 'b', once: true }] }), []);
+    // A function that takes an object of the language has no row, which no case can give, but may have none.
+    const native = takes(['text', { unit: 'session' }]);
+    assert.deepEqual(withParam(native, 'convert', { function: [] }), []);
+    const refused: [object, unknown, RegExp][] = [
+      [takes(['text']), 'a', /convert is not \{"function": \[<row>\]\}/],
+      [takes(['text']), { function: [{ args: { a: 'a' }, result: 'b' }] }, /the args of row 0 of convert are not the positions 0/],
+      [takes(['text']), { function: [{ args: { 0: 'a' }, result: 'b', raise: {} }] }, /row 0 of convert has no key raise/],
+      [native, { function: [{ args: { 0: 'a', 1: null }, result: 'b' }] }, /row 0 of convert: the function takes an object of the language, which a row cannot give/],
+    ];
+    for (const [parameter, value, message] of refused) {
+      const found = withParam(parameter, 'convert', value);
+      assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()]], String(message));
+      assert.match(found[0]?.message ?? '', message);
+    }
   });
   test('a group that is not in its file', () => {
     const c = contract();
@@ -898,6 +936,12 @@ describe('CK-22 instance values (GN-13f)', () => {
     assert.match(messages((c) => { c.gate_enter[1].receiver.pick = [{ tuple: 0 }]; }), /takes part 0 of \{"list":\{"unit":"gate"\}\}, which is no tuple/);
     assert.match(messages((c) => { c.gate_enter[2].receiver.then = [{ call: 'tag.name' }]; }), /then 0 of the receiver calls tag\.name, which is no method of gate/);
   });
+  test('a then that fails with a kind of its member, and one that names another kind', () => {
+    const twice = (raises: unknown) => (c: any) => { c.gate_enter[2].receiver.then.push({ call: 'gate.close', raises }); };
+    assert.deepEqual(run(twice({ kind: 'closed' })), []);
+    assert.match(messages(twice({ kind: 'missing' })), /then 1 of the receiver expects gate\.close to fail with missing, which is no kind of its raises/);
+    assert.match(messages(twice('closed')), /then 1 of the receiver expects gate\.close to fail by \{"kind": <kind>\}/);
+  });
   test('a receiver of a member that has none', () => {
     assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
   });
@@ -923,5 +967,27 @@ describe('CK-64 integers of a case (T-1)', () => {
       outside(`/cases/5 the case ${id} of shapes.total`, 'the argument numbers[1]', 'uint'),
       outside(`/cases/5 the case ${id} of shapes.total`, 'the result result', 'uint'),
     ]);
+  });
+});
+
+describe('CK-22 values of the type cancel (GN-13)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  // shapes.measure with a parameter of the type cancel, given by its first case.
+  const run = (value: unknown): string[] => {
+    const contract = read('packages/rust/interface.json');
+    const measure = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'shapes.measure');
+    measure.parameters.push({ name: ['cancel'], type: { optional: 'cancel' }, default: { literal: null } });
+    const cases = read('contracts/cases.json');
+    cases.measure[0].cancel = value;
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-22').map((f) => f.message);
+  };
+  test('a cancellation that fired before the call, one that does not fire, and none', () => {
+    for (const value of [{ cancel: 'fired' }, { cancel: 'open' }, null]) assert.deepEqual(run(value), [], JSON.stringify(value));
+  });
+  test('any other value', () => {
+    for (const value of [true, { cancel: 'later' }, { cancel: 'fired', after: 1 }]) {
+      assert.deepEqual(run(value).filter((m) => m.includes('the argument cancel')).length, 1, JSON.stringify(value));
+      assert.match(run(value).join('\n'), /the argument cancel is \{"cancel": "fired" \| "open"\}/);
+    }
   });
 });

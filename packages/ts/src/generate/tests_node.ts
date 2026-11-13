@@ -110,6 +110,10 @@ export function nodeTests(model: Model): string {
     bind: (local, expr) => `const ${local} = ${expr};`,
     name: (local) => local,
     run: (expr) => `${expr};`,
+    fails: (expr, kind, what) => {
+      usesOutcome = true;
+      return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
+    },
     pick: (expr, step) => ('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {

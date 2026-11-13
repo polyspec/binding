@@ -245,7 +245,11 @@ the design ids are those of the binding design.
   `null`, own enumerable string keys), a Date, a function, and a typed array or a symbol as `Other`; PHP takes an
   element that is a reference as `PhpReference` with its identity, an array with `array_is_list`, a stdClass and a
   Closure. A core value leaves as the `OutValue` of the core's `out` function, made by the alias's `out` rows of
-  built-in forms (a form by a member is refused by name, G-4); in Python and Node the same handle is the same object,
+  built-in forms or by a member: a constructor or static member of a generated class of the contract whose one
+  parameter is the content of the kind (bool, int, int64, float, text or bytes) and which cannot fail is called on that
+  content by its core path, and its value leaves as an instance of the class; any other member, and a member in an
+  alias of another repository, is refused by name (G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
+  map, each key of the kinds it lists made by the rows as its items are (T-2); in Python and Node the same handle is the same object,
   and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
   handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
   it is kept until its request ends: the engine frees the values of a request when the request ends, so the extension
@@ -547,6 +551,9 @@ the design ids are those of the binding design.
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
+  `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
+  refused by name (G-4).
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
   every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
   that array of `[key, value]`. The members of a
@@ -566,7 +573,9 @@ the design ids are those of the binding design.
   takes the first row of its member that is left and whose arguments equal the call's, and a call that no row answers
   is recorded and throws `UnexpectedCall`. After the call under test, the test requires that record to be empty, so a
   core that swallows the exception still fails, and the calls to be those of `calls`, in order, when the case names
-  them. `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
+  them. A callback inside another type (a field of a record, an item of a list, an `optional`) is given as the same
+  fixture, and a function as `{"function": [<row>]}`, whose `args` are the positions of its parameters (`"0"`, `"1"`,
+  ...). `binding check` judges the form (CK-22). The B-4 test of a member that takes a callback runs its raising cases
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
@@ -637,7 +646,8 @@ the design ids are those of the binding design.
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
   `args` holds the parameters of the member by their snake_case keys; a parameter of a class type may be an instance
   value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
-  compared. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
+  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 

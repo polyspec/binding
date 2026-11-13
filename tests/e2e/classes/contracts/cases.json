@@ -147,6 +147,35 @@
         "category": "value",
         "message": "the gate of a is closed"
       }
+    },
+    {
+      "id": "a_gate_closed_twice_lets_nothing_pass",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          },
+          {
+            "call": "gate.close",
+            "raises": {
+              "kind": "closed"
+            }
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
     }
   ],
   "gate_close": [

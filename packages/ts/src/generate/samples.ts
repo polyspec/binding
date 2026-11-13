@@ -368,7 +368,8 @@ export interface Receiver {
   // steps into its result when the result holds the instance (from), and the calls on the instance that prepare it.
   on?: Receiver;
   pick?: Pick[];
-  then?: { fn: Fn; args: Map<Arg, unknown> }[];
+  // A call of then may fail with a kind, which the test requires before the next step.
+  then?: { fn: Fn; args: Map<Arg, unknown>; raises?: string }[];
 }
 
 // G-5 (GN-13f): a step into a result: a field of a record, an item of a list, a part of a tuple.
@@ -437,7 +438,10 @@ export function instanceOf(model: Model, unitId: string, value: unknown, where: 
     const step = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
     const fn = typeof step['call'] === 'string' ? memberById(model, step['call']) : undefined;
     if (fn === undefined || fn.unit.id !== unitId || fn.receiver === undefined) return fail(`then ${i} calls ${String(step['call'])}, which is no method of ${unitId}`);
-    return { fn, args: argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`) };
+    const args = argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`);
+    const kind = (step['raises'] as Record<string, unknown> | undefined)?.['kind'];
+    if (step['raises'] !== undefined && typeof kind !== 'string') return fail(`then ${i} expects ${fn.member.id} to fail by {"kind": <kind>}`);
+    return { fn, args, ...(typeof kind === 'string' ? { raises: kind } : {}) };
   });
   const picks = pick.map((step): Pick => (typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
   return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
@@ -452,6 +456,8 @@ export interface MadeForm {
   name: (local: string) => string;
   // The statement that runs an expression for its effect.
   run: (expr: string) => string;
+  // The statement that requires an expression to fail with a kind; `what` names the step in the message.
+  fails: (expr: string, kind: string, what: string) => string;
   // The expression that steps into a value: a field (snake_case name), an item or a part of a tuple.
   pick: (expr: string, step: Pick) => string;
 }
@@ -487,7 +493,10 @@ export function madeLines(model: Model, form: MadeForm, receiver: Receiver, pref
     }
     const local = fresh();
     lines.push(form.bind(local, expr));
-    for (const step of r.then ?? []) lines.push(form.run(form.invoke(step.fn, argsText(step.fn, step.args), form.name(local))));
+    for (const [i, step] of (r.then ?? []).entries()) {
+      const call = form.invoke(step.fn, argsText(step.fn, step.args), form.name(local));
+      lines.push(step.raises === undefined ? form.run(call) : form.fails(call, step.raises, `then ${i} fails with ${step.raises}`));
+    }
     return form.name(local);
   };
   if (isPlain(receiver)) return { lines, expr: form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') };
