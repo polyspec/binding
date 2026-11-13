@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The Go tests made the instance of a case whose call of `then` has `"raises": {"kind": <kind>}` by requiring that
+  call to succeed, so `TestB4GateEnterAGateClosedTwiceLetsNothingPass` of `tests/e2e/classes` failed with "the gate of
+  a is closed" where the case expects that failure. The Go test now requires the kind of that call and goes on to the
+  next step, as the other targets do (GN-13f). Verified by `npm test` in `packages/ts`.
 - The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
   the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
   each with its reason (GN-14b).
