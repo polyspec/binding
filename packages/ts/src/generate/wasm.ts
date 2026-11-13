@@ -289,8 +289,9 @@ fn in_keyed_map<T>(value: &JsValue, subject: &str, kinds: &[u8], expected: &str,
     for entry in entries.iter() {
         let pair = entry.dyn_ref::<Array>().filter(|pair| pair.length() == 2).ok_or_else(|| type_error(subject, expected))?;
         let key = pair.get(0);
-        let (tag, key) = if key.as_f64().is_some() {
-            (0, binding_core::Key::Int(safe_integer(&key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?))
+        // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
+        let (tag, key) = if key.as_f64().is_some() && kinds.contains(&0) {
+            (0, binding_core::Key::Int(safe_integer(&key, subject, NumberType::Int)?))
         } else if key.is_string() {
             (2, binding_core::Key::Text(in_text(&key, subject)?))
         } else {

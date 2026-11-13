@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, isInternal, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -93,17 +93,33 @@ fn in_bool(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
     }
 }
 
-/// B-2: an int that is not a bool, in the range of the contract type; any other value is kind invalid_number.
+/// B-2, GN-12a: an int that is not a bool, 0 to 2^53 - 1 for the contract type uint; any other value is kind
+/// invalid_number.
 fn in_uint(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
     }
-    value.extract::<u64>().map_err(|_out_of_range| invalid())
+    match value.extract::<u64>() {
+        Ok(integer) if integer <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(invalid()),
+    }
 }
 
-/// B-2: as in_uint for the contract type int.
+/// B-2, GN-12a: as in_uint, a safe integer for the contract type int.
 fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
+    let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
+    if !value.is_exact_instance_of::<PyInt>() {
+        return Err(invalid());
+    }
+    match value.extract::<i64>() {
+        Ok(integer) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
+        _ => Err(invalid()),
+    }
+}
+
+/// B-2, T-1: as in_int, the range of i64 for the contract type int64.
+fn in_int64(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
@@ -230,7 +246,8 @@ fn in_keyed_map<'py, T>(
     let Ok(dict) = value.cast::<PyDict>() else { return Err(binding_error(py, type_error(subject, "dict"))) };
     let mut map = binding_core::KeyedMap::new();
     for (key, value) in dict.iter() {
-        let (tag, key) = if key.is_exact_instance_of::<PyInt>() {
+        // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
+        let (tag, key) = if key.is_exact_instance_of::<PyInt>() && kinds.contains(&0) {
             (0, binding_core::Key::Int(in_int(py, &key, subject)?))
         } else if let Ok(bytes) = key.cast_exact::<PyBytes>() {
             (1, binding_core::Key::Bytes(bytes.as_bytes().to_vec()))
@@ -300,7 +317,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
@@ -558,7 +575,9 @@ function awaitedMethod(fn: Fn, name: string): string {
 const AWAITED = `
 /// GN-6m: an awaitable that runs a member that waits in a thread of asyncio, so that the event loop does not block.
 fn awaited<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-    let all = PyTuple::new(py, std::iter::once(member).chain(args.iter()))?;
+    let mut all = vec![member];
+    all.extend(args.iter());
+    let all = PyTuple::new(py, all)?;
     py.import("asyncio")?.getattr("to_thread")?.call(all, kwargs)
 }
 `;
@@ -584,7 +603,21 @@ const _: () = {
 ` : ''}
 #[pymethods]
 impl ${struct} {${members}}
-
+${object.cleanup === undefined ? '' : `
+/// GN-6p, B-10: an object finalized without its cleanup call warns with ResourceWarning, and dropping the value releases
+/// its resource.
+impl Drop for ${struct} {
+    fn drop(&mut self) {
+        if !self.inner.taken() {
+            Python::attach(|py| {
+                if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {
+                    error.write_unraisable(py, None);
+                }
+            });
+        }
+    }
+}
+`}
 ${givesOut ? `
 fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
     Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
@@ -875,7 +908,7 @@ fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResul
     }
 }
 
-${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
+${faultRust(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${/\bGiven\b/.test(`${functions}${objects}`) ? GIVEN : ''}${used}${functions}${objects}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[pyfunction]

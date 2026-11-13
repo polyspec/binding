@@ -5,7 +5,17 @@ use crate::BindingError;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
+use tokio::sync::{
+    Mutex, OwnedMappedMutexGuard, OwnedMutexGuard, OwnedRwLockMappedWriteGuard, OwnedRwLockReadGuard,
+    OwnedRwLockWriteGuard, RwLock,
+};
+
+/// The guard of a place of an `Exclusive` value.
+type ExclusiveGuard<T> = OwnedMappedMutexGuard<Option<T>, T>;
+/// The guard of a read place of a `Shared` value.
+type SharedRead<T> = OwnedRwLockReadGuard<Option<T>, T>;
+/// The guard of a write place of a `Shared` value.
+type SharedWrite<T> = OwnedRwLockMappedWriteGuard<Option<T>, T>;
 
 /// The guard of a read place (B-5c). The read places of one call that are the same instance share one guard, and the
 /// guard is released when the last of them is dropped.
@@ -70,6 +80,13 @@ fn sound(poisoned: &AtomicBool, class: &str) -> Result<(), BindingError> {
     Ok(())
 }
 
+/// GN-6o: an object whose value a receiver `self` took.
+fn consumed(class: &str) -> BindingError {
+    BindingError::Consumed {
+        class: class.to_owned(),
+    }
+}
+
 fn busy(class: &str) -> BindingError {
     BindingError::Busy {
         class: class.to_owned(),
@@ -88,7 +105,7 @@ fn shared<G>(cell: &Arc<AtomicBool>, beside: &[Option<&Reading<G>>]) -> Option<R
 /// The value of a class unit that has a write place and no member that reads it while another call is in progress
 /// (B-5c): an `Arc<tokio::sync::Mutex<T>>` with the mark `poisoned`. `Clone` gives another handle of the same value.
 pub struct Exclusive<T> {
-    lock: Arc<Mutex<T>>,
+    lock: Arc<Mutex<Option<T>>>,
     poisoned: Arc<AtomicBool>,
 }
 
@@ -105,7 +122,7 @@ impl<T> Exclusive<T> {
     /// Holds a value.
     pub fn new(value: T) -> Self {
         Self {
-            lock: Arc::new(Mutex::new(value)),
+            lock: Arc::new(Mutex::new(Some(value))),
             poisoned: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -115,46 +132,67 @@ impl<T> Exclusive<T> {
     ///
     /// # Errors
     ///
-    /// Kind `internal` for a poisoned object, kind `busy` when the lock is held.
+    /// Kind `internal` for a poisoned object, kind `busy` when the lock is held, kind `consumed` when the value was
+    /// taken.
     pub fn read(
         &self,
         class: &str,
-        beside: &[Option<&Reading<OwnedMutexGuard<T>>>],
-    ) -> Result<Reading<OwnedMutexGuard<T>>, BindingError> {
+        beside: &[Option<&Reading<ExclusiveGuard<T>>>],
+    ) -> Result<Reading<ExclusiveGuard<T>>, BindingError> {
         sound(&self.poisoned, class)?;
         if let Some(held) = shared(&self.poisoned, beside) {
             return Ok(held);
         }
-        match Arc::clone(&self.lock).try_lock_owned() {
-            Ok(guard) => Ok(Reading {
-                guard: Arc::new(guard),
-                cell: Arc::clone(&self.poisoned),
-            }),
-            Err(_held) => Err(busy(class)),
-        }
+        Ok(Reading {
+            guard: Arc::new(self.place(class)?),
+            cell: Arc::clone(&self.poisoned),
+        })
     }
 
     /// The guard of a write place.
     ///
     /// # Errors
     ///
-    /// Kind `internal` for a poisoned object, kind `busy` when the lock is held.
-    pub fn write(&self, class: &str) -> Result<Writing<OwnedMutexGuard<T>>, BindingError> {
+    /// Kind `internal` for a poisoned object, kind `busy` when the lock is held, kind `consumed` when the value was
+    /// taken.
+    pub fn write(&self, class: &str) -> Result<Writing<ExclusiveGuard<T>>, BindingError> {
         sound(&self.poisoned, class)?;
-        match Arc::clone(&self.lock).try_lock_owned() {
-            Ok(guard) => Ok(Writing {
-                guard,
-                poisoned: Arc::clone(&self.poisoned),
-            }),
-            Err(_held) => Err(busy(class)),
+        Ok(Writing {
+            guard: self.place(class)?,
+            poisoned: Arc::clone(&self.poisoned),
+        })
+    }
+
+    /// The value of the place of a receiver `self`, which leaves the object consumed (GN-6o).
+    ///
+    /// # Errors
+    ///
+    /// Kind `internal` for a poisoned object, kind `busy` when the lock is held, kind `consumed` when the value was
+    /// taken.
+    pub fn take(&self, class: &str) -> Result<T, BindingError> {
+        sound(&self.poisoned, class)?;
+        let mut guard = Arc::clone(&self.lock).try_lock_owned().map_err(|_held| busy(class))?;
+        guard.take().ok_or_else(|| consumed(class))
+    }
+
+    /// Whether a receiver `self` took the value; a lock that is held is not taken (GN-6p).
+    pub fn taken(&self) -> bool {
+        match self.lock.try_lock() {
+            Ok(guard) => guard.is_none(),
+            Err(_held) => false,
         }
+    }
+
+    fn place(&self, class: &str) -> Result<ExclusiveGuard<T>, BindingError> {
+        let guard = Arc::clone(&self.lock).try_lock_owned().map_err(|_held| busy(class))?;
+        OwnedMutexGuard::try_map(guard, Option::as_mut).map_err(|_empty| consumed(class))
     }
 }
 
 /// The value of a class unit that calls may read at the same time (B-5c): an `Arc<tokio::sync::RwLock<T>>` with the
 /// mark `poisoned`. `Clone` gives another handle of the same value.
 pub struct Shared<T> {
-    lock: Arc<RwLock<T>>,
+    lock: Arc<RwLock<Option<T>>>,
     poisoned: Arc<AtomicBool>,
 }
 
@@ -171,7 +209,7 @@ impl<T> Shared<T> {
     /// Holds a value.
     pub fn new(value: T) -> Self {
         Self {
-            lock: Arc::new(RwLock::new(value)),
+            lock: Arc::new(RwLock::new(Some(value))),
             poisoned: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -181,38 +219,58 @@ impl<T> Shared<T> {
     ///
     /// # Errors
     ///
-    /// Kind `internal` for a poisoned object, kind `busy` when a write guard is held.
+    /// Kind `internal` for a poisoned object, kind `busy` when a write guard is held, kind `consumed` when the value
+    /// was taken.
     pub fn read(
         &self,
         class: &str,
-        beside: &[Option<&Reading<OwnedRwLockReadGuard<T>>>],
-    ) -> Result<Reading<OwnedRwLockReadGuard<T>>, BindingError> {
+        beside: &[Option<&Reading<SharedRead<T>>>],
+    ) -> Result<Reading<SharedRead<T>>, BindingError> {
         sound(&self.poisoned, class)?;
         if let Some(held) = shared(&self.poisoned, beside) {
             return Ok(held);
         }
-        match Arc::clone(&self.lock).try_read_owned() {
-            Ok(guard) => Ok(Reading {
-                guard: Arc::new(guard),
-                cell: Arc::clone(&self.poisoned),
-            }),
-            Err(_held) => Err(busy(class)),
-        }
+        let guard = Arc::clone(&self.lock).try_read_owned().map_err(|_held| busy(class))?;
+        let guard = OwnedRwLockReadGuard::try_map(guard, Option::as_ref).map_err(|_empty| consumed(class))?;
+        Ok(Reading {
+            guard: Arc::new(guard),
+            cell: Arc::clone(&self.poisoned),
+        })
     }
 
     /// The guard of a write place.
     ///
     /// # Errors
     ///
-    /// Kind `internal` for a poisoned object, kind `busy` when a guard is held.
-    pub fn write(&self, class: &str) -> Result<Writing<OwnedRwLockWriteGuard<T>>, BindingError> {
+    /// Kind `internal` for a poisoned object, kind `busy` when a guard is held, kind `consumed` when the value was
+    /// taken.
+    pub fn write(&self, class: &str) -> Result<Writing<SharedWrite<T>>, BindingError> {
         sound(&self.poisoned, class)?;
-        match Arc::clone(&self.lock).try_write_owned() {
-            Ok(guard) => Ok(Writing {
-                guard,
-                poisoned: Arc::clone(&self.poisoned),
-            }),
-            Err(_held) => Err(busy(class)),
+        let guard = Arc::clone(&self.lock).try_write_owned().map_err(|_held| busy(class))?;
+        let guard = OwnedRwLockWriteGuard::try_map(guard, Option::as_mut).map_err(|_empty| consumed(class))?;
+        Ok(Writing {
+            guard,
+            poisoned: Arc::clone(&self.poisoned),
+        })
+    }
+
+    /// The value of the place of a receiver `self`, which leaves the object consumed (GN-6o).
+    ///
+    /// # Errors
+    ///
+    /// Kind `internal` for a poisoned object, kind `busy` when a guard is held, kind `consumed` when the value was
+    /// taken.
+    pub fn take(&self, class: &str) -> Result<T, BindingError> {
+        sound(&self.poisoned, class)?;
+        let mut guard = Arc::clone(&self.lock).try_write_owned().map_err(|_held| busy(class))?;
+        guard.take().ok_or_else(|| consumed(class))
+    }
+
+    /// Whether a receiver `self` took the value; a lock that is held is not taken (GN-6p).
+    pub fn taken(&self) -> bool {
+        match self.lock.try_read() {
+            Ok(guard) => guard.is_none(),
+            Err(_held) => false,
         }
     }
 }

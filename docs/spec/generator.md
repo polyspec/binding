@@ -17,14 +17,14 @@ the design ids are those of the binding design.
   records (as parameters and in their result form, also of another repository), value aliases (also of another
   repository, GN-6k), enums, constants, error classes and error units (GN-7a),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
-  fields (GN-6i).
+  fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o) and a class unit with
+  `cleanup` (GN-6p).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
   recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
-  that GN-6i does not list, `cleanup`, a receiver
-  `self`, `only` of a unit, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
+  that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library without its outer variant (GN-7c), the
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, and a class or a callback unit of another module (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  record of another repository (GN-15f) and modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -429,13 +429,23 @@ the design ids are those of the binding design.
   reference to each (napi `FunctionRef`); a failure is an instance of its class that the addon makes with the message,
   kind, status and errno and throws (B-4). The ESM entry re-exports the CommonJS one, so both share their classes.
   `map<T>` is a `Map` whose keys are strings, and `keyed_map<T>{key}` a `Map` whose keys are safe integers or strings
-  of the listed kinds (T-2): the entry passes the entries of a `Map` to the addon, which judges each key (any other key
-  or value is kind `invalid_argument_type`), and makes a `Map` of the entries that the addon gives back. Because the
+  of the listed kinds (T-2): the entry passes the entries of a `Map` to the addon, which judges each key (a number key
+  that is no safe integer is kind `invalid_number` (GN-12a), any other key or value is kind `invalid_argument_type`), and makes a `Map` of the entries that the addon gives back. Because the
   entry does it, such a map is a whole parameter or return, or an optional one; one inside another type, and byte
   string keys, which a `Map` compares by identity, are refused by name (G-4), so nothing is left out silently; the
   generator takes them when a contract needs them.
 
-- **GN-12a** Node and WASM (T-1): an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
+- **GN-12a** Every target (T-1, CK-64): an `int` value that the binding takes, as an argument, an item of a list, a
+  tuple, a map or an optional, or a field of a record, is a safe integer, −(2^53 − 1) to 2^53 − 1, and a `uint` value is
+  0 to 2^53 − 1; an integer outside that range is kind `invalid_number` (B-2) in PHP, Python and Go as in Node and
+  WASM, whose number holds no larger integer exactly. Why: one contract gives the same result in every target, and an
+  integer that one target takes and another refuses would give two. An `int64` takes the range of i64 in every
+  target. An integer key of a `keyed_map` whose contract lists `int` keys is a safe integer too: an integer key
+  outside that range, and in Node and WASM a number key that is no integer, is kind `invalid_number` in every target,
+  where Node and WASM gave `invalid_argument_type` before; a key of a kind that the contract does not list stays kind
+  `invalid_argument_type` (T-2). Why: a refused number has the kind of B-2 at every place, so the same key gives the
+  same kind in every target.
+  Node and WASM: an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
   integers, and anything else is kind `invalid_number` (B-2); an `int64` result is a `bigint`, so that the whole range
   of i64 leaves, as the declarations say (`number | bigint` in, `bigint` out). A case file gives an integer outside
   the safe integers as its JSON token, which `binding` reads as a `bigint` and every test writes by its decimal
@@ -483,6 +493,42 @@ the design ids are those of the binding design.
   A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
   Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
   thread of a runtime, while the caller of each language waits in the form that its language has.
+- **GN-6o** A method whose core receiver is `self` consumes the core value of its object (E-1a, B-5c). Its receiver is a
+  write place, and the generated code takes the value out of the lock of the class (`take` of `binding_core::Exclusive`
+  or `Shared`), so the lock holds no value after the call, also when the core fails, because the core owns the value
+  from the call on. Every later place of that object, as the receiver or as a parameter, fails with kind `consumed` of
+  category `type` (E-1a), before any argument reaches the core. A member that waits takes the value on the calling
+  thread and moves it into its work or its future (GN-6m, GN-6n). G-5 generates for each such member a test that calls
+  it and then another member of the same object, which fails with kind `consumed`. PHP, Python and Node generate it;
+  Go and WASM refuse such a member by name until their wrapper takes the value (G-4). Why: a value that the core owns
+  after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
+- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o); another
+  member is refused by name. The binding crate asserts at compile time that the core type of such a unit implements
+  `binding_core::Cleanup` and that the core type of every other class unit does not (an ambiguous trait implementation,
+  which fails to compile when the type implements it), so that a resource that needs a cleanup call is not missing
+  from the contract. When an object whose value was not consumed is destroyed, its destructor drops the core value,
+  whose `Drop` releases the resource, and warns that the cleanup call was not made, with the message
+  `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)`:
+  - PHP raises `E_WARNING` when the object is freed;
+  - Python warns with `ResourceWarning` when the object is finalized;
+  - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
+  Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
+  generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,
+  drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
+  member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
+  under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process. Node has no test of the absent
+  warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
+  reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
+  names the call that the caller left out.
+- **GN-6q** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
+  hand, and its source is its declaration (I-1, L-3). The generator writes nothing of it in any target: no entry
+  point, conversion, declaration, re-export or generated test, and the contract check requires no case of it (CK-22).
+  The host package exports it with its own entry (L-2a). A host unit takes a generated unit as a parameter (U-2 of the
+  design: a host operation on a generated unit is a function of a host functions unit), and a generated unit that
+  names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
+  generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
+  host unit would be a second declaration that could differ from its source.
 - **GN-6r** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
   same conversions, refusals and generated tests, and each language marks it as no public API:
   - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
@@ -498,14 +544,6 @@ the design ids are those of the binding design.
   internal unit as those of a public one (CK-23), because the generated code declares them. Why: the code of the
   repository (its hosts, its command tool and its cases) calls an internal unit through the binding as it calls a
   public one, while a user of a package reads it as no API (U-1, P-3).
-- **GN-6q** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
-  hand, and its source is its declaration (I-1, L-3). The generator writes nothing of it in any target: no entry
-  point, conversion, declaration, re-export or generated test, and the contract check requires no case of it (CK-22).
-  The host package exports it with its own entry (L-2a). A host unit takes a generated unit as a parameter (U-2 of the
-  design: a host operation on a generated unit is a function of a host functions unit), and a generated unit that
-  names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
-  generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
-  host unit would be a second declaration that could differ from its source.
 - **GN-6s** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
   an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
   members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
@@ -536,7 +574,7 @@ the design ids are those of the binding design.
   (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
   directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
-  is a Go keyword or a name of the generated body takes a trailing `_`.
+  is a Go keyword, a name of the generated body or the package name of a module of the contract takes a trailing `_`.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
@@ -544,8 +582,12 @@ the design ids are those of the binding design.
   `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
-  panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
-  module is refused by name (its handle and dispatch are unexported). A to_json is `MarshalJSON` of `json.Marshaler`,
+  panics with the error of the core because `fmt.Stringer` has no error result. A member of another module reaches a
+  class or a callback unit through functions of its package whose first parameter is `binding.Token` of
+  `internal/binding`, a type that only the packages of the Go module can name: `<Class>Handle` gives the handle of an
+  instance, `<Class>FromHandle` makes the instance of a handle, and `Dispatch<Callback>` gives the dispatch of a Go
+  value of the callback. A package has them only for a unit that another module names, and CK-13 counts their names.
+  Modules whose packages would import each other are refused by name, because Go refuses an import cycle. A to_json is `MarshalJSON` of `json.Marshaler`,
   which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
   `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
   error alone. A member that returns `never` has no result before its `error`.
@@ -571,6 +613,16 @@ the design ids are those of the binding design.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value.
+- **GN-15f** Go records of another repository (T-3, GN-6c), not implemented yet: the generator refuses such a record
+  by name and names this row (G-4). A record of another repository is the struct `<Record>` of the package of its
+  module in the Go module of that repository, the module of `packages.go` of its contract, and the C ABI writes and
+  reads it field by field as a record of this repository. `binding scaffold` reads the contracts of the libraries whose
+  records the contract names, as `binding generate` does, and writes for each a line `require <module> <version>` in
+  `go.mod`: the version is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version
+  `=X.Y.Z` or the tag `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>/packages/go`
+  relative to `packages/go`; a dependency line that names a branch or a commit has no Go version and is refused by
+  name. The Go program then also links the static library of that repository, whose directory `CGO_LDFLAGS` names
+  beside the directory of this one (GN-15).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
   `[N]T` when its parts have one Go type, and else `Tuple<N>[T0, T1, ...]`, the generic struct of `internal/binding`
@@ -581,7 +633,11 @@ the design ids are those of the binding design.
   `invalid_text`, and a byte leaves as the rune of the same code point (B-8, the rule of every language); a string of
   the core leaves as its UTF-8 bytes. An enum value that is not one of the
   constants is kind `invalid_argument_type`. A function that calls the core returns `error` last (E-7); B-2 and G-7
-  hold by the Go types and the compiler. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
+  hold by the Go types and the compiler, except the range of GN-12a: the C ABI refuses an `int` or a `uint` outside the
+  safe integers as kind `invalid_number`. An optional value leaves the C ABI as a tag and its value, and the C ABI
+  takes it as an `Option` of a reference to the value of the core (`as_ref`), as PHP, Python and Node do, so the type
+  of the value is the type of the core: a generic output conversion of the value, such as that of an int or a text,
+  then has one type to take. `Map[T]` is the ordered map of T-2, an alias of `internal/binding.Map` that a
   package declares when it names one, and not a Go map, whose iteration order is random: `Set` puts a new key after the
   others and keeps the place of a key that is there, `Keys` gives them in order, and a zero or nil `*Map` is empty; it
   crosses the C ABI as its length and its entries in order (a key twice is kind `internal`, a key that is not UTF-8
@@ -640,7 +696,7 @@ the design ids are those of the binding design.
   and each place of a call takes its guard for the call, so a member with the receiver `&mut self` writes the value
   and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
   class unit with
-  `cleanup` (B-10) is refused by name, as for every target (GN-1).
+  `cleanup` (B-10) and a method with the receiver `self` are refused by name (GN-6o, GN-6p).
 - **GN-18b** WASM, a value alias with `core: {in, out}` (U-7), also of another repository (GN-6k): the value is taken
   and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
   rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16
@@ -667,7 +723,9 @@ the design ids are those of the binding design.
 ## Generated tests (G-5)
 
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
-  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 in Node) as kind `invalid_number` of the value class;
+  of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 for uint and int and −2^53 for int, GN-12a) as kind
+  `invalid_number` of the value class, and for every `keyed_map` parameter whose contract lists `int` keys the key
+  2^53 as kind `invalid_number` (GN-12a);
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
   `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
@@ -795,7 +853,9 @@ the design ids are those of the binding design.
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
 - **GN-13b** Go: the tests of a package are `zz_generated_test.go` in the package itself, so that a test reads the
-  handle of an instance, run by `go test`: B-3 for every text parameter or field (the bytes FF), the enum check of
+  handle of an instance, run by `go test`: B-2 for every `int` parameter (2^53 and −2^53) and every `uint` parameter
+  (2^53) as kind `invalid_number` (GN-12a), the key 2^53 of every `keyed_map` parameter with `int` keys as kind
+  `invalid_number` (GN-12a), B-3 for every text parameter or field (the bytes FF), the enum check of
   GN-16 for every enum parameter or field, U-2 (a call without an argument with a default gives the call with its
   default), U-7 (a kind of an alias through the member), K-2 (a nil callback, and the error of a callback is the error
   of the call), B-4 for every contract case that raises (the exact type of E-2 and E-7, `errors.As` of its category,

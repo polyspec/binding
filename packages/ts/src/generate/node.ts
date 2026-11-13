@@ -5,7 +5,7 @@ import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, isInternal, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, isInternal, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -325,7 +325,8 @@ fn in_keyed_map<'env, T>(
     for entry in entries {
         let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, expected))?;
         let (tag, key) = match key.get_type().map_err(internal)? {
-            ValueType::Number => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?)),
+            // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
+            ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
             _ => return Err(type_error(subject, expected)),
         };
@@ -493,7 +494,7 @@ function entryRust(model: Model, fn: Fn): string {
     // is converted on the JavaScript thread.
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        driving(env, ${futureOf(model, fn, body)}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+    lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (waitsIo(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
@@ -502,7 +503,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${work}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+    lines.push(`        waiting(env, move || ${work}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -763,11 +764,24 @@ function objectRust(model: Model, object: ObjectClass): string {
 pub mod class_${rustField(object.unit.name)} {
     use super::*;
 
-    #[napi]
+    #[napi${object.cleanup === undefined ? '' : '(custom_finalize)'}]
     pub struct ${struct} {
         pub(crate) inner: ${heldType(object)},
     }
-
+${object.cleanup === undefined ? '' : `
+    /// GN-6p, B-10: an object finalized without its cleanup call emits a ResourceWarning, and dropping the value
+    /// releases its resource.
+    impl ObjectFinalize for ${struct} {
+        fn finalize(self, env: Env) -> napi::Result<()> {
+            if self.inner.taken() {
+                return Ok(());
+            }
+            let process: Object<'_> = env.get_global()?.get_named_property("process")?;
+            let emit: Function<'_, FnArgs<(&str, &str)>, ()> = process.get_named_property("emitWarning")?;
+            emit.apply(process, FnArgs::from((${rustString(cleanupWarning(jsClass, memberName('node', object.cleanup)))}, "ResourceWarning")))
+        }
+    }
+`}
     #[napi]
     impl ${struct} {${object.members.map((fn) => functionRust(model, fn).replaceAll('\n', '\n    ')).join('')}}
 }
@@ -891,7 +905,7 @@ ${propertyArms}
 }
 
 // The names that the addon imports from napi's bindgen_prelude; the others are of the crate root.
-const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ToNapiValue', 'Uint8Array']);
+const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ObjectFinalize', 'ToNapiValue', 'Uint8Array']);
 
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
@@ -910,7 +924,7 @@ function libRust(model: Model): string {
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
-  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
+  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
@@ -1031,7 +1045,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${waitingFaults(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
+${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]

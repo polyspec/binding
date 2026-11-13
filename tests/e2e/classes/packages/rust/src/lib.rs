@@ -143,6 +143,12 @@ impl Tag {
         Gate { tag: self.name.clone(), open: true }
     }
 
+    /// The lease of the tag, a resource whose release call ends it (B-10).
+    #[must_use]
+    pub fn lease(&self) -> Lease {
+        Lease { tag: self.name.clone() }
+    }
+
     /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
     #[must_use]
     pub fn gates(&self, count: u64) -> Vec<Gate> {
@@ -154,6 +160,28 @@ impl Tag {
                 gate
             })
             .collect()
+    }
+}
+
+/// A lease of a tag, a resource that its release call ends (B-10: a class unit with `cleanup`).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Lease {
+    tag: String,
+}
+
+impl binding_core::Cleanup for Lease {}
+
+impl Lease {
+    /// The name of the tag that holds the lease.
+    #[must_use]
+    pub fn holder(&self) -> String {
+        self.tag.clone()
+    }
+
+    /// Releases the lease, which consumes it (GN-6o).
+    #[must_use]
+    pub fn release(self) -> String {
+        format!("the lease of {} is released", self.tag)
     }
 }
 

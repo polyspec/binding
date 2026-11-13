@@ -1047,6 +1047,9 @@ class Checker {
       declare(unit.module, typeName, path);
       const constructor = (unit.members ?? []).some((m) => m.kind === 'constructor');
       if (unit.kind === 'class' && unit.constructible !== false && constructor) declare(unit.module, `New${typeName}`, path);
+      // GN-15a: the functions through which another module reaches a class or a callback.
+      if (unit.kind === 'class') for (const name of [`${typeName}Handle`, `${typeName}FromHandle`]) declare(unit.module, name, path);
+      if (unit.kind === 'interface' && unit.origin === 'callback') declare(unit.module, `Dispatch${typeName}`, path);
       // T-5: a static member is the function <Class><Member> of the package.
       for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
         if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
