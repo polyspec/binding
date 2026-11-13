@@ -399,7 +399,9 @@ the design ids are those of the binding design.
   follow the parameters as named parameters. The category classes are registered at module startup by `ClassBuilder`,
   extend the class of E-2 found in the engine's class table, and keep the class's own object handler, so an error has
   the file, line and trace of its call; `kind()`, `status()` and `errno()` read private properties. An enum is a backed
-  enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
+  enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
+  refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
+  (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
   `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
   contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it

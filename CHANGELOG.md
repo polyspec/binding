@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A PHP enum with a case named by a keyword or a type name, such as `object`, `array`, `string` and `null` of the
+  enum `kind` of json, did not compile: the macro `php_enum` of ext-php-rs refuses those names, also as the name of
+  `#[php(name)]`, and the enum type that the module registers was then missing (E0425). Such a case now takes a
+  trailing `_` in the extension and the stub (`Kind::Object_`); its backed value is the value of the contract (GN-10).
+  Verified by `npm test` in `packages/ts` and by clippy of the json PHP binding.
 - A parameter of a class that the core takes by value, such as `key` and `value` of `OrderedMap::insert(&mut self, key:
   Value, value: Value)`, did not compile, because the call gave a borrow of the guard (E0308). The argument is now
   `CoreForm::core_form` of the borrow of the value, which the type of the core parameter turns into the borrow or a

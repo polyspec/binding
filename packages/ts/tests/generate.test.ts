@@ -1412,7 +1412,7 @@ test('a parameter of a class gives the core the value in the form that the core 
   }
 });
 
-test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name takes a trailing _ (GN-6c, N-2)', () => {
+test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name takes a trailing _ (GN-10, N-2)', () => {
   const { contract, caseFiles } = tokenClasses();
   contract.units.find((u: any) => u.id === 'token_kind').variants.push({ name: ['object'], value: 'object' }, { name: ['string'], value: 'string' });
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php'] });

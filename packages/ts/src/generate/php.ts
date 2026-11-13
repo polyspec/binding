@@ -1,6 +1,6 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
-import type { Type, Unit } from '../contract.ts';
+import type { Name, Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
@@ -28,6 +28,24 @@ export function phpNamespace(layout: PhpLayout, module: string): string {
 }
 
 const phpEnumType = (unit: Unit): string => `Php${langName('php', unit.name, 'class')}`;
+
+// GN-10: PHP takes a keyword or a type name as the name of an enum case, but the macro php_enum of ext-php-rs refuses
+// them, case-insensitively, also as the name that #[php(name)] gives (validate_php_name of ext-php-rs-derive), so such
+// a case takes a trailing _. The words are those that the macro refuses for an enum case.
+const PHP_CASE_REFUSED: ReadonlySet<string> = new Set([
+  '__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const',
+  'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty', 'enum', 'enddeclare', 'endfor',
+  'endforeach', 'endif', 'endswitch', 'endwhile', 'eval', 'exit', 'extends', 'final', 'finally', 'fn', 'for', 'foreach',
+  'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once', 'instanceof', 'insteadof', 'interface',
+  'isset', 'list', 'match', 'namespace', 'new', 'or', 'print', 'private', 'protected', 'public', 'readonly', 'require',
+  'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield',
+  '__class__', '__dir__', '__file__', '__function__', '__line__', '__method__', '__namespace__', '__trait__', 'self',
+  'parent', 'bool', 'false', 'float', 'int', 'iterable', 'mixed', 'never', 'null', 'object', 'string', 'true', 'void',
+]);
+const phpCase = (name: Name): string => {
+  const plain = langName('php', name, 'class');
+  return PHP_CASE_REFUSED.has(plain.toLowerCase()) ? `${plain}_` : plain;
+};
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
@@ -352,7 +370,7 @@ function enumRust(layout: PhpLayout, unit: Unit): string {
   const core = unit.core_type ?? '';
   const php = phpEnumType(unit);
   const phpName = `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}`;
-  const cases = (unit.variants ?? []).map((v) => `    #[php(name = ${rustString(langName('php', v.name, 'class'))}, value = ${rustString(v.value)})]\n    ${rustVariant(v.name)},`).join('\n');
+  const cases = (unit.variants ?? []).map((v) => `    #[php(name = ${rustString(phpCase(v.name))}, value = ${rustString(v.value)})]\n    ${rustVariant(v.name)},`).join('\n');
   const arms = (unit.variants ?? []).map((v) => `        Some(${php}::${rustVariant(v.name)}) => Ok(${core}::${rustVariant(v.name)}),`).join('\n');
   const outArms = (unit.variants ?? []).map((v) => `        ${core}::${rustVariant(v.name)} => ${php}::${rustVariant(v.name)},`).join('\n');
   return `
@@ -1386,7 +1404,7 @@ ${members.join('\n')}    }
     for (const unit of model.enums.filter((u) => u.module === module)) {
       items.push(`    enum ${langName('php', unit.name, 'class')}: string
     {
-${(unit.variants ?? []).map((v) => `        case ${langName('php', v.name, 'class')} = '${v.value}';`).join('\n')}
+${(unit.variants ?? []).map((v) => `        case ${phpCase(v.name)} = '${v.value}';`).join('\n')}
     }
 `);
     }
