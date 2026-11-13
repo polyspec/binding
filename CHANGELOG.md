@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The scope of the `Raised` values of the Python crate named `std::cell::RefCell` by its path, while the crate
+  imports `RefCell` wherever its text names it, so the crate of a contract without a class held an unused import,
+  which the lints deny: `make e2e` of `tests/e2e/consumer` failed at the lint of the Python crate with
+  `unused import: std::cell::RefCell`. The scope now names `RefCell` by the import. Verified by `npm test` in
+  `packages/ts`, whose test generates the Python crate of the consumer. The crate was not compiled again for this
+  change.
 - The `advance` of a `Driven` object of the WASM crate ran its work outside `shielded`, so an advance that language
   code makes inside the call of another member saw the faults that a test armed for that member; the Node crate
   shielded it. The WASM crate now shields it too (GN-8a). The test of the fault entries compared only the count of

@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1479c72da03d9c5434d57f15f0d54faffab01014c005810eef8d8b6f2dd784ac -->
+<!-- source-sha256: 36c4adaccd5587e229aa03f5f53ee2d4341d58f975d2e731235c16cfa0374e96 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python crate의 `Raised` 값의 scope는 `std::cell::RefCell`을 경로로 이름했는데, crate는 본문이 `RefCell`을 이름하는
+  곳마다 그것을 import한다. 그래서 class가 없는 계약의 crate는 쓰지 않는 import를 가졌고 lint가 그것을 거부했다.
+  `tests/e2e/consumer`의 `make e2e`가 Python crate의 lint에서 `unused import: std::cell::RefCell`로 실패했다. 이제 scope는
+  `RefCell`을 import로 이름한다. `packages/ts`의 `npm test`로 검증했다. 그 테스트는 consumer의 Python crate를 생성한다.
+  이 변경에 대해 crate를 다시 컴파일하지 않았다.
 - WASM crate의 `Driven` 객체의 `advance`는 작업을 `shielded` 밖에서 돌렸다. 그래서 언어 코드가 다른 member의 호출
   안에서 하는 advance는 시험이 그 member에 장전한 fault를 보았다. Node crate는 그것을 shield했다. 이제 WASM crate도
   shield한다(GN-8a). fault 진입의 테스트는 장전 호출의 수와 shield의 수만 비교했다. 새 테스트는 sample의 WASM crate를

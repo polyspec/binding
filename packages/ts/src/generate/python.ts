@@ -1000,7 +1000,7 @@ fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
 
 thread_local! {
     /// U-3: the handles of the Raised values that each call in progress made on this thread, the innermost call last.
-    static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const { std::cell::RefCell::new(Vec::new()) };
+    static RAISING: RefCell<Vec<Vec<u64>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// U-3: a Raised is released by the call that made it: what was thrown under each handle that nothing took, because

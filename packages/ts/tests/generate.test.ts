@@ -3893,7 +3893,8 @@ test('a Raised of the PHP, Python and Go crates is released by the call that mad
   assert.match(php, /fn raised_released\(made: &\[u64\]\) \{\n {4}let gone = THROWN\.try_with\(\|map\| \{\n {8}let mut map = map\.borrow_mut\(\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Thrown>>\(\)\n {4}\}\);\n {4}drop\(gone\);\n\}/);
   assert.match(php, scope(String.raw`fn guard<T>\(body: impl FnOnce\(\) -> Result<T, Fail>\) -> Result<T, Fail>`));
   const python = text(out, 'packages/python/generated/lib.rs');
-  assert.match(python, /static RAISING: std::cell::RefCell<Vec<Vec<u64>>> = const \{ std::cell::RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(python, /static RAISING: RefCell<Vec<Vec<u64>>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
+  assert.match(python, /\nuse std::cell::RefCell;\n/);
   assert.match(python, new RegExp(String.raw`thrown_map\(\)\.insert\(handle, error\.into_value\(py\)\.into_any\(\)\);\n {4}${record} {4}binding_core::Raised::from_generated\(`));
   // The values end with the GIL, which the entry point holds where guard returns, and after the table is released.
   assert.match(python, /fn raised_released\(_py: Python<'_>, made: &\[u64\]\) \{\n {4}if made\.is_empty\(\) \{\n {8}return;\n {4}\}\n {4}let gone = \{\n {8}let mut map = thrown_map\(\);\n {8}made\.iter\(\)\.filter_map\(\|handle\| map\.remove\(handle\)\)\.collect::<Vec<Py<PyAny>>>\(\)\n {4}\};\n {4}drop\(gone\);\n\}/);
@@ -4063,4 +4064,14 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
   // No arming and no shield is outside an entry, so the counts of the crate are the sums of its entries.
   assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future)\("/g)?.length);
   assert.equal(entries.reduce((sum, entry) => sum + entry.shields, 0), lib.match(/shielded\(\|\| /g)?.length);
+});
+
+test('the Python crate of a contract without a class uses the RefCell that it imports: the scope of the Raised values names it by the import (U-3)', () => {
+  // The consumer has callbacks and no class: its crate imports RefCell for the scope alone, and a scope that named
+  // std::cell::RefCell by its path left the import unused, which the lints deny.
+  const { contract, caseFiles, foreign } = consumerSample();
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['python'] }), 'packages/python/generated/lib.rs');
+  assert.match(lib, /\nuse std::cell::RefCell;\n/);
+  assert.match(lib, /static RAISING: RefCell<Vec<Vec<u64>>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
+  assert.doesNotMatch(lib, /std::cell::RefCell[<:]/);
 });
