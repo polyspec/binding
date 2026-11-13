@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -210,6 +210,15 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     };
     for (const kase of raisingCases(model, fn)) {
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        methods.push(`
+    public function testB4${name}${id}(): void
+    {
+        self::fail(${phpText(refusal)});
+    }`);
+        continue;
+      }
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
@@ -248,6 +257,15 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     public function testGn13e${name}${id}(): void
     {
         self::fail(${phpText(kase.refused)});
+    }`);
+        continue;
+      }
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        methods.push(`
+    public function testGn13e${name}${id}(): void
+    {
+        self::fail(${phpText(refusal)});
     }`);
         continue;
       }

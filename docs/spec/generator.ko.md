@@ -459,7 +459,14 @@
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
-  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. 타입 `cancel`의 값은 호출 전에 발동한
+  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. origin value class가 나타내는
+  값 타입(U-1)의 값은 그 kind의 `out` 행이 언어에 대해 적은 static member나 constructor의 호출이다. `value`가 없는 kind는
+  parameter 없는 member로, 그 밖의 kind는 parameter 하나인 member로 만들며, 그 member는 case의 `value`를 그 parameter 타입의
+  case 값으로 받는다. 그래서 `list`는 그 class의 값들을 담는다. 그런 member로 만드는 행이 없는 kind(parameter 둘인 member,
+  내장 형태, 또는 서로 다른 member를 적은 같은 kind의 행 둘)는 적지 않는다. 생성기가 receiver나 인자를 적지 못하는 case는
+  그 이유와 case와 member를 대며 실패하는 시험을 갖고, target의 다른 시험은 적는다(G-4, GN-13e). 그 밖에 어떤 시험도 만들 수
+  없는 값(factory 없는 class의 placeholder 등)은 이름을 대고 그 target을 거부하며, 생성기는 항목을 대지 않는 예외로 끝나지
+  않는다. 타입 `cancel`의 값은 호출 전에 발동한
   취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 이 타입은 아직 생성되지 않으므로
   그것을 받는 member는 이름을 대고 거부한다(G-4). 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind

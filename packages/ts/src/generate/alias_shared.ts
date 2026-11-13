@@ -76,7 +76,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
     const variant = VARIANT[kind];
-    if (variant === undefined) throw new Error(`no OutValue variant of the kind ${kind}`);
+    if (variant === undefined) throw new Unsupported(`no OutValue variant of the kind ${kind}`);
     const ofKind = rows.filter((row) => row.kind === kind);
     const form = (row: OutRow): string => {
       const make = row.make[lang];

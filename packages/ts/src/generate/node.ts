@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -22,7 +22,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
     const name = fn[type];
-    if (name === undefined) throw new Error(`no Node input conversion for ${type}`);
+    if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
@@ -36,7 +36,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
-  throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -46,7 +46,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     if (type === 'none') return 'out_none(env)';
     const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
     const name = fn[type];
-    if (name === undefined) throw new Error(`no Node output conversion for ${type}`);
+    if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
   }
   if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
@@ -62,7 +62,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(env, ${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value})`;
-  throw new Error(`no Node output conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Node output conversion for ${JSON.stringify(type)}`);
 }
 
 const HELPERS = `

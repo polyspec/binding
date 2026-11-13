@@ -33,7 +33,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   if (typeof type === 'string') {
     const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
     const name = fn[type];
-    if (name === undefined) throw new Error(`no PHP input conversion for ${type}`);
+    if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
@@ -46,7 +46,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
-  throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -70,7 +70,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
   if ((objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) && unit !== undefined) return `out_${recordFn(unit, aliasOf(model, type)?.library)}(${value})`;
-  throw new Error(`no PHP output conversion for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no PHP output conversion for ${JSON.stringify(type)}`);
 }
 
 // G-5: the entry points of the feature fault-test, which arm the faults of a case and report what did not fire.

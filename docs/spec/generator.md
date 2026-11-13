@@ -555,6 +555,14 @@ the design ids are those of the binding design.
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  A value of a value type that a class of origin value represents (U-1) is the call of the static member or
+  constructor that the `out` row of its kind names for the language: a member without parameters for a kind without
+  `value`, and a member of one parameter, which takes the case's `value` as a case value of its type, so `list` holds
+  the values of the class; a kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
+  write has a test that fails with the reason, the case and the member, and the other tests of the target are written
+  (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
+  refusal of the target by name, and the generator ends with no exception that names no item.
   A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
   `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
   refused by name (G-4).

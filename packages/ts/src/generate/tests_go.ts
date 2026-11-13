@@ -5,7 +5,7 @@
 // and a call with a missing, extra or unknown argument does not compile (E-7).
 
 import type { Type } from '../contract.ts';
-import { type Model, langName, unitOf } from './model.ts';
+import { type Model, Unsupported, langName, unitOf } from './model.ts';
 import { goBytes, goErrorTypes, goHeader, goImport, goName, goPackage, goParam, goString } from './go.ts';
 import { caseKey, raisingCases, resultCases } from './samples.ts';
 
@@ -38,7 +38,7 @@ function placeholder(v: Values, type: Type): string {
   const first = unit?.variants?.[0];
   if (unit?.kind === 'enum' && first !== undefined) return `${v.pkg}.${goName(unit.name)}${goName(first.name)}`;
   if (unit?.kind === 'record') return `${v.pkg}.${goName(unit.name)}{${(unit.fields ?? []).map((f) => `${goName(f.name)}: ${placeholder(v, f.type)}`).join(', ')}}`;
-  throw new Error(`no Go placeholder for ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go placeholder for ${JSON.stringify(type)}`);
 }
 
 // A case value (JSON) as a Go value; latin1 text is a Go string of its runes, as text is (B-8).
@@ -51,10 +51,10 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     // G-5: bytes are {"hex": ...}.
     if (type === 'bytes') {
       const hex = typeof value === 'object' && value !== null ? (value as { hex?: unknown }).hex : undefined;
-      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Error(`a case value of the type bytes is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
+      if (typeof hex !== 'string' || !/^([0-9a-f]{2})*$/.test(hex)) throw new Unsupported(`a case value of the type bytes is {"hex": "<lower-case hex>"}, not ${JSON.stringify(value)}`);
       return `[]byte(${goBytes((hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16)))})`;
     }
-    throw new Error(`no Go case value of the type ${type}`);
+    throw new Unsupported(`no Go case value of the type ${type}`);
   }
   if ('optional' in type) {
     v.usesPtr = true;
@@ -92,7 +92,7 @@ function fromJson(v: Values, type: Type, value: unknown): string {
     const fields = value as Record<string, unknown>;
     return `${v.pkg}.${goName(unit.name)}{${(unit.fields ?? []).map((f) => `${goName(f.name)}: ${fromJson(v, f.type, fields[langName('python', f.name, 'variable')] ?? null)}`).join(', ')}}`;
   }
-  throw new Error(`no Go case value of the type ${JSON.stringify(type)}`);
+  throw new Unsupported(`no Go case value of the type ${JSON.stringify(type)}`);
 }
 
 const testName = (words: string[]): string => words.map((w) => w.charAt(0).toUpperCase() + w.slice(1).replace(/_$/, "")).join("");

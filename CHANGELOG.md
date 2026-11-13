@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
+  generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
+  generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,
+  `Value.array` of the values of its list), and a case whose value the generator does not write, such as a kind made
+  by a member of two parameters, has a test that fails with the reason while the other tests of the target are
+  written. Every other value that the generator does not write refuses the target by name in place of an exception
+  (GN-13). Verified by `npm test` in `packages/ts`.
 - The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
