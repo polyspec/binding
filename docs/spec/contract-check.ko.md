@@ -121,6 +121,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
 - **CK-66** Python의 awaitable(GN-6m): 대상에 `python`이 있는 계약에서, wait가 `none`이 아닌 member의 Python 이름 `a<name>`은
   같은 unit의 다른 member의 Python 이름이 아니다.
+- **CK-67** class parameter의 빌림(GN-6h): parameter의 `core`(`&`, `&mut`, `value`)는 타입이 이 계약의 class unit이거나 그
+  `optional`인 parameter에만 둔다. 코어가 빌림을 받는 자리는 class의 인스턴스뿐이기 때문이다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

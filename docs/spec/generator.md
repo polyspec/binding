@@ -201,7 +201,7 @@ the design ids are those of the binding design.
   generated as such a class, and a value type named in `types` is that unit.
 - **GN-6h** The lock of a class unit (U-2 busy, B-5c). A place of a class is where a call takes an instance of it: the
   receiver of a member, or a parameter whose type is the class itself. A write place is a receiver `&mut self` or
-  `self`; every other place is a read place, and a parameter is a read place until the contract names its borrow. A
+  `self`, or a parameter whose `core` is `&mut`; every other place is a read place. A
   class unit holds its core value in a lock that is only tried when (1) a member of it has a write place, (2) a value
   of the class comes in from the language (a parameter, a field of a record or an element of a list in one, or the
   return of a callback), or (3) a member of it reaches language code. A type carries language code when it is a
@@ -222,7 +222,16 @@ the design ids are those of the binding design.
   calls the core and holds them until its result is converted; the read places of one call that are the same
   instance share one lock (`Arc::ptr_eq`), and an instance that the call takes at a write place and at another place
   fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
-  gets `&*guard` for a read place and `&mut *guard` for a write place. A value of the class inside another type (an
+  gets `&*guard` for a read place and `&mut *guard` for a write place, and a parameter whose `core` is `value` gets
+  a clone of the value under its read guard, so that class is `Clone`. A parameter whose type is a class names in
+  `core` the borrow that the core takes (`&`, `&mut` or `value`; absent, `&`). Every binding crate holds, for each
+  member with a parameter that names its borrow, the assertion `const _: () = { let _: fn(<receiver>, <param>, ...) ->
+  _ = <core path>; };`, in which the receiver is `&T`, `&mut T` or `T` of the core type of its class, a parameter that
+  names its borrow is `&T`, `&mut T` or `T` of the core type of its class and every other parameter is `_`, so a
+  borrow that differs from the core does not compile (I-2). Why: binding reads no Rust source, so the contract names
+  the borrow, and the call alone does not find a contract `&mut` over a core that takes `&`, because `&mut` coerces to
+  `&`. A `core` of a parameter whose type is an `optional` of a class is refused by name (G-4). A value of the class
+  inside another type (an
   element of a list, a field of a record, the return of a callback) is read, cloned and released at once, so such a
   class is `Clone`. The lock of a class with a write place holds a flag `poisoned`: a panic while the guard of a write
   place is held sets it before the guard is released, and every later call that takes the object at any place fails

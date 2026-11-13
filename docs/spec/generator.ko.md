@@ -165,8 +165,8 @@
   그런 클래스로 생성하며, `types`에 이름을 둔 값 타입은 그 unit이다.
   인자를 받는 Node 메서드와 static member는 addon의 `__<name>`(열거되지 않고 선언에 없다)이고 진입점이 그 위에 G-7 확인을 하는 `<name>`을 정의한다.
 - **GN-6h** class unit의 잠금(U-2 busy, B-5c). class의 자리는 호출이 그 인스턴스를 받는 곳이다: member의 receiver, 또는 타입이
-  그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`다. 그 밖의 자리는 모두 읽기 쪽 자리이며, parameter는
-  계약이 그 빌림을 적기 전까지 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
+  그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`, 그리고 `core`가 `&mut`인 parameter다. 그 밖의
+  자리는 모두 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
   unit의 member에 쓰기 쪽 자리가 있다, (2) 그 class의 값이 언어에서 들어온다(parameter, 그 안의 record field나 list 원소,
   callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit, 함수 타입,
   `host_value`, kind `native`인 `out` 행을 가진 값 alias, 언어 코드를 담는 class일 때이며, record field, `optional`, `list`,
@@ -183,7 +183,14 @@
   (`try_write_owned`, mutex는 `try_lock_owned`) 얻는다. 호출은 코어를 부르기 전에 모든 자리의 잠금을 얻고 결과를 변환할 때까지
   쥔다. 한 호출의 읽기 쪽 자리들이 같은 인스턴스이면 잠금 하나를 함께 쓰고(`Arc::ptr_eq`), 한 호출이 같은 인스턴스를 쓰기
   쪽 자리와 다른 자리에 함께 받으면 kind `busy`로 실패한다. 코어에 같은 값의 `&mut`와 다른 빌림을 함께 줄 수 없기
-  때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받는다. 다른 타입 안의 class 값(list 원소,
+  때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받고, `core`가 `value`인 parameter는 읽기
+  guard 아래 값의 복제를 받으므로 그 class는 `Clone`이다. 타입이 class인 parameter는 코어가 받는 빌림을 `core`에 적는다
+  (`&`, `&mut`, `value`. 없으면 `&`). 모든 바인딩 crate는 빌림을 적은 parameter를 가진 member마다 단언
+  `const _: () = { let _: fn(<receiver>, <param>, ...) -> _ = <core path>; };`을 둔다. receiver는 그 class 코어 타입의
+  `&T`·`&mut T`·`T`이고, 빌림을 적은 parameter는 그 class 코어 타입의 `&T`·`&mut T`·`T`이며, 다른 parameter는 `_`다. 그래서
+  코어와 다른 빌림은 컴파일되지 않는다(I-2). 이유: binding은 Rust 소스를 읽지 않으므로 계약이 빌림을 적는다. 또 `&mut`는
+  `&`로 강제 변환되므로 호출만으로는 코어가 `&`를 받는데 계약이 `&mut`를 적은 것을 찾지 못한다. 타입이 class의 `optional`인
+  parameter의 `core`는 이름을 대어 거부한다(G-4). 다른 타입 안의 class 값(list 원소,
   record field, callback의 반환)은 읽어서 복제하고 곧 놓으므로 그런 class는 `Clone`이다. 쓰기 쪽 자리가 있는 class의 잠금은
   `poisoned` 표지를 가진다: 쓰기 쪽 자리의 guard를 쥔 동안 난 panic은 guard를 놓기 전에 표지를 세우고, 그 뒤 그 객체를 어느
   자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을

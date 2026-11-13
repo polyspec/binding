@@ -1199,6 +1199,14 @@
         "default_core": {
           "$ref": "#/$defs/rustPath"
         },
+        "core": {
+          "description": "The borrow of a class instance that the core takes (GN-6h, CK-67); absent, &.",
+          "enum": [
+            "&",
+            "&mut",
+            "value"
+          ]
+        },
         "rest": {
           "const": true
         },

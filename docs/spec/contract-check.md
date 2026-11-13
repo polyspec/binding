@@ -145,6 +145,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   (GN-5).
 - **CK-66** The awaitable of Python (GN-6m): in a contract with the target `python`, the Python name `a<name>` of a
   member with a wait other than `none` is the Python name of no other member of its unit.
+- **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is only on a
+  parameter whose type is a class unit of this contract or an `optional` of one, because only an instance of a class
+  is a place whose borrow the core takes.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
