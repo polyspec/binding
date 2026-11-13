@@ -5,6 +5,27 @@
 
 ## Unreleased
 
+- The end-to-end sample had a function parameter only on methods, so the entries of a function of a functions unit and
+  of a static member that take a function were generated and never compiled. The sample now has the function `scoped`
+  and the static member `store.once`, each with a case that returns, a case that raises and a case that awaits
+  (GN-6ae). Verified by `make e2e` of `tests/e2e/sample`: PHP passes 98 generated tests, Python 100 and Go 77, none
+  failed and none skipped, with the lints of each clean; Node and WASM fail there by their refusal.
+- A panic of a method of a Go callback unwound through the frames of the static library, which skipped the
+  destructors of the core: the instance that the member borrowed stayed locked, and a later member that writes it
+  failed with kind `busy`. The call (`Call.run`) now recovers the panic of every Go callback and every Go `func`,
+  keeps its value as the error of the call, and the member panics with the same value after the call of the C ABI
+  returned (GN-15b); the dispatch of a `func` no longer recovers on its own. The Go test of a member that takes a
+  callback requires the value of the panic at the caller, the member again on the same instance, and a member that
+  writes the instance that is not `busy`. Verified by `npm test` in `packages/ts` and by `make e2e` of
+  `tests/e2e/sample`: before the change the Go test of `ledger.known` failed with "the panic of the callback left
+  ledger.note busy", and after it the 77 Go tests pass.
+- The Go lane is merged: the refusal of a parameter of a function type and of a result `passthrough` names Node and
+  WASM alone, and GN-4c states the family of the entries of the Go crate, the C symbol
+  `polyspec_<library>_<module>_<member>`, with which no helper starts. The test of functions named as helpers
+  generates the Go crate too, with functions named `pass`, `guard`, `raised`, `held`, `lock`, `taken`, `thrown` and
+  `called`, and finds no function defined twice. Verified by `npm test` in `packages/ts`, where 20 tests that
+  generate the sample for every target still fail with the refusal of Node and WASM, and by `make e2e` of
+  `tests/e2e/sample`, where PHP passed 88 generated tests, Python 88 and Go 61 before the sample grew.
 - The generated crates of a contract that names a library `core`, `binding`, `failure` or `library` did not compile:
   the helpers of the error of that library, `<library>_error` and `<library>_failure_error`, had the names of the
   helpers `core_error`, `binding_error`, `failure_error` and `library_error`. They are now `error_of_<library>` and

@@ -1,11 +1,28 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a87c9a43b98bcbb9701b43b3bca3cd57147bdf5614606b1be7647af2be54d6bb -->
+<!-- source-sha256: cc88788605d42a7cadc309841e94d1f32e45224191c25ebbd6cfaaf98855e9c7 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- end-to-end sample에는 함수 parameter가 method에만 있어서, 함수를 받는 functions unit의 함수와 static member의 진입은
+  생성되기만 하고 컴파일된 적이 없었다. sample에 이제 함수 `scoped`와 static member `store.once`가 있고, 각각 돌려주는
+  case, 던지는 case, 기다리는 case를 가진다(GN-6ae). `tests/e2e/sample`의 `make e2e`로 검증했다: PHP는 생성된 시험 98개,
+  Python은 100개, Go는 77개를 통과하고 실패와 skip은 없으며 각 lint는 깨끗하다. Node와 WASM은 거기서 그 거부로 실패한다.
+- Go callback의 method의 panic은 static library의 frame을 지나 unwind했고, 코어의 destructor를 건너뛰었다. member가 빌린
+  인스턴스는 잠긴 채 남았고, 그 뒤 그것을 쓰는 member는 kind `busy`로 실패했다. 이제 호출(`Call.run`)이 모든 Go callback과
+  모든 Go `func`의 panic을 recover하고 그 값을 호출의 error로 쥐며, member는 C ABI 호출이 돌아온 뒤 같은 값으로
+  panic한다(GN-15b). `func`의 dispatch는 더는 따로 recover하지 않는다. callback을 받는 member의 Go 시험은 호출자가 panic의
+  값을 받을 것, member가 같은 인스턴스에서 다시 돌 것, 그 인스턴스를 쓰는 member가 `busy`가 아닐 것을 요구한다.
+  `packages/ts`의 `npm test`와 `tests/e2e/sample`의 `make e2e`로 검증했다: 변경 전에 `ledger.known`의 Go 시험은 "the
+  panic of the callback left ledger.note busy"로 실패했고, 변경 후 Go 시험 77개가 통과한다.
+- Go lane을 병합했다: 함수 타입의 parameter와 결과 `passthrough`의 거부는 Node와 WASM만 이름하고, GN-4c는 Go crate의 진입의
+  계열, 곧 C symbol `polyspec_<library>_<module>_<member>`를 적으며 어떤 helper도 그것으로 시작하지 않는다. helper와 이름이
+  같은 함수의 시험은 Go crate도 생성한다. 함수 이름은 `pass`, `guard`, `raised`, `held`, `lock`, `taken`, `thrown`,
+  `called`이고, 두 번 정의된 함수를 찾지 못한다. `packages/ts`의 `npm test`로 검증했고, 모든 target으로 sample을 생성하는
+  시험 20개는 Node와 WASM의 거부로 아직 실패한다. `tests/e2e/sample`의 `make e2e`로도 검증했다. sample이 커지기 전에 PHP는
+  생성된 시험 88개, Python은 88개, Go는 61개를 통과했다.
 - library `core`, `binding`, `failure`, `library`를 이름하는 계약의 생성된 crate는 컴파일되지 않았다. 그 library의 오류의
   helper `<library>_error`와 `<library>_failure_error`가 helper `core_error`, `binding_error`, `failure_error`,
   `library_error`의 이름을 가졌기 때문이다. 이제 다섯 crate에서 `error_of_<library>`와 `failure_of_<library>`이고, 이
