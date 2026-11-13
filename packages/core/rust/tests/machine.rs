@@ -54,7 +54,7 @@ fn ready<T>(mut wait: Wait<T>) -> Result<T, BindingError> {
 #[test]
 fn drive_gives_the_output_of_a_wait_to_the_next_step_and_makes_each_call() -> Result<(), BindingError> {
     let mut machine = Sum::default();
-    assert_eq!(drive(&mut machine, ready)?, Some(42));
+    assert_eq!(drive(&mut machine, ready, |value| Ok(Ok(value)))?, Some(42));
     assert_eq!(machine.calls, 1);
     Ok(())
 }
@@ -62,11 +62,15 @@ fn drive_gives_the_output_of_a_wait_to_the_next_step_and_makes_each_call() -> Re
 #[test]
 fn drive_ends_with_the_failure_of_a_wait() {
     let mut machine = Sum::default();
-    let failed = drive(&mut machine, |_wait| {
-        Err(BindingError::Internal {
-            detail: String::from("no runtime"),
-        })
-    });
+    let failed = drive(
+        &mut machine,
+        |_wait| {
+            Err(BindingError::Internal {
+                detail: String::from("no runtime"),
+            })
+        },
+        |value| Ok(Ok(value)),
+    );
     assert!(matches!(failed, Err(BindingError::Internal { .. })));
     assert_eq!(machine.calls, 0);
 }

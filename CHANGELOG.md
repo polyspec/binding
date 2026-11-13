@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- binding_core had no form for a value of language code that a machine of a member receives from a function and
+  returns unchanged, and no step at which a machine hands an awaitable to its driver, so a machine of a transaction
+  could neither return the value of its function nor wait for an async function. binding_core now has
+  `Passthrough`, a handle of the table of the binding that the core moves without reading and whose drop gives the
+  handle to the release function of the binding, `Step::Await(Passthrough)`, `Machine::settle(Result<Passthrough,
+  Raised>)`, `Next::Await` and `Driving::settle`; `machine::drive` takes a third function `awaited`, which gives the
+  outcome of each awaited value, and ends with its error (GN-6ae). Verified by `cargo test --all-features` and
+  `cargo test` of binding_core and their clippy runs.
 - A method with `wait: async_driver` that reaches language code was refused ("a method with machine is not generated,
   because its machine would borrow its receiver"), so `db.transaction`, `tx.savepoint` and `db.close` of orm were
   generated in no target. Such a method now names the receiver `&self`, and every target gives its core path a clone

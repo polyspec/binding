@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- binding_core에는 member의 machine이 함수에서 받아 그대로 돌려주는 언어 코드 값의 형식도, machine이 awaitable을
+  driver에 넘기는 step도 없어서, transaction의 machine은 함수의 값을 돌려줄 수도 async 함수를 기다릴 수도 없었다. 이제
+  binding_core에는 코어가 읽지 않고 옮기며 drop되면 handle을 binding의 해제 함수에 주는 binding table의 handle
+  `Passthrough`, `Step::Await(Passthrough)`, `Machine::settle(Result<Passthrough, Raised>)`, `Next::Await`,
+  `Driving::settle`이 있다. `machine::drive`는 기다린 각 값의 결과를 주는 세 번째 함수 `awaited`를 받고, 그 오류로
+  끝난다(GN-6ae). binding_core의 `cargo test --all-features`, `cargo test`와 그 clippy 실행으로 확인했다.
 - 언어 코드에 닿는 `wait: async_driver` method는 거부되어("a method with machine is not generated, because its machine
   would borrow its receiver") orm의 `db.transaction`, `tx.savepoint`, `db.close`는 어느 target에서도 생성되지 않았다.
   이제 그런 method는 receiver `&self`를 적고, 모든 target은 인스턴스 값의 clone `Clone::clone(&*receiver)`을 인자보다
