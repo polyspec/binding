@@ -1529,8 +1529,8 @@ test('the test of a case holds the words of its id, and two ids that give one na
     return fixture;
   };
   const out = generate({ ...withIds(['document-order', 'x.y z']), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node'] });
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eShowDocumentOrder\(\): void/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eShowXYZ\(\): void/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eshowDocumentOrder\(\): void/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eshowXYZ\(\): void/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_document_order\(self\) -> None:/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_x_y_z\(self\) -> None:/);
   // Node names a test by a string, which holds the id as it is.

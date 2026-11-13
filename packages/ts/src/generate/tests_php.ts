@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -18,6 +18,7 @@ const BAD_NUMBERS: Record<string, string[]> = {
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
 
 export function phpTests(model: Model, layout: PhpLayout): string {
+  checkCaseNames(model, casePascal, true);
   const enumRef = (name: string, value: string): string => {
     const unit = model.enums.find((u) => langName('python', u.name, 'class') === name);
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
@@ -210,7 +211,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       return { fixtures, before, after };
     };
     for (const kase of raisingCases(model, fn)) {
-      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const id = casePascal(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         methods.push(`
@@ -252,7 +253,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
-      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const id = casePascal(kase.id);
       if (kase.refused !== undefined) {
         methods.push(`
     public function testGn13e${name}${id}(): void
@@ -327,7 +328,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     for (const kase of stringCases(model, fn)) {
       // GN-6g: PHP gives Stringable to a class that has __toString.
       methods.push(`
-    public function testN4${name}${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    public function testN4${name}${casePascal(kase.id)}(): void
     {${receiverOfCase(kase.receiver).lines}
         self::assertInstanceOf(\\Stringable::class, ${receiverOfCase(kase.receiver).expr});
         self::assertSame(${phpText(kase.result)}, ${invoke(fn, '', receiverOfCase(kase.receiver).expr)});
@@ -389,7 +390,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
   for (const kase of aliasCases(model)) {
     const alias = langName('php', kase.alias.unit.name, 'class');
     methods.push(`
-    public function testU7${alias}In${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    public function testU7${alias}In${casePascal(kase.id)}(): void
     {
         try {
             \\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)});

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case whose id holds a character that no identifier takes, such as `document-order` of json, gave the PHP method
+  `testGn13eparseDocument-order` and the Python method `test_gn13e_parse_document-order`, so PHPUnit and unittest
+  could not read the generated tests. The name of the test of a case now holds the words of its id, split at every
+  run of characters other than ASCII letters and digits (`DocumentOrder`, `document_order`), as Go already did, and
+  two ids of one member or one value alias that give one name refuse the target by name, PHP comparing without case
+  (GN-13e). Verified by `npm test` in `packages/ts`.
 - A case value of kind map of a class of origin value whose make member takes another class, such as `Value.object`
   of json, which takes an `OrderedMap`, failed its test with "takes more than one value" or "no case value of the
   type", because the `[key, value]` pairs of the case are no value of that class. The pairs now fill the class: its

@@ -23,7 +23,7 @@ import {
   objectUnit, places, pointName, unitOf,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -320,7 +320,8 @@ function expectKind(type: string, kind: string, rule: string): string[] {
 
 const indent = (lines: string[], depth: number): string => lines.map((l) => (l === '' ? '' : `${'\t'.repeat(depth)}${l}`)).join('\n');
 
-const testName = (text: string): string => text.split(/[^A-Za-z0-9]+/).filter((w) => w !== '').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+// GN-13e: a name of a test holds the words of a text, capitalized and joined, as the id of a case.
+const testName = casePascal;
 
 // G-5: the fixture of a callback, which answers the calls of the core by the rows of a case.
 function fixtureLines(v: Values, b: Body, fixture: Fixture, name: string): string {
@@ -720,6 +721,7 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
 }
 
 export function goTestFiles(model: Model, module: string): [string, string][] {
+  checkCaseNames(model, casePascal, false);
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };

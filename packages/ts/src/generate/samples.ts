@@ -898,6 +898,31 @@ export interface AliasCase {
   category: string;
 }
 
+// GN-13e: the words of the id of a case, split at every run of characters other than ASCII letters and digits, which
+// the name of its test holds in a language whose tests are functions or methods.
+export const caseWords = (id: string): string[] => id.split(/[^A-Za-z0-9]+/).filter((word) => word !== '');
+// GN-13e: the words of an id capitalized and joined (PHP, Go), or joined by _ (Python).
+export const casePascal = (id: string): string => caseWords(id).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+export const caseSnake = (id: string): string => caseWords(id).join('_');
+
+// GN-13e: two ids of the cases of one member, or of one value alias, that give one test name refuse the target, PHP
+// comparing the names without case as it does for its methods; an id without a word gives no name.
+export function checkCaseNames(model: Model, name: (id: string) => string, caseless: boolean): void {
+  const groups: [string, unknown[]][] = [...model.cases.entries(), ...[...model.aliasCases.entries()].map(([id, cases]): [string, unknown[]] => [`the alias ${id}`, cases])];
+  for (const [owner, cases] of groups) {
+    const seen = new Map<string, string>();
+    for (const kase of cases) {
+      const id = String((kase as Record<string, unknown>)['id']);
+      const made = name(id);
+      if (caseWords(id).length === 0) throw new Unsupported(`the case ${id} of ${owner} has no letter or digit for the name of its test (GN-13e)`);
+      const key = caseless ? made.toLowerCase() : made;
+      const other = seen.get(key);
+      if (other !== undefined && other !== id) throw new Unsupported(`the cases ${other} and ${id} of ${owner} give one test name ${made} (GN-13e)`);
+      seen.set(key, id);
+    }
+  }
+}
+
 export function aliasCases(model: Model): AliasCase[] {
   const out: AliasCase[] = [];
   for (const alias of model.aliases) {

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 식별자가 받지 않는 문자를 id에 가진 case(json의 `document-order`)는 PHP 메서드 `testGn13eparseDocument-order`와 Python
+  메서드 `test_gn13e_parse_document-order`를 내서, PHPUnit과 unittest가 생성된 시험을 읽지 못했다. 이제 case 시험의 이름은
+  ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나눈 id의 낱말을 담고(`DocumentOrder`, `document_order`, Go는 이미 그랬다), 한
+  member나 한 값 alias의 두 id가 같은 이름을 내면 target을 이름을 대고 거부하며 PHP는 대소문자 없이 비교한다(GN-13e).
+  `packages/ts`의 `npm test`로 검증했다.
 - make member가 다른 class를 받는 origin value class(`OrderedMap`을 받는 json의 `Value.object`)의 kind map case 값은
   "takes more than one value"나 "no case value of the type"으로 시험이 실패했다. case의 `[key, value]` 쌍이 그 class의 값이 아니기
   때문이다. 이제 쌍이 그 class를 채운다: parameter 없는 생성자가 만들고, receiver `&mut self`와 parameter 둘을 가진 하나뿐인
