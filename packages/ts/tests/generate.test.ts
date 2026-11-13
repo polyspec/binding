@@ -1049,6 +1049,16 @@ test('Go: a record of another repository is the struct of its Go module, which g
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
 });
 
+test('pyproject.toml names another library at the version of a release form, and alone for a development form (GN-3e)', () => {
+  const { contract, foreign } = plotSample();
+  const pyproject = (spec: unknown): string => String(trackedPackages(contract, '0.0.0', new Map([['polyspec-points', spec]]), [], foreign).get('packages/python/pyproject.toml'));
+  assert.match(pyproject('=0.1.2'), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  assert.match(pyproject({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  for (const spec of [{ path: '../../../points/packages/rust' }, { git: 'https://github.com/polyspec/points.git', branch: 'main' }, '0.1']) {
+    assert.match(pyproject(spec), /\ndependencies = \["polyspec-points"\]\n/, JSON.stringify(spec));
+  }
+});
+
 test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
   // gofmt writes 1 << 53 as 1<<53 where it is one of several arguments, so the test writes the number itself.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
