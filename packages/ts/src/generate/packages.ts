@@ -10,8 +10,17 @@ import { type Files, header } from './text.ts';
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
 // Every binding crate holds the core value of a class unit in the locks of the feature lock (GN-6h, GN-18a).
-const bindingCore = (_suffix: string): string =>
-  `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock'].map((f) => JSON.stringify(f)).join(', ')}] }`;
+// GN-6n: the binding crate of a target that has a member with wait async_driver turns on the driver of binding_core.
+const bindingCore = (driver: boolean): string =>
+  `polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core", features = [${['construct', 'lock', ...(driver ? ['driver'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`;
+
+// GN-6n: whether the crate of a target, named by its suffix, has a member with wait async_driver.
+const SUFFIX_TARGET: Record<string, string> = { python: 'python', node: 'node', wasm: 'wasm', 'php-ext': 'php', go: 'go' };
+export const drives = (contract: Contract, suffix: string): boolean =>
+  contract.units.some((unit) => (unit.members ?? []).some((member) => {
+    const only = member.only ?? unit.only;
+    return member.wait === 'async_driver' && (only === undefined || only.targets.includes((SUFFIX_TARGET[suffix] ?? suffix) as (typeof only.targets)[number]));
+  }));
 
 // GN-3a: an allow attribute in a form that rustfmt keeps with its defaults and with the settings of a repository
 // (use_small_heuristics = "Max", a wider max_width): on one line of at most 80 columns, which is narrower than the
@@ -117,7 +126,7 @@ panic-test = []
 ${testFeatures(contract, suffix, armed)}
 [dependencies]
 ${contract.core.crate} = { path = "${crate?.core ?? (host ? '../../rust' : '../rust')}"${coreFeatures(contract, suffix)} }
-${bindingCore(suffix)}
+${bindingCore(drives(contract, suffix))}
 ${dependencies.join('\n')}
 
 [lints]
@@ -216,7 +225,8 @@ python-source = "generated/python"
     const npm = (contract.packages['node'] as { package: string }).package;
     files.set('packages/ts/Cargo.toml', manifest(contract, version, armed, 'node', `polyspec_${contract.library.replaceAll('-', '_')}_node`, [
       ...foreignOf('node'),
-      'napi = { version = "=3.16.2", default-features = false, features = ["napi8"] }',
+      // GN-6n: the future of a member with wait async_driver runs on the tokio runtime of napi.
+      `napi = { version = "=3.16.2", default-features = false, features = [${['napi8', ...(drives(contract, 'node') ? ['tokio_rt'] : [])].map((f) => JSON.stringify(f)).join(', ')}] }`,
       'napi-derive = "=3.7.1"',
     ], '\nbuild = "build.rs"', isHost(contract, 'node')).replace('\n[dependencies]', '\n[build-dependencies]\nnapi-build = "=2.6.0"\n\n[dependencies]'));
     files.set('packages/ts/build.rs', `${header('//')}\n// napi-build links the addon against the symbols that Node provides at load time.\n\nfn main() {\n    napi_build::setup();\n}\n`);

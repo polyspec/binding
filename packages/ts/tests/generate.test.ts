@@ -1870,7 +1870,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /\nasync def afetch\(name: str\) -> str: \.\.\./);
   // Node: a Promise of the future on the tokio runtime of napi, whose result is converted on the JavaScript thread.
   const node = text(out, 'packages/ts/generated/lib.rs');
-  assert.match(node, /env\.spawn_future_with_callback\(binding_core::driver::Caught::new\(/);
+  assert.match(node, /env\s*\.spawn_future_with_callback\(driven\(binding_core::driver::Caught::new\(future\)\)/);
   assert.match(node, future);
   assert.match(node, method);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
@@ -1878,10 +1878,12 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(dts, /\n {2}enterLater\(\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.fetch\('a'\)/);
   // The binding crates turn on the driver of binding_core, and the Node crate the tokio runtime of napi.
+  const crates = trackedPackages(read('packages/rust/interface.json'), '0.0.0');
   for (const crate of ['packages/php-ext/Cargo.toml', 'packages/python/Cargo.toml', 'packages/ts/Cargo.toml']) {
-    assert.match(text(out, crate), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
+    assert.match(String(crates.get(crate)), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/, crate);
   }
-  assert.match(text(out, 'packages/ts/Cargo.toml'), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
+  assert.match(String(crates.get('packages/ts/Cargo.toml')), /napi = \{[^\n]*features = \[[^\]\n]*"tokio_rt"/);
+  assert.doesNotMatch(String(crates.get('packages/go/internal/ffi/Cargo.toml')), /"driver"/);
   // Go and WASM name such a member as not generated yet; a constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;

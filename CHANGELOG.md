@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
+  `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
+  runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,
+  and Node returns a `Promise` of `Env::spawn_future_with_callback` on the runtime of napi (`tokio_rt`). The future
+  owns the converted arguments and guards, its faults are installed around each poll (`fault::Armed::around`), and a
+  panic of a poll is kind `internal` (`driver::Caught`). Go and WASM refuse such a member by name. binding_core has the
+  new feature `driver`. Verified by `make check`.
 - A member with `wait: blocking_io` was refused by every target ("wait blocking_io is not generated yet"), so
   `classes.read` and `gate.enter_slowly` of `tests/e2e/classes` had no binding. The generator now passes
   `binding_core::Io::for_generated_call()` to the core and waits in the form of each language (GN-6m): PHP blocks the
