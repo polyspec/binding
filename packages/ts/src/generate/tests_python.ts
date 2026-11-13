@@ -1,9 +1,9 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, awaits, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { refuseScopedCases, type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type After, FIXTURE_RAISED, awaitsFunction, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 
@@ -76,9 +76,15 @@ def _outcome(call):
         return ("error", type(error), getattr(error, "kind", None))
 `;
 
+// GN-6ae: the exception that a function fixture of the test in progress raises.
+const PYTHON_RAISED = `
+
+# GN-6ae: the exception that a function fixture of the test in progress raises.
+_raised: list[BaseException] = []
+`;
+
 export function pythonTests(model: Model, module: string): string {
   checkCaseNames(model, caseSnake, false);
-  refuseScopedCases(model, 'Python');
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
     errorNew: (unit, kind, message) => `pkg.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`,
     callbackNew: (unit, how) => {
@@ -182,6 +188,53 @@ export function pythonTests(model: Model, module: string): string {
     if (fn.kind === 'property') return `${receiver}.${member}`;
     return `${receiver}.${member}(${args})`;
   };
+  // GN-6ae: the call of the awaited form of a member that waits, a<name>, which gives an awaitable.
+  const invokeAwaited = (fn: Fn, args: string, receiver: string): string => {
+    const member = `a${langName('python', fn.member.name, 'callable')}`;
+    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    if (fn.kind === 'static') return `pkg.${langName('python', fn.unit.name, 'class')}.${member}(${args})`;
+    return `${receiver}.${member}(${args})`;
+  };
+  // GN-6ae: the function of a function fixture is a function of the module, because a lambda holds no statement: each
+  // step calls a method on one of its arguments, and a step that names a result requires it, whose failure is an
+  // exception of the function; it then returns its result, raises the instance of an error unit, or raises the
+  // exception that the test of the case holds. A fixture with awaits is a coroutine function, whose steps await the
+  // awaited form of a member that waits. Two fixtures of one body are one function.
+  let usesRaised = false;
+  const functions = new Map<string, string>();
+  ctx.functionNew = (fixture) => {
+    const lines = fixture.steps.flatMap((step, i) => {
+      const on = `args[${step.on}]`;
+      const call = fixture.awaits && awaits(step.fn) ? `await ${invokeAwaited(step.fn, step.args, on)}` : invoke(step.fn, step.args, on);
+      if (step.expected === undefined) return [call];
+      if ('refused' in step.expected) return [`raise AssertionError(${pyString(step.expected.refused)})`];
+      usesSame = true;
+      return [`result_${i} = ${call}`, `expected_${i} = ${step.expected.text}`, `if not _same(result_${i}, expected_${i}):`, `    raise AssertionError(f"{result_${i}!r} is not {expected_${i}!r}")`];
+    });
+    usesRaised ||= 'exception' in fixture.end;
+    lines.push('result' in fixture.end ? `return ${fixture.end.result}` : 'raise' in fixture.end ? `raise ${fixture.end.raise}` : 'raise _raised[0]');
+    const body = `${fixture.awaits ? 'async ' : ''}def NAME(*args):  # noqa: ANN002, ANN202\n${lines.map((line) => `    ${line}\n`).join('')}`;
+    const known = functions.get(body);
+    if (known !== undefined) return known;
+    const name = `_function_${functions.size}`;
+    functions.set(body, name);
+    helpers.push(`\n\n${body.replace('NAME', name)}`);
+    return name;
+  };
+  // GN-6ae: the call of a case: a case whose function fixture names awaits runs the awaited form on an event loop.
+  const caseCall = (fn: Fn, args: string, receiver: string, given: Map<Fn['args'][number], unknown>): string => {
+    if (!awaitsFunction(given)) return invoke(fn, args, receiver);
+    usesAsyncio = true;
+    return `asyncio.run(${invokeAwaited(fn, args, receiver)})`;
+  };
+  // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
+  const afterChecks = (after: After[] | undefined, receiver: string): string =>
+    (after ?? []).map((call, i) => {
+      const expected = expectedText(model, ctx, call.fn, call.result);
+      if ('refused' in expected) return `\n        self.fail(${pyString(expected.refused)})`;
+      usesSame = true;
+      return `\n        after_${i} = ${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}\n        expected_${i} = ${expected.text}\n        self.assertTrue(_same(after_${i}, expected_${i}), f"{after_${i}!r} is not {expected_${i}!r}")`;
+    }).join('');
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -261,6 +314,26 @@ export function pythonTests(model: Model, module: string): string {
         self.assertEqual(caught.exception.kind, "invalid_text")`);
       }
     }
+    // GN-6ae: a parameter of a function type takes a callable, and any other value is kind invalid_callback; the plain
+    // form of a member whose function may return an awaitable has no event loop to await it on, which is the same kind
+    // with a message that names the awaited form.
+    for (const arg of reachable ? fn.args : []) {
+      if (typeof arg.type !== 'object' || !('function' in arg.type)) continue;
+      const argName = langName('python', arg.name, 'variable');
+      out.push(`
+    def test_gn6ae_${name}_${argName}_refuses_what_is_no_callable(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${call(new Map([[arg, '1']]))}
+        self.assertEqual(caught.exception.kind, "invalid_callback")`);
+      if (!arg.type.function.async_allowed || fn.machine !== true) continue;
+      const awaitable = ctx.functionNew?.({ parameters: arg.type.function.parameters.length, awaits: true, steps: [], end: { result: 'None' } }) ?? '';
+      out.push(`
+    def test_gn6ae_${name}_${argName}_refuses_an_awaitable_without_an_event_loop(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${call(new Map([[arg, awaitable]]))}
+        self.assertEqual(caught.exception.kind, "invalid_callback")
+        self.assertIn(${pyString(`a${langName('python', fn.member.name, 'callable')}`)}, str(caught.exception))`);
+    }
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('python', pair.arg.name, 'variable');
@@ -280,7 +353,10 @@ export function pythonTests(model: Model, module: string): string {
         continue;
       }
       const receiverMade = receiverOfCase(kase.receiver);
-      const receiver = receiverMade.expr;
+      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+      const heldReceiver = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      if (heldReceiver) receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
+      const receiver = heldReceiver ? 'receiver' : receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
@@ -303,13 +379,34 @@ export function pythonTests(model: Model, module: string): string {
       out.push(`
     def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
-            ${kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), receiver) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
+            ${kase.faults === undefined ? caseCall(fn, callArgs(model, ctx, fn, caseArg), receiver, kase.args) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
         self.assertIs(type(error), pkg.${exactClass(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
-        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}`);
+        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}`);
+    }
+    // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
+    for (const kase of callbackCases(model, fn)) {
+      const id = caseSnake(kase.id);
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+    def test_gn6ae_${name}_${id}(self) -> None:
+        self.fail(${pyString(refusal)})`);
+        continue;
+      }
+      const receiverMade = receiverOfCase(kase.receiver);
+      const call = caseCall(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr === '' ? '' : 'receiver', kase.args);
+      usesRaised = true;
+      out.push(`
+    def test_gn6ae_${name}_${id}(self) -> None:${receiverMade.lines}${receiverMade.expr === '' ? '' : `\n        receiver = ${receiverMade.expr}`}
+        raised = LookupError(${pyString(FIXTURE_RAISED)})
+        _raised[:] = [raised]
+        with self.assertRaises(LookupError) as caught:
+            ${call}
+        self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
@@ -334,16 +431,21 @@ export function pythonTests(model: Model, module: string): string {
         .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
         .join('');
       const receiverMade = receiverOfCase(kase.receiver);
+      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+      if (kase.after !== undefined && receiverMade.expr !== '') {
+        receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
+        receiverMade.expr = 'receiver';
+      }
       const receiver = receiverMade.expr;
-      const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
+      const call = caseCall(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
-      }), receiver);
+      }), receiver, kase.args);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n        ${call}` : 'refused' in expected ? `\n        self.fail(${pyString(expected.refused)})` : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
-    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}`);
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -479,7 +581,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''
 ${usesWarnings ? 'import warnings\n' : ''}
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${usesRaised ? PYTHON_RAISED : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

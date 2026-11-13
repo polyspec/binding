@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: f80969ddab8d6a04675a0649e20e705f43caccd8ea21769c4c4590b04d5da8cd -->
+<!-- source-sha256: 88b03309833970742b901c03a1f218ed462cf25f9d31aa9e2192f75aca906c47 -->
 # 생성기
 
 [English](generator.md)
@@ -635,6 +635,19 @@
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
     다시 던진다. 값의 table은 handle에서 `Zval`로 가는 thread-local map이다. release 함수는 값을 table에서 꺼내고 table을
     놓은 뒤에 값을 끝낸다. PHP 값의 destructor가 binding으로 다시 들어오는 PHP 코드를 돌릴 수 있기 때문이다.
+  - Python: parameter는 callable을 받고(`callable()`. 다른 값은 kind `invalid_callback`이다), `_native.pyi`에는
+    `Callable[[<parameters>], object]`로 선언하며, 결과는 `object`다. closure는 callable의 참조를 쥐고, machine이 그것을
+    부르는 스레드의 GIL로 부른다(`Python::attach`). 그 코드의 예외는 U-3의 `Raised`로 쥐므로 호출자는 같은 예외 객체를
+    받는다. 값의 table은 handle에서 `Py<PyAny>`로 가는 thread-local map이다. machine은 시작부터 끝까지 그 호출의
+    스레드에서 돈다. `<name>`은 호출자의 스레드에서, `a<name>`은 그 worker 스레드에서 돈다. 그래서 값은 한 스레드의
+    table에 들어가고 나오며, 놓은 값은 GIL을 쥐고 끝난다. 함수가 awaitable을 돌려줄 수 있는 member에는 진입
+    `_<name>_on_loop(<event loop>, /, <parameters>)`가 있다. `<name>`은 loop 없이 그것을 부르고, `a<name>`은 호출자의
+    돌고 있는 event loop와 함께 그것을 `asyncio.to_thread`에서 돌리는 coroutine이다. driver는 함수가 돌려준 값마다
+    `inspect.isawaitable`을 묻는다. awaitable이 아닌 값은 곧바로 settle한다. awaitable은 coroutine으로 감싸
+    `asyncio.run_coroutine_threadsafe`로 그 loop에 주고, worker 스레드는 그 future의 결과를 기다리며 그 대기는 GIL을
+    놓는다. loop가 없으면 coroutine을 닫아 Python이 기다리지 않은 coroutine을 경고하지 않게 하고, 호출은 kind
+    `invalid_callback`으로 실패한다. 두 coroutine 함수는 crate가 처음 필요할 때 자기 소스로 만드는 module이다. Rust
+    코드는 `async def`를 쓰지 못하기 때문이다.
   - `async_allowed: true`: 함수는 awaitable을 돌려줄 수 있고, machine은 call 뒤에 `Step::Await(Passthrough)`로 그것을
     driver에 준다. driver는 다음 `resume` 전에 그 결과를 `Machine::settle(Result<Passthrough, Raised>)`에 준다. Node와
     WASM: `advance()`는 `[false, value]`를 돌려주고, 진입은 thenable이 아닌 값까지 promise로 기다려 그 값이나 거부를
@@ -653,10 +666,12 @@
     step은 기다리는 member의 호출을 기다리고(Python은 `await <인자>.a<name>(...)`), 그 case의 Python 시험은 event
     loop에서 `a<name>`을 부른다. PHP와 Go에는 awaitable이 없으므로 거기서는 같은 fixture가 보통 함수이고 driver가 그 값을
     곧바로 settle한다. 표시가 있는 case는 다섯 target에서 돌고 각 target에서 같은 결과, 예외, `after`를 요구한다.
-  아직 생성하지 않는 것(G-4): Python, Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
+  아직 생성하지 않는 것(G-4): Node, Go, WASM은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를
   "a parameter of a function type and a result passthrough are not generated for <Target> yet"로 이름을 대고 거부한다.
-  PHP는 그 member를 생성한다. PHP 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case의 시험,
-  `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직 쓰지 않는다.
+  PHP와 Python은 그 member를 생성한다. PHP와 Python 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"`
+  case의 시험, `after`의 호출, callable이 아닌 값이 kind `invalid_callback`이라는 시험을 쓴다. 다른 target의 시험은 아직
+  쓰지 않는다. Python의 함수 fixture는 시험 module의 함수다. lambda는 문장을 갖지 못하기 때문이다. Python 시험은 또
+  awaitable을 돌려주는 함수를 받은 `<name>`이 `a<name>`을 이름하는 message의 kind `invalid_callback`일 것을 요구한다.
   end-to-end sample의 계약은 `store`와 `scope`를 가지므로, sample의 end-to-end 검사는 그것을 거부하는 target을 그 target이
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class

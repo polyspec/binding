@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- Python refused a member with a parameter of a function type or a result `passthrough` by name. The Python binding
+  now generates it: the callable is checked when it enters (kind `invalid_callback`), the closure calls it with the
+  GIL and gives each class argument as a new instance, the value that it returned is held in a thread-local table
+  under a handle that is never given again, and the member returns that object unchanged. A member whose function
+  may return an awaitable has the entry `_<name>_on_loop`: `a<name>` runs it in a thread of asyncio with the running
+  event loop of its caller, on which the driver awaits an awaitable with `asyncio.run_coroutine_threadsafe`, and
+  `<name>` given an awaitable closes it and fails with kind `invalid_callback`, whose message names `a<name>`. The
+  Python test writes a function fixture as a function of the test module, a fixture with `awaits` as a coroutine
+  function, the step results, the case of `raises: "callback"` and the calls of `after` (GN-6ae, CK-22). Verified by
+  `npm test` in `packages/ts`, whose tests of the Python crate and of the Python test pass; the tests that generate
+  the sample for every target still fail with the refusal of Node, Go and WASM. The end-to-end check of the sample
+  was not run for this change.
 - The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
   helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
   `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to

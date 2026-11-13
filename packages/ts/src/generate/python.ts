@@ -344,6 +344,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     if (type === 'never') return `match ${value} {}`;
     return type === 'none' ? 'none_out(py)' : `${fn[type]}(py, ${value})`;
   }
+  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
+  if ('passthrough' in type) return `passed_out(py, ${value})`;
   if ('list' in type) return `list_out(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('keyed_map' in type) return `keyed_map_out(py, ${value}, |py, item| ${convertOut(model, type.keyed_map, 'item')})`;
@@ -516,6 +518,11 @@ function entryRust(model: Model, fn: Fn): string {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     const subject = rustString(langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
+    // GN-6ae: a function parameter is the closure that the machine of the member calls.
+    if (typeof arg.type === 'object' && 'function' in arg.type) {
+      lines.push(...functionClosure(model, arg.type, variable, subject));
+      continue;
+    }
     const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
@@ -532,7 +539,10 @@ function entryRust(model: Model, fn: Fn): string {
   const armed = armedCall(model, fn, core);
   // GN-6m, GN-6n: the core call of a member that waits runs without the GIL, so other Python threads run while it
   // waits; the future of an async member runs on the runtime of binding_core.
-  const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => `py.detach(|| ${wait})`, '|error| binding_error(py, error)') : waitsIo(fn) ? `py.detach(|| ${armed})` : armed;
+  // GN-6ae: a value that a function of the member returned is settled on the event loop of the caller of a<name>.
+  const onLoop = settles(fn);
+  const settled = onLoop ? `|value| settled(py, value, ${ON_LOOP}, ${rustString(functionArgs(fn).map((a) => langName('python', a.name, 'variable')).join(' or '))}, ${rustString(awaitedName(fn))})` : undefined;
+  const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => `py.detach(|| ${wait})`, '|error| binding_error(py, error)', settled) : waitsIo(fn) ? `py.detach(|| ${armed})` : armed;
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py, error)),\n        };`);
   } else {
@@ -552,8 +562,25 @@ ${lines.map((l) => `    ${l}`).join('\n')}
 `;
   }
   lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  const passed = fn.args.map((a) => `, ${rustIdent(langName('python', a.name, 'variable'))}`).join('');
+  const loopSignature = signature === '' ? `${ON_LOOP}, /` : `${ON_LOOP}, /, ${signature}`;
+  const loopParam = `, ${ON_LOOP}: Option<&Bound<'py, PyAny>>`;
   if (fn.kind === 'function') {
-    return `
+    return onLoop ? `
+#[pyfunction]
+#[pyo3(signature = (${signature}))]
+fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
+    on_loop_${name}(py, None${passed})
+}
+
+/// GN-6ae: ${name} with the event loop on which a value that its function returned is awaited; None is no loop.
+#[pyfunction(name = ${rustString(onLoopName(name))}, signature = (${loopSignature}))]
+fn on_loop_${name}<'py>(py: Python<'py>${loopParam}${params}) -> PyResult<Bound<'py, PyAny>> {
+    guard(py, || {
+${lines.join('\n')}
+    })
+}
+${awaitedFunction(name, true)}` : `
 #[pyfunction]
 #[pyo3(signature = (${signature}))]
 fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
@@ -561,7 +588,7 @@ fn ${name}<'py>(py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
 ${lines.join('\n')}
     })
 }
-${awaits(fn) ? awaitedFunction(name) : ''}`;
+${awaits(fn) ? awaitedFunction(name, false) : ''}`;
   }
   // GN-6: the Rust name of a method is member_<name> and its Python name an attribute, so that no name of a member meets
   // a naming convention of the lints for methods (from_*, to_*, into_*, is_*, the names of std traits); a hook keeps
@@ -570,6 +597,23 @@ ${awaits(fn) ? awaitedFunction(name) : ''}`;
   const attributes = fn.special === 'stringify' ? [] : ({ static: ['#[staticmethod]', `#[pyo3(name = ${pyName}, signature = (${signature}))]`], method: [`#[pyo3(name = ${pyName}, signature = (${signature}))]`], property: [`#[getter(${name})]`] }[fn.kind] ?? []);
   const self = fn.receiver === undefined ? '' : '&self, ';
   const ident = fn.special === 'stringify' ? name : `member_${name}`;
+  if (onLoop) {
+    const onto = fn.receiver === undefined ? 'Self::' : 'self.';
+    return `
+${attributes.map((a) => `    ${a}`).join('\n')}
+    fn ${ident}<'py>(${self}py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
+        ${onto}on_loop_${name}(py, None${passed})
+    }
+
+    /// GN-6ae: ${name} with the event loop on which a value that its function returned is awaited; None is no loop.
+${fn.receiver === undefined ? '    #[staticmethod]\n' : ''}    #[pyo3(name = ${rustString(onLoopName(name))}, signature = (${loopSignature}))]
+    fn on_loop_${name}<'py>(${self}py: Python<'py>${loopParam}${params}) -> PyResult<Bound<'py, PyAny>> {
+        guard(py, || {
+${lines.map((l) => `    ${l}`).join('\n')}
+        })
+    }
+${awaitedMethod(fn, name, true)}`;
+  }
   return `
 ${attributes.map((a) => `    ${a}`).join('\n')}
     fn ${ident}<'py>(${self}py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
@@ -577,36 +621,51 @@ ${attributes.map((a) => `    ${a}`).join('\n')}
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
     }
-${awaits(fn) ? awaitedMethod(fn, name) : ''}`;
+${awaits(fn) ? awaitedMethod(fn, name, false) : ''}`;
 }
 
 // GN-6m: the Python name of the awaitable of a member that waits; CK-16 keeps it apart from every other name.
 export const awaitedName = (fn: Fn): string => `a${memberName('python', fn)}`;
 
-// GN-6m: a<name> of a function runs <name> in asyncio.to_thread; the arguments are judged when <name> runs.
-const awaitedFunction = (name: string): string => `
+// GN-6ae: the parameter of the event loop of the entry _<name>_on_loop. It ends with an underscore, which no name of a
+// contract does, and is positional only, so that it meets no parameter of the member.
+const ON_LOOP = 'event_loop_';
+
+// GN-6ae: the Python name of the entry of a member that takes the event loop of the caller of a<name>; it starts with an
+// underscore, which no name of a contract does.
+const onLoopName = (name: string): string => `_${name}_on_loop`;
+
+// GN-6ae: the parameters of a function type of a member, and whether the driver settles a value that one of them
+// returned on an event loop: the function may return an awaitable (async_allowed).
+const functionArgs = (fn: Fn): Arg[] => fn.args.filter((a) => typeof a.type === 'object' && 'function' in a.type);
+const settles = (fn: Fn): boolean => fn.machine === true && functionArgs(fn).some((a) => typeof a.type === 'object' && 'function' in a.type && a.type.function.async_allowed);
+
+// GN-6m: a<name> of a function runs <name> in asyncio.to_thread; the arguments are judged when <name> runs. GN-6ae:
+// a<name> of a member whose function may return an awaitable runs _<name>_on_loop there with the running event loop.
+const awaitedFunction = (name: string, onLoop: boolean): string => `
 #[pyfunction(name = ${rustString(`a${name}`)}, signature = (*args, **kwargs))]
 fn a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-    awaited(py, wrap_pyfunction!(${name}, py)?.into_any(), args, kwargs)
+    ${onLoop ? `awaited_on_loop(py, wrap_pyfunction!(on_loop_${name}, py)?.into_any(), args, kwargs)` : `awaited(py, wrap_pyfunction!(${name}, py)?.into_any(), args, kwargs)`}
 }
 `;
 
 // GN-6m: a<name> of a method or a static method runs the bound <name> in asyncio.to_thread.
-function awaitedMethod(fn: Fn, name: string): string {
+function awaitedMethod(fn: Fn, name: string, onLoop: boolean): string {
+  const [via, member] = onLoop ? ['awaited_on_loop', onLoopName(name)] : ['awaited', name];
   const attribute = `#[pyo3(name = ${rustString(`a${name}`)}, signature = (*args, **kwargs))]`;
   if (fn.receiver === undefined) {
     return `
     #[staticmethod]
     ${attribute}
     fn member_a${name}<'py>(py: Python<'py>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-        awaited(py, py.get_type::<Self>().getattr(${rustString(name)})?, args, kwargs)
+        ${via}(py, py.get_type::<Self>().getattr(${rustString(member)})?, args, kwargs)
     }
 `;
   }
   return `
     ${attribute}
     fn member_a${name}<'py>(slf: &Bound<'py, Self>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-        awaited(slf.py(), slf.getattr(${rustString(name)})?, args, kwargs)
+        ${via}(slf.py(), slf.getattr(${rustString(member)})?, args, kwargs)
     }
 `;
 }
@@ -779,6 +838,138 @@ function traitParam(model: Model, type: Type): string {
   return `&${rustType(model, type)}`;
 }
 
+// GN-6ae: the lines that make the closure of a function parameter from a Python callable. The closure owns a reference
+// to the callable; each call takes the GIL on the thread on which the machine calls it, makes the Python value of each
+// argument, a class argument as a new instance of its class, and gives what the callable returned as a Passthrough, or
+// its exception as a Raised.
+function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
+  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return [
+    `        let ${name} = callable_in(py, ${name}, ${subject})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    '            Python::attach(|py| {',
+    '                let call = || -> PyResult<binding_core::Passthrough> {',
+    `                    let returned = ${name}.bind(py).call1((${parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}?,`).join(' ')}))?;`,
+    '                    Ok(pass(returned.unbind()))',
+    '                };',
+    '                call().map_err(|error| thrown(py, error))',
+    '            })',
+    '        };',
+  ];
+}
+
+// GN-6ae, B-3: the table of the values that the functions of Python code returned, each under the handle of its
+// Passthrough; the check of a callable that enters; and, for a function that may return an awaitable, the coroutine
+// functions of the awaited form and the outcome of a value on the event loop of the caller.
+function passingRust(model: Model, layout: PythonLayout): string {
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
+  const takes = fns.some((fn) => functionArgs(fn).length > 0);
+  const returns = fns.some((fn) => typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+  const awaitsValue = fns.some(settles);
+  if (!takes && !returns) return '';
+  return `
+thread_local! {
+    /// GN-6ae, B-3: the values that the functions of Python code returned, each until its Passthrough ends. A machine
+    /// runs on the thread of its call from its start to its end, so a value enters and leaves the table of one thread.
+    static PASSED: RefCell<BTreeMap<u64, Py<PyAny>>> = const { RefCell::new(BTreeMap::new()) };
+}
+${takes ? `
+static NEXT_PASSED: AtomicU64 = AtomicU64::new(1);
+
+/// GN-6ae: holds a Python value in the table, which the core moves and never reads.
+fn pass(value: Py<PyAny>) -> binding_core::Passthrough {
+    let handle = NEXT_PASSED.fetch_add(1, Ordering::Relaxed);
+    PASSED.with_borrow_mut(|map| map.insert(handle, value));
+    binding_core::Passthrough::from_generated(binding_core::Handle::new(handle), release_passed)
+}
+
+/// GN-6ae: removes the value of a Passthrough that the core dropped. The value ends with the GIL, after the table is
+/// released, because its finalizer may run Python code that enters the binding again; a thread that ends holds no
+/// table.
+fn release_passed(handle: binding_core::Handle) {
+    let gone = PASSED.try_with(|map| map.borrow_mut().remove(&handle.raw()));
+    Python::attach(|_py| drop(gone));
+}
+
+/// GN-6ae: a function parameter takes a Python callable (kind invalid_callback), to which the closure keeps a
+/// reference.
+fn callable_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
+    if !value.is_callable() {
+        return Err(binding_error(py, BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    Ok(value.clone().unbind())
+}
+` : ''}
+/// GN-6ae: the value of a Passthrough, which leaves the table unchanged; a handle that names no value is kind internal.
+fn passed(value: binding_core::Passthrough) -> Result<Py<PyAny>, BindingError> {
+    let handle = value.into_handle();
+    PASSED
+        .with_borrow_mut(|map| map.remove(&handle.raw()))
+        .ok_or_else(|| BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") })
+}
+${returns ? `
+/// GN-6ae: the value of a result passthrough, the object that the function returned.
+fn passed_out(py: Python<'_>, value: binding_core::Passthrough) -> PyResult<Bound<'_, PyAny>> {
+    match passed(value) {
+        Ok(object) => Ok(object.into_bound(py)),
+        Err(error) => Err(binding_error(py, error)),
+    }
+}
+` : ''}${awaitsValue ? `
+/// GN-6ae: a coroutine function of the awaited form: on_loop runs a member in a thread of asyncio with the running
+/// event loop of its caller as the first argument, and settle awaits an awaitable as a coroutine, which
+/// asyncio.run_coroutine_threadsafe takes.
+fn awaiting<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+    static AWAITING: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
+    let module = AWAITING.get_or_try_init(py, || {
+        let code = c"import asyncio\\n\\n\\nasync def on_loop(member, /, *args, **kwargs):\\n    return await asyncio.to_thread(member, asyncio.get_running_loop(), *args, **kwargs)\\n\\n\\nasync def settle(awaitable, /):\\n    return await awaitable\\n";
+        PyModule::from_code(py, code, c"_awaiting.py", c${JSON.stringify(`${layout.module}._awaiting`)}).map(Bound::unbind)
+    })?;
+    module.bind(py).getattr(name)
+}
+
+/// GN-6ae: the awaitable of a member whose function may return an awaitable: the member runs in a thread of asyncio and
+/// takes the running event loop of the caller, on which the driver settles such a value.
+fn awaited_on_loop<'py>(py: Python<'py>, member: Bound<'py, PyAny>, args: &Bound<'py, PyTuple>, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+    let mut all = vec![member];
+    all.extend(args.iter());
+    awaiting(py, "on_loop")?.call(PyTuple::new(py, all)?, kwargs)
+}
+
+/// GN-6ae: the outcome of a value that a function of Python code returned. A value that is no awaitable is settled at
+/// once. An awaitable is awaited as a coroutine on the event loop of the caller of the awaited member, whose worker
+/// thread waits for its outcome while the wait of the future releases the GIL: its value, or the exception that it
+/// raised. Without an event loop no code can await it: a coroutine is closed, and the call fails with kind
+/// invalid_callback, whose message names the awaited member.
+fn settled<'py>(py: Python<'py>, value: binding_core::Passthrough, event_loop: Option<&Bound<'py, PyAny>>, subject: &str, awaited: &str) -> Result<Result<binding_core::Passthrough, binding_core::Raised>, BindingError> {
+    let object = passed(value)?.into_bound(py);
+    let awaitable = || -> PyResult<bool> { py.import("inspect")?.getattr("isawaitable")?.call1((&object,))?.extract() };
+    match awaitable() {
+        Ok(true) => {}
+        Ok(false) => return Ok(Ok(pass(object.unbind()))),
+        Err(error) => return Ok(Err(raised(py, error))),
+    }
+    let Some(event_loop) = event_loop else {
+        let closed = object.hasattr("close").and_then(|closes| if closes { object.call_method0("close").map(|_closed| ()) } else { Ok(()) });
+        if let Err(error) = closed {
+            error.write_unraisable(py, None);
+        }
+        return Err(BindingError::InvalidCallback { subject: subject.to_owned(), member: format!("that returns no awaitable; {awaited} awaits one") });
+    };
+    let outcome = || -> PyResult<Bound<'py, PyAny>> {
+        let coroutine = awaiting(py, "settle")?.call1((&object,))?;
+        let future = py.import("asyncio")?.getattr("run_coroutine_threadsafe")?.call1((coroutine, event_loop))?;
+        future.call_method0("result")
+    };
+    match outcome() {
+        Ok(value) => Ok(Ok(pass(value.unbind()))),
+        Err(error) => Ok(Err(raised(py, error))),
+    }
+}
+` : ''}`;
+}
+
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -794,10 +985,15 @@ fn thrown_map() -> MutexGuard<'static, BTreeMap<u64, Py<PyAny>>> {
     }
 }
 
-fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
+/// U-3: keeps an exception of Python code under the handle of its Raised.
+fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+
+fn thrown(py: Python<'_>, error: PyErr) -> binding_core::Failure<${model.coreError ?? '()'}> {
+    binding_core::Failure::Raised(raised(py, error))
 }
 
 fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreError ?? '()'}>) -> PyErr {
@@ -901,7 +1097,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
   const recognizes = model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined));
-  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailurePython(model);
+  const rest = model.callbacks.map((c) => callbackRust(model, c)).join('') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + passingRust(model, layout) + foreignFailurePython(model);
   const draft = functions + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest;
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn )\\bout_${rustField(o.unit.name)}\\(`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + rest;
@@ -924,6 +1120,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
     ...model.functions.filter(awaits).map((fn) => `    module.add_function(wrap_pyfunction!(${awaitedName(fn)}, module)?)?;`),
+    ...model.functions.filter(settles).map((fn) => `    module.add_function(wrap_pyfunction!(on_loop_${langName('python', fn.member.name, 'callable')}, module)?)?;`),
     ...model.objects.map((o) => `    module.add_class::<Py${langName('python', o.unit.name, 'class')}>()?;`),
   ].join('\n');
   const classChecks = model.classes.map((c) => `    errors(module.py())?.getattr(${rustString(c.name)})?;`).join('\n');
@@ -934,7 +1131,7 @@ use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 ${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
-${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
+${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bRefCell\b/.test(objects) ? 'use std::cell::RefCell;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1046,6 +1243,9 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('map' in type) return `dict[str, ${pyType(model, type.map, input)}]`;
   if ('keyed_map' in type) return `dict[${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? 'object').join(' | ')}, ${pyType(model, type.keyed_map, input)}]`;
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
+  // GN-6ae: a function parameter is a callable of its parameters, whose value is any object, which a passthrough is.
+  if ('function' in type) return `Callable[[${type.function.parameters.map((part) => pyType(model, part, false)).join(', ')}], object]`;
+  if ('passthrough' in type) return 'object';
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
   // U-7: a value alias is any value that its core judges.
@@ -1230,7 +1430,7 @@ function nativePyi(model: Model): string {
     return `\n@final\nclass ${langName('python', o.unit.name, 'class')}:\n${lines.join('\n')}\n`;
   });
   return `${pyHeader()}
-from collections.abc import ${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
+from collections.abc import ${/\bCallable\[/.test([...fns, ...classes].join('\n')) ? 'Callable, ' : ''}${model.objects.some((o) => o.members.some((f) => f.kind === 'iterate')) ? 'Iterator, ' : ''}Sequence
 from typing import ${/\bNoReturn\b/.test([...fns, ...classes].join('\n')) ? 'NoReturn, ' : ''}final
 ${enumImports.length > 0 ? `from ._types import ${enumImports.join(', ')}\n` : ''}${foreignImports(model).map((line) => `${line}\n`).join('')}
 ${fns.join('\n')}

@@ -765,6 +765,21 @@ the design ids are those of the binding design.
     `Raised` of U-3, so `failure_error` throws the same object again. The table of the values is a thread-local map
     from a handle to a `Zval`; the release function takes the value out of the table and ends it after the table is
     released, because the destructor of a PHP value may run PHP code that enters the binding again.
+  - Python: the parameter takes a callable (`callable()`; any other value is kind `invalid_callback`), declared in
+    `_native.pyi` as `Callable[[<parameters>], object]`, and the result is `object`. The closure keeps a reference to
+    the callable and calls it with the GIL of the thread on which the machine calls it (`Python::attach`); an
+    exception of its code is kept as the `Raised` of U-3, so the caller gets the same exception object. The table of
+    the values is a thread-local map from a handle to a `Py<PyAny>`: the machine runs on the thread of its call from
+    its start to its end, `<name>` on the thread of the caller and `a<name>` on its worker thread, so a value enters
+    and leaves the table of one thread, and a released value ends with the GIL. A member whose function may return an
+    awaitable has the entry `_<name>_on_loop(<event loop>, /, <parameters>)`: `<name>` calls it with no loop, and
+    `a<name>` is a coroutine that runs it in `asyncio.to_thread` with the running event loop of its caller. The
+    driver asks `inspect.isawaitable` of each value that the function returned: a value that is no awaitable is
+    settled at once; an awaitable is wrapped in a coroutine, given to that loop with
+    `asyncio.run_coroutine_threadsafe`, and the worker thread waits for the outcome of its future, which releases the
+    GIL; without a loop a coroutine is closed, so that Python does not warn that it was never awaited, and the call
+    fails with kind `invalid_callback`. The two coroutine functions are a module that the crate makes from its own
+    source when it first needs one, because Rust code writes no `async def`.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
     the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
@@ -788,11 +803,14 @@ the design ids are those of the binding design.
     loop. PHP and Go have no awaitable, so there the same fixture is a plain function, whose value the driver
     settles at once: a case with the marker runs on the five targets and requires the same result, exception and
     `after` on each.
-  Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
+  Not generated yet (G-4): Node, Go and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP generates the member. The PHP test writes the function fixture, the test of a case with `raises:
-  "callback"`, which requires the same exception object, the calls of `after`, and a test that a value that is no
-  callable is kind `invalid_callback`; the test of another target does not yet. The contract of the end-to-end sample
+  yet"; PHP and Python generate the member. The PHP and Python tests write the function fixture, the test of a case
+  with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a value
+  that is no callable is kind `invalid_callback`; the test of another target does not yet. A Python function fixture
+  is a function of the test module, because a lambda holds no statement, and the Python test also requires that
+  `<name>` given a function that returns an awaitable is kind `invalid_callback` with a message that names
+  `a<name>`. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns

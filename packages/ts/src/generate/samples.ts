@@ -395,6 +395,11 @@ function functionFixture(model: Model, ctx: Context, type: Extract<Type, { funct
   return ctx.functionNew({ parameters: type.parameters.length, awaits, steps, end: { raise: ctx.errorNew(unit, kind, FIXTURE_RAISED) } });
 }
 
+// GN-6ae (CK-22): whether an argument of a case is a function fixture that names awaits, so that the test of a language
+// with awaitables calls the awaited form of the member.
+export const awaitsFunction = (args: Map<Arg, unknown>): boolean =>
+  [...args.values()].some((value) => (value as { function?: { awaits?: unknown } } | null)?.function?.awaits === true);
+
 // GN-6ae: whether a value of a case holds a function fixture that raises the exception of the language.
 export const raisesException = (value: unknown): boolean => {
   if (typeof value !== 'object' || value === null) return false;

@@ -1,11 +1,21 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: b3bddc1ae97056a9c926232107ad18ac7afeb1871132789dde24a3a27d5cf677 -->
+<!-- source-sha256: 1344bd0f635b9ec5c47070f32ad8f2d4b6a79442cc7ff99dd3c48dcd5744b647 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. Python binding은 이제 그것을
+  생성한다. callable은 들어올 때 검사하고(kind `invalid_callback`), closure는 GIL을 쥐고 그것을 부르며 각 class 인자를 새
+  인스턴스로 준다. 그것이 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐고, member는 그 객체를 그대로
+  돌려준다. 함수가 awaitable을 돌려줄 수 있는 member에는 진입 `_<name>_on_loop`가 있다. `a<name>`은 호출자의 돌고 있는
+  event loop와 함께 그것을 asyncio의 스레드에서 돌리고, driver는 그 loop에서 `asyncio.run_coroutine_threadsafe`로
+  awaitable을 기다린다. awaitable을 받은 `<name>`은 그것을 닫고 `a<name>`을 이름하는 message의 kind `invalid_callback`으로
+  실패한다. Python 시험은 함수 fixture를 시험 module의 함수로, `awaits`가 있는 fixture를 coroutine 함수로 쓰고, step의
+  결과, `raises: "callback"` case, `after`의 호출을 쓴다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Python
+  crate와 Python 시험의 시험은 통과한다. 모든 target으로 sample을 생성하는 시험은 Node, Go, WASM의 거부로 아직 실패한다.
+  이 변경에 대해 sample의 end-to-end 검사는 실행하지 않았다.
 - `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
   않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
   정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:

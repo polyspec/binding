@@ -3002,7 +3002,9 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  for (const [target, name] of [['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+  // PHP and Python generate the member.
+  for (const target of ['php', 'python']) assert.doesNotThrow(() => sample(scoped, [target]), target);
+  for (const [target, name] of [['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
     assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
@@ -3192,4 +3194,84 @@ test('no helper of a generated PHP crate has a name of the conversions of a unit
   const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
   const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
   assert.deepEqual(others, []);
+});
+
+test('no helper of a generated Python crate has a name of the conversions of a unit, in_<unit> and out_<unit> (GN-4c)', () => {
+  const lib = text(scopedSample(['python'], helperNamed), 'packages/python/generated/lib.rs');
+  const names = functionNames(lib);
+  for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, name);
+  assert.match(lib, /\nfn in_default\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<polyspec_sample::Default> \{/);
+  assert.match(lib, /\nfn default_in<'py, T>\(/);
+  assert.match(lib, /\nfn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{/);
+  assert.match(lib, /\nfn text_in\(/);
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
+  const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
+  assert.deepEqual(others, []);
+});
+
+test('Python makes a closure of a callable, holds its value in the passthrough table and settles an awaitable on the event loop of the caller (GN-6ae)', () => {
+  const out = scopedSample(['python']);
+  const lib = text(out, 'packages/python/generated/lib.rs');
+  // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
+  assert.match(lib, /fn callable_in\(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str\) -> PyResult<Py<PyAny>> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(py, BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  // The closure takes the GIL on the thread of its call, makes a new instance of the class of each class argument,
+  // calls the callable and stores what it returned in the table; an exception of the callable is a Raised.
+  assert.match(lib, /let work = callable_in\(py, work, "work"\)\?;\n\s+let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+Python::attach\(\|py\| \{\n\s+let call = \|\| -> PyResult<binding_core::Passthrough> \{\n\s+let returned = work\.bind\(py\)\.call1\(\(out_scope\(py, arg0\)\?,\)\)\?;\n\s+Ok\(pass\(returned\.unbind\(\)\)\)\n\s+\};\n\s+call\(\)\.map_err\(\|error\| thrown\(py, error\)\)\n\s+\}\)\n\s+\};/);
+  // The plain member has no event loop; _<name>_on_loop takes one, positional only, and a<name> runs it in a thread of
+  // asyncio with the running event loop of its caller.
+  assert.match(lib, /#\[pyo3\(name = "transaction", signature = \(work\)\)\]\n {4}fn member_transaction<'py>\(&self, py: Python<'py>, work: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n {8}self\.on_loop_transaction\(py, None, work\)\n {4}\}/);
+  assert.match(lib, /#\[pyo3\(name = "_transaction_on_loop", signature = \(event_loop_, \/, work\)\)\]\n {4}fn on_loop_transaction<'py>\(&self, py: Python<'py>, event_loop_: Option<&Bound<'py, PyAny>>, work: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{/);
+  assert.match(lib, /fn member_atransaction<'py>\(slf: &Bound<'py, Self>, [^\n]*\n {8}awaited_on_loop\(slf\.py\(\), slf\.getattr\("_transaction_on_loop"\)\?, args, kwargs\)/);
+  assert.match(lib, /async def on_loop\(member, \/, \*args, \*\*kwargs\):\\n {4}return await asyncio\.to_thread\(member, asyncio\.get_running_loop\(\), \*args, \*\*kwargs\)/);
+  // The machine takes a clone of the value of the instance and the closure, waits without the GIL, and the driver
+  // settles each value that the function returned.
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\), \|io\| driven\(py\.detach\([^\n]*\)\), \|value\| settled\(py, value, event_loop_, "work", "atransaction"\)\)/);
+  // An awaitable is awaited as a coroutine on the event loop of the caller, and without a loop it is kind
+  // invalid_callback with the name of the awaited member; a value that is no awaitable is settled at once.
+  assert.match(lib, /fn settled<'py>\(py: Python<'py>, value: binding_core::Passthrough, event_loop: Option<&Bound<'py, PyAny>>, subject: &str, awaited: &str\) -> Result<Result<binding_core::Passthrough, binding_core::Raised>, BindingError> \{/);
+  assert.match(lib, /Ok\(false\) => return Ok\(Ok\(pass\(object\.unbind\(\)\)\)\),/);
+  assert.match(lib, /return Err\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: format!\("that returns no awaitable; \{awaited\} awaits one"\) \}\);/);
+  assert.match(lib, /let coroutine = awaiting\(py, "settle"\)\?\.call1\(\(&object,\)\)\?;\n\s+let future = py\.import\("asyncio"\)\?\.getattr\("run_coroutine_threadsafe"\)\?\.call1\(\(coroutine, event_loop\)\)\?;\n\s+future\.call_method0\("result"\)/);
+  // B-3: the table of the values of a thread, its release function, and the result that leaves the table unchanged.
+  assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Py<PyAny>>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
+  assert.match(lib, /fn pass\(value: Py<PyAny>\) -> binding_core::Passthrough \{[^}]*binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);
+  assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{\n {4}let gone = PASSED\.try_with\(\|map\| map\.borrow_mut\(\)\.remove\(&handle\.raw\(\)\)\);\n {4}Python::attach\(\|_py\| drop\(gone\)\);\n\}/);
+  assert.match(lib, /\.ok_or_else\(\|\| BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)/);
+  assert.match(lib, /\n\s+passed_out\(py, result\)\n/);
+  assert.match(lib, /\nuse std::cell::RefCell;\n/);
+  // The declaration: a callable of the scope that returns any object, which the member returns.
+  const stub = text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi');
+  assert.match(stub, /^from collections\.abc import Callable, /m);
+  assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
+  // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
+  const plain = text(scopedSample(['python'], (contract) => {
+    for (const id of ['store.transaction', 'scope.nested']) member(contract, id).parameters[0].type.function.async_allowed = false;
+  }), 'packages/python/generated/lib.rs');
+  assert.match(plain, /\|io\| driven\(py\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
+  assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);
+});
+
+test('the Python test writes a function fixture as a function of the module, a fixture with awaits as a coroutine function, raises callback and after (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['python']), 'packages/python/generated/tests/test_generated.py');
+  // A step calls a method on the argument at its position, a step that names a result requires it, and the function
+  // returns its result, a value of GN-13.
+  assert.match(tests, /\ndef (_function_\d+)\(\*args\):  # noqa: ANN002, ANN202\n {4}args\[0\]\.put\("a", "1"\)\n {4}result_1 = args\[0\]\.get\("a"\)\n {4}expected_1 = "1"\n {4}if not _same\(result_1, expected_1\):\n {8}raise AssertionError\(f"\{result_1!r\} is not \{expected_1!r\}"\)\n {4}return "done"\n/);
+  const committing = /\ndef (_function_\d+)\(\*args\):[^\n]*\n(?: {4}[^\n]*\n)*? {4}return "done"\n/.exec(tests)?.[1] ?? '';
+  assert.match(tests, new RegExp(String.raw`def test_gn13e_store_transaction_the_entries_of_a_function_that_returns_are_committed\(self\) -> None:\n {8}receiver = pkg\.Store\(\)\n {8}result = receiver\.transaction\(${committing}\)\n {8}expected = "done"\n {8}self\.assertTrue\(_same\(result, expected\), [^\n]*\n {8}after_0 = receiver\.get\("a"\)\n {8}expected_0 = "1"\n {8}self\.assertTrue\(_same\(after_0, expected_0\), `));
+  // An argument of a function type of a step is again a function of the module.
+  assert.match(tests, /\n {4}args\[0\]\.nested\(_function_\d+\)\n/);
+  // A fixture with awaits is a coroutine function, whose steps await the awaited form of a member that waits, and
+  // the test of its case calls the awaited form on an event loop.
+  assert.match(tests, /\nasync def (_function_\d+)\(\*args\):  # noqa: ANN002, ANN202\n {4}args\[0\]\.put\("a", "1"\)\n {4}await args\[0\]\.anested\(_function_\d+\)\n(?: {4}[^\n]*\n)* {4}return "awaited"\n/);
+  assert.match(tests, /def test_gn13e_store_transaction_the_entries_of_a_function_that_awaits_are_committed\(self\) -> None:\n {8}receiver = pkg\.Store\(\)\n {8}result = asyncio\.run\(receiver\.atransaction\(_function_\d+\)\)\n {8}expected = "awaited"\n/);
+  assert.match(tests, /^import asyncio\n/m);
+  // raises "callback": the function raises the exception that the test holds, the caller gets the same object, and
+  // after observes the receiver after the failed call; an awaitable that raises gives the same.
+  assert.match(tests, /\n_raised: list\[BaseException\] = \[\]\n/);
+  assert.match(tests, /def test_gn6ae_store_transaction_the_entries_of_a_function_that_raises_are_dropped\(self\) -> None:\n {8}receiver = pkg\.Store\(\)\n {8}raised = LookupError\("raised by the function of the case"\)\n {8}_raised\[:\] = \[raised\]\n {8}with self\.assertRaises\(LookupError\) as caught:\n {12}receiver\.transaction\(_function_\d+\)\n {8}self\.assertIs\(caught\.exception, raised\)\n {8}after_0 = receiver\.get\("a"\)\n {8}expected_0 = None\n/);
+  assert.match(tests, /def test_gn6ae_store_transaction_the_entries_of_an_awaitable_that_raises_are_dropped\(self\) -> None:\n(?: {8}[^\n]*\n)*? {12}asyncio\.run\(receiver\.atransaction\(_function_\d+\)\)\n {8}self\.assertIs\(caught\.exception, raised\)\n/);
+  assert.match(tests, /\n {4}raise _raised\[0\]\n/);
+  // A value that is no callable is kind invalid_callback, and so is an awaitable that the plain member cannot await.
+  assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_what_is_no_callable\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(1\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)/);
+  assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_an_awaitable_without_an_event_loop\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(_function_\d+\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)\n {8}self\.assertIn\("atransaction", str\(caught\.exception\)\)/);
 });
