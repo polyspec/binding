@@ -2052,6 +2052,44 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'async_driver'; }, ['node']), /tag\.new: a constructor with wait async_driver is not generated \(GN-6n\)/);
 });
 
+test('a member with wait blocking_io that reaches language code runs where its language references may be used (GN-6q)', () => {
+  const sample = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = sample();
+  const token = 'binding_core::Io::for_generated_call()';
+  // PHP: the core calls the callback on the calling thread.
+  assert.ok(text(out, 'packages/php-ext/generated/lib.rs').includes(`polyspec_sample::resolve_slowly(${token}, `), 'PHP passes the token');
+  // Python: the call runs without the GIL, each callback call takes the GIL on the thread of the core, and a callback
+  // with thread owner has no check of the thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| [^\n]*polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), /);
+  assert.match(python, /#\[pyfunction\(name = "aresolve_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.doesNotMatch(python, /WrongThread|std::thread::current/);
+  const pyTests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(pyTests, /def test_gn6q_resolve_slowly_awaits_a_callback_on_the_thread_of_to_thread\(self\) -> None:\n {8}raised = LookupError\("raised by the callback"\)\n {8}with self\.assertRaises\(LookupError\) as caught:\n {12}asyncio\.run\(pkg\.aresolve_slowly\(/);
+  // Node: the call runs synchronously on the JavaScript thread, and the entry still returns a Promise.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  const entry = node.slice(node.indexOf('pub fn resolve_slowly<'), node.indexOf('\n}\n', node.indexOf('pub fn resolve_slowly<')));
+  assert.match(entry, /polyspec_sample::resolve_slowly\(binding_core::Io::for_generated_call\(\), &mut lookup, &key\)/);
+  assert.doesNotMatch(entry, /waiting\(env/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.resolveSlowly\(/);
+  // Node and PHP keep the check of a callback with thread owner.
+  assert.match(node, /BindingError::WrongThread/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
+  // Go refuses a member with blocking_io by name; a member with async_driver that reaches language code is refused.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
+    contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
+  };
+  assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
+  assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
+});
+
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
