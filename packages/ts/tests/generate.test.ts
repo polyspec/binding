@@ -1601,7 +1601,7 @@ test('a member named by a word that JavaScript reserves is defined by its key, a
   const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node', 'wasm'] });
   const node = text(out, 'packages/ts/generated/index.cjs');
   for (const word of RESERVED) assert.ok(!new RegExp(`function ${word}\\(`).test(node), `no function expression is named ${word}`);
-  assert.match(node, /Object\.defineProperty\(Token, "null", \{\n\s+value: \{ \["null"\]\(\.\.\.args\) \{/);
+  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\(\.\.\.args\) \{/);
   const dir = mkdtempSync(join(tmpdir(), 'binding-reserved-'));
   try {
     writeFileSync(join(dir, 'index.cjs'), node);

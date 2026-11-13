@@ -1168,9 +1168,9 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
-    },
+    } }[${jsString(name)}],
     writable: true,
     configurable: true,
   });

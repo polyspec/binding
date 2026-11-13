@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- JavaScript가 예약한 낱말을 이름으로 가진 Node class member(json `Value`의 static member `null`)는 진입점이
+  `function null(...args)`로 정의해서 진입점이 파싱되지 않았다(SyntaxError). 이제 진입점은 addon 위의 각 member를 계산된 key
+  `<name>`의 메서드로 쓰고 그 메서드는 `<name>`을 `name`으로 지니며, JavaScript의 모든 예약어를 Node 진입점과 WASM module에
+  대해 시험한다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
 - Python 파서가 받는 것보다 깊게 중첩된 Python case 값(json `value.array`의 `array_past_limit`)은 import되지 않는 시험
   module을 냈다("too many nested parentheses"). 이제 괄호가 50단보다 깊게 중첩될 case 값은 시험 module 함수의 지역 변수로
   단계별로 만들고 시험이 그 함수를 부르므로, case는 온전히 남는다(GN-13e). `packages/ts`의 `npm test`로 검증했다.
