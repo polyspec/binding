@@ -1919,9 +1919,10 @@ test('a class parameter gives the core the borrow that its core names, which eve
     assert.ok(lib.includes('const _: () = {\n    let _: fn(polyspec_classes::Tag) -> _ = polyspec_classes::shout;\n};'), `${crate} asserts the borrow of shout`);
     assert.ok(lib.includes('const _: () = {\n    let _: fn(&polyspec_classes::Tag, &mut polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the borrows of same`);
   }
-  // A parameter that names no borrow is asserted by nothing.
-  const plain = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
-  for (const crate of LIBS) assert.doesNotMatch(text(plain, crate), /let _: fn\(/, crate);
+  // G-4: a class parameter that names no borrow is refused by name, as the contract check reports it (CK-67).
+  delete param('tag.same').core;
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /tag\.same\.other: a class parameter names the borrow that the core takes in core \(GN-6h\)/);
+  param('tag.same').core = '&mut';
   // G-4: the borrow of an optional of a class is refused by name.
   param('classes.shout').type = { optional: { unit: 'tag' } };
   assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /classes\.shout\.tag: the borrow of an optional class is not generated yet/);

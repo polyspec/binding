@@ -316,7 +316,8 @@
               "type": {
                 "unit": "tag"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": {
@@ -1023,7 +1024,8 @@
               "type": {
                 "unit": "counter"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": "none",
@@ -1049,7 +1051,8 @@
               "type": {
                 "unit": "counter"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": "uint",

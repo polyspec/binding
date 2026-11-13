@@ -548,6 +548,17 @@ describe('CK-8 the kinds of an alias (U-7, E-5)', () => {
 describe('CK-67 the borrow of a class parameter', () => {
   test('a borrow of a parameter whose type is no class', () =>
     fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => { member(c, 'forms.parse').parameters[0].core = '&mut'; }));
+  test('a class parameter that names no borrow', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/1/core`, (c) => {
+      member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { unit: 'session' }, required: true });
+    }));
+  test('an optional class parameter that names no borrow', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/1/core`, (c) => {
+      member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { optional: { unit: 'session' } }, required: true });
+    }));
+  test('a class parameter that names its borrow is accepted', () => {
+    assert.deepEqual(findings((c) => { member(c, 'forms.parse').parameters.splice(1, 0, { name: ['other'], type: { unit: 'session' }, required: true, core: '&mut' }); }), []);
+  });
   test('a borrow of a list of a class', () =>
     fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => {
       const p = member(c, 'forms.parse').parameters[0];

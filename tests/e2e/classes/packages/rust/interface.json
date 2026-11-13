@@ -169,7 +169,8 @@
               "type": {
                 "unit": "tag"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": {
@@ -425,7 +426,8 @@
               "type": {
                 "unit": "tag"
               },
-              "required": true
+              "required": true,
+              "core": "&"
             }
           ],
           "returns": "bool",
