@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c51bb0a3065b6775cf9ce62cc554c056e9e07979fcc65865e3321cde8b95c3cf -->
+<!-- source-sha256: a87c9a43b98bcbb9701b43b3bca3cd57147bdf5614606b1be7647af2be54d6bb -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- library `core`, `binding`, `failure`, `library`를 이름하는 계약의 생성된 crate는 컴파일되지 않았다. 그 library의 오류의
+  helper `<library>_error`와 `<library>_failure_error`가 helper `core_error`, `binding_error`, `failure_error`,
+  `library_error`의 이름을 가졌기 때문이다. 이제 다섯 crate에서 `error_of_<library>`와 `failure_of_<library>`이고, 이
+  둘은 어떤 helper도 시작하지 않는 GN-4c의 계열이다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 그런 library마다 그
+  값 alias를 받는 계약의 crate를 생성하고 crate의 어떤 함수도 두 번 정의되지 않을 것을 요구한다. 변경 전에 그 시험은 Go
+  crate에서 `core_error`의 정의 둘을 찾았다. 이 변경으로 생성된 crate를 컴파일하지는 않았다.
 - sample의 `scope`처럼 class가 함수 parameter의 인자로만 쓰이는 계약의 Python crate는 clippy를 통과하지 못했다. 함수
   타입의 parameter를 들어오는 값으로 읽어서, 아무도 부르지 않는 변환 `in_<class>`가 crate에 있었기 때문이다. 그
   parameter는 함수로 나가는 값이므로 이제 함수 타입이 돌려주는 것만 들어오는 값으로 세고, 그 변환은 쓰지 않는다.

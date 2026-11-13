@@ -906,8 +906,8 @@ test('a value alias of another repository converts through the core of its owner
     assert.match(lib, /let \(root, mut source\) = polyspec_sample::data_to_out\(value\.borrow\(\)\);/, path);
     assert.doesNotMatch(lib, /\bfn (in|out)_data\b/, path);
     // A failure of the owner's in is of the owner's enum; its class is this library's class of the owner's category.
-    assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| sample_failure_error\(/, path);
-    assert.match(lib, /fn sample_error\([^)]*error: polyspec_sample::Error\)[^{]*\{\n    let class(: usize)? = match error \{\n        polyspec_sample::Error::Missing \{ \.\. \} => [^\n]*\n        polyspec_sample::Error::Unsupported \{ \.\. \} => [^\n]*\n(?:        polyspec_sample::Error::[^\n]*\n)*    \};/, path);
+    assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| failure_of_sample\(/, path);
+    assert.match(lib, /fn error_of_sample\([^)]*error: polyspec_sample::Error\)[^{]*\{\n    let class(: usize)? = match error \{\n        polyspec_sample::Error::Missing \{ \.\. \} => [^\n]*\n        polyspec_sample::Error::Unsupported \{ \.\. \} => [^\n]*\n(?:        polyspec_sample::Error::[^\n]*\n)*    \};/, path);
     // The callback gives the alias through the same conversions.
     assert.match(lib, new RegExp(`${helperName(path, 'in_optional')}\\([^\\n]*in_sample_data\\(`), path);
     assert.match(lib, /out_sample_data\((py|self\.env), value\)|out_sample_data\(value\)/, path);
@@ -933,7 +933,7 @@ test('a value alias of another repository is refused by name where it is not gen
     if (!contract.targets.includes('go')) contract.targets.push('go');
     contract.packages.go ??= { module: 'github.com/polyspec/consumer/packages/go' };
   })();
-  assert.match(text(go, 'packages/go/internal/ffi/generated/lib.rs'), /fn sample_failure_error\(/);
+  assert.match(text(go, 'packages/go/internal/ffi/generated/lib.rs'), /fn failure_of_sample\(/);
   // E-1b (a): an owner that forwards the kinds of a third library.
   assert.throws(generated(({ foreign }) => {
     foreign.get('sample').errors.kinds.push({ variant: 'polyspec_sample::Error::Other', library: 'third' });
@@ -3366,6 +3366,24 @@ test('the Python test writes a function fixture as a function of the module, a f
   // A value that is no callable is kind invalid_callback, and so is an awaitable that the plain member cannot await.
   assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_what_is_no_callable\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(1\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)/);
   assert.match(tests, /def test_gn6ae_store_transaction_work_refuses_an_awaitable_without_an_event_loop\(self\) -> None:\n {8}with self\.assertRaises\(pkg\.SampleTypeError\) as caught:\n {12}pkg\.Store\(\)\.transaction\(_function_\d+\)\n {8}self\.assertEqual\(caught\.exception\.kind, "invalid_callback"\)\n {8}self\.assertIn\("atransaction", str\(caught\.exception\)\)/);
+});
+
+test('the helpers of the error of another library share no name with a helper of the crate: libraries named core, binding, failure and library (GN-4c)', () => {
+  for (const library of ['core', 'binding', 'failure', 'library']) {
+    const { contract, caseFiles, foreign } = consumerSample();
+    const owner = foreign.get('sample');
+    owner.library = library;
+    const renamed = JSON.parse(JSON.stringify(contract).replaceAll('"library":"sample"', `"library":"${library}"`));
+    const out = generate({ contract: renamed, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign: new Map([[library, owner]]) });
+    const libs = [...out].filter(([path]) => path.endsWith('generated/lib.rs'));
+    assert.ok(libs.length >= 3, library);
+    for (const [path, lib] of libs) {
+      const names = functionNames(String(lib));
+      assert.deepEqual([...names].filter(([, count]) => count > 1).map(([name]) => name), [], `${library} ${path}`);
+      assert.equal(names.get(`error_of_${library}`), 1, `${library} ${path}`);
+      assert.equal(names.get(`failure_of_${library}`), 1, `${library} ${path}`);
+    }
+  }
 });
 
 test('Go recovers the panic of a method of a callback in the call, and the member panics with the same value (GN-15b, U-3)', () => {

@@ -1557,7 +1557,7 @@ export const aliasFn = (alias: ValueAlias): string => recordFn(alias.unit, alias
 
 // U-7 (a'): the Rust name of the function that turns a failure of the `in` of a library's alias into the language error.
 export const aliasFailureFn = (alias: ValueAlias): string =>
-  alias.library === undefined ? 'failure_error' : `${alias.library.replaceAll('-', '_')}_failure_error`;
+  alias.library === undefined ? 'failure_error' : `failure_of_${alias.library.replaceAll('-', '_')}`;
 
 // The value aliases of other repositories, one per library: the first of each names the library's error enum.
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>

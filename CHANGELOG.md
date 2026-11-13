@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The generated crates of a contract that names a library `core`, `binding`, `failure` or `library` did not compile:
+  the helpers of the error of that library, `<library>_error` and `<library>_failure_error`, had the names of the
+  helpers `core_error`, `binding_error`, `failure_error` and `library_error`. They are now `error_of_<library>` and
+  `failure_of_<library>`, two families of GN-4c with which no helper starts, in the five crates. Verified by `npm
+  test` in `packages/ts`, whose test generates the crates of a contract that takes a value alias of each such library
+  and requires that no function of a crate is defined twice; before the change it found two definitions of
+  `core_error` in the Go crate. The generated crates were not compiled for this change.
 - The Python crate of a contract whose class is only an argument of a function parameter, as `scope` of the sample
   is, did not pass clippy: the crate held the conversion `in_<class>`, which nothing called, because the parameters
   of a function type were read as values that come in. They go out to the function, so only what a function type

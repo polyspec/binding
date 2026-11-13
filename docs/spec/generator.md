@@ -151,7 +151,8 @@ the design ids are those of the binding design.
   unit of that name, which does not compile. The same holds for every function whose name comes from the contract: a
   name of the contract and a helper of the crate share no name. Such a function states its family first, and no
   helper starts with the prefix of a family: `in_` and `out_` (a unit), `held_` (a class at a parameter), `make_` (a
-  value alias), `alias_in_` (the entry of `codec-test`), `recognized_<callback>_<member>`, and `function_`, the
+  value alias), `alias_in_` (the entry of `codec-test`), `recognized_<callback>_<member>`, `error_of_<library>` and
+  `failure_of_<library>` (the error of another library, U-7), and `function_`, the
   entry of a function of a functions unit, to which an attribute gives the name of its language (`#[php(name =
   ...)]`, `#[pyfunction(name = ...)]`); the Python entry of a function with an event loop (GN-6ae) is
   `loop_function_<name>`. The members of a class are functions of its `impl` block, which holds no helper. The

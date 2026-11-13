@@ -272,16 +272,16 @@ export function foreignFailurePython(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(py: Python<'_>, error: ${error.path}) -> PyErr {
+fn error_of_${library}(py: Python<'_>, error: ${error.path}) -> PyErr {
     let class = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 
-fn ${library}_failure_error(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
+fn failure_of_${library}(py: Python<'_>, failure: binding_core::Failure<${error.path}>) -> PyErr {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(py, error),
+        binding_core::Failure::Kind(error) => error_of_${library}(py, error),
         binding_core::Failure::Raised(raised) => failure_error(py, binding_core::Failure::Raised(raised)),
         binding_core::Failure::Callback(error) => failure_error(py, binding_core::Failure::Callback(error)),
     }

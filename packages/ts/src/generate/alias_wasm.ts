@@ -372,16 +372,16 @@ export function foreignFailureWasm(model: Model, rest: string): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(error: ${error.path}) -> Fail {
+fn error_of_${library}(error: ${error.path}) -> Fail {
     let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${rest} }
 }
 
-fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Kind(error) => error_of_${library}(error),
         binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
         binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
     }

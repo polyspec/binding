@@ -1125,16 +1125,16 @@ function foreignFailureRust(model: Model): string {
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the category that its E-1 gives it.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn ${library}_error(error: ${error.path}) -> Fail {
+fn error_of_${library}(error: ${error.path}) -> Fail {
     let category: Category = match ${errorMatched({ codeOf: error.code }, 'error')} {
 ${arms}
     };
     Fail { category, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error), class: 0, properties: Vec::new(), raised: None }
 }
 
-fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fail {
+fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
     match failure {
-        binding_core::Failure::Kind(error) => ${library}_error(error),
+        binding_core::Failure::Kind(error) => error_of_${library}(error),
         binding_core::Failure::Raised(raised) => raised_fail(&raised),
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }

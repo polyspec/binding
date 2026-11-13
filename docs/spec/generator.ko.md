@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5d4fd1fb7886406d6cd1b6b47f71bf1df3d5983e9565eb6e0d226976e8765c42 -->
+<!-- source-sha256: 8c99bcf9c64d2563bbb5d244ac46e410e47d55190811253c047be56d984a091e -->
 # 생성기
 
 [English](generator.md)
@@ -121,7 +121,8 @@
   이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 계약에서 이름이 오는 모든
   함수에 같은 것이 적용된다: 계약의 이름과 crate의 helper는 같은 이름을 쓰지 않는다. 그런 함수는 자기 계열을 앞에 적고,
   helper는 어느 계열의 접두로도 시작하지 않는다: `in_`과 `out_`(unit), `held_`(parameter 자리의 class), `make_`(값
-  alias), `alias_in_`(`codec-test`의 진입), `recognized_<callback>_<member>`, 그리고 functions unit의 함수의 진입인
+  alias), `alias_in_`(`codec-test`의 진입), `recognized_<callback>_<member>`, `error_of_<library>`와
+  `failure_of_<library>`(다른 library의 오류, U-7), 그리고 functions unit의 함수의 진입인
   `function_`이다. 그 진입에는 attribute가 언어의 이름을 준다(`#[php(name = ...)]`, `#[pyfunction(name = ...)]`).
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
   함수이고, 그 블록에는 helper가 없다. 진입은 자기 module이 아니라 접두를 갖는다. 접두는 진입의 이름만 바꾸고 언어의
