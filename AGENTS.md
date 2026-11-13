@@ -98,3 +98,11 @@ rules of this repository.
   into sub-items or add tasks to it; do not create another checklist. Why: one list of tasks with their verification
   commands shows what is done and how it was checked.
   Enforced by: `make docs-check`
+- Own: No tracked file names a Git commit, of this repository or of another, except where a tool requires the commit:
+  a GitHub action is pinned by its commit on its `uses:` line, and a lock records what its package manager resolved. The
+  evidence of a run, such as the commit that an end-to-end run checked, is in its record under the ignored
+  `var/report/`; a changelog entry or a document states what was verified, by which command, on which inputs. Why: a
+  commit name says nothing to a reader who does not look it up, it does not survive a history that is rewritten or
+  shallow, and a fact that a reader needs belongs in the sentence itself.
+  Enforced by: `npm test` in `packages/ts`, whose `tests/tracked-commits.test.ts` fails a token of a commit name in a
+  tracked file.

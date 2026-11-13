@@ -90,3 +90,9 @@
   산출물, 검증 명령, 상태를 가진다. 작업은 하위 항목으로 나누거나 체크리스트에 더하고, 다른 체크리스트를 만들지 않는다.
   이유: 검증 명령을 가진 작업의 목록 하나가 무엇이 끝났고 어떻게 확인했는지를 보인다.
   Enforced by: `make docs-check`
+- Own: 추적 파일은 이 저장소의 것이든 다른 저장소의 것이든 Git commit을 이름하지 않는다. 도구가 commit을 요구하는 곳만
+  예외다: GitHub action은 그 `uses:` 줄에서 commit으로 고정하고, lock은 그 package manager가 정한 것을 적는다. end-to-end
+  실행이 확인한 commit 같은 실행의 증거는 무시되는 `var/report/` 아래 그 기록에 있다. changelog 항목이나 문서는 무엇을,
+  어느 명령으로, 어느 입력에서 검증했는지 적는다. 이유: commit 이름은 그것을 찾아보지 않는 독자에게 아무것도 말하지 않고,
+  다시 쓰이거나 얕은 history에서는 남지 않으며, 독자에게 필요한 사실은 문장 자체에 있어야 한다.
+  Enforced by: `packages/ts`의 `npm test`, 그 `tests/tracked-commits.test.ts`가 추적 파일 안의 commit 이름 토큰을 실패시킨다.
