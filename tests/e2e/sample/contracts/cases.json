@@ -341,6 +341,126 @@
   ],
   "checked": [],
   "touch": [],
+  "scoped": [
+    {
+      "id": "a_function_of_a_scope_returns_what_its_function_returns",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      }
+    },
+    {
+      "id": "a_function_of_a_scope_raises_what_its_function_raises",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback"
+    },
+    {
+      "id": "a_function_of_a_scope_returns_what_its_awaitable_gives",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      }
+    }
+  ],
   "store_new": [
     {
       "id": "a_store_starts_empty"
@@ -638,6 +758,126 @@
           "result": null
         }
       ]
+    }
+  ],
+  "store_once": [
+    {
+      "id": "a_store_of_one_call_returns_what_its_function_returns",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "done"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "done"
+      }
+    },
+    {
+      "id": "a_store_of_one_call_raises_what_its_function_raises",
+      "work": {
+        "function": {
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "a"
+              },
+              "result": "1"
+            }
+          ],
+          "raise": "exception"
+        }
+      },
+      "raises": "callback"
+    },
+    {
+      "id": "a_store_of_one_call_returns_what_its_awaitable_gives",
+      "work": {
+        "function": {
+          "awaits": true,
+          "calls": [
+            {
+              "on": "0",
+              "call": "scope.put",
+              "args": {
+                "key": "a",
+                "value": "1"
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.nested",
+              "args": {
+                "work": {
+                  "function": {
+                    "awaits": true,
+                    "calls": [
+                      {
+                        "on": "0",
+                        "call": "scope.put",
+                        "args": {
+                          "key": "b",
+                          "value": "2"
+                        }
+                      }
+                    ],
+                    "result": {
+                      "kind": "null"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "on": "0",
+              "call": "scope.get",
+              "args": {
+                "key": "b"
+              },
+              "result": "2"
+            }
+          ],
+          "result": {
+            "kind": "text",
+            "value": "awaited"
+          }
+        }
+      },
+      "result": {
+        "kind": "text",
+        "value": "awaited"
+      }
     }
   ],
   "scope_put": [],

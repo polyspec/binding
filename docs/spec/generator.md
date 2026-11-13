@@ -853,7 +853,10 @@ the design ids are those of the binding design.
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
   `passthrough`, and the class `scope`, whose `put` and `get` write and read the pending entries and whose `nested`
-  takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. Why: a transaction is a
+  takes a function of an inner `scope`; its cases commit, roll back after a raise, and nest. The function `scoped`
+  of its functions unit and the static member `store.once` take the same function, over entries that end with the
+  call, and their cases return, raise and await, so the end-to-end check compiles and runs the entry of each kind of
+  member that takes a function: a method, a function and a static member. Why: a transaction is a
   scope that the core opens, hands to language code and closes after that code returns, so the core decides when the
   language code runs and what its failure means, and the machine keeps the I/O of the scope on tokio (GN-6ab).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and

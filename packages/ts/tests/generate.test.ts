@@ -3323,13 +3323,21 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   // A class that only a function takes goes out to the function and has no conversion in (T-5).
   assert.match(lib, /\nfn out_scope\(/);
   assert.doesNotMatch(lib, /\bfn in_scope\b/);
+  // A function of a functions unit and a static member have the same three entries, with the names of GN-4c.
+  assert.match(lib, /#\[pyfunction\(name = "scoped"\)\]\n#\[pyo3\(signature = \(work\)\)\]\nfn function_scoped<'py>\(py: Python<'py>, work: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n {4}loop_function_scoped\(py, None, work\)\n\}/);
+  assert.match(lib, /#\[pyfunction\(name = "_scoped_on_loop", signature = \(event_loop_, \/, work\)\)\]\nfn loop_function_scoped<'py>\(/);
+  assert.match(lib, /#\[pyfunction\(name = "ascoped", signature = \(\*args, \*\*kwargs\)\)\]\nfn function_ascoped<'py>\([^\n]*\n {4}awaited_on_loop\(py, wrap_pyfunction!\(loop_function_scoped, py\)\?\.into_any\(\), args, kwargs\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::scoped\(work\), /);
+  assert.match(lib, /#\[pyo3\(name = "once", signature = \(work\)\)\]\n {4}fn member_once<'py>\(py: Python<'py>, work: &Bound<'py, PyAny>\) -> PyResult<Bound<'py, PyAny>> \{\n {8}Self::on_loop_once\(py, None, work\)\n {4}\}/);
+  assert.match(lib, /fn member_aonce<'py>\(py: Python<'py>, [^\n]*\n {8}awaited_on_loop\(py, py\.get_type::<Self>\(\)\.getattr\("_once_on_loop"\)\?, args, kwargs\)/);
+  assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::Store::once\(work\), /);
   // The declaration: a callable of the scope that returns any object, which the member returns.
   const stub = text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi');
   assert.match(stub, /^from collections\.abc import Callable, /m);
   assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
   // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
   const plain = text(scopedSample(['python'], (contract) => {
-    for (const id of ['store.transaction', 'scope.nested']) member(contract, id).parameters[0].type.function.async_allowed = false;
+    for (const id of ['store.transaction', 'store.once', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
   }), 'packages/python/generated/lib.rs');
   assert.match(plain, /\|io\| driven\(py\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);
@@ -3362,7 +3370,11 @@ test('the Python test writes a function fixture as a function of the module, a f
 
 test('Go recovers the panic of a method of a callback in the call, and the member panics with the same value (GN-15b, U-3)', () => {
   // The sample, and the sample without the classes whose members take a func: a contract with a callback unit alone.
-  const plain = (contract: any): void => { contract.units = contract.units.filter((u: any) => u.id !== 'store' && u.id !== 'scope'); };
+  const plain = (contract: any): void => {
+    contract.units = contract.units.filter((u: any) => u.id !== 'store' && u.id !== 'scope');
+    const functions = unitOf(contract, 'sample');
+    functions.members = functions.members.filter((m: any) => m.id !== 'sample.scoped');
+  };
   for (const out of [scopedSample(['go']), scopedSample(['go'], plain)]) {
     const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
     assert.match(binding, /\/\/export polyspec_sample__go_callback\n/);

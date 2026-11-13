@@ -571,6 +571,24 @@ impl Store {
     {
         Scoped::new(self.entries, function)
     }
+
+    /// Runs `function` with a scope over a store of this one call, as [`Store::transaction`] does: a static member
+    /// that takes a function (GN-6ae).
+    pub fn once<F>(function: F) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        Scoped::new(Entries::default(), function)
+    }
+}
+
+/// Runs `function` with a scope over entries that end with the call, as [`Store::transaction`] does: a function of a
+/// functions unit that takes a function (GN-6ae).
+pub fn scoped<F>(function: F) -> Scoped<F>
+where
+    F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+{
+    Scoped::new(Entries::default(), function)
 }
 
 /// The pending entries of a transaction over the entries of its parent, a handle whose clones share one state.

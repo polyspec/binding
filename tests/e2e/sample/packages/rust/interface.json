@@ -550,6 +550,44 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::touch"
+        },
+        {
+          "id": "sample.scoped",
+          "name": [
+            "scoped"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::scoped",
+            "machine": true
+          }
         }
       ]
     },
@@ -1363,6 +1401,44 @@
             "receiver": "&self",
             "machine": true
           }
+        },
+        {
+          "id": "store.once",
+          "name": [
+            "once"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::once",
+            "machine": true
+          }
         }
       ]
     },
@@ -1608,6 +1684,11 @@
       "group": "touch"
     },
     {
+      "member": "sample.scoped",
+      "file": "contracts/cases.json",
+      "group": "scoped"
+    },
+    {
       "member": "store.new",
       "file": "contracts/cases.json",
       "group": "store_new"
@@ -1621,6 +1702,11 @@
       "member": "store.transaction",
       "file": "contracts/cases.json",
       "group": "store_transaction"
+    },
+    {
+      "member": "store.once",
+      "file": "contracts/cases.json",
+      "group": "store_once"
     },
     {
       "member": "scope.put",

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 72ac953e420c451b0d471ccfdd539b17cb0cc89ad299e2622ce61c50bf60f949 -->
+<!-- source-sha256: 5d4fd1fb7886406d6cd1b6b47f71bf1df3d5983e9565eb6e0d226976e8765c42 -->
 # 생성기
 
 [English](generator.md)
@@ -709,7 +709,9 @@
   생성할 때까지 실패로 이름한다(GN-14c).
   end-to-end sample에는 class `store`가 있어 그 `transaction`은 `scope`의 함수를 받고 `passthrough`를 돌려주며, class
   `scope`의 `put`과 `get`은 대기 중인 항목을 쓰고 읽고 `nested`는 안쪽 `scope`의 함수를 받는다. 그 case는 commit하고,
-  던진 뒤 rollback하고, 중첩한다. 이유: transaction은 코어가 열고 언어 코드에 넘기고 그 코드가 돌아온 뒤 닫는 범위이므로,
+  던진 뒤 rollback하고, 중첩한다. functions unit의 함수 `scoped`와 static member `store.once`는 같은 함수를 받고, 그 항목은
+  호출과 함께 끝나며, 그 case는 돌려주고, 던지고, 기다린다. 그래서 end-to-end 검사는 함수를 받는 member의 종류마다, 곧
+  method, 함수, static member의 진입을 컴파일하고 돌린다. 이유: transaction은 코어가 열고 언어 코드에 넘기고 그 코드가 돌아온 뒤 닫는 범위이므로,
   언어 코드가 언제 돌고 그 실패가 무엇을 뜻하는지는 코어가 정하고, machine은 범위의 I/O를 tokio에 둔다(GN-6ab).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
