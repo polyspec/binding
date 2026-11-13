@@ -1,11 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c33e3f30bbb3207027cba7ea5438c4a2d7a7713b3b9c0cfb32777342bce89fa4 -->
+<!-- source-sha256: 9457c630a8837787b4a4afa8e1f7f92996067b2b2f786100e6e1c7d3fe9a3130 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `package.json`과 `package-lock.json`이 `@polyspec/kit`을 0.0.109에서 0.0.112로 고정한다. Makefile의 recipe가 실행하는
+  utility는 모두 그 release에 있고 recipe가 주는 인자를 받는다. binding의 release, 곧 `packages/ts`의 npm archive와
+  `binding_core`의 tag는 0.0.112에 더는 없는 것(플랫폼별 package kind, asset set, Go 모듈의 commit, release의 contract
+  검사)을 쓰지 않는다. 설치한 0.0.112에서 `make docs-check`와 `make release-coverage`로 확인했다(B2.139).
 - 코어가 함수의 `Raised`를 버리고 값으로 답하는 PHP member(`tests/e2e/sample`의 `store.attempt`)가 값을 돌려주었는데도
   PHP가 그 함수의 예외를 던졌다. ext-php-rs는 코드가 예외를 던진 호출을 오류로 보고하고 예외를 엔진에 pending으로 남겨
   두는데, 생성된 crate는 그 오류에서 예외를 꺼내기 전에 돌아갔다. 이제 crate는 PHP 코드를 부르는 모든 호출(함수,

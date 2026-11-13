@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- `package.json` and `package-lock.json` pin `@polyspec/kit` 0.0.112, from 0.0.109. Every utility that a recipe of the
+  Makefile runs is in that release and takes the arguments that the recipe gives. The release of binding, the npm
+  archive of `packages/ts` and the tag of `binding_core`, uses nothing that 0.0.112 no longer holds: the per-platform
+  package kinds, the asset sets, the commit of a Go module and the contract check of a release. Verified with
+  `make docs-check` and `make release-coverage` on the installed 0.0.112 (B2.139).
 - A PHP member whose core drops the `Raised` of a function and answers by a value, as `store.attempt` of
   `tests/e2e/sample` does, returned its value and PHP threw the exception of the function all the same: ext-php-rs
   reports a call whose code threw as an error and leaves the exception pending in the engine, and the generated crate
