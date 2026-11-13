@@ -1504,6 +1504,36 @@ test('a case value of a class that is no value class is the pairs that fill it (
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.count\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.none\(\)\); return made0; \}\)\(\)\)/);
 });
 
+test('the test of a case holds the words of its id, and two ids that give one name refuse the target (GN-13e)', () => {
+  const withIds = (ids: string[]): { contract: any; caseFiles: Map<string, unknown> } => {
+    const fixture = tokenClasses();
+    (fixture.caseFiles.get('contracts/cases.json') as any).show = ids.map((id) => ({ id, value: { kind: 'text', value: 'a' }, result: '"a"' }));
+    return fixture;
+  };
+  const out = generate({ ...withIds(['document-order', 'x.y z']), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node'] });
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eShowDocumentOrder\(\): void/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eShowXYZ\(\): void/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_document_order\(self\) -> None:/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_x_y_z\(self\) -> None:/);
+  // Node names a test by a string, which holds the id as it is.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: show document-order', /);
+  const refused = (ids: string[], target: string): string[] => {
+    try {
+      generate({ ...withIds(ids), version: '0.0.0', coreLib: 'polyspec_classes', targets: [target] as Inputs['targets'] & string[] });
+    } catch (error: any) {
+      return error.refusals ?? [String(error)];
+    }
+    return [];
+  };
+  const clash = 'the cases a-word and a_word of classes.show give one test name a_word (GN-13e)';
+  assert.ok(refused(['a-word', 'a_word'], 'python').includes(clash), 'Python');
+  assert.ok(refused(['a-word', 'a_word'], 'php').some((r) => r.startsWith('the cases a-word and a_word of classes.show give one test name')), 'PHP');
+  // PHP compares the names of methods without case, Python with it.
+  assert.ok(refused(['a_b', 'ab'], 'php').some((r) => r.startsWith('the cases a_b and ab of classes.show give one test name')), 'PHP without case');
+  assert.deepEqual(refused(['a_b', 'ab'], 'python'), []);
+  assert.deepEqual(refused(['a-word', 'a_word'], 'node'), []);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
