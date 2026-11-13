@@ -2,6 +2,7 @@
 // check that owns the rule, at the path of the changed item, and with no finding of another check.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { checkContract, type Finding } from '../src/index.ts';
 import { contract, dependency, member, unit, unitIndex } from './fixture.ts';
@@ -868,3 +869,31 @@ test('CK-8: a case of kind null reads nothing', () =>
       unit(c, 'value').in.push({ [lang]: type, cases: [{ kind: 'null', read: 'builtin' }] });
     }
   }));
+
+describe('CK-22 instance values (GN-13f)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    change(cases);
+    return checkContract(read('packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const messages = (change: (cases: any) => void): string => run(change).map((f) => `${f.check} ${f.message}`).join('\n');
+  test('the classes repository passes', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('a member that is no member, or that gives another class', () => {
+    assert.match(messages((c) => { c.gate_enter[0].receiver.new = 'tag.nothing'; }), /CK-22 the case an_open_gate_lets_its_tag_pass of gate\.enter: the receiver names tag\.nothing, which is no member/);
+    assert.match(messages((c) => { c.gate_enter[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.new gives \{"unit":"tag"\}, not the class gate/);
+  });
+  test('a method without its receiver, and args that are not the parameters', () => {
+    assert.match(messages((c) => { delete c.gate_enter[0].receiver.receiver; }), /tag\.gate is a method, so the value gives its receiver/);
+    assert.match(messages((c) => { c.gate_enter[0].receiver.receiver.args = {}; }), /the args of the receiver of the receiver give no name of tag\.new/);
+  });
+  test('a pick that does not reach the class, and a then that is no method of it', () => {
+    assert.match(messages((c) => { c.gate_enter[1].receiver.pick = [{ tuple: 0 }]; }), /takes part 0 of \{"list":\{"unit":"gate"\}\}, which is no tuple/);
+    assert.match(messages((c) => { c.gate_enter[2].receiver.then = [{ call: 'tag.name' }]; }), /then 0 of the receiver calls tag\.name, which is no method of gate/);
+  });
+  test('a receiver of a member that has none', () => {
+    assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
+  });
+});

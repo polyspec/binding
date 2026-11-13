@@ -53,7 +53,9 @@ function convertOut(model: Model, type: Type, value: string): string {
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('map' in type) return `out_map(${value}, |item| ${convertOut(model, type.map, 'item')})`;
   if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `out_optional(${value}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
+  // An optional is matched where it is, so its item is the value or the reference that the place holds, whose type no
+  // generic conversion needs to infer.
+  if ('optional' in type) return `match ${value} {\n        Some(value) => ${convertOut(model, type.optional, 'value')},\n        None => Ok(JsValue::NULL),\n    }`;
   if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`).join(', ')}])`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;

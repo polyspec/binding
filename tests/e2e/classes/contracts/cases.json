@@ -76,5 +76,114 @@
       "name": "a",
       "count": 2
     }
+  ],
+  "tag_gate": [
+    {
+      "id": "a_tag_has_a_gate",
+      "name": "a"
+    }
+  ],
+  "tag_gates": [
+    {
+      "id": "a_tag_has_two_gates",
+      "name": "a",
+      "count": 2
+    }
+  ],
+  "gate_enter": [
+    {
+      "id": "an_open_gate_lets_its_tag_pass",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a passes"
+    },
+    {
+      "id": "the_second_gate_has_a_dot",
+      "receiver": {
+        "from": "tag.gates",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "b"
+          }
+        },
+        "args": {
+          "count": 2
+        },
+        "pick": [
+          {
+            "index": 1
+          }
+        ]
+      },
+      "result": "b. passes"
+    },
+    {
+      "id": "a_closed_gate_lets_nothing_pass",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
+    }
+  ],
+  "gate_close": [
+    {
+      "id": "an_open_gate_closes",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_gate_closes_once",
+      "receiver": {
+        "new": "tag.gate",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "gate.close"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "closed",
+        "status": null,
+        "category": "value",
+        "message": "the gate of a is closed"
+      }
+    }
   ]
 }

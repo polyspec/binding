@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A case could make the receiver of a method only by a constructor or a static member of its own class, so a kind that
+  only a receiver of earlier calls reaches had no case, and `binding check` refused the contract (CK-22). A case now
+  gives its receiver as an instance value: the member that makes it (`new`), or the member whose result holds it with
+  the steps to it (`from`, `pick`), its own receiver, its arguments and the calls that prepare it (`then`). Every target
+  makes the instances as locals of the test, and `binding check` reports a value that breaks the form (GN-13f, CK-22).
+  WASM wrote an optional field of a record through a generic conversion whose type the compiler could not infer; it
+  matches the optional where it is. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/classes`.
 - WASM refused a contract with fault injection points and a record of another repository. The WASM crate now has the
   feature `fault-test` with the entry points `__armFaults` and `__faultLeft`, each core call runs with the faults that a
   test armed, the B-4 test of a case with `faults` arms them, and a record of another repository is a plain object

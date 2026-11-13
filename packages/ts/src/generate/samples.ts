@@ -338,6 +338,135 @@ export const callables = (model: Model): Fn[] => [...model.functions, ...model.o
 export interface Receiver {
   factory: Fn;
   args: Map<Arg, unknown>;
+  // G-5 (GN-13f): the instance value of a case. The instance that the factory is called on when it is a method, the
+  // steps into its result when the result holds the instance (from), and the calls on the instance that prepare it.
+  on?: Receiver;
+  pick?: Pick[];
+  then?: { fn: Fn; args: Map<Arg, unknown> }[];
+}
+
+// G-5 (GN-13f): a step into a result: a field of a record, an item of a list, a part of a tuple.
+export type Pick = { field: string } | { index: number } | { tuple: number };
+
+// Whether a receiver is one factory call, which a test writes as one expression.
+export const isPlain = (receiver: Receiver): boolean =>
+  receiver.on === undefined && (receiver.pick ?? []).length === 0 && (receiver.then ?? []).length === 0 && ![...receiver.args.values()].some(isInstanceValue);
+
+// G-5 (GN-13f): whether a case value is an instance value, {"new": ...} or {"from": ...}.
+export const isInstanceValue = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && (typeof (value as Record<string, unknown>)['new'] === 'string' || typeof (value as Record<string, unknown>)['from'] === 'string');
+
+// Every member of the model by its id: the functions and the members of the class units.
+const memberById = (model: Model, id: string): Fn | undefined =>
+  [...model.functions, ...model.objects.flatMap((o) => o.members)].find((fn) => fn.member.id === id);
+
+// The type that the steps of a pick reach from a type, or a reason.
+export function pickedType(model: Model, type: Type, pick: readonly unknown[]): Type | string {
+  let at = type;
+  for (const [i, step] of pick.entries()) {
+    const what = `step ${i} of pick`;
+    if (typeof at === 'object' && 'optional' in at) return `${what} reads an optional, which a pick does not step into`;
+    if (typeof step === 'string') {
+      const unit = unitOf(model, at);
+      const field = unit?.kind === 'record' ? (unit.fields ?? []).find((f) => langName('python', f.name, 'variable') === step) : undefined;
+      if (field === undefined) return `${what} names the field ${step}, which ${JSON.stringify(at)} has not`;
+      at = field.type;
+      continue;
+    }
+    const record = typeof step === 'object' && step !== null && !Array.isArray(step) ? (step as Record<string, unknown>) : {};
+    const n = record['index'] ?? record['tuple'];
+    if (Object.keys(record).length !== 1 || typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return `${what} is not a field name, {"index": n} or {"tuple": n}`;
+    if ('index' in record) {
+      if (typeof at !== 'object' || !('list' in at)) return `${what} takes an item of ${JSON.stringify(at)}, which is no list`;
+      at = at.list;
+    } else {
+      if (typeof at !== 'object' || !('tuple' in at) || n >= at.tuple.length) return `${what} takes part ${n} of ${JSON.stringify(at)}, which is no tuple of that length`;
+      at = at.tuple[n] ?? 'none';
+    }
+  }
+  return at;
+}
+
+// G-5 (GN-13f): the instance of the class unit `unitId` that an instance value gives:
+//   {"new": "<member id>", "receiver": <instance value>?, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}
+//   {"from": "<member id>", "receiver": <instance value>?, "args": {...}, "pick": [<step>], "then": [...]}
+// new names a member that returns the class; from a member whose result holds it, which pick reaches. receiver is
+// the instance that the member is called on, when it is a method. Each call of then is a member of the class, called
+// on the instance in order. The binding check reports every value that breaks this (CK-22); here it is an error.
+export function instanceOf(model: Model, unitId: string, value: unknown, where: string): Receiver {
+  const fail = (message: string): never => {
+    throw new Error(`${where}: ${message} (G-5, GN-13f)`);
+  };
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : fail('an instance value is {"new" | "from": <member id>, ...}');
+  const id = record['new'] ?? record['from'];
+  const factory = typeof id === 'string' ? memberById(model, id) : undefined;
+  if (factory === undefined) return fail(`${String(id)} is no member that the binding generates`);
+  const pick = Array.isArray(record['pick']) ? record['pick'] : [];
+  const reached = pickedType(model, factory.returns, 'from' in record ? pick : []);
+  if (typeof reached === 'string') return fail(reached);
+  if (typeof reached !== 'object' || !('unit' in reached) || reached.unit !== unitId || reached.library !== undefined) fail(`${factory.member.id} gives ${JSON.stringify(reached)}, not the class ${unitId}`);
+  const args = argsOf(factory, (record['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args are not the parameters of ${factory.member.id}`);
+  const on = factory.receiver === undefined ? undefined : instanceOf(model, factory.unit.id, record['receiver'] ?? fail(`${factory.member.id} is a method, so the value gives its receiver`), `${where}, the receiver of ${factory.member.id}`);
+  const then = (Array.isArray(record['then']) ? record['then'] : []).map((item, i) => {
+    const step = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {};
+    const fn = typeof step['call'] === 'string' ? memberById(model, step['call']) : undefined;
+    if (fn === undefined || fn.unit.id !== unitId || fn.receiver === undefined) return fail(`then ${i} calls ${String(step['call'])}, which is no method of ${unitId}`);
+    return { fn, args: argsOf(fn, (step['args'] ?? {}) as Record<string, unknown>) ?? fail(`the args of then ${i} are not the parameters of ${fn.member.id}`) };
+  });
+  const picks = pick.map((step): Pick => (typeof step === 'string' ? { field: step } : 'index' in (step as object) ? { index: (step as { index: number }).index } : { tuple: (step as { tuple: number }).tuple }));
+  return { factory, args, ...(on === undefined ? {} : { on }), ...(picks.length === 0 ? {} : { pick: picks }), ...(then.length === 0 ? {} : { then }) };
+}
+
+// How a language writes the statements that make an instance (GN-13f).
+export interface MadeForm {
+  ctx: Context;
+  invoke: (fn: Fn, args: string, receiver: string) => string;
+  // The statement that binds a local name to an expression, and the name as an expression.
+  bind: (name: string, expr: string) => string;
+  name: (local: string) => string;
+  // The statement that runs an expression for its effect.
+  run: (expr: string) => string;
+  // The expression that steps into a value: a field (snake_case name), an item or a part of a tuple.
+  pick: (expr: string, step: Pick) => string;
+}
+
+// G-5 (GN-13f): the statements that make an instance and the expression that names it. Every instance that the value
+// makes, the receivers and the results that a pick reads from, is a local of the test, so none is reclaimed before the
+// test ends; a plain receiver is one expression.
+export function madeLines(model: Model, form: MadeForm, receiver: Receiver, prefix = 'made'): { lines: string[]; expr: string } {
+  const lines: string[] = [];
+  let count = 0;
+  const fresh = (): string => `${prefix}${count++}`;
+  const argsText = (fn: Fn, args: ReadonlyMap<Arg, unknown>): string =>
+    callArgs(model, form.ctx, fn, (arg) => {
+      const raw = args.get(arg);
+      if (isInstanceValue(raw)) {
+        const unit = typeof arg.type === 'object' && 'unit' in arg.type ? arg.type.unit : '';
+        return make(instanceOf(model, unit, raw, `${fn.member.id}.${arg.name.join('_')}`));
+      }
+      return caseValue(model, form.ctx, arg, args);
+    });
+  const make = (r: Receiver): string => {
+    if (isPlain(r)) {
+      const local = fresh();
+      lines.push(form.bind(local, form.invoke(r.factory, argsText(r.factory, r.args), '')));
+      return form.name(local);
+    }
+    const on = r.on === undefined ? '' : make(r.on);
+    let expr = form.invoke(r.factory, argsText(r.factory, r.args), on);
+    for (const step of r.pick ?? []) {
+      const local = fresh();
+      lines.push(form.bind(local, expr));
+      expr = form.pick(form.name(local), step);
+    }
+    const local = fresh();
+    lines.push(form.bind(local, expr));
+    for (const step of r.then ?? []) lines.push(form.run(form.invoke(step.fn, argsText(step.fn, step.args), form.name(local))));
+    return form.name(local);
+  };
+  if (isPlain(receiver)) return { lines, expr: form.invoke(receiver.factory, argsText(receiver.factory, receiver.args), '') };
+  const expr = make(receiver);
+  return { lines, expr };
 }
 
 // The arguments that a case gives to the parameters of a member, or undefined when a key is missing.
@@ -362,6 +491,8 @@ function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | un
 // class, the first in contract order.
 export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>): Receiver | undefined {
   if (fn.receiver === undefined) return undefined;
+  // GN-13f: a case that gives its receiver as an instance value.
+  if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);
   const object = model.objects.find((o) => o.unit === fn.unit);
   for (const factory of object?.members ?? []) {
     const returns = factory.returns;

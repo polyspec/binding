@@ -1,10 +1,10 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -97,8 +97,27 @@ export function nodeTests(model: Model): string {
     return `${receiver}.${member}(${args})`;
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
-  const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+
+  // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
+  const form: MadeForm = {
+    ctx,
+    invoke,
+    bind: (local, expr) => `const ${local} = ${expr};`,
+    name: (local) => local,
+    run: (expr) => `${expr};`,
+    pick: (expr, step) => ('field' in step ? `${expr}.${langName('node', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+  };
+  const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
+    if (receiver === undefined) return { lines: '', expr: '' };
+    const built = madeLines(model, form, receiver);
+    return { lines: built.lines.map((line) => `\n  ${line}`).join(''), expr: built.expr };
+  };
+  // GN-13f: a receiver as one expression; an instance value is made in a function that the expression calls.
+  const made = (receiver: Receiver): string => {
+    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+    const built = madeLines(model, form, receiver);
+    return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
+  };
   let usesOutcome = false;
   let usesOrdered = false;
   for (const fn of callables(model)) {
@@ -181,7 +200,8 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       };
-      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      const receiverMade = receiverOfCase(kase.receiver);
+      const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg${i}`, value]]; })];
@@ -196,7 +216,7 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
         .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((call) => `[${call.join(', ')}]`).join(', ')}]);`}`)
         .join('');
       out.push(`
-test('B-4: ${name} ${kase.id}', () => {${before}${arming}
+test('B-4: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -225,12 +245,13 @@ test('GN-13e: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       });
-      const call = invoke(fn, args, kase.receiver === undefined ? '' : made(kase.receiver));
+      const receiverMade = receiverOfCase(kase.receiver);
+      const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${before}${check}${after}
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
 });`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -255,8 +276,8 @@ test('K-2: ${name} refuses a callback result of another type', () => {
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
-test('N-4: ${name} ${kase.id}', () => {
-  assert.equal(${invoke(fn, '', made(kase.receiver))}, ${jsString(kase.result)});
+test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
+  assert.equal(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${jsString(kase.result)});
 });`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.

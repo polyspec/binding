@@ -562,6 +562,18 @@ the design ids are those of the binding design.
   call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
   value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
   a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
+- **GN-13f** A case of a method gives its receiver either as the arguments of a factory of its class among its own
+  keys, or under the key `receiver` as an instance value, which earlier calls make:
+  `{"new": "<member id>", "receiver": <instance value>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
+  or `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<step>], "then": [...]}`. `new` names a member
+  that returns the class: a constructor, a static member, a function, or a method of any class; `from` names a member
+  whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
+  and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
+  `args` holds the parameters of the member by their snake_case keys; a parameter of a class type may be an instance
+  value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
+  compared. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
+  G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
 - **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every

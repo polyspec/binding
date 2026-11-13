@@ -1,8 +1,8 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, errorUnitOfKind, hookCall, langName } from './model.ts';
-import { type Context, type Receiver, bytesKind, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, Unsupported, errorUnitOfKind, hookCall, langName } from './model.ts';
+import { type Context, type MadeForm, type Receiver, bytesKind, isPlain, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { NODE_ORDERED } from './tests_node.ts';
@@ -48,8 +48,27 @@ export function wasmTests(model: Model): string {
     return `${receiver}.${member}(${args})`;
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
-  const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+
+  // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
+  const form: MadeForm = {
+    ctx,
+    invoke,
+    bind: (local, expr) => `const ${local} = ${expr};`,
+    name: (local) => local,
+    run: (expr) => `${expr};`,
+    pick: (expr, step) => ('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+  };
+  const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
+    if (receiver === undefined) return { lines: '', expr: '' };
+    const built = madeLines(model, form, receiver);
+    return { lines: built.lines.map((line) => `\n  ${line}`).join(''), expr: built.expr };
+  };
+  // GN-13f: a receiver as one expression; an instance value is made in a function that the expression calls.
+  const made = (receiver: Receiver): string => {
+    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+    const built = madeLines(model, form, receiver);
+    return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
+  };
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -123,7 +142,8 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      const receiverMade = receiverOfCase(kase.receiver);
+      const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseValue(model, ctx, arg, kase.args); return value === undefined ? [] : [[`arg${i}`, value]]; })];
@@ -132,7 +152,7 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
       const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
       usesGlue ||= kase.faults !== undefined;
       out.push(`
-test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${arming}
+test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${receiverMade.lines}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
@@ -145,18 +165,19 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
       const expected = kase.refused !== undefined ? { refused: kase.refused } : kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
-      const call = kase.refused !== undefined ? '' : invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), kase.receiver === undefined ? '' : made(kase.receiver));
+      const receiverMade = kase.refused !== undefined ? { lines: '', expr: '' } : receiverOfCase(kase.receiver);
+      const call = kase.refused !== undefined ? '' : invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `${call};` : 'refused' in expected ? `assert.fail(${jsString(expected.refused)});` : `assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}
   ${check}
 });`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
-test('N-4: ${name} ${kase.id}', () => {
-  assert.equal(${invoke(fn, '', made(kase.receiver))}, ${jsString(kase.result)});
+test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
+  assert.equal(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${jsString(kase.result)});
 });`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.

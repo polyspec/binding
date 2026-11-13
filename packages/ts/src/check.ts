@@ -1220,6 +1220,7 @@ class Checker {
       this.caseFixtures(row.member, group, `/cases/${i}`);
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
+        this.caseInstances(row.member, record, `/cases/${i}`);
         const raises = record['raises'];
         const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
         const kind = expected['kind'];
@@ -1280,6 +1281,103 @@ class Checker {
           if (aliasRaised.get(unit.id)?.has(kind) !== true) this.report('CK-22', `${path}/in_raises/${r}`, `no case of the alias ${unit.id} raises the kind ${kind} (K-1, U-7)`);
         }
       }
+    }
+  }
+
+  // G-5 (GN-13f): the instance values of a case: its receiver, and an argument of a class type that is given as one.
+  // The receiver of a method is an instance value or, without the key receiver, the arguments of a factory of its
+  // class among the keys of the case.
+  caseInstances(memberId: string, record: Record<string, unknown>, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const where = `the case ${String(record['id'])} of ${memberId}`;
+    const report = (message: string): void => this.report('CK-22', path, `${where}: ${message} (G-5, GN-13f)`);
+    const method = typeof found.member.core === 'object' && found.member.core.receiver !== undefined;
+    if (record['receiver'] !== undefined) {
+      if (!method) report(`${memberId} has no receiver, so the case gives none`);
+      else this.instanceValue(found.unit.id, record['receiver'], report, 'the receiver');
+    }
+    this.instanceArgs(found.member, record, report, 'the case');
+  }
+
+  // The arguments of a member in an instance value or a case whose class type is given as an instance value.
+  instanceArgs(member: Member, given: Record<string, unknown>, report: (message: string) => void, what: string): void {
+    for (const parameter of member.parameters ?? []) {
+      const key = convert(parameter.name, 'python', 'variable');
+      const value = given[key];
+      const unit = typeof parameter.type === 'object' && 'unit' in parameter.type && parameter.type.library === undefined ? this.units.get(parameter.type.unit)?.value : undefined;
+      if (unit?.kind === 'class' && typeof value === 'object' && value !== null && !Array.isArray(value)) this.instanceValue(unit.id, value, report, `${key} of ${what}`);
+    }
+  }
+
+  // G-5 (GN-13f): an instance of the class unit `unitId`:
+  //   {"new": <member id>, "receiver"?, "args"?, "then"?} or {"from": <member id>, "receiver"?, "args"?, "pick", "then"?}
+  instanceValue(unitId: string, value: unknown, report: (message: string) => void, what: string): void {
+    const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    if (record === undefined) return report(`${what} is not an instance value {"new" | "from": <member id>, ...}`);
+    const from = Object.hasOwn(record, 'from');
+    for (const key of Object.keys(record)) {
+      if (!['new', 'from', 'receiver', 'args', 'then', ...(from ? ['pick'] : [])].includes(key)) report(`${what} has no key ${key}`);
+    }
+    if (Object.hasOwn(record, 'new') === from) return report(`${what} names its member in new or in from, one of them`);
+    const id = record[from ? 'from' : 'new'];
+    const found = typeof id === 'string' ? this.members.get(id) : undefined;
+    if (found === undefined) return report(`${what} names ${String(id)}, which is no member`);
+    const { member } = found;
+    const method = typeof member.core === 'object' && member.core.receiver !== undefined;
+    // The type that the member gives, then each step of pick into it.
+    let at: Type | undefined = member.returns === undefined || member.returns === 'self' ? { unit: found.unit.id } : member.returns;
+    const pick = record['pick'];
+    if (from && !Array.isArray(pick)) return report(`${what} reads its instance from the result of ${member.id} by a pick, a list of steps`);
+    for (const [i, step] of (Array.isArray(pick) ? pick : []).entries()) {
+      const target: Type | undefined = at;
+      if (target === undefined) break;
+      if (typeof step === 'string') {
+        const unit: Unit | undefined = typeof target === 'object' && 'unit' in target && target.library === undefined ? this.units.get(target.unit)?.value : undefined;
+        const field: Field | undefined = unit?.kind === 'record' ? (unit.fields ?? []).find((f: Field) => convert(f.name, 'python', 'variable') === step) : undefined;
+        if (field === undefined) return report(`step ${i} of the pick of ${what} names the field ${step}, which ${JSON.stringify(target)} has not`);
+        at = field.type;
+        continue;
+      }
+      const index = typeof step === 'object' && step !== null && !Array.isArray(step) ? (step as Record<string, unknown>) : {};
+      const n = index['index'] ?? index['tuple'];
+      if (Object.keys(index).length !== 1 || typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return report(`step ${i} of the pick of ${what} is not a field name, {"index": n} or {"tuple": n}`);
+      if ('index' in index) {
+        if (typeof target !== 'object' || !('list' in target)) return report(`step ${i} of the pick of ${what} takes an item of ${JSON.stringify(target)}, which is no list`);
+        at = target.list;
+      } else {
+        if (typeof target !== 'object' || !('tuple' in target) || n >= target.tuple.length) return report(`step ${i} of the pick of ${what} takes part ${n} of ${JSON.stringify(target)}, which is no tuple of that length`);
+        at = target.tuple[n];
+      }
+    }
+    if (typeof at !== 'object' || !('unit' in at) || at.unit !== unitId || at.library !== undefined) report(`${what}: ${member.id}${from ? ' and its pick give' : ' gives'} ${JSON.stringify(at)}, not the class ${unitId}`);
+    if (method && record['receiver'] === undefined) report(`${what}: ${member.id} is a method, so the value gives its receiver`);
+    if (!method && record['receiver'] !== undefined) report(`${what}: ${member.id} has no receiver, so the value gives none`);
+    if (method && record['receiver'] !== undefined) this.instanceValue(found.unit.id, record['receiver'], report, `the receiver of ${what}`);
+    const args = (target: Member, given: unknown, whose: string): void => {
+      const keys = given === undefined ? {} : typeof given === 'object' && given !== null && !Array.isArray(given) ? (given as Record<string, unknown>) : undefined;
+      if (keys === undefined) return report(`the args of ${whose} are not an object of the parameters of ${target.id}`);
+      const names = (target.parameters ?? []).map((p) => convert(p.name, 'python', 'variable'));
+      for (const key of Object.keys(keys)) if (!names.includes(key)) report(`the args of ${whose} have no parameter ${key} of ${target.id}`);
+      for (const parameter of target.parameters ?? []) {
+        const key = convert(parameter.name, 'python', 'variable');
+        if (parameter.default === undefined && !Object.hasOwn(keys, key)) report(`the args of ${whose} give no ${key} of ${target.id}`);
+      }
+      this.instanceArgs(target, keys, report, whose);
+    };
+    args(member, record['args'], what);
+    const then = record['then'];
+    if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
+    for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
+      const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      for (const key of Object.keys(call)) if (key !== 'call' && key !== 'args') report(`then ${i} of ${what} has no key ${key}`);
+      const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
+      const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
+      if (step === undefined || step.unit.id !== unitId || !stepMethod) {
+        report(`then ${i} of ${what} calls ${String(call['call'])}, which is no method of ${unitId}`);
+        continue;
+      }
+      args(step.member, call['args'], `then ${i} of ${what}`);
     }
   }
 

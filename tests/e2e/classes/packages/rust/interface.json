@@ -109,6 +109,10 @@
       {
         "variant": "polyspec_classes::Error::Unsupported",
         "category": "value"
+      },
+      {
+        "variant": "polyspec_classes::Error::Closed",
+        "category": "value"
       }
     ],
     "binding": [],
@@ -396,6 +400,103 @@
             "path": "polyspec_classes::Tag::repeat",
             "receiver": "&self"
           }
+        },
+        {
+          "id": "tag.gate",
+          "name": [
+            "gate"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "gate"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::gate",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.gates",
+          "name": [
+            "gates"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "unit": "gate"
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::gates",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gate",
+      "name": [
+        "gate"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Gate",
+      "final": true,
+      "constructible": false,
+      "members": [
+        {
+          "id": "gate.enter",
+          "name": [
+            "enter"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Closed"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Gate::enter",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "gate.close",
+          "name": [
+            "close"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [
+            "polyspec_classes::Error::Closed"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Gate::close",
+            "receiver": "&mut self"
+          }
         }
       ]
     }
@@ -457,6 +558,26 @@
       "member": "tag.repeat",
       "file": "contracts/cases.json",
       "group": "tag_repeat"
+    },
+    {
+      "member": "tag.gate",
+      "file": "contracts/cases.json",
+      "group": "tag_gate"
+    },
+    {
+      "member": "tag.gates",
+      "file": "contracts/cases.json",
+      "group": "tag_gates"
+    },
+    {
+      "member": "gate.enter",
+      "file": "contracts/cases.json",
+      "group": "gate_enter"
+    },
+    {
+      "member": "gate.close",
+      "file": "contracts/cases.json",
+      "group": "gate_close"
     }
   ]
 }

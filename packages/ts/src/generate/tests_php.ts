@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -53,8 +53,27 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `${receiver}->${member}(${args})`;
   };
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
-  const made = (receiver: Receiver): string =>
-    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+
+  // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
+  const form: MadeForm = {
+    ctx,
+    invoke,
+    bind: (local, expr) => `$${local} = ${expr};`,
+    name: (local) => `$${local}`,
+    run: (expr) => `${expr};`,
+    pick: (expr, step) => ('field' in step ? `${expr}->${langName('php', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+  };
+  const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
+    if (receiver === undefined) return { lines: '', expr: '' };
+    const built = madeLines(model, form, receiver);
+    return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
+  };
+  // GN-13f: a receiver as one expression; an instance value is made in a closure that the expression calls.
+  const made = (receiver: Receiver): string => {
+    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
+    const built = madeLines(model, form, receiver);
+    return `(function () { ${built.lines.join(' ')} return ${built.expr}; })()`;
+  };
   let usesOutcome = false;
   let usesSame = false;
   for (const fn of callables(model)) {
@@ -194,7 +213,8 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       };
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
-      const made_ = kase.receiver === undefined ? '' : made(kase.receiver);
+      const receiverMade = receiverOfCase(kase.receiver);
+      const made_ = receiverMade.expr;
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['$receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`$arg${i}`, value]]; })];
       const arming = kase.faults === undefined ? '' : `${locals.map(([local, value]) => `\n        ${local} = ${value};`).join('')}\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(fn.member.id)}, ${phpText(kase.faults)});`;
       const call = kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), made_) : invoke(fn, callArgs(model, ctx, fn, (arg) => (caseArg(arg) === undefined ? undefined : `$arg${fn.args.indexOf(arg)}`)), made_ === '' ? '' : '$receiver');
@@ -203,7 +223,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
       methods.push(`
     public function testB4${name}${id}(): void
-    {${before}${arming}
+    {${receiverMade.lines}${before}${arming}
         try {
             ${call};
             self::fail('no error');
@@ -228,10 +248,11 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         continue;
       }
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
+      const receiverMade = receiverOfCase(kase.receiver);
       const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
-      }), kase.receiver === undefined ? '' : made(kase.receiver));
+      }), receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined
@@ -239,7 +260,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
       methods.push(`
     public function testGn13e${name}${id}(): void
-    {${before}${check}${after}
+    {${receiverMade.lines}${before}${check}${after}
     }`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
@@ -284,9 +305,9 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       // GN-6g: PHP gives Stringable to a class that has __toString.
       methods.push(`
     public function testN4${name}${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
-    {
-        self::assertInstanceOf(\\Stringable::class, ${made(kase.receiver)});
-        self::assertSame(${phpText(kase.result)}, ${invoke(fn, '', made(kase.receiver))});
+    {${receiverOfCase(kase.receiver).lines}
+        self::assertInstanceOf(\\Stringable::class, ${receiverOfCase(kase.receiver).expr});
+        self::assertSame(${phpText(kase.result)}, ${invoke(fn, '', receiverOfCase(kase.receiver).expr)});
     }`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.

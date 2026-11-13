@@ -17,6 +17,11 @@ pub enum Error {
         /// What the value is.
         what: String,
     },
+    /// A gate that is closed lets nothing pass and does not close again.
+    Closed {
+        /// The name of the tag of the gate.
+        tag: String,
+    },
 }
 
 impl Error {
@@ -26,6 +31,7 @@ impl Error {
         match self {
             Self::Missing { .. } => "missing",
             Self::Unsupported { .. } => "unsupported",
+            Self::Closed { .. } => "closed",
         }
     }
 }
@@ -35,6 +41,7 @@ impl fmt::Display for Error {
         match self {
             Self::Missing { key } => write!(f, "no value for {key}"),
             Self::Unsupported { what } => write!(f, "not data: {what}"),
+            Self::Closed { tag } => write!(f, "the gate of {tag} is closed"),
         }
     }
 }
@@ -129,6 +136,59 @@ impl Tag {
     pub fn entries(&self) -> impl Iterator<Item = (&String, &Self)> {
         std::iter::once((&self.name, self))
     }
+
+    /// The open gate of the tag (G-5: a class that only a method of another class makes).
+    #[must_use]
+    pub fn gate(&self) -> Gate {
+        Gate { tag: self.name.clone(), open: true }
+    }
+
+    /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
+    #[must_use]
+    pub fn gates(&self, count: u64) -> Vec<Gate> {
+        let mut dots = String::new();
+        (0..count)
+            .map(|_index| {
+                let gate = Gate { tag: format!("{}{dots}", self.name), open: true };
+                dots.push('.');
+                gate
+            })
+            .collect()
+    }
+}
+
+/// A gate of a tag, which a call closes (G-5: a receiver that an earlier call prepares).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gate {
+    tag: String,
+    open: bool,
+}
+
+impl Gate {
+    /// What enters the gate.
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed.
+    pub fn enter(&self) -> Result<String, Error> {
+        if !self.open {
+            return Err(Error::Closed { tag: self.tag.clone() });
+        }
+        Ok(format!("{} passes", self.tag))
+    }
+
+    /// Closes the gate.
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed already.
+    pub fn close(&mut self) -> Result<(), Error> {
+        if !self.open {
+            return Err(Error::Closed { tag: self.tag.clone() });
+        }
+        self.open = false;
+        Ok(())
+    }
 }
 
 /// The names of the tags, joined by commas.
@@ -158,5 +218,11 @@ mod tests {
         assert_eq!(tag.repeat(2).len(), 2);
         assert_eq!(tag.label(), "#a");
         assert_eq!(join(&[tag.clone(), shout(&tag)]), "a,A");
+        let mut gate = tag.gate();
+        assert_eq!(gate.enter(), Ok(String::from("a passes")));
+        assert_eq!(gate.close(), Ok(()));
+        assert_eq!(gate.enter(), Err(Error::Closed { tag: String::from("a") }));
+        assert_eq!(gate.close(), Err(Error::Closed { tag: String::from("a") }));
+        assert_eq!(tag.gates(2).iter().map(Gate::enter).collect::<Vec<_>>(), vec![Ok(String::from("a passes")), Ok(String::from("a. passes"))]);
     }
 }

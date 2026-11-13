@@ -1,9 +1,9 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -97,7 +97,30 @@ export function pythonTests(model: Model, module: string): string {
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
-  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+  // GN-13f: a receiver as one expression; an instance value is made in a function of the module that the expression
+  // calls.
+  const helpers: string[] = [];
+  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => {
+    if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+    const built = madeLines(model, madeForm, receiver);
+    const helper = `_made_${helpers.length}`;
+    helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
+    return `${helper}()`;
+  };
+  // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
+  const madeForm: MadeForm = {
+    ctx,
+    invoke: (fn, args, receiver) => invoke(fn, args, receiver),
+    bind: (local, expr) => `${local} = ${expr}`,
+    name: (local) => local,
+    run: (expr) => expr,
+    pick: (expr, step) => ('field' in step ? `${expr}.${step.field}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+  };
+  const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
+    if (receiver === undefined) return { lines: '', expr: '' };
+    const built = madeLines(model, madeForm, receiver);
+    return { lines: built.lines.map((line) => `\n        ${line}`).join(''), expr: built.expr };
+  };
   let usesOutcome = false;
   let usesSame = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -193,7 +216,8 @@ export function pythonTests(model: Model, module: string): string {
         )`);
     }
     for (const kase of raisingCases(model, fn)) {
-      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => (kase.receiver === undefined ? undefined : caseValue(model, ctx, arg, kase.receiver.args)));
+      const receiverMade = receiverOfCase(kase.receiver);
+      const receiver = receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
@@ -214,7 +238,7 @@ export function pythonTests(model: Model, module: string): string {
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
       out.push(`
-    def test_b4_${name}_${kase.id}(self) -> None:${before}${arming}
+    def test_b4_${name}_${kase.id}(self) -> None:${receiverMade.lines}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), receiver) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
@@ -239,7 +263,8 @@ export function pythonTests(model: Model, module: string): string {
       const after = fixtures
         .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
         .join('');
-      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => (kase.receiver === undefined ? undefined : caseValue(model, ctx, arg, kase.receiver.args)));
+      const receiverMade = receiverOfCase(kase.receiver);
+      const receiver = receiverMade.expr;
       const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
@@ -248,7 +273,7 @@ export function pythonTests(model: Model, module: string): string {
       usesSame ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n        ${call}` : 'refused' in expected ? `\n        self.fail(${pyString(expected.refused)})` : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
-    def test_gn13e_${name}_${kase.id}(self) -> None:${before}${check}${after}`);
+    def test_gn13e_${name}_${kase.id}(self) -> None:${receiverMade.lines}${before}${check}${after}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -275,8 +300,8 @@ export function pythonTests(model: Model, module: string): string {
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
-    def test_n4_${name}_${kase.id}(self) -> None:
-        self.assertEqual(${invoke(fn, '', made(kase.receiver, (arg) => caseValue(model, ctx, arg, kase.receiver.args)))}, ${pyString(kase.result)})`);
+    def test_n4_${name}_${kase.id}(self) -> None:${receiverOfCase(kase.receiver).lines}
+        self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
@@ -324,7 +349,7 @@ ${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}imp
 
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

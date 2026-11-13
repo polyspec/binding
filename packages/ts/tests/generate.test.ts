@@ -1540,3 +1540,16 @@ test('every case that does not raise runs and compares its result in every targe
   assert.match(go, /t\.Run\("unread", func\(t \*testing\.T\) \{\n\t\t_, err := sample\.SplitWords\("c"/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: splitWords unread', \(\) => \{\n\s+pkg\.splitWords\('c'/);
 });
+
+test('a case gives its receiver as an instance value, made by earlier calls in every target (GN-13f)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  // A receiver that a method of another class makes and a call prepares, each instance a local of the test.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('B-4: Gate\.enter a_closed_gate_lets_nothing_pass', \(\) => \{\n  const made0 = new pkg\.Tag\('a'\);\n  const made1 = made0\.gate\(\);\n  made1\.close\(\);\n  assert\.throws\(\(\) => made1\.enter\(\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const made1 = made0\.gates\(2\);\n  const made2 = made1\[1\];\n  assert\.deepStrictEqual\(ordered\(made2\.enter\(\)\), ordered\('b\. passes'\)\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0 = pkg\.Tag\("a"\)\n        made1 = made0\.gate\(\)\n        made1\.close\(\)\n        with self\.assertRaises/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0 = new \\Polyspec\\Classes\\Tag\("a"\);\n        \$made1 = \$made0->gate\(\);\n        \$made1->close\(\);/);
+  // The tests that need any receiver call a function that makes it.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /G-7: Gate\.enter counts and names its arguments', \(\) => \{\n  assert\.throws\(\(\) => \(\(\) => \{ const made0 = new pkg\.Tag\('a'\); const made1 = made0\.gate\(\); return made1; \}\)\(\)\.enter\(null\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_0\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
+});

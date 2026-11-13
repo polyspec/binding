@@ -461,6 +461,17 @@
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. 결과에 case 형식이 없는
   case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의 내장 형태를 만드는 out 행이 없는 case, parameter나 receiver
   factory의 인자를 주지 않는 case는 그 이유로 시험이 실패하므로, case는 빠지지 않는다.
+- **GN-13f** 메서드의 case는 receiver를 자기 키 가운데 그 class의 factory 인자로 주거나, 키 `receiver` 아래에 앞선
+  호출들이 만드는 인스턴스 값으로 준다:
+  `{"new": "<member id>", "receiver": <인스턴스 값>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
+  또는 `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<단계>], "then": [...]}`. `new`는 그 class를
+  돌려주는 member다: 생성자, static member, 함수, 어느 class의 메서드. `from`은 결과가 그 class를 담는 member이고,
+  `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
+  member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, class 타입
+  parameter는 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
+  않는다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
+  끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
+  `binding check`는 이를 어기는 값을 지적한다(CK-22).
 
 - **GN-13b** Go: 패키지의 시험은 외부 시험 패키지 `zz_generated_test.go`이며 `go test`로 실행한다: text parameter·field마다
   B-3(바이트 FF), enum parameter·field마다 GN-16의 enum 검사, raise하는 contract case마다 B-4(E-7의 정확한 타입, kind, status,
