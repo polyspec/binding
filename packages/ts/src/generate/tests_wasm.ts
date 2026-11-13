@@ -80,6 +80,11 @@ export function wasmTests(model: Model): string {
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
+  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
+  };
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;

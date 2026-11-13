@@ -23,7 +23,7 @@ import {
   objectUnit, places, pointName, unitOf,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, comparableResult, expectedErrno, fixtureOf, fixturesOf, instanceOf, isInstanceValue,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -32,6 +32,8 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
+  // GN-6n: the callback units whose fixture a case value inside another value makes.
+  fixtures: Set<CallbackUnit>;
 }
 
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
@@ -138,6 +140,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
   }
   const unit = unitOf(v.model, type);
+  // GN-6n: a callback value inside another value is a fixture of the body, whose calls the test does not read.
+  const callback = v.model.callbacks.find((c) => c.unit === unit);
+  if (callback !== undefined && unit !== undefined && typeof json === 'object' && 'callback' in json) {
+    v.fixtures.add(callback);
+    return fixtureLines(v, b, fixtureOf(unit, json, 'a case value'), b.fresh('fixture'));
+  }
   if (unit?.kind === 'enum') {
     const variant = (unit.variants ?? []).find((x) => x.value === json);
     return variant === undefined ? `${typeName(v, type)}(${goString(String(json))})` : `${typeName(v, type)}${goName(variant.name)}`;
@@ -313,7 +321,7 @@ const indent = (lines: string[], depth: number): string => lines.map((l) => (l =
 const testName = (text: string): string => text.split(/[^A-Za-z0-9]+/).filter((w) => w !== '').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
 
 // G-5: the fixture of a callback, which answers the calls of the core by the rows of a case.
-function fixtureLines(v: Values, b: Body, fixture: Fixture, name: string): string {
+function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: string): string {
   const members = fixture.unit.members ?? [];
   const memberName = (i: number): string => goString(langName('go', members[i]?.name ?? [], 'callable'));
   const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(p.type, value(v, b, p.type, args[i] ?? null))).join(', ')}}`;
@@ -711,7 +719,7 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
 
 export function goTestFiles(model: Model, module: string): [string, string][] {
   const scope: GoScope = { model, module, imports: new Set() };
-  const v: Values = { model, module, scope, usesPtr: false };
+  const v: Values = { model, module, scope, usesPtr: false, fixtures: new Set() };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
@@ -723,7 +731,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
-    ...[...out.callbacks].map((cb) => callbackTypes(v, cb)),
+    ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = ''): string => {
     const body = `${extra}${tests.join('\n')}\n`;

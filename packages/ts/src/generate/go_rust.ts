@@ -9,7 +9,7 @@ import { defaultAsserts } from './defaults.ts';
 import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
-  aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
+  aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, lockLines, objectUnit, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
@@ -61,13 +61,13 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
     return `${name}(${input})`;
   }
-  if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
+  if ('list' in type) return `in_list(${input}, ${closure(['input'], boxed(model, type.list, convertIn(model, type.list, 'input', subject)))})`;
   if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
+  if ('optional' in type) return `in_optional(${input}, ${closure(['input'], boxed(model, type.optional, convertIn(model, type.optional, 'input', subject)))})`;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
   const unit = unitOf(model, type);
@@ -441,24 +441,26 @@ function recordRust(model: Model, unit: Unit): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const subject = rustString(goName(f.name));
-    if (f.default !== undefined) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, 'input', subject)}?;`;
+    if (f.default !== undefined) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, 'input', subject))}?;`;
   });
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
-  const writes = fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `${f.default === undefined && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
+  const writes = (): string[] => fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `${f.default === undefined && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
+  // GN-6n: a record with a callback field has one lifetime and only enters.
+  const entersOnly = fields.some((f) => unitOf(model, f.type)?.origin === 'callback');
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
-fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
+fn in_${name}(input: &mut &[u8]) -> Result<${rustType(model, { unit: unit.id })}, Fail> {
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
 }
-
+${entersOnly ? '' : `
 fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
     let value = value.borrow();
-${writes.join('\n')}
+${writes().join('\n')}
 }
-`;
+`}`;
 }
 
 // ---- class units (T-5) ----

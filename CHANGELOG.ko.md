@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 다른 타입 안(list의 항목, `optional`, record parameter의 field)에 callback을 가진 parameter는 모든 target에서
+  거부되었다("the type {"unit": ...} is not generated yet"). 이제 각 target은 그런 callback을 `Box<dyn <core trait> + 'a>`로,
+  그것을 담은 list, `optional`, record를 값으로 코어에 준다. `'a`는 Node에서 `'env`, 다른 곳에서 `'static`이다. callback
+  field를 가진 record의 코어 타입은 그 lifetime을 가지며, 그런 record는 record parameter가 아닌 자리에서 이름으로
+  거부한다(GN-6n). 생성된 시험은 다른 값 안의 callback 값을 fixture의 객체로, 또는 그 callback을 구현하는 class의 인스턴스
+  값으로 준다. `tests/e2e/sample`은 `sample.first`(list), `sample.maybe`(`optional`), `sample.seek`(record field)를
+  가진다. `packages/ts`의 `npm test`로 확인했다.
 - 함수 값 `{"function": [<행>]}`을 준 case는 생성기를 "no case value of the type"으로 멈추게 했다. 이제 Python 시험은
   그것을 호출 자체의 fixture로 주고 호출 뒤에 그 호출 기록을 읽는다. `then` 호출의 인자처럼 다른 값 안에 있으면 그런
   fixture의 호출 가능한 객체로 준다. 또 호출 가능하지 않은 값이 kind `invalid_argument_type`인지 확인한다(G-5, GN-6m).

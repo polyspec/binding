@@ -31,6 +31,8 @@ export interface Context {
   instanceNew?: (receiver: Receiver) => string;
   // GN-6m: the expression of a function value of a case from its rows, where the test reads no record of its calls.
   functionNew?: (rows: string[][]) => string;
+  // GN-6n: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
+  fixtureNew?: (values: { members: string[]; rows: string[][] }) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -177,6 +179,16 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     );
   }
   // GN-13f: the value of a class is an instance value, at any place of the case.
+  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
+  // value at a place of a callback is an instance of a class that implements it (GN-13f).
+  if (unit?.origin === 'callback' && ctx.fixtureNew !== undefined && typeof value === 'object' && value !== null && 'callback' in value) {
+    return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(unit, value, 'a case value')));
+  }
+  if (unit?.origin === 'callback' && isInstanceValue(value) && ctx.instanceNew !== undefined) {
+    const made = memberById(model, String((value as Record<string, unknown>)['new']))?.returns;
+    const of = typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
+    return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
+  }
   // GN-6m: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
   if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
@@ -738,40 +750,46 @@ export function fixturesOf(model: Model, fn: Fn, id: string, args: Map<Arg, unkn
     const unit = unitOf(model, arg.type);
     if (unit?.origin !== 'callback') continue;
     const where = `the case ${id} of ${fn.member.id}`;
-    const value = args.get(arg) as { callback?: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] } | null | undefined;
-    if (typeof value !== 'object' || value === null || typeof value.callback !== 'object' || value.callback === null) {
+    const value = args.get(arg);
+    if (typeof value !== 'object' || value === null || typeof (value as { callback?: unknown }).callback !== 'object') {
       throw new Error(`${where} gives no {"callback": ...} for ${langName('python', arg.name, 'variable')} (G-5)`);
     }
-    const members = unit.members ?? [];
-    const position = (memberId: string): number => {
-      const found = members.findIndex((m) => m.id === memberId);
-      if (found < 0) throw new Error(`${where} names ${memberId}, which is no member of ${unit.id} (G-5)`);
-      return found;
-    };
-    const ordered = (member: number, given: Record<string, unknown> | undefined): unknown[] =>
-      (members[member]?.parameters ?? []).map((p) => {
-        const key = langName('python', p.name, 'variable');
-        if (given === undefined || !(key in given)) throw new Error(`${where} gives no ${key} in the args of ${members[member]?.id ?? ''} (G-5)`);
-        return given[key];
-      });
-    const rows: Fixture['rows'] = [];
-    for (const [memberId, list] of Object.entries(value.callback)) {
-      const member = position(memberId);
-      for (const row of list as Record<string, unknown>[]) {
-        if (row['raise'] !== undefined) throw new Unsupported(`${where}: a raise row of a callback fixture is not generated yet`);
-        if (row['async'] === true) throw new Unsupported(`${where}: an async row of a callback fixture is not generated yet`);
-        rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true });
-      }
-    }
-    const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
-    out.push({ arg, unit, rows, ...(calls === undefined ? {} : { calls }) });
+    out.push({ arg, ...fixtureOf(unit, value, where) });
   }
   return out;
 }
 
+// G-5: the rows and the calls of a callback value {"callback": {...}, "calls": [...]} of the unit.
+export function fixtureOf(unit: Unit, given: unknown, where: string): Omit<Fixture, 'arg'> {
+  const value = given as { callback: Record<string, unknown[]>; calls?: { member: string; args?: Record<string, unknown> }[] };
+  const members = unit.members ?? [];
+  const position = (memberId: string): number => {
+    const found = members.findIndex((m) => m.id === memberId);
+    if (found < 0) throw new Error(`${where} names ${memberId}, which is no member of ${unit.id} (G-5)`);
+    return found;
+  };
+  const ordered = (member: number, args: Record<string, unknown> | undefined): unknown[] =>
+    (members[member]?.parameters ?? []).map((p) => {
+      const key = langName('python', p.name, 'variable');
+      if (args === undefined || !(key in args)) throw new Error(`${where} gives no ${key} in the args of ${members[member]?.id ?? ''} (G-5)`);
+      return args[key];
+    });
+  const rows: Fixture['rows'] = [];
+  for (const [memberId, list] of Object.entries(value.callback)) {
+    const member = position(memberId);
+    for (const row of list as Record<string, unknown>[]) {
+      if (row['raise'] !== undefined) throw new Unsupported(`${where}: a raise row of a callback fixture is not generated yet`);
+      if (row['async'] === true) throw new Unsupported(`${where}: an async row of a callback fixture is not generated yet`);
+      rows.push({ member, args: ordered(member, row['args'] as Record<string, unknown> | undefined), result: row['result'] ?? null, once: row['once'] === true });
+    }
+  }
+  const calls = value.calls?.map((call) => ({ member: position(call.member), args: ordered(position(call.member), call.args) }));
+  return { unit, rows, ...(calls === undefined ? {} : { calls }) };
+}
+
 // The rows and the expected calls of a fixture as the values of a language: the member name, the arguments, and for a
 // row the result and whether it is used once.
-export function fixtureValues(model: Model, ctx: Context, fixture: Fixture): { members: string[]; rows: string[][]; calls: string[][] | undefined } {
+export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture, 'arg'>): { members: string[]; rows: string[][]; calls: string[][] | undefined } {
   const members = fixture.unit.members ?? [];
   const name = (member: number): string => langName(ctx.lang, members[member]?.name ?? [], 'callable');
   const argsOf = (member: number, args: unknown[]): string[] => (members[member]?.parameters ?? []).map((p, i) => fromJson(model, ctx, p.type, args[i] ?? null));

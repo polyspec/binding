@@ -114,6 +114,11 @@ export function pythonTests(model: Model, module: string): string {
     return `${helper}()`;
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
+  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call raises.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `_fixture((${values.members.map((m) => `${m},`).join(' ')}), [${values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
+  };
   // GN-6m: a function value inside another value is the callable of a fixture, whose unexpected call raises.
   ctx.functionNew = (rows) => {
     usesFixture = true;

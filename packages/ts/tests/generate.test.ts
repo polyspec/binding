@@ -1547,7 +1547,7 @@ test('the errno of a case is the value of its symbol in Python and Node, and PHP
 
 test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
   const drop = (c: any, cases: any): void => {
-    c.units = c.units.filter((u: any) => !['lookup', 'tag', 'data', 'counter', 'ledger'].includes(u.id));
+    c.units = c.units.filter((u: any) => !['lookup', 'search', 'tag', 'data', 'counter', 'ledger'].includes(u.id));
     const kept = ['sample.measure', 'sample.checked', 'sample.touch'];
     c.units.find((u: any) => u.id === 'sample').members = c.units.find((u: any) => u.id === 'sample').members.filter((m: any) => kept.includes(m.id));
     c.cases = c.cases.filter((row: any) => kept.includes(row.member));
@@ -1584,7 +1584,7 @@ test('core.result says whether the core returns a Result, and a return of none i
   assert.throws(() => sampleWith((c) => {
     c.errors.kinds = [];
     delete c.faults;
-    c.units = c.units.filter((u: any) => !['lookup', 'tag', 'data', 'counter', 'ledger'].includes(u.id));
+    c.units = c.units.filter((u: any) => !['lookup', 'search', 'tag', 'data', 'counter', 'ledger'].includes(u.id));
     const kept = ['sample.checked'];
     c.units.find((u: any) => u.id === 'sample').members = c.units.find((u: any) => u.id === 'sample').members.filter((m: any) => kept.includes(m.id));
     c.cases = c.cases.filter((row: any) => kept.includes(row.member));

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A parameter that held a callback inside another type, an item of a list, an `optional` or a field of a record
+  parameter, was refused for every target ("the type {"unit": ...} is not generated yet"). Each target now gives the
+  core such a callback as `Box<dyn <core trait> + 'a>` and the list, the `optional` or the record by value, `'a` being
+  `'env` in Node and `'static` elsewhere; the core type of a record with a callback field has that lifetime, and such a
+  record is refused by name at a place other than a record parameter (GN-6n). A generated test gives a callback value
+  inside another value as the object of a fixture, or an instance value of a class that implements the callback.
+  `tests/e2e/sample` has `sample.first` (a list), `sample.maybe` (an `optional`) and `sample.seek` (a record field).
+  Verified by `npm test` in `packages/ts`.
 - A case that gave a function value `{"function": [<row>]}` stopped the generator with "no case value of the type".
   A Python test now gives it as a fixture of the call itself, whose record of calls the test reads after the call, or,
   inside another value such as an argument of a `then` call, as the callable of such a fixture; and it checks that a

@@ -17,6 +17,31 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
 
+// G-5: the object of a callback fixture: a call that no row answers is recorded and throws, so a core that swallows the
+// exception still fails the test, which reads the record.
+function phpFixture(values: { members: string[]; rows: string[][] }): string {
+  return `new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
+            public array $unexpected = [];
+            public array $calls = [];
+            public function __construct(private array $rows) {}
+${values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
+            private function answer(string $name, array $args): mixed
+            {
+                $this->calls[] = [$name, $args];
+                foreach ($this->rows as $at => $row) {
+                    if ($row[0] === $name && $row[1] === $args) {
+                        if ($row[3]) {
+                            unset($this->rows[$at]);
+                        }
+                        return $row[2];
+                    }
+                }
+                $this->unexpected[] = [$name, $args];
+                throw new UnexpectedCall($name);
+            }
+        }`;
+}
+
 export function phpTests(model: Model, layout: PhpLayout): string {
   const enumRef = (name: string, value: string): string => {
     const unit = model.enums.find((u) => langName('python', u.name, 'class') === name);
@@ -79,6 +104,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `(function () { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
+  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return phpFixture(values);
+  };
   let usesOutcome = false;
   let usesSame = false;
   for (const fn of callables(model)) {
@@ -182,26 +212,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       const before = fixtures
         .map(
           (f) => `
-        ${f.name} = new class([${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
-            public array $unexpected = [];
-            public array $calls = [];
-            public function __construct(private array $rows) {}
-${f.values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
-            private function answer(string $name, array $args): mixed
-            {
-                $this->calls[] = [$name, $args];
-                foreach ($this->rows as $at => $row) {
-                    if ($row[0] === $name && $row[1] === $args) {
-                        if ($row[3]) {
-                            unset($this->rows[$at]);
-                        }
-                        return $row[2];
-                    }
-                }
-                $this->unexpected[] = [$name, $args];
-                throw new UnexpectedCall($name);
-            }
-        };`,
+        ${f.name} = ${phpFixture(f.values)};`,
         )
         .join('');
       const after = fixtures
