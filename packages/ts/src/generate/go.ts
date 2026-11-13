@@ -1833,4 +1833,38 @@ export function go(model: Model, files: Files): void {
     files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model, echo));
   }
   files.set(`${FFI}/generated/lib.rs`, libRust(model));
+  for (const platform of GO_PLATFORMS) {
+    files.set(`${BINDING}/zz_generated_link_${platform}.go`, goLink(model, platform));
+    files.set(`${FFI}/lib/${platform}/zz_generated_lib.go`, goLibraryPackage(model, platform));
+  }
+}
+
+// GN-15g: the platforms of a Go module, <GOOS>_<GOARCH> of the platforms of a release (GN-3c).
+export const GO_PLATFORMS = ['linux_amd64', 'linux_arm64', 'darwin_arm64'] as const;
+
+// GN-15g: the file of package binding that Go compiles for one platform alone, by its name. Its directive names the
+// directory of the static library of that platform inside the Go module (${SRCDIR} is the directory of the file, also
+// in the module cache), so a module that is fetched at its tag links the library that it carries; a checkout, whose
+// directory holds no library, names the directory of its build by CGO_LDFLAGS, which the linker searches first. It
+// imports the package of the directory, because go mod vendor copies only the directories of imported packages.
+function goLink(model: Model, platform: string): string {
+  return `${goHeader()}
+
+package binding
+
+// #cgo LDFLAGS: -L\${SRCDIR}/../ffi/lib/${platform}
+import "C"
+
+import _ "${goModule(model.contract)}/internal/ffi/lib/${platform}"
+`;
+}
+
+// GN-15g: the one Go file of the directory of the static library of a platform, which makes the directory a package.
+function goLibraryPackage(model: Model, platform: string): string {
+  return `${goHeader()}
+
+// Package ${platform} is the directory of the static library lib${staticLib(model.contract)}.a of ${platform.replace('_', '/')}, which a release of
+// the Go module puts beside this file (GN-15g); package binding imports it, so go mod vendor copies the library.
+package ${platform}
+`;
 }
