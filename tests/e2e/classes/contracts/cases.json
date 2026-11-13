@@ -129,6 +129,42 @@
       "name": "a"
     }
   ],
+  "tag_lease": [
+    {
+      "id": "a_tag_has_a_lease",
+      "name": "a"
+    }
+  ],
+  "lease_holder": [
+    {
+      "id": "a_lease_is_held_by_its_tag",
+      "receiver": {
+        "new": "tag.lease",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a"
+    }
+  ],
+  "lease_release": [
+    {
+      "id": "a_lease_is_released",
+      "receiver": {
+        "new": "tag.lease",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "the lease of a is released"
+    }
+  ],
   "tag_gates": [
     {
       "id": "a_tag_has_two_gates",

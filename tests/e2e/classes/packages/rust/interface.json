@@ -483,6 +483,32 @@
           }
         },
         {
+          "id": "tag.lease",
+          "name": [
+            "lease"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6p"
+          },
+          "parameters": [],
+          "returns": {
+            "unit": "lease"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::lease",
+            "receiver": "&self"
+          }
+        },
+        {
           "id": "tag.gates",
           "name": [
             "gates"
@@ -616,6 +642,70 @@
           }
         }
       ]
+    },
+    {
+      "id": "lease",
+      "name": [
+        "lease"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Lease",
+      "final": true,
+      "constructible": false,
+      "cleanup": "lease.release",
+      "members": [
+        {
+          "id": "lease.holder",
+          "name": [
+            "holder"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6p"
+          },
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Lease::holder",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "lease.release",
+          "name": [
+            "release"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6p"
+          },
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Lease::release",
+            "receiver": "self"
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -680,6 +770,21 @@
       "member": "tag.gate",
       "file": "contracts/cases.json",
       "group": "tag_gate"
+    },
+    {
+      "member": "tag.lease",
+      "file": "contracts/cases.json",
+      "group": "tag_lease"
+    },
+    {
+      "member": "lease.holder",
+      "file": "contracts/cases.json",
+      "group": "lease_holder"
+    },
+    {
+      "member": "lease.release",
+      "file": "contracts/cases.json",
+      "group": "lease_release"
     },
     {
       "member": "tag.gates",

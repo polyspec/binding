@@ -1881,6 +1881,43 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
 
+test('a receiver self takes the value of its object, and a class with cleanup warns when it is destroyed without it (GN-6o, GN-6p, B-10)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  const warning = 'Lease was destroyed without release(), so its destructor released it (B-10)';
+  for (const [lang, path] of [['php', 'packages/php-ext/generated/lib.rs'], ['python', 'packages/python/generated/lib.rs'], ['node', 'packages/ts/generated/lib.rs']] as const) {
+    const lib = text(out, path);
+    // GN-6o: the place of the receiver self takes the value out of the lock, and the core consumes it.
+    assert.match(lib, /\.take\("Lease"\)/, lang);
+    assert.match(lib, /polyspec_classes::Lease::release\(receiver\)/, lang);
+    // GN-6p: the core type of a unit with cleanup implements Cleanup, and that of another class unit does not.
+    assert.match(lib, /cleanup::<polyspec_classes::Lease>/, lang);
+    assert.match(lib, /<polyspec_classes::Gate as NotCleanup<_>>::not_cleanup/, lang);
+    assert.doesNotMatch(lib, /<polyspec_classes::Lease as NotCleanup<_>>/, lang);
+    assert.ok(lib.includes(warning), `${lang} warns in its destructor`);
+  }
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /PyResourceWarning/);
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /emitWarning/);
+  // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /'warning'/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /consumed/);
+  // Go and WASM refuse the unit and the receiver self by name; a cleanup that is not a method with the receiver self is
+  // refused.
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.only?.reason === 'GN-6p') delete member.only;
+  };
+  assert.throws(() => classes(everywhere, ['go']), /lease: a class unit with cleanup is not generated for Go yet \(GN-6p\)/);
+  assert.throws(() => classes(everywhere, ['wasm']), /lease\.release: a method with the receiver self is not generated for WASM yet \(GN-6o\)/);
+  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self \(GN-6p\)/);
+});
+
 test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
