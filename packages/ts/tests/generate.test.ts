@@ -2532,9 +2532,11 @@ test('a default of an optional type is one Option, None when it is left out or n
   const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
   assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);
   assert.match(goShapes, /\tEnd +\*string\n/);
-  // An optional of a keyed map, which is itself the pointer *KeyedMap[T], is the one place of a second pointer.
-  assert.match(goShapes, /^func Present\(maps \[\]\*\*KeyedMap\[string\]\) \(\[\]\*\*KeyedMap\[string\], error\)/m);
-  assert.doesNotMatch(goShapes.replaceAll('**KeyedMap[string]', ''), /\*\*/);
+  // GN-15e: an optional of a keyed map, which is itself the pointer *KeyedMap[T], takes no second pointer: its nil
+  // is the missing value.
+  assert.match(goShapes, /^func Present\(maps \[\]\*KeyedMap\[string\]\) \(\[\]\*KeyedMap\[string\], error\)/m);
+  assert.doesNotMatch(goShapes, /\*\*/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /\*\*|ptr\((?:mapWith|keyedWith|NewMap|NewKeyedMap)/);
   assert.doesNotMatch(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /Option<Option</);
   // G-4: another default of an optional type is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
@@ -3055,11 +3057,11 @@ test('the result null of an optional of a class is compared with the null of eac
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n\s+result = pkg\.find\("a"\)\n\s+expected = None\n/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13efindAbsent\(\): void\n\s+\{\n\s+self::assertSame\(self::same\(null\), self::same\([^\n]*find\("a"\)\)\);/);
-  // Go compares with the nil of the type of the result, as its other results. Go writes no case value of a class of
+  // Go compares with the nil of the type of the result, which is the one pointer of the class (GN-15e). Go writes no case value of a class of
   // origin value yet, so its contract has the cases of find alone.
   const goContract = { ...contract, cases: contract.cases.filter((row: any) => row.member === 'classes.find') };
   const go = generate({ contract: goContract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] });
-  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
   // A result that is a class still has no case form, so its test fails with the reason.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
 });

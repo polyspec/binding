@@ -19,7 +19,7 @@ import { defaultCaseValue } from './defaults.ts';
 import { numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
-  goPackage, goParam, goResultCount, goString, goTupleArray, goType,
+  goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent,
 } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
@@ -70,6 +70,8 @@ function typed(type: Type, text: string): string {
 }
 
 function pointerTo(v: Values, type: Type, inner: string): string {
+  // GN-15e: a pointer whose nil is no value of its type is its own optional.
+  if (nilAbsent(v.model, type)) return inner;
   v.usesPtr = true;
   if (aliasOf(v.model, type) !== undefined) return `ptr[any](${inner})`;
   // GN-6v: a pointer to the interface of a variant, not to the struct of the case.

@@ -1059,7 +1059,12 @@ the design ids are those of the binding design.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil
-  already means no value (GN-6i).
+  already means no value (GN-6i). A Go type that is a pointer whose nil is no value of the type takes no second
+  pointer, as an `optional` and as a parameter or field with a default: a `map<T>` (`*Map[T]`), a `keyed_map<T>`
+  (`*KeyedMap[T]`), an instance of a class (`*<Class>`) and a value class of another repository (GN-6x). Its nil is
+  the missing value, and the C ABI writes the tag of an absent value for it, so `optional<keyed_map<T>>` is
+  `*KeyedMap[T]`. An `optional` of an `optional` keeps its second pointer, because the nil of the inner pointer is a
+  value of the outer type.
 - **GN-15f** Go records of another repository (T-3, GN-6c): a record of another repository is the struct `<Record>` of the package of its
   module in the Go module of that repository, the module of `packages.go` of its contract, which the package imports
   by its package name; the C ABI writes and reads it field by field as a record of this repository, through

@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 6c45e1885cb8c3b5c1ef57265fa0e6f20c0b3384482c145731ab5e6208ab9f1a -->
+<!-- source-sha256: 6630c3cea9034429c07a6a8894faa7ead04b6999aa2c0634ec69266c82436503 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Go는 이미 포인터인 타입의 `optional`을 두 번째 포인터로 썼다: `optional<keyed_map<T>>`는 `**KeyedMap[T]`,
+  `optional<map<T>>`는 `**Map[T]`, class의 `optional`은 `**<Class>`였고, 그런 타입의 기본값이 있는 parameter나 field도
+  두 번째 포인터를 받았다. 이제 nil이 그 타입의 값이 아닌 포인터는 두 번째 포인터를 받지 않는다. 그 nil이 없는 값이고
+  C ABI는 그 nil에 값이 없다는 태그를 쓴다. `map<T>`, `keyed_map<T>`, class의 인스턴스, 다른 레포의 value class가
+  그렇고, `optional`의 `optional`은 두 번째 포인터를 그대로 둔다(GN-15e). `make test-ts`로 확인했다:
+  `tests/e2e/shapes`의 Go 바인딩 테스트가 `Present`의 `[]**KeyedMap[string]` 때문에 실패했고 이제 바인딩과 그 테스트에
+  `**`가 없을 것을 요구하며, 397개 중 397개가 통과한다.
 - `tests/e2e/shapes`의 첫 map case가 결함 둘을 드러냈다. Node addon은 전역 `Array`를 object로 읽었는데 napi는 함수를 그렇게
   읽는 것을 거부하므로, map이 있는 모든 호출이 kind `internal`로 실패했다. 이제 그 검사 없이 읽는다. Go 테스트는 map 값을
   한 줄의 함수 리터럴로 썼는데 gofmt는 본문이 한 줄보다 긴 함수 리터럴을 여러 줄로 나누므로, `gofmt -l`이

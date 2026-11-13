@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Go wrote an `optional` of a type that is already a pointer with a second pointer: `optional<keyed_map<T>>` was
+  `**KeyedMap[T]`, `optional<map<T>>` was `**Map[T]`, and an `optional` of a class was `**<Class>`; a parameter or a
+  field of such a type with a default got the second pointer too. A pointer whose nil is no value of its type now
+  takes no second pointer: its nil is the missing value, for which the C ABI writes the tag of an absent value. This
+  holds for a `map<T>`, a `keyed_map<T>`, an instance of a class and a value class of another repository; an
+  `optional` of an `optional` keeps its second pointer (GN-15e). Verified by `make test-ts`: the test of the Go
+  binding of `tests/e2e/shapes` failed with `[]**KeyedMap[string]` of `Present` and now requires that the binding and
+  its tests hold no `**`, and 397 of 397 pass.
 - The first cases with a map of `tests/e2e/shapes` showed two defects. The Node addon read the global `Array` as an
   object, which napi refuses for a function, so every call with a map failed with kind `internal`; it now reads it
   without that check. The Go tests wrote a map value as a function literal on one line, which gofmt breaks when its
