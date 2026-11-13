@@ -1,11 +1,23 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d1a4eb319d27bc48e8968baeb07c14c440010f1ccc91d3e23d53a79f21cea9f8 -->
+<!-- source-sha256: 9611201561cd3f409918bbbfa81084fba9f0f7e31a7d2be046676ad4dc5ad5b4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 코어의 다른 polyspec 라이브러리 의존 줄이 branch, commit, 버전 범위를 적으면 `binding check`, `binding scaffold`,
+  `binding generate`가 모든 target에서 stack trace와 함께 멈췄다. 그 라이브러리의 Go module에 `go.mod`에 적을 버전이 없었기
+  때문이다. 이제 그런 줄은 개발 꼴이다(GN-3e). `go.mod`는 `replace` 줄 없이 그 module을 `v0.0.0`으로 require하고, 개발
+  checkout은 추적하지 않는 `go.work`로 그것을 해석한다. `path`는 `v0.0.0`과 `replace` 줄을 그대로 갖고, tag나 정확한 버전은
+  `vX.Y.Z`를 그대로 갖는다(GN-15f). release 도구가 주는 옵션인 `binding check <interface.json> --release`는 개발 꼴을 하나씩
+  새 검사 CK-70의 finding으로 보고하며, finding은 코어 manifest, crate, 그 꼴을 이름한다. `scaffold`가 쓸 수 없는 추적
+  package(코어가 이름한 라이브러리에 의존하지 않는다, 라이브러리에 Go module이 없다, path가 그 라이브러리의 코어가 아니다,
+  계약을 찾지 못한다)는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓰고 상태 1로 실패하고, `check`는 그것을
+  CK-19로 보고하며 다른 것을 비교하고, `generate`는 더 이상 추적 package를 읽지 않는다. 계약이나 case 파일이 일으킨
+  `generate`의 실패는 그 문장을 가진 거부된 target이며 stack trace가 없어서 다른 target을 멈추지 않는다(GN-1c).
+  `make test-ts`로 확인했다. 새 시험 셋과 GN-15f의 바뀐 시험은 변경 전에 실패했고(396개 중 4개), 변경 뒤 396개 중 396개가
+  통과한다.
 - 쓰기 쪽 자리가 있는 class를 갖고 class를 인자로 받는 member가 없는 계약에서, 생성된 Node crate는 napi의
   `ClassInstance`와 `FromNapiValue`를 조건 없이 import했다. 그 둘을 쓰는 것은 feature `panic-test`의 poison 진입점뿐이어서,
   feature 없는 빌드에 쓰이지 않는 import가 남았고, 워크스페이스의 lint가 이를 deny한다. 이제 생성기는 그 진입점만 쓰는

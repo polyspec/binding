@@ -1144,6 +1144,27 @@ test('a tracked package that scaffold cannot write is named, and the other packa
   }
 });
 
+test('a failure that a case file causes is a refused target with its sentence and no stack trace (GN-1c)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'binding-sentence-'));
+  try {
+    execFileSync('cp', ['-r', new URL('../../../tests/e2e/sample', import.meta.url).pathname, root]);
+    // A value {"host"} outside its closed table, which the generator reads when it writes the case of an alias.
+    const casesPath = join(root, 'sample/contracts/cases.json');
+    const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
+    const kase = cases.data_in.find((k: any) => k.raises !== undefined);
+    kase.value = { host: 'bogus' };
+    writeFileSync(casesPath, JSON.stringify(cases));
+    const run = spawnSync(process.execPath, [cli, 'generate', '--root', join(root, 'sample'), '--out', join(root, 'out')], { encoding: 'utf8' });
+    assert.equal(run.status, 1);
+    for (const target of ['php', 'python', 'node', 'go', 'wasm']) {
+      assert.match(run.stderr, new RegExp(`${target}: not generated \\(G-4\\), 1 item:\\n  the case ${kase.id} of the alias data: a value \\{"host"\\} is [^\\n]*, not "bogus" \\(G-5\\)\\n`));
+    }
+    assert.doesNotMatch(run.stderr, /\n {4}at /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('Go: a contract without a class unit has no table of instances in its C ABI (T-5, GN-15a)', () => {
   // A map insert of the generated code (made.insert) is no call of the helper that keeps an instance in a table.
   const { contract, caseFiles, foreign } = consumerSample();

@@ -5,6 +5,19 @@
 
 ## Unreleased
 
+- When the dependency line of the core on another polyspec library named a branch, a commit or a version range,
+  `binding check`, `binding scaffold` and `binding generate` stopped for every target with a stack trace, because the
+  Go module of that library had no version for `go.mod`. Such a line is now a development form (GN-3e): `go.mod`
+  requires the module at `v0.0.0` without a `replace` line, which the development checkout resolves through its
+  untracked `go.work`; a `path` keeps `v0.0.0` with its `replace` line and a tag or an exact version keeps `vX.Y.Z`
+  (GN-15f). `binding check <interface.json> --release`, the option that a release tool passes, reports each
+  development form as a finding of the new check CK-70, which names the core manifest, the crate and the form. A
+  tracked package that `scaffold` cannot write (the core does not depend on a named library, a library has no Go
+  module, a path is not the core of its library, a contract is not found) is named with its reason: `scaffold` writes
+  the other packages and fails with status 1, `check` reports it as CK-19 and compares the others, and `generate` no
+  longer reads the tracked packages. A failure of `generate` that a contract or a case file causes is a refused target
+  with its sentence and no stack trace, so it does not stop another target (GN-1c). Verified by `make test-ts`: the
+  three new tests and the changed test of GN-15f failed before the change (4 of 396), and 396 of 396 pass with it.
 - For a contract with a class that has a write place and no member that takes a class as an argument, the generated
   Node crate imported napi's `ClassInstance` and `FromNapiValue` without a condition, while their only user was the
   poison entry point of the feature `panic-test`, so a build without features had unused imports, which the lints of

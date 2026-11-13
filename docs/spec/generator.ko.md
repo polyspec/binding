@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a8f2cd1caad1429963b5a6acda243051bd4c1134e90f581b431eb2d6fb024918 -->
+<!-- source-sha256: c9950ea4c44ec149f14a86d70b84a2b1c7c67ce1f513095291eb201345301432 -->
 # 생성기
 
 [English](generator.md)

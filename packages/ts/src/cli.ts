@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// binding check <interface.json>
+// binding check <interface.json> [--release]
 //   The contract check (I-1, I-2), with the contracts of the libraries the contract names, and the comparison of the
-//   tracked binding packages with what `binding scaffold` writes (L-2).
+//   tracked binding packages with what `binding scaffold` writes (L-2). --release adds the check of a release (CK-70).
 // binding scaffold [--root <repository> | --contract <interface.json>]
 //   Writes the tracked thin package of each binding (L-2): its Cargo manifest, its entry file and its language manifest.
 // binding generate [--root <repository> | --contract <interface.json>] [--out <directory>]
@@ -19,7 +19,7 @@ import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
+import { casePointLibraries, componentBase, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -81,18 +81,27 @@ function fail(message: string): never {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
   process.exit(2);
 }
 
+// GN-1c: the sentences of a failure that a contract, a case file or a manifest causes, which the generator throws as a
+// refusal or as an Error with its sentence. Any other error is a defect of binding and keeps its stack trace.
+function sentences(error: unknown): string[] {
+  if (error instanceof Unsupported) return error.refusals;
+  if (error instanceof Error && error.constructor === Error && !error.message.startsWith('internal:')) return [error.message];
+  throw error;
+}
 
 const [command, ...rest] = process.argv.slice(2);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
 if (command === 'check') {
-  const [path, ...extra] = rest;
-  if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
+  // CK-70: --release, which the tool that builds a release passes, adds the check of a release.
+  const [path, ...extra] = rest.filter((argument) => argument !== '--release');
+  if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the option --release');
+  if (rest.includes('--release')) options.set('--release', 'true');
   contractPath = resolve(path);
 } else {
   for (let i = 0; i < rest.length; i += 2) {
@@ -178,16 +187,27 @@ function scaffolded(): Map<string, unknown> {
     const spec = manifest.dependencies?.[`polyspec-${library}`];
     const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
     if (typeof path === 'string') {
+      // A contract that is not there is not found: the Go module, which alone reads it, is then named as not written
+      // (GN-3e), and the packages of the other targets are written.
       const file = join(root, checked.core.path, path, 'interface.json');
-      if (!existsSync(file)) fail(`${file}: the contract of ${library}, a path dependency of the core, is not there, so scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-      found.set(library, JSON.parse(readFileSync(file, 'utf8')));
+      if (existsSync(file)) found.set(library, JSON.parse(readFileSync(file, 'utf8')));
     }
     else others = true;
   }
   if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
   return found;
 }
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
+const coreDependencies = new Map(Object.entries(manifest.dependencies ?? {}));
+// GN-3e: the tracked packages, which check and scaffold read and generate does not. A package that cannot be written is
+// named with its reason, and so is a failure of the whole that the contract, a case file or a manifest causes.
+function trackedOf(): Tracked {
+  try {
+    return trackedResult(checked, version as string, coreDependencies, casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
+  } catch (error) {
+    return { files: new Map(), refused: sentences(error).map((message) => ({ path: componentBase(checked), message })) };
+  }
+}
+const tracked: Tracked = command === 'generate' ? { files: new Map(), refused: [] } : trackedOf();
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.
@@ -225,9 +245,21 @@ if (command === 'check') {
       process.stderr.write(`${join(coreDir, 'Cargo.toml')}: CK-65 the core ${checked.core.crate} has fault injection points, but its [dev-dependencies] name no ${checked.core.crate} = { path = ".", features = ["fault-test"] }, so cargo test without flags does not arm them (GN-5)\n`);
     }
   }
+  // CK-70: the check of a release reports each dependency line of the core on another library in a development form.
+  if (options.has('--release')) {
+    for (const message of releaseFindings(checked, coreDependencies, casePointLibraries(checked, caseFiles))) {
+      differs = true;
+      process.stderr.write(`${join(root, checked.core.path, 'Cargo.toml')}: CK-70 ${message}\n`);
+    }
+  }
   const names = failedChecks.has('CK-18');
   if (names) process.stderr.write(`${contractPath}: CK-19 did not run: it compares with what binding scaffold writes, which needs the package names of CK-18\n`);
-  for (const [path, text] of names ? [] : tracked) {
+  // GN-3e: a package that scaffold cannot write is a finding with its reason.
+  for (const { path, message } of names ? [] : tracked.refused) {
+    differs = true;
+    process.stderr.write(`${join(root, path)}: CK-19 binding scaffold does not write it: ${message} (L-2)\n`);
+  }
+  for (const [path, text] of names ? [] : tracked.files) {
     const full = join(root, path);
     const found = existsSync(full) ? readFileSync(full, 'utf8') : undefined;
     if (found !== text) {
@@ -255,11 +287,13 @@ if (command === 'check') {
 if (command === 'scaffold') {
   // --out writes the same files under another directory, as for generate.
   const target = resolve(options.get('--out') ?? root);
-  for (const [path, text] of tracked) {
+  for (const [path, text] of tracked.files) {
     mkdirSync(dirname(join(target, path)), { recursive: true });
     writeFileSync(join(target, path), text);
   }
-  process.exit(0);
+  // GN-3e: a package that cannot be written is named with its reason after the others are written.
+  for (const { path, message } of tracked.refused) process.stderr.write(`binding: ${path}: not written: ${message}\n`);
+  process.exit(tracked.refused.length > 0 ? 1 : 0);
 }
 
 const lib = { name: manifest.lib?.name ?? core.name.replaceAll('-', '_') };
@@ -275,8 +309,7 @@ for (const target of targets) {
   try {
     for (const [path, text] of generate({ contract: checked, version, coreLib: lib.name, caseFiles, foreign: foreign as ReadonlyMap<string, Contract>, targets: [target] })) files.set(path, text);
   } catch (error) {
-    if (!(error instanceof Unsupported)) throw error;
-    refused.push({ target, refusals: error.refusals });
+    refused.push({ target, refusals: sentences(error) });
   }
 }
 const out = resolve(options.get('--out') ?? root);
