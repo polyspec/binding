@@ -21,8 +21,8 @@ the design ids are those of the binding design.
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a dependency kind, the
   type `source` outside a parameter) is refused by name
-  before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
-  repository (T-3, T-5, U-3), and the type `source`, a default and an error unit; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything is written (G-4, P-4). Go refuses a class unit (T-5); Go and WASM refuse a callback unit and a record of
+  another repository (T-3, U-3), and the type `source`, a default and an error unit; WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -231,6 +231,12 @@ the design ids are those of the binding design.
   `binding_core::Kinds`, and in PHP the private properties stay those of the category class, read and written in its
   scope. Refused by name (G-4): an error unit with members (E-3), an error unit in a module other than the root, and a
   `class` that names no error unit.
+- **GN-7b** The Go and WASM crates hold, for each variant that a member names in `raises`, the assertion
+  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
+  core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
+  returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
+  the same assertion in the Python, Node and PHP crates, the path of a variant that holds the error of a dependency
+  (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
 
@@ -252,7 +258,9 @@ the design ids are those of the binding design.
   `invalid_argument_type`. A map leaves with the same rule: a decimal text or byte string key becomes an int key, and
   a map with two keys that PHP makes one (`Int(1)` and `Text("1")`) is kind `internal`, not a lost entry (P-4). The
   int key as text is the inverse of PHP's own conversion of a decimal string key, so a text key `"1"` that leaves as
-  the int key 1 comes back as the text `"1"` and keeps its value (P-3).
+  the int key 1 comes back as the text `"1"` and keeps its value (P-3). `map<T>` is an array in its order by the same
+  rule for its text keys: a string key is its UTF-8 text (other bytes are kind `invalid_text`), an int key its decimal
+  text, and a decimal text key leaves as an int key.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
   `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
@@ -303,8 +311,7 @@ the design ids are those of the binding design.
   `invalid_text`). `keyed_map<T>{key}` is `*KeyedMap[T]` of the same order, whose `Key` is an integer, a byte string or
   a text (`IntKey`, `BytesKey`, `TextKey`, functions of the package), different keys even with the same digits; a key
   crosses the C ABI as its kind and value, and a key of a kind that the contract does not list is kind
-  `invalid_argument_type`. `map<T>` is generated for Go, Python, Node and WASM (GN-11, GN-12, GN-18) so far, so a contract with
-  a map and another target is refused by name; `keyed_map<T>` is generated for every target (GN-10, GN-11, GN-12, GN-18).
+  `invalid_argument_type`. `map<T>` and `keyed_map<T>` are generated for every target (GN-10, GN-11, GN-12, GN-18).
 - **GN-17** The C ABI (B-8): each function is `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`.
   Go encodes the arguments into one buffer in parameter order: a bool or a presence tag one byte 0 or 1, a number eight
   bytes little endian (int64 two's complement, float64 its IEEE 754 bits), a string or byte slice its length (eight
@@ -335,6 +342,21 @@ the design ids are those of the binding design.
   instance broken; every later call fails with the same kind. The module is not instantiated again, because the state
   that earlier handles point to would be gone. Where the module unwinds, `catch_unwind` gives kind `internal` as in
   every binding (B-7).
+- **GN-18a** WASM, a class unit (T-5): a class that the ES module defines, with the members of the Node class (GN-6b,
+  GN-6f, GN-6g: the constructor, static members, methods, getters, `Symbol.iterator`, `toString` and `toJSON`) and the
+  same argument checks (G-7). The WebAssembly module keeps the core values of the instances of a class in a table of
+  that class, and an instance keeps the handle of its value in a private field, which no other code reads or forges: a
+  value is an instance of the class exactly when it has that field. The module exports each member as
+  `__<Class>_<member>`, which is not part of the API: `__<Class>_new` gives the handle of the new value, and a method, a
+  getter or a hook takes the handle of its instance first. When the module loads, the ES module hands over for each
+  class a function that makes an instance around a handle, by which a value of the class leaves, and one that reads the
+  handle of an instance and answers `undefined` for any other value, which is kind `invalid_argument_type`. A call
+  shares the value that it reads, so no table is borrowed while the core runs, and a parameter of a class gives the core
+  a copy of the value (GN-6b). A `FinalizationRegistry` drops the value of an instance that the engine collected, and its
+  handle is used again; an instance has no `free()`, so no call meets a released value. The class is not a class of
+  wasm-bindgen: wasm-bindgen gives up the instance when Rust takes its value from a `JsValue`, and after its `free()` a
+  call of the instance fails with an error that has no kind (P-2). A class unit with `cleanup` (B-10) is refused by
+  name, as for every target (GN-1).
 
 ## Generated tests (G-5)
 
@@ -414,8 +436,9 @@ the design ids are those of the binding design.
   refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
-- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node with
-  `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
+  members of a class among them, with `node --test` against the subpath `./wasm` of the installed package; it has no
+  test of K-2, because WASM generates no callback unit. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
 

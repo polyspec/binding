@@ -12,6 +12,7 @@ import { convert, libraryName } from '../names.ts';
 import { type Constant, type Fn, type Model, Unsupported, coreArg, langName, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { extensionName } from './packages.ts';
 import { goCodecTest, goMapTest, goTests, goPanicTest } from './tests_go.ts';
+import { raisesAssertions } from './raises.ts';
 import { type Files, header, closure, rustString, usedHelpers, WIDEN } from './text.ts';
 
 const GO = 'packages/go';
@@ -1298,7 +1299,7 @@ struct Fail {
 fn binding_error(error: BindingError) -> Fail {
     Fail { category: error.category(), message: error.to_string(), kind: error.kind(), status: error.status(), errno: error.errno() }
 }
-${coreErrorRust(model)}
+${coreErrorRust(model)}${raisesAssertions(model)}
 /// B-7, B-8: a panic of the call reaches Go as kind internal and never crosses the C ABI.
 fn guard(body: impl FnOnce() -> Result<Vec<u8>, Fail>) -> Result<Vec<u8>, Fail> {
     match catch_unwind(AssertUnwindSafe(body)) {

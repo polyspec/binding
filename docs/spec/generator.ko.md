@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i), member가 없는 error unit(GN-7a)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, error unit의 member, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 의존 kind, parameter가 아닌 자리의 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record를 거부하고(T-3, T-5, U-3), 타입 `source`, 기본값, error unit도 거부한다. Go는 다른 타입 안의 서로
+  `self`, unit의 `only`, `native`, 이름 예외, 의존 kind, parameter가 아닌 자리의 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go는 class unit을 거부한다(T-5). Go와 WASM은 callback unit과 다른 레포의 record를 거부하고(T-3, U-3), 타입 `source`, 기본값, error unit도 거부한다. WASM은 value alias를 거부하고(U-7) class unit은 GN-18a대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
@@ -188,6 +188,11 @@
   errno는 `binding_core::Kinds`의 것 그대로이고, PHP에서 private property는 category 클래스의 것 그대로이며 그 scope에서
   읽고 쓴다. 이름을 대고 거부하는 것(G-4): member가 있는 error unit(E-3), 루트가 아닌 module의 error unit, error unit을
   가리키지 않는 `class`.
+- **GN-7b** Go와 WASM crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
+  `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
+  컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
+  한 번 단언한다. 아직 생성하지 않는 것: Python, Node, PHP crate의 같은 단언, 의존 레포의 오류를 담은 variant의 경로
+  (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
 - **GN-8** 모든 진입점은 본문을 `catch_unwind`로 실행한다. panic은 프레임워크의 panic 오류가 아니라 internal category
   클래스의 kind `internal`로 호출자에게 도달한다(B-7).
 
@@ -206,7 +211,9 @@
   적혔으면 텍스트, 아니면 바이트 문자열이 적혔을 때 바이트 문자열이다. 그 밖의 key는 kind `invalid_argument_type`이다. 나가는
   map도 같은 규칙이다: 십진 텍스트나 바이트 문자열 key는 int key가 되고, PHP가 하나로 만드는 두 key(`Int(1)`과 `Text("1")`)를
   가진 map은 항목을 잃지 않고 kind `internal`이다(P-4). int key를 텍스트로 받는 것은 PHP가 십진 문자열 key를 int로 바꾸는
-  규칙의 역변환이므로, int key 1로 나간 텍스트 key `"1"`은 텍스트 `"1"`로 다시 들어와 값이 바뀌지 않는다(P-3).
+  규칙의 역변환이므로, int key 1로 나간 텍스트 key `"1"`은 텍스트 `"1"`로 다시 들어와 값이 바뀌지 않는다(P-3). `map<T>`는
+  텍스트 key에 같은 규칙을 쓰는 순서대로의 array다: 문자열 key는 그 UTF-8 텍스트(다른 바이트는 kind `invalid_text`), int key는
+  그 십진 텍스트이고, 십진 텍스트 key는 int key로 나간다.
 - **GN-11** Python: native module `<root>._native`는 원시 값을 받고(T-8) record field는 keyword-only다. 런타임이 인자를 세고
   이름을 확인한다(G-7). category 클래스는 `<root>._errors`, enum은 `<root>._types`에 있고 native module이 로드될 때 그것을
   import한다(B-4). 계약의 module은 `<root>.<module>`이고 `<root>`가 모든 공개 이름을 다시 내보낸다(P-3). enum은
@@ -248,8 +255,7 @@
   넘긴다(같은 key 둘은 kind `internal`, UTF-8이 아닌 key는 `invalid_text`). `keyed_map<T>{key}`는 같은 순서의
   `*KeyedMap[T]`이며 `Key`는 정수, 바이트 문자열, 텍스트 중 하나다(패키지 함수 `IntKey`, `BytesKey`, `TextKey`). 숫자가 같아도
   종류가 다르면 다른 key다. key는 종류와 값으로 C ABI를 넘고, 계약이 적지 않은 종류의 key는 kind `invalid_argument_type`이다.
-  `map<T>`는 아직 Go, Python, Node, WASM(GN-11, GN-12, GN-18)에만 생성하므로 map과 다른 target을 가진 계약은 이름으로 거부한다. `keyed_map<T>`는 모든 target에
-  생성한다(GN-10, GN-11, GN-12, GN-18).
+  `map<T>`와 `keyed_map<T>`는 모든 target에 생성한다(GN-10, GN-11, GN-12, GN-18).
 - **GN-17** C ABI(B-8): 함수마다 `polyspec_<repository>_<module>_<member>(args, len, result) -> int32`다. Go는 인자를
   parameter 순서로 버퍼 하나에 인코딩한다: bool과 존재 표지는 0 또는 1의 한 바이트, 수는 little endian 여덟 바이트(int64는
   2의 보수, float64는 IEEE 754 비트), 문자열과 byte slice는 길이(여덟 바이트)와 바이트, list는 길이와 원소, record는 계약
@@ -274,6 +280,18 @@
   `internal`로 바꾸고 인스턴스를 망가진 상태로 표시한다. 그 뒤 모든 호출은 같은 kind로 실패한다. 모듈을 다시 인스턴스화하지
   않는다. 그전 handle이 가리키던 상태가 사라지기 때문이다. 모듈이 unwind하는 곳에서는 다른 바인딩처럼 `catch_unwind`가 kind
   `internal`을 낸다(B-7).
+- **GN-18a** WASM의 class unit(T-5): ES 모듈이 정의하는 class이며 Node class의 member(GN-6b, GN-6f, GN-6g: 생성자, static
+  member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
+  그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
+  읽거나 꾸며낼 수 없다: 어떤 값이 그 class의 인스턴스인 것은 그 field를 가질 때뿐이다. 모듈은 member마다
+  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__<Class>_new`는 새 값의 handle을 주고, 메서드, getter, hook은
+  인스턴스의 handle을 첫 인자로 받는다. 모듈을 읽을 때 ES 모듈은 class마다 handle로 인스턴스를 만드는 함수(그 class의 값이
+  나갈 때 쓴다)와 인스턴스의 handle을 읽는 함수를 넘긴다. 읽는 함수는 다른 값에 `undefined`를 답하고 그 값은 kind
+  `invalid_argument_type`이다. 호출은 읽은 값을 공유하므로 코어가 도는 동안 어떤 표도 빌리지 않으며, class parameter는 그 값의
+  사본을 코어에 준다(GN-6b). 엔진이 회수한 인스턴스의 값은 `FinalizationRegistry`가 버리고 그 handle은 다시 쓰인다. 인스턴스에
+  `free()`가 없으므로 어떤 호출도 놓인 값을 만나지 않는다. 이 class는 wasm-bindgen의 class가 아니다: wasm-bindgen은 Rust가
+  `JsValue`에서 값을 꺼낼 때 인스턴스를 포기시키고, `free()` 뒤 그 인스턴스의 호출은 kind 없는 오류로 실패한다(P-2).
+  `cleanup`(B-10)이 있는 class unit은 모든 target과 같이 이름으로 거부한다(GN-1).
 
 ## 생성 시험(G-5)
 
@@ -337,8 +355,9 @@
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 계약이 모든 key 종류를
   적지 않은 `keyed_map` parameter·field는 빠진 종류의 key로 kind `invalid_argument_type`을 시험한다. case의 latin1 값은 그 rune의 Go 문자열이다. case는 `map`을 순서대로의 항목을 가진 객체로,
   `keyed_map`을 GN-13처럼 준다.
-- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을 설치한 패키지의 subpath
-  `./wasm`에 대해 `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
+- **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을, class member의 시험을
+  포함해, 설치한 패키지의 subpath `./wasm`에 대해 `node --test`로 실행한다. WASM은 callback unit을 생성하지 않으므로 K-2
+  시험은 없다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
   `internal`을 기대하고, 그 뒤의 호출은 인스턴스가 trap했으면 kind `internal`이고 모듈이 unwind하면 성공해야 한다(GW-7).
 
 ## 끝에서 끝까지 확인

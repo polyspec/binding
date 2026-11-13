@@ -1,8 +1,8 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Model, langName } from './model.ts';
-import { type Context, callArgs, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, hookCall, langName } from './model.ts';
+import { type Context, type Receiver, callArgs, callables, fromJson, isNumber, placeholder, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 
@@ -26,6 +26,21 @@ export function wasmTests(model: Model): string {
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   const out: string[] = [];
+  // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
+  const invoke = (fn: Fn, args: string, receiver: string): string => {
+    const hook = hookCall('node', fn, receiver);
+    if (hook !== undefined) return hook;
+    const member = langName('wasm', fn.member.name, 'callable');
+    const unit = `pkg.${langName('wasm', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    if (fn.kind === 'constructor') return `new ${unit}(${args})`;
+    if (fn.kind === 'static') return `${unit}.${member}(${args})`;
+    if (fn.kind === 'property') return `${receiver}.${member}`;
+    return `${receiver}.${member}(${args})`;
+  };
+  ctx.objectNew = (factory, args) => invoke(factory, args, '');
+  const made = (receiver: Receiver): string =>
+    invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => fromJson(model, ctx, arg.type, receiver.args.get(arg) ?? null)), '');
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -33,11 +48,16 @@ export function wasmTests(model: Model): string {
   const later = () => pkg.${langName('wasm', firstFn.member.name, 'callable')}(${callArgs(model, ctx, firstFn, (arg) => placeholder(model, ctx, arg.type))});
   if (state.broken()) assert.throws(later, internal);
   else assert.doesNotThrow(() => { try { later(); } catch (error) { if (internal(error)) throw error; } });`;
-  for (const fn of model.functions) {
-    const name = langName('wasm', fn.member.name, 'callable');
+  for (const fn of callables(model)) {
+    const name = fn.kind === 'function' ? langName('wasm', fn.member.name, 'callable') : `${langName('wasm', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('wasm', fn.member.name, 'callable')}`;
+    const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
+    const recv = sample === undefined ? '' : made(sample);
+    const target = (args: string): string => invoke(fn, args, recv);
     const call = (override: Map<unknown, string>): string =>
-      `pkg.${name}(${callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type))})`;
-    for (const arg of fn.args) {
+      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
+    // A method is tested on an instance, which a case of the class gives (GN-13).
+    const reachable = fn.receiver === undefined || sample !== undefined;
+    for (const arg of reachable ? fn.args : []) {
       const argName = langName('wasm', arg.name, 'variable');
       const number = isNumber(arg.type);
       if (number !== undefined) {
@@ -66,9 +86,10 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
     }
     for (const kase of raisingCases(model, fn)) {
       const args = callArgs(model, ctx, fn, (arg) => fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null));
+      const receiver = kase.receiver === undefined ? '' : made(kase.receiver);
       out.push(`
 test('B-4: ${name} ${kase.id}', () => {
-  assert.throws(() => pkg.${name}(${args}), (error) =>
+  assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${cls(kase.raises.category)} &&
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
@@ -76,20 +97,28 @@ test('B-4: ${name} ${kase.id}', () => {
     error.errno === null);
 });`);
     }
+    for (const kase of stringCases(model, fn)) {
+      out.push(`
+test('N-4: ${name} ${kase.id}', () => {
+  assert.equal(${invoke(fn, '', made(kase.receiver))}, ${jsString(kase.result)});
+});`);
+    }
+    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
+    if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const record = fn.record;
     const recordTests = record === undefined ? '' : `
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('wasm', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
   const positional = [${fn.args.filter((a) => !a.field).map(values).join(', ')}];
-  assert.throws(() => pkg.${name}(...positional, { ...fields, notAMember: 1 }), (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
+  assert.throws(() => ${target('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
   for (const field of Object.keys(fields)) {
     const lacking = { ...fields, [field]: undefined };
-    assert.throws(() => pkg.${name}(...positional, lacking), (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
+    assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     out.push(`
-test('G-7: ${name} counts and names its arguments', () => {
-  assert.throws(() => pkg.${name}(), (error) => error.constructor === TypeError && /takes/.test(error.message));
-  assert.throws(() => pkg.${name}(${callArgs(model, ctx, fn, values)}, null), (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
+test('G-7: ${name} counts and names its arguments', () => {${fn.args.length === 0 ? '' : `
+  assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
+  assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
   return `${header('//')}
