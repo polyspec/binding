@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `binding scaffold` wrote the platform packages `<npm package>-<platform>` into `optionalDependencies` of `package.json` at its own version, and `binding check` required them of a hand-written host `package.json` (CK-19), so the lock of an npm workspace could not hold them before the release of that version and `npm ci` refused the manifest ("Missing: @polyspec/hyper-darwin-arm64@ from lock file"). The source manifest and the workspace lock no longer name them: release tooling writes them into `optionalDependencies` of the manifest it packs, at the version of the release (GN-3b, GN-3c). The end-to-end check installs the platform package and the package as two tarballs, so the entry finds the addon without the field. Verified by `make test-ts` (291 tests).
 - `binding check` read from a hand-written host `package.json` (L-2a) only its name, its `files` and its platform
   packages, so a host package without `"type"`, `napi.binaryName` or `napi.targets`, which a release reads (kit
   K1189), passed the check. It now also reads these three items, compares each deeply with the value of GN-3c, and

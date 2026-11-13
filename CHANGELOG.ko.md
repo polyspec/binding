@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `binding scaffold`는 플랫폼 패키지 `<npm 패키지>-<platform>`을 자기 버전으로 `package.json`의 `optionalDependencies`에 썼고, `binding check`는 손으로 쓴 host `package.json`에 그것을 요구했다(CK-19). 그래서 npm workspace의 lock은 그 버전의 release 전에는 그것을 담을 수 없었고 `npm ci`가 manifest를 거부했다("Missing: @polyspec/hyper-darwin-arm64@ from lock file"). 이제 source manifest와 workspace lock은 그것을 적지 않는다. 배포 도구가 pack하는 manifest의 `optionalDependencies`에 그 release의 버전으로 적는다(GN-3b, GN-3c). end-to-end 검사는 플랫폼 패키지와 패키지를 두 tarball로 설치하므로, 진입점은 그 필드 없이 addon을 찾는다. `make test-ts`(시험 291개)로 검증했다.
 - `binding check`는 손으로 쓴 host `package.json`(L-2a)에서 이름, `files`, 플랫폼 패키지만 읽었다. 그래서 release가 읽는
   `"type"`, `napi.binaryName`, `napi.targets`(kit K1189)가 없는 host 패키지도 검사를 통과했다. 이제 이 세 항목도 읽고, 각각을
   GN-3c의 값과 깊이 비교하며, 없거나 다른 항목은 그 값과 함께 이름을 적는다. 예: `CK-19 napi.targets is missing, not
