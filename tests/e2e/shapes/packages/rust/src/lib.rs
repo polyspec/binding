@@ -214,10 +214,7 @@ pub struct PadOptions {
 /// The text filled to the width of the options on their side, with the fill or a space, and the end after it.
 #[must_use]
 pub fn pad(text: &str, fill: Option<&str>, options: &PadOptions) -> String {
-    let fill = match fill {
-        Some(fill) => fill,
-        None => " ",
-    };
+    let fill = fill.unwrap_or(" ");
     let side = match options.side {
         Some(side) => side,
         None => DEFAULT_SIDE,
@@ -333,11 +330,7 @@ pub fn stride_count(stride: &Stride) -> usize {
     let Ok(step) = usize::try_from(stride.step) else {
         return 0;
     };
-    if step == 0 {
-        0
-    } else {
-        width / step
-    }
+    width.checked_div(step).unwrap_or(0)
 }
 
 /// The offset from a start to an end, negative when the end is before the start (GN-6ac: parameters of u8 and an
