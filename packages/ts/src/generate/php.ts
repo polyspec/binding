@@ -49,19 +49,19 @@ const phpCase = (name: Name): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'latin1_in', source: 'latin1_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
-  if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+    return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
-  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
+  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
@@ -73,18 +73,18 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(Zval::new())';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_bytes', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'text_out', latin1: 'bytes_out', bytes: 'bytes_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', float: 'float_out' };
     return `${fn[type]}(${value})`;
   }
   // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `out_passed(${value})`;
-  if ('list' in type) return `out_list(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
+  if ('passthrough' in type) return `passed_out(${value})`;
+  if ('list' in type) return `list_out(${value}, ${closure(['item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('keyed_map' in type) return `out_keyed_map(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('map' in type) return `out_map(${value}, |item| ${convertOut(model, type.map, 'item')})`;
-  if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
+  if ('keyed_map' in type) return `keyed_map_out(${value}, |item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('map' in type) return `map_out(${value}, |item| ${convertOut(model, type.map, 'item')})`;
+  if ('optional' in type) return `optional_out(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_array(vec![${parts.join(', ')}])`);
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `array_out(vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
@@ -133,14 +133,14 @@ fn type_error(subject: &str, expected: &str) -> Fail {
 }
 
 /// B-3: text is a string whose bytes are UTF-8.
-fn in_text(value: &Zval, subject: &str) -> Result<String, Fail> {
+fn text_in(value: &Zval, subject: &str) -> Result<String, Fail> {
     let Some(text) = value.zend_str() else { return Err(type_error(subject, "string")) };
     String::from_utf8(text.as_bytes().to_vec())
         .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
 }
 
 /// T-1 latin1, bytes and source: the bytes of a string; a PHP string is its bytes, which the core judges.
-fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
+fn latin1_in(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
     match value.zend_str() {
         Some(text) => Ok(text.as_bytes().to_vec()),
         None => Err(type_error(subject, "string")),
@@ -149,14 +149,14 @@ fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
 
 /// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
 /// parameter that a call with named arguments skips, so null is an argument that was left out (GN-10).
-fn in_default<T>(value: Option<&Zval>, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn default_in<T>(value: Option<&Zval>, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     match value.filter(|value| !value.is_null()) {
         Some(value) => item(value).map(Some),
         None => Ok(None),
     }
 }
 
-fn in_bool(value: &Zval, subject: &str) -> Result<bool, Fail> {
+fn bool_in(value: &Zval, subject: &str) -> Result<bool, Fail> {
     if value.is_true() {
         return Ok(true);
     }
@@ -168,7 +168,7 @@ fn in_bool(value: &Zval, subject: &str) -> Result<bool, Fail> {
 
 /// B-2, GN-12a: an int (IS_LONG) that is a safe integer for the contract type int; any other value is kind
 /// invalid_number.
-fn in_int(value: &Zval, subject: &str) -> Result<i64, Fail> {
+fn int_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
     match (value.is_long(), value.long()) {
         (true, Some(integer)) if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -176,7 +176,7 @@ fn in_int(value: &Zval, subject: &str) -> Result<i64, Fail> {
 }
 
 /// B-2, T-1: an int (IS_LONG) of the range of i64 for the contract type int64.
-fn in_int64(value: &Zval, subject: &str) -> Result<i64, Fail> {
+fn int64_in(value: &Zval, subject: &str) -> Result<i64, Fail> {
     match (value.is_long(), value.long()) {
         (true, Some(integer)) => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
@@ -184,7 +184,7 @@ fn in_int64(value: &Zval, subject: &str) -> Result<i64, Fail> {
 }
 
 /// B-2, GN-12a: an int (IS_LONG) of 0 to 2^53 - 1 for the contract type uint.
-fn in_uint(value: &Zval, subject: &str) -> Result<u64, Fail> {
+fn uint_in(value: &Zval, subject: &str) -> Result<u64, Fail> {
     let invalid = || binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     match (value.is_long(), value.long()) {
         (true, Some(integer @ 0..=9_007_199_254_740_991)) => Ok(integer.unsigned_abs()),
@@ -192,7 +192,7 @@ fn in_uint(value: &Zval, subject: &str) -> Result<u64, Fail> {
     }
 }
 
-fn in_float(value: &Zval, subject: &str) -> Result<f64, Fail> {
+fn float_in(value: &Zval, subject: &str) -> Result<f64, Fail> {
     match (value.is_double(), value.double()) {
         (true, Some(float)) => Ok(float),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
@@ -200,7 +200,7 @@ fn in_float(value: &Zval, subject: &str) -> Result<f64, Fail> {
 }
 
 /// T-2: a list is an array whose keys are 0 to n-1 in order; another array would lose its keys (P-4).
-fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
+fn list_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
     if !array.has_sequential_keys() {
         return Err(type_error(subject, "list"));
@@ -209,7 +209,7 @@ fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fai
 }
 
 /// GN-6t: a tuple is a list of exactly its parts.
-fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
+fn tuple_in<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
     if !array.has_sequential_keys() {
         return Err(type_error(subject, "list"));
@@ -218,54 +218,54 @@ fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Z
 }
 
 /// null is the absence; any other value is converted.
-fn in_optional<T>(value: &Zval, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn optional_in<T>(value: &Zval, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if value.is_null() {
         return Ok(None);
     }
     item(value).map(Some)
 }
 
-fn out_text(value: impl AsRef<str>) -> Result<Zval, Fail> {
+fn text_out(value: impl AsRef<str>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_zend_string(ZendStr::new(value.as_ref().as_bytes(), false));
     Ok(zval)
 }
 
 /// T-1 latin1 and bytes: a string of the bytes.
-fn out_bytes(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
+fn bytes_out(value: impl AsRef<[u8]>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_zend_string(ZendStr::new(value.as_ref(), false));
     Ok(zval)
 }
 
-fn out_bool(value: impl Borrow<bool>) -> Result<Zval, Fail> {
+fn bool_out(value: impl Borrow<bool>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_bool(*value.borrow());
     Ok(zval)
 }
 
-fn out_int(value: impl WideInt) -> Result<Zval, Fail> {
+fn int_out(value: impl WideInt) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_long(value.widen_int());
     Ok(zval)
 }
 
 /// B-2: a uint leaves as an int; one above PHP_INT_MAX is kind internal.
-fn out_uint(value: impl WideUint) -> Result<Zval, Fail> {
+fn uint_out(value: impl WideUint) -> Result<Zval, Fail> {
     let value = value.widen_uint();
     match i64::try_from(value) {
-        Ok(value) => out_int(value),
+        Ok(value) => int_out(value),
         Err(_large) => Err(binding_error(BindingError::Internal { detail: format!("{value} is above PHP_INT_MAX") })),
     }
 }
 
-fn out_float(value: impl Borrow<f64>) -> Result<Zval, Fail> {
+fn float_out(value: impl Borrow<f64>) -> Result<Zval, Fail> {
     let mut zval = Zval::new();
     zval.set_double(*value.borrow());
     Ok(zval)
 }
 
-fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
+fn array_out(items: Vec<Zval>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     for item in items {
         array.push(item).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
@@ -277,7 +277,7 @@ fn out_array(items: Vec<Zval>) -> Result<Zval, Fail> {
 
 /// T-2: an array in its order whose keys are texts. A string key is its UTF-8 text (other bytes are kind invalid_text),
 /// and an int key is its decimal text, the inverse of PHP's own conversion of a decimal string key.
-fn in_map<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "array")) };
     let mut map = binding_core::OrderedMap::new();
     let mut entries = array.iter();
@@ -298,8 +298,8 @@ fn in_map<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail
 }
 
 /// T-2: a map, owned or borrowed, as an array in its order; PHP makes a decimal text key an int key, which comes back
-/// as the same text (in_map).
-fn out_map<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+/// as the same text (map_in).
+fn map_out<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     for (key, value) in value.borrow().iter() {
         let before = array.len();
@@ -317,7 +317,7 @@ fn out_map<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T)
 /// and not integers (PHP makes a decimal string key an int, so an array cannot hold the text); a string key is a text
 /// when it is UTF-8 and text is listed, else a byte string when bytes are listed; any other key is kind
 /// invalid_argument_type.
-fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
+fn keyed_map_in<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, expected)) };
     let mut map = binding_core::KeyedMap::new();
     let mut entries = array.iter();
@@ -349,7 +349,7 @@ fn in_keyed_map<T>(value: &Zval, subject: &str, kinds: &[u8], expected: &str, it
 
 /// T-2: a keyed map, owned or borrowed, as an array in its order. PHP makes a decimal text or byte string key an int,
 /// so a map whose keys PHP makes one (Int(1) and Text("1")) cannot be an array: kind internal, not a lost entry (P-4).
-fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn keyed_map_out<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     let mut array = ZendHashTable::new();
     let failed = |error: ext_php_rs::error::Error| binding_error(BindingError::Internal { detail: error.to_string() });
     for (key, value) in value.borrow().iter() {
@@ -375,11 +375,11 @@ fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn
     Ok(zval)
 }
 
-fn out_list<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
-    out_array(value.into_iter().map(item).collect::<Result<Vec<_>, Fail>>()?)
+fn list_out<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+    array_out(value.into_iter().map(item).collect::<Result<Vec<_>, Fail>>()?)
 }
 
-fn out_optional<T>(value: Option<T>, item: impl FnOnce(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
+fn optional_out<T>(value: Option<T>, item: impl FnOnce(T) -> Result<Zval, Fail>) -> Result<Zval, Fail> {
     match value {
         Some(value) => item(value),
         None => Ok(Zval::new()),
@@ -587,7 +587,7 @@ function iterateRust(model: Model, fn: Fn): string {
   const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
   const body = yields.key === undefined
     ? `                let position = i64::try_from(position).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
-                pairs.push((out_int(position)?, ${item(yields.value, 'item')}));`
+                pairs.push((int_out(position)?, ${item(yields.value, 'item')}));`
     : `                let (key, value) = item;
                 pairs.push((${item(yields.key, 'key')}, ${item(yields.value, 'value')}));`;
   return `
@@ -691,7 +691,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
       lines.push(...functionClosure(model, arg.type, rustField(arg.name), rustIdent(variable), rustString(variable)));
       continue;
     }
-    const converted = arg.default === undefined ? convertIn(model, arg.type, rustIdent(variable), rustString(variable)) : `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
+    const converted = arg.default === undefined ? convertIn(model, arg.type, rustIdent(variable), rustString(variable)) : `default_in(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
@@ -862,7 +862,7 @@ function functionClosure(model: Model, type: Type & { function: unknown }, name:
   const parts = (type as { function: { parameters: Type[] } }).function.parameters;
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return [
-    `        let ${name} = in_callable(${value}, ${subject})?;`,
+    `        let ${name} = callable_in(${value}, ${subject})?;`,
     `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i}: Zval = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
@@ -903,7 +903,7 @@ fn release_passed(handle: binding_core::Handle) {
 }
 
 /// GN-6ae: the value of a result passthrough, which leaves the table unchanged.
-fn out_passed(value: binding_core::Passthrough) -> Result<Zval, Fail> {
+fn passed_out(value: binding_core::Passthrough) -> Result<Zval, Fail> {
     let handle = value.into_handle();
     PASSED
         .with_borrow_mut(|map| map.remove(&handle.raw()))
@@ -911,7 +911,7 @@ fn out_passed(value: binding_core::Passthrough) -> Result<Zval, Fail> {
 }
 
 /// GN-6ae: a function parameter takes a PHP callable (kind invalid_callback), to which the closure keeps a reference.
-fn in_callable(value: &Zval, subject: &str) -> Result<Zval, Fail> {
+fn callable_in(value: &Zval, subject: &str) -> Result<Zval, Fail> {
     if !value.is_callable() {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }

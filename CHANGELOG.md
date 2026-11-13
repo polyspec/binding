@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The generated Go crate of a contract with a unit named `text`, `list` or another word of a helper did not compile:
+  the conversion `in_<unit>` or `out_<unit>` had the name of the helper `in_<word>` or `out_<word>`. The helpers of
+  the Go crate now state their direction last, as GN-4c states: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`,
+  `key_out`, `no_form_out`, `passed_out`. No function of the Go crate has the name of a member: an entry point is
+  `<prefix>_<module>_<member>`. Verified by `npm test` in `packages/ts`, whose test generates the Go crate of the
+  sample with the enums `default`, `callable` and `text` and requires one definition of each conversion and no other
+  function named `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_text`.
 - The Go binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
   generates them: the parameter is a Go `func(<parameters>) (any, error)` and the result is `any`; the `func` enters
   as a callback of the call and runs through the export `<prefix>__go_callback` on the goroutine and the thread of
@@ -19,6 +26,14 @@
   `func`, and no longer refuses a case with `after` or `raises: "callback"` (GN-6ae, CK-22). Verified by `npm test`
   in `packages/ts`, whose two tests of the Go crate, package and test pass; 20 tests that generate the sample for
   every target still fail with the refusal of Python, Node and WASM.
+- The generated crate of a contract with a unit named `default`, `callable`, `text`, `list` or another word of a
+  helper did not compile: the conversion of the unit, `in_<unit>` or `out_<unit>`, had the name of the helper
+  `in_<word>` or `out_<word>`, so the function was defined twice. The names `in_<...>` and `out_<...>` now belong to
+  the conversions of units alone, and a helper states its direction last: `text_in`, `list_out`, `default_in`,
+  `callable_in`, `passed_out` (GN-4c). The crates of PHP and Python apply the rule; those of Node, WASM and Go do
+  not yet. Verified by `npm test` in `packages/ts`, whose test generates the PHP crate of the sample with the enums
+  `default`, `callable` and `text` and requires one definition of each conversion and no other function named
+  `in_<...>` or `out_<...>`; before the change that test found two definitions of `in_default`.
 - No case could give a function that returns an awaitable, so the path of `Step::Await` whose awaitable settles later,
   or raises, had no case. A function fixture may now name `"awaits": true`: the function returns an awaitable of its
   language whose outcome is the `result` or the `raise` of the fixture. The contract check accepts the marker only

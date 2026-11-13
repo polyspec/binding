@@ -13,19 +13,19 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
     case 'null':
       return 'Ok(Zval::new())';
     case 'bool':
-      return 'out_bool(value)';
+      return 'bool_out(value)';
     case 'int':
       if (kind === 'number') return 'php_literal_int(&value)';
-      return kind === 'int64' ? 'out_int(value)' : 'out_int(value.value())';
+      return kind === 'int64' ? 'int_out(value)' : 'int_out(value.value())';
     case 'float':
       if (kind === 'number') return 'php_literal_float(&value)';
-      if (kind === 'float') return 'out_float(value.value())';
+      if (kind === 'float') return 'float_out(value.value())';
       // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
       return `php_literal_float(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`;
     case 'text':
-      return kind === 'bytes' ? 'php_utf8(value.value())' : 'out_text(value)';
+      return kind === 'bytes' ? 'php_utf8(value.value())' : 'text_out(value)';
     case 'bytes':
-      return kind === 'text' ? 'out_bytes(value.as_bytes())' : 'out_bytes(value.value())';
+      return kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())';
     case 'list': {
       const parts = container(alias, kind, form);
       return `{
@@ -244,7 +244,7 @@ fn php_insert(array: &mut ZendHashTable, key: OutValue, item: Zval) -> Result<()
 /// U-7: the literal token of a number as an int; one beyond the range of an int is kind internal.
 fn php_literal_int(literal: &str) -> Result<Zval, Fail> {
     match literal.parse::<i64>() {
-        Ok(integer) => out_int(integer),
+        Ok(integer) => int_out(integer),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no int") })),
     }
 }
@@ -252,7 +252,7 @@ fn php_literal_int(literal: &str) -> Result<Zval, Fail> {
 /// U-7: the literal token of a number as the nearest float.
 fn php_literal_float(literal: &str) -> Result<Zval, Fail> {
     match literal.parse::<f64>() {
-        Ok(float) => out_float(float),
+        Ok(float) => float_out(float),
         Err(_token) => Err(binding_error(BindingError::Internal { detail: format!("U-7: {literal} is no number") })),
     }
 }
@@ -260,7 +260,7 @@ fn php_literal_float(literal: &str) -> Result<Zval, Fail> {
 /// U-7: bytes that are UTF-8 as a string.
 fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => out_text(text),
+        Ok(text) => text_out(text),
         Err(_bytes) => Err(binding_error(BindingError::Internal { detail: String::from("U-7: text of bytes that are not UTF-8") })),
     }
 }

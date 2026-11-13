@@ -35,7 +35,7 @@ fn type_error(subject: &str, expected: &str) -> BindingError {
 }
 
 /// B-3: text is a str whose code points are Unicode scalar values.
-fn in_text(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<String> {
+fn text_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<String> {
     let Ok(text) = value.cast::<PyString>() else { return Err(binding_error(py, type_error(subject, "str"))) };
     match text.to_str() {
         Ok(text) => Ok(text.to_owned()),
@@ -44,7 +44,7 @@ fn in_text(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
 }
 
 /// B-3, T-1 latin1: a str whose characters are U+0000 to U+00FF, one byte each.
-fn in_latin1(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+fn latin1_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
     let Ok(text) = value.cast::<PyString>() else { return Err(binding_error(py, type_error(subject, "str"))) };
     let above = || binding_error(py, BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 });
     let Ok(text) = text.to_str() else { return Err(above()) };
@@ -52,7 +52,7 @@ fn in_latin1(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResul
 }
 
 /// T-7: bytes from the buffer protocol types bytes, bytearray and memoryview.
-fn in_bytes(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+fn bytes_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
     if value.cast::<PyString>().is_ok() {
         return Err(binding_error(py, type_error(subject, "bytes")));
     }
@@ -63,9 +63,9 @@ fn in_bytes(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
 }
 
 /// T-1 source: a str, as its UTF-8 (B-3), or the bytes of bytes, bytearray or memoryview.
-fn in_source(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
+fn source_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Vec<u8>> {
     if value.cast::<PyString>().is_ok() {
-        return in_text(py, value, subject).map(String::into_bytes);
+        return text_in(py, value, subject).map(String::into_bytes);
     }
     match value.extract::<Vec<u8>>() {
         Ok(bytes) => Ok(bytes),
@@ -74,14 +74,14 @@ fn in_source(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResul
 }
 
 /// U-2: an argument that the caller left out is None, whose value the core decides; any other value is converted.
-fn in_default<'py, T>(value: &Given<'py>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
+fn default_in<'py, T>(value: &Given<'py>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
     match value {
         Given::Omitted => Ok(None),
         Given::Value(value) => item(value).map(Some),
     }
 }
 
-fn in_bool(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<bool> {
+fn bool_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<bool> {
     match value.cast_exact::<PyBool>() {
         Ok(flag) => Ok(flag.is_true()),
         Err(_not_bool) => Err(binding_error(py, type_error(subject, "bool"))),
@@ -90,7 +90,7 @@ fn in_bool(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
 
 /// B-2, GN-12a: an int that is not a bool, 0 to 2^53 - 1 for the contract type uint; any other value is kind
 /// invalid_number.
-fn in_uint(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
+fn uint_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<u64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
@@ -101,8 +101,8 @@ fn in_uint(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<
     }
 }
 
-/// B-2, GN-12a: as in_uint, a safe integer for the contract type int.
-fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
+/// B-2, GN-12a: as uint_in, a safe integer for the contract type int.
+fn int_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
@@ -113,8 +113,8 @@ fn in_int(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i
     }
 }
 
-/// B-2, T-1: as in_int, the range of i64 for the contract type int64.
-fn in_int64(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
+/// B-2, T-1: as int_in, the range of i64 for the contract type int64.
+fn int64_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<i64> {
     let invalid = || binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int });
     if !value.is_exact_instance_of::<PyInt>() {
         return Err(invalid());
@@ -123,7 +123,7 @@ fn in_int64(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
 }
 
 /// B-2: a float; an int or a bool is not a float.
-fn in_float(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<f64> {
+fn float_in(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<f64> {
     match value.cast_exact::<PyFloat>() {
         Ok(float) => Ok(float.value()),
         Err(_not_float) => Err(binding_error(py, BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float })),
@@ -131,7 +131,7 @@ fn in_float(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult
 }
 
 /// T-2: a list or a tuple, each item converted.
-fn in_list<'py, T>(
+fn list_in<'py, T>(
     py: Python<'py>,
     value: &Bound<'py, PyAny>,
     subject: &str,
@@ -148,59 +148,59 @@ fn in_list<'py, T>(
 
 /// T-2: None is the absence; any other value is converted.
 /// GN-6t: a tuple is a tuple of exactly its parts.
-fn in_tuple<'py, const N: usize>(py: Python<'py>, value: &Bound<'py, PyAny>, subject: &str) -> PyResult<[Bound<'py, PyAny>; N]> {
+fn tuple_in<'py, const N: usize>(py: Python<'py>, value: &Bound<'py, PyAny>, subject: &str) -> PyResult<[Bound<'py, PyAny>; N]> {
     let Ok(tuple) = value.cast::<PyTuple>() else { return Err(binding_error(py, type_error(subject, "tuple"))) };
     <[Bound<'py, PyAny>; N]>::try_from(tuple.iter().collect::<Vec<_>>()).map_err(|_other| binding_error(py, type_error(subject, &format!("a tuple of {N} items"))))
 }
 
-fn in_optional<'py, T>(value: &Bound<'py, PyAny>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
+fn optional_in<'py, T>(value: &Bound<'py, PyAny>, item: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>) -> PyResult<Option<T>> {
     if value.is_none() {
         return Ok(None);
     }
     item(value).map(Some)
 }
 
-fn out_text<'py>(py: Python<'py>, value: impl AsRef<str>) -> PyResult<Bound<'py, PyAny>> {
+fn text_out<'py>(py: Python<'py>, value: impl AsRef<str>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyString::new(py, value.as_ref()).into_any())
 }
 
 /// T-1 latin1: each byte is one character.
-fn out_latin1<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
+fn latin1_out<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
     let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
     Ok(PyString::new(py, &text).into_any())
 }
 
-fn out_bytes<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
+fn bytes_out<'py>(py: Python<'py>, value: impl AsRef<[u8]>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyBytes::new(py, value.as_ref()).into_any())
 }
 
-fn out_bool<'py>(py: Python<'py>, value: impl Borrow<bool>) -> PyResult<Bound<'py, PyAny>> {
+fn bool_out<'py>(py: Python<'py>, value: impl Borrow<bool>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyBool::new(py, *value.borrow()).to_owned().into_any())
 }
 
-fn out_uint<'py>(py: Python<'py>, value: impl WideUint) -> PyResult<Bound<'py, PyAny>> {
+fn uint_out<'py>(py: Python<'py>, value: impl WideUint) -> PyResult<Bound<'py, PyAny>> {
     Ok(value.widen_uint().into_pyobject(py)?.into_any())
 }
 
-fn out_int<'py>(py: Python<'py>, value: impl WideInt) -> PyResult<Bound<'py, PyAny>> {
+fn int_out<'py>(py: Python<'py>, value: impl WideInt) -> PyResult<Bound<'py, PyAny>> {
     Ok(value.widen_int().into_pyobject(py)?.into_any())
 }
 
-fn out_float<'py>(py: Python<'py>, value: impl Borrow<f64>) -> PyResult<Bound<'py, PyAny>> {
+fn float_out<'py>(py: Python<'py>, value: impl Borrow<f64>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyFloat::new(py, *value.borrow()).into_any())
 }
 
-fn out_none(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+fn none_out(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     Ok(py.None().into_bound(py))
 }
 
-fn out_list<'py, T>(py: Python<'py>, value: impl IntoIterator<Item = T>, item: impl Fn(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+fn list_out<'py, T>(py: Python<'py>, value: impl IntoIterator<Item = T>, item: impl Fn(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
     let items = value.into_iter().map(|value| item(py, value)).collect::<PyResult<Vec<_>>>()?;
     Ok(PyList::new(py, items)?.into_any())
 }
 
 /// T-2: a dict in its order whose keys are str; any other key is kind invalid_argument_type.
-fn in_map<'py, T>(
+fn map_in<'py, T>(
     py: Python<'py>,
     value: &Bound<'py, PyAny>,
     subject: &str,
@@ -212,7 +212,7 @@ fn in_map<'py, T>(
         if !key.is_exact_instance_of::<PyString>() {
             return Err(binding_error(py, type_error(subject, "a dict whose keys are str")));
         }
-        let key = in_text(py, &key, subject)?;
+        let key = text_in(py, &key, subject)?;
         let value = item(py, &value)?;
         if map.insert(key, value).is_some() {
             return Err(binding_error(py, BindingError::Internal { detail: String::from("a dict gave a key twice") }));
@@ -222,7 +222,7 @@ fn in_map<'py, T>(
 }
 
 /// T-2: a map, owned or borrowed, as a dict in its order.
-fn out_map<'py, T>(
+fn map_out<'py, T>(
     py: Python<'py>,
     value: impl Borrow<binding_core::OrderedMap<T>>,
     item: impl Fn(Python<'py>, &T) -> PyResult<Bound<'py, PyAny>>,
@@ -236,7 +236,7 @@ fn out_map<'py, T>(
 
 /// T-2, U-7 (c): a dict in its order, each key an int (not a bool), bytes or a str of a kind that the contract lists;
 /// any other key is kind invalid_argument_type.
-fn in_keyed_map<'py, T>(
+fn keyed_map_in<'py, T>(
     py: Python<'py>,
     value: &Bound<'py, PyAny>,
     subject: &str,
@@ -249,11 +249,11 @@ fn in_keyed_map<'py, T>(
     for (key, value) in dict.iter() {
         // GN-12a: an int key of a listed int is a safe integer, else kind invalid_number.
         let (tag, key) = if key.is_exact_instance_of::<PyInt>() && kinds.contains(&0) {
-            (0, binding_core::Key::Int(in_int(py, &key, subject)?))
+            (0, binding_core::Key::Int(int_in(py, &key, subject)?))
         } else if let Ok(bytes) = key.cast_exact::<PyBytes>() {
             (1, binding_core::Key::Bytes(bytes.as_bytes().to_vec()))
         } else if key.is_exact_instance_of::<PyString>() {
-            (2, binding_core::Key::Text(in_text(py, &key, subject)?))
+            (2, binding_core::Key::Text(text_in(py, &key, subject)?))
         } else {
             return Err(binding_error(py, type_error(subject, expected)));
         };
@@ -269,7 +269,7 @@ fn in_keyed_map<'py, T>(
 }
 
 /// T-2: a keyed map, owned or borrowed, as a dict in its order: int, bytes and str keys.
-fn out_keyed_map<'py, T>(
+fn keyed_map_out<'py, T>(
     py: Python<'py>,
     value: impl Borrow<binding_core::KeyedMap<T>>,
     item: impl Fn(Python<'py>, &T) -> PyResult<Bound<'py, PyAny>>,
@@ -286,14 +286,14 @@ fn out_keyed_map<'py, T>(
     Ok(dict.into_any())
 }
 
-fn out_tuple<'py>(py: Python<'py>, items: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+fn tuple_out<'py>(py: Python<'py>, items: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
     Ok(PyTuple::new(py, items)?.into_any())
 }
 
-fn out_optional<'py, T>(py: Python<'py>, value: Option<T>, item: impl FnOnce(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+fn optional_out<'py, T>(py: Python<'py>, value: Option<T>, item: impl FnOnce(Python<'py>, T) -> PyResult<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
     match value {
         Some(value) => item(py, value),
-        None => out_none(py),
+        None => none_out(py),
     }
 }
 `;
@@ -318,17 +318,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', bytes: 'in_bytes', source: 'in_source', float: 'in_float' };
+    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', bytes: 'bytes_in', source: 'source_in', float: 'float_in' };
     return `${fn[type]}(py, ${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
-  if ('map' in type) return `in_map(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('list' in type) return `list_in(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('map' in type) return `map_in(py, ${value}, ${subject}, ${closure(['py', 'item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
+    return `keyed_map_in(py, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
-  if ('tuple' in type) return tupleIn(type.tuple, `in_tuple(py, ${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
+  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(py, ${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined) {
     return `in_${recordFn(unit ?? { name: [] }, aliasOf(model, type)?.library)}(py, ${value}, ${subject})`;
@@ -339,18 +339,18 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', bytes: 'out_bytes', float: 'out_float', none: 'out_none' };
+    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', bytes: 'bytes_out', float: 'float_out', none: 'none_out' };
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
-    return type === 'none' ? 'out_none(py)' : `${fn[type]}(py, ${value})`;
+    return type === 'none' ? 'none_out(py)' : `${fn[type]}(py, ${value})`;
   }
-  if ('list' in type) return `out_list(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
+  if ('list' in type) return `list_out(py, ${value}, ${closure(['py', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('keyed_map' in type) return `out_keyed_map(py, ${value}, |py, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('map' in type) return `out_map(py, ${value}, |py, item| ${convertOut(model, type.map, 'item')})`;
-  if ('optional' in type) return `out_optional(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('keyed_map' in type) return `keyed_map_out(py, ${value}, |py, item| ${convertOut(model, type.keyed_map, 'item')})`;
+  if ('map' in type) return `map_out(py, ${value}, |py, item| ${convertOut(model, type.map, 'item')})`;
+  if ('optional' in type) return `optional_out(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(py, vec![${parts.join(', ')}])`);
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(py, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
@@ -373,7 +373,7 @@ fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResu
         return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) }));
     }
     let raw = value.getattr("value")?;
-    let text: String = in_text(py, &raw, subject)?;
+    let text: String = text_in(py, &raw, subject)?;
     match text.as_str() {
 ${arms}
         _ => Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(pyClass)}) })),
@@ -516,7 +516,7 @@ function entryRust(model: Model, fn: Fn): string {
     const variable = rustIdent(langName('python', arg.name, 'variable'));
     const subject = rustString(langName('python', arg.name, 'variable'));
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `in_default(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
+    const converted = arg.default === undefined ? convertIn(model, arg.type, variable, subject) : `default_in(&${variable}, ${closure(['value'], convertIn(model, arg.type, 'value', subject))})`;
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);

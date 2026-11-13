@@ -64,27 +64,27 @@ export const callsBack = (model: Model): boolean => runsGo(model) || model.alias
 
 export function convertIn(model: Model, type: Type, input: string, subject: string): string {
   if (typeof type === 'string') {
-    if (type === 'text') return `in_text(${input}, ${subject})`;
-    if (type === 'latin1') return `in_latin1(${input}, ${subject})`;
+    if (type === 'text') return `text_in(${input}, ${subject})`;
+    if (type === 'latin1') return `latin1_in(${input}, ${subject})`;
     // T-1: a source is a Go []byte, whose bytes the core judges.
     // GN-12a: an int or a uint of the contract is a safe integer, which the Go types do not hold to.
-    if (type === 'int' || type === 'uint') return `in_safe_${type}(${input}, ${subject})`;
-    const fn: Record<string, string> = { bytes: 'in_bytes', source: 'in_bytes', bool: 'in_bool', int64: 'in_int', float: 'in_float' };
+    if (type === 'int' || type === 'uint') return `safe_${type}_in(${input}, ${subject})`;
+    const fn: Record<string, string> = { bytes: 'bytes_in', source: 'bytes_in', bool: 'bool_in', int64: 'int_in', float: 'float_in' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go input conversion for ${type}`);
     return `${name}(${input})`;
   }
-  if ('list' in type) return `in_list(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
+  if ('list' in type) return `list_in(${input}, ${closure(['input'], convertIn(model, type.list, 'input', subject))})`;
   if ('tuple' in type) {
     // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
-    return `in_tuple${type.tuple.length}(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
+    return `tuple${type.tuple.length}_in(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
   }
-  if ('map' in type) return `in_map(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
+  if ('map' in type) return `map_in(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `in_keyed_map(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
+    return `keyed_map_in(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
+  if ('optional' in type) return `optional_in(${input}, ${closure(['input'], convertIn(model, type.optional, 'input', subject))})`;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `in_${aliasFn(alias)}(${input})`;
   const unit = unitOf(model, type);
@@ -98,17 +98,17 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
 export function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     if (type === 'never') return `match ${value} {}`;
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bytes: 'out_bytes', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float' };
+    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bytes: 'bytes_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', float: 'float_out' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no Go output conversion for ${type}`);
     return `${name}(output, ${value})`;
   }
-  if ('list' in type) return `out_list(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
+  if ('list' in type) return `list_out(output, ${value}, ${closure(['output', 'item'], convertOut(model, type.list, 'item'))})`;
   // The item of a map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `out_map(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
-  if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
+  if ('map' in type) return `map_out(output, ${value}, |output, item| ${convertOut(model, type.map, 'item')})`;
+  if ('keyed_map' in type) return `keyed_map_out(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
+  // GN-16: an Option of a reference to the value of the core, so a generic item, such as int_out, takes one type.
+  if ('optional' in type) return `optional_out(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
   // GN-6ae: a result passthrough crosses the C ABI as the handle of its value in the table of package binding.
   if ('passthrough' in type) return `passed_out(output, ${value})`;
@@ -165,48 +165,48 @@ fn finish_input(input: &[u8]) -> Result<(), Fail> {
     }
 }
 
-fn in_bool(input: &mut &[u8]) -> Result<bool, Fail> {
+fn bool_in(input: &mut &[u8]) -> Result<bool, Fail> {
     read_tag(input)
 }
 
-fn in_uint(input: &mut &[u8]) -> Result<u64, Fail> {
+fn uint_in(input: &mut &[u8]) -> Result<u64, Fail> {
     Ok(u64::from_le_bytes(read_word(input)?))
 }
 
-fn in_int(input: &mut &[u8]) -> Result<i64, Fail> {
+fn int_in(input: &mut &[u8]) -> Result<i64, Fail> {
     Ok(i64::from_le_bytes(read_word(input)?))
 }
 
 /// B-2, GN-12a: a uint of the contract is 0 to 2^53 - 1; a larger one is kind invalid_number.
-fn in_safe_uint(input: &mut &[u8], subject: &str) -> Result<u64, Fail> {
-    match in_uint(input)? {
+fn safe_uint_in(input: &mut &[u8], subject: &str) -> Result<u64, Fail> {
+    match uint_in(input)? {
         integer @ 0..=9_007_199_254_740_991 => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Uint })),
     }
 }
 
 /// B-2, GN-12a: an int of the contract is a safe integer; any other is kind invalid_number.
-fn in_safe_int(input: &mut &[u8], subject: &str) -> Result<i64, Fail> {
-    match in_int(input)? {
+fn safe_int_in(input: &mut &[u8], subject: &str) -> Result<i64, Fail> {
+    match int_in(input)? {
         integer if integer.unsigned_abs() <= 9_007_199_254_740_991 => Ok(integer),
         _ => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
     }
 }
 
-fn in_float(input: &mut &[u8]) -> Result<f64, Fail> {
+fn float_in(input: &mut &[u8]) -> Result<f64, Fail> {
     Ok(f64::from_le_bytes(read_word(input)?))
 }
 
 /// B-8: a Go string of the contract type text is UTF-8; other bytes are kind invalid_text.
-fn in_text(input: &mut &[u8], subject: &str) -> Result<String, Fail> {
+fn text_in(input: &mut &[u8], subject: &str) -> Result<String, Fail> {
     String::from_utf8(read_bytes(input)?.to_vec())
         .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
 }
 
 /// B-8, T-1 latin1: a Go string of UTF-8 whose runes are U+0000 to U+00FF, one byte each; a rune above U+00FF is kind
 /// invalid_text, as in every language.
-fn in_latin1(input: &mut &[u8], subject: &str) -> Result<Vec<u8>, Fail> {
-    let text = in_text(input, subject)?;
+fn latin1_in(input: &mut &[u8], subject: &str) -> Result<Vec<u8>, Fail> {
+    let text = text_in(input, subject)?;
     text.chars()
         .map(|character| {
             u8::try_from(u32::from(character))
@@ -216,11 +216,11 @@ fn in_latin1(input: &mut &[u8], subject: &str) -> Result<Vec<u8>, Fail> {
 }
 
 /// A []byte is its bytes; a source (T-1) is a []byte too, whose bytes the core judges.
-fn in_bytes(input: &mut &[u8]) -> Result<Vec<u8>, Fail> {
+fn bytes_in(input: &mut &[u8]) -> Result<Vec<u8>, Fail> {
     Ok(read_bytes(input)?.to_vec())
 }
 
-fn in_list<'a, T>(input: &mut &'a [u8], item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
+fn list_in<'a, T>(input: &mut &'a [u8], item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Vec<T>, Fail> {
     let count = read_length(input)?;
     let mut items = Vec::new();
     for _ in 0..count {
@@ -231,7 +231,7 @@ fn in_list<'a, T>(input: &mut &'a [u8], item: impl Fn(&mut &'a [u8]) -> Result<T
 
 /// An optional value, and U-2 a parameter or a field with a default, which Go leaves out as nil: the core decides its
 /// value.
-fn in_optional<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+fn optional_in<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
     if read_tag(input)? {
         item(input).map(Some)
     } else {
@@ -240,11 +240,11 @@ fn in_optional<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> 
 }
 
 /// T-2: an ordered map, its text keys each once; a key twice is a fault of the generated Go code (kind internal).
-fn in_map<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let count = read_length(input)?;
     let mut map = binding_core::OrderedMap::new();
     for _ in 0..count {
-        let key = in_text(input, subject)?;
+        let key = text_in(input, subject)?;
         let value = item(input)?;
         if map.insert(key, value).is_some() {
             return Err(malformed());
@@ -254,18 +254,18 @@ fn in_map<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8
 }
 
 /// T-2: an ordered map, owned or borrowed, in its order.
-fn out_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
+fn map_out<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
     let map = value.borrow();
     write_length(output, map.len());
     for (key, value) in map.iter() {
-        out_text(output, key);
+        text_out(output, key);
         item(output, value);
     }
 }
 
 /// T-2, U-7 (c): a keyed map, its keys each once: kind 0 an integer, 1 a byte string, 2 a text; a key of a kind that
 /// the contract does not list is kind invalid_argument_type, a key twice a fault of the generated Go code.
-fn in_keyed_map<'a, T>(
+fn keyed_map_in<'a, T>(
     input: &mut &'a [u8],
     subject: &str,
     kinds: &[u8],
@@ -276,9 +276,9 @@ fn in_keyed_map<'a, T>(
     let mut map = binding_core::KeyedMap::new();
     for _ in 0..count {
         let (tag, key) = match take(input, 1)? {
-            [0] => (0, binding_core::Key::Int(in_int(input)?)),
-            [1] => (1, binding_core::Key::Bytes(in_bytes(input)?)),
-            [2] => (2, binding_core::Key::Text(in_text(input, subject)?)),
+            [0] => (0, binding_core::Key::Int(int_in(input)?)),
+            [1] => (1, binding_core::Key::Bytes(bytes_in(input)?)),
+            [2] => (2, binding_core::Key::Text(text_in(input, subject)?)),
             _ => return Err(malformed()),
         };
         if !kinds.contains(&tag) {
@@ -297,29 +297,29 @@ fn in_keyed_map<'a, T>(
 }
 
 /// T-2: a keyed map, owned or borrowed, in its order.
-fn out_keyed_map<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
+fn keyed_map_out<T>(output: &mut Vec<u8>, value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&mut Vec<u8>, &T)) {
     let map = value.borrow();
     write_length(output, map.len());
     for (key, value) in map.iter() {
-        out_key(output, key);
+        key_out(output, key);
         item(output, value);
     }
 }
 
 /// T-2: a key of a keyed map: its kind (0 an integer, 1 a byte string, 2 a text) and its value.
-fn out_key(output: &mut Vec<u8>, key: &binding_core::Key) {
+fn key_out(output: &mut Vec<u8>, key: &binding_core::Key) {
     match key {
         binding_core::Key::Int(integer) => {
             output.push(0);
-            out_int(output, integer);
+            int_out(output, integer);
         }
         binding_core::Key::Bytes(bytes) => {
             output.push(1);
-            out_bytes(output, bytes);
+            bytes_out(output, bytes);
         }
         binding_core::Key::Text(text) => {
             output.push(2);
-            out_text(output, text);
+            text_out(output, text);
         }
     }
 }
@@ -332,39 +332,39 @@ fn write_length(output: &mut Vec<u8>, length: usize) {
     output.extend_from_slice(&length.to_le_bytes());
 }
 
-fn out_bytes(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
+fn bytes_out(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
     let bytes = value.as_ref();
     write_length(output, bytes.len());
     output.extend_from_slice(bytes);
 }
 
-fn out_text(output: &mut Vec<u8>, value: impl AsRef<str>) {
-    out_bytes(output, value.as_ref().as_bytes());
+fn text_out(output: &mut Vec<u8>, value: impl AsRef<str>) {
+    bytes_out(output, value.as_ref().as_bytes());
 }
 
 /// T-1 latin1: each byte leaves as the rune of the same code point, so a Go string reads it as UTF-8.
-fn out_latin1(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
+fn latin1_out(output: &mut Vec<u8>, value: impl AsRef<[u8]>) {
     let text: String = value.as_ref().iter().map(|byte| char::from(*byte)).collect();
-    out_text(output, text);
+    text_out(output, text);
 }
 
-fn out_bool(output: &mut Vec<u8>, value: impl Borrow<bool>) {
+fn bool_out(output: &mut Vec<u8>, value: impl Borrow<bool>) {
     output.push(u8::from(*value.borrow()));
 }
 
-fn out_uint(output: &mut Vec<u8>, value: impl WideUint) {
+fn uint_out(output: &mut Vec<u8>, value: impl WideUint) {
     output.extend_from_slice(&value.widen_uint().to_le_bytes());
 }
 
-fn out_int(output: &mut Vec<u8>, value: impl WideInt) {
+fn int_out(output: &mut Vec<u8>, value: impl WideInt) {
     output.extend_from_slice(&value.widen_int().to_le_bytes());
 }
 
-fn out_float(output: &mut Vec<u8>, value: impl Borrow<f64>) {
+fn float_out(output: &mut Vec<u8>, value: impl Borrow<f64>) {
     output.extend_from_slice(&value.borrow().to_le_bytes());
 }
 
-fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: impl Fn(&mut Vec<u8>, T)) {
+fn list_out<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: impl Fn(&mut Vec<u8>, T)) {
     let items: Vec<T> = value.into_iter().collect();
     write_length(output, items.len());
     for value in items {
@@ -373,7 +373,7 @@ fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: i
 }
 
 /// An optional value, owned or borrowed (\`&Option<T>\` is an \`Option<&T>\`).
-fn out_optional<T>(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce(&mut Vec<u8>, T)) {
+fn optional_out<T>(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce(&mut Vec<u8>, T)) {
     match value {
         Some(value) => {
             output.push(1);
@@ -426,26 +426,26 @@ fn read_host(input: &mut &[u8]) -> Result<HostValue, Fail> {
     Ok(match take(input, 1)? {
         [0] => HostValue::Null,
         [1] => HostValue::Bool(read_tag(input)?),
-        [2] => HostValue::Int(in_int(input)?),
-        [3] => HostValue::Number(in_text(input, "a number")?),
-        [4] => HostValue::Float(in_float(input)?),
-        [5] => HostValue::Text(HostText::Bytes(in_bytes(input)?)),
-        [6] => HostValue::Bytes(in_bytes(input)?),
-        [7] => HostValue::List { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
-        [8] => HostValue::Map { handle: Handle::new(in_uint(input)?), len: in_uint(input)? },
-        [9] => HostValue::Callable(Handle::new(in_uint(input)?)),
+        [2] => HostValue::Int(int_in(input)?),
+        [3] => HostValue::Number(text_in(input, "a number")?),
+        [4] => HostValue::Float(float_in(input)?),
+        [5] => HostValue::Text(HostText::Bytes(bytes_in(input)?)),
+        [6] => HostValue::Bytes(bytes_in(input)?),
+        [7] => HostValue::List { handle: Handle::new(uint_in(input)?), len: uint_in(input)? },
+        [8] => HostValue::Map { handle: Handle::new(uint_in(input)?), len: uint_in(input)? },
+        [9] => HostValue::Callable(Handle::new(uint_in(input)?)),
         [10] => {
-            let type_name = in_text(input, "a type name")?;
-            HostValue::Other { type_name, handle: Handle::new(in_uint(input)?) }
+            let type_name = text_in(input, "a type name")?;
+            HostValue::Other { type_name, handle: Handle::new(uint_in(input)?) }
         }
         _ => return Err(malformed()),
     })
 }
 
 /// U-7: a value that the out rows of the alias give no Go form: a node that Go decodes as kind internal.
-fn out_no_form(output: &mut Vec<u8>, reason: &str) {
+fn no_form_out(output: &mut Vec<u8>, reason: &str) {
     output.push(255);
-    out_text(output, reason);
+    text_out(output, reason);
 }
 `;
 
@@ -467,7 +467,7 @@ fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
     let text = match value.borrow() {
 ${outArmsText}
     };
-    out_text(output, text);
+    text_out(output, text);
 }
 `;
 }
@@ -515,7 +515,7 @@ function objectHelpers(model: Model, object: ObjectClass): string {
   const nested = takesObject(model, object) ? `
 /// T-5: a value of the class ${goClass} inside another type is the handle of an instance; the core takes a copy of its value.
 fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${core}, Fail> {
-    let held = held_${plain}(in_uint(input)?, subject)?;${object.lock === undefined ? `
+    let held = held_${plain}(uint_in(input)?, subject)?;${object.lock === undefined ? `
     Ok(${core}::clone(&held))` : `
     let value = held.read(${rustString(goClass)}, &[]).map_err(binding_error)?;
     Ok(${core}::clone(&value))`}
@@ -529,14 +529,14 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
 fn out_${plain}(output: &mut Vec<u8>, value: impl CoreForm<${core}>) {
-    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
+    uint_out(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
 /// the handle of a new instance, which the package of the class makes.
 fn alias_out_${plain}(output: &mut Vec<u8>, value: ${core}) {
     output.push(10);
-    out_uint(output, ${model.objects.indexOf(object)}u64);
+    uint_out(output, ${model.objects.indexOf(object)}u64);
     out_${plain}(output, value);
 }
 ${nested}`;
@@ -617,7 +617,7 @@ pub unsafe extern "C" fn ${symbol}(args: *const u8, len: usize, result: *mut Buf
 function argumentLines(model: Model, fn: Fn): string[] {
   const lines: string[] = [];
   if (fn.receiver !== undefined) {
-    lines.push(`        let held = held_${plainName(fn.unit)}(in_uint(&mut input)?, "receiver")?;`);
+    lines.push(`        let held = held_${plainName(fn.unit)}(uint_in(&mut input)?, "receiver")?;`);
     if (!locked(model, fn)) lines.push(`        let this: &${fn.unit.core_type ?? ''} = &held;`);
   }
   for (const parameter of fn.params) {
@@ -625,7 +625,7 @@ function argumentLines(model: Model, fn: Fn): string[] {
     const subject = rustString(goSubject(parameter.name));
     const object = heldParam(model, parameter.type);
     if (object !== undefined) {
-      lines.push(`        let ${variable} = held_${plainName(object.unit)}(in_uint(&mut input)?, ${subject})?;`);
+      lines.push(`        let ${variable} = held_${plainName(object.unit)}(uint_in(&mut input)?, ${subject})?;`);
       continue;
     }
     // GN-6ae: a function parameter is the closure that the machine of the member calls.
@@ -667,7 +667,7 @@ function functionClosure(model: Model, parts: Type[], name: string, subject: str
 
 // GN-6ae: the func of a function parameter as the closure reads it, its call through the trampoline of the callbacks,
 // and the Passthrough of the value that package binding holds in its table: its release function, and the result
-// that crosses the C ABI as its handle. A name of the form in_<word> or out_<word> is the conversion of a unit.
+// that crosses the C ABI as its handle. GN-4c: a helper states its direction last, and in_<name> and out_<name> are the conversions of units.
 function passingRust(model: Model): string {
   if (!passes(model)) return '';
   return `
@@ -677,8 +677,8 @@ fn go_function(input: &mut &[u8], subject: &str) -> Result<(u64, u64), Fail> {
     if !read_tag(input)? {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }
-    let call = in_uint(input)?;
-    let callback = in_uint(input)?;
+    let call = uint_in(input)?;
+    let callback = uint_in(input)?;
     Ok((call, callback))
 }
 
@@ -692,7 +692,7 @@ fn called(function: (u64, u64), args: &[u8]) -> Result<binding_core::Passthrough
         return Err(raised_by_go(call, &bytes));
     }
     let mut input: &[u8] = &bytes;
-    match in_uint(&mut input).and_then(|handle| finish_input(input).map(|()| handle)) {
+    match uint_in(&mut input).and_then(|handle| finish_input(input).map(|()| handle)) {
         Ok(handle) => Ok(binding_core::Passthrough::from_generated(Handle::new(handle), release_passed)),
         Err(fail) => Err(thrown(Thrown::Binding(fail))),
     }
@@ -706,7 +706,7 @@ fn release_passed(handle: Handle) {
 
 /// GN-6ae: a result passthrough leaves as its handle; Go takes the value out of the table of package binding.
 fn passed_out(output: &mut Vec<u8>, value: binding_core::Passthrough) {
-    out_uint(output, value.into_handle().raw());
+    uint_out(output, value.into_handle().raw());
 }
 `;
 }
@@ -812,9 +812,9 @@ ${decode}
 fn ${recognizedFn(cb, m)}(call: u64, bytes: &[u8]) -> ${failure} {
     let mut input = bytes;
     let mut read = || -> Result<(u64, String, String), Fail> {
-        let index = in_uint(&mut input)?;
-        let kind = in_text(&mut input, "U-3: the kind of a recognized error")?;
-        let message = in_text(&mut input, "U-3: the message of a recognized error")?;
+        let index = uint_in(&mut input)?;
+        let kind = text_in(&mut input, "U-3: the kind of a recognized error")?;
+        let message = text_in(&mut input, "U-3: the message of a recognized error")?;
         finish_input(input)?;
         Ok((index, kind, message))
     };
@@ -841,8 +841,8 @@ fn in_${plain}(input: &mut &[u8], subject: &str) -> Result<${struct}, Fail> {
     if !read_tag(input)? {
         return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
     }
-    let call = in_uint(input)?;
-    let callback = in_uint(input)?;
+    let call = uint_in(input)?;
+    let callback = uint_in(input)?;
     Ok(${struct} { call, callback${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
@@ -929,7 +929,7 @@ fn go_callback(call: u64, callback: u64, member: u32, args: &[u8]) -> (i32, Vec<
 /// U-3: the error that a Go method returned, kept by Go in its call under the index that the bytes give.
 fn raised_by_go(call: u64, bytes: &[u8]) -> Raised {
     let mut input = bytes;
-    match in_uint(&mut input).and_then(|index| finish_input(input).map(|()| index)) {
+    match uint_in(&mut input).and_then(|index| finish_input(input).map(|()| index)) {
         Ok(index) => thrown(Thrown::Go { call, index }),
         Err(fail) => thrown(Thrown::Binding(fail)),
     }
@@ -997,40 +997,40 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
     case 'null':
       return 'output.push(0)';
     case 'bool':
-      return '{\n            output.push(1);\n            out_bool(output, value);\n        }';
+      return '{\n            output.push(1);\n            bool_out(output, value);\n        }';
     case 'int':
-      if (kind === 'int') return '{\n            output.push(2);\n            out_int(output, value.value());\n        }';
-      if (kind === 'int64') return '{\n            output.push(2);\n            out_int(output, value);\n        }';
+      if (kind === 'int') return '{\n            output.push(2);\n            int_out(output, value.value());\n        }';
+      if (kind === 'int64') return '{\n            output.push(2);\n            int_out(output, value);\n        }';
       break;
     case 'float':
-      if (kind === 'float') return '{\n            output.push(3);\n            out_float(output, value.value());\n        }';
+      if (kind === 'float') return '{\n            output.push(3);\n            float_out(output, value.value());\n        }';
       if (kind === 'int' || kind === 'int64' || kind === 'number') {
         const text = kind === 'int' ? 'value.value().to_string()' : kind === 'int64' ? 'value.to_string()' : 'value';
         // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
         return `match ${text}.parse::<f64>() {
             Ok(float) => {
                 output.push(3);
-                out_float(output, float);
+                float_out(output, float);
             }
-            Err(_never) => out_no_form(output, "U-7: an integer that is no number"),
+            Err(_never) => no_form_out(output, "U-7: an integer that is no number"),
         }`;
       }
       break;
     case 'text':
-      if (kind === 'text') return '{\n            output.push(4);\n            out_text(output, value);\n        }';
+      if (kind === 'text') return '{\n            output.push(4);\n            text_out(output, value);\n        }';
       if (kind === 'bytes') {
         return `match std::str::from_utf8(value.value()) {
             Ok(text) => {
                 output.push(4);
-                out_text(output, text);
+                text_out(output, text);
             }
-            Err(_bytes) => out_no_form(output, "U-7: text of bytes that are not UTF-8"),
+            Err(_bytes) => no_form_out(output, "U-7: text of bytes that are not UTF-8"),
         }`;
       }
       break;
     case 'bytes':
-      if (kind === 'bytes') return '{\n            output.push(5);\n            out_bytes(output, value.value());\n        }';
-      if (kind === 'text') return '{\n            output.push(5);\n            out_bytes(output, value.as_bytes());\n        }';
+      if (kind === 'bytes') return '{\n            output.push(5);\n            bytes_out(output, value.value());\n        }';
+      if (kind === 'text') return '{\n            output.push(5);\n            bytes_out(output, value.as_bytes());\n        }';
       break;
     case 'list': {
       const parts = container(alias, kind, form);
@@ -1043,7 +1043,7 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
             }
             made.insert(handle.raw(), made.len());
             output.push(6);
-            out_uint(output, len);
+            uint_out(output, len);
             for index in 0..len {
                 let item = ${parts.item};
                 make(output, item, source, made);
@@ -1062,7 +1062,7 @@ function goBuiltin(alias: ValueAlias, form: string, kind: string): string {
             }
             made.insert(handle.raw(), made.len());
             output.push(${form === 'map' ? 7 : 9});
-            out_uint(output, len);
+            uint_out(output, len);
             for index in 0..len {
                 let (key, item) = ${parts.entry};
                 make(output, key, source, made);
@@ -1087,11 +1087,11 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
-  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
+  const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(alias, form, kind), 'no_form_out(output, "U-7: no out row takes the value")', 'output, ', 'alias_out_');
   return `
 /// U-7: a Go value of the alias ${alias.unit.id} enters as the call that walks it and its first level, which the core judges.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
-    let call = in_uint(input)?;
+    let call = uint_in(input)?;
     let described = read_host(input)?;
     let mut host = GoHost { call };
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
@@ -1109,7 +1109,7 @@ fn make_${name}(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues,
     let make = make_${name};
     match out.clone() {
 ${arms.join('\n')}
-        other => out_no_form(output, &format!("U-7: no out row of the kind {}", other.kind().as_str())),
+        other => no_form_out(output, &format!("U-7: no out row of the kind {}", other.kind().as_str())),
     }
 }
 `;
@@ -1197,9 +1197,9 @@ export function echoes(model: Model): Echoes {
   const used = rustUsed(model);
   const has = (...names: string[]): boolean => names.every((name) => new RegExp(`\\bfn ${name}\\b`).test(used));
   return {
-    latin1: has('in_latin1', 'out_latin1'),
-    map: has('in_map', 'out_map', 'in_text', 'out_text'),
-    keyed: has('in_keyed_map', 'out_keyed_map', 'in_text', 'out_text'),
+    latin1: has('latin1_in', 'latin1_out'),
+    map: has('map_in', 'map_out', 'text_in', 'text_out'),
+    keyed: has('keyed_map_in', 'keyed_map_out', 'text_in', 'text_out'),
   };
 }
 
@@ -1215,9 +1215,9 @@ function testEntries(model: Model): string {
       '        Ok(buffer)',
     ], 'codec-test');
   const out: string[] = [];
-  if (echo.latin1) out.push(echoEntry('latin1', 'in_latin1(&mut input, "value")?', 'out_latin1(&mut buffer, &value)'));
-  if (echo.map) out.push(echoEntry('map', 'in_map(&mut input, "value", |input| in_text(input, "value"))?', 'out_map(&mut buffer, &value, |output, item| out_text(output, item))'));
-  if (echo.keyed) out.push(echoEntry('keyed_map', 'in_keyed_map(&mut input, "value", &[0, 1, 2], "a key", |input| in_text(input, "value"))?', 'out_keyed_map(&mut buffer, &value, |output, item| out_text(output, item))'));
+  if (echo.latin1) out.push(echoEntry('latin1', 'latin1_in(&mut input, "value")?', 'latin1_out(&mut buffer, &value)'));
+  if (echo.map) out.push(echoEntry('map', 'map_in(&mut input, "value", |input| text_in(input, "value"))?', 'map_out(&mut buffer, &value, |output, item| text_out(output, item))'));
+  if (echo.keyed) out.push(echoEntry('keyed_map', 'keyed_map_in(&mut input, "value", &[0, 1, 2], "a key", |input| text_in(input, "value"))?', 'keyed_map_out(&mut buffer, &value, |output, item| text_out(output, item))'));
   // U-7: the in function of a value alias with in_raises alone.
   for (const alias of aliasesWithKinds(model).filter((a) => a.library === undefined)) {
     out.push(entry(model, `${p}__alias_in_${aliasFn(alias)}`, `U-7: runs the in function of the alias ${alias.unit.id} alone, for the tests of its kinds.`, [
@@ -1236,28 +1236,28 @@ function testEntries(model: Model): string {
                 panic!("panic-test");
             }`).join('\n');
     out.push(entry(model, `${p}__panic_test_held`, 'B-5c: the entry point of the generated poison test, which panics while it holds the write guard of an instance.', [
-      '        let class = in_uint(&mut input)?;',
-      '        let handle = in_uint(&mut input)?;',
+      '        let class = uint_in(&mut input)?;',
+      '        let handle = uint_in(&mut input)?;',
       '        finish_input(input)?;',
       `        match class {\n${arms}\n            _ => Err(binding_error(BindingError::Internal { detail: String::from("B-5c: no class with a write place has this index") })),\n        }`,
     ], 'panic-test'));
   }
   if (model.faults.length > 0) {
     out.push(entry(model, `${p}__arm_faults`, 'G-5: arms the faults of a case for the next call of the member on this thread, and gives the id of the arming.', [
-      '        let member = in_text(&mut input, "member")?;',
-      '        let faults = in_text(&mut input, "faults")?;',
+      '        let member = text_in(&mut input, "member")?;',
+      '        let faults = text_in(&mut input, "faults")?;',
       '        finish_input(input)?;',
       '        let id: u64 = binding_core::fault::arm(&member, &faults).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;',
       '        let mut buffer = Vec::new();',
-      '        out_uint(&mut buffer, id);',
+      '        uint_out(&mut buffer, id);',
       '        Ok(buffer)',
     ], 'fault-test'));
     out.push(entry(model, `${p}__fault_left`, 'G-5: the points of an arming whose fault did not fire.', [
-      '        let id = in_uint(&mut input)?;',
+      '        let id = uint_in(&mut input)?;',
       '        finish_input(input)?;',
       '        let left = binding_core::fault::left(id).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;',
       '        let mut buffer = Vec::new();',
-      '        out_list(&mut buffer, left, out_text);',
+      '        list_out(&mut buffer, left, text_out);',
       '        Ok(buffer)',
     ], 'fault-test'));
   }
@@ -1305,7 +1305,7 @@ function tupleReaders(model: Model): string {
   return [...arities].sort((a, b) => a - b).map((n) => {
     const names = Array.from({ length: n }, (_, i) => `T${i}`);
     return `/// T-2, GN-16: a tuple of ${n} parts, read in order.
-fn in_tuple${n}<'a, ${names.join(', ')}>(
+fn tuple${n}_in<'a, ${names.join(', ')}>(
     input: &mut &'a [u8],
 ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, Fail>,`).join('\n')}
 ) -> Result<(${names.join(', ')}${n === 1 ? ',' : ''}), Fail> {
@@ -1317,8 +1317,8 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 // GN-4: the helpers that the test entry points of each feature use; a helper that only they use is compiled under
 // their features.
 const testEntryUses = (model: Model): Record<string, string> => ({
-  'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : '',
-  'fault-test': model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : '',
+  'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'uint_in' : '',
+  'fault-test': model.faults.length > 0 ? 'uint_in uint_out text_in text_out list_out' : '',
   'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
 });
 

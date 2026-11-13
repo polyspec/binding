@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c08bcf40dfb448eaeb08b068af7637a0a1470bb252291d91c0f359d8fe8cf004 -->
+<!-- source-sha256: 01337159ff41b10bcb5cee2925b09ed83b87899e8a81804f0e61bc949848252d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 이름이 `text`, `list`이거나 helper의 다른 단어인 unit이 있는 계약의 생성된 Go crate는 컴파일되지 않았다. 변환
+  `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`의 이름을 가졌기 때문이다. Go crate의 helper는 이제
+  GN-4c가 적는 대로 방향을 끝에 적는다: `text_in`, `list_out`, `safe_int_in`, `tuple<N>_in`, `key_out`,
+  `no_form_out`, `passed_out`. Go crate의 어떤 함수도 member의 이름을 갖지 않는다: 진입점은
+  `<prefix>_<module>_<member>`다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`, `callable`,
+  `text`가 있는 sample의 Go crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는 이름의 다른
+  함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_text`의 정의 둘을 찾았다.
 - Go 바인딩은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그것을 생성한다:
   parameter는 Go `func(<parameters>) (any, error)`이고 결과는 `any`다. `func`는 호출의 callback으로 들어가 export
   `<prefix>__go_callback`으로 member의 goroutine과 스레드에서 돌고, class 인자는 각각 새 인스턴스다. package
@@ -17,6 +24,13 @@
   `raises: "callback"` case, `after`의 호출, nil `func`와 `func`의 error와 panic의 시험을 쓰며, `after`나 `raises:
   "callback"`이 있는 case를 더는 거부하지 않는다(GN-6ae, CK-22). `packages/ts`의 `npm test`로 검증했고 Go crate, package,
   시험의 시험 2개는 통과한다. 모든 target으로 sample을 생성하는 시험 20개는 아직 Python, Node, WASM의 거부로 실패한다.
+- `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
+  않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
+  정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:
+  `text_in`, `list_out`, `default_in`, `callable_in`, `passed_out`(GN-4c). PHP와 Python의 crate는 이 규칙을 적용하고,
+  Node, WASM, Go의 crate는 아직 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`,
+  `callable`, `text`가 있는 sample의 PHP crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는
+  이름의 다른 함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_default`의 정의 둘을 찾았다.
 - awaitable을 돌려주는 함수를 주는 case가 없어서, awaitable이 나중에 settle되거나 예외를 내는 `Step::Await`의 경로에는
   case가 없었다. 함수 fixture는 이제 `"awaits": true`를 적을 수 있다. 그 함수는 그 언어의 awaitable을 돌려주고 그
   결과는 fixture의 `result`나 `raise`다. 계약 검사는 그 표시를 값이 `true`일 때만, `async_allowed: true`인 함수 타입에만,
