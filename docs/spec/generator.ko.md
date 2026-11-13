@@ -213,6 +213,15 @@
   바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
   `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+- **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
+  선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
+  던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는
+  stub과 class의 항목에서 확장이 등록하는 interface, Python은 `Protocol`이 이름하는 메서드를 갖는다. 그래서 class의 인스턴스는
+  그 member를 가진 언어 객체처럼 callback을 받는 자리에 들어오고, callback의 호출은 그 메서드를 거쳐 가진 값에 닿는다. case에서
+  callback의 자리에 인스턴스 값(GN-13f)이 올 수 있다. 아직 생성하지 않아 이름으로 거부한다: 다른 레포의 interface, class가
+  `&self`가 아닌 receiver로 구현하는 member, abstract class(U-1).
+  이유: 코어 타입이 trait를 구현하는 class는 이미 callback이므로, 호출자는 호출마다 넘겨 주는 자기 객체 대신 그 인스턴스를
+  callback을 받는 자리에 넘긴다.
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
@@ -574,7 +583,7 @@
   돌려주는 member다: 생성자, static member, 함수, 어느 class의 메서드. `from`은 결과가 그 class를 담는 member이고,
   `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
   member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
-  자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
+  자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
   그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.

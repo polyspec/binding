@@ -261,6 +261,17 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6w** A class unit that `implements` a callback interface of this contract (U-1, U-3) has, for each member of
+  the interface that it does not declare under the same name, a method that calls the trait method on the held
+  value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
+  name the interface: Node and WASM `class <Class> implements <Interface>`, and PHP the interface that the extension
+  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names. An instance
+  of the class therefore enters where the callback is taken as any language object with those members does, and the
+  call of the callback reaches the held value through the method. In a case an instance value (GN-13f) may stand at
+  a place of the callback. Refused by name, not generated yet: an interface of another repository, a member that the
+  class implements with a receiver other than `&self`, and an abstract class (U-1).
+  Why: a class whose core type implements the trait is a callback already, so a caller passes its instance where the
+  callback is taken instead of an object of its own that forwards each call.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -703,7 +714,8 @@ the design ids are those of the binding design.
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
-  parameter, an item of a list, a field of a record, an `optional`) may be an instance value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
+  parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
+  a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
   requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,

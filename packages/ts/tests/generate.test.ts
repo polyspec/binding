@@ -1150,6 +1150,25 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
 });
 
+test('a class that implements a callback interface has its members and stands for the callback (U-1, U-3, GN-6w)', () => {
+  const out = variants();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /<polyspec_variants::Ribbon as polyspec_variants::Tail>::last\((&self\.inner|this), count\)/, path);
+  }
+  assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_native.pyi'), /class Ribbon:[\s\S]*def last\(self, count: int\) -> bytes: \.\.\./);
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    assert.match(text(out, path), /export declare class Ribbon implements Tail \{[\s\S]*last\(count: number\): Uint8Array;/, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_variants.stub.php'), /final class Ribbon implements \\Polyspec\\Variants\\Tail\n/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /#\[php\(implements\(ce = interface_tail, stub = "\\\\Polyspec\\\\Variants\\\\Tail"\)\)\]/);
+  // GN-13f: an instance value stands at the place of the callback that its class implements.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tail_of\(pkg\.Ribbon\("abc"\), 2\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tailOf\(new pkg\.Ribbon\('abc'\), 2\)/);
+  assert.throws(() => variants(undefined, ['go']), /ribbon: a class that implements an interface is not generated for Go yet \(GN-6w\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'tail').members[0].core.receiver = '&mut self'; }), /ribbon: the member tail\.last that it implements takes the receiver &mut self, which an implemented member is not generated for yet \(GN-6w\)/);
+  assert.throws(() => variants((c) => { unitOf(c, 'ribbon').abstract = true; }), /ribbon: an abstract class is not generated yet/);
+});
+
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
