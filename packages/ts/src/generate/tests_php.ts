@@ -432,10 +432,13 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } finally {
             restore_error_handler();
         }
-        self::assertSame(${expected}, $warnings);`;
+        ${expected}`;
+    // GN-6p: PHP puts the name of the running function before the message of a warning, which ends with the B-10 text.
     methods.push(`
     public function testB10${label}WarnsWithout${langName('php', cleanup.member.name, 'class')}(): void
-    {${warned('', `[[E_WARNING, ${phpText(cleanupWarning(label, memberName('php', cleanup)))}]]`)}
+    {${warned('', `self::assertCount(1, $warnings);
+        self::assertSame(E_WARNING, $warnings[0][0]);
+        self::assertStringEndsWith(${phpText(cleanupWarning(label, memberName('php', cleanup)))}, $warnings[0][1]);`)}
     }
 
     public function testB10${label}DoesNotWarnAfter${langName('php', cleanup.member.name, 'class')}(): void
@@ -444,7 +447,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
                 ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), '$held')};
             } catch (\\Throwable) {
                 // B-10: the cleanup call consumed the value whatever it gave.
-            }`, '[]')}
+            }`, 'self::assertSame([], $warnings);')}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

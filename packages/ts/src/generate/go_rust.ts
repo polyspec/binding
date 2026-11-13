@@ -1201,7 +1201,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.objects.filter((o) => o.lock?.writes === true).map((o) => `held_${plainName(o.unit)}`).join(' ')} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
