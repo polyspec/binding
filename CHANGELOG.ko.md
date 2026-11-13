@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ea3b098021cf84754b103c1d29e4a644675d66432677c221cda159890d6b70d4 -->
+<!-- source-sha256: 3a06c898f5191766be7387f105fa5bc3ca89c96184b5b51b457af3fd202f68f3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -15,7 +15,11 @@
 - Go 모듈의 release 형태의 정적 라이브러리가 Rust 표준 라이브러리의 debug section을 담았고 그것이 크기의 3분의 1이었으며,
   Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않는다(darwin/arm64에서 sample은 `strip = "debuginfo"`가 있든 없든
   19402832 bytes). 명세는 release가 고정 toolchain의 `llvm-strip --strip-debug`로 그것을 뗀다고 적고(GN-15g), end-to-end
-  검사의 release 형태 단계가 그렇게 하며 `llvm-size -A`가 debug section을 여전히 적으면 실패한다(GN-14f).
+  검사의 release 형태 단계가 그렇게 하며 `llvm-size -A`가 debug section을 여전히 적으면 실패한다(GN-14f). 확인:
+  `make test-ts`, 그리고 darwin/arm64에서 `tests/e2e/points`와 함께 돌린 `tests/e2e/plot`의 `make e2e`. 그 기록은 증거이고,
+  plot의 라이브러리는 19046784 bytes에서 12618176 bytes로, points의 것은 19043472 bytes에서 12614864 bytes로 줄었으며,
+  release 형태의 시험 18개가 그 라이브러리로 통과했다(그 실행의 target php, python, wasm은 전과 같이 실패했다). 실행하지
+  않은 것: debug section을 뗀 라이브러리로 돌리는 `tests/e2e/sample`의 `make e2e`.
 - 어떤 소비자도 라이브러리의 Go 모듈을 받을 수 없었다: Go 모듈은 tag의 소스로 받아지는데, 생성된 Go 파일과 정적
   라이브러리는 추적 파일이 아니고, 생성 코드는 라이브러리의 디렉터리를 가리키지 않아서 빌드에 `CGO_LDFLAGS`가 필요했다.
   이제 `binding generate`는 Go 모듈의 플랫폼(`linux_amd64`, `linux_arm64`, `darwin_arm64`)마다 지시문

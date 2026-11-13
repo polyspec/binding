@@ -16,7 +16,11 @@
   third of its size, and the `strip` of a Cargo profile does not change a static library (19402832 bytes of the
   sample on darwin/arm64 with `strip = "debuginfo"` and without it). The specification states that a release removes
   them with `llvm-strip --strip-debug` of the pinned toolchain (GN-15g), and the step of the released form of the
-  end-to-end check does so and fails when `llvm-size -A` still names a debug section (GN-14f).
+  end-to-end check does so and fails when `llvm-size -A` still names a debug section (GN-14f). Verified by
+  `make test-ts` and by `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on darwin/arm64, whose record is
+  evidence: the library of plot went from 19046784 to 12618176 bytes and the one of points from 19043472 to 12614864,
+  and the 18 tests of the released form passed with them (the targets php, python and wasm of that run failed as
+  before). Not run: `make e2e` of `tests/e2e/sample` with the libraries without debug sections.
 - No consumer could take the Go module of a library: a Go module is fetched as the source of a tag, the generated Go
   files and the static library are no tracked files, and the generated code named no directory of the library, so a
   build needed `CGO_LDFLAGS`. `binding generate` now writes, for each platform of a Go module (`linux_amd64`,
