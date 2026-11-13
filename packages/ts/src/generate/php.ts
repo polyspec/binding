@@ -99,6 +99,7 @@ pub fn fault_left(id: i64) -> Result<Vec<String>, PhpException> {
 `;
 
 const PANIC_TEST = (layout: PhpLayout): string => `/// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\panicTest`)})]
@@ -769,6 +770,7 @@ function poisonRust(model: Model, layout: PhpLayout): string {
         }`;
   }).join('\n');
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\${POISON_ENTRY.php}`)})]
@@ -877,11 +879,13 @@ fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, nam
     }
 }
 `}
-/// A library class that is registered already: the parent of an error unit and the scope of its properties.
+/// A library class that is registered already: the parent of an error unit and the scope of its properties. Startup
+/// registers every library class or fails the start of the module, so the engine's Exception stands only for a class
+/// that was not registered, which no call and no registration meets.
 fn registered_class(index: usize) -> &'static ClassEntry {
     match CLASSES.get(index).and_then(OnceLock::get) {
         Some(Class(class)) => class,
-        None => panic!("B-4: the library class {index} is not registered"),
+        None => ext_php_rs::zend::ce::exception(),
     }
 }
 ${[...new Set(model.errorUnits.map(parentIndex))].map((i) => `
@@ -1008,9 +1012,12 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
+  // B-4: the classes of PHP that the library classes extend or implement, found by startup before any registration.
+  const jsonHook = model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json'));
+  const builtins = [...new Set(model.classes.map((c) => phpBase(c.category))), ...(jsonHook ? ['JsonSerializable'] : [])];
   const baseFns = [...new Set(bases)].map((fnName) => {
     const category = model.classes.find((c) => phpBaseFn(c.category) === fnName)?.category ?? 'value';
-    return `fn ${fnName}() -> &'static ClassEntry {\n    builtin_class(${rustString(phpBase(category))})\n}\n`;
+    return `fn ${fnName}() -> &'static ClassEntry {\n    builtin(${builtins.indexOf(phpBase(category))}, ext_php_rs::zend::ce::exception)\n}\n`;
   }).join('\n');
   return `${header('//')}
 // The extension ${layout.extension}. Its functions take the raw values and judge them (T-8); PHP counts the arguments
@@ -1065,8 +1072,8 @@ fn remember(index: usize, class: &'static ClassEntry) {
     }
 }
 
-/// B-4: a class of PHP itself, found in the engine's class table when the module starts; a missing class fails the start.
-fn builtin_class(name: &str) -> &'static ClassEntry {
+/// B-4: a class of PHP itself, found in the engine's class table when the module starts.
+fn builtin_class(name: &str) -> Option<&'static ClassEntry> {
     // SAFETY: at module startup the compiler globals hold the class table, which outlives the module; the lookup copies
     // the name before lowercasing it.
     let found = unsafe {
@@ -1074,16 +1081,27 @@ fn builtin_class(name: &str) -> &'static ClassEntry {
         ext_php_rs::ffi::zend_hash_str_find_ptr_lc(table, name.as_ptr().cast(), name.len())
     };
     // SAFETY: the class table holds class entries.
-    match unsafe { found.cast::<ClassEntry>().as_ref() } {
-        Some(class) => class,
-        None => panic!("B-4: the class {name} is missing"),
+    unsafe { found.cast::<ClassEntry>().as_ref() }
+}
+
+
+/// B-4: the classes of PHP that the library classes extend or implement, in the order of BUILTIN_NAMES.
+static BUILTINS: [OnceLock<Class>; ${builtins.length}] = [${builtins.map(() => 'const { OnceLock::new() }').join(', ')}];
+const BUILTIN_NAMES: [&str; ${builtins.length}] = [${builtins.map((name) => rustString(name)).join(', ')}];
+
+/// B-4: a class of PHP that startup found. The registration that reads it runs only after startup found every one,
+/// so the engine's class that \`absent\` gives stands only for a lookup that did not run, and no registration takes it.
+fn builtin(index: usize, absent: fn() -> &'static ClassEntry) -> &'static ClassEntry {
+    match BUILTINS.get(index).and_then(OnceLock::get) {
+        Some(Class(class)) => class,
+        None => absent(),
     }
 }
 
-${baseFns}${model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json')) ? `
+${baseFns}${jsonHook ? `
 /// N-4: the interface of a class with a JSON hook.
 fn json_serializable() -> &'static ClassEntry {
-    builtin_class("JsonSerializable")
+    builtin(${builtins.indexOf('JsonSerializable')}, ext_php_rs::zend::ce::aggregate)
 }
 ` : ''}
 fn private_property(name: &str) -> ClassProperty {
@@ -1216,7 +1234,16 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
-extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
+extern "C" fn startup(_kind: i32, _module: i32) -> i32 {
+    // B-4: a class of PHP that is missing fails the start of the module, before anything is registered.
+    for (slot, name) in BUILTINS.iter().zip(BUILTIN_NAMES) {
+        match builtin_class(name) {
+            Some(class) => {
+                let _first: Result<(), Class> = slot.set(Class(class));
+            }
+            None => return 1,
+        }
+    }${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
     0
 }
 

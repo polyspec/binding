@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The PHP extension panicked when a class of PHP that a library class extends was missing ("B-4: the class {name} is
+  missing") and when a library class was not registered, so a repository that denies `clippy::panic` failed its
+  clippy of the bindings. Startup now finds every class of PHP that a library class extends or implements before it
+  registers anything, and a missing one fails the start of the module (GN-10). The entry points of the panic test of
+  every target, which panic on purpose, carry `#[allow(clippy::panic)]` with the reason B-7, so the deny holds for
+  every other item (GN-5). Verified by `npm test` in `packages/ts` and by clippy of the binding crates of
+  php-serialization with the features `panic-test` and `fault-test`.
 - A unit with `only` and a class of origin `value` without `core_type` were refused ("only and native are not
   generated yet"), so a contract whose value alias makes such classes, as php-serialization's `StdClass` and
   `Reference`, generated no target. A unit with `only` is now generated for the targets that it lists only. Python,

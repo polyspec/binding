@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- PHP 확장은 라이브러리 클래스가 상속하는 PHP 클래스가 없을 때("B-4: the class {name} is missing")와 라이브러리 클래스가
+  등록되지 않았을 때 panic했다. 그래서 `clippy::panic`을 deny하는 레포는 바인딩의 clippy에서 실패했다. 이제 startup은 무엇이든
+  등록하기 전에 라이브러리 클래스가 상속하거나 구현하는 PHP 클래스를 모두 찾고, 없는 클래스가 있으면 module 시작이
+  실패한다(GN-10). 모든 target에서 일부러 panic하는 panic 시험 진입점은 B-7을 이유로 적은 `#[allow(clippy::panic)]`를
+  가지므로, 다른 모든 항목에는 deny가 유지된다(GN-5). `packages/ts`의 `npm test`와, feature `panic-test`와 `fault-test`를
+  켠 php-serialization 바인딩 crate들의 clippy로 확인했다.
 - `only`가 있는 unit과 `core_type`이 없는 origin `value`의 class는 거부되었다("only and native are not generated yet").
   그래서 php-serialization의 `StdClass`와 `Reference`처럼 value alias가 그런 class를 만드는 계약은 어떤 target도
   생성되지 않았다. 이제 `only`가 있는 unit은 그것이 적은 target에만 생성한다. Python, Node, WASM은 그 class를 받은 값을

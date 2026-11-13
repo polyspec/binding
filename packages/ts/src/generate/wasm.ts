@@ -975,6 +975,7 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
     }
 
 `}    /// B-7: the entry point of the generated panic test.
+    #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
     #[cfg(feature = "panic-test")]
     #[wasm_bindgen(js_name = "__panicTest")]
     pub fn panic_test() -> Result<(), JsValue> {

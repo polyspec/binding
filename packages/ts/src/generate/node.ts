@@ -714,6 +714,7 @@ function poisonRust(model: Model): string {
   }).join('\n');
   return `
 /// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = ${rustString(POISON_ENTRY.node)})]
 pub fn panic_test_held(env: &Env, object: Unknown<'_>) -> napi::Result<()> {
@@ -928,6 +929,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
 pub fn panic_test(env: &Env) -> napi::Result<()> {

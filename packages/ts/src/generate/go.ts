@@ -1391,6 +1391,7 @@ ${used}${functions}
 /// # Safety
 ///
 /// As for every function of this library.
+#[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
 #[no_mangle]
 pub unsafe extern "C" fn ${prefix(model)}__panic_test(args: *const u8, len: usize, result: *mut Buffer) -> i32 {
