@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- binding_core는 코어가 보관할 수 있는 언어 객체(`HostValue::Object`, `HostValue::Callable`, `OutValue::Native`)를
+  바인딩 표의 `Handle`로 주었고, 그 표는 모든 객체를 프로세스나 요청이 끝날 때까지 가졌다. 코어가 handle을 버린 때를
+  바인딩에 알리는 것이 없었기 때문이다. 이제 그것을 `Native`로 준다. `Native`는 객체로 같음을 판정하는
+  `Arc<dyn NativeObject>`이고, 코어가 마지막 것을 drop하면 바인딩이 그 객체 대신 가진 것을 해제한다(B-1, U-7 (d)).
+  `HostValue::Object`의 field 이름은 `native`다. `tests/native.rs`는 같음, 복제, 다른 스레드에서의 해제를 확인한다.
+  `make test-rust lint-rust`로 확인했다.
 - `tests/e2e/functions`의 `registry.call`처럼 receiver가 보관한 언어 코드를 부르는 member는 코어가
   `Result<T, Failure<E>>`를 돌려주는데도, 코어 오류가 `E`인 것처럼 생성되어 바인딩 crate가 컴파일되지 않았다(E0308).
   이제 계약은 그런 member를 `core.failure: true`로 적고, 생성 코드는 그 오류를 callback을 받는 member의 오류처럼 변환한다.

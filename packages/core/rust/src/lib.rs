@@ -18,6 +18,7 @@ mod keyed;
 mod lock;
 mod map;
 pub mod naming;
+mod native;
 mod raised;
 mod value;
 mod wait;
@@ -31,6 +32,7 @@ pub use keyed::{Key, KeyedMap};
 #[cfg(feature = "lock")]
 pub use lock::{Exclusive, Reading, Shared, Writing};
 pub use map::OrderedMap;
+pub use native::{Native, NativeObject};
 pub use raised::Raised;
 pub use value::{
     BytesOut, FloatOut, Handle, HostText, HostValue, IntOut, MapOut, OutValue, Predicate, Prototype, ValueKind,

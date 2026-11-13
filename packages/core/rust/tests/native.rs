@@ -22,7 +22,10 @@ impl Drop for Kept {
 }
 
 fn kept(key: u64, released: &Arc<AtomicUsize>) -> Native {
-    Native::new(Kept { key, released: Arc::clone(released) })
+    Native::new(Kept {
+        key,
+        released: Arc::clone(released),
+    })
 }
 
 #[test]
@@ -43,7 +46,11 @@ fn the_object_is_released_when_the_last_native_is_dropped() {
     let native = kept(2, &released);
     let held = OutValue::Native(native.clone());
     assert_eq!(held.kind(), ValueKind::Native);
-    let object = HostValue::Object { native, type_name: String::from("Kept"), json_serializable: false };
+    let object = HostValue::Object {
+        native,
+        type_name: String::from("Kept"),
+        json_serializable: false,
+    };
     drop(object);
     assert_eq!(released.load(Ordering::SeqCst), 0, "the out value still holds it");
     // A core may drop the value on another thread.

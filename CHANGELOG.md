@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- binding_core gave a language object that a core may keep, a `HostValue::Object`, a `HostValue::Callable` or an
+  `OutValue::Native`, as a `Handle` into a table of the binding that kept every object until the end of the process
+  or the request, because nothing told the binding when the core dropped the handle. It now gives it as a `Native`,
+  an `Arc<dyn NativeObject>` that is equal by its object and releases what the binding keeps for the object when the
+  core drops the last one (B-1, U-7 (d)). `HostValue::Object` names the field `native`. `tests/native.rs` checks the
+  equality, a clone and the release on another thread. Verified by `make test-rust lint-rust`.
 - A member that calls language code that its receiver keeps, such as `registry.call` of `tests/e2e/functions`,
   whose core returns `Result<T, Failure<E>>`, was generated as if its core error were `E`, so the binding crate did
   not compile (E0308). The contract now names such a member with `core.failure: true`, whose error the generated code
