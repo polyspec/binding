@@ -644,6 +644,16 @@ test('a case writes bytes as hex and a float that JSON cannot write by its name 
   assert.equal(fromJson(model, ctx('node'), 'text', { ill_formed: 'a' }), "'a' + '\\uD800'");
   assert.equal(fromJson(model, ctx('php'), 'text', { ill_formed: 'a' }), '"a" . "\\xFF"');
   assert.throws(() => fromJson(model, ctx('php'), 'text', { ill_formed: 1 }), /\{"ill_formed": "<text>"\}/);
+  // A value nested deeper than a JSON reader takes is a list repeated around its innermost value, made in a loop.
+  const alias = { id: 'data', kind: 'alias' };
+  const valued = { contract: { units: [alias] }, foreign: new Map(), aliases: [{ unit: alias, library: undefined }] } as any;
+  const deep = { kind: 'list', repeat: 3, value: { kind: 'null' } };
+  assert.equal(fromJson(valued, ctx('python'), { unit: 'data' }, deep), '__import__("functools").reduce(lambda inner, _: [inner], range(3), None)');
+  assert.equal(fromJson(valued, ctx('node'), { unit: 'data' }, deep), 'Array.from({ length: 3 }).reduce((inner) => [inner], null)');
+  assert.equal(fromJson(valued, ctx('php'), { unit: 'data' }, deep), 'array_reduce(array_fill(0, 3, null), fn ($inner) => [$inner], null)');
+  assert.deepEqual(new Function(`return ${fromJson(valued, ctx('node'), { unit: 'data' }, deep)}`)(), [[[null]]]);
+  assert.throws(() => fromJson(valued, ctx('node'), { unit: 'data' }, { ...deep, repeat: 0 }), /"repeat": <n of at least 1>/);
+
   assert.equal(fromJson(model, ctx('node'), 'float', { float: 'nan' }), 'NaN');
   assert.equal(fromJson(model, ctx('php'), 'float', 1.5), '1.5');
   assert.throws(() => fromJson(model, ctx('php'), 'bytes', 'abc'), /is \{"hex"/);

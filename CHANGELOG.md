@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case could give a value of a value type only as JSON nested once per level, so a value deeper than the default
+  limit of a JSON reader (PHP 512, serde_json 128) could not be written, and a kind that only such a value raises had
+  no case (CK-22). A case gives it as `{"kind": "list", "repeat": <n>, "value": <value>}`, which each test makes in a
+  loop (G-5). The table of built-in forms named no Go type of `keyed_map`, so the contract check reported that Go has
+  no built-in keyed_map value (CK-8) although Go has `*KeyedMap[T]` (GN-15); the table names `*KeyedMap[any]`.
+  Verified by `npm test` in `packages/ts`.
 - A case could not give a text that is not well formed, because a JSON text holds only well-formed text, so a kind
   that only such a text raises had no case (CK-22). A case gives it as `{"ill_formed": "<text>"}`: the text and an
   unpaired surrogate in Python, Node and WASM, or the byte 0xFF in PHP and Go (G-5). Verified by `npm test` in

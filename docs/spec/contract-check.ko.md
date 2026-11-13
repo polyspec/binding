@@ -174,7 +174,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   | `bytes` | `string` | `bytes` | `Uint8Array` | `[]byte` |
   | `list` | `array` | `list` | `Array` | `[]any` |
   | `map` | `array` | `dict` | `Map` | `map[string]any` |
-  | `keyed_map` | `array` | `dict` | `Map` | 없음 |
+  | `keyed_map` | `array` | `dict` | `Map` | `*KeyedMap[any]`(GN-15) |
   | `php_object` | `stdClass` | 없음 | 없음 | 없음 |
   | `php_reference` | `reference` | 없음 | 없음 | 없음 |
   | `native` | `object` | `object` | `object` | `any` |

@@ -47,7 +47,7 @@ export const MADE_TYPE: Readonly<Record<Lang, Readonly<Record<string, string>>>>
   wasm: JS,
   go: {
     null: 'nil', bool: 'bool', int: 'int64', float: 'float64', text: 'string', bytes: '[]byte', list: '[]any',
-    map: 'map[string]any', native: 'any',
+    map: 'map[string]any', keyed_map: '*KeyedMap[any]', native: 'any',
   },
 };
 

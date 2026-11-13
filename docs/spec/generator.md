@@ -502,7 +502,10 @@ the design ids are those of the binding design.
   whose texts are code points or UTF-16, and the byte 0xFF in PHP and Go, whose texts are bytes; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
   the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
-  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values;
+  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values,
+  or, for a value nested deeper than a JSON reader takes, `{"kind": "list", "repeat": <n>, "value": <value>}`: n
+  lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
+  in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list

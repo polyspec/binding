@@ -175,6 +175,7 @@ function madeAsBuilt(unit: Unit, lang: Lang3, value: unknown): void {
     if (make !== BUILT[kind]) throw new Unsupported(`the kind ${kind} of ${unit.id} leaves ${lang} by the form ${JSON.stringify(make)}, with which a result is not compared yet`);
   }
   const held = record?.['value'];
+  if (kind === 'list' && record?.['repeat'] !== undefined) madeAsBuilt(unit, lang, held);
   if (kind === 'list' && Array.isArray(held)) for (const item of held) madeAsBuilt(unit, lang, item);
   if (kind === 'map' && Array.isArray(held)) for (const pair of held) madeAsBuilt(unit, lang, (pair as unknown[])[1]);
 }
@@ -214,6 +215,16 @@ function valueFromJson(model: Model, ctx: Context, value: unknown, where: string
     const wide = BigInt(token);
     if (wide < -(2n ** 63n) || wide >= 2n ** 63n) throw new Unsupported(`a case value of ${where}: the int ${token} is outside the int of PHP (G-5)`);
     return token;
+  }
+  // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it, the
+  // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
+  if (kind === 'list' && record['repeat'] !== undefined) {
+    const repeat = record['repeat'];
+    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Error(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(value)}`);
+    const inner = valueFromJson(model, ctx, held, where);
+    if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
+    if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;
+    return `array_reduce(array_fill(0, ${repeat}, null), fn ($inner) => [$inner], ${inner})`;
   }
   if (kind === 'list' && Array.isArray(held)) return `[${held.map((item) => valueFromJson(model, ctx, item, where)).join(', ')}]`;
   if (kind === 'map' && Array.isArray(held)) {

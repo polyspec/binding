@@ -200,7 +200,7 @@ These closed sets are binding's own; the Rust names are those of `binding_core` 
   | `bytes` | `string` | `bytes` | `Uint8Array` | `[]byte` |
   | `list` | `array` | `list` | `Array` | `[]any` |
   | `map` | `array` | `dict` | `Map` | `map[string]any` |
-  | `keyed_map` | `array` | `dict` | `Map` | none |
+  | `keyed_map` | `array` | `dict` | `Map` | `*KeyedMap[any]` (GN-15) |
   | `php_object` | `stdClass` | none | none | none |
   | `php_reference` | `reference` | none | none | none |
   | `native` | `object` | `object` | `object` | `any` |
