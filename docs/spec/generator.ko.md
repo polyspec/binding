@@ -28,7 +28,9 @@
 - **GN-1c** `binding generate`는 받은 target 또는 계약의 target을 하나씩 따로 생성한다(GN-1b). 아무것도 거부하지 않은
   target의 파일은 모두 쓰고, 거부된 target은 거부한 항목과 함께 이름하며 그 파일은 그대로 두고, target이 하나라도 거부되면
   생성한 target도 적은 뒤 상태 1로 실패한다. 거부는 명령줄 오류가 아닌 다른 실패와 마찬가지로 usage 줄을 찍지 않는다. usage 줄은
-  명령줄 오류만 상태 2와 함께 찍는다. target 하나를 build하고 시험하는 저장소는 `--target`으로 그 target만 생성하므로, 다른
+  명령줄 오류만 상태 2와 함께 찍는다. 계약, case 파일, manifest가 일으킨 실패는 그 문장을 찍고 stack trace를 찍지 않으며, 생성이
+  그런 문장으로 실패한 target은 그 항목으로 거부된 target이어서 다른 target을 멈추지 않는다. binding 자신의 결함만 stack
+  trace를 찍는다. target 하나를 build하고 시험하는 저장소는 `--target`으로 그 target만 생성하므로, 다른
   target의 거부에 막히지 않는다. 이유: 한 target이 아직 받지 못하는 계약도 다른 target의 바인딩은 내고, 실패한 target은 모두
   이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
@@ -108,6 +110,16 @@
   Cargo를 어디서 어떻게 시작하느냐에 따라 다르게 링크된다. build script는 host에서 돌므로 대상의 OS는 `cfg!(target_os)`가
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
+- **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
+  버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
+  `vX.Y.Z`, GN-15f). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
+  레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`), 개발 checkout은 그것을 개발 링크로
+  해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
+  보고한다(CK-70). Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
+  package는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓴 뒤 상태 1로 실패하고, `check`는 그것을 CK-19의 finding으로
+  보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
+  manifest의 문제이므로 다른 target을 멈추지 않으며, release가 담으면 안 되는 것은 그 줄을 이름하는 finding이고, 던진 오류는
+  그 줄을 이름하지 않았다.
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가
@@ -873,8 +885,9 @@
   없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record나 값 class(GN-6x)를 이름하는 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
-  `replace <module> => <path>` 줄을 준다. branch, commit, 버전 범위를 적은 의존 줄에는 Go 버전이 없으므로 이름으로
-  거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
+  `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이
+  `v0.0.0`을 준다. 개발 checkout은 그것을 개발 링크, 곧 그 레포의 checkout을 적은 추적하지 않는 `go.work`로 해석한다(kit의
+  `make link`가 쓴다). 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
   디렉터리에 빌드한다(GN-14).
 - **GN-16** Go 타입(T-1, T-2, B-8): bool `bool`, int·int64 `int64`, uint `uint64`, float `float64`, text·latin1 `string`,
   bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]`(아래), `optional<T>` `*T`, 다른 타입 안이나 parameter 자리의 tuple은 부분의 Go 타입이 하나이면 `[N]T`, 아니면 `Tuple<N>[T0, T1, ...]`이다. 이것은 field `P0`~`P<N-1>`에 부분을 차례로 담는 `internal/binding`의 generic struct이며, 그것을 쓰는 패키지가 `Map`처럼 별칭으로 선언한다(Go 배열은 원소 타입이 하나다), tuple 반환은 여러 결과.

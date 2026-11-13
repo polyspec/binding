@@ -22,6 +22,10 @@ contract that passes the schema and the package names (CK-1, CK-18). A check tha
 that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
 another binding behind a finding of the contract.
 
+`binding check <interface.json> --release` also runs the check of a release, CK-70. The tool that builds a release
+passes the option; a check without it does not run CK-70, because a development checkout holds the development forms
+that a release may not hold.
+
 ## Checks
 
 The schema is part of the npm package `@polyspec/binding` and is exported as `./schema/interface.schema.json` (S15).
@@ -162,6 +166,13 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise
   (GN-5).
+- **CK-70** The dependencies of a release (generator GN-3e), run by `binding check --release` alone: the dependency
+  line of the core on each `polyspec-<library>` whose types the contract names or whose fault injection points a case
+  arms names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit. A development form (a path, a branch, a
+  commit, a version range) is a finding that names the core manifest, the crate and the form, because the manifests
+  that `scaffold` writes from it name no version of a release (`go.mod` `v0.0.0`). It is a check of its own and no
+  part of CK-19: the tracked files of a development checkout are what `scaffold` writes, so CK-19 passes them, and the
+  question of CK-70 is what a release may hold.
 - **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is on every
   parameter of a member, other than a member of a callback interface, whose type is a class unit of this contract with the
   origin `generated` or an `optional` of one, and on no other parameter, because only an instance of a class is a place whose borrow the

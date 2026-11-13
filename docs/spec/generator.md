@@ -43,7 +43,10 @@ the design ids are those of the binding design.
   (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
   items and the targets that it generated, keeps the files of a refused target as they are, and then fails with
   status 1 when a target was refused. A refusal, like any failure that is no error of the command line, prints no
-  usage line; only an error of the command line prints it, with status 2. A repository that builds and tests one
+  usage line; only an error of the command line prints it, with status 2. A failure that a contract, a case file or a
+  manifest causes prints its sentence and no stack trace, and a target whose generation fails with such a sentence is
+  a refused target with that item, so it does not stop another target; only a defect of binding itself prints a
+  stack trace. A repository that builds and tests one
   target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
   one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
   usage line would say that the command was written wrong when it was not.
@@ -137,6 +140,18 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
+- **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
+  the core on `polyspec-<library>`. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
+  is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f). Every other line (a path, a
+  branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
+  the manifest names the library without the version of a release (`go.mod` `v0.0.0`), and the development checkout
+  resolves it through its development links. No form of the line stops `scaffold`, `generate` or `check`;
+  `binding check --release` reports each development form (CK-70). A tracked package that `scaffold` cannot write,
+  such as the Go module of a contract that names a record of a library without a Go module, is named with its reason:
+  `scaffold` writes the other packages and then fails with status 1, `check` reports it as a finding of CK-19 and
+  compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a
+  question of one manifest of one target, so it does not stop the other targets, and what a release may not hold is a
+  finding that names the line, which a thrown error did not.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3
@@ -1061,8 +1076,10 @@ the design ids are those of the binding design.
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag
   `vX.Y.Z`; a `path` dependency gives `v0.0.0` and a line `replace <module> => <path>` from the Go module of this
-  repository to the Go module of that one; a dependency line that names a branch, a commit or a version range has no
-  Go version and is refused by name. The Go program then also links the static library of that repository, which the
+  repository to the Go module of that one; every other dependency line (a branch, a commit, a version
+  range) is a development form too (GN-3e) and gives `v0.0.0` without a `replace` line, which the development
+  checkout resolves through its development link, an untracked `go.work` that names the checkout of that repository
+  (`make link` of kit writes it). The Go program then also links the static library of that repository, which the
   end-to-end run builds into the same directory as the one of this repository (GN-14).
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type or as a parameter
