@@ -178,6 +178,37 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_classes::shout"
+        },
+        {
+          "id": "classes.read",
+          "name": [
+            "read"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6m"
+          },
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "blocking_io",
+          "core": "polyspec_classes::read"
         }
       ]
     },
@@ -288,6 +319,7 @@
             "targets": [
               "php",
               "node",
+              "go",
               "wasm"
             ],
             "reason": "N-4"
@@ -497,6 +529,33 @@
             "path": "polyspec_classes::Gate::close",
             "receiver": "&mut self"
           }
+        },
+        {
+          "id": "gate.enter_slowly",
+          "name": [
+            "enter",
+            "slowly"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "only": {
+            "targets": [
+              "php",
+              "python",
+              "node"
+            ],
+            "reason": "GN-6m"
+          },
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Closed"
+          ],
+          "wait": "blocking_io",
+          "core": {
+            "path": "polyspec_classes::Gate::enter_slowly",
+            "receiver": "&self"
+          }
         }
       ]
     }
@@ -578,6 +637,16 @@
       "member": "gate.close",
       "file": "contracts/cases.json",
       "group": "gate_close"
+    },
+    {
+      "member": "classes.read",
+      "file": "contracts/cases.json",
+      "group": "read"
+    },
+    {
+      "member": "gate.enter_slowly",
+      "file": "contracts/cases.json",
+      "group": "gate_enter_slowly"
     }
   ]
 }

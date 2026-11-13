@@ -23,8 +23,7 @@ import { trackedPackages } from '../src/generate/packages.ts';
 // is the one whose first unit is words.
 const FIVE = ['php', 'python', 'node', 'go', 'wasm'];
 const TAKEN: Record<string, string[]> = {
-  // Go refuses the tuple of two types in the list that words.split returns (a Go array has one element type).
-  fixture: ['php', 'python', 'node', 'wasm'],
+  fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
@@ -78,36 +77,44 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
+test('the fixture names the five targets, and the generator refuses a target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
-  const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
+  // GN-12: a keyed map inside a list is refused for Node and WASM, whose entry turns a Map into its entries.
+  const root = mkdtempSync(join(tmpdir(), 'binding-v-'));
   const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
   try {
-    // The target Go alone writes nothing.
-    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
+    execFileSync('cp', ['-r', `${fixture}.`, root]);
+    const path = join(root, 'packages/rust/interface.json');
+    const contract = JSON.parse(readFileSync(path, 'utf8'));
+    contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
+    writeFileSync(path, JSON.stringify(contract));
+    const refused = /node: not generated \(G-4\), 1 item:\n  split: a map<T> or keyed_map<T> inside another type is not generated for node[^\n]* yet \(GN-12\)/;
+    // The target Node alone writes nothing.
+    const alone = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'node'], { encoding: 'utf8' });
     // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
     assert.equal(alone.status, 1, alone.stderr);
     assert.doesNotMatch(alone.stderr, /usage:/);
-    assert.match(alone.stderr, goRefused);
+    assert.match(alone.stderr, refused);
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
-    // Every target: the refused Go is named, and every other target is written as it is alone.
-    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
+    // Every target: the refused Node and WASM are named, and every other target is written as it is alone.
+    const whole = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out], { encoding: 'utf8' });
     assert.equal(whole.status, 1, whole.stderr);
     assert.doesNotMatch(whole.stderr, /usage:/);
-    assert.match(whole.stderr, goRefused);
-    assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
+    assert.match(whole.stderr, refused);
+    assert.match(whole.stderr, /generated: php, python, go/);
     const written = files(out);
-    assert.ok(![...written.keys()].some((path) => path.startsWith('packages/go/')), 'the refused target Go wrote files');
+    assert.ok(![...written.keys()].some((file) => file.startsWith('packages/ts/')), 'a refused target wrote files');
     const taken = mkdtempSync(join(tmpdir(), 'binding-w-'));
     try {
-      execFileSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', taken, '--target', FIXTURE_TAKEN]);
+      execFileSync(process.execPath, [cli, 'generate', '--root', root, '--out', taken, '--target', 'php,python,go']);
       assert.deepEqual(files(taken), written);
     } finally {
       rmSync(taken, { recursive: true, force: true });
     }
   } finally {
+    rmSync(root, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
   }
 });
@@ -127,9 +134,9 @@ test('a generation leaves no file of an earlier one', () => {
 
 test('an item that is not generated yet is refused by its name (G-4)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
-  contract.units[0].members[0].wait = 'blocking_io';
+  contract.units[0].members[0].wait = 'process_wait';
   const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]);
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait blocking_io is not generated yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait process_wait is not generated yet/);
 });
 
 test('a contract that fails the check is not generated', () => {
@@ -286,7 +293,7 @@ test('the binding packages of a component core sit beside it (L-1)', () => {
   contract.core.path = 'packages/server/rust';
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   const dirs = new Set([...out.keys()].map((path) => path.split('/').slice(0, 4).join('/')));
-  assert.deepEqual([...dirs].sort(), ['packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
+  assert.deepEqual([...dirs].sort(), ['packages/server/go/errors', 'packages/server/go/internal', 'packages/server/go/zz_generated_sample.go', 'packages/server/go/zz_generated_test.go', 'packages/server/php-ext/generated', 'packages/server/python/generated', 'packages/server/ts/generated', 'packages/server/ts/wasm']);
   const root = mkdtempSync(join(tmpdir(), 'binding-h-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
@@ -312,11 +319,15 @@ test('Go: the C ABI, the packages and their tests are generated, and a generatio
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
-    // T-2: a Go array has one element type, so a tuple of two types inside a list is refused by name (G-4).
-    assert.throws(() => execFileSync(process.execPath, [cli, 'generate', '--root', root], { stdio: 'pipe' }), /a tuple of \["text","uint"\] inside another type is not generated for Go/);
+    // T-2: a tuple of two types inside a list is a struct of its parts, and a tuple of one type an array.
+    execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]Tuple2\[string, uint64\], error\)/);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /^type Tuple2\[T0, T1 any\] = binding\.Tuple2\[T0, T1\]$/m);
+    assert.match(String(files(join(root, 'packages/go')).get('internal/binding/zz_generated_binding.go')), /^type Tuple2\[T0, T1 any\] struct \{\n\tP0 T0\n\tP1 T1\n\}$/m);
     contract.units[0].members[0].returns.list.tuple = ['text', 'text'];
     writeFileSync(path, JSON.stringify(contract));
     execFileSync(process.execPath, [cli, 'generate', '--root', root]);
+    assert.match(String(files(join(root, 'packages/go')).get('zz_generated_sample.go')), /\(\[\]\[2\]string, error\)/);
     const stale = join(root, 'packages/go/zz_generated_stale.go');
     writeFileSync(stale, 'package sample\n');
     writeFileSync(join(root, 'packages/go/go.mod'), 'module github.com/polyspec/sample/packages/go\n');
@@ -416,6 +427,22 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextAboveU00FF\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\u0100"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextThatIsNotUTF8\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\xff"/);
+});
+
+test('Go: a tuple parameter is read part by part, a Tuple<N> of different part types or an array of one (T-2, GN-16)', () => {
+  const { contract } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  contract.units[0].members[0].parameters[0].type = { tuple: ['text', 'uint', 'bool'] };
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const go = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(go, /^func SplitWords\(text_ Tuple3\[string, uint64, bool\], options Options\)/m);
+  assert.match(go, /\tenc\.Text\(text_\.P0\)\n\tenc\.Uint\(text_\.P1\)\n\tenc\.Bool\(text_\.P2\)/);
+  const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rust, /fn in_tuple3<'a, T0, T1, T2>\(/);
+  assert.match(rust, /in_tuple3\(&mut input, \|input\| in_text\(input, "text"\), in_uint, in_bool\)\?/);
 });
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
@@ -935,6 +962,13 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
   assert.match(nodeTests, /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  // GN-15a: a Go to_json is MarshalJSON of json.Marshaler over the unexported toJSON, and a never return gives the
+  // error alone; the B-4 test calls toJSON.
+  const go = text(out, 'packages/go/zz_generated_sample.go');
+  assert.match(go, /\nfunc \(this \*Tag\) toJSON\(\) error \{\n/);
+  assert.match(go, /\nfunc \(this \*Tag\) MarshalJSON\(\) \(\[\]byte, error\) \{\n\treturn nil, this\.toJSON\(\)\n\}\n/);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /host_json\([^]*?\n +match result \{\}\n/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\.toJSON\(\)/);
   // G-4: what N-4 does not allow is refused by name.
   const refused = (change: (members: any[]) => void, message: RegExp): void => {
     const contract = structuredClone(sample);
@@ -1874,7 +1908,8 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   // A call of then that the case expects to fail requires that kind, and the instance stays for the next step.
   const cases = read('contracts/cases.json');
   cases.gate_enter[2].receiver.then.push({ call: 'gate.close', raises: { kind: 'closed' } });
-  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'wasm'] });
+  const failing = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  assert.match(text(failing, 'packages/go/zz_generated_test.go'), /\tfailure\d+ := made\d+\.Close\(\)\n\tif kinded, ok := failure\d+\.\(interface\{ Kind\(\) string \}\); !ok \|\| kinded\.Kind\(\) != "closed" \{\n\t\tt\.Fatalf\("GN-13f: %#v is not of kind closed", failure\d+\)/);
   assert.match(text(failing, 'packages/ts/generated/tests/generated.test.mjs'), /  made1\.close\(\);\n  assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /\nfunction outcome\(call\)[^]*assert\.equal\(outcome\(\(\) => made1\.close\(\)\)\.kind, 'closed', 'G-5: then 1 fails with closed'\);\n/);
   assert.match(text(failing, 'packages/python/generated/tests/test_generated.py'), /\ndef _outcome\(call\):[^]*made1\.close\(\)\n        assert _outcome\(lambda: made1\.close\(\)\)\[::2\] == \("error", "closed"\), "G-5: then 1 fails with closed"\n/);
@@ -1901,4 +1936,45 @@ test('an error unit in a module is the class of the namespace or the module of i
   // Node and WASM: the entries export the class by its name.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
+});
+
+test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  const token = 'binding_core::Io::for_generated_call()';
+  // PHP: the call blocks the calling thread.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.ok(php.includes(`polyspec_classes::read(${token}, `), 'PHP passes the token to read');
+  assert.match(php, /polyspec_classes::Gate::enter_slowly\(receiver, binding_core::Io::for_generated_call\(\)\)/);
+  // Python: the core call runs without the GIL, and a<name> runs <name> in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);
+  assert.match(python, /#\[pyo3\(name = "aenter_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /#\[pyfunction\(name = "aread", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /"to_thread"/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /\nasync def aread\(name: str\) -> str: \.\.\./);
+  // Node: a Promise, whose work runs on the libuv pool and whose result is converted on the JavaScript thread.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /impl<'env, W, O> ScopedTask<'env> for Waiting<W, O>/);
+  assert.match(node, /waiting\(env, move \|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function read\(name: string\): Promise<string>;/);
+  assert.match(dts, /\n {2}enterSlowly\(\): Promise<string>;/);
+  const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(tests, /await pkg\.read\('a'\)/);
+  assert.match(tests, /await assert\.rejects\(/);
+  // WASM has no member that waits (only, Q-4); Go names it as not generated yet.
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\(/);
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
+    contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
+  };
+  assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  // A constructor that waits has no awaited form: refused by name.
+  assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
 });

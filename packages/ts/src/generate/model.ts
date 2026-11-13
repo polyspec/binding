@@ -315,9 +315,16 @@ export function collectModel(
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
   const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
+  const carrying = carriers(contract.units);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
-    if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    // GN-6m: a member with wait blocking_io is generated in the form of each language; another wait is not yet.
+    if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    if (member.wait === 'blocking_io') {
+      if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait blocking_io is not generated (GN-6m)`);
+      const reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
+      if (reachesCode) throw new Unsupported(`${member.id}: a member with wait blocking_io that reaches language code is not generated (GN-6m)`);
+    }
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
     const corePath = typeof core === 'string' ? core : core.path;
@@ -432,6 +439,8 @@ export function collectModel(
           if ((unit.members ?? []).filter((m) => m.kind === member.kind).length > 1) throw new Unsupported(`${unit.id}: a class has one ${member.kind} (N-4)`);
           if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
           if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
+          // GN-6m: the language calls a hook in its own protocol, which awaits nothing.
+          if (member.wait === 'blocking_io') throw new Unsupported(`${member.id}: a ${member.kind} with wait blocking_io is not generated (GN-6m)`);
           members.push({ ...toFn(unit, member, 'method'), special: member.kind });
           return true;
         }
@@ -949,11 +958,17 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
+  // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
+  if (waitsIo(fn)) args.unshift(IO_TOKEN);
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
   if (held.some((h) => h.param === undefined)) return [RECEIVER_GUARD, ...args];
   return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
+
+// GN-6m: whether a member waits on blocking I/O, and the token that its core function takes.
+export const waitsIo = (fn: Fn): boolean => fn.member.wait === 'blocking_io';
+export const IO_TOKEN = 'binding_core::Io::for_generated_call()';
 
 // The class units of the contract with the members of each kind, for the emitters.
 export const objectUnit = (model: Model, type: Type): ObjectClass | undefined => {

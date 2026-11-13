@@ -29,6 +29,32 @@
   `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
   conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
   reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
+- A member with `wait: blocking_io` was refused by every target ("wait blocking_io is not generated yet"), so
+  `classes.read` and `gate.enter_slowly` of `tests/e2e/classes` had no binding. The generator now passes
+  `binding_core::Io::for_generated_call()` to the core and waits in the form of each language (GN-6m): PHP blocks the
+  calling thread; Python runs the core call in `py.detach` and adds the awaitable `a<name>` over `asyncio.to_thread`;
+  Node returns a `Promise` whose work runs on the libuv pool through a `ScopedTask`, and its entry is an async
+  function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
+  iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
+  Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a class with a member `to_json`, so `tag.to_json` of `tests/e2e/sample`
+  and `tests/e2e/classes` named only PHP and Node and the Go binding had no JSON form. Go now gives a to_json as
+  `MarshalJSON` of `json.Marshaler` over the unexported `toJSON`, which marshals the value of the core with
+  `encoding/json` and returns the error of the core; a to_json that returns `never` returns the error alone, and the
+  B-4 test calls `toJSON` (GN-15a). Both contracts name Go for `tag.to_json`. Verified by `npm test` in `packages/ts`
+  and `gofmt` and `go vet` of the generated packages.
+- The generator refused the Go binding of a contract with a tuple of different part types inside another type or with
+  a tuple parameter, so the fixture, whose `words.split` returns a list of a tuple of text and uint, had no Go
+  binding. Go now gives such a tuple as `Tuple<N>[T0, ...]`, a generic struct of `internal/binding` with the fields
+  `P0` to `P<N-1>` that a package names by an alias, keeps `[N]T` for a tuple of one part type, and reads a tuple
+  argument part by part (GN-16). Verified by `npm test` in `packages/ts` and `go vet` of the generated packages.
+- The Go tests made the instance of a case whose call of `then` has `"raises": {"kind": <kind>}` by requiring that
+  call to succeed, so `TestB4GateEnterAGateClosedTwiceLetsNothingPass` of `tests/e2e/classes` failed with "the gate of
+  a is closed" where the case expects that failure. The Go test now requires the kind of that call and goes on to the
+  next step, as the other targets do (GN-13f). Verified by `npm test` in `packages/ts`.
+- The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
+  the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
+  each with its reason (GN-14b).
 - A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
   generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
   generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,

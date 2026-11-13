@@ -87,7 +87,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-15** WASM(Q-4): `wasm`이 target이면, parameter·반환·yields에 `path`가 있거나(record·variant 안 포함) wait가
   `blocking_io`·`process_wait`인 member는 자신이나 unit에 `wasm`이 없는 `only`와 그 규칙 id를 갖는다.
 - **CK-16** Python awaitable(N-5, U-3): wait가 `none`이 아닌 member나 `async_allowed: true`인 callback member의 `a<name>`은
-  같은 unit의 다른 member의 Python 이름이 아니다.
+  같은 unit의 다른 member의 Python 이름이 아니고 Python의 예약어도 아니다. 그래야 GN-6m의 awaitable을 생성할 수 있다.
 - **CK-17** callback(U-3, T-3): `async_allowed`와 `errors`는 callback member만 갖고, 모든 callback member는 `async_allowed`를
   적고, trait 메서드와 receiver를 `core: {path, receiver}`에 receiver `&self`나 `&mut self`로 적는다. 생성된 struct가 그
   trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리킨다. 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌
@@ -117,8 +117,6 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-65** 실패 주입점(`faults`, G-5)을 가진 코어는 manifest의 `[dev-dependencies]`에 자기 자신을 `fault-test`와 함께
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
-- **CK-66** Python의 awaitable(GN-6m): 대상에 `python`이 있는 계약에서, wait가 `none`이 아닌 member의 Python 이름 `a<name>`은
-  같은 unit의 다른 member의 Python 이름이 아니다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

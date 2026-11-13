@@ -105,7 +105,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   records and variants too) or whose wait is `blocking_io` or `process_wait` has an `only` without `wasm`, on itself or
   on its unit, with its rule id.
 - **CK-16** Python awaitables (N-5, U-3): the name `a<name>` of a member whose wait is not `none`, or of a callback
-  member with `async_allowed: true`, is not the Python name of another member of the unit.
+  member with `async_allowed: true`, is not the Python name of another member of the unit and is no reserved word of
+  Python, so that the awaitable of GN-6m can be generated.
 - **CK-17** Callbacks (U-3, T-3): only callback members have `async_allowed` and `errors`, and every callback member
   states `async_allowed` and names its trait method and receiver in `core: {path, receiver}` with the receiver `&self`
   or `&mut self`, because the generated struct implements the trait and binding reads no Rust source; `recognize`
@@ -140,8 +141,6 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `<core crate> = { path = ".", features = ["fault-test"] }` in the `[dev-dependencies]` of its manifest, so that
   `cargo test` of the core without flags arms its points; `binding check` reports the core manifest otherwise
   (GN-5).
-- **CK-66** The awaitable of Python (GN-6m): in a contract with the target `python`, the Python name `a<name>` of a
-  member with a wait other than `none` is the Python name of no other member of its unit.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also
