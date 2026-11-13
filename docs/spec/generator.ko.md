@@ -363,17 +363,19 @@
   - PHP는 호출 스레드에서 코어를 부르고, 코어가 돌아올 때까지 그 스레드가 막힌다.
   - Python: `<name>`은 GIL을 쥔 채 인자를 바꾸고 코어 호출을 `py.detach`에서 돌린다. 그래서 코어가 기다리는 동안 다른
     Python 스레드가 돈다. 객체나 module은 `a<name>`도 가진다. 이것은 같은 인자로 `<name>`을 `asyncio.to_thread`에서 돌리는
-    awaitable이라서 이벤트 루프를 막지 않는다. 그 인자는 그 스레드에서 `<name>`이 돌 때 판정된다(CK-66이 이 이름을 다른
-    member와 떼어 둔다).
+    awaitable이라서 이벤트 루프를 막지 않는다. 그 인자는 그 스레드에서 `<name>`이 돌 때 판정된다(CK-16이 이 이름을 다른
+    member와 예약어에서 떼어 둔다).
   - Node는 `Promise`를 돌려준다. 진입점은 JavaScript 스레드에서 인자를 바꾸고 자리의 잠금과 fault 장전을 가져온 뒤, 코어
     호출을 libuv 풀에서 돌리고(`ScopedTask`의 `Env::spawn`), 결과나 오류를 JavaScript 스레드에서 바꾼다. 호출의 panic은
-    kind `internal`로 promise를 거부한다(B-7). 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
+    kind `internal`로 promise를 거부한다(B-7). member의 JavaScript 진입은 async 함수다. 그래서 인자의 실패를 포함한 모든
+    실패가 promise를 거부하고, 호출 자리에서 던져지는 실패는 없다. 선언은 `Promise<T>`를 적고, 생성 시험은 호출을 await한다.
   - Go는 cgo 호출로 작업을 코어에 넘기고 곧바로 돌아오며, 호출 goroutine은 그 작업의 완료 channel에서 기다린다. 코어는
     export한 Go 함수로 그 channel을 채운다. 그래서 기다리는 호출이 OS 스레드를 붙잡지 않는다(B-8). 아직 생성하지 않으며,
     `wait: blocking_io`인 Go member는 이름을 대고 거부한다(G-4).
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
-  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate는 이름을 대고 거부한다.
-  코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없기 때문이다. `process_wait`와
+  기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate·hook(N-4)은 이름을
+  대고 거부한다. 코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도
+  기다리지 않는 자기 protocol로 부르기 때문이다. `process_wait`와
   `async_driver`도 이름을 대고 거부한다(G-4).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며

@@ -127,9 +127,9 @@ test('a generation leaves no file of an earlier one', () => {
 
 test('an item that is not generated yet is refused by its name (G-4)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
-  contract.units[0].members[0].wait = 'blocking_io';
+  contract.units[0].members[0].wait = 'process_wait';
   const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]);
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait blocking_io is not generated yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait process_wait is not generated yet/);
 });
 
 test('a contract that fails the check is not generated', () => {
@@ -1839,10 +1839,10 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   assert.match(dts, /export declare function read\(name: string\): Promise<string>;/);
   assert.match(dts, /\n {2}enterSlowly\(\): Promise<string>;/);
   const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
-  assert.match(tests, /await pkg\.read\("a"\)/);
+  assert.match(tests, /await pkg\.read\('a'\)/);
   assert.match(tests, /await assert\.rejects\(/);
   // WASM has no member that waits (only, Q-4); Go names it as not generated yet.
-  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\b/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\(/);
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');

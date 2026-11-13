@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -485,8 +485,18 @@ function entryRust(model: Model, fn: Fn): string {
     }
   }
   lines.push(...locks(model, fn));
-  const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`);
-  if (fn.fallible) {
+  const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  const call = armedCall(model, fn, core);
+  if (waitsIo(fn)) {
+    // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
+    // runs on the libuv pool, and its result is converted on the JavaScript thread.
+    const faults = model.faults.length > 0;
+    if (faults) lines.push(`        let faults = faults_of(${JSON.stringify(fn.member.id)});`);
+    const armed = faults ? `faults.run(|| ${core})` : core;
+    const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
+    const give = convertOut(model, fn.returns, 'result');
+    lines.push(`        waiting(env, move || ${work}, |env, ${/\bresult\b/.test(give) ? 'result' : '_result'}| ${give})`);
+  } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
     // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
@@ -497,7 +507,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsIo(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -528,6 +538,69 @@ ${lines.map((l) => `    ${l}`).join('\n')}
         })
         .map_err(|fail| throw(env, fail))
     }
+`;
+}
+
+// GN-6m: the work of a member that waits, which runs on the libuv pool. Its result, or its failure, is converted on the
+// JavaScript thread; a panic of the work is a failure of kind internal (B-7).
+const WAITING = `
+/// GN-6m: starts the work of a member that waits on the libuv pool and gives its promise.
+fn waiting<'env, W, O>(env: &'env Env, work: W, give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>) -> Result<Unknown<'env>, Fail>
+where
+    W: FnOnce() -> Result<O, Fail> + Send + 'env,
+    O: Send + 'static,
+{
+    let promise = env.spawn(Waiting { work: Some(work), give }).map_err(internal)?;
+    Ok(promise.promise_object().to_unknown())
+}
+/// GN-6m: the work of a call that waits and the conversion of its result.
+struct Waiting<W, O> {
+    work: Option<W>,
+    give: for<'e> fn(&'e Env, O) -> Result<Unknown<'e>, Fail>,
+}
+impl<'env, W, O> ScopedTask<'env> for Waiting<W, O>
+where
+    W: FnOnce() -> Result<O, Fail> + Send,
+    O: Send + 'static,
+{
+    type Output = Result<O, Fail>;
+    type JsValue = Unknown<'env>;
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        let work = self.work.take().ok_or_else(|| napi::Error::from_reason("GN-6m: the work of a call runs once"))?;
+        Ok(guard(work))
+    }
+    fn resolve(&mut self, env: &'env Env, output: Self::Output) -> napi::Result<Unknown<'env>> {
+        output.and_then(|value| (self.give)(env, value)).map_err(|fail| throw(env, fail))
+    }
+}
+`;
+
+// G-5, GN-6m: the arming of a member that waits is taken on the JavaScript thread and installed where the work runs.
+function waitingFaults(model: Model): string {
+  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(waitsIo)) return '';
+  return `
+/// G-5, GN-6m: the arming that a test armed for a member that waits, which its work installs on the libuv pool.
+#[cfg(feature = "fault-test")]
+fn faults_of(member: &str) -> binding_core::fault::Armed {
+    binding_core::fault::take(member)
+}
+
+/// G-5, GN-6m: without the feature fault-test, the work of a member that waits runs as it is.
+#[cfg(not(feature = "fault-test"))]
+const fn faults_of(_member: &str) -> Unarmed {
+    Unarmed
+}
+
+/// G-5, GN-6m: no arming, without the feature fault-test.
+#[cfg(not(feature = "fault-test"))]
+struct Unarmed;
+
+#[cfg(not(feature = "fault-test"))]
+impl Unarmed {
+    fn run<T>(&self, work: impl FnOnce() -> T) -> T {
+        work()
+    }
+}
 `;
 }
 
@@ -801,8 +874,8 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
-  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'Uint8Array', 'ValueType']
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${enums}`, `${functions}${propertyUses}`);
+  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
@@ -842,8 +915,9 @@ struct Fail {
     properties: Option<Box<Properties>>,` : ''}
 }
 ${model.errorUnits.length > 0 ? `
-/// I-3: writes the properties of an error unit on its instance.
-type Properties = Box<dyn for<'env> FnOnce(&'env Env, &mut Object<'env>) -> napi::Result<()>>;
+/// I-3: writes the properties of an error unit on its instance. It is Send, because the failure of a call that waits
+/// moves from the libuv pool to the JavaScript thread (GN-6m).
+type Properties = Box<dyn for<'env> FnOnce(&'env Env, &mut Object<'env>) -> napi::Result<()> + Send>;
 
 ` : ''}${model.errorUnits.some((u) => errorProperties(u).length > 0) ? `
 /// I-3: a property of an error is read-only, as kind, status and errno are (E-3).
@@ -922,7 +996,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
         }
     }
 }
-${faultRust(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
+${faultRust(model)}${waitingFaults(model)}${aliasKindsRust(model)}${raisesAssertions(model)}${used}${functions}
 /// B-7: the entry point of the generated panic test.
 #[cfg(feature = "panic-test")]
 #[napi(js_name = "__panicTest")]
@@ -1021,6 +1095,8 @@ class ${name} extends ${parent} {
 }`;
   }).join('\n');
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
+  // GN-6m: the entry of a member that waits is an async function, so that every failure of the call, also one of its
+  // arguments, rejects the promise.
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
     const count = fn.params.length;
     // U-2: the parameters that may be left out are the last ones, a record parameter with {empty: "object"} too.
@@ -1038,13 +1114,13 @@ class ${name} extends ${parent} {
       if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
+    lines.push(keyedType(fn.returns) ? `  return fromEntries(${waitsIo(fn) ? 'await ' : ''}${call(passed.join(', '))});` : `  return ${call(passed.join(', '))};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
     const name = langName('node', fn.member.name, 'callable');
     return `
-function ${name}(...args) {
+${waitsIo(fn) ? 'async ' : ''}function ${name}(...args) {
 ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
 }`;
   }).join('\n');
@@ -1058,7 +1134,7 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: function ${name}(...args) {
+    value: ${waitsIo(fn) ? 'async ' : ''}function ${name}(...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
     },
     writable: true,
@@ -1179,6 +1255,8 @@ function indexDts(model: Model): string {
     const value = a === undefined ? undefined : declaredValue(model, a)?.value;
     return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
   };
+  // GN-6m: a member that waits returns a Promise of its result.
+  const returned = (fn: Fn): string => (waitsIo(fn) ? `Promise<${tsType(model, fn.returns, false)}>` : tsType(model, fn.returns, false));
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
@@ -1205,7 +1283,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
 }`).join('\n');
   const fns = model.functions.map((fn) => {
     const params = fn.params.map((p) => param(fn, p));
-    return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${tsType(model, fn.returns, false)};`;
+    return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
@@ -1213,14 +1291,14 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     const lines = o.members.map((fn) => {
       const name = memberName('node', fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${returned(fn)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'iterate') {
         const yields = fn.yields ?? { value: 'none' };
         const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
         return `  [Symbol.iterator](): IterableIterator<${item}>;`;
       }
-      return `  ${name}(${params(fn)}): ${tsType(model, fn.returns, false)};`;
+      return `  ${name}(${params(fn)}): ${returned(fn)};`;
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `

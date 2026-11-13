@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A member with `wait: blocking_io` was refused by every target ("wait blocking_io is not generated yet"), so
+  `classes.read` and `gate.enter_slowly` of `tests/e2e/classes` had no binding. The generator now passes
+  `binding_core::Io::for_generated_call()` to the core and waits in the form of each language (GN-6m): PHP blocks the
+  calling thread; Python runs the core call in `py.detach` and adds the awaitable `a<name>` over `asyncio.to_thread`;
+  Node returns a `Promise` whose work runs on the libuv pool through a `ScopedTask`, and its entry is an async
+  function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
+  iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
+  Python. Verified by `make test-ts`.
 - The Go tests made the instance of a case whose call of `then` has `"raises": {"kind": <kind>}` by requiring that
   call to succeed, so `TestB4GateEnterAGateClosedTwiceLetsNothingPass` of `tests/e2e/classes` failed with "the gate of
   a is closed" where the case expects that failure. The Go test now requires the kind of that call and goes on to the

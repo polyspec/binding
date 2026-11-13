@@ -439,18 +439,20 @@ the design ids are those of the binding design.
   - Python: `<name>` converts the arguments with the GIL held and runs the core call in `py.detach`, so other Python
     threads run while the core waits. The object or module also has `a<name>`, an awaitable that runs `<name>` with the
     same arguments in `asyncio.to_thread`, so an event loop does not block; its arguments are judged when `<name>` runs
-    in that thread (CK-66 keeps the name apart from the other members).
+    in that thread (CK-16 keeps the name apart from the other members and from the reserved words).
   - Node returns a `Promise`. The entry point converts the arguments, takes the locks of its places and the arming of
     its faults on the JavaScript thread, runs the core call on the libuv pool (`Env::spawn` of a `ScopedTask`) and
     converts the result or the error on the JavaScript thread; a panic of the call rejects the promise with kind
-    `internal` (B-7). The declarations name `Promise<T>`, and the generated tests await the call.
+    `internal` (B-7). The JavaScript entry of the member is an async function, so that every failure, also one of the
+    arguments, rejects the promise and none is thrown at the call. The declarations name `Promise<T>`, and the
+    generated tests await the call.
   - Go hands the work to the core in a cgo call that returns at once; the calling goroutine waits on the completion
     channel of the work, which the core fills through an exported Go function, so that a waiting call holds no OS
     thread (B-8). It is not generated yet, and a Go member with `wait: blocking_io` is refused by name (G-4).
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
-  A member that waits and takes a callback or a value of language code, and a constructor, a property or an iterate
-  that waits, are refused by name, because the core would reach language code off the thread of the call or the
-  language has no awaited form of them; `process_wait` and `async_driver` are refused by name (G-4).
+  A member that waits and takes a callback or a value of language code, and a constructor, a property, an iterate or
+  a hook (N-4) that waits, are refused by name, because the core would reach language code off the thread of the call
+  or the language has no awaited form of them, or calls a hook in its own protocol, which awaits nothing; `process_wait` and `async_driver` are refused by name (G-4).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

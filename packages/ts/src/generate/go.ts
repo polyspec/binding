@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, waitsIo } from './model.ts';
 import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -1559,6 +1559,8 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const fn of model.objects.flatMap((o) => o.members).filter((m) => m.special === 'to_json')) {
     refusals.refuse(`${fn.member.id}: a to_json member is not generated for Go (GN-6g: encoding/json reads the exported fields of a value, and a class holds only a handle)`);
   }
+  // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
+  for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
