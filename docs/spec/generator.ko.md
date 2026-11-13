@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 61807a31f559edb072850facd60dcdc086f37aac0eea2ad6f2fa754629dd0652 -->
+<!-- source-sha256: df9d21803b1f388c06b74671d4fb248a41654eb83064191ff3c027e2731db3d1 -->
 # 생성기
 
 [English](generator.md)
@@ -118,8 +118,12 @@
   보고한다(CK-70). 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
   적은 출처(`git`과 그 `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`)를 바인딩 crate에 필요한
   feature와 함께 쓰고, 스스로 무엇도 고정하지 않는다. 그래서 binding의 release tag를 적은 코어는 그 release의 바인딩 crate를
-  준다. 코어가 `polyspec-binding-core` 줄을 적지 않은 때에만 `scaffold`는 binding의 개발 줄, 곧 그 Git 저장소의 branch
-  `v1/rust-core`를 쓰며, release의 검사가 그것을 바인딩 crate마다 보고한다. Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
+  준다. 다른 라이브러리의 값을 넘겨주기만 하는 코어처럼 코어가 `polyspec-binding-core` 줄을 적지 않은 때에는 `scaffold`가
+  생성기 자신의 줄을 쓴다. release의 생성기는 그 버전으로 설치되어 자신의 commit을 알지 못하며(docs/spec/contract-check.md
+  CK-20), binding의 Git 저장소를 자기 버전의 tag `vX.Y.Z`로 쓴다. 이것은 release 꼴이다. 개발 생성기는 자신의 commit을
+  알며(checkout, `git archive`가 쓴 tree, Git에서의 설치), binding의 Git 저장소를 개발 branch `v1/rust-core`로 쓰고,
+  release의 검사가 그것을 바인딩 crate마다 보고한다. 생성된 코드는 그것을 쓰는 생성기의 `binding_core`에 맞추어
+  쓰이므로(L-2), 코어가 줄을 적지 않은 때에 맞는 줄은 생성기의 줄 하나뿐이다. Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
   package는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓴 뒤 상태 1로 실패하고, `check`는 그것을 CK-19의 finding으로
   보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
   manifest의 문제이므로 다른 target을 멈추지 않으며, release가 담으면 안 되는 것은 그 줄을 이름하는 finding이고, 던진 오류는

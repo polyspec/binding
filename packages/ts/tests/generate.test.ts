@@ -13,7 +13,8 @@ import { caseTestTargets, generate as generateTargets, type Inputs } from '../sr
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
-import { trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, trackedPackages } from '../src/generate/packages.ts';
+import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
 // some of them for each contract by name, which the end-to-end check reports as the failures of those targets
@@ -1236,6 +1237,30 @@ test('the line of a binding crate on polyspec-binding-core follows the line of t
   assert.equal(line({ path: '../../../binding/packages/core/rust' }, 'packages/go/internal/ffi/Cargo.toml'), '\npolyspec-binding-core = { path = "../../../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
   // A core without the line: the development line of binding.
   assert.equal(line(undefined), `\npolyspec-binding-core = { git = "${git}", branch = "v1/rust-core", features = ["construct", "lock"] }\n`);
+});
+
+test('a core without a line on polyspec-binding-core gives the binding crates the line of the generator itself: the tag of its version for a release, the development branch otherwise (GN-3e, CK-70)', () => {
+  const contract = load().contract;
+  const git = 'https://github.com/polyspec/binding.git';
+  const manifests = (own: { version: string; commit: string | undefined }, core?: unknown): string[] =>
+    [...trackedPackages(contract, '0.0.0', core === undefined ? new Map() : new Map([['polyspec-binding-core', core]]), [], new Map(), [], 'MIT', own)].filter(([path]) => path.endsWith('Cargo.toml')).map(([, text]) => text);
+  // The generator of a release knows no commit of itself (CK-20): it was installed at its version.
+  const released = { version: '0.3.0', commit: undefined };
+  const tagged = manifests(released);
+  assert.ok(tagged.length >= 5, `the fixture has ${tagged.length} binding crates`);
+  for (const text of tagged) {
+    assert.match(text, /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", tag = "v0\.3\.0", features = \[/);
+    // The tag of a release is a release form, so the check of a release reports nothing in the crate (CK-70).
+    assert.equal(bindingCoreFinding(parse(text)), undefined);
+  }
+  // A generator that knows its commit is a development generator: a checkout, a tree of git archive, an install from Git.
+  const development = { version: '0.3.0', commit: 'a'.repeat(40) };
+  for (const text of manifests(development)) {
+    assert.match(text, /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", branch = "v1\/rust-core", features = \[/);
+    assert.match(String(bindingCoreFinding(parse(text))), /^the dependency line of polyspec-binding-core names the branch v1\/rust-core, a development form/);
+  }
+  // The line of the core, when it names one, is followed by either generator.
+  for (const text of manifests(released, { git, branch: 'next' })) assert.match(text, /\npolyspec-binding-core = \{ git = "[^"]+", branch = "next", features = \[/);
 });
 
 test('a tracked package that scaffold cannot write is named, and the other packages are written and compared (GN-3e, CK-19)', () => {

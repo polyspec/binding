@@ -152,9 +152,14 @@ the design ids are those of the binding design.
   `polyspec-binding-core` follows the line of the core on it in the same way: `scaffold` writes the source that the
   core names (its `git` with its `branch` or `tag`, its `version`, or its `path`, which climbs to the place of the
   binding crate) with the features that the binding crate needs, and pins none by itself, so a core that names the
-  tag of a release of binding gives binding crates of that release. Only for a core that names no line on
-  `polyspec-binding-core` does `scaffold` write the development line of binding, its Git repository at the branch
-  `v1/rust-core`, which the check of a release reports in each binding crate. A tracked package that `scaffold` cannot write,
+  tag of a release of binding gives binding crates of that release. For a core that names no line on
+  `polyspec-binding-core`, such as a core that only passes the values of another library on, `scaffold` writes the
+  line of the generator itself: the generator of a release, which was installed at its version and knows no commit of
+  itself (docs/spec/contract-check.md CK-20), writes the Git repository of binding at the tag `vX.Y.Z` of its own
+  version, a release form; a development generator, which knows its commit (a checkout, a tree that `git archive`
+  wrote, an install from Git), writes the Git repository of binding at the development branch `v1/rust-core`, which
+  the check of a release reports in each binding crate. The generated code is written for the `binding_core` of the
+  generator that writes it (L-2), so the line of the generator is the one line that fits when the core names none. A tracked package that `scaffold` cannot write,
   such as the Go module of a contract that names a record of a library without a Go module, is named with its reason:
   `scaffold` writes the other packages and then fails with status 1, `check` reports it as a finding of CK-19 and
   compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a
