@@ -1826,6 +1826,32 @@ test('the PHP extension finds the classes of PHP at startup and has no panic (GN
   assert.match(lib, /extern "C" fn startup\(_kind: i32, _module: i32\) -> i32 \{\n[^\n]*\n {4}for \(slot, name\) in BUILTINS\.iter\(\)\.zip\(BUILTIN_NAMES\) \{[\s\S]*?None => return 1,[\s\S]*?let registered = ClassBuilder::new/);
 });
 
+test('a case value of Python, Node and WASM makes one instance per reference id (GN-13, G-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const targets = ['python', 'node', 'wasm'];
+  sample.units.push({
+    id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only: { targets, reason: 'the test of GN-6m' },
+    members: [
+      { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+      { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+    ],
+  });
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push({ kind: 'reference', make: { php: 'null', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } });
+  for (const lang of targets) data.in.push({ [lang]: 'boxed', cases: [{ kind: 'reference', read: 'boxed.value' }] });
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const inner = { kind: 'reference', value: { id: 1, value: { kind: 'text', value: 'x' } } };
+  const outer = { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [inner] } } };
+  file['echo']?.push({ id: 'shared_references', value: { kind: 'list', value: [outer, inner, outer] } });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', ...targets] });
+  // Each id is one instance, made before the value that holds it, so both places hold the same instance.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\(r1 := pkg\.Boxed\("x"\), r0 := pkg\.Boxed\(\[r1\]\), \[r0, r1, r0\]\)\[-1\]/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(out, path), /\(\(\) => \{ const r1 = new pkg\.Boxed\('x'\); const r0 = new pkg\.Boxed\(\[r1\]\); return \[r0, r1, r0\]; \}\)\(\)/, path);
+  }
+});
+
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const data = sample.units.find((u: any) => u.id === 'data');

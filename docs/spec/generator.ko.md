@@ -536,7 +536,9 @@
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP reference는 배열이나 property의
   자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`를 가진 PHP case 값은 id마다 변수 하나를 정하고
-  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
+  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. Python, Node, WASM은 reference의 class(GN-6m)의
+  인스턴스를 id마다 하나, 그것을 담는 값보다 먼저, 각 인스턴스에 이름을 붙이는 식(Python은 tuple의 대입식, Node와 WASM은
+  화살표 함수) 안에서 만든다. 그래서 같은 id의 모든 자리가 같은 인스턴스를 가진다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
   언어의 어떤 호출로도 줄 수 없는 case는, `panic-test`, `fault-test`와 나란한 그 target의 feature `case-test`(GN-5)의
   진입점으로 실행한다. 진입점은 인자를 바인딩 자신의 인코딩, 곧 바인딩이 기술하는 host 값(B-1)이나 Go C ABI의 값
   stream(B-8)으로 만들어, 호출이 쓰는 것과 같은 변환(value alias의 `in` 함수, 인자의 decode)에 넘긴다. 그 시험은 case의

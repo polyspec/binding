@@ -649,7 +649,10 @@ the design ids are those of the binding design.
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes. A PHP reference is a place of an array or of a property, so a case value of
   PHP whose places hold `{"kind": "reference", "value": {"id", "value"}}` is made in a closure that sets one variable
-  per id and returns the value whose places take the variables by reference. A case whose argument has no form in the
+  per id and returns the value whose places take the variables by reference. Python, Node and WASM make one instance of the
+  class of a reference (GN-6m) per id, before the value that holds it, in an expression that names each instance (an
+  assignment expression of a tuple in Python, an arrow function in Node and WASM), so every place of an id holds the
+  same instance. A case whose argument has no form in the
   language of a target, so that no call of that language can give it, runs through an entry point of the feature
   `case-test` of that target (GN-5), beside `panic-test` and `fault-test`: the entry point makes the argument in the
   binding's own encoding, as the host values that the binding describes (B-1) or as the value stream of the C ABI of
