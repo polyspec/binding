@@ -4,7 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
@@ -558,6 +558,7 @@ function functionRust(model: Model, fn: Fn): string {
                     let promise = awaited(${wait}, |()| Ok(JsValue::UNDEFINED))?;
                     Ok((false, promise))
                 }
+                ${awaitsNone(fn)}
                 binding_core::machine::Next::Done(result) => {
                     ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
                 }

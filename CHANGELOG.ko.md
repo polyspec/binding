@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 생성된 machine driver는 `machine::drive`에 함수 두 개를 주고 `Next::Await`를 match하지 않아서, passthrough 값을
+  기다리는 binding_core로는 어느 binding crate도 compile되지 않았다. 이제 PHP, Python, Go는 값을 바로 settle하는 함수
+  `|value| Ok(Ok(value))`를 `drive`에 주고, Node와 WASM은 함수 parameter가 없는 member의 `Next::Await`에 그 member를
+  적은 kind `internal`로 답한다. 코어는 binding이 준 값으로만 `Passthrough`를 만들기 때문이다. sample의 machine은
+  `settle`을 구현한다(GN-6ae). `make test-ts`로 확인했다.
 - binding_core에는 member의 machine이 함수에서 받아 그대로 돌려주는 언어 코드 값의 형식도, machine이 awaitable을
   driver에 넘기는 step도 없어서, transaction의 machine은 함수의 값을 돌려줄 수도 async 함수를 기다릴 수도 없었다. 이제
   binding_core에는 코어가 읽지 않고 옮기며 drop되면 handle을 binding의 해제 함수에 주는 binding table의 handle

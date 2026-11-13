@@ -177,6 +177,9 @@ impl<L: Lookup> binding_core::machine::Machine for ResolveDriven<L> {
     fn call(&mut self) {
         self.found = Some(self.lookup.find(&self.key));
     }
+
+    /// The machine calls no function that returns a value of language code, so it awaits none (GN-6ae).
+    fn settle(&mut self, _outcome: Result<binding_core::Passthrough, binding_core::Raised>) {}
 }
 
 /// The number of the keys that the lookup holds.

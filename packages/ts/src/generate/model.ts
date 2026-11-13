@@ -1232,11 +1232,17 @@ export function futureOf(model: Model, fn: Fn, body: string): string {
 // GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
 // gives the form of the wait around block_on, and failed the conversion of a BindingError. GN-6ab: the core call of a
 // member with machine makes the machine, and drive makes its calls on the calling thread and waits for each of its
-// futures in the same form.
-export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string): string =>
+// futures in the same form. GN-6ae: awaited gives the outcome of a value that a function of the machine returned; PHP
+// and Go have no awaitable, so they settle the value at once.
+export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string, awaited = '|value| Ok(Ok(value))'): string =>
   fn.machine === true
-    ? `{\n            let mut machine = ${core};\n            binding_core::machine::drive(&mut machine, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, 'io.await')}))`)})).map_err(${failed})?\n        }`
+    ? `{\n            let mut machine = ${core};\n            binding_core::machine::drive(&mut machine, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, 'io.await')}))`)}), ${awaited}).map_err(${failed})?\n        }`
     : `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
+
+// GN-6ae: the arm of an awaited value of a machine that Node or WASM advances, for a member without a function
+// parameter: the core makes a Passthrough only from a value that the binding gave it, so such a machine awaits none.
+export const awaitsNone = (fn: Fn): string =>
+  `binding_core::machine::Next::Await(_value) => Err(binding_error(BindingError::Internal { detail: String::from(${JSON.stringify(`GN-6ae: ${fn.member.id} awaits no value of language code`)}) })),`;
 
 // GN-6n: the end of the future of a member with wait async_driver on the calling thread: a runtime that cannot be made,
 // or a panic of a poll, is a failure of kind internal (B-7).

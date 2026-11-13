@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
+import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
@@ -566,6 +566,7 @@ function entryRust(model: Model, fn: Fn): string {
                     let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
                     Ok((false, promise))
                 }
+                ${awaitsNone(fn)}
                 binding_core::machine::Next::Done(result) => {
                     ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
                 }

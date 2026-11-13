@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The generated driver of a machine passed `machine::drive` two functions and matched no `Next::Await`, so no
+  binding crate compiled against the binding_core that awaits a passthrough value. PHP, Python and Go now give
+  `drive` the function `|value| Ok(Ok(value))`, which settles a value at once; Node and WASM answer `Next::Await` of a
+  member without a function parameter with kind `internal` that names the member, because the core makes a
+  `Passthrough` only from a value that the binding gave it; the machine of the sample implements `settle` (GN-6ae).
+  Verified by `make test-ts`.
 - binding_core had no form for a value of language code that a machine of a member receives from a function and
   returns unchanged, and no step at which a machine hands an awaitable to its driver, so a machine of a transaction
   could neither return the value of its function nor wait for an async function. binding_core now has
