@@ -973,10 +973,42 @@ test('a value class of another repository converts through the core of its owner
   }
 });
 
-test('Go refuses a value class of another repository by name, whose call protocol has no form of an instance (G-4, GN-6x)', () => {
+test('Go describes, reads and makes a value class of another repository through the call of GN-15c (T-3, U-1, GN-6x, GN-15c)', () => {
   const { contract, caseFiles, foreign } = valueClassSample();
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }),
-    /owner\.value: a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and making of an instance \(GN-6x\)/);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] });
+  // The Go type of the owner's class, from the package of its module in the owner's Go module.
+  const pkg = text(out, 'packages/go/zz_generated_consumer.go');
+  assert.match(pkg, /"github\.com\/polyspec\/owner\/packages\/go"/);
+  assert.match(pkg, /^func Relay\(value \*owner\.Value\) \(\*owner\.Value, error\)/m);
+  assert.match(pkg, /result, _ = dec\.Value\(\)\.\(\*owner\.Value\)/);
+  // The C ABI converts through the owner's two core functions; an instance is node 11, an error of the owner node 12,
+  // and the content of an instance is the question read (op 2).
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /\nfn in_owner_value\(/);
+  assert.match(lib, /polyspec_owner::value_in\(&mut host, described\)/);
+  assert.match(lib, /polyspec_owner::value_out\(/);
+  assert.match(lib, /\[11\] => \{\n\s*let kind = match take\(input, 1\)\? \{/);
+  assert.match(lib, /HostValue::Value \{ kind, handle: Handle::new\(in_uint\(input\)\?\) \}/);
+  assert.match(lib, /\[12\] => \{\n\s*let call = in_uint\(input\)\?;\n\s*let index = in_uint\(input\)\?;\n\s*return Err\(Fail \{ raised: Some\(\(call, index\)\),/);
+  assert.match(lib, /fn read\(&mut self, value: Handle\) -> Result<HostValue, Raised> \{\n\s*let mut values = self\.ask\(2, value, 0, 1\)\?;/);
+  assert.doesNotMatch(lib, /Go gives no value of a value class/);
+  // A core value leaves as node 11 with the number of the class and of its Go out row, then the content of the row.
+  assert.match(lib, /OutValue::Null => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 0\);\n\s*\}/);
+  assert.match(lib, /OutValue::Text\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 3\);\n\s*out_text\(output, &value\);/);
+  // Package binding imports the owner's package, describes its instances by the in row and makes them by the out rows.
+  const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(binding, /"github\.com\/polyspec\/owner\/packages\/go"/);
+  assert.match(binding, /case \*owner\.Value:\n\t\tkind, err := found\.Kind\(\)/);
+  assert.match(binding, /case "object":\n\t\t\tc\.describeValue\(enc, 9, func\(\) \(any, error\) \{ return found\.Members\(\) \}\)/);
+  assert.match(binding, /case "null":\n\t\t\tc\.describeValue\(enc, 0, nil\)/);
+  assert.match(binding, /case \*owner\.OrderedMap:\n\t\tentries, err := found\.Entries\(\)/);
+  assert.match(binding, /case op == 2 && held\.read != nil:/);
+  assert.match(binding, /value, err = owner\.ValueNull\(\)/);
+  assert.match(binding, /value, err = owner\.ValueBoolean\(r\.Bool\(\)\)/);
+  assert.match(binding, /value, err = owner\.ValueArray\(items\)/);
+  assert.match(binding, /entries, err := owner\.NewOrderedMap\(\)/);
+  assert.match(binding, /entries\.Insert\(key, item\)/);
+  assert.match(binding, /value, err = owner\.ValueObject\(entries\)/);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
