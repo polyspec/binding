@@ -81,8 +81,13 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
     return `\\${ns}\\${langName('php', unit?.name ?? [name], 'class')}::from(${phpText(value)})`;
   };
+  // T-3, GN-6c: a record of another repository is the class of the namespace of that repository.
+  const recordOwner = (unit: Unit): PhpLayout => {
+    const library = model.foreignRecords.find((r) => r.unit === unit)?.library;
+    return library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
+  };
   const recordNew = (unit: Unit, fields: string[]): string =>
-    `new \\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('php', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')})`;
+    `new \\${phpNamespace(recordOwner(unit), unit.module)}\\${langName('php', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('php', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')})`;
   const callbackNew = (unit: Unit, how: CallbackHow): string => {
     if ('missing' in how) return 'new class {}';
     const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';

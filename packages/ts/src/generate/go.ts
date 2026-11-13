@@ -171,7 +171,8 @@ export function goType(scope: GoScope, type: Type): string {
     scope.usesKeyed = true;
     return `*KeyedMap[${goType(scope, type.keyed_map)}]`;
   }
-  if ('optional' in type) return `*${goType(scope, type.optional)}`;
+  // GN-15e: a pointer whose nil is no value of its type takes no second pointer.
+  if ('optional' in type) return `${nilAbsent(scope.model, type.optional) ? '' : '*'}${goType(scope, type.optional)}`;
   if ('tuple' in type) {
     // T-2, GN-16: a tuple inside another type or as a parameter is a Go array of its one part type, else a struct of
     // its parts in order (a Go array has one element type).
@@ -255,12 +256,22 @@ ${names.map((name, i) => `\tP${i} ${name}`).join('\n')}
 `;
 }
 
+// GN-15e: whether the Go type of the type is a pointer whose nil is no value of the type, so that nil is the missing
+// value of its optional and of its place with a default: a map, a keyed map, an instance of a class and a value
+// class of another repository. The nil of an optional is a value of the type, so an optional is none.
+export function nilAbsent(model: Model, type: Type): boolean {
+  if (typeof type === 'object' && ('map' in type || 'keyed_map' in type)) return true;
+  if (typeof type === 'object' && ('list' in type || 'optional' in type || 'tuple' in type)) return false;
+  const alias = aliasOf(model, type);
+  return alias === undefined ? objectUnit(model, type) !== undefined : alias.owner !== undefined;
+}
+
 // The part i of a Go tuple: an item of its array or a field of its struct.
 const tuplePart = (scope: GoScope, parts: Type[], expr: string, i: number): string => (goTupleArray(scope, parts) ? `${expr}[${i}]` : `${expr}.P${i}`);
 
 // U-2, T-4: a field with a default is a pointer, nil when the caller leaves it out.
 export const fieldType = (scope: GoScope, field: { type: Type; default?: Default }): string =>
-  pointed(field) ? `*${goType(scope, field.type)}` : goType(scope, field.type);
+  goType(scope, fieldWire(field));
 const fieldWire = (field: { type: Type; default?: Default }): Type => (pointed(field) ? { optional: field.type } : field.type);
 
 export const pad = (text: string, width: number): string => text + ' '.repeat(Math.max(0, width - text.length));
@@ -321,7 +332,7 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
     ];
   }
   if ('optional' in type) {
-    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, `*${expr}`, indent + 1, depth), `${t}}`];
+    return [`${t}if ${expr} == nil {`, `${t}\tenc.Tag(false)`, `${t}} else {`, `${t}\tenc.Tag(true)`, ...goEncode(scope, type.optional, nilAbsent(scope.model, type.optional) ? expr : `*${expr}`, indent + 1, depth), `${t}}`];
   }
   if ('tuple' in type) return type.tuple.flatMap((part, i) => goEncode(scope, part, tuplePart(scope, type.tuple, expr, i), indent, depth));
   // U-7: a value of an alias is the call that walks it and its first level.
@@ -384,7 +395,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
       `${t}if dec.Tag() {`,
       `${t}\tvar ${value} ${goType(scope, type.optional)}`,
       ...goDecode(scope, type.optional, value, indent + 1, depth + 1),
-      `${t}\t${target} = &${value}`,
+      `${t}\t${target} = ${nilAbsent(scope.model, type.optional) ? '' : '&'}${value}`,
       `${t}}`,
     ];
   }
@@ -425,7 +436,7 @@ export function goResults(scope: GoScope, returns: Type): string[] {
 // U-2: a parameter with a default is a pointer, nil when the caller leaves it out.
 const hasDefault = (fn: Fn, parameter: Fn['params'][number]): boolean => pointed(parameter) && fn.record?.param !== parameter;
 const paramType = (scope: GoScope, fn: Fn, parameter: Fn['params'][number]): string =>
-  hasDefault(fn, parameter) ? `*${goType(scope, parameter.type)}` : goType(scope, parameter.type);
+  goType(scope, paramWire(fn, parameter));
 const paramWire = (fn: Fn, parameter: Fn['params'][number]): Type => (hasDefault(fn, parameter) ? { optional: parameter.type } : parameter.type);
 
 // The results of a member: an iterate gives an iterator over its items (N-4), any other member the results of its

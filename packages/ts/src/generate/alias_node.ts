@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { container, outArms, ownedNatives, readValue, valueReads } from './alias_shared.ts';
+import { container, outArms, ownedNatives, readAsVariants, readValue, valueReads } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -183,6 +183,10 @@ function readAs(kase: ReadCase): string {
 
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesNodeHost(model: Model): string {
+  return readAsVariants(valueClassesNodeHostAll(model));
+}
+
+function valueClassesNodeHostAll(model: Model): string {
   const classes = foreignClasses(model);
   const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
     const row = classIn(alias, 'node');
@@ -251,8 +255,11 @@ ${checks.join('\n')}
         };
         let content = js_member(object, name, call)?;
         match read_as {
+            /*Units{*/
             // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
             ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(js_units(content, name)?))),
+            /*}Units*/
+            /*TextOr{*/
             ReadAs::TextOr(units, units_call) => match content.get_type()? {
                 // B2.89: none names a text with an unpaired surrogate, whose UTF-16 code units the member units gives,
                 // so only such a text crosses as a list of numbers; any other text crosses as its UTF-8 bytes.
@@ -263,7 +270,10 @@ ${checks.join('\n')}
                 }
                 _ => Err(napi::Error::from_reason(format!("GN-6x: {name} gives no text and no null"))),
             },
+            /*}TextOr*/
+            /*Content{*/
             ReadAs::Content => self.describe(content),
+            /*}Content*/
         }
     }
 }
@@ -287,12 +297,18 @@ fn js_units(content: Unknown<'_>, name: &str) -> napi::Result<Vec<u16>> {
 /// GN-6x: how the read member of an in case gives the content of an instance.
 #[derive(Clone, Copy)]
 enum ReadAs {
+    /*Content{*/
     /// The content, described by the rules of the language.
     Content,
+    /*}Content*/
+    /*Units{*/
     /// The UTF-16 code units of a text of the kind text16 (B2.81).
     Units,
+    /*}Units*/
+    /*TextOr{*/
     /// A text, or null for a text whose UTF-16 code units the named member gives (B2.89).
     TextOr(&'static str, bool),
+    /*}TextOr*/
 }
 `;
 }

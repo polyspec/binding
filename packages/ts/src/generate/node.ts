@@ -107,7 +107,7 @@ fn type_error(subject: &str, expected: &str) -> Fail {
 }
 
 /// The UTF-16 code units of a string, without the terminating NUL that napi writes.
-fn units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
+fn string_units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
     if value.get_type().map_err(internal)? != ValueType::String {
         return Err(type_error(subject, "string"));
     }
@@ -121,13 +121,13 @@ fn units(value: Unknown<'_>, subject: &str) -> Result<Vec<u16>, Fail> {
 
 /// B-3: text is a string without an unpaired surrogate.
 fn in_text(value: Unknown<'_>, subject: &str) -> Result<String, Fail> {
-    String::from_utf16(&units(value, subject)?)
+    String::from_utf16(&string_units(value, subject)?)
         .map_err(|_unpaired| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::UnpairedSurrogate }))
 }
 
 /// B-3, T-1 latin1: a string whose code units are U+0000 to U+00FF, one byte each.
 fn in_latin1(value: Unknown<'_>, subject: &str) -> Result<Vec<u8>, Fail> {
-    units(value, subject)?
+    string_units(value, subject)?
         .into_iter()
         .map(|unit| u8::try_from(unit).map_err(|_above| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::AboveLatin1 })))
         .collect()
@@ -329,14 +329,35 @@ fn out_list<'env, T>(env: &'env Env, value: impl IntoIterator<Item = T>, item: i
     out_tuple(env, items)
 }
 
-/// T-2: the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a map is a whole
-/// parameter, GN-12): each key a string; any other key is kind invalid_argument_type.
+/// T-2, GN-12: the entries of a Map in its order, each [key, value]; a value that is no Map (an array of pairs, a plain
+/// object) is kind invalid_argument_type. The Map is read here, where the value is judged, so a map is taken at every
+/// place of a type: as a parameter, in a list, an optional, a record, a variant and another map.
+fn map_entries<'env>(value: Unknown<'env>, subject: &str, expected: &str) -> Result<Vec<[Unknown<'env>; 2]>, Fail> {
+    let env = Env::from_raw(JsValue::value(&value).env);
+    let global = env.get_global().map_err(internal)?;
+    let class: Function<'env, (), Unknown<'env>> = global.get_named_property("Map").map_err(internal)?;
+    if !value.instanceof(class).map_err(internal)? {
+        return Err(type_error(subject, expected));
+    }
+    // Array is a function, which holds from as a property.
+    let array: Object<'env> = global.get_named_property_unchecked("Array").map_err(internal)?;
+    let from: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = array.get_named_property("from").map_err(internal)?;
+    let entries = from.apply(array, FnArgs::from((value,))).map_err(internal)?;
+    in_list(entries, subject, |entry| {
+        <[Unknown<'env>; 2]>::try_from(in_list(entry, subject, Ok)?).map_err(|_not_a_pair| binding_error(BindingError::Internal { detail: String::from("a Map gave an entry that is no pair") }))
+    })
+}
+
+/// T-2, GN-12: a new Map of the entries, in their order.
+fn out_entries<'env>(env: &'env Env, entries: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
+    let class: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = env.get_global().map_err(internal)?.get_named_property("Map").map_err(internal)?;
+    class.new_instance(FnArgs::from((out_tuple(env, entries)?,))).map_err(internal)
+}
+
+/// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
 fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
-    let entries = in_list(value, subject, |entry| in_list(entry, subject, Ok))
-        .map_err(|_not_entries| type_error(subject, "a Map whose keys are strings"))?;
     let mut map = binding_core::OrderedMap::new();
-    for entry in entries {
-        let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, "a Map whose keys are strings"))?;
+    for [key, value] in map_entries(value, subject, "a Map whose keys are strings")? {
         if key.get_type().map_err(internal)? != ValueType::String {
             return Err(type_error(subject, "a Map whose keys are strings"));
         }
@@ -347,7 +368,7 @@ fn in_map<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'e
     Ok(map)
 }
 
-/// T-2: a map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map.
+/// T-2: a map, owned or borrowed, as a Map of its entries in their order.
 fn out_map<'env, T>(
     env: &'env Env,
     value: impl Borrow<binding_core::OrderedMap<T>>,
@@ -357,12 +378,11 @@ fn out_map<'env, T>(
     for (key, value) in value.borrow().iter() {
         entries.push(out_tuple(env, vec![out_text(env, key)?, item(env, value)?])?);
     }
-    out_tuple(env, entries)
+    out_entries(env, entries)
 }
 
-/// T-2, U-7 (c): the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a keyed map is
-/// a whole parameter, GN-12): a key that is a safe integer or a string of a kind that the contract lists; any other key
-/// is kind invalid_argument_type.
+/// T-2, U-7 (c): a Map whose keys are safe integers or strings of the kinds that the contract lists; any other key is
+/// kind invalid_argument_type.
 fn in_keyed_map<'env, T>(
     value: Unknown<'env>,
     subject: &str,
@@ -370,11 +390,8 @@ fn in_keyed_map<'env, T>(
     expected: &str,
     item: impl Fn(Unknown<'env>) -> Result<T, Fail>,
 ) -> Result<binding_core::KeyedMap<T>, Fail> {
-    let entries = in_list(value, subject, |entry| in_list(entry, subject, Ok))
-        .map_err(|_not_entries| type_error(subject, expected))?;
     let mut map = binding_core::KeyedMap::new();
-    for entry in entries {
-        let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, expected))?;
+    for [key, value] in map_entries(value, subject, expected)? {
         let (tag, key) = match key.get_type().map_err(internal)? {
             // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
             ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
@@ -393,9 +410,8 @@ fn in_keyed_map<'env, T>(
     Ok(map)
 }
 
-/// T-2: a keyed map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map; an
-/// integer key leaves as a number (a safe integer, B-2) and a byte string key, which no Node contract lists, is kind
-/// internal.
+/// T-2: a keyed map, owned or borrowed, as a Map of its entries in their order; an integer key leaves as a number (a
+/// safe integer, B-2) and a byte string key, which no Node contract lists, is kind internal.
 fn out_keyed_map<'env, T>(
     env: &'env Env,
     value: impl Borrow<binding_core::KeyedMap<T>>,
@@ -410,7 +426,7 @@ fn out_keyed_map<'env, T>(
         };
         entries.push(out_tuple(env, vec![key, item(env, value)?])?);
     }
-    out_tuple(env, entries)
+    out_entries(env, entries)
 }
 
 fn out_tuple<'env>(env: &'env Env, items: Vec<Unknown<'env>>) -> Result<Unknown<'env>, Fail> {
@@ -948,7 +964,7 @@ ${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failu
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
@@ -1379,12 +1395,6 @@ function tsType(model: Model, type: Type, input: boolean): string {
 }
 
 const listParam = (type: Type): boolean => typeof type === 'object' && 'list' in type;
-// T-2: a keyed map, whole or optional, which the JavaScript entry passes as the entries of a Map (GN-12).
-const keyedType = (type: Type): boolean => {
-  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
-  return typeof base === 'object' && ('keyed_map' in base || 'map' in base);
-};
-
 function indexCjs(model: Model): string {
   const base = addonBase(model);
   const classes = model.classes.map((c) => `
@@ -1428,12 +1438,11 @@ class ${name} extends ${parent} {
         lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
-      if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return listParam(p.type) ? `toList(args[${i}])` : `args[${i}]`;
     });
     // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
     const called = fn.machine === true ? `drive(${call(passed.join(', '))})` : call(passed.join(', '));
-    lines.push(keyedType(fn.returns) ? `  return fromEntries(${awaits(fn) ? 'await ' : ''}${called});` : `  return ${called};`);
+    lines.push(`  return ${called};`);
     return lines.join('\n');
   };
   const fns = model.functions.map((fn) => {
@@ -1533,18 +1542,6 @@ function toList(value) {
   return value;
 }
 
-// T-2: a keyed map crosses as its entries, [key, value], which only a Map gives: null stays the absence, and any other
-// value reaches the addon as undefined, which it refuses as kind invalid_argument_type (an array of pairs is not a Map).
-function toEntries(value) {
-  if (value instanceof Map) return Array.from(value);
-  return value === null ? null : undefined;
-}
-
-// T-2: the entries of a keyed map, as a Map; null is the absence.
-function fromEntries(value) {
-  return value === null ? null : new Map(value);
-}
-
 // G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent; a
 // field without a default is required (U-2); a value that is not an object is judged by the addon.
 function checkRecord(fn, name, record, fields, required) {
@@ -1567,16 +1564,15 @@ module.exports = { ${exports.join(', ')} };
 }
 
 // GN-6af: the class of the entry of a value class without core_type: the count of the arguments (G-7), the check of the
-// addon, and the kept values as own enumerable data properties. A keyed map crosses as its entries; a value that is no
-// Map crosses as null, which the addon refuses.
+// addon, and the kept values as own enumerable data properties. A keyed map crosses as the Map itself, which the addon
+// reads and judges (GN-12).
 export function keptClassJs(kept: KeptClass): string {
   const cls = langName('node', kept.unit.name, 'class');
   const count = kept.fields.length;
   const least = kept.fields.filter((f) => f.default === undefined).length;
   const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
   const crossed = kept.fields.map((f, i) => {
-    const keyed = typeof f.type === 'object' && 'keyed_map' in f.type;
-    return keyed ? `args[${i}] === undefined ? undefined : toEntries(args[${i}]) ?? null` : typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
+    return typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
   });
   const empty = { null: 'null', map: 'new Map()', list: '[]' };
   const defined = kept.fields.map((f, i) => {

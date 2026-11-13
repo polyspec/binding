@@ -833,6 +833,9 @@ impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 ${recognizing}`;
 }
 
+// GN-6u: an out row of the Go form gives a native value back, so the crate gives Go a new handle of its func.
+const givesNative = (model: Model): boolean => model.aliases.some((a) => (a.unit.out ?? []).some((row) => row.kind === 'native' && row.make?.go !== undefined));
+
 // U-3, U-7: the calls into Go, the errors that Go code returned in a callback and the walk of a Go value.
 function callBackRust(model: Model): string {
   const failing = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.failure) || model.aliases.some((a) => a.library === undefined);
@@ -842,7 +845,7 @@ function callBackRust(model: Model): string {
 /// E-1c: the failure of a core that calls back.
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
-        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no member gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
+        ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => ${callsBack(model) ? 'raised_fail(&raised)' : 'binding_error(BindingError::Internal { detail: raised.to_string() })'},
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
@@ -873,7 +876,7 @@ thread_local! {
     /// GN-6u: the cgo.Handle of each func that the buffer being written gives Go, in the order of their indexes.
     static GIVEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
-
+${!givesNative(model) ? '' : `
 /// GN-6u: gives Go a new cgo.Handle of a func in the buffer being written, as its index in the list of the buffer.
 fn give(handle: u64) -> usize {
     GIVEN.with_borrow_mut(|given| {
@@ -881,7 +884,7 @@ fn give(handle: u64) -> usize {
         given.len() - 1
     })
 }
-
+`}
 /// GN-6u: a buffer for Go: the list of the handles that it gives, which Go deletes before it decodes anything, then
 /// its bytes.
 fn given_first(bytes: Vec<u8>) -> Vec<u8> {
@@ -981,9 +984,9 @@ extern "C" {${model.callbacks.length === 0 ? '' : `
     /// U-7: the function that package binding exports to describe a child of a Go value.
     fn ${p}__go_host(call: u64, op: u32, handle: u64, index: u64, result: *mut Buffer) -> i32;
     /// GN-6u: the function that package binding exports to delete the cgo.Handle of a Native.
-    fn ${p}__go_release(handle: u64);
+    fn ${p}__go_release(handle: u64);${!givesNative(model) ? '' : `
     /// GN-6u: the function that package binding exports to give a new cgo.Handle of the func of a Native.
-    fn ${p}__go_native(handle: u64) -> u64;`}
+    fn ${p}__go_native(handle: u64) -> u64;`}`}
 }
 
 /// U-3, U-7: gives Go a buffer of \`len\` bytes, which Go fills with the answer of a call back and this crate takes back.

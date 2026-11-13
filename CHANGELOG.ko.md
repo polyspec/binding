@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 637de0b8818df7b498028cde2112f3edfa6a381a18904f07cb344c7dd89346dd -->
+<!-- source-sha256: 6cef796658735c78e036b6d46039c76bb770e4044406f9407302bfda440a93a1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -34,6 +34,25 @@
   실행의 target php, python, wasm은 이 변경이 건드리지 않는 단계에서 실패했다. darwin/arm64에서 돌린 `tests/e2e/sample`의
   `make e2e`도 기록이 증거이고 모든 target이 통과했다(PHP 생성 시험 67개, Python 66개, Node 67개, WASM 54개, Go 41개와
   release 형태의 시험 35개). 실행하지 않은 것: Linux의 release 형태.
+- json의 계약으로 돌린 end-to-end 검사의 relay가 드러낸 생성기의 텍스트가 더 있고, 모두 lint가 deny하는 죽은 코드다.
+  PHP, Python, Node, WASM host의 enum `ReadAs`는 모든 variant를, 읽기는 모든 갈래를 가졌는데, json의 in case는 `Units`를
+  만들지 않는다. 이제 host는 그 계약의 in case가 만드는 variant와 그 갈래만 가진다(GN-6x). PHP는 유일한 alias가 다른
+  저장소의 value class인 계약에도 struct `PhpMaking`을 썼는데, 그 class는 소유자의 member가 만든다. 이제 계약 자신의
+  alias가 있을 때만 쓴다(U-7). Python은 out row가 native 값을 돌려주는 곳에서만 `PyNative`의 객체를 읽으므로, 그런 row가
+  없으면 그 field는 읽히지 않았다. 그때 struct는 이유를 적은 `dead_code` allow를 가진다. 그 field는 Native를 가진 코어를
+  위해 객체를 붙들기 때문이다(GN-6u). Go crate는 alias가 있는 모든 계약에 helper `give`를 쓰고 package binding의 함수
+  `__go_native`를 선언했는데, native 값을 돌려주는 out row만 그것들을 부른다. 이제 그런 row가 있을 때만 쓴다. Node의
+  helper `units`는 host에 그 이름의 변수가 있는 모든 crate에 남았다. helper는 그 이름이 코드의 단어인 곳에서 쓰인 것으로
+  세기 때문이다. 이제 그 이름은 `string_units`다. kind가 없는 라이브러리의 `failure_error`가 쓰는 kind의 메시지는
+  member를 단어로 적었고, 그것이 Node와 WASM의 helper `member`를 남겼다. 이제 그 메시지는 호출을 적는다. `make
+  test-ts`로 검증했다: variant 테스트는 `Units` 때문에, 부르지 않는 함수의 테스트는 `give`, `__go_native`, `member` 때문에
+  실패했고, 변경 후 둘 다 통과한다.
+- 실행의 work 디렉터리 테스트(GN-14)는 `workOf`와 `runIn`을 부르고 recipe의 텍스트를 읽었을 뿐, work 디렉터리 없이 실행의
+  script를 돌린 테스트는 없었다. 새 테스트는 추적 파일로 자기 checkout을 만들고, 그 안에서 `--work` 없이
+  `scripts/e2e.mts`를 돌리며, 그 checkout의 `git status --porcelain --ignored --untracked-files=all`이 실행 전후에 같지
+  않거나 실행의 임시 디렉터리가 비어 있지 않으면 실패한다. `make test-ts`로 검증했다: 414개 중 414개가 통과한다. 이름이
+  없을 때 `workOf`가 호출자의 디렉터리를 주도록 바꾼 사본에서 같은 단계를 밟으면 commit tree의 파일 195개가 checkout에
+  남았고, 테스트의 비교는 이것을 실패시킨다.
 - PHP, Python, Node, WASM crate의 helper `handle_count`와 `handle_position`은 `clippy::manual_unwrap_or` allow 아래에서
   `try_from`의 결과를 손으로 match했고, 그 이유는 `unwrap_or`가 금지라고 했다. R-1은 그 계열을 `Option`에만 금지하고, 생성
   코드는 다른 곳에서 `Result::unwrap_or`를 부른다. 이제 여덟 helper는 allow 없이 `try_from(value).unwrap_or(MAX)`이고,
@@ -54,6 +73,44 @@
   row의 번호를 접미사 없는 literal로 썼고, 그것은 `out_uint(…, impl WideUint)`에서 `i32`다. 이제 `u64` literal이다
   (GN-15c). json의 계약으로 돌린 relay의 end-to-end 실행이 찾았다. `make test-ts`로 검증했다: 새 테스트 셋이 각각 자기
   텍스트 때문에 실패했고, 변경 후 412개 중 412개가 통과한다.
+- 생성된 Node와 WASM 테스트는 호출의 가운데에서 기본값이 있는 parameter를 생략할 때 그 인자를 빼 버렸고, 그래서 options
+  record가 그 자리에 섰다: `pkg.pad('ab', { end: '!' })`는 record를 `fill`로 주었고, `tests/e2e/shapes`의 `pad` 테스트 셋이
+  두 target 각각에서 kind `invalid_argument_type`으로 실패했다. 이 작업 이전 커밋의 테스트도 같은 호출을 썼다. 이제
+  GN-6i가 언어마다 그런 호출의 한 가지 꼴을 적는다: Python은 keyword, PHP는 이름 있는 인자, Node와 WASM은 그 자리의
+  `undefined`, Go는 nil이며, 각 언어의 선언이 그 꼴을 받는다. Node와 WASM 테스트는 `pkg.pad('ab', undefined, { end: '!' })`로
+  쓰고 호출 끝의 `undefined` 인자만 뺀다(U-2, GN-6i, GN-13d, GN-13e). `make test-ts`로 확인했다: 테스트가 호출
+  `pkg.pad('ab', { side: 'left' })` 때문에 실패했고, 397개 중 397개가 통과한다.
+- Go는 이미 포인터인 타입의 `optional`을 두 번째 포인터로 썼다: `optional<keyed_map<T>>`는 `**KeyedMap[T]`,
+  `optional<map<T>>`는 `**Map[T]`, class의 `optional`은 `**<Class>`였고, 그런 타입의 기본값이 있는 parameter나 field도
+  두 번째 포인터를 받았다. 이제 nil이 그 타입의 값이 아닌 포인터는 두 번째 포인터를 받지 않는다. 그 nil이 없는 값이고
+  C ABI는 그 nil에 값이 없다는 태그를 쓴다. `map<T>`, `keyed_map<T>`, class의 인스턴스, 다른 레포의 value class가
+  그렇고, `optional`의 `optional`은 두 번째 포인터를 그대로 둔다(GN-15e). `make test-ts`로 확인했다:
+  `tests/e2e/shapes`의 Go 바인딩 테스트가 `Present`의 `[]**KeyedMap[string]` 때문에 실패했고 이제 바인딩과 그 테스트에
+  `**`가 없을 것을 요구하며, 397개 중 397개가 통과한다.
+- `tests/e2e/shapes`의 첫 map case가 결함 둘을 드러냈다. Node addon은 전역 `Array`를 object로 읽었는데 napi는 함수를 그렇게
+  읽는 것을 거부하므로, map이 있는 모든 호출이 kind `internal`로 실패했다. 이제 그 검사 없이 읽는다. Go 테스트는 map 값을
+  한 줄의 함수 리터럴로 썼는데 gofmt는 본문이 한 줄보다 긴 함수 리터럴을 여러 줄로 나누므로, `gofmt -l`이
+  `zz_generated_test.go`를 지목했다. 이제 map 값은 항목마다 helper `mapWith`나 `keyedWith`를 부르는 호출이다(T-2, GN-12,
+  GN-13f). `make test-ts`로 확인: 397개 중 397개 통과.
+- member가 `map<T>`나 `keyed_map<T>`의 값으로만 돌려주는 record는 result form을 얻지 못했다. result form이 있는 record를
+  모으는 순회가 map 안으로 들어가지 않았으므로, Python·Node·PHP·WASM crate는 갖고 있지 않은 변환 `out_<record>`를 불렀다.
+  이제 그 순회는 map과 keyed map 안으로 들어간다(T-2, T-4, GN-6a). `make test-ts`로 확인: 새 테스트는 Python crate에
+  `out_text_measure`가 없어서 실패했고, 397개 중 397개가 통과한다.
+- 다른 레포의 record를 부르는 계약에서, 생성된 Python·PHP 테스트는 그 record를 계약 자신의 패키지 안의 이름으로
+  불렀다(`pkg.Point`, `\Polyspec\Plot\Point`). 그런 클래스는 없으므로 `tests/e2e/plot`의 Python 테스트는
+  `module 'polyspec.plot' has no attribute 'Point'`로 실패했다. 이제 GN-6c의 규칙은 모든 target에 대해, 다른 레포의 unit은
+  그 레포 패키지의 unit이라고 적는다: Python 테스트는 그 패키지의 모듈을 `foreign_<library>`로 import하고 PHP 테스트는 그
+  레포 namespace의 클래스를 부른다. Go 테스트가 그 레포 Go 모듈의 struct를 부르고 Node·WASM 테스트가 plain object를 주는
+  것과 같다(T-3, GN-6c). list, tuple, map이 없는 계약(`tests/e2e/points`, `tests/e2e/plot`)의 WASM crate는 실패의 생성자
+  인자에 `Array::of4`를 쓰면서 `js_sys::Array`를 import하지 않았다. 이제 crate는 그것을 항상 import한다(GN-18).
+  `make test-ts`로 확인: 새 테스트 둘이 이 이유로 실패했고, 396개 중 396개가 통과한다.
+- 다른 타입 안의 `map<T>`나 `keyed_map<T>`(record의 field, list·optional·다른 map의 항목)는 Node와 WASM에서 이름으로
+  거부되었다. JavaScript 진입점이 `Map`을 항목으로 바꾸었으므로 parameter나 반환 전체가 map일 때만 받았기 때문이다. 이제
+  addon과 WASM 모듈이 값을 판정하는 자리에서 `Map`을 읽고 돌려줄 `Map`을 만들므로, 두 target은 타입의 모든 자리에서 map을
+  받고 진입점은 그 값을 그대로 넘긴다(T-2, GN-12, GN-18). `Map`이 아닌 값은 그대로 kind `invalid_argument_type`이고, 바이트
+  문자열 key는 이제 모든 자리에서 이름으로 거부된다. `tests/e2e/shapes`에 record `tally`와 member `tally_of`,
+  `tally_total`, `merged`, `split_counts`, `doubled`, `present`를 case와 함께 추가했다: record, list, optional, map 안의
+  map을 양방향으로 다룬다. `make test-ts`로 확인: 394개 중 394개 통과.
 - 생성 crate의 helper가 `async fn`이면 모든 crate에 남았다. `usedHelpers`는 항목의 처음에서 `fn`이나 `trait` 뒤의
   이름만 읽었고, 그래서 WASM crate의 `async fn caught`는 이름이 없어 쓰인 것으로 세어졌다. `wait: async_driver`
   member가 없는 WASM crate(variants, sample)에 죽은 코드가 있었고 lint가 이를 deny한다. 이제 `usedHelpers`는
