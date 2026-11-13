@@ -445,8 +445,10 @@ export function pythonTests(model: Model, module: string): string {
         continue;
       }
       const receiverMade = receiverOfCase(kase.receiver);
-      // GN-6ae: a case with after holds its receiver, which the calls of after observe.
-      const heldReceiver = kase.after !== undefined && kase.faults === undefined && receiverMade.expr !== '';
+      // GN-13f: the receiver is made before the block that expects the failure, so a receiver that cannot be made fails
+      // the test: a receiver that no line made yet is held. GN-6ae: a case with after holds its receiver, which the
+      // calls of after observe.
+      const heldReceiver = kase.faults === undefined && receiverMade.expr !== '' && (kase.after !== undefined || receiverMade.lines === '');
       if (heldReceiver) receiverMade.lines += `\n        receiver = ${receiverMade.expr}`;
       const receiver = heldReceiver ? 'receiver' : receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.

@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 33a0bcc1771c5096fdf93eb1ca1f2878932d0bba0c51053282f6ff4916190bb0 -->
+<!-- source-sha256: 830645594b47b74721f235fab900ffa15b6942e509677d6843db95659c0221ef -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 메서드의 case의 receiver를 그 메서드의 인자를 담은 키로 만들었다. factory `from_units(units)`, `null()`,
+  `object(members)` 곁에서 키 `members`와 `units`를 가진 `get_units`의 case가, 호출의 `units`를 받은 `from_units`로
+  receiver를 얻었다. Go 시험은 receiver를 만들다 실패했고, 다른 대상의 시험은 실패를 기대하는 블록 안에서 receiver를
+  만들어서, receiver를 만드는 실패가 호출의 실패로 통과했다. 이제 case의 member의 parameter 키는 factory의 parameter를
+  주지 않고, case의 키를 하나도 받지 않는 factory는 키를 받는 factory가 없을 때만 receiver를 만들며, raises가 있는
+  case의 Python, Node, WASM, PHP 시험은 Go 시험처럼 실패해야 하는 호출 앞에서 receiver를 지역 변수로 만든다(GN-13f).
+  `make test-ts`로 검증했다: 새 시험이 변경 전에는 실패했다. 실행하지 않은 것: 생성된 시험. 값 class의 레포를 준
+  `tests/e2e/relay`의 `make e2e`가 실행한다.
 - 다른 레포의 값 class가 있는 계약의 PHP crate가 컴파일되지 않았다. 그런 crate의 host는 모든 crate의 host의 글을 바꿔
   field `owned`와 `values`를 더한 것인데, host에 더한 `stdClass` 객체 표가 그 바꾸기가 찾는 글을 바꿔서, 코드는 그
   field를 이름하는데 field는 더해지지 않았다. 이제 바꾸기는 struct의 끝만 이름하고, 생성기는 host에 더하는 부분이

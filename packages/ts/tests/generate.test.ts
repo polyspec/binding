@@ -2316,7 +2316,8 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   const phpTests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(phpTests, /assertInstanceOf\(\\Stringable::class, new \\Polyspec\\Sample\\Tag\("a"\)\)/);
   assert.match(phpTests, /assertSame\("#a", \(string\) new \\Polyspec\\Sample\\Tag\("a"\)\)/);
-  assert.match(phpTests, /\\json_encode\(new \\Polyspec\\Sample\\Tag\("a"\)\)/);
+  // GN-13f: the receiver of the case that raises is made before the call that must fail.
+  assert.match(phpTests, /\$receiver = new \\Polyspec\\Sample\\Tag\("a"\);\n {8}try \{\n {12}\\json_encode\(\$receiver\);/);
   assert.doesNotMatch(phpTests, /testG7TagTo(String|Json)/);
   // Q-4 only: to_json names php and node, and Python has no JSON hook.
   const python = text(out, 'packages/python/generated/lib.rs');
@@ -2331,7 +2332,7 @@ test('a stringify and a to_json are the hooks of each language, and never and on
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /toString\(\): string;\n {2}toJSON\(\): never;/);
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
   assert.match(nodeTests, /assert\.equal\(String\(new pkg\.Tag\('a'\)\), '#a'\)/);
-  assert.match(nodeTests, /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  assert.match(nodeTests, /const receiver = new pkg\.Tag\('a'\);\n {2}assert\.throws\(\(\) => JSON\.stringify\(receiver\)/);
   // GN-15a: a Go to_json is MarshalJSON of json.Marshaler over the unexported toJSON, and a never return gives the
   // error alone; the B-4 test calls toJSON.
   const go = text(out, 'packages/go/zz_generated_sample.go');
@@ -3877,6 +3878,35 @@ test('a case value that the generator does not write fails the test of its case 
   assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
 });
 
+// GN-13f: the classes repository with two more factories of tag before its constructor: one whose parameter has the key
+// of the parameter of tag.with_suffix, and one without parameters. The case of with_suffix gives `name`, the argument of
+// the constructor, and `suffix`, the argument of with_suffix itself.
+function suffixFactories(): { contract: any; caseFiles: Map<string, unknown> } {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const make = (id: string, parameters: any[]): any => ({ id: `tag.${id}`, name: id.split('_'), kind: 'static', visibility: 'public', parameters, returns: { unit: 'tag' }, raises: [], wait: 'none', core: `polyspec_classes::Tag::${id}` });
+  contract.units.find((u: any) => u.id === 'tag').members.unshift(make('from_suffix', [{ name: ['suffix'], type: 'text', required: true }]), make('blank', []));
+  return { contract, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) };
+}
+
+test('the receiver of a case is made from the keys that are no parameter of its member, before the block that expects the failure (GN-13f, B2.143)', () => {
+  const out = generate({ ...suffixFactories(), version: '0.0.0', coreLib: 'polyspec_classes' });
+  // The key `suffix` is the argument of with_suffix, so tag.from_suffix is no factory of the receiver; tag.blank takes
+  // no key, so the constructor, which takes `name`, makes the receiver. The receiver is a local that is made before the
+  // call that must fail, so a receiver that cannot be made fails the test.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_b4_tag_with_suffix_the_empty_suffix_is_refused\(self\) -> None:\n {8}receiver = pkg\.Tag\("a"\)\n {8}with self\.assertRaises\(pkg\.ClassesValueError\) as caught:\n {12}receiver\.with_suffix\(""\)\n/);
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    assert.match(text(out, path), /test\('B-4: Tag\.withSuffix the_empty_suffix_is_refused', \(\) => \{\n {2}const receiver = new pkg\.Tag\('a'\);\n {2}assert\.throws\(\(\) => receiver\.withSuffix\(''\), /, path);
+  }
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB4TagWithSuffixTheEmptySuffixIsRefused\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Classes\\Tag\("a"\);\n {8}try \{\n {12}\$receiver->withSuffix\(""\);\n/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB4TagWithSuffixTheEmptySuffixIsRefused\(t \*testing\.T\) \{\n\tmade0, failure1 := NewTag\("a"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", failure1\)\n\t\}\n\t_, err := made0\.WithSuffix\(""\)\n/);
+  // A case that gives no key of a factory with parameters takes the factory without parameters.
+  const { contract, caseFiles } = suffixFactories();
+  (caseFiles.get('contracts/cases.json') as any).tag_with_suffix.push({ id: 'a_blank_tag_takes_no_empty_suffix', suffix: '', raises: { kind: 'missing', status: null, category: 'value', message: 'no value for suffix' } });
+  const blank = text(generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['python'] }), 'packages/python/generated/tests/test_generated.py');
+  assert.match(blank, /def test_b4_tag_with_suffix_a_blank_tag_takes_no_empty_suffix\(self\) -> None:\n {8}receiver = pkg\.Tag\.blank\(\)\n {8}with self\.assertRaises\(pkg\.ClassesValueError\) as caught:\n {12}receiver\.with_suffix\(""\)\n/);
+});
+
 test('a class value that the core gives by reference leaves as a new instance of a copy of it (T-5, GN-6b)', () => {
   const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
   const files = ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
@@ -4220,7 +4250,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   assert.match(text(withHook, 'packages/ts/wasm/generated/index.mjs'), /\n {2}toJSON\(\) \{\n {4}return enter\(SampleInternalError, \(\) => glue\.__Tag_toJSON\(this\.#handle\)\);/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/lib.rs'), /match result \{\}/);
   assert.match(text(withHook, 'packages/ts/wasm/generated/index.d.ts'), /toJSON\(\): never;/);
-  assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.throws\(\(\) => JSON\.stringify\(new pkg\.Tag\('a'\)\)/);
+  assert.match(text(withHook, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const receiver = new pkg\.Tag\('a'\);\n {2}assert\.throws\(\(\) => JSON\.stringify\(receiver\)/);
   // GN-18a, GN-6h: a member that writes its receiver takes the write guard of the lock that the table holds.
   const written = classSample(['wasm']);
   const full2 = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));

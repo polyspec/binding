@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 016eef7fed7b1703b55606b2466ede638a07c16feb1d58192fad6a26b8a41d6e -->
+<!-- source-sha256: 386d782461e697fea87623fbb90eda6b068023961ae32e0e9204e96bcdbbed75 -->
 # 생성기
 
 [English](generator.md)
@@ -1643,7 +1643,12 @@
   또는 `{"from": "<member id>", "receiver": ..., "args": {...}, "pick": [<단계>], "then": [...]}`. `new`는 그 class를
   돌려주는 member다: 생성자, static member, 함수, 어느 class의 메서드. `from`은 결과가 그 class를 담는 member이고,
   `pick`은 단계로 거기에 닿는다: snake_case field 이름, list의 `{"index": n}`, tuple의 `{"tuple": n}`. `receiver`는
-  member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
+  member가 메서드일 때 주며 그 자체가 인스턴스 값이다. case는 자기 키 가운데, 계약 순서로 첫 factory의 인자를 준다. 그
+  factory는 모든 parameter의 키가 case에 있고 그 키가 case의 member의 parameter 키가 아닌 factory다. 그런 키는 그
+  member의 인자를 담는다. factory `from_units` 곁의 메서드 `get_units`의 case에서 `units`가 그렇다. 그 키로 만든
+  receiver는 case가 이름한 값과 다른 값이다. case의 키를 하나도 받지 않는 factory는 모든 case에 맞으므로, 키를 받는
+  factory가 없을 때만 receiver를 만든다. raises가 있는 case의 시험은 실패해야 하는 호출 앞에서 receiver를 지역 변수로
+  만든다. 만들 수 없는 receiver는 시험을 실패시키며, 그 실패는 case가 기대하는 실패로 받아들여지지 않는다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
   자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
   그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. `then`의 호출은

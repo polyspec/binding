@@ -2017,6 +2017,13 @@ the design ids are those of the binding design.
   that returns the class: a constructor, a static member, a function, or a method of any class; `from` names a member
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
+  Among its own keys a case gives the arguments of the first factory, in contract order, whose every parameter has a
+  key that is no key of a parameter of the member of the case: such a key holds an argument of that member, as `units`
+  of a case of a method `get_units` does beside a factory `from_units`, and a receiver made from it is another value
+  than the case names. A factory that takes no key of the case fits every case, so it makes the receiver only when no
+  factory that takes a key does. The test of a case that raises makes the receiver as a local before the call that
+  must fail: a receiver that cannot be made fails the test, and its failure is not taken for the failure that the
+  case expects.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value, and so may the value of
   a callback that a class of the case implements (GN-6w). Each call of `then` is a method of the class, called on the instance in order, and its result is not

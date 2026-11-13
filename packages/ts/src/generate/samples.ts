@@ -1356,20 +1356,34 @@ export function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknow
   return args;
 }
 
-// T-5: the factory of a class unit whose parameters a case gives: a static member or the constructor that returns the
-// class, the first in contract order.
-export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>): Receiver | undefined {
+// GN-13f: the keys of a case that hold the arguments of a member: the key of each parameter, and the key of the record
+// whose fields are its parameters.
+function argumentKeys(fn: Fn): Set<string> {
+  return new Set(fn.args.map((arg) => langName('python', arg.field && fn.record !== undefined ? fn.record.param.name : arg.name, 'variable')));
+}
+
+// T-5, GN-13f: the factory of a class unit whose parameters a case gives: a static member or the constructor that
+// returns the class, the first in contract order. `of` is the member whose case the record is: a key of one of its
+// parameters holds an argument of that member, so it gives no parameter of a factory; and a factory that takes no key
+// of the case fits every case, so it is the factory only when no factory that takes a key is.
+export function receiverOf(model: Model, fn: Fn, record: Record<string, unknown>, of: Fn = fn): Receiver | undefined {
   if (fn.receiver === undefined) return undefined;
   // GN-13f: a case that gives its receiver as an instance value.
   if (record['receiver'] !== undefined) return instanceOf(model, fn.unit.id, record['receiver'], `the case ${String(record['id'])} of ${fn.member.id}`);
+  const taken = argumentKeys(of);
+  const given = Object.fromEntries(Object.entries(record).filter(([key]) => !taken.has(key)));
+  let bare: Receiver | undefined;
   for (const factory of classMembers(model, fn.unit)) {
     const returns = factory.returns;
     const makes = typeof returns === 'object' && 'unit' in returns && returns.unit === fn.unit.id && returns.library === undefined;
     if (factory.receiver !== undefined || !makes) continue;
-    const args = argsOf(factory, record);
-    if (args !== undefined) return { factory, args };
+    // A case of the factory itself gives the arguments of the factory.
+    const args = argsOf(factory, factory === of ? record : given);
+    if (args === undefined) continue;
+    if (args.size > 0) return { factory, args };
+    bare ??= { factory, args };
   }
-  return undefined;
+  return bare;
 }
 
 // An instance for the tests of a method that need any valid receiver: the factory arguments of the first case of the
@@ -1379,7 +1393,7 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
     for (const kase of model.cases.get(member.member.id) ?? []) {
       const record = kase as Record<string, unknown>;
       if (record['raises'] !== undefined) continue;
-      const found = receiverOf(model, fn, record);
+      const found = receiverOf(model, fn, record, member);
       // GN-13f: a test that needs any receiver takes none that arms faults, which would fire in its calls.
       if (found !== undefined && !armsFaults(found)) return found;
     }

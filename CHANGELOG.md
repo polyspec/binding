@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The receiver of a case of a method was made from a key that holds an argument of the method. A case of `get_units`
+  with the keys `members` and `units` beside the factories `from_units(units)`, `null()` and `object(members)` got its
+  receiver from `from_units` with the `units` of the call: the Go test failed at making the receiver, and the tests
+  of the other targets made the receiver inside the block that expects the failure, so the failure of making it
+  passed as the failure of the call. A key of a parameter of the member of the case now gives no parameter of a
+  factory, a factory that takes no key of the case makes the receiver only when no factory that takes a key does, and
+  the Python, Node, WASM and PHP test of a case that raises makes the receiver as a local before the call that must
+  fail, as the Go test did (GN-13f). Verified by `make test-ts`: the new test failed before the change. Not run: the
+  generated tests, by `make e2e` of `tests/e2e/relay` with the repository of its value class.
 - The PHP crate of a contract with a value class of another repository did not compile: the host of such a crate is
   the host of every crate with the fields `owned` and `values` added by a replacement of its text, and the table of
   the objects of a `stdClass`, added to the host, changed the text that the replacement looked for, so the fields
