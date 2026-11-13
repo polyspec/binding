@@ -1098,6 +1098,40 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+// The Rust function `name` of a generated crate, from its line to the closing brace of its body.
+const rustFn = (code: string, name: string): string => {
+  const start = code.indexOf(`\nfn ${name}(`);
+  return start < 0 ? '' : code.slice(start, code.indexOf('\n}\n', start) + 3);
+};
+
+test('an int or a uint outside the safe integers is kind invalid_number in every target, and an int64 takes the range of i64 (GN-12a, GN-13, GN-13b)', () => {
+  // buffer.from_end takes an int, shapes.total a list of uint and shapes.negate an int64.
+  const out = shaped((contract) => {
+    member(contract, 'buffer.from_end').parameters[0].type = 'int';
+  });
+  const safe = /9_007_199_254_740_991/;
+  for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(rustFn(lib, 'in_int'), safe, `${path}: in_int refuses an int outside the safe integers`);
+    assert.match(rustFn(lib, 'in_uint'), safe, `${path}: in_uint refuses a uint above 2^53 - 1`);
+    assert.notEqual(rustFn(lib, 'in_int64'), '', `${path}: in_int64 takes an int64`);
+    assert.doesNotMatch(rustFn(lib, 'in_int64'), safe, `${path}: in_int64 takes the range of i64`);
+  }
+  const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rustFn(ffi, 'in_safe_int'), safe, 'the Go C ABI refuses an int outside the safe integers');
+  assert.match(rustFn(ffi, 'in_safe_uint'), safe, 'the Go C ABI refuses a uint above 2^53 - 1');
+  assert.match(ffi, /in_list\(input, \|input\| in_safe_uint\(input, /, 'an item of a list of uint is in the range');
+  assert.doesNotMatch(rustFn(ffi, 'in_int'), safe, 'an int64, a handle and a length take the range of their word');
+  assert.match(
+    text(out, 'packages/python/generated/tests/test_generated.py'),
+    /def test_b2_buffer_from_end_count_refuses_what_is_not_int\(self\) -> None:\n\s+for bad in \[[^\n]*2\*\*53, -\(2\*\*53\)/,
+  );
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testB2BufferFromEndCountRefusesWhatIsNotint\(\): void\n\s+\{\n\s+foreach \(\[[^\n]*2 \*\* 53, -\(2 \*\* 53\)/);
+  const goTest = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(goTest, /func TestB2\w*FromEnd\w*\(t \*testing\.T\) \{[\s\S]*?FromEnd\(1 << 53\)[\s\S]*?"invalid_number"/);
+  assert.match(goTest, /func TestB2\w*FromEnd\w*\(t \*testing\.T\) \{[\s\S]*?FromEnd\(-\(1 << 53\)\)[\s\S]*?"invalid_number"/);
+});
+
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
