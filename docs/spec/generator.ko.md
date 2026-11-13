@@ -287,8 +287,8 @@
   bytes이거나 그 optional이다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
-  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). 루트가
+  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property,
+  그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). `library`가 있는 행(E-1b (a))은 GN-7c대로 생성한다. 루트가
   아닌 module의 오류 unit은 PHP에서는 그 module의 namespace에 있는 클래스이고(GN-10), Python에서는 `<root>.<module>`이
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
@@ -296,8 +296,17 @@
 - **GN-7b** 모든 바인딩 crate는 member가 `raises`에 적은 variant마다 그 member의 코어 경로가 돌려주는 오류 타입에 대한 단언
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });`을 둔다. 그 타입의 variant가 아닌 경로는
   컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 enum 하나를 돌려주므로, 여러 member가 내는 variant는
-  한 번 단언한다. 아직 생성하지 않는 것: 의존 레포의 오류를 담은 variant의 경로
-  (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
+  한 번 단언한다. 코어가 그대로 전달하는 의존 레포의 variant는 GN-7c의 pattern으로 단언한다. 아직 생성하지 않는 것: code enum을
+  담은 오류 구조체의 투영 함수.
+- **GN-7c** 코어가 그대로 전달하는 의존 레포의 kind(E-1b (a)): `errors.kinds`의 행은 라이브러리와 경로 `<바깥>/<안쪽>`을 적는다.
+  `<바깥>`은 그 라이브러리의 오류를 담은 이 레포 코어 오류의 variant이고, `<안쪽>`은 그 라이브러리 계약의 행이 적은 그 오류의
+  variant다. member는 `raises`에 같은 경로를 적는다. 코어 오류의 모든 match(클래스, property)와 GN-7b의 단언은 pattern
+  `<바깥>(<안쪽> { .. })`을 쓰므로, 바깥 variant가 그 안쪽 variant를 담지 않는 경로는 컴파일되지 않는다(I-2). category는 라이브러리
+  계약에서 `<안쪽>` 행의 category이고, 클래스는 이 레포 E-2 표의 그 category 클래스이거나 행이 `class`에 적은 오류 unit이며, kind,
+  status, errno는 자기 행처럼 코어 오류가 주는 것(`Kinds`)이다. 그런 kind를 내는 case의 생성 테스트는 그 클래스로 쓴 GN-13의
+  테스트다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
+  (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
+  컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature

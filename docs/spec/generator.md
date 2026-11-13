@@ -351,8 +351,8 @@ the design ids are those of the binding design.
   scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
-  `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row
-  are refused by name (G-4). An error unit of a module other than the root is a class of the
+  `errno` or `message`, a `class` that names no error unit of the category of its row are refused by name (G-4); a row
+  with `library` (E-1b (a)) is generated as GN-7c states. An error unit of a module other than the root is a class of the
   namespace of its module in PHP (GN-10), a class of `<root>._errors` that `<root>.<module>` imports in Python (GN-11),
   and an export of the entry by its name in Node and WASM, as every other name of a module is. Go generates an error
   unit as GN-15d states, in package `errors` whatever its module. WASM generates an
@@ -361,9 +361,21 @@ the design ids are those of the binding design.
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
   `const _: fn(&<error>) -> bool = |error| matches!(error, <variant> { .. });` against the error type that the member's
   core path returns, so a path that is no variant of that type does not compile (E-5, I-2). Every member of a contract
-  returns the one core error enum of E-1, so a variant that several members raise is asserted once. Not generated yet:
-  the path of a variant that holds the error of a dependency
-  (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
+  returns the one core error enum of E-1, so a variant that several members raise is asserted once. The variant of a
+  dependency that the core passes on is asserted by the pattern of GN-7c. Not generated yet: the projection function of
+  an error struct that holds a code enum.
+- **GN-7c** A kind of a dependency that the core passes on as it is (E-1b (a)): the row of `errors.kinds` names the
+  library and the path `<outer>/<inner>`, where `<outer>` is the variant of the core error of this repository that
+  holds the error of the library and `<inner>` the variant of that error as the row of the library's contract names
+  it; a member names the same path in `raises`. Every match of the core error (the class, the properties) and the
+  assertion of GN-7b take the pattern `<outer>(<inner> { .. })`, so a path whose outer variant does not hold that
+  inner variant does not compile (I-2). The category is that of the row of `<inner>` in the library's contract, the
+  class is the class of that category in this repository's table of E-2, or the error unit that the row names in
+  `class`, and the kind, status and errno are those that the core error gives (`Kinds`), as for its own rows. The
+  generated test of a raising case of such a kind is the test of GN-13 with that class. A row with `library` whose
+  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
+  the core error holds the error of the library inside one of its own variants, so only the path down to the inner
+  variant gives a pattern that the compiler checks against the core error (E-1b (a)).
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
   every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`

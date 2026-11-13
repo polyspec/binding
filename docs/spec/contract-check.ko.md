@@ -74,7 +74,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   형태로 쓴 레포 이름이다(N-2: 약어 낱말은 PHP·Node에서 첫 글자만 대문자, Python·Go에서 모두 대문자이므로 `HttpCookieValueError`와
   `HTTPCookieValueError`. 레포 이름의 약어 낱말은 아래 binding의 표다). PHP 클래스는 `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의 `class`
   덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). 변형과 binding kind는 한 번만
-  선언한다.
+  선언한다. `library`가 있는 행은 variant `<바깥>/<안쪽>`을 적고 그 `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은
+  `/`를 적지 않는다(GN-7c).
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
