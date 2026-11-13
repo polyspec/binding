@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 168b615e939bd68df7af5e04d078f17c25347291eaae420921985d8dadd62271 -->
+<!-- source-sha256: 7d47679bfb0448e782c7489a8105d6d0cffeb3454214e103dba967f91c607436 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -43,8 +43,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-8** value unit(U-1, U-7):
   - value alias는 `HostValue`로 설명한 언어 값을 판정하는 코어 함수
     (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`)와 코어 값을 `OutValue`로 주는 코어 함수(`&T`를 받아
-    `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. value class는
-    `in` 행이 그 member를 읽으므로 그런 `core`를 갖지 않는다.
+    `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. 값 타입을 대표하는
+    value class는 그런 `core`와 `core_type`을 적을 수 있고, 다른 레포는 그 함수로 그 값을 주고받는다(GN-6x). 자기 바인딩은
+    그 함수를 부르지 않는다. `in` 행이 그 member를 읽고, 자기 레포는 native 객체를 꺼내기 때문이다(T-3). 그 밖의 unit은
+    `core: {in, out}`을 갖지 않는다.
   - 값 타입을 대표하는 unit이 `out`과 `in`을 갖는다. alias가 모으지 않는 `value` class이거나 `alias`(origin `value`)다.
     alias가 모으는 class(alias의 `in` 행이 그것을 가리킨다)는 둘 다 갖지 않는다. alias의 구성원은 그 `in` 행의 언어
     타입이다(U-7 (a)).
@@ -57,6 +59,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     `native`인 case는 내용이 없거나 코어가 열어 보지 않으므로 `read`가 없다(U-1, VAL-18). kind `native`는 형태
     `native`로 만들고 그 형태는 다른 kind를 만들지 않는다. native 값은 `OutValue::Native`의 handle로 들어온 언어 객체
     그대로이기 때문이다(VAL-18).
+  - `by`가 있는 class의 kind `text` case는 `uint`의 list를 주는 공개 member인 `units`를 적을 수 있다. 그러면 `read`는
+    optional `text`를 주고, 없음은 그 text가 Unicode text가 아니어서 `units`가 주는 UTF-16 code unit으로 읽는다는
+    뜻이다(GN-6x). 그래서 `read` 한 번의 호출이 언어의 모든 text를 한 번 판정하고, code unit은 짝 없는 surrogate를
+    가진 text에서만 경계를 건넌다(B2.89).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태(`keyed_map`은 `{keyed_map: {key: [...]}}`),
     대표 class나 alias가 모으는 class의 공개 `constructor`·`static` member, 또는 kind `nested:X`의 `{value: X}`다.
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
@@ -65,7 +71,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     binding의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
     `text`는 UTF-8, `int`는 정수인 안전 정수, `list`는 키 0~n-1). `when`이 맞는 첫 case가 그 case이며, 표가 정하지 않는
     술어는 finding이다. `by`가 있는 class는 `is`를 실행 때만 알 수 있으므로 행의 kind가 case 하나를 정확히
-    가리켜야 한다. case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
+    가리켜야 하며, `units`를 가진 kind `text`의 case는 kind `text16`의 case이기도 하다. 짝 없는 surrogate를 가진 text를
+    그 UTF-16 code unit으로 읽기 때문이다(GN-6x). case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
     시험은 남는다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼
@@ -177,9 +184,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - 레포 이름의 약어 낱말(P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`, `json`, `orm`,
   `php`, `sql`, `ui`, `uri`, `url`, `xml`. 레포 이름의 새 약어는 이 표(`packages/ts/src/names.ts`의 `LIBRARY_ACRONYMS`, 그것을 갖는
   유일한 곳)에 더한다.
-- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
+- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `text16`, `bytes`, `list`, `map`, `object`, `reference`,
   `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
-  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
+  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1). `text16`은 짝 없는 surrogate까지 담는 UTF-16 code
+  unit의 text이고, 값 class가 `uint`의 list를 읽거나 받는 member로 주고 만든다(GN-6x). PHP와 Go의 문자열은 짝 없는
+  surrogate를 담지 못하므로 어떤 내장 형태도 그것을 만들지 않는다.
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
 - 내장 형태와 각각이 만드는 언어 타입:

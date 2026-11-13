@@ -5,7 +5,7 @@
 import type { Lang } from './contract.ts';
 
 export const VALUE_KINDS = [
-  'null', 'bool', 'int', 'int64', 'float', 'number', 'text', 'bytes', 'list', 'map', 'object', 'reference', 'safe_text',
+  'null', 'bool', 'int', 'int64', 'float', 'number', 'text', 'text16', 'bytes', 'list', 'map', 'object', 'reference', 'safe_text',
   'native',
   'nested:json_value', 'nested:template_value', 'nested:php_value',
 ] as const;

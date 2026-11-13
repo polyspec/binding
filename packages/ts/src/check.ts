@@ -559,12 +559,33 @@ class Checker {
       if (unit.origin !== 'value') continue;
       const by = gathered.get(unit.id);
       const holds = unit.out !== undefined || unit.in !== undefined;
+      if (by !== undefined && typeof unit.core === 'object' && unit.core !== null) {
+        this.report('CK-8', `${path}/core`, `${unit.id} is gathered by the alias ${by}, which names core: {in, out} (U-1, GN-6x)`);
+      }
       if (by !== undefined && holds) {
         this.report('CK-8', path, `${unit.id} is gathered by the alias ${by}, which holds the out and in tables (U-1)`);
       } else if (by === undefined && (unit.out === undefined || unit.in === undefined)) {
         this.report('CK-8', path, `${unit.id} represents its value type, so it holds out and in (U-1)`);
       }
       if (by === undefined && holds) this.valueUnit(unit, path, gathered);
+    }
+  }
+
+  // GN-6x, B2.89: a case of the kind text of a class with by may name units, a member that gives the UTF-16 code units
+  // of a text as a list of uint; its read then gives an optional text, none for a text with an unpaired surrogate.
+  unitsCase(kase: InRow['cases'][number], read: Member | undefined, by: boolean, path: string): void {
+    if (kase.kind !== 'text' || !by) {
+      this.report('CK-8', `${path}/units`, `only a case of the kind text of a row with by names units, not a case of the kind ${kase.kind} (GN-6x)`);
+      return;
+    }
+    const units = this.publicMember(kase.units ?? '', `${path}/units`, 'units');
+    const returns = units?.returns;
+    if (units !== undefined && !(typeof returns === 'object' && returns !== null && 'list' in returns && returns.list === 'uint')) {
+      this.report('CK-8', `${path}/units`, `units ${kase.units ?? ''} gives no list of uint, the UTF-16 code units of a text (GN-6x)`);
+    }
+    const text = read?.returns;
+    if (read !== undefined && !(typeof text === 'object' && text !== null && 'optional' in text && text.optional === 'text')) {
+      this.report('CK-8', `${path}/read`, `read ${kase.read ?? ''} of a case with units gives no optional text, whose none names a text with an unpaired surrogate (GN-6x)`);
     }
   }
 
@@ -622,7 +643,11 @@ class Checker {
     if (unit.kind === 'alias' && (typeof unit.core !== 'object' || unit.core === null)) {
       this.report('CK-8', path, `the value alias ${unit.id} names the core functions that judge and give its values in core: {in, out} (U-7)`);
     }
-    if (unit.kind !== 'alias' && typeof unit.core === 'object') this.report('CK-8', `${path}/core`, 'only a value alias has core: {in, out} (U-7)');
+    // GN-6x: the class that represents its value type may name the functions through which another repository takes
+    // and gives its values, with the core type that they take and give.
+    if (unit.kind !== 'alias' && typeof unit.core === 'object' && unit.core !== null && unit.core_type === undefined) {
+      this.report('CK-8', path, `the value class ${unit.id} names core: {in, out} and no core_type (GN-6x)`);
+    }
     // The unit types this representative may name: itself when it is a class, its gathered classes when it is an alias.
     const ownTypes = new Set(unit.kind === 'alias' ? [...gathered].filter(([, by]) => by === unit.id).map(([id]) => id) : [unit.id]);
     const rows = new Map<string, InRow>();
@@ -687,7 +712,8 @@ class Checker {
         if (!isBuiltin && (kase.read === undefined || kase.read === 'builtin')) {
           this.report('CK-8', `${rowPath}/cases/${c}`, 'a case of a value unit type names its read member');
         }
-        if (kase.read !== undefined && kase.read !== 'builtin') this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read');
+        const read = kase.read !== undefined && kase.read !== 'builtin' ? this.publicMember(kase.read, `${rowPath}/cases/${c}/read`, 'read') : undefined;
+        if (kase.units !== undefined) this.unitsCase(kase, read, row.by !== undefined, `${rowPath}/cases/${c}`);
       }
     }
     const byKind = new Map<string, Located<OutRow>[]>();
@@ -728,6 +754,11 @@ class Checker {
           continue;
         }
         if ((BUILTIN_FORMS as readonly string[]).includes(make)) {
+          // GN-6x: the string of PHP and Go cannot hold an unpaired surrogate, so a member of a class makes text16.
+          if (row.kind === 'text16') {
+            this.report('CK-8', makePath, `the kind text16 is made by a member of a class, not by the built-in form ${make} (GN-6x)`);
+            continue;
+          }
           made = MADE_TYPE[lang][make];
           form = make;
           if (made === undefined) this.report('CK-8', makePath, `${lang} has no built-in ${make} value`);
@@ -760,7 +791,9 @@ class Checker {
   roundTrip(row: OutRow, path: string, into: InRow, lang: Lang, made: string, form: string | undefined, siblings: readonly OutRow[]): void {
     let chosen: string | undefined;
     if (into.by !== undefined) {
-      const matching = into.cases.filter((c) => c.kind === row.kind);
+      // GN-6x, P-3, B2.89: a case of the kind text with units reads a text with an unpaired surrogate as its UTF-16 code
+      // units, so it is also the case of the kind text16.
+      const matching = into.cases.filter((c) => c.kind === row.kind || (row.kind === 'text16' && c.kind === 'text' && c.units !== undefined));
       if (matching.length !== 1) {
         this.report('CK-8', path, `${lang} ${made} has ${matching.length} cases of kind ${row.kind}; its by value cannot name one (P-3)`);
         return;

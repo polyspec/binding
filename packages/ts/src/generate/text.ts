@@ -106,6 +106,16 @@ macro_rules! wide_uint {
     )*};
 }
 wide_uint!(u8, u16, u32, u64);
+// GN-6ac: usize is at most 64 bits wide on every target, which the assertion proves, so it widens with as without
+// loss; From does not take usize, because the standard library does not promise its width.
+const _: () = assert!(usize::BITS <= 64);
+#[allow(clippy::as_conversions, reason = "GN-6ac")]
+impl WideUint for usize {
+    fn widen_uint(self) -> u64 { self as u64 }
+}
+impl WideUint for &usize {
+    fn widen_uint(self) -> u64 { (*self).widen_uint() }
+}
 
 /// T-1: an int or int64 return is i64 or a narrower integer, which widens with From.
 trait WideInt {
@@ -122,6 +132,292 @@ macro_rules! wide_int {
     )*};
 }
 wide_int!(i8, i16, i32, i64, u8, u16, u32);
+// GN-6ac: isize is at most 64 bits wide on every target, which the assertion proves, so it widens with as without
+// loss; From does not take isize, because the standard library does not promise its width.
+const _: () = assert!(isize::BITS <= 64);
+#[allow(clippy::as_conversions, reason = "GN-6ac")]
+impl WideInt for isize {
+    fn widen_int(self) -> i64 { self as i64 }
+}
+impl WideInt for &isize {
+    fn widen_int(self) -> i64 { (*self).widen_int() }
+}
+`;
+
+
+// GN-6ac: a value of the contract enters the core in the core's own type, and leaves it from that type. The contract
+// does not name the core's type: IntoCore and the Parts traits take each form that the core may hold, and the core's
+// signature chooses one.
+export const INTO_CORE = `
+/// T-1, GN-6ac: a value of the contract enters the core as the core's own type: an integer narrows with TryFrom, and a
+/// value outside the range of that type is kind invalid_number (B-2); a list and an optional take their items the same way.
+trait IntoCore<T> {
+    fn into_core(self, subject: &str) -> Result<T, BindingError>;
+}
+macro_rules! into_core_same {
+    ($($t:ty),*) => {$(
+        impl IntoCore<$t> for $t {
+            fn into_core(self, _subject: &str) -> Result<$t, BindingError> { Ok(self) }
+        }
+    )*};
+}
+into_core_same!(u64, i64, f64, bool, String);
+macro_rules! into_core_narrow {
+    ($from:ty, $expected:expr, $($t:ty),*) => {$(
+        impl IntoCore<$t> for $from {
+            fn into_core(self, subject: &str) -> Result<$t, BindingError> {
+                <$t>::try_from(self).map_err(|_out_of_range| BindingError::InvalidNumber { subject: subject.to_owned(), expected: $expected })
+            }
+        }
+    )*};
+}
+into_core_narrow!(u64, NumberType::Uint, u8, u16, u32, usize);
+into_core_narrow!(i64, NumberType::Int, i8, i16, i32, isize);
+impl<A: IntoCore<T>, T> IntoCore<Vec<T>> for Vec<A> {
+    fn into_core(self, subject: &str) -> Result<Vec<T>, BindingError> {
+        self.into_iter().map(|item| item.into_core(subject)).collect()
+    }
+}
+impl<A: IntoCore<T>, T> IntoCore<Option<T>> for Option<A> {
+    fn into_core(self, subject: &str) -> Result<Option<T>, BindingError> {
+        self.map(|value| value.into_core(subject)).transpose()
+    }
+}
+/// GN-6ac: a tuple of 1 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, T0> IntoCore<(T0,)> for (A,) {
+    fn into_core(self, subject: &str) -> Result<(T0,), BindingError> {
+        Ok((self.0.into_core(subject)?,))
+    }
+}
+impl<A: IntoCore<T>, T> IntoCore<[T; 1]> for (A,) {
+    fn into_core(self, subject: &str) -> Result<[T; 1], BindingError> {
+        Ok([self.0.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 2 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, T0, T1> IntoCore<(T0, T1)> for (A, B) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, T> IntoCore<[T; 2]> for (A, B) {
+    fn into_core(self, subject: &str) -> Result<[T; 2], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 3 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, T0, T1, T2> IntoCore<(T0, T1, T2)> for (A, B, C) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, T> IntoCore<[T; 3]> for (A, B, C) {
+    fn into_core(self, subject: &str) -> Result<[T; 3], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 4 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, D: IntoCore<T3>, T0, T1, T2, T3> IntoCore<(T0, T1, T2, T3)> for (A, B, C, D) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2, T3), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, D: IntoCore<T>, T> IntoCore<[T; 4]> for (A, B, C, D) {
+    fn into_core(self, subject: &str) -> Result<[T; 4], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 5 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, D: IntoCore<T3>, E: IntoCore<T4>, T0, T1, T2, T3, T4> IntoCore<(T0, T1, T2, T3, T4)> for (A, B, C, D, E) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2, T3, T4), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, D: IntoCore<T>, E: IntoCore<T>, T> IntoCore<[T; 5]> for (A, B, C, D, E) {
+    fn into_core(self, subject: &str) -> Result<[T; 5], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 6 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, D: IntoCore<T3>, E: IntoCore<T4>, F: IntoCore<T5>, T0, T1, T2, T3, T4, T5> IntoCore<(T0, T1, T2, T3, T4, T5)> for (A, B, C, D, E, F) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2, T3, T4, T5), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, D: IntoCore<T>, E: IntoCore<T>, F: IntoCore<T>, T> IntoCore<[T; 6]> for (A, B, C, D, E, F) {
+    fn into_core(self, subject: &str) -> Result<[T; 6], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 7 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, D: IntoCore<T3>, E: IntoCore<T4>, F: IntoCore<T5>, G: IntoCore<T6>, T0, T1, T2, T3, T4, T5, T6> IntoCore<(T0, T1, T2, T3, T4, T5, T6)> for (A, B, C, D, E, F, G) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2, T3, T4, T5, T6), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?, self.6.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, D: IntoCore<T>, E: IntoCore<T>, F: IntoCore<T>, G: IntoCore<T>, T> IntoCore<[T; 7]> for (A, B, C, D, E, F, G) {
+    fn into_core(self, subject: &str) -> Result<[T; 7], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?, self.6.into_core(subject)?])
+    }
+}
+/// GN-6ac: a tuple of 8 parts enters the core as a Rust tuple, or as an array when its parts have one type.
+impl<A: IntoCore<T0>, B: IntoCore<T1>, C: IntoCore<T2>, D: IntoCore<T3>, E: IntoCore<T4>, F: IntoCore<T5>, G: IntoCore<T6>, H: IntoCore<T7>, T0, T1, T2, T3, T4, T5, T6, T7> IntoCore<(T0, T1, T2, T3, T4, T5, T6, T7)> for (A, B, C, D, E, F, G, H) {
+    fn into_core(self, subject: &str) -> Result<(T0, T1, T2, T3, T4, T5, T6, T7), BindingError> {
+        Ok((self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?, self.6.into_core(subject)?, self.7.into_core(subject)?))
+    }
+}
+impl<A: IntoCore<T>, B: IntoCore<T>, C: IntoCore<T>, D: IntoCore<T>, E: IntoCore<T>, F: IntoCore<T>, G: IntoCore<T>, H: IntoCore<T>, T> IntoCore<[T; 8]> for (A, B, C, D, E, F, G, H) {
+    fn into_core(self, subject: &str) -> Result<[T; 8], BindingError> {
+        Ok([self.0.into_core(subject)?, self.1.into_core(subject)?, self.2.into_core(subject)?, self.3.into_core(subject)?, self.4.into_core(subject)?, self.5.into_core(subject)?, self.6.into_core(subject)?, self.7.into_core(subject)?])
+    }
+}
+`;
+
+export const PARTS = `
+
+/// GN-6ac: the parts of a tuple of 1 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts1<A, P: Parts1<A> + ?Sized>(value: &P) -> (&A,) {
+    value.parts()
+}
+trait Parts1<A> {
+    fn parts(&self) -> (&A,);
+}
+impl<A> Parts1<A> for (A,) {
+    fn parts(&self) -> (&A,) { (&self.0,) }
+}
+impl<T> Parts1<T> for [T; 1] {
+    fn parts(&self) -> (&T,) { (&self[0],) }
+}
+impl<A, P: Parts1<A> + ?Sized> Parts1<A> for &P {
+    fn parts(&self) -> (&A,) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 2 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts2<A, B, P: Parts2<A, B> + ?Sized>(value: &P) -> (&A, &B) {
+    value.parts()
+}
+trait Parts2<A, B> {
+    fn parts(&self) -> (&A, &B);
+}
+impl<A, B> Parts2<A, B> for (A, B) {
+    fn parts(&self) -> (&A, &B) { (&self.0, &self.1) }
+}
+impl<T> Parts2<T, T> for [T; 2] {
+    fn parts(&self) -> (&T, &T) { (&self[0], &self[1]) }
+}
+impl<A, B, P: Parts2<A, B> + ?Sized> Parts2<A, B> for &P {
+    fn parts(&self) -> (&A, &B) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 3 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts3<A, B, C, P: Parts3<A, B, C> + ?Sized>(value: &P) -> (&A, &B, &C) {
+    value.parts()
+}
+trait Parts3<A, B, C> {
+    fn parts(&self) -> (&A, &B, &C);
+}
+impl<A, B, C> Parts3<A, B, C> for (A, B, C) {
+    fn parts(&self) -> (&A, &B, &C) { (&self.0, &self.1, &self.2) }
+}
+impl<T> Parts3<T, T, T> for [T; 3] {
+    fn parts(&self) -> (&T, &T, &T) { (&self[0], &self[1], &self[2]) }
+}
+impl<A, B, C, P: Parts3<A, B, C> + ?Sized> Parts3<A, B, C> for &P {
+    fn parts(&self) -> (&A, &B, &C) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 4 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts4<A, B, C, D, P: Parts4<A, B, C, D> + ?Sized>(value: &P) -> (&A, &B, &C, &D) {
+    value.parts()
+}
+trait Parts4<A, B, C, D> {
+    fn parts(&self) -> (&A, &B, &C, &D);
+}
+impl<A, B, C, D> Parts4<A, B, C, D> for (A, B, C, D) {
+    fn parts(&self) -> (&A, &B, &C, &D) { (&self.0, &self.1, &self.2, &self.3) }
+}
+impl<T> Parts4<T, T, T, T> for [T; 4] {
+    fn parts(&self) -> (&T, &T, &T, &T) { (&self[0], &self[1], &self[2], &self[3]) }
+}
+impl<A, B, C, D, P: Parts4<A, B, C, D> + ?Sized> Parts4<A, B, C, D> for &P {
+    fn parts(&self) -> (&A, &B, &C, &D) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 5 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts5<A, B, C, D, E, P: Parts5<A, B, C, D, E> + ?Sized>(value: &P) -> (&A, &B, &C, &D, &E) {
+    value.parts()
+}
+trait Parts5<A, B, C, D, E> {
+    fn parts(&self) -> (&A, &B, &C, &D, &E);
+}
+impl<A, B, C, D, E> Parts5<A, B, C, D, E> for (A, B, C, D, E) {
+    fn parts(&self) -> (&A, &B, &C, &D, &E) { (&self.0, &self.1, &self.2, &self.3, &self.4) }
+}
+impl<T> Parts5<T, T, T, T, T> for [T; 5] {
+    fn parts(&self) -> (&T, &T, &T, &T, &T) { (&self[0], &self[1], &self[2], &self[3], &self[4]) }
+}
+impl<A, B, C, D, E, P: Parts5<A, B, C, D, E> + ?Sized> Parts5<A, B, C, D, E> for &P {
+    fn parts(&self) -> (&A, &B, &C, &D, &E) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 6 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts6<A, B, C, D, E, F, P: Parts6<A, B, C, D, E, F> + ?Sized>(value: &P) -> (&A, &B, &C, &D, &E, &F) {
+    value.parts()
+}
+trait Parts6<A, B, C, D, E, F> {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F);
+}
+impl<A, B, C, D, E, F> Parts6<A, B, C, D, E, F> for (A, B, C, D, E, F) {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F) { (&self.0, &self.1, &self.2, &self.3, &self.4, &self.5) }
+}
+impl<T> Parts6<T, T, T, T, T, T> for [T; 6] {
+    fn parts(&self) -> (&T, &T, &T, &T, &T, &T) { (&self[0], &self[1], &self[2], &self[3], &self[4], &self[5]) }
+}
+impl<A, B, C, D, E, F, P: Parts6<A, B, C, D, E, F> + ?Sized> Parts6<A, B, C, D, E, F> for &P {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 7 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts7<A, B, C, D, E, F, G, P: Parts7<A, B, C, D, E, F, G> + ?Sized>(value: &P) -> (&A, &B, &C, &D, &E, &F, &G) {
+    value.parts()
+}
+trait Parts7<A, B, C, D, E, F, G> {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G);
+}
+impl<A, B, C, D, E, F, G> Parts7<A, B, C, D, E, F, G> for (A, B, C, D, E, F, G) {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G) { (&self.0, &self.1, &self.2, &self.3, &self.4, &self.5, &self.6) }
+}
+impl<T> Parts7<T, T, T, T, T, T, T> for [T; 7] {
+    fn parts(&self) -> (&T, &T, &T, &T, &T, &T, &T) { (&self[0], &self[1], &self[2], &self[3], &self[4], &self[5], &self[6]) }
+}
+impl<A, B, C, D, E, F, G, P: Parts7<A, B, C, D, E, F, G> + ?Sized> Parts7<A, B, C, D, E, F, G> for &P {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G) { (**self).parts() }
+}
+
+/// GN-6ac: the parts of a tuple of 8 that leaves the core, which holds it as a Rust tuple or, when its parts have one
+/// type, as an array; a reference to either gives the same parts.
+fn parts8<A, B, C, D, E, F, G, H, P: Parts8<A, B, C, D, E, F, G, H> + ?Sized>(value: &P) -> (&A, &B, &C, &D, &E, &F, &G, &H) {
+    value.parts()
+}
+trait Parts8<A, B, C, D, E, F, G, H> {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G, &H);
+}
+impl<A, B, C, D, E, F, G, H> Parts8<A, B, C, D, E, F, G, H> for (A, B, C, D, E, F, G, H) {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G, &H) { (&self.0, &self.1, &self.2, &self.3, &self.4, &self.5, &self.6, &self.7) }
+}
+impl<T> Parts8<T, T, T, T, T, T, T, T> for [T; 8] {
+    fn parts(&self) -> (&T, &T, &T, &T, &T, &T, &T, &T) { (&self[0], &self[1], &self[2], &self[3], &self[4], &self[5], &self[6], &self[7]) }
+}
+impl<A, B, C, D, E, F, G, H, P: Parts8<A, B, C, D, E, F, G, H> + ?Sized> Parts8<A, B, C, D, E, F, G, H> for &P {
+    fn parts(&self) -> (&A, &B, &C, &D, &E, &F, &G, &H) { (**self).parts() }
+}
 `;
 
 // T-5, GN-6b: a value of a class reaches the binding owned or borrowed, as the core gives a result or takes an argument.

@@ -11,12 +11,14 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf,
+  heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
+  takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, optionRef, rustString, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
+import { classMakes } from './value_class.ts';
+import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -100,7 +102,11 @@ export function convertOut(model: Model, type: Type, value: string): string {
   if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
   // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
   if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) return `{\n${type.tuple.map((t, i) => `            ${convertOut(model, t, `&${value}.${i}`)};`).join('\n')}\n        }`;
+  // GN-6ac: the core holds a tuple as a Rust tuple or, when its parts have one type, as an array; partsN reads either.
+  if ('tuple' in type) {
+    const names = type.tuple.map((_, i) => `part_${i}`);
+    return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${type.tuple.length}(&${value}); ${type.tuple.map((t, i) => `${convertOut(model, t, names[i] ?? '')};`).join(' ')} }`;
+  }
   const alias = aliasOf(model, type);
   if (alias !== undefined) return `out_${aliasFn(alias)}(output, ${value})`;
   const unit = unitOf(model, type);
@@ -481,8 +487,8 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const subject = rustString(goName(f.name));
-    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, 'input', subject))}?;`;
+    if (pointed(f)) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type, true)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type, true)} = ${boxed(model, f.type, convertIn(model, f.type, 'input', subject))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), subject, 'binding_error')}` : ''}`;
   });
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
@@ -634,6 +640,9 @@ function argumentLines(model: Model, fn: Fn): string[] {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
     } else {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', subject)}?;`);
+      // GN-6ac, GN-6ad: the core call chooses the core's own type, which IntoCore narrows to; a list is then a Vec of
+      // the core's items, whose slice the core borrows.
+      if (narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
   lines.push('        finish_input(input)?;');
@@ -828,8 +837,8 @@ struct GoHost {
 }
 
 impl GoHost {
-    /// The descriptions that Go gives for a question: the item of a list (op 0) or the key and the value of an entry
-    /// of a map (op 1).
+    /// The descriptions that Go gives for a question: the item of a list (op 0), the key and the value of an entry of
+    /// a map (op 1), or the content of an instance of a value class of another repository (op 2, GN-6x).
     fn ask(&self, op: u32, handle: Handle, index: u64, count: usize) -> Result<Vec<HostValue>, Raised> {
         let mut buffer = Buffer { ptr: std::ptr::null_mut(), len: 0, cap: 0 };
         // SAFETY: the call is alive while the entry point that named it runs, and the buffer is writable.
@@ -865,9 +874,13 @@ impl HostValues for GoHost {
         }
     }
 
-    fn read(&mut self, _value: Handle) -> Result<HostValue, Raised> {
+${valueClasses(model).length === 0 ? `    fn read(&mut self, _value: Handle) -> Result<HostValue, Raised> {
         Err(thrown(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-1: Go gives no value of a value class") }))))
-    }
+    }` : `    /// GN-6x: the content of an instance of a value class of another repository, which its read member gives (op 2).
+    fn read(&mut self, value: Handle) -> Result<HostValue, Raised> {
+        let mut values = self.ask(2, value, 0, 1)?;
+        values.pop().ok_or_else(|| thrown(Thrown::Binding(malformed())))
+    }`}
 }
 `;
   const callbackCall = model.callbacks.length === 0 ? '' : `
@@ -1072,6 +1085,7 @@ function aliasRust(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
+  if (alias.owner !== undefined) return valueClassRust(model, alias, name, core, failure);
   // U-7, GN-15c: a Go value leaves the core as a value of a built-in form, or as an instance that a member makes.
   const arms = outArms(model, alias, 'go', (form, kind) => goBuiltin(model, alias, form, kind), 'out_no_form(output, "U-7: no out row takes the value")', 'output, ', undefined, 'alias_out_');
   return `
@@ -1096,6 +1110,69 @@ fn make_${name}(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues,
     match out.clone() {
 ${arms.join('\n')}
         other => out_no_form(output, &format!("U-7: no out row of the kind {}", other.kind().as_str())),
+    }
+}
+`;
+}
+
+// GN-6x, GN-15c: a value class of another repository: an instance enters as HostValue::Value, which the owner's in
+// function reads through the question read; a core value leaves as node 11 with the numbers of the class and of its Go
+// out row and the content of the row, from which package binding makes the instance by the owner's function.
+function valueClassRust(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
+  const number = valueClasses(model).indexOf(alias);
+  const head = (row: number): string => `            output.push(11);\n            out_uint(output, ${number});\n            out_uint(output, ${row});`;
+  const arms = classMakes(alias, 'go').map((make, row) => {
+    if (make.form === 'content') {
+      if (make.kind === 'null') return `        OutValue::Null => {\n${head(row)}\n        }`;
+      if (make.kind === 'bool') return `        OutValue::Bool(value) => {\n${head(row)}\n            out_bool(output, value);\n        }`;
+      if (make.kind === 'text16') {
+        // B2.81: the UTF-16 code units of the text, unpaired surrogates included, as a list of integers.
+        return `        OutValue::Text16(value) => {\n${head(row)}\n            out_list(output, value, |output, unit| out_uint(output, u64::from(unit)));\n        }`;
+      }
+      return `        OutValue::${make.kind === 'number' ? 'Number' : 'Text'}(value) => {\n${head(row)}\n            out_text(output, value);\n        }`;
+    }
+    if (make.form === 'list') {
+      return `        OutValue::List { handle, len } => {
+${head(row)}
+            out_uint(output, len);
+            for index in 0..len {
+                let item = source.item(handle, index);
+                make(output, item, source);
+            }
+        }`;
+    }
+    return `        OutValue::Map(value) => {
+${head(row)}
+            let handle = value.handle();
+            let len = value.len();
+            out_uint(output, len);
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                make(output, key, source);
+                make(output, item, source);
+            }
+        }`;
+  });
+  return `
+/// GN-6x: an instance of ${goName(alias.unit.name)} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
+fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
+    let call = in_uint(input)?;
+    let described = read_host(input)?;
+    let mut host = GoHost { call };
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
+}
+
+/// GN-6x: a core value of ${goName(alias.unit.name)} leaves as the nodes from which package binding makes the instance.
+fn out_${name}(output: &mut Vec<u8>, value: impl Borrow<${core}>) {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(output, root, &mut source);
+}
+
+fn make_${name}(output: &mut Vec<u8>, out: OutValue, source: &mut dyn OutValues) {
+    let make = make_${name};
+    match out {
+${arms.join('\n')}
+        other => out_no_form(output, &format!("GN-6x: no out row of the kind {}", other.kind().as_str())),
     }
 }
 `;
@@ -1272,8 +1349,40 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
+  const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
+  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
 }
+
+// GN-6x: the value classes of other repositories of the model, in the order of their numbers in node 11 of a result.
+export const valueClasses = (model: Model): ValueAlias[] => model.aliases.filter((a) => a.owner !== undefined);
+
+// GN-6x, GN-15c: the binding_core::ValueKind of each number of node 11 of a description.
+export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object', 'Text16'];
+
+// GN-6x, GN-15c: node 11, an instance of a value class of another repository with the kind of its in case and its
+// handle, and node 12, the error that a member of the owner returned, kept by Go in the call under its index.
+const VALUE_CLASS_NODES = `        [11] => {
+            let kind = match take(input, 1)? {
+${GO_VALUE_KINDS.map((k, i) => `                [${i}] => ValueKind::${k},`).join('\n')}
+                _ => return Err(malformed()),
+            };
+            HostValue::Value { kind, handle: Handle::new(in_uint(input)?) }
+        }
+        [13] => {
+            // B2.81: the UTF-16 code units of a text of the kind text16, which the read member of its case gives.
+            let len = in_uint(input)?;
+            let mut units = Vec::new();
+            for _ in 0..len {
+                units.push(u16::try_from(in_uint(input)?).map_err(|_overflow| malformed())?);
+            }
+            HostValue::Text(HostText::Utf16(units))
+        }
+        [12] => {
+            let call = in_uint(input)?;
+            let index = in_uint(input)?;
+            return Err(Fail { raised: Some((call, index)), ..binding_error(BindingError::Internal { detail: String::from("GN-6x: the error of a member of a value class") }) });
+        }
+`;
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
 // names are left out.
@@ -1320,7 +1429,7 @@ export function libRust(model: Model): string {
   const categoryIndex = goErrorTypes(model.contract).map(([category], i) => `        Category::${category.charAt(0).toUpperCase()}${category.slice(1)} => ${i},`).join('\n');
   const usesMutex = model.objects.length > 0 || callsBack(model);
   const usesMap = model.objects.length > 0 || callsBack(model);
-  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised'].filter((t) => new RegExp(`\\b${t}\\b`).test(all));
+  const hostTypes = ['Handle', 'HostText', 'HostValue', 'HostValues', 'Native', 'NativeObject', 'OutValue', 'OutValues', 'Predicate', 'Raised', 'ValueKind'].filter((t) => new RegExp(`\\b${t}\\b`).test(all));
   return `${header('//')}
 // The C ABI of the Go binding of ${model.contract.library} (B-8). Each function takes the encoded arguments, which the
 // Go package writes, judges them as it decodes them (T-8), calls the core and gives back the encoded result or failure

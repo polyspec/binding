@@ -157,6 +157,17 @@ describe('CK-6 cycles', () => {
 
 describe('CK-8 value units', () => {
   const inRows = (c: any): any[] => unit(c, 'value').in;
+  // GN-6x: the class that represents its value type names the functions through which another repository takes and
+  // gives its values; its core type is named with them.
+  const owned = (c: any): void => {
+    unit(c, 'value').core = { in: 'forms::value_in', out: 'forms::value_out' };
+    unit(c, 'value').core_type = 'forms::Value';
+  };
+  test('a value class that represents its value type names core: {in, out} with its core_type', () => {
+    assert.deepEqual(findings(owned), []);
+  });
+  test('a value class with core: {in, out} and no core_type', () =>
+    fails('CK-8', at('value'), (c) => { owned(c); delete unit(c, 'value').core_type; }));
   test('a by enum value without a case', () =>
     fails('CK-8', `${at('value')}/in/0/cases`, (c) => { inRows(c)[0].cases.pop(); }));
   test('a by enum value in two cases', () =>
@@ -178,6 +189,44 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/3/make/php`, (c) => { unit(c, 'value').out[3].make.php = 'bigint'; }));
   test('make names a method, not a constructor', () =>
     fails('CK-8', `${at('value')}/out/1/make/node`, (c) => { unit(c, 'value').out[1].make.node = 'value.items'; }));
+  // GN-6x: a text with an unpaired surrogate is the kind text16, which a member of a class makes from code units; the
+  // string of PHP and Go cannot hold it, so no built-in form makes it.
+  // GN-6x, P-3, B2.89: a value class makes a text by a text row and a text with an unpaired surrogate by a text16 row,
+  // and reads a string by one case of the kind text whose read gives an optional text and whose units member gives the
+  // UTF-16 code units of a text with an unpaired surrogate; that case is the case of both kinds.
+  const owner = (change: (unit: any) => void = () => {}): Finding[] => {
+    const parsed = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+    change(parsed.units.find((u: any) => u.id === 'value'));
+    // The fixture holds no case files (CK-22); the round trip is CK-8.
+    return checkContract(parsed).filter((f) => f.check === 'CK-8' || f.check === 'CK-1');
+  };
+  const strings = (value: any): any[] => value.in.map((row: any) => row.cases.find((c: any) => c.is === 'string'));
+  test('a text row and a text16 row that come back by the case of the kind text with units', () => {
+    assert.deepEqual(owner(), []);
+  });
+  test('a text row whose string case is the kind text16, which reads every text as its code units', () => {
+    const result = owner((value) => { for (const kase of strings(value)) { kase.kind = 'text16'; kase.read = 'value.string_units'; delete kase.units; } });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /has 0 cases of kind text\b/.test(f.message)), JSON.stringify(result, null, 2));
+  });
+  test('units on a case of another kind than text', () => {
+    const result = owner((value) => { for (const row of value.in) Object.assign(row.cases.find((c: any) => c.is === 'number'), { units: 'value.string_units' }); });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/3\/units$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units whose read gives no optional text', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.read = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/read$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units that gives no list of uint', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.units = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/units$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('a text16 row that comes back by the case of the kind text', () =>
+    fails('CK-8', `${at('value')}/out/0/make`, (c) => {
+      unit(c, 'value').out[0].kind = 'text16';
+      unit(c, 'value').out[0].make = Object.fromEntries(Object.keys(unit(c, 'value').out[0].make).map((lang) => [lang, 'value.new']));
+    }));
+  test('a text16 row made by a built-in form', () =>
+    fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'text16'; }));
   test('a value that comes back as another kind', () =>
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => {
       // PHP makes text and bytes both as string, which the in table classifies as text.
@@ -438,8 +487,8 @@ describe('CK-8 representative units and predicate round trips', () => {
       delete value.in;
       value.origin = 'value';
     }));
-  test('a value class with core functions (U-7)', () =>
-    fails('CK-8', `${at('value')}/core`, (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
+  test('a value class with core functions and no core_type (U-7, GN-6x)', () =>
+    fails('CK-8', at('value'), (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
   const gather = (c: any): void => {
     const value = unit(c, 'value');
     c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, out: value.out, in: value.in });

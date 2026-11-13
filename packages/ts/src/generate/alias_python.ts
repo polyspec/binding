@@ -6,8 +6,9 @@
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms, readValue, valueReads } from './alias_shared.ts';
-import type { Unit } from '../contract.ts';
+import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { rustString } from './text.ts';
+import type { Member, Unit } from '../contract.ts';
 
 // The Python value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -83,10 +84,176 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
   }
 }
 
+// GN-6x: the module of the owner's package that holds a class of the owner, and the class's name there.
+function ownerClass(alias: ValueAlias, unit: Unit): string {
+  const python = alias.owner?.packages['python'] as { module: string } | undefined;
+  const module = `${python?.module ?? ''}${unit.module === '' ? '' : `.${unit.module.replaceAll('/', '.')}`}`;
+  return `foreign_types(py, ${rustString(module)})?.getattr(${rustString(langName('python', unit.name, 'class'))})?`;
+}
+
+// GN-6x: the Python call of a member of the owner on an object: an attribute for a property, a call for a method.
+const access = (member: Member): { name: string; call: boolean } => ({ name: langName('python', member.name, 'callable'), call: member.kind !== 'property' });
+
+// GN-6x: the OutValue variant of the content that a member of a value class is called on.
+const CONTENT: Record<string, string> = { bool: 'Bool', number: 'Number', text: 'Text', text16: 'Text16' };
+
+// GN-6x: the Python conversions of a value class of another repository: an instance enters as HostValue::Value, which
+// the owner's in function reads through the read members of its in row; a core value leaves as the instance that the
+// owner's members of its out rows make.
+function valueClassPython(alias: ValueAlias, name: string, core: string, failure: string): string {
+  const own = ownerClass(alias, alias.unit);
+  const call = (member: Member, args: string): string => {
+    const { name: method } = access(member);
+    return member.kind === 'constructor' ? `class.call1((${args},))` : args === '' ? `class.call_method0(${rustString(method)})` : `class.call_method1(${rustString(method)}, (${args},))`;
+  };
+  const arms = classMakes(alias, 'python').map((make) => {
+    if (make.form === 'content') {
+      const variant = make.kind === 'null' ? 'OutValue::Null' : `OutValue::${CONTENT[make.kind] ?? 'Text'}(value)`;
+      return `        ${variant} => ${call(make.member, make.params === 0 ? '' : 'value')},`;
+    }
+    if (make.form === 'list') {
+      return `        OutValue::List { handle, len } => {
+            let items = PyList::empty(py);
+            for index in 0..len {
+                let item = source.item(handle, index);
+                items.append(make(py, item, source)?)?;
+            }
+            ${call(make.member, 'items')}
+        }`;
+    }
+    return `        OutValue::Map(value) => {
+            let handle = value.handle();
+            let len = value.len();
+            let map = ${ownerClass(alias, make.map)}.call0()?;
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(py, key, source)?;
+                let item = make(py, item, source)?;
+                map.call_method1(${rustString(access(make.insert).name)}, (key, item))?;
+            }
+            ${call(make.member, 'map')}
+        }`;
+  });
+  return `
+/// GN-6x: an instance of ${langName('python', alias.unit.name, 'class')} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
+fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${core}> {
+    if !value.is_instance(&${own})? {
+        return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(langName('python', alias.unit.name, 'class'))}) }));
+    }
+    let mut host = PyHost::new(py);
+    let described = host.describe(value)?;
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(py, failure))
+}
+
+/// GN-6x: a core value of ${langName('python', alias.unit.name, 'class')} leaves as the instance that the members of its owner make.
+fn out_${name}<'py>(py: Python<'py>, value: impl Borrow<${core}>) -> PyResult<Bound<'py, PyAny>> {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(py, root, &mut source)
+}
+
+fn make_${name}<'py>(py: Python<'py>, out: OutValue, source: &mut dyn OutValues) -> PyResult<Bound<'py, PyAny>> {
+    let make = make_${name};
+    let class = ${own};
+    match out {
+${arms.join('\n')}
+        other => Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
+    }
+}
+`;
+}
+
+// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
+// member gives (B2.89), or the content.
+function readAs(kase: ReadCase): string {
+  if (kase.kind === 'Text16') return 'ReadAs::Units';
+  if (kase.units === undefined) return 'ReadAs::Content';
+  return `ReadAs::TextOr(${rustString(access(kase.units).name)}, ${String(access(kase.units).call)})`;
+}
+
+// GN-6x: the description of an instance of each value class of another repository by its in row, and of an instance of
+// a class of its owner that a read member gives, as a map of the entries of its iteration.
+function valueClassesHost(model: Model): string {
+  const classes = model.aliases.filter((a) => a.owner !== undefined);
+  const checks = classes.flatMap((alias) => {
+    const row = classIn(alias, 'python');
+    const by = access(row.by);
+    const arms = row.cases.map((kase) => {
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(access(kase.read).name)}, ${String(access(kase.read).call)}, ${readAs(kase)}))`;
+      return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
+    }).join('\n');
+    const maps = row.maps.map((map) => `        if value.is_instance(&${ownerClass(alias, map.unit)})? {
+            let mut entries = Vec::new();
+            for pair in value.call_method0("items")?.try_iter()? {
+                entries.push(pair?.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>)>()?);
+            }
+            let len = handle_count(entries.len());
+            return Ok(Some(HostValue::Map { handle: self.hold(Held::Entries(entries)), len }));
+        }`);
+    return [`        if value.is_instance(&${ownerClass(alias, alias.unit)})? {
+            let by: String = value.${by.call ? `call_method0(${rustString(by.name)})` : `getattr(${rustString(by.name)})`}?.extract()?;
+            let (kind, read) = match by.as_str() {
+${arms}
+                other => return Err(binding_error(py, BindingError::Internal { detail: format!("GN-6x: ${langName('python', alias.unit.name, 'class')} gives the kind {other}, which its in row has no case for") })),
+            };
+            return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Foreign(value.clone(), read)) }));
+        }`, ...maps];
+  });
+  return `
+impl<'py> PyHost<'py> {
+    /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance
+    /// of a class of its owner that a read member gives, as a map of the entries of its iteration.
+    fn value_class(&mut self, value: &Bound<'py, PyAny>) -> PyResult<Option<HostValue>> {
+        let py = self.py;
+${checks.join('\n')}
+        Ok(None)
+    }
+
+    /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
+    fn read_value(&mut self, value: Handle) -> PyResult<HostValue> {
+        let py = self.py;
+        let held = match self.held.get(handle_position(value.raw())) {
+            Some(Held::Foreign(object, Some(read))) => Some((object.clone(), *read)),
+            _ => None,
+        };
+        let Some((object, (name, call, read_as))) = held else {
+            return Err(binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }));
+        };
+        let content = if call { object.call_method0(name)? } else { object.getattr(name)? };
+        match read_as {
+            // B2.81: the UTF-16 code units of a text of the kind text16, unpaired surrogates included.
+            ReadAs::Units => Ok(HostValue::Text(HostText::Utf16(content.extract::<Vec<u16>>()?))),
+            ReadAs::TextOr(units, units_call) => {
+                // B2.89: a text as its UTF-8 bytes; none names a text with an unpaired surrogate, whose UTF-16 code
+                // units the member units gives, so only such a text crosses as a list of integers.
+                if content.is_none() {
+                    let units = if units_call { object.call_method0(units)? } else { object.getattr(units)? };
+                    return Ok(HostValue::Text(HostText::Utf16(units.extract::<Vec<u16>>()?)));
+                }
+                Ok(HostValue::Text(HostText::Bytes(content.cast::<PyString>()?.to_str()?.as_bytes().to_vec())))
+            }
+            ReadAs::Content => self.describe(&content),
+        }
+    }
+}
+
+/// GN-6x: how the read member of an in case gives the content of an instance.
+#[derive(Clone, Copy)]
+enum ReadAs {
+    /// The content, described by the rules of the language.
+    Content,
+    /// The UTF-16 code units of a text of the kind text16 (B2.81).
+    Units,
+    /// A text, or none for a text whose UTF-16 code units the named member gives (B2.89).
+    TextOr(&'static str, bool),
+}
+`;
+}
+
 export function aliasPython(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
+  if (alias.owner !== undefined) return valueClassPython(alias, name, core, failure);
   const arms = outArms(model, alias, 'python', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'py, ', keptMake);
   return `
 /// U-7: a Python value of ${langName('python', alias.unit.name, 'class')} enters as HostValue, which the core judges.
@@ -170,6 +337,10 @@ impl<'py> PyHost<'py> {
             return Ok(HostValue::Float(value.extract::<f64>()?));
         }
         if value.is_exact_instance_of::<PyString>() {
+            // B2.89: a str without a surrogate as its UTF-8 bytes, which CPython keeps with the str.
+            if let Ok(text) = value.cast::<PyString>()?.to_str() {
+                return Ok(HostValue::Text(HostText::Bytes(text.as_bytes().to_vec())));
+            }
             // B-3: the code points, unpaired surrogates included.
             let encoded = value.call_method1("encode", ("utf-32-le", "surrogatepass"))?;
             let bytes: Vec<u8> = encoded.extract()?;
@@ -299,10 +470,20 @@ fn ${library}_failure_error(py: Python<'_>, failure: binding_core::Failure<${err
 
 // B-1, GN-6af: the PyHost of a model. An instance of a class that an in row of a value alias names is HostValue::Value
 // with the kind of the row, held for read: an instance of a class without core_type under one handle within the walk,
-// found by its address while the walk holds it; read gives the property that the row names.
+// found by its address while the walk holds it; read gives the property that the row names. GN-6x: an instance of a
+// value class of another repository is HostValue::Value too, held as Held::Foreign with the read member of its in case,
+// which read calls.
 export function pythonHost(model: Model): string {
   const reads = valueReads(model, 'python');
-  if (reads.length === 0) return PYTHON_HOST.replace('/*HELD*/', '').replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', '').replace('/*READ*/', '_value: Handle').replace('/*READS*/', 'Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no value class is read") })))');
+  const foreign = model.aliases.some((a) => a.owner !== undefined);
+  const foreignHeld = foreign ? "\n    Foreign(Bound<'py, PyAny>, Option<(&'static str, bool, ReadAs)>)," : '';
+  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
+  const foreignRead = 'self.read_value(value).map_err(|error| raised(py, error))';
+  const foreignHost = foreign ? valueClassesHost(model) : '';
+  if (reads.length === 0) {
+    return PYTHON_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', '').replace('/*NEW*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
+      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no value class is read") })))') + foreignHost;
+  }
   const struct = (unit: Unit): string => `Py${langName('python', unit.name, 'class')}`;
   const describe = reads.map((r, index) => {
     const unit = (r.kept?.unit.unit ?? r.object?.unit.unit) as Unit;
@@ -352,17 +533,20 @@ export function pythonHost(model: Model): string {
             },`;
   }).join('');
   return PYTHON_HOST
-    .replace('/*HELD*/', "\n    Value(Bound<'py, PyAny>, usize),")
+    .replace('/*HELD*/', `\n    Value(Bound<'py, PyAny>, usize),${foreignHeld}`)
     .replace('/*SEEN*/', reads.some((r) => r.kept !== undefined) ? '\n    seen: BTreeMap<usize, Handle>,' : '')
     .replace('/*NEW*/', reads.some((r) => r.kept !== undefined) ? ', seen: BTreeMap::new()' : '')
-    .replace('/*DESCRIBE*/', describe)
+    .replace('/*DESCRIBE*/', `${foreignDescribe}${describe}`)
     .replace('/*READ*/', 'value: Handle')
-    .replace('/*READS*/', `let Some(Held::Value(object, read)) = self.held.get(handle_position(value.raw())).cloned() else {
+    .replace('/*READS*/', `${foreign ? `if let Some(Held::Foreign(..)) = self.held.get(handle_position(value.raw())) {
+            return ${foreignRead};
+        }
+        ` : ''}let Some(Held::Value(object, read)) = self.held.get(handle_position(value.raw())).cloned() else {
             return Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") })));
         };
         match read {${read}
             _ => Err(raised(py, binding_error(py, BindingError::Internal { detail: String::from("B-1: no such value") }))),
-        }`);
+        }`) + foreignHost;
 }
 
 // GN-6af: an instance of a value class without core_type made from the content of an out row, before the content, as

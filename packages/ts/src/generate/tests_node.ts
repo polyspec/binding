@@ -107,14 +107,22 @@ export function nodeTests(model: Model): string {
   // entry is the host's.
   const esm = isHost(model.contract, 'node') ? '../index.mjs' : npm;
   const cjsEntry = isHost(model.contract, 'node') ? '../index.cjs' : npm;
+  const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     casePath: (relative) => `casePath(${jsString(relative)})`,
+    // GN-6x: a static member of a value class of another repository, through the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}.${langName('node', member.name, 'callable')}()`;
+    },
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
       return `{ ${(unit.members ?? []).map((m) => `${langName('node', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-6v: a case is an object of its tag and its fields.
+    variantNew: (variant, kase, fields) => `{ ${[`${langName('node', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
@@ -538,6 +546,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import test${usesCasePath ? ', { afterEach }' : ''} from 'node:test';${usesCasePath ? "\nimport { mkdtempSync, rmSync } from 'node:fs';\nimport { tmpdir } from 'node:os';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
+${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
 ${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesCasePath ? NODE_CASE_PATH : ''}

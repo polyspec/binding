@@ -13,7 +13,7 @@ const PREDICATE: Record<string, string> = {
 // The OutValue variant of each kind and how its content is bound in a match arm.
 const VARIANT: Record<string, string> = {
   null: 'OutValue::Null', bool: 'OutValue::Bool(value)', int: 'OutValue::Int(value)', int64: 'OutValue::Int64(value)',
-  float: 'OutValue::Float(value)', number: 'OutValue::Number(value)', text: 'OutValue::Text(value)', bytes: 'OutValue::Bytes(value)',
+  float: 'OutValue::Float(value)', number: 'OutValue::Number(value)', text: 'OutValue::Text(value)', text16: 'OutValue::Text16(value)', bytes: 'OutValue::Bytes(value)',
   list: 'OutValue::List { handle, len }', map: 'OutValue::Map(value)', object: 'OutValue::Object { handle, len }',
   reference: 'OutValue::Reference { handle, value }', safe_text: 'OutValue::SafeText(value)', native: 'OutValue::Native(native)',
 };

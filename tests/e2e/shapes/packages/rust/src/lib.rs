@@ -272,6 +272,81 @@ pub fn measure(text: &str) -> Measure {
     }
 }
 
+/// The length of a span of a start and an end, none when the end is before the start (GN-6t: a tuple parameter).
+#[must_use]
+pub fn span_length(span: &(u64, u64)) -> u64 {
+    span.1.saturating_sub(span.0)
+}
+
+/// The lengths of the spans together (GN-6t: a list of a tuple).
+#[must_use]
+pub fn spans_total(spans: &[(u64, u64)]) -> u64 {
+    spans.iter().map(span_length).sum()
+}
+
+/// A text and a count as one text (GN-6t: a tuple of different part types).
+#[must_use]
+pub fn labelled(pair: &(String, u64)) -> String {
+    format!("{}×{}", pair.0, pair.1)
+}
+
+/// The width of a span of a start and an end, none when the end is before the start (GN-6ac: a tuple parameter that
+/// the core holds as an array of usize).
+#[must_use]
+pub const fn span_width(span: &[usize; 2]) -> usize {
+    span[1].saturating_sub(span[0])
+}
+
+/// The span of a start and a length (GN-6ac: parameters of u32 and a tuple result that the core holds as an array).
+#[must_use]
+pub const fn span_at(start: u32, length: u32) -> [u32; 2] {
+    [start, start.saturating_add(length)]
+}
+
+/// The sum of the widths, the largest width when it does not fit (GN-6ad: a list parameter that the core borrows as a
+/// slice of usize).
+#[must_use]
+pub fn width_sum(widths: &[usize]) -> usize {
+    widths
+        .iter()
+        .fold(0, |sum, width| sum.saturating_add(*width))
+}
+
+/// The largest of the values, 0 for none (GN-6ad: a list parameter that the core borrows as a slice of u32).
+#[must_use]
+pub fn largest(values: &[u32]) -> u32 {
+    values.iter().copied().fold(0, u32::max)
+}
+
+/// A span and the step that walks it (GN-6ac: a record whose fields the core holds as [usize; 2] and u32).
+pub struct Stride {
+    /// The start and the end.
+    pub ends: [usize; 2],
+    /// The width of a step; none of 0.
+    pub step: u32,
+}
+
+/// The number of whole steps in the span of a stride, 0 for a step of 0 (GN-6ac: a record parameter).
+#[must_use]
+pub fn stride_count(stride: &Stride) -> usize {
+    let width = stride.ends[1].saturating_sub(stride.ends[0]);
+    let Ok(step) = usize::try_from(stride.step) else {
+        return 0;
+    };
+    if step == 0 {
+        0
+    } else {
+        width / step
+    }
+}
+
+/// The offset from a start to an end, negative when the end is before the start (GN-6ac: parameters of u8 and an
+/// isize result).
+#[must_use]
+pub fn offset(start: u8, end: u8) -> isize {
+    isize::from(end) - isize::from(start)
+}
+
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is
 /// the largest.
 #[must_use]

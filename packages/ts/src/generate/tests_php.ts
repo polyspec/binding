@@ -1,7 +1,7 @@
 // The generated PHPUnit test of the PHP binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run with the
 // extension loaded.
 
-import type { Unit } from '../contract.ts';
+import type { Member, Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
@@ -85,7 +85,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const body = 'raise' in how ? `throw ${how.raise};` : how.returns === 'wrong' ? 'return new \\stdClass();' : 'return null;';
     return `new class { ${(unit.members ?? []).map((m) => `public function ${langName('php', m.name, 'callable')}(mixed ...$args): mixed { ${body} }`).join(' ')} }`;
   };
-  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
+  // GN-6x: a static member of a value class of another repository, through the namespace of the owner's package.
+  const foreignValue = (library: string, unit: Unit, member: Member): string => {
+    const namespace = (model.foreign.get(library)?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+    return `\\${namespace}${unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`}\\${langName('php', unit.name, 'class')}::${langName('php', member.name, 'callable')}()`;
+  };
+  const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew, foreignValue, casePath: (relative) => `$this->casePath(${phpText(relative)})` };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.

@@ -88,6 +88,7 @@ const PYTHON_CASE_PATH = `
 
 export function pythonTests(model: Model, module: string): string {
   checkCaseNames(model, caseSnake, false);
+  const foreignModules = new Set<string>();
   // GN-6r: a name of an internal unit is called in the module of the internal names of its module, which the test
   // imports when it is not the root module.
   const internalModules = new Set<string>();
@@ -106,6 +107,11 @@ export function pythonTests(model: Model, module: string): string {
     },
     recordNew: (unit, fields) =>
       `${ref(unit)}${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
+    // GN-6x: a static member of a value class of another repository, through the module of the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('python', unit.name, 'class')}.${langName('python', member.name, 'callable')}()`;
+    },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
@@ -569,7 +575,7 @@ export function pythonTests(model: Model, module: string): string {
 ${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesCasePath ? 'import os\nimport tempfile\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest
 ${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
-${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}from ${module} import _native
+${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesCasePath ? PYTHON_CASE_PATH : ''}

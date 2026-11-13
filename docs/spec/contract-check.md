@@ -48,7 +48,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-8** Value units (U-1, U-7):
   - a value alias names in `core: {in, out}` the core functions that judge a language value described as `HostValue`
     (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`) and give a core value as `OutValue`
-    (a function from `&T` to `(OutValue, V)` where `V: OutValues` may borrow the value); a value class has no such `core`, because its `in` rows read its members;
+    (a function from `&T` to `(OutValue, V)` where `V: OutValues` may borrow the value); a value class that represents its value type
+    may name such a `core` with its `core_type`, through which another repository takes and gives its values (GN-6x);
+    its own binding does not call them, because its `in` rows read its members and its own repository takes out the
+    native object (T-3); no other unit has `core: {in, out}`;
   - the unit that represents a value type holds `out` and `in`: a `value` class that no alias gathers, or an `alias`
     (whose origin is `value`); a class that an alias gathers (an `in` row of the alias names it) holds neither; the
     members of an alias are the language types of its `in` rows (U-7 (a));
@@ -59,6 +62,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
     `is`, and a row of a built-in type may split its cases by `when` as the rows of one kind are split (below), the
     predicate being the core's judgement (U-7 (f));
   - a case of a class names `read`, a public member; a case of a built-in type has `read: builtin` (U-7 (e)); a case of kind `null` or `native` has no `read`, because it has no content or the core never opens it (U-1, VAL-18); the kind `native` is made by the form `native` and the form makes no other kind, because a native value is the language object that entered as the handle of `OutValue::Native` (VAL-18);
+  - a case of the kind `text` of a class with `by` may name `units`, a public member that gives a list of `uint`; its
+    `read` then gives an optional `text`, and none means that the text is no Unicode text and is read as the UTF-16
+    code units that `units` gives (GN-6x). One call of `read` so judges every text of the language once, and the
+    code units cross the boundary only for a text with an unpaired surrogate (B2.89);
   - an `out` row makes a value in every target; `make` is a built-in form that the language has (`keyed_map` written
     `{keyed_map: {key: [...]}}`), a public `constructor` or `static` member of the representing class or of a class the
     alias gathers, or `{value: X}` for the kind `nested:X`;
@@ -70,7 +77,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
     made value (the row's own `when`; for an `else` row, the other value of a predicate that its sibling rows select
     with one value; `text` is UTF-8; `int` is an integral safe integer; `list` has the keys 0 to n-1), the first case
     whose `when` holds is the case, and a predicate that the table does not give is a finding. For a class with `by`,
-    whose `is` is known only at run time, the row's kind names exactly one case. A check that passes when any case
+    whose `is` is known only at run time, the row's kind names exactly one case, and a case of the kind `text` with `units` is also the
+    case of the kind `text16`, because it reads a text with an unpaired surrogate as its UTF-16 code units (GN-6x).
+    A check that passes when any case
     matches is not used, because it passes a wrong classification; the generated round-trip test of G-5 remains;
   - only a property of a `value` unit is `writable` (U-2);
   - `in_raises` is on a value alias with `core: {in, out}` only and names variants of `errors.kinds` of the contract:
@@ -207,9 +216,12 @@ These closed sets are binding's own; the Rust names are those of `binding_core` 
 - Acronym words of a repository name (P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`,
   `json`, `orm`, `php`, `sql`, `ui`, `uri`, `url`, `xml`. A new acronym of a repository name is added to this table
   (`LIBRARY_ACRONYMS` in `packages/ts/src/names.ts`), the one place that holds it.
-- Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`,
+- Value kinds: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `text16`, `bytes`, `list`, `map`, `object`,
   `reference`, `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value` (`ValueKind`). `int` and
-  `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1).
+  `int64` have the forms of the contract types of the same names (Node `number` and `bigint`, T-1). `text16` is a text
+  as UTF-16 code units, unpaired surrogates included, which a value class gives and makes by a member that reads or
+  takes a list of `uint` (GN-6x); no built-in form makes it, because the string of PHP and Go cannot hold an unpaired
+  surrogate.
 - Predicates and their kinds: `utf8` (bytes), `sequence_keys` (map), `safe_integer` (int), `integral_float` (float)
   (`Predicate`). A row writes `when: {predicate, is}`.
 - Built-in forms and the language type each makes:

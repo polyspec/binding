@@ -757,3 +757,131 @@
 - The entry `src/lib.rs` of the Go C ABI crate wrote its allow attribute on one line of 125 characters, which
   `cargo fmt --all --check` of a repository refuses; `binding scaffold` writes each allow attribute in the form of
   rustfmt (GN-3a). Verified by `npm test` in `packages/ts`.
+- No run converted a json value through a consumer of json, so `value_in` and `value_out` of json ran in no language,
+  and `go.mod` required the Go module of another repository only for its records, so the Go binding of a contract that
+  names the value class of json imported the package of json, which its module did not require. `tests/e2e/relay` is
+  that consumer: its function `carry` takes and gives the value class of json, which is a path dependency beside it,
+  and its case runners of Node, WASM, Python, PHP and Go compare the text of the value that comes back with the text of
+  the value that went in, for unpaired surrogates, a paired pair, a mixed text, a key with an unpaired surrogate, a big
+  integer token, a document of every kind and a value at the depth limit 256. `go.mod` now requires the Go module of
+  each library whose records or value classes the contract names. The run measures with `bench.mjs`, `bench.py` and
+  `bench.php` of `tests/e2e/<library>`, the median of 21 runs of carry against `parse(stringify(value))` of json with the
+  load average, into `var/report/bench/`, as a warning only. Red: `make test-ts` failed 1 of 319 (the go.mod of the
+  relay); Green: 319 of 319 pass (B2.87).
+- A string of a value class of another repository entered a core as a list of integers: the in case of json read every
+  string by `value.string_units`, so each string crossed the boundary of the language as its UTF-16 code units, and
+  WASM read a built-in string unit by unit and Python by an encoding to UTF-32. A case of the kind `text` may now name
+  `units`, a member that gives a list of `uint`; its `read` gives an optional `text`, which the generated code takes
+  as the text of the language, and only its none, a text with an unpaired surrogate, reads the code units by `units`.
+  Such a case is also the case of the kind `text16` in the round trip of CK-8, which replaces the rule that let a
+  `text` row come back by a case of the kind `text16`. Python takes a `str` without a surrogate and WASM a string that
+  `isWellFormed` as UTF-8 bytes. Red: `make test-ts` failed 7 of 318 (the CK-8 tests of `units` and the value class
+  tests of the five targets); Green: 318 of 318 pass (B2.89).
+- A text with an unpaired surrogate had no form in which it leaves a core: `binding_core::OutValue` held a text only as
+  a Rust `String`, so the `out` function of json could not give the string `"\ud800"` that `polyspec_json::Value`
+  holds, and a value class read a string by a member that gives a text, which json refuses for such a string.
+  `OutValue::Text16(Vec<u16>)` and the kind `text16` give a text as its UTF-16 code units, unpaired surrogates
+  included. An `out` row of the kind `text16` makes the value by a member of the class that takes a list of `uint`
+  (json `value.from_units`), and an `in` case of the kind `text16` reads it by a member that gives one (json
+  `value.string_units`) as `HostText::Utf16`, in Python, Node, PHP and WASM. A value class keeps its `text` row, so
+  that a case value of the kind `text` is still made, and CK-8 lets that row come back by the case of the kind
+  `text16`, because a Unicode text is the same value as its UTF-16 code units; no other pair of kinds is accepted. No built-in form makes the kind, because
+  the string of PHP and Go cannot hold an unpaired surrogate (CK-8). Red:
+  `make test-ts` failed 2 of 301 (CK-1 for the kind, and the refusal of the make `value.from_units` and of the case of
+  the kind `text16`), and `make test-rust` failed to compile the test of `OutValue::Text16`; Green: both pass
+  (B2.81). Go reads the string of a value class as node 13 of its code units and makes one from them by the function
+  of the `text16` row, now that Go takes a value class (B2.80). Red: `make test-ts` failed the Go assertions of the
+  kind `text16` in the generate test; Green: it passes 314 of 314.
+- The generator refused the Go binding of a contract that takes or gives a value class of another repository, with
+  "a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and
+  making of an instance (GN-6x)", so a function that takes and gives the value class of the owner had no Go binding.
+  Go now names the pointer to the owner's Go type, which package binding imports. Package binding describes an
+  instance by the Go in row of the class as node 11, with the kind of its case and a handle whose question read (op 2)
+  calls the read member of the case, and an instance of a class of the owner that iterates keys and values as a map
+  of its entries; an error of a member of the owner is node 12, which the Go function returns unchanged. A core value
+  leaves as node 11 of the result with the numbers of the class and of its out row and the content of the row, from
+  which package binding makes the instance through the owner's exported function (GN-6x, GN-15c). Verified by
+  `npm test` in `packages/ts` and `gofmt` and `go vet` of the generated Go module of the consumer sample with the
+  owner fixture, beside the Go package generated from the owner's contract.
+- The unit test of GN-6ac required nothing of the Go C ABI for `shapes.stride_count`, whose record `stride` the core
+  holds with a `[usize; 2]` and a u32 field, and for `shapes.offset`, which takes u8 parameters and gives an isize. It
+  now requires that the Go crate gives each field through `IntoCore` before the struct literal, narrows both u8
+  parameters, and widens the isize result as an int after the assertion of its width. The generator already wrote
+  these forms (the record fields since the Go change of GN-6ac); without the narrowing of the fields the test fails.
+  Verified by `npm test` in `packages/ts`.
+- The crate of the Go C ABI gave a list parameter to the core as a `Vec` of the table's type, u64 or a tuple of u64,
+  while the core call took `&values[..]`, so the Go binding of `tests/e2e/shapes`, whose core borrows `&[usize]` in
+  `width_sum` and `&[u32]` in `largest`, did not compile. The crate now turns such a list through `IntoCore` into a
+  `Vec` of the core's item type, as the other crates do (GN-6ad); an item outside the core's type is kind
+  `invalid_number`. Verified by `npm test` in `packages/ts`.
+- The crate of the Go C ABI gave a parameter to the core in the type of the table, u64 or a tuple of u64, and read a
+  tuple result by its fields `.0` and `.1`, so the Go binding of `tests/e2e/shapes`, whose core takes `[usize; 2]` in
+  `span_width` and u32 in `span_at` and gives `[u32; 2]`, did not compile. The crate now gives each integer parameter
+  and each integer field of a record to the core through `IntoCore`, reads a tuple result through `partsN`, and
+  widens a usize result after the assertion of its width, as the other crates do (GN-6ac); a start of 2^32 is kind
+  `invalid_number`. Verified by `npm test` in `packages/ts`.
+- A parameter or a result of a value class of another repository, such as the class `value` of json that
+  `engine.render_json.assign` of template takes, was refused in every target as "the type
+  {"unit":"value","library":"json"} is not generated yet". When the owner names `core: {in, out}` and `core_type` in
+  the class (CK-8), Python, Node, PHP and WASM now take an instance of the owner's class, describe it as
+  `HostValue::Value` by the `by` member of its `in` row and read its content through the `read` members, an instance
+  of the owner's map class as the entries of its iteration, and make a core value by the static and constructor
+  members of its `out` rows through the owner's package; the owner's `in` and `out` functions are the only conversion
+  (GN-6x). Go refuses it by name, because the call of GN-15c has no form of an instance yet, and a value class of
+  another repository without those functions is refused by name. Verified with `make test-ts` (300 passed).
+- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
+  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
+  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
+  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
+  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
+  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
+  only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
+  An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
+  target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
+  `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
+  array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
+  not convert yet. `tests/e2e/shapes` has
+  `shapes.span_width` over `[usize; 2]`, `shapes.span_at` of `u32` parameters with a `[u32; 2]` result,
+  `shapes.stride_count` of the record `stride`, whose core struct holds `ends: [usize; 2]` and `step: u32`, and
+  `shapes.offset` of `u8` parameters with an `isize` result; a step of 2^32 and a start of 256 are kind
+  `invalid_number`. The compile test of GN-6ad compiles their generated WASM entry points with the core for the host
+  and for wasm32, and fails with the generator before this change. Verified by `npm test` in `packages/ts`.
+- A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
+  generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
+  a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM
+  member that is missing or `undefined` and declared optional, and null at its place in the PHP constructor; a case
+  value may leave out its key (GN-6v). Any other default of a case field stays refused by name. `tests/e2e/variants`
+  has the field `at` of the case `label` with this default. Verified by `npm test` in `packages/ts`.
+- PHP, Python, Node and WASM refused a member that takes a tuple ("no input conversion"), while Go took it, so a
+  contract with such a member generated those targets of nothing. A tuple now enters as the sequence of exactly its
+  parts, a Python `tuple`, a Node and WASM `Array` and a PHP list, each part converted as its type; another value or
+  another number of items is kind `invalid_argument_type` (GN-6t). `tests/e2e/shapes` has `shapes.span_length`,
+  `shapes.spans_total` and `shapes.labelled`, a tuple parameter, a list of tuples and a tuple of different part
+  types. Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
+- The generator refused a variant unit (T-9) and a class unit with `implements`, so a contract with either generated
+  no target. A variant is now the Rust enum of its `core_type`, converted both ways by a match of its cases without a
+  wildcard; a field that holds the variant again is boxed; each case is a Python dataclass, a Node and WASM object of
+  its tag, and a PHP final class of the variant's interface (GN-6v). A class that implements a callback interface of
+  the contract has the members of the interface, which call the trait on the held value, and its instance stands for
+  the callback, also in a case (GN-6w). Go refuses both by name. `tests/e2e/variants` has the variant `figure`, whose
+  case `group` holds figures in a list, a box and an optional box, and the class `ribbon` that implements `tail`.
+  Verified by `npm test` in `packages/ts` and `make e2e` of `tests/e2e/variants`.
+- The host of Python, Node and WASM read an instance of a value class of this contract (a class without `core_type`,
+  or a class that an `in` row of a value alias names) and had no form for an instance of a value class of another
+  repository in the same contract. One host now holds both: an instance of a class of this contract as
+  `Held::Value` with the number of its read, and an instance of a class of another repository as `Held::Foreign` with
+  the read member of its `in` case, and `read` gives the content of either. The conversions of a value class of another
+  repository make the host by `JsHost::new`, `PyHost::new` and, in PHP, with the field `marked`. A PHP binding of a
+  contract with a value class of another repository and no callback unit and no function type did not compile,
+  because a member of the owner gives its exception as `Thrown::Php`, a variant that was generated only for a callback
+  or a function type; the variant is now generated for such a contract too. The PHP functions that give the interface
+  of a variant and the interface of a callback that a class implements (`variant_<unit>`, `interface_<unit>`) ended
+  with `panic!` when the class table did not hold the interface. They now read it through `own_interface`, which has
+  no panic, and `startup` fails the start when it does not find the interface of a variant before the classes of its
+  cases are registered, or the interface of a callback after the interfaces are registered (B-1, B-4, GN-6af, GN-6v,
+  GN-6w, GN-6x). The function of GN-6v that tells whether an optional field of a case may be left out is
+  `caseLeftOut`, because `leftOut` is the conversion of an argument that may be left out (GN-6i). The Rust cores of
+  `tests/e2e/shapes` and `tests/e2e/variants` are in the form of rustfmt, which `make fmt-e2e` checks. Verified by
+  `make test-ts`: 373 tests pass.

@@ -368,7 +368,8 @@ export const NODE_PLATFORMS = [
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
 
-// GN-15f: the libraries of the records that the contract names, each of whose Go module go.mod requires.
+// GN-15f: the libraries of the records and of the value classes (GN-6x) that the contract names, each of whose Go
+// module go.mod requires, because the Go binding imports the package of each (B2.87).
 function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
   const found = new Set<string>();
   const walk = (value: unknown): void => {
@@ -378,7 +379,7 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
       if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library) {
         const owner = foreign.get(library);
         if (owner === undefined) throw new Error(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-        if (owner.units.some((u) => u.id === unit && u.kind === 'record')) found.add(library);
+        if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
       }
       Object.values(value).forEach(walk);
     }
@@ -388,7 +389,7 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
   return [...found].sort();
 }
 
-// GN-15f: the require lines of go.mod, a Go module of each library whose records the contract names, at the version of
+// GN-15f: the require lines of go.mod, a Go module of each library whose records or value classes the contract names, at the version of
 // the dependency line of the core: an exact version or a tag, or a path with a replace line to the Go module there.
 function goRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): string {
   const requires: string[] = [];
@@ -396,7 +397,7 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
   for (const library of recordLibraries(contract, foreign)) {
     const owner = foreign.get(library) as Contract;
     const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
-    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record the Go binding names (GN-15f)`);
+    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
     const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown } : { version: spec };

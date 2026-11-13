@@ -25,8 +25,16 @@ export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
+  const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
+    // GN-6x: a static member of a value class of another repository, through the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}.${langName('wasm', member.name, 'callable')}()`;
+    },
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
+    // GN-6v: a case is an object of its tag and its fields, as for Node.
+    variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
     // U-3: a callback object, as for Node.
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
@@ -376,6 +384,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
+${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
 ${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
