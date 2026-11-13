@@ -124,7 +124,10 @@ the design ids are those of the binding design.
   and wasm-bindgen expand to unsafe code, and each unsafe block of the generated code carries an allow with its reason.
   An exception of one crate is an attribute of its source with its reason (`#![allow(<lint>, reason = "...")]`),
   because Cargo applies the workspace table to every member alike. The generated
-  code holds only the helper functions it uses, because the lints deny dead code.
+  code holds only the helper functions it uses, because the lints deny dead code. A helper of the Go C ABI that only
+  the entry points of a test feature (`panic-test`, `fault-test`, `codec-test`) use is compiled under those features
+  alone (`#[cfg(any(feature = ...))]`), because the static library without them has no such entry point and would
+  hold the helper unused.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
@@ -150,7 +153,10 @@ the design ids are those of the binding design.
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
-  B-5c test, which takes an instance, takes its write guard and panics.
+  B-5c test, which takes an instance, takes its write guard and panics. It takes the instances of the classes that the
+  target makes, by a constructor or a static member that returns the class, because the test of a class that the target
+  cannot make has no instance to give it, and the Go entry point would read the instance table of such a class only
+  under `panic-test`, which leaves its reader unused without the feature.
   A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, the Go crate always
   (for its round-trip entry points), and every crate has
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
@@ -1063,7 +1069,9 @@ the design ids are those of the binding design.
   -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
   counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
   that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
-  test is named and fails the run, because it verifies nothing. On macOS the PHP extension links by the `build.rs` of its
+  test is named and fails the run, because it verifies nothing. A package that does not build ends the events of its
+  build with `build-output` and `build-fail`; the run writes that output and names it as the cause of the failure of
+  the package, because a link error is seen only there. On macOS the PHP extension links by the `build.rs` of its
   crate (GN-3d), so a run gives no link setting by hand.
 - **GN-14b** A run checks one commit of binding: `BINDING`, `HEAD` by default. The check writes the tree of that commit
   into `<work>/binding` with `git archive`, installs the packages of the generator from the lock of that tree and runs

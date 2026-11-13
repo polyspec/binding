@@ -10,8 +10,9 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
+  heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, objectUnit, recordFn, resultLet, rustField,
+  rustType, rustVariant, takesObject, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue,
+  caseWritten, UNIT_CASE_ALLOW, poisoned,
 } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
@@ -1228,7 +1229,7 @@ function testEntries(model: Model): string {
   }
   out.push(entry(model, `${p}__panic_test`, 'B-7: the entry point of the generated panic test.', ['        finish_input(input)?;', '        panic!("panic-test")'], 'panic-test'));
   // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
-  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => o.lock?.writes === true);
+  const written = model.objects.map((o, index) => ({ o, index })).filter(({ o }) => poisoned(model, o));
   if (written.length > 0) {
     const arms = written.map(({ o, index }) => `            ${index} => {
                 let held = held_${plainName(o.unit)}(handle, "held")?;
@@ -1285,7 +1286,7 @@ function rustUsed(model: Model): string {
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
   const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
-  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
 }
 
 // GN-6x: the value classes of other repositories of the model, in the order of their numbers in node 11 of a result.
@@ -1338,9 +1339,13 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
   }).join('\n\n');
 }
 
-// The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
-const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.objects.filter((o) => o.lock?.writes === true).map((o) => `held_${plainName(o.unit)}`).join(' ')} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+// GN-4: the helpers that the test entry points of each feature use; a helper that only they use is compiled under
+// their features.
+const testEntryUses = (model: Model): Record<string, string> => ({
+  'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : '',
+  'fault-test': model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : '',
+  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
+});
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);

@@ -2656,10 +2656,13 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   assert.match(text(out, 'packages/python/generated/lib.rs'), /let raising = PyErr::take\(py\);\n {16}if let Err\(error\) = PyErr::warn\([^\n]*\n {20}error\.write_unraisable\(py, None\);\n {16}\}\n {16}if let Some\(raising\) = raising \{\n {20}raising\.restore\(py\);\n {16}\}/);
   // GN-6p: PHP puts the name of the running function before the message of a warning.
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertCount\(1, \$warnings\);\n {8}self::assertSame\(E_WARNING, \$warnings\[0\]\[0\]\);\n {8}self::assertStringEndsWith\("Lease was destroyed without release\(\), so its destructor released it \(B-10\)", \$warnings\[0\]\[1\]\);/);
-  // B-5c: the Go poison entry point reaches every class with a write place through its helper, also a class that the
-  // Go package does not generate.
+  // B-5c: the Go poison entry point reaches each of its classes through a helper that the C ABI defines.
   const goLib = text(classes(() => undefined, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
   for (const [, plain] of goLib.matchAll(/\bheld_([a-z_0-9]+)\(/g)) assert.ok(goLib.includes(`fn held_${plain}(`), `Go defines held_${plain}`);
+  // The poison entry point takes the instances of the classes that Go makes: Go makes neither Gate nor Lease here, so
+  // the C ABI and the Go package have no poison entry point.
+  assert.doesNotMatch(goLib, /held_lease|panic_test_held/);
+  assert.doesNotMatch(text(classes(() => undefined, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /PanicTestHeld/);
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
@@ -2748,6 +2751,8 @@ test('a member with wait blocking_io that reaches language code runs where its l
   assert.doesNotMatch(entry, /waiting\(env/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /await pkg\.resolveSlowly\(/);
+  // G-5: every K-2 test of a member that waits is an async function, as it awaits the call.
+  for (const found of String(text(out, 'packages/ts/generated/tests/generated.test.mjs')).matchAll(/test\('K-2: resolveSlowly [^']*', (async )?\(\) => \{/g)) assert.ok(found[1] !== undefined, found[0]);
   // Node and PHP keep the check of a callback with thread owner.
   assert.match(node, /BindingError::WrongThread/);
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /BindingError::WrongThread/);
@@ -2759,6 +2764,15 @@ test('a member with wait blocking_io that reaches language code runs where its l
   assert.throws(() => sample(everywhere, ['go']), /sample\.resolve_slowly: wait blocking_io is not generated for Go yet \(GN-6m\)/);
   const driven = (contract: any): void => { member(contract, 'sample.resolve_slowly').wait = 'async_driver'; };
   assert.throws(() => sample(driven, ['node']), /sample\.resolve_slowly: a member with wait async_driver that reaches language code is not generated \(GN-6n\)/);
+});
+
+test('a Go helper that only the entry points of a test feature use is compiled under that feature (GN-4)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['go'] }), 'packages/go/internal/ffi/generated/lib.rs');
+  // out_list writes the points that a fault-test entry point gives back, and no member of the sample gives a list.
+  assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
+  // A helper of the members is compiled in every form.
+  assert.match(lib, /\nfn in_text\(/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {

@@ -50,6 +50,29 @@
   and each integer field of a record to the core through `IntoCore`, reads a tuple result through `partsN`, and
   widens a usize result after the assertion of its width, as the other crates do (GN-6ac); a start of 2^32 is kind
   `invalid_number`. Verified by `npm test` in `packages/ts`.
+- `cargo test` of binding_core without features ran `tests/lock.rs` and `tests/driver.rs` with no test, because each
+  file was gated by a crate-level `#![cfg(feature = ...)]`, and passed while it checked nothing. The two files are
+  now `[[test]]` targets with `required-features`, which a run without the feature does not build (HR-84). Verified by
+  `make check`: test-ts ran 290 tests, all passed, with the test of `tests/core-tests.test.ts`; test-rust ran lock and
+  driver with all features and listed neither without features.
+- The e2e run of `tests/e2e/sample` failed in Node and Go. Node: of the K-2 tests of `resolveSlowly`, only the first
+  test of the block became an async function, so the module of the generated tests did not parse (`await` in a
+  function that is not async); every test of a block that awaits is now async. Go: `out_list`, which only the entry
+  point of the feature `fault-test` uses, was compiled in the static library without features, which then denied it
+  as dead code; a helper that only the entry points of a test feature use is now compiled under those features (GN-4).
+  Verified by `make e2e` of `tests/e2e/sample`: every target passed, node with 67 tests and go 41, and by `npm test` in
+  `packages/ts`: 289 of 289 pass.
+- The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
+  class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
+  was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static
+  member, as the Go poison test does, and a package without such a class has no entry point (GN-6h). Verified by `make
+  e2e` of `tests/e2e/classes`: every target passed, go with 27 tests, and by `npm test` in `packages/ts`: 289 of 289
+  pass.
+- `make e2e` read `go test -json` without its `build-output` events, so a Go package that failed to link was named
+  only as "go test failed the packages …" without the linker output. The events are read in
+  `scripts/go-test-events.mts`, which prints the output of each build and names it in the cause (GN-14a). Verified by
+  `npm test` in `packages/ts`: 289 of 289 pass, with the two tests of `tests/go-test-events.test.ts`; no e2e run since
+  had a Go package that does not build.
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
   (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any
@@ -156,7 +179,9 @@
   kind `wrong_thread`, so the callback also runs on the worker thread of `a<name>`. Node runs the call synchronously
   on the JavaScript thread, which owns the callback objects, and returns a settled promise. A member with
   `async_driver` that reaches language code stays refused by name. `sample.resolve_slowly` of `tests/e2e/sample`
-  covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q).
+  covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q). Verified by `make
+  e2e` of `tests/e2e/sample`: every target passed, php with 67 tests, python 66, node 67, go 41 and wasm 54, and by `npm
+  test` in `packages/ts`: 289 of 289 pass.
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
@@ -284,7 +309,8 @@
   next step, as the other targets do (GN-13f). Verified by `npm test` in `packages/ts`.
 - The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
   the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
-  each with its reason (GN-14b).
+  each with its reason (GN-14b). Verified by `npm test` in `packages/ts`: 289 of 289 pass, with the test of
+  `tests/e2e-inputs.test.ts`.
 - A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
   generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
   generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,
@@ -298,11 +324,15 @@
   the version of the top section of `CHANGELOG.md` and creates its GitHub Release with the npm archive of `packages/ts`;
   the tag also releases `binding_core` as a Git tag (`config/release.json`). The Makefile adds `ci-targets`,
   `ci-summary`, `ci-passed`, `release-tag`, `release-checkout`, `release-prepare`, `release-tools`, `release-tools-path`,
-  `release-assets`, `release-publish`, `release-undraft` and `release-coverage`.
+  `release-assets`, `release-publish`, `release-undraft` and `release-coverage`. Verified by `make check`, whose
+  test-ts, test-rust and lint-rust passed, and by `make release-coverage`, which classified every package file; the
+  workflows run only after the push of `main`, so no run of them has verified them yet.
 - A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
   dev-dependency of its own, and repositories did it in two forms. The core now has itself as a dev-dependency with
   `fault-test`, so `cargo test` without flags arms its points, and `binding check` reports a core manifest without it
-  (CK-65, GN-5). The sample core of tests/e2e has that dev-dependency.
+  (CK-65, GN-5). The sample core of tests/e2e has that dev-dependency. Verified by `npm test` in `packages/ts`: 289 of
+  289 pass, with the test of CK-65, and by `make e2e` of `tests/e2e/sample`, whose core has that dev-dependency: every
+  target passed.
 - A case that gave an instance value as an item of a list of a class, or as an argument of a class type of the call
   under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
   now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
@@ -323,11 +353,13 @@
   the defaults of rustfmt, so `cargo fmt --check` of a repository with `use_small_heuristics = "Max"` and `max_width =
   120` failed on the `src/lib.rs` of each binding crate, which those settings join into one line. An allow attribute
   is now one line of at most 80 columns, which both forms keep, and a reason that does not fit is the comment above it;
-  the reason of the Node addon names its rule id (GN-3a, GN-4).
+  the reason of the Node addon names its rule id (GN-3a, GN-4). Verified by `npm test` in `packages/ts`: 289 of 289
+  pass, with the test that runs rustfmt on the binding crates with its defaults and with the settings of a repository.
 - The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
-  `errors`, so the end-to-end check raises it through each target.
+  `errors`, so the end-to-end check raises it through each target. Verified by `make e2e` of `tests/e2e/shapes`: every
+  target passed, php with 66 tests, python 78, node 79, go 50 and wasm 77.
 - A record parameter with the default `{empty: "object"}` was refused for every target ("a default of a record
   parameter is not generated yet"), so a contract with one, such as `parse(source, options = {})`, generated no
   target. Such a parameter is generated when every field of the record has a default: the core takes the record with
@@ -338,17 +370,20 @@
 - The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
   of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
   with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
-  runs the three to their end and names each failed one.
+  runs the three to their end and names each failed one. Verified by `make check`: test-ts ran 289 tests, all passed,
+  and test-rust and lint-rust passed with all features and with none.
 - `binding generate` ended a refused target, after it had written the other targets, with the usage line and status 2,
   as if the command line were wrong, so a repository could not tell the refusal from a usage error. A refusal, a core
   manifest that is not the crate of the contract and a failed `cargo metadata` now end with status 1 and no usage
-  line; only an error of the command line prints the usage with status 2 (GN-1c).
+  line; only an error of the command line prints the usage with status 2 (GN-1c). Verified by `npm test` in
+  `packages/ts`: 289 of 289 pass, with the test of GN-1c.
 - A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
   so one core with `fault-test` turned on the points of every core: a binding crate that left
   `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
   is now the macro `fault::point!`, which is judged by the feature `fault-test` of the crate that writes it, and
   `tests/point.rs` builds two cores and a binding that turns on the feature of one of them (GN-5). A core writes
-  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`.
+  `binding_core::fault::point!(NAME)` in place of `binding_core::fault::point(NAME)`. Verified by `make test-rust`:
+  `tests/point.rs` passed with all features and with none.
 - A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
   form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
   positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value
@@ -376,7 +411,8 @@
 - The check did not judge the integers of a case at a place of the type `int` or `uint`, so a case that gave
   9223372036854775807 to an `int` parameter passed the check, which Python and PHP took as an i64 and Node and WASM
   refused as kind `invalid_number`. The check now reports an integer of a case outside the safe integers at such a
-  place (CK-64).
+  place (CK-64). Verified by `npm test` in `packages/ts`: 289 of 289 pass, with the tests of CK-64 in
+  `tests/contract-check.test.ts`.
 - The Node and WASM declarations named an `int64` parameter `number | bigint` and an `int64` result `bigint`, but the
   binding took and gave a number of the safe integers only, so the case 9223372036854775807 was refused as an
   argument, and `binding` read that integer of a case file as the nearest double. The binding now takes a `bigint` of

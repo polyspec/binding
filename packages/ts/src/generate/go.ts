@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, variantOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, variantOf, waitsIo, waitsAsync, poisoned } from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
@@ -1914,7 +1914,7 @@ func (r *Reader) fail(problem string) {
 function goBindingPanic(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
   const p = prefix(model);
-  const written = model.objects.some((o) => o.lock?.writes === true);
+  const written = model.objects.some((o) => poisoned(model, o));
   return `${goHeader()}
 
 //go:build polyspec_panic_test

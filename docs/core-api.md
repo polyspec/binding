@@ -23,6 +23,9 @@ types of the design rules named below and no rule of any library.
   optional dependencies `serde_json` 1.0.154 (the list of faults of a case) and, on Unix, `libc` 0.2.191 (the value of
   an errno symbol). A core that has points declares `fault-test = ["polyspec-binding-core/fault-test"]` and nothing
   else of it; a binding turns on the feature of each core whose points its cases name. No release build has it (G-5).
+- Tests: a test file of the crate that needs a feature (`tests/lock.rs`, `tests/driver.rs`) is a `[[test]]` target
+  with that feature in `required-features`, so `cargo test` without the feature does not build it, and a run of the
+  target runs its tests; a target that ran no test would pass while it checked nothing (HR-84).
 - Use from another repository during development: a path dependency on this folder,
   `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`, named by a local link
   and never by a tracked manifest (PRINCIPLES P30).

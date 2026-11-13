@@ -56,21 +56,35 @@ export const phpLatin1 = (text: string): string => phpBytes([...text].map((c) =>
 // The helper functions of a block of Rust items (each a function with its doc comment, the items separated by blank
 // lines and holding none) that `code` calls, directly or through another helper, in their order in the block; a crate holds no unused
 // helper, because its lints deny dead code.
-export function usedHelpers(block: string, code: string): string {
+export function usedHelpers(block: string, code: string, gated: Readonly<Record<string, string>> = {}): string {
   const items = block.split(/\n[ \t]*\n/).map((item) => item.trim()).filter((item) => item !== '');
   const named = items.map((item) => ({ item, name: /^(?:\/\/\/[^\n]*\n)*(?:fn|trait) ([A-Za-z_0-9]+)/.exec(item)?.[1] ?? '' }));
-  const used = new Set<string>();
   // A helper is used where its name is a word of the code, called or passed; comments and a field of that name
   // (`member: ...`) do not count.
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
-  let frontier = strip(code);
-  for (;;) {
-    const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\b(?!\\s*:[^:])`).test(frontier));
-    if (added.length === 0) break;
-    for (const { name } of added) used.add(name);
-    frontier = strip(added.map(({ item }) => item).join('\n'));
-  }
-  return named.filter(({ name }) => used.has(name)).map(({ item }) => `\n${item}\n`).join('');
+  const usedBy = (text: string): Set<string> => {
+    const used = new Set<string>();
+    let frontier = strip(text);
+    for (;;) {
+      const added = named.filter(({ name }) => !used.has(name) && new RegExp(`\\b${name}\\b(?!\\s*:[^:])`).test(frontier));
+      if (added.length === 0) break;
+      for (const { name } of added) used.add(name);
+      frontier = strip(added.map(({ item }) => item).join('\n'));
+    }
+    return used;
+  };
+  const always = usedBy(code);
+  // GN-4: a helper that only the code of a feature uses is compiled under that feature, so no form holds it unused.
+  const features = Object.entries(gated).map(([feature, text]) => ({ feature, used: usedBy(`${code}\n${text}`) }));
+  return named
+    .flatMap(({ item, name }) => {
+      if (always.has(name)) return [`\n${item}\n`];
+      const under = features.filter((f) => f.used.has(name)).map((f) => `feature = ${JSON.stringify(f.feature)}`);
+      if (under.length === 0) return [];
+      const cfg = `#[cfg(${under.length === 1 ? under[0] : `any(${under.join(', ')})`})]`;
+      return [`\n${item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1${cfg}\n`)}\n`];
+    })
+    .join('');
 }
 
 // T-1: an integer return (uint, int, int64) may be a narrower Rust integer, which the generated code widens with From;

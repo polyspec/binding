@@ -22,6 +22,9 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
   `serde_json` 1.0.154(case의 faults 목록)와 Unix에서 `libc` 0.2.191(errno 기호의 값)을 쓴다. 주입점을 가진 코어는
   `fault-test = ["polyspec-binding-core/fault-test"]`만 선언한다. 바인딩은 case가 이름을 부르는 주입점을 가진 코어마다
   그 코어의 feature를 켠다. 릴리스 빌드에는 켜지 않는다(G-5).
+- 시험: feature가 필요한 crate의 시험 파일(`tests/lock.rs`, `tests/driver.rs`)은 그 feature를 `required-features`에
+  적은 `[[test]]` target이다. 그래서 feature 없는 `cargo test`는 그것을 빌드하지 않고, 그 target의 실행은 그 시험을 돌린다.
+  시험을 하나도 돌리지 않은 target은 아무것도 확인하지 않고 통과하기 때문이다(HR-84).
 - 개발 중 다른 레포에서 쓰는 법: 이 폴더에 대한 경로 의존
   `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`. 추적하는 매니페스트가 아니라
   로컬 link로 정한다(PRINCIPLES P30).

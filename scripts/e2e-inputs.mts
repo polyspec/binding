@@ -14,6 +14,7 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'Makefile', why: 'make e2e runs its recipe, which sets the environment of mise and the PATH of var/tools' },
   { path: 'scripts/e2e.mts', why: 'the script of the checkout writes the tree of the commit and starts the script of that tree' },
   { path: 'scripts/e2e-inputs.mts', why: 'the script of the checkout reads this list' },
+  { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
   { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
   { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },

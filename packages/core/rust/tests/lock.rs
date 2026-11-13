@@ -1,6 +1,5 @@
 //! B-5c: the locks of a class unit are tried and never awaited, the read places of one call share a guard, and a panic
 //! under a write guard poisons the object.
-#![cfg(feature = "lock")]
 
 use binding_core::{BindingError, Exclusive, Shared};
 use std::panic::{catch_unwind, AssertUnwindSafe};

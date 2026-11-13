@@ -858,6 +858,13 @@ function assignLocks(contract: Contract, units: Map<string, Unit>, objects: Obje
   }
 }
 
+// T-5: the member that makes an instance of the class: a constructor or a static member that returns it.
+export const factoryOf = (model: Model, object: ObjectClass): Fn | undefined =>
+  object.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
+
+// GN-6h, B-5c: a class whose instance the poison test gives: a class with a write place that the target makes.
+export const poisoned = (model: Model, object: ObjectClass): boolean => object.lock?.writes === true && factoryOf(model, object) !== undefined;
+
 // GN-6h: the Rust type in which a class holds its core value.
 export const heldType = (object: ObjectClass): string => {
   const core = object.unit.core_type ?? '';
