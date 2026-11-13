@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0029486beae048a5669c3814a82763efba0f3b66bc27bd329f9b9a9dda066f4e -->
+<!-- source-sha256: d89f39a4eab5f60a15c8e9c8ed3e635b3a7605dcb96ad0790f5d65b5f60333d9 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- GN-4c: classes 계약의 손으로 쓴 WASM case가 class의 release를 `__free_<Class>` 이름으로 부른다. `__<Class>_free`를 불렀는데 WASM crate가 더는 그 이름을 내보내지 않아, 수거된 instance의 case가 `glue.__Tag_free is not a function`으로 실패했다.
 - `scaffold`가 쓰는 `package.json`과 `composer.json`이 다른 라이브러리를 적지 않았다. 그래서 entry가 값 class owner의 npm
   package를 import하는(`require('@polyspec/<library>')`, GN-6x) release된 npm package가 그 package 없이 설치되었고, release된
   PHP 확장은 자기가 만들고 읽는 class의 확장 없이 설치되었다. 이제 `package.json`은 계약이 이름하는 타입들에 값 class가

@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- GN-4c: the hand-written WASM cases of the classes contract call the release of a class by its name `__free_<Class>`; they called `__<Class>_free`, which the WASM crate no longer exports, so the case of a collected instance failed with `glue.__Tag_free is not a function`.
 - The `package.json` and the `composer.json` that `scaffold` writes named no other library, so a released npm
   package whose entries import the npm package of the owner of a value class (`require('@polyspec/<library>')`, GN-6x)
   was installed without it, and a released PHP extension without the extension whose classes it makes and reads.
