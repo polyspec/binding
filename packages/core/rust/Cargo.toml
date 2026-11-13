@@ -28,6 +28,16 @@ fault-test = ["dep:serde_json", "dep:libc"]
 # binding crates of PHP, Python and Node of a contract with such a member enable it; a core crate does not.
 driver = ["dep:tokio", "tokio/rt-multi-thread"]
 
+# HR-84: a test that needs a feature is built only with it, so a run without the feature has no target that runs no
+# test (docs/core-api.md).
+[[test]]
+name = "lock"
+required-features = ["lock"]
+
+[[test]]
+name = "driver"
+required-features = ["driver"]
+
 [dependencies]
 indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 tokio-util = { version = "=0.7.20", default-features = false }

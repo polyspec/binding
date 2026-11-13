@@ -1,4 +1,5 @@
 <!-- doc-id: changelog -->
+<!-- source-sha256: 9ecb0e55035766c3512af0dbb1b63fcb32860d9b4c16026d2f6ca94dd910d684 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -151,12 +152,90 @@
   대해 `match error`를 써서 컴파일되지 않았다. 이제 `errors.code`가 오류의 타입과 code로 가는 투영을 적고, 모든 crate가 code를
   match하고 단언한다(`match <투영>(&error)`). 다른 enum의 값을 담은 variant는 `<바깥>/<안쪽>`으로 적고 `Outer(Inner { .. })`로
   match한다(GN-7b). `packages/ts`에서 `npm test`로 확인했다.
+- `tests/e2e/classes`의 Node 바인딩이 컴파일되지 않았다(E0515, E0597): 호출이 receiver guard의 참조를
+  (`let receiver = &*receiver;`) 묶은 뒤 guard를 `Gate.enter_later`(async_driver)의 future와 `Gate.enter_slowly`
+  (blocking_io)의 pool closure로 옮겼으므로, future와 closure가 호출의 지역 변수를 빌린 참조를 쥐었다. 이제 future와 pool
+  closure가 guard를 소유하고 그 안에서 참조를 묶는다(GN-6h). `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거이며
+  모든 target에서 통과했다(PHP 생성 시험 60개와 contract case 4개, Python 58개와 4개, Node 63개, Go 27개, WASM 42개).
+  `tests/e2e/sample`, `tests/e2e/shapes`, `tests/e2e/consumer`의 `make e2e`도 증거인 기록에서 모든 target이 통과했다.
+- feature 없는 binding_core의 `cargo test`가 `tests/lock.rs`와 `tests/driver.rs`를 시험 없이 돌리고 통과했다. 각 파일이
+  crate 수준의 `#![cfg(feature = ...)]`로 막혀 있었기 때문이다. 이제 두 파일은 `required-features`를 가진 `[[test]]`
+  target이고, feature 없는 실행은 그것을 빌드하지 않는다(HR-84). `make check`로 확인했다: test-ts는 시험 290개를 돌려 모두
+  통과했고 `tests/core-tests.test.ts`의 시험이 그 안에 있다. test-rust는 모든 feature에서 lock과 driver를 돌렸고 feature
+  없이는 둘 다 목록에 없었다.
+- `tests/e2e/sample`의 e2e가 Node와 Go에서 실패했다. Node: `resolveSlowly`의 K-2 시험 가운데 묶음의 첫 시험만 async
+  function이 되어, 생성된 시험 module이 해석되지 않았다(async가 아닌 function 안의 `await`). 이제 기다리는 묶음의 모든 시험이
+  async다. Go: feature `fault-test`의 진입점만 쓰는 `out_list`가 feature 없는 정적 라이브러리에도 컴파일되어, 그 라이브러리가
+  그것을 죽은 코드로 거부했다. 이제 시험 feature의 진입점만 쓰는 도우미는 그 feature에서만 컴파일된다(GN-4).
+  `tests/e2e/sample`의 `make e2e`로 확인했다: 모든 target이 통과했고 node는 시험 67개, go는 41개다. `packages/ts`의 `npm
+  test`로도 확인했다: 289개 중 289개 통과.
+- changelog 항목 하나가 end-to-end 실행이 확인한 commit을 이름했다. 이것은 찾아보지 않는 독자에게 아무것도 말하지 않고
+  얕은 history에서는 사라진다. 이제 추적 파일은 GitHub action의 commit 고정과 lock 말고는 Git commit을 이름하지 않는다.
+  `tests/tracked-commits.test.ts`가 다른 commit 이름 토큰을 모두 실패시키고, 그 항목은 그것을 검증한 실행을 적는다(B1.4).
+  `packages/ts`의 `npm test`로 검증했다.
+- GN-13a는 B-10을 G-5가 생성하지 않는 시험에 넣었지만, GN-6p는 PHP, Python, Node가 `cleanup`이 있는 class unit마다
+  B-10 시험을 생성한다고 적는다. 이제 GN-13a는 B-10을 그런 unit을 이름으로 거부하는 Go와 WASM에서만 열린 항목으로
+  적는다(GN-6p, GN-13a). `packages/ts`의 `npm test`가 PHP, Python, Node에 요구하는 B-10 시험을 읽어 확인했다.
+- binding에는 문서 검사가 없었다: `make docs-check`도 `config/documents.json`도 체크리스트도 없어서, 깨진 link, 원문의
+  개정을 갖지 않은 한국어 짝, 꼴이 틀린 체크리스트 행이 드러나지 않았다. 이제 `make docs-check`가 설치된
+  `@polyspec/kit`의 문서 검사를 모든 Markdown 문서, changelog, `config/checklist.json`이 선언한 체크리스트
+  `docs/plans/execution/checklist.md`에 돌리고, `make documents-stamp`가 검토한 한국어 짝에 `source-sha256`을 쓴다(B1.1,
+  B1.2). `make docs-check`로 검증했다.
+- instance 값이 아닌 class의 Go case 값(json `Value`의 `{"kind": "text", "value": "a"}`)은 "a case value of the class
+  value is an instance value"로 Go target 전체를 거부했다. 이제 Go는 다른 target과 같이 쓴다: origin value인 class는 그
+  kind의 make member로, 다른 class는 생성자와 쌍의 insert로 만들고, 각각 시험의 지역 변수다. receiver나 인자를 쓰지 못하는
+  case는 그 시험이 이름을 대고 실패하고, target의 다른 시험은 쓰인다(U-1, GN-13, GN-13e, GN-13f). `packages/ts`의
+  `npm test`로 검증했다.
+- parameter 없는 생성자(json `OrderedMap()`)의 Python G-7 시험은 인자 없는 CPython 함수의 말인 `takes no arguments`를
+  기대했지만, 그 생성자는 PyO3의 `__new__`이고 `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 이제 시험은
+  형태마다 그 말을 기대한다(G-7). `packages/ts`의 `npm test`로 검증했다.
+- JSON이 정수로 적는 float case 값(json `value.from_float`의 `0`, `100`, `1e20`)은 Python과 PHP에서 정수로 적혔는데, 두 언어는
+  float 자리의 정수를 거부한다(kind `invalid_argument_type`). 음의 0은 모든 언어에서 부호를 잃었다. 이제 float는 Python과 PHP에서
+  float literal(`0.0`, `1e+20`)이고, 음의 0은 `-0.0`, Node와 WASM에서 `-0`이다(B-2, G-5). `packages/ts`의 `npm test`로 검증했다.
+- 결과가 class optional의 `null`인 case(json `ordered_map.get`의 `get_absent`)는 "a class has no case value form"으로 시험이
+  실패했다. 이제 optional의 결과 `null`은 optional이 무엇을 담든 case 형식이 있고, 각 target은 결과를 자기 null과 비교한다
+  (Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의 `nil`). class인 결과는 여전히 그 이유로 실패한다(GN-13e). `packages/ts`의
+  `npm test`로 검증했다.
+- JavaScript가 예약한 낱말을 이름으로 가진 Node class member(json `Value`의 static member `null`)는 진입점이
+  `function null(...args)`로 정의해서 진입점이 파싱되지 않았다(SyntaxError). 이제 진입점은 addon 위의 각 member를 계산된 key
+  `<name>`의 메서드로 쓰고 그 메서드는 `<name>`을 `name`으로 지니며, JavaScript의 모든 예약어를 Node 진입점과 WASM module에
+  대해 시험한다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
+- Python 파서가 받는 것보다 깊게 중첩된 Python case 값(json `value.array`의 `array_past_limit`)은 import되지 않는 시험
+  module을 냈다("too many nested parentheses"). 이제 괄호가 50단보다 깊게 중첩될 case 값은 시험 module 함수의 지역 변수로
+  단계별로 만들고 시험이 그 함수를 부르므로, case는 온전히 남는다(GN-13e). `packages/ts`의 `npm test`로 검증했다.
+- 식별자가 받지 않는 문자를 id에 가진 case(json의 `document-order`)는 PHP 메서드 `testGn13eparseDocument-order`와 Python
+  메서드 `test_gn13e_parse_document-order`를 내서, PHPUnit과 unittest가 생성된 시험을 읽지 못했다. 이제 case 시험의 이름은
+  ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나눈 id의 낱말을 담고(`DocumentOrder`, `document_order`, Go는 이미 그랬다), 한
+  member나 한 값 alias의 두 id가 같은 이름을 내면 target을 이름을 대고 거부하며 PHP는 대소문자 없이 비교한다(GN-13e).
+  `packages/ts`의 `npm test`로 검증했다.
+- make member가 다른 class를 받는 origin value class(`OrderedMap`을 받는 json의 `Value.object`)의 kind map case 값은
+  "takes more than one value"나 "no case value of the type"으로 시험이 실패했다. case의 `[key, value]` 쌍이 그 class의 값이 아니기
+  때문이다. 이제 쌍이 그 class를 채운다: parameter 없는 생성자가 만들고, receiver `&mut self`와 parameter 둘을 가진 하나뿐인
+  member가 각 쌍을 받으며, parameter가 origin value class면 text key는 kind text의 값이 된다. 다른 자리(`value.object`의
+  `members`)의 그런 class case 값도 같은 쌍의 list다(GN-13). `packages/ts`의 `npm test`로 검증했다.
+- 키워드나 타입 이름의 case를 가진 PHP enum(json의 enum `kind`의 `object`, `array`, `string`, `null`)은 컴파일되지 않았다.
+  ext-php-rs의 매크로 `php_enum`이 그 이름을 `#[php(name)]`의 이름으로도 거부하고, 그래서 module이 등록하는 enum 타입이
+  없었다(E0425). 이제 그런 case는 확장과 stub에서 뒤에 `_`를 붙이고(`Kind::Object_`), backed 값은 계약의 값이다(GN-10).
+  `packages/ts`의 `npm test`와 json PHP binding의 clippy로 검증했다.
+- 코어가 값으로 받는 class의 parameter(`OrderedMap::insert(&mut self, key: Value, value: Value)`의 `key`와 `value`)는
+  컴파일되지 않았다. 호출이 guard의 참조를 주었기 때문이다(E0308). 이제 인자는 값의 참조에 대한 `CoreForm::core_form`이고, 코어
+  parameter의 타입이 그것을 참조나 사본으로 바꾼다(GN-6h). `packages/ts`의 `npm test`와 json의 Node, Python, WASM binding의 clippy로
+  검증했다.
+- 코어 경로가 trait 함수인 잠긴 class의 member(경로가 `std::string::ToString::to_string`인 `value.to_string`)는 컴파일되지
+  않았다. 호출이 guard의 참조를 주었는데 generic 경로는 그것을 deref하지 않기 때문이다(E0277). 이제 생성 코드는 모든 잠금을 얻은 뒤
+  각 자리의 이름으로 `&*guard`나 `&mut *guard`를 묶고, 코어 호출은 그 이름을 받는다(GN-6h). `packages/ts`의 `npm test`로 검증했다.
+- 코어가 참조로 주는 클래스 결과(`Value::members`의 `&OrderedMap`, `Value::items`와 `Value::get`의 `&Value` 항목)는 컴파일되지
+  않았다. `out_<class>`가 값을 소유한 형태로 받았기 때문이다(E0308, E0631). 이제 변환은 `impl CoreForm<T>`를 받아 소유한 값은
+  그대로 두고 빌린 값은 복제하며, optional이나 list가 더하는 참조 뒤의 값도 같다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
 - `tests/e2e/classes`의 Go C ABI가 `panic-test` 없이 빌드되지 않았다. poison 진입점이 쓰기 쪽 자리가 있는 모든 class에 갈래를
   두었는데, Go가 만들지 않는 `lease`도 그랬고, 그 갈래만 쓰는 `held_lease`가 feature가 꺼지면 쓰이지 않았다. 이제 진입점은
   Go poison 시험처럼 Go가 생성자나 static member로 만드는 class만 받고, 그런 class가 없는 패키지에는 진입점이 없다(GN-6h).
+  `tests/e2e/classes`의 `make e2e`로 확인했다: 모든 target이 통과했고 go는 시험 27개다. `packages/ts`의 `npm test`로도
+  확인했다: 289개 중 289개 통과.
 - `make e2e`가 `go test -json`을 그 `build-output` 사건 없이 읽었다. 그래서 link에 실패한 Go 패키지는 linker 출력 없이
   "go test failed the packages …"로만 적혔다. 이제 `scripts/go-test-events.mts`가 사건을 읽고, 각 빌드의 출력을 찍고 원인에
-  그것을 적는다(GN-14a).
+  그것을 적는다(GN-14a). `packages/ts`의 `npm test`로 확인했다: 289개 중 289개 통과이고,
+  `tests/go-test-events.test.ts`의 시험 두 개가 그 안에 있다. 그 뒤의 e2e 실행에는 빌드되지 않는 Go 패키지가 없었다.
 - B-2의 Go 시험은 안전한 정수보다 큰 정수를 `1 << 53`으로 적었는데, gofmt는 그것이 여러 인자 가운데 하나일 때
   `1<<53`으로 바꾼다. 그래서 `tests/e2e/points` Go module의 `gofmt -l`이 `zz_generated_test.go`를
   (`Shift(1 << 53, Point{X: 0, Y: 0})`) 이름했다. 이제 시험은 어느 자리에서든 gofmt가 그대로 두는 수
@@ -180,14 +259,17 @@
   두었다가 경고 뒤에 다시 설정한다. PHP: PHP가 메시지 앞에 실행 중인 함수를 붙이므로 경고는 `<function>(): Lease was
   destroyed …`이다. 그래서 B-10 시험은 그 글로 끝나는 메시지를 요구한다. Go: B-5c의 poison entry point가 `held_lease`를
   불렀는데, 그것을 쓰는 것이 그 시험 entry뿐이라 helper 묶음이 그것을 뺐다. 이제 그 helper를 남긴다.
+  `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거이며 모든 target에서 통과했다: PHP는 생성 시험 60개와 contract
+  case 4개, Python은 58개와 4개, Go는 27개.
 - parameter나 receiver가 언어 코드를 지니는 `wait: blocking_io` member를 모든 target이 거부했다("a member with wait
   blocking_io that reaches language code is not generated (GN-6m)"). 그래서 host loader를 쓰는 template engine의
   `engine.load`, `prepare`, `prepare_bound`에 바인딩이 없었다. 이제 PHP와 Python은 GN-6m대로 생성한다. Python
   callback의 각 호출은 코어가 그것을 부르는 스레드에서 kind `wrong_thread` 검사 없이 GIL을 얻으므로, `a<name>`의 worker
-  스레드에서도 callback이 실행된다. Node는 callback 객체를 가진 JavaScript 스레드에서 호출을 동기로 실행하고 정해진
-  promise를 돌려준다. 언어 코드에 닿는 `async_driver` member는 계속 이름을 대고 거부한다. `tests/e2e/sample`의
+  스레드에서도 callback이 실행된다. Node는 callback 객체를 가진 JavaScript 스레드에서 호출을 동기로 실행하고 이미
+  settle된 promise를 돌려준다. 언어 코드에 닿는 `async_driver` member는 계속 이름을 대고 거부한다. `tests/e2e/sample`의
   `sample.resolve_slowly`가 이것을 다루고, 예외를 던지는 callback으로 `aresolve_slowly`를 기다리는 Python 시험이 있다
-  (GN-6q).
+  (GN-6q). `tests/e2e/sample`의 `make e2e`로 확인했다: 모든 target이 통과했고 php는 시험 67개, python 66개, node 67개,
+  go 41개, wasm 54개다. `packages/ts`의 `npm test`로도 확인했다: 289개 중 289개 통과.
 - 코어 receiver가 `self`인 method와 `cleanup`이 있는 class unit은 모든 target이 거부했다("a receiver self is not
   generated yet", "cleanup is not generated yet"). 그래서 닫는 호출이 소비하는 자원에는 binding이 없었다. 이제 PHP·Python·
   Node는 class의 잠금에서 값을 꺼내고(`Exclusive`와 `Shared`의 `take`, 객체는 그 뒤 kind `consumed`다, GN-6o), `cleanup`이
@@ -195,14 +277,16 @@
   객체가 정리 호출 없이 사라지면 경고한다. 경고는 `E_WARNING`, `ResourceWarning`, type `ResourceWarning`인
   `process.emitWarning`이다(GN-6p, B-10). 생성 시험은 호출 뒤의 kind `consumed`와 경고를 요구한다. Go와 WASM은 그런
   member와 unit을 이름을 대고 거부한다. `make check`로 확인했다.
-- 8d9ed8c에서 `tests/e2e/classes`의 end-to-end 검사가 Python에서 실패했다. `a<name>`이 인자 tuple을 이어 붙인
+- `tests/e2e/classes`의 end-to-end 검사가 Python에서 실패했다. `a<name>`이 인자 tuple을 이어 붙인
   iterator로 만들었는데, `PyTuple::new`는 크기가 정확한 것만 받기 때문이다. Node와 WASM에서도 실패했다. 기다리는 member의
   결과 변환이 함수를 부르기만 하는 closure였고, clippy가 이것을 거부하기 때문이다(`redundant_closure`). 이제 Python은
   vector로 tuple을 만들고, Node는 함수 자체를 넘긴다(GN-6m, GN-6n). `tests/e2e/classes`의 `make e2e`로 확인했다.
 - fsm의 Go C ABI가 컴파일되지 않았다(E0283, type annotations needed): `out_optional`이 `impl Into<Option<T>>`를 받았는데,
   error unit의 optional property인 `Option<i64>`와 optional text field인 `&Option<String>`이 두 타입 `T`에 맞아서 제네릭
   `out_int`과 `out_text`가 `T`를 정하지 못했다. 이제 `out_optional`은 PHP, Python, Node처럼 코어 값의 `as_ref`를 받는
-  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과.
+  `Option<T>`를 받는다(GN-16). `packages/ts`의 `npm test`로 확인했다: 280개 중 280개 통과. fsm의 `make e2e`로도
+  검증했고, 그 기록은 증거다: PHP, Python, Node, WASM이 통과했고(557, 556, 557, 556개 시험), Go는 컴파일되었고 결함 88의 이름
+  붙은 `from_code` 시험 20개만 실패했다. 그 입력은 GN-13의 case-test 진입점이 생성될 때까지 Go에 형태가 없다.
 - Go tuple parameter 시험이 `uint` 부분에 `in_uint`을 요구했지만, GN-12a는 `uint` 부분을 `in_safe_uint`로 안전 정수에
   묶는다. 이제 시험은 `in_safe_uint`를 요구한다. `packages/ts`의 `npm test`로 확인했다: 277개 중 277개 통과.
 - 같은 `keyed_map` 정수 key가 두 결과를 냈다: Node와 WASM은 안전 정수가 아닌 number key를 `invalid_argument_type`으로
@@ -228,7 +312,7 @@
   `binding_core::Io::for_generated_call()`을 넘기고 언어마다 자기 꼴로 기다린다(GN-6m). PHP는 호출 스레드를 막는다.
   Python은 코어 호출을 `py.detach`에서 돌리고 `asyncio.to_thread` 위의 awaitable `a<name>`을 더한다. Node는 작업을
   `ScopedTask`로 libuv 풀에서 돌리는 `Promise`를 돌려주고, 그 진입은 async 함수라서 모든 실패가 promise를 거부한다.
-  Go는 그런 member를 이름을 대고 거부하고, 기다리는 constructor·property·iterate·hook도 이름을 대고 거부한다. CK-16은
+  Go는 그런 member를 이름을 대고 거부한다. 기다리는 constructor·property·iterate·hook은 이름을 대고 거부된다. CK-16은
   Python의 예약어인 awaitable 이름도 보고한다. `make test-ts`로 확인했다.
 - fault injection point가 있는 계약의 Go C ABI는 남은 point를 closure `|output, item| out_text(output, item)`로
   주어서, `polyspec-sample-go`의 `cargo clippy -D warnings`가 `redundant_closure`로 실패했고 `tests/e2e/sample`의 Go
@@ -264,7 +348,8 @@
   closed"로 실패했다. 이제 Go 시험은 다른 target처럼 그 호출의 kind를 요구하고 다음 단계로 넘어간다(GN-13f).
   `packages/ts`의 `npm test`로 확인했다.
 - CI와 release workflow 파일, 그리고 `config/release.json`은 GN-14b의 어느 목록에도 없었다. 그래서 이 파일들을 더한 뒤 종단 실행의
-  입력 시험이 실패했다. 이제 이 파일들은 실행이 읽지 않는 파일로 각각 이유와 함께 목록에 있다(GN-14b).
+  입력 시험이 실패했다. 이제 이 파일들은 실행이 읽지 않는 파일로 각각 이유와 함께 목록에 있다(GN-14b). `packages/ts`의
+  `npm test`로 확인했다: 289개 중 289개 통과이고, `tests/e2e-inputs.test.ts`의 시험이 그 안에 있다.
 - origin value class를 받는 member의 case는 값을 `{"kind": "text", "value": ...}`로 주었고, 생성기는 어떤 항목도 대지 않는 예외
   "no case value of the type {"unit":"value"}"로 끝나서 json은 어떤 target도 생성되지 않았다. 이제 그 값은 그 kind의 `out` 행이
   적은 member의 호출이고(`Value.string`, list이면 그 값들의 `Value.array`), 생성기가 적지 못하는 값의 case(parameter 둘인
@@ -276,10 +361,14 @@
   tag를 붙이고 `packages/ts`의 npm archive와 함께 GitHub Release를 만든다. 그 tag는 `binding_core`도 Git tag로
   release한다(`config/release.json`). Makefile은 `ci-targets`, `ci-summary`, `ci-passed`, `release-tag`,
   `release-checkout`, `release-prepare`, `release-tools`, `release-tools-path`, `release-assets`, `release-publish`,
-  `release-undraft`, `release-coverage`를 더한다.
+  `release-undraft`, `release-coverage`를 더한다. `make check`로 확인했다: test-ts, test-rust, lint-rust가 통과했다.
+  `make release-coverage`로도 확인했다: 모든 패키지 파일이 분류되었다. workflow는 `main`의 push 뒤에만 돌므로, 그것들을
+  검증한 실행은 아직 없다.
 - 실패 주입점을 가진 코어는 저장소가 flag나 자기 dev-dependency를 주지 않으면 지점이 꺼진 채로 `cargo test`를 돌렸고, 저장소들은
   이를 두 꼴로 했다. 이제 코어는 자기 자신을 `fault-test`와 함께 dev-dependency로 두어, flag 없는 `cargo test`가 지점을
   장전한다. `binding check`는 그것이 없는 코어 manifest를 보고한다(CK-65, GN-5). tests/e2e의 sample 코어가 그 dev-dependency를 갖는다.
+  `packages/ts`의 `npm test`로 확인했다: 289개 중 289개 통과이고, CK-65의 시험이 그 안에 있다. 그 dev-dependency를 가진
+  코어의 `tests/e2e/sample` `make e2e`로도 확인했다: 모든 target이 통과했다.
 - class의 list 항목이나 시험 대상 호출의 class 타입 인자로 인스턴스 값을 준 case는 생성기를 "no case value of the
   type"으로 멈추게 했다. 이제 case의 어느 자리에 있는 class의 값도 인스턴스 값이며, 각 target이 그 자리에서 그것을
   만든다(GN-13f). `tests/e2e/classes`는 `classes.join`과 `tag.same`의 그런 case를 가진다. `packages/ts`의 `npm test`로
@@ -298,10 +387,13 @@
 - `binding scaffold`는 70칸보다 넓은 allow 속성을 인자마다 한 줄로 썼다. 이것은 rustfmt 기본 설정의 꼴이어서,
   `use_small_heuristics = "Max"`와 `max_width = 120`을 쓰는 저장소에서는 그 설정이 한 줄로 합치는 각 바인딩 crate의
   `src/lib.rs`에서 `cargo fmt --check`가 실패했다. 이제 allow 속성은 두 꼴 모두가 그대로 두는 80칸 이하의 한 줄이고, 들어가지
-  않는 이유는 그 위의 주석이 된다. Node addon의 이유는 규칙 id를 적는다(GN-3a, GN-4).
+  않는 이유는 그 위의 주석이 된다. Node addon의 이유는 규칙 id를 적는다(GN-3a, GN-4). `packages/ts`의 `npm test`로
+  확인했다: 289개 중 289개 통과이고, 바인딩 crate에 rustfmt를 기본 설정과 저장소의 설정으로 돌리는 시험이 그 안에 있다.
 - 생성기는 루트가 아닌 module의 오류 unit을 모든 target에서 거부했다. 이제 그것을 생성한다. PHP는 그 module의 namespace에
   클래스를 등록하고, Python은 `<root>.<module>`과 `<root>`에서 주며, Node와 WASM은 그 이름으로 내보낸다(GN-7a, GN-11).
   tests/e2e/shapes의 오류 unit `utf8_error`는 module `errors`에 있으므로, 종단 검사는 각 target에서 그 오류를 낸다.
+  `tests/e2e/shapes`의 `make e2e`로 확인했다: 모든 target이 통과했고 php는 시험 66개, python 78개, node 79개, go 50개,
+  wasm 77개다.
 - 기본값 `{empty: "object"}`가 있는 record parameter는 모든 target에서 거부되었다("a default of a record parameter is not
   generated yet"). 그래서 `parse(source, options = {})` 같은 parameter가 있는 계약은 어떤 target도 생성되지 않았다. 이제
   record의 모든 field에 기본값이 있으면 그 parameter를 생성한다. 코어는 모든 field가 `None`인 record를 받고, Python과
@@ -311,14 +403,18 @@
 - Makefile에 단위 시험 target이 없어서, packages/ts와 binding_core의 시험은 각 패키지의 명령으로만 돌았다. `make test-ts`는
   packages/ts를 type-check하고 시험을 돌리고, `make test-rust`는 binding_core를 모든 feature로, 그리고 feature 없이 시험한다.
   `make lint-rust`는 두 꼴로 clippy를 돌리고 형식을 확인하며, `make check`는 셋을 끝까지 돌리고 실패한 것을 모두 이름한다.
+  `make check`로 확인했다: test-ts는 시험 289개를 돌려 모두 통과했고, test-rust와 lint-rust는 모든 feature와 feature
+  없이 통과했다.
 - `binding generate`는 다른 target을 쓴 뒤 거부된 target을 usage 줄과 상태 2로 끝냈다. 명령줄이 잘못된 것처럼 끝냈으므로,
   저장소는 거부와 usage 오류를 구별할 수 없었다. 이제 거부, 계약의 crate가 아닌 코어 manifest, 실패한 `cargo metadata`는 usage
-  줄 없이 상태 1로 끝난다. usage는 명령줄 오류만 상태 2와 함께 찍는다(GN-1c).
+  줄 없이 상태 1로 끝난다. usage는 명령줄 오류만 상태 2와 함께 찍는다(GN-1c). `packages/ts`의 `npm test`로 확인했다:
+  289개 중 289개 통과이고, GN-1c의 시험이 그 안에 있다.
 - 실패 주입점은 binding_core의 feature `fault-test`로 판정되었는데, Cargo는 build 전체에서 그 feature를 합친다. 그래서 코어
   하나가 `fault-test`를 켜면 모든 코어의 지점이 켜졌고, feature에서 `polyspec-<library>/fault-test`를 빠뜨린 바인딩 crate도
   그 라이브러리의 지점을 장전하는 case를 통과했다. 이제 지점은 macro `fault::point!`이고, 그것을 적은 crate의 feature
   `fault-test`로 판정된다. `tests/point.rs`는 코어 둘과, 그 가운데 하나의 feature만 켜는 바인딩을 만들어 이를 확인한다(GN-5).
-  코어는 `binding_core::fault::point(NAME)` 대신 `binding_core::fault::point!(NAME)`을 적는다.
+  코어는 `binding_core::fault::point(NAME)` 대신 `binding_core::fault::point!(NAME)`을 적는다. `make test-rust`로
+  확인했다: `tests/point.rs`가 모든 feature와 feature 없이 통과했다.
 - 함수나 다른 타입 안의 callback을 받으면서 raises가 있는 member는 case 형식을 기다린다고 지적되어 그 kind에 case가
   없었다(CK-22). 이제 case는 함수를 `args`가 parameter의 위치인 `{"function": [<행>]}`로, callback 타입의 모든 자리를 그
   fixture나 그 interface를 구현하는 class의 인스턴스 값으로 주고, `binding check`는 fixture를 판정하듯 각각을 판정한다
@@ -340,7 +436,8 @@
   map으로 만들고, 그것이 적은 종류의 key는 항목과 같이 alias의 행으로 만든다(GN-6e). `packages/ts`의 `npm test`로 확인했다.
 - 검사는 타입 `int`나 `uint` 자리에 있는 case의 정수를 판정하지 않았다. 그래서 `int` parameter에 9223372036854775807을
   주는 case가 검사를 통과했고, Python과 PHP는 그 값을 i64로 받았지만 Node와 WASM은 kind `invalid_number`로 거부했다.
-  이제 검사는 그런 자리에서 안전 정수 밖에 있는 case의 정수를 보고한다(CK-64).
+  이제 검사는 그런 자리에서 안전 정수 밖에 있는 case의 정수를 보고한다(CK-64). `packages/ts`의 `npm test`로 확인했다:
+  289개 중 289개 통과이고, `tests/contract-check.test.ts`의 CK-64 시험이 그 안에 있다.
 - Node과 WASM 선언은 `int64` parameter를 `number | bigint`로, `int64` 결과를 `bigint`로 적었지만 바인딩은 안전 정수의
   number만 받고 주었다. 그래서 case 9223372036854775807이 인자 오류로 거부되었고, `binding`은 case 파일의 그 정수를 가장
   가까운 double로 읽었다. 이제 바인딩은 i64 범위의 `bigint`를 받고 `bigint`를 주며, `binding`은 안전 정수 밖의 정수를
@@ -369,7 +466,9 @@
   fixture, alias의 U-7 시험을 가진다(GN-13c). `packages/ts`에서 `npm test`로 확인했다.
 - `tests/e2e/shapes`와 `tests/e2e/sample`의 코어는 길이와 index를 `as`로 변환했는데, 이제 그 workspace가 가진 R-1의 lint가
   이를 금하므로 코어의 lint가 모든 target을 실패시켰다. 길이는 변환의 이유를 단 함수 하나로 넓히고, index는
-  `usize::try_from`으로 변환하며, data 값의 정수는 U-7의 이유를 단 가장 가까운 float다.
+  `usize::try_from`으로 변환하며, data 값의 정수는 U-7의 이유를 단 가장 가까운 float다. `tests/e2e/shapes`의
+  `make e2e`로 검증했고, 그 기록은 증거이며 모든 target에서 통과했다(PHP 66, Python 78, Node 79, Go 50, WASM 77개 시험).
+  `tests/e2e/sample`의 `make e2e`도 증거인 기록에서 모든 target의 코어 lint를 통과했다.
 - 다른 라이브러리의 실패 주입점(`<library>.<id>`)을 장전하는 case는, `fault-test`가 자기 코어의 feature만 켜는 바인딩
   crate에서 돌았다. 그래서 다른 코어의 지점이 컴파일되지 않아 case가 그것을 장전하지 못했고, `binding check`는 그
   manifest를 지적하지 않았다. 이제 `binding scaffold`는 case 파일이 장전하는 지점의 라이브러리를 읽어 각각의
@@ -410,9 +509,10 @@
 - `binding generate`는 한 target이 항목 하나를 거부하면 아무것도 쓰지 않아, Go가 아직 받지 못하는 계약은 어느 target의
   바인딩도 내지 않았다. 이제 target마다 따로 생성해, 아무것도 거부하지 않은 target은 모두 쓰고, 거부된 target은 그 항목과
   함께 이름한 뒤 상태 2로 실패한다(GN-1c). `packages/ts`의 `npm test`로 확인했다.
-- `tests/e2e/sample`의 값 alias `data`는 target Go와 WASM을 선언했지만 out 행이 Go 값과 WASM 값을 만들지 않고 그 값을 분류하는 in 행도 없어, `binding
-  check`가 `tests/e2e/sample`과 `tests/e2e/consumer`의 모든 target을 실패시켰다(CK-8). 이제 각 out 행이 그 kind의 Go 값과
-  WASM 값을 만들고, in 행이 그 값을 분류한다. `packages/ts`의 `npm test`와 `make e2e`로 확인했다.
+- `tests/e2e/sample`의 값 alias `data`는 target Go와 WASM을 선언했지만 out 행이 Go 값과 WASM 값을 만들지 않고 그
+  값을 분류하는 in 행도 없어, `binding check`가 `tests/e2e/sample`과 `tests/e2e/consumer`의 모든 target을
+  실패시켰다(CK-8). 이제 각 out 행이 그 kind의 Go 값과 WASM 값을 만들고, in 행이 그 값을 분류한다. `packages/ts`의
+  `npm test`와 `make e2e`로 확인했다.
 - 생성한 시험은 실패하는 contract case만 실행하고 결과를 비교하지 않았다. 실패하지 않는 case만 가진 member는 어느 시험도
   부르지 않았다. 이제 모든 target이 그런 case를 하나씩 실행해 결과를 case의 값과 비교한다. 그 값의 키는 `cases` 행의 새
   `result`이거나 `result`이며, 결과에 case 형식이 없는 case는 이름을 대고 시험이 실패한다(GN-13e, CK-22). `packages/ts`의

@@ -77,12 +77,12 @@ async function settled(call) {
 }
 `;
 
-// GN-6m: a test that calls a member that waits awaits it: the test is an async function, a failure is a rejection and
-// an outcome is settled.
+// GN-6m: a test that calls a member that waits awaits it: each test of the block is an async function, a failure is a
+// rejection and an outcome is settled.
 export const awaitedTest = (block: string): string => {
   if (!/\bawait /.test(block)) return block;
   return block
-    .replace(/^(\ntest\('[^\n]*?'), \(\) => \{/, '$1, async () => {')
+    .replaceAll(/(\ntest\('[^\n]*?'), \(\) => \{/g, '$1, async () => {')
     .replaceAll('assert.throws(() => ', 'await assert.rejects(async () => ')
     .replaceAll('outcome(() => ', 'await settled(async () => ');
 };

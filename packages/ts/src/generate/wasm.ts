@@ -4,13 +4,13 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, variantPattern, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, variantPattern, errorMatched, recognizedFn, recognizedMatch, RECEIVER_GUARD, guardBorrows } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
+import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -487,7 +487,7 @@ pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
 ${[...receiverLines(model, fn), ...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel)].join('\n')}
         let items = Array::new();
-        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'})`)} {
+        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? RECEIVER_GUARD : 'this'})`)} {
 ${body}
         }
         Ok(items.into())
@@ -529,8 +529,11 @@ function functionRust(model: Model, fn: Fn): string {
       if (arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, rustString(langName('wasm', parameter.name, 'variable')), 'binding_error')}`);
     }
   }
-  // GN-6h: the guards of the places of the call, the receiver's first.
-  lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel));
+  // GN-6h: the guards of the places of the call, the receiver's first. A future owns the guards, so it binds the
+  // borrows of the guards inside it.
+  const moved = fn.machine !== true && waitsAsync(fn);
+  lines.push(...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel, !moved));
+  const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   // The receiver is the reference above, or the guard of its lock, the first argument of the core path (U-2
   // core.receiver).
   const callArgs = coreCallArgs(model, fn, (p) => rustField(p.name), 'this');
@@ -567,7 +570,7 @@ function functionRust(model: Model, fn: Fn): string {
   } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards; the event loop of JavaScript polls it, and its
     // result is converted when it ends.
-    const body = fn.fallible ? `${core}.await.map_err(${failed})` : `Ok(${core}.await)`;
+    const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${failed})` : `Ok(${core}.await)`}`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        awaited(${futureOf(model, fn, body)}, ${closure([/\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible && fn.returns === 'none') {
@@ -623,8 +626,8 @@ fn held_param_${plain}(value: &JsValue, subject: &str) -> Result<Rc<${heldType(o
 ` : ''}
 
 /// T-5: a value of ${jsClass} leaves as a new instance, which the ES module makes around the handle of the value.
-fn out_${name}(value: ${core}) -> Result<JsValue, Fail> {
-    let handle = insert_${plain}(value)?;
+fn out_${name}(value: impl CoreForm<${core}>) -> Result<JsValue, Fail> {
+    let handle = insert_${plain}(value.core_form())?;
     make_instance(${index}, handle).inspect_err(|_fail| ${table}.with(|table| table.borrow_mut().remove(handle)))
 }
 ${takesObject(model, object) ? `
@@ -1013,7 +1016,7 @@ function libRust(model: Model): string {
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));

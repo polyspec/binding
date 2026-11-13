@@ -1,4 +1,5 @@
 <!-- doc-id: development -->
+<!-- source-sha256: 76a705639b41d96789d9a4034887bfb4c37ca26dc9bf9a556b13f34a18e551f6 -->
 # 개발
 
 [English](AGENTS.md)
@@ -78,3 +79,20 @@
   release하는 모든 manifest의 version이다.
   Enforced by: `make release-coverage`는 `config/release.json`이 분류하지 않은 package 파일을 실패시킨다. `make
   release-tag`는 성공한 실행의 commit에만 tag를 붙인다.
+- Own: `make docs-check`는 `config/documents.json`이 고른 문서를 하나씩 설치된 `@polyspec/kit`의 문서 검사로 읽는다: 그
+  link, anchor, fence, changelog, 그리고 `config/checklist.json`이 선언한 `docs/plans/<plan>/`의 체크리스트. 영어 문서마다
+  같은 `doc-id`를 가진 한국어 짝 `.ko.md`가 있고, 짝은 영어 파일의 sha256인 `source-sha256`을 가진다. 이것은 번역을 검토한
+  뒤 `make documents-stamp PATHS=<twin>`이 쓴다. commit 전에 `make docs-check`를 돌린다. 이유: polyspec 저장소는 모두 같은
+  문서 구조를 가지고, 깨진 link나 원문과 다른 것을 말하는 짝은 읽는 사람을 잘못 이끈다.
+  Enforced by: `make docs-check`. 짝이 원문과 같은 것을 말하는지는 검토가 판단한다.
+- Own: 이 저장소의 체크리스트는 하나, 짝을 가진 `docs/plans/execution/checklist.md`이다. `docs/plans/execution/plan.md`가
+  wave마다 배경과 의존을 가진다. 작업 ID는 `B<wave>.<number>` 꼴이고, 하위 작업은 `-<number>`를 붙이며, 행은 ID, 작업,
+  산출물, 검증 명령, 상태를 가진다. 작업은 하위 항목으로 나누거나 체크리스트에 더하고, 다른 체크리스트를 만들지 않는다.
+  이유: 검증 명령을 가진 작업의 목록 하나가 무엇이 끝났고 어떻게 확인했는지를 보인다.
+  Enforced by: `make docs-check`
+- Own: 추적 파일은 이 저장소의 것이든 다른 저장소의 것이든 Git commit을 이름하지 않는다. 도구가 commit을 요구하는 곳만
+  예외다: GitHub action은 그 `uses:` 줄에서 commit으로 고정하고, lock은 그 package manager가 정한 것을 적는다. end-to-end
+  실행이 확인한 commit 같은 실행의 증거는 무시되는 `var/report/` 아래 그 기록에 있다. changelog 항목이나 문서는 무엇을,
+  어느 명령으로, 어느 입력에서 검증했는지 적는다. 이유: commit 이름은 그것을 찾아보지 않는 독자에게 아무것도 말하지 않고,
+  다시 쓰이거나 얕은 history에서는 남지 않으며, 독자에게 필요한 사실은 문장 자체에 있어야 한다.
+  Enforced by: `packages/ts`의 `npm test`, 그 `tests/tracked-commits.test.ts`가 추적 파일 안의 commit 이름 토큰을 실패시킨다.

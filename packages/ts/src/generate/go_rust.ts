@@ -19,7 +19,7 @@ import {
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, optionRef, rustString, usedHelpers, WIDEN } from './text.ts';
+import { header, closure, optionRef, rustString, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -519,8 +519,8 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 }
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
-fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+fn out_${plain}(output: &mut Vec<u8>, value: impl CoreForm<${core}>) {
+    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
@@ -1201,24 +1201,8 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  const block = `${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${units}\n${tupleReaders(model)}`;
-  // A helper that only the test entry points of a feature use carries that feature, because the build without it
-  // denies dead code (GN-15).
-  const plain = new Set(helperItems(usedHelpers(block, code)));
-  const features = new Map<string, Set<string>>();
-  for (const [feature, names] of testEntryUses(model)) {
-    for (const item of helperItems(usedHelpers(block, names))) features.set(item, (features.get(item) ?? new Set()).add(feature));
-  }
-  return helperItems(usedHelpers(block, `${code} ${[...testEntryUses(model).values()].join(' ')}`)).map((item) => {
-    const named = [...(features.get(item) ?? [])].sort().map((f) => `feature = ${JSON.stringify(f)}`);
-    if (plain.has(item) || named.length === 0) return `\n${item}\n`;
-    const cfg = named.length === 1 ? named[0] : `any(${named.join(', ')})`;
-    return `\n${item.replace(/^((?:\/\/\/[^\n]*\n)*)/, `$1#[cfg(${cfg})]\n`)}\n`;
-  }).join('');
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${DRIVEN}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
 }
-
-// The items of a block of helpers that usedHelpers gave.
-const helperItems = (block: string): string[] => block.split(/\n\n/).map((item) => item.trim()).filter((item) => item !== '');
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
 // names are left out.
@@ -1248,13 +1232,13 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
   }).join('\n\n');
 }
 
-// The helpers that the test entry points of each feature use, which count as uses where the entry points compile with
-// their feature.
-const testEntryUses = (model: Model): Map<string, string> => new Map([
-  ['panic-test', model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''],
-  ['fault-test', model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''],
-  ['codec-test', aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')],
-]);
+// GN-4: the helpers that the test entry points of each feature use; a helper that only they use is compiled under
+// their features.
+const testEntryUses = (model: Model): Record<string, string> => ({
+  'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : '',
+  'fault-test': model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : '',
+  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
+});
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);

@@ -1042,7 +1042,9 @@ export const RECEIVER_GUARD = 'receiver';
 // GN-6h: the lines that take the locks of the places of a call, each a `let` of the guard under the name of the place.
 // `fail` maps a BindingError to the error of the language's call, and `label` is the name of a class in the language,
 // for the message of kind busy and of a poisoned object.
-export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string, fail: string, label: (object: ObjectClass) => string): string[] {
+// `borrowed` false leaves out the borrows of guardBorrows, which a call binds inside the future or the closure that owns
+// the guards.
+export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter) => string, receiver: string, fail: string, label: (object: ObjectClass) => string, borrowed = true): string[] {
   const lines: string[] = [];
   const reads = new Map<ObjectClass['unit'], string[]>();
   for (const place of places(model, fn)) {
@@ -1061,6 +1063,21 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     const beside = reads.get(place.object.unit) ?? [];
     lines.push(`        let ${name} = ${cell}.read(${text}, &[${beside.map((b) => `Some(&${b})`).join(', ')}]).map_err(${fail})?;`);
     reads.set(place.object.unit, [...beside, name]);
+  }
+  if (borrowed) lines.push(...guardBorrows(model, fn, variable).map((line) => `        ${line}`));
+  return lines;
+}
+
+// GN-6h: the core gets the value that each guard holds, which a path of a trait (ToString::to_string) does not find
+// through a borrow of the guard. The guards stay alive under the names that the borrows shadow; where the core call runs
+// in a future or a closure that leaves the call, the guards move into it and these lines are its first statements.
+// GN-6o: the receiver self is the value itself, which the core consumes.
+export function guardBorrows(model: Model, fn: Fn, variable: (parameter: Parameter) => string): string[] {
+  const lines: string[] = [];
+  for (const place of places(model, fn)) {
+    if (place.param === undefined && fn.receiver === 'self') continue;
+    const name = place.param === undefined ? RECEIVER_GUARD : variable(place.param);
+    lines.push(`let ${name} = ${place.write ? '&mut ' : '&'}*${name};`);
   }
   return lines;
 }
@@ -1176,17 +1193,17 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   }
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
-    // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
-    const place = held.find((h) => h.param === p);
-    if (place !== undefined) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
+    // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
+    if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
   if (waitsIo(fn)) args.unshift(IO_TOKEN);
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
-  // GN-6o: the receiver self is the value that its place took.
-  if (held.some((h) => h.param === undefined)) return [fn.receiver === 'self' ? RECEIVER_GUARD : `${mut ? '&mut ' : '&'}${RECEIVER_GUARD}`, ...args];
+  // GN-6o: the receiver self is the value that its place took; any other receiver is the borrow that lockLines bound.
+  if (held.some((h) => h.param === undefined)) return [RECEIVER_GUARD, ...args];
   return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
 

@@ -23,6 +23,9 @@ types of the design rules named below and no rule of any library.
   optional dependencies `serde_json` 1.0.154 (the list of faults of a case) and, on Unix, `libc` 0.2.191 (the value of
   an errno symbol). A core that has points declares `fault-test = ["polyspec-binding-core/fault-test"]` and nothing
   else of it; a binding turns on the feature of each core whose points its cases name. No release build has it (G-5).
+- Tests: a test file of the crate that needs a feature (`tests/lock.rs`, `tests/driver.rs`) is a `[[test]]` target
+  with that feature in `required-features`, so `cargo test` without the feature does not build it, and a run of the
+  target runs its tests; a target that ran no test would pass while it checked nothing (HR-84).
 - Use from another repository during development: a path dependency on this folder,
   `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`, named by a local link
   and never by a tracked manifest (PRINCIPLES P30).
@@ -44,7 +47,7 @@ types of the design rules named below and no rule of any library.
 | `OrderedMap<T>` | T-2 `map<T>` | Insertion-ordered map with text keys: `new`, `with_capacity`, `insert -> Option<T>` (replaces in place, returns the old value), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`; equality depends on order; no `FromIterator`, which would drop repeated keys. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | Insertion-ordered map whose keys are `Key::Int(i64)`, `Key::Bytes(Vec<u8>)` or `Key::Text(String)`; the same API and rules as `OrderedMap`. |
 | `Raised` | U-3, E-7 | A language exception raised in a callback, held as a handle that the core does not open; `Raised::from_generated(Handle)` and `handle()` only with `construct`; `Display`, `std::error::Error`; no kind. |
-| `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)` or `Callback(Box<dyn std::error::Error + Send + Sync>)`: the error type of a core function that calls a callback; the last arm returns a Rust callback's error to its Rust caller unchanged, is built without `construct` and never reaches generated code. `From<Raised>`, `Display`, `std::error::Error` (its source is the Rust callback's error); `Debug` only. |
+| `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)` or `Callback(Box<dyn std::error::Error + Send + Sync>)`: the error type of a core function that calls a callback; the last arm returns a Rust callback's error to its Rust caller unchanged, is built without `construct` and never reaches generated code. `From<Raised>`, `Display`, `std::error::Error` (its source is the Rust callback's error); it derives `Debug` and no other trait. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`; `ALL`, `as_str()`. |
 | `naming::{convert, Word, Lang, Role}` | N-2 | The name conversion, public for generators outside binding; `naming::Lang` is `Php`, `Python`, `Js`, `Go`, `Rust`; `naming::Role` is `Class`, `Callable`, `Variable`, `Constant`. Its vectors are shared with binding's TypeScript conversion. |
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, all required; implemented by every core error enum and by `BindingError`. |

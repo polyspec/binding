@@ -3,9 +3,9 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
-import { pyHeader, pyString } from './text.ts';
+import { bracketDepth, pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['float("nan")', 'float("inf")', 'float("-inf")', '1.5', 'True', '"7"', '-1', '2**53', '2**64'],
@@ -77,6 +77,7 @@ def _outcome(call):
 `;
 
 export function pythonTests(model: Model, module: string): string {
+  checkCaseNames(model, caseSnake, false);
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
     errorNew: (unit, kind, message) => `pkg.${langName('python', unit.name, 'class')}(${pyString(message)}, ${pyString(kind)})`,
     callbackNew: (unit, how) => {
@@ -105,12 +106,49 @@ export function pythonTests(model: Model, module: string): string {
   const helpers: string[] = [];
   const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => {
     if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
-    const built = madeLines(model, madeForm, receiver);
+    const built = steps.apart(() => madeLines(model, madeForm, receiver));
     const helper = `_made_${helpers.length}`;
     helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${built.lines.map((line) => `    ${line}\n`).join('')}    return ${built.expr}\n`);
     return `${helper}()`;
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
+  // GN-13e: the parser of Python refuses brackets nested 200 deep, so a value that reaches DEEP is a local variable of a
+  // function of the module, which the next step takes; the values inside a function of an instance value are its own.
+  const DEEP = 50;
+  let pending: string[] = [];
+  let deepFunctions = 0;
+  const steps = {
+    depth: 0,
+    bind: (expr: string): string => {
+      if (bracketDepth(expr) <= DEEP) return expr;
+      const name = `step_${pending.length}`;
+      pending.push(`${name} = ${expr}`);
+      return name;
+    },
+    done: (expr: string): string => {
+      const last = steps.bind(expr);
+      if (pending.length === 0) return last;
+      const helper = `_deep_${deepFunctions++}`;
+      helpers.push(`\n\ndef ${helper}():  # noqa: ANN202\n${pending.map((line) => `    ${line}\n`).join('')}    return ${last}\n`);
+      pending = [];
+      return `${helper}()`;
+    },
+    drop: (): void => {
+      pending = [];
+    },
+    apart: <T>(make: () => T): T => {
+      const [depth, kept] = [steps.depth, pending];
+      steps.depth = 0;
+      pending = [];
+      try {
+        return make();
+      } finally {
+        steps.depth = depth;
+        pending = kept;
+      }
+    },
+  };
+  ctx.steps = steps;
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
   const madeForm: MadeForm = {
     ctx,
@@ -236,7 +274,7 @@ export function pythonTests(model: Model, module: string): string {
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         out.push(`
-    def test_b4_${name}_${kase.id}(self) -> None:
+    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(refusal)})`);
         continue;
       }
@@ -262,7 +300,7 @@ export function pythonTests(model: Model, module: string): string {
       const errno = expectedErrno(kase);
       usesErrno ||= errno !== null && 'symbol' in errno;
       out.push(`
-    def test_b4_${name}_${kase.id}(self) -> None:${receiverMade.lines}${before}${arming}
+    def test_b4_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${arming}
         with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
             ${kase.faults === undefined ? invoke(fn, callArgs(model, ctx, fn, caseArg), receiver) : armedCall}${kase.faults === undefined ? '' : '\n        self.assertEqual(_native._fault_left(armed), [])'}
         error = caught.exception
@@ -276,14 +314,14 @@ export function pythonTests(model: Model, module: string): string {
     for (const kase of resultCases(model, fn)) {
       if (kase.refused !== undefined) {
         out.push(`
-    def test_gn13e_${name}_${kase.id}(self) -> None:
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(kase.refused)})`);
         continue;
       }
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         out.push(`
-    def test_gn13e_${name}_${kase.id}(self) -> None:
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:
         self.fail(${pyString(refusal)})`);
         continue;
       }
@@ -304,7 +342,7 @@ export function pythonTests(model: Model, module: string): string {
       usesSame ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n        ${call}` : 'refused' in expected ? `\n        self.fail(${pyString(expected.refused)})` : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
-    def test_gn13e_${name}_${kase.id}(self) -> None:${receiverMade.lines}${before}${check}${after}`);
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
@@ -343,19 +381,24 @@ export function pythonTests(model: Model, module: string): string {
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
-    def test_n4_${name}_${kase.id}(self) -> None:${receiverOfCase(kase.receiver).lines}
+    def test_n4_${name}_${caseSnake(kase.id)}(self) -> None:${receiverOfCase(kase.receiver).lines}
         self.assertEqual(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${pyString(kase.result)})`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test. A member without parameters is
-    // a function of no arguments in CPython, which says so for a positional and for a keyword argument.
+    // a function of no arguments in CPython, which says so for a positional and for a keyword argument; a constructor
+    // without parameters is the __new__ of PyO3, which counts the positional arguments and names the keyword.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
+    const bare = fn.args.length === 0;
+    const pyo3New = bare && fn.kind === 'constructor';
+    const extra = pyo3New ? 'takes 0 positional arguments' : bare ? 'takes no arguments' : 'positional';
+    const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
     out.push(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${target('')}`}
-        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no arguments' : 'positional'}"):
+        with self.assertRaisesRegex(TypeError, "${extra}"):
             ${target(callArgs(model, ctx, fn, values, 'None'))}
-        with self.assertRaisesRegex(TypeError, "${fn.args.length === 0 ? 'takes no keyword arguments' : 'unexpected keyword'}"):
+        with self.assertRaisesRegex(TypeError, "${unknown}"):
             ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
   }
   // B-5c (GN-6h): a poisoned object is refused at every place, and an instance at a write place and another is busy.
@@ -422,7 +465,7 @@ export function pythonTests(model: Model, module: string): string {
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     out.push(`
-    def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${kase.id}(self) -> None:
+    def test_u7_${langName('python', kase.alias.unit.name, 'variable')}_in_${caseSnake(kase.id)}(self) -> None:
         with self.assertRaises(pkg.${cls(kase.category)}) as caught:
             _native._alias_in_${langName('python', kase.alias.unit.name, 'variable')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)})
         self.assertIs(type(caught.exception), pkg.${cls(kase.category)})

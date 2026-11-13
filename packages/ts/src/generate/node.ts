@@ -4,10 +4,10 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit } from './model.ts';
+import { awaitsNone, type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, propertyValue, cleanupAsserts, cleanupWarning, variantPattern, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, guardBorrows } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -505,7 +505,7 @@ ${body}
 const classLabel = (object: ObjectClass): string => langName('node', object.unit.name, 'class');
 
 // GN-6h: the lines that take the locks of the places of a call.
-const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel);
+const locks = (model: Model, fn: Fn, borrowed = true): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel, borrowed);
 
 const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
 
@@ -547,7 +547,10 @@ function entryRust(model: Model, fn: Fn): string {
       if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
-  lines.push(...locks(model, fn));
+  // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
+  const moved = waitsAsync(fn) || pooled(fn);
+  lines.push(...locks(model, fn, !moved));
+  const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
   if (fn.machine === true) {
@@ -578,7 +581,7 @@ function entryRust(model: Model, fn: Fn): string {
   } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
-    const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
+    const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (pooled(fn)) {
@@ -589,7 +592,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${work}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+    lines.push(`        waiting(env, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -1063,8 +1066,8 @@ const _: () = {
     sync::<${core}>();
 };
 
-` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value')} }, env).map_err(internal)
+` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: impl CoreForm<${core}>) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value.core_form()')} }, env).map_err(internal)
 }
 
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${jsClass} inside another type is an instance of it, whose value is read, cloned and
@@ -1200,7 +1203,7 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
@@ -1462,9 +1465,9 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
-    },
+    } }[${jsString(name)}],
     writable: true,
     configurable: true,
   });

@@ -124,7 +124,10 @@ the design ids are those of the binding design.
   and wasm-bindgen expand to unsafe code, and each unsafe block of the generated code carries an allow with its reason.
   An exception of one crate is an attribute of its source with its reason (`#![allow(<lint>, reason = "...")]`),
   because Cargo applies the workspace table to every member alike. The generated
-  code holds only the helper functions it uses, because the lints deny dead code.
+  code holds only the helper functions it uses, because the lints deny dead code. A helper of the Go C ABI that only
+  the entry points of a test feature (`panic-test`, `fault-test`, `codec-test`) use is compiled under those features
+  alone (`#[cfg(any(feature = ...))]`), because the static library without them has no such entry point and would
+  hold the helper unused.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
 - **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
@@ -252,10 +255,14 @@ the design ids are those of the binding design.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the
   native module, Node a napi class exported by its JavaScript name, PHP a `php_class` with the flag final. A method or
   property calls the core path with the held value as its receiver; a static member or the constructor that returns
-  the class wraps the value. `constructible: false` leaves no constructor (PHP declares it private). A property is a
+  the class wraps the value. A result of the class is a new instance whether the core gives it owned or borrowed (an
+  accessor gives `&T`, and an item of an optional or a list a reference to either): the conversion `out_<class>` takes
+  `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, so the instance never borrows the core. `constructible: false` leaves no constructor (PHP declares it private). A property is a
   getter in Python and Node and a method in PHP (I-3). napi-rs defines a class's methods as not configurable, so a
   Node method or static member that takes arguments is the addon's `__<name>`, not enumerable and absent from the
-  declarations, and the entry defines `<name>` over it with the checks of G-7. napi-rs keeps the classes it parsed in
+  declarations, and the entry defines `<name>` over it with the checks of G-7. The entry writes that function as a
+  method with the computed key `<name>`, not as a function expression named `<name>`: a member may take a name that
+  JavaScript reserves (`null`, `delete`), which names no function, and the method keeps `<name>` as its `name`. napi-rs keeps the classes it parsed in
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
   Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
   arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
@@ -287,18 +294,25 @@ the design ids are those of the binding design.
   calls the core and holds them until its result is converted; the read places of one call that are the same
   instance share one lock (`Arc::ptr_eq`), and an instance that the call takes at a write place and at another place
   fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
-  gets `&*guard` for a read place and `&mut *guard` for a write place, and a parameter whose `core` is `value` gets
-  a clone of the value under its read guard, so that class is `Clone`. A parameter whose type is a generated class or an
-  `optional` of one names in `core` the borrow that the core takes (`&`, `&mut` or `value`), and a parameter without it is
-  refused by name (G-4): a default would claim a borrow that nobody wrote, and the call alone does not find a wrong
-  one. Every binding crate holds, for each
-  member with a parameter that names its borrow, the assertion `const _: () = { let _: fn(<receiver>, <param>, ...) ->
-  _ = <core path>; };`, in which the receiver is `&T`, `&mut T` or `T` of the core type of its class, a parameter that
-  names its borrow is `&T`, `&mut T` or `T` of the core type of its class and every other parameter is `_`, so a
-  borrow that differs from the core does not compile (I-2). Why: binding reads no Rust source, so the contract names
-  the borrow, and the call alone does not find a contract `&mut` over a core that takes `&`, because `&mut` coerces to
-  `&`. A `core` of a parameter whose type is an `optional` of a class is refused by name (G-4). A value of the class
-  inside another type (an
+  gets `&*guard` for a read place and `&mut *guard` for a write place, which the generated code binds under the name of
+  the place once every lock is taken, so a core path of a trait (`std::string::ToString::to_string`), which takes `&T`
+  of any `T` and therefore does not deref a borrow of the guard, gets the value as well. Where the core call runs in a
+  future or a closure that the call moves to another thread (Node: `driving` of GN-6n and the pool of GN-6m), the guards
+  move into it and the borrows are bound inside it, because a borrow of a local of the call lives no longer than the
+  call. A parameter whose type is a generated class or an `optional` of one names in `core` the borrow that the core
+  takes (`&`, `&mut` or `value`), and a parameter without it is refused by name (G-4): a default would claim a borrow
+  that nobody wrote, and the call alone does not find a wrong one. `&mut` makes the parameter a write place, and `&` and
+  `value` a read place. A parameter of a class gives the core `CoreForm::core_form` of the borrow of its guard (GN-6b):
+  the type of the core parameter selects the borrow where the core takes `&T` and a copy where it takes `T`
+  (`OrderedMap::insert(&mut self, key: Value, value: Value)`), so a parameter whose `core` is `value` gets a clone of the
+  value under its read guard, and that class is `Clone`. Every binding crate holds, for each member with a parameter
+  that names its borrow, the assertion `const _: () = { let _: fn(<receiver>, <param>, ...) -> _ = <core path>; };`, in
+  which the receiver is `&T`, `&mut T` or `T` of the core type of its class, a parameter that names its borrow is `&T`,
+  `&mut T` or `T` of the core type of its class and every other parameter is `_`, so a borrow that differs from the
+  core does not compile (I-2). Why: binding reads no Rust source, so the contract names the borrow, and the call alone
+  does not find a contract `&mut` over a core that takes `&`, because `&mut` coerces to `&`, nor a contract `&` over a
+  core that takes the value, because `CoreForm` gives either form. A `core` of a parameter whose type is an `optional` of
+  a class is refused by name (G-4). A value of the class inside another type (an
   element of a list, a field of a record, the return of a callback) is read, cloned and released at once, so such a
   class is `Clone`. The lock of a class with a write place holds a flag `poisoned`: a panic while the guard of a write
   place is held sets it before the guard is released, and every later call that takes the object at any place fails
@@ -511,7 +525,10 @@ the design ids are those of the binding design.
   null)`, which every error unit inherits, so that PHP code makes an error with its kind as Python, Node and WASM code
   does (GN-7a); without it a kind could be set only in the scope of the class that declares it, which is no public
   API. The object of an error that the extension raises is made without the constructor (B-4). An enum is a backed
-  enum (T-6). The `php_function` and `php_module` expansions of ext-php-rs call `Option::map_or` and
+  enum (T-6). PHP takes a keyword or a type name as the name of an enum case, but the macro `php_enum` of ext-php-rs
+  refuses them case-insensitively, also as the name that `#[php(name)]` gives, so such a case takes a trailing `_`
+  (`Kind::Object_`, `Kind::List_`); the backed value stays the value of the contract. The `php_function` and
+  `php_module` expansions of ext-php-rs call `Option::map_or` and
   `Result::unwrap_or`, so the functions and the module entry are in one module that holds that one allow.
   `keyed_map<T>{key}` is an array in its order (T-2). An int key is an integer key, or its decimal text when the
   contract lists text and not integers, because PHP makes a decimal string key an int; a string key is a text when it
@@ -920,9 +937,14 @@ the design ids are those of the binding design.
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
   `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
-  name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
+  name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). In Python a
+  function or method without parameters is a function of no arguments, which CPython reports as `takes no arguments`
+  and `takes no keyword arguments`, while a constructor without parameters is the `__new__` of PyO3, which reports
+  `takes 0 positional arguments` and `unexpected keyword argument`, and each test expects the words of its form. The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. Values that JSON
+  value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. A
+  number of the type `float` is a float literal in Python and PHP, which refuse an integer there (B-2), also when JSON
+  writes it as an integer (`0` is `0.0`, `1e20` is `1e+20`), and a negative zero keeps its sign (`-0.0`). Values that JSON
   cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
   `{"hex": ...}` for bytes that are no text; a text that is not well formed is `{"ill_formed": "<text>"}`, the text
   and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,
@@ -938,7 +960,11 @@ the design ids are those of the binding design.
   A value of a value type that a class of origin value represents (U-1) is the call of the static member or
   constructor that the `out` row of its kind names for the language: a member without parameters for a kind without
   `value`, and a member of one parameter, which takes the case's `value` as a case value of its type, so `list` holds
-  the values of the class; a kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  the values of the class. When that one parameter is another class of the contract, the `[key, value]` pairs of a
+  kind `map` fill it: its constructor without parameters makes it, and its one member with the receiver `&mut self`
+  and two parameters takes each pair in order, a text key as a value of kind `text` where that parameter is a class
+  of origin value (`Value.object` of an `OrderedMap` that `OrderedMap.insert` fills). A case value of such a class at
+  any other place is the same list of pairs. A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
@@ -976,7 +1002,7 @@ the design ids are those of the binding design.
   with their fixtures. A stringify and a to_json are run as the language runs the hook
   (GN-6g): a stringify has a test for each of its cases that does not raise, in which the string form of the instance
   (`str`, `String`, a `(string)` cast) is the case's `result` and, in PHP, the instance is a `\Stringable`; the B-4
-  test of a to_json calls `JSON.stringify`, `json_encode` or or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
+  test of a to_json calls `JSON.stringify`, `json_encode` or the unexported `toJSON` in Go, as the Go test of a stringify calls `stringify`; neither has a G-7 test. B-5c (GN-6h): for every class with a write place, a test makes an instance, runs the poison
   entry point of GN-5 on it, which panics while it holds the write guard, and requires kind `internal` from that call,
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
@@ -999,7 +1025,8 @@ the design ids are those of the binding design.
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
   safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
   the built-in form of the kind makes.
-- **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
+- **GN-13a** Open items of G-5, not generated yet: B-5b and B-6; B-10 in Go and WASM, which refuse a class unit
+  with `cleanup` by name (PHP, Python and Node generate it, GN-6p); of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
   constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of a value unit's rows; and, of the callback fixture, an `async` row, a function value
@@ -1031,9 +1058,21 @@ the design ids are those of the binding design.
   each part of a tuple return. The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
-  call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
+  call alone and fails when it raises. The result `null` of an optional has a case form whatever the optional holds,
+  a class too: each target compares the result with its null (Python `None`, Node, WASM and PHP `null`, and Go `nil`
+  of the type of the result). A case whose result has no case form (a class, a result of `none`), whose
   value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
   a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
+  The name of the test of a case in a language whose tests are functions or methods (Python, PHP, Go) holds the id of
+  the case as its words: the id is split at every run of characters other than ASCII letters and digits
+  (`document-order` is `document`, `order`), and the words are joined by `_` in Python and capitalized and joined in
+  PHP and Go (`DocumentOrder`). Node and WASM name a test by a string, which holds the id as it is. Two ids of the
+  cases of one member, or of one value alias, that give the same name refuse the target by name, PHP comparing names
+  without case as it does for its methods, so no test hides another. The parser of Python refuses an expression whose
+  brackets nest 200 deep ("too many nested parentheses"), and a case may nest a value deeper (a list past the depth
+  limit of its core). A Python case value whose brackets would nest more than 50 deep is therefore made step by step:
+  each value of it that reaches that depth is a local variable of a function of the test module, the next step takes
+  the variable, and the test calls the function, so the value of the case stays whole.
 - **GN-13f** A case of a method gives its receiver either as the arguments of a factory of its class among its own
   keys, or under the key `receiver` as an instance value, which earlier calls make:
   `{"new": "<member id>", "receiver": <instance value>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`
@@ -1056,7 +1095,11 @@ the design ids are those of the binding design.
   GN-16 for every enum parameter or field, U-2 (a call without an argument with a default gives the call with its
   default), U-7 (a kind of an alias through the member), K-2 (a nil callback, and the error of a callback is the error
   of the call), B-4 for every contract case that raises (the exact type of E-2 and E-7, `errors.As` of its category,
-  the kind, the status and the errno), GN-13e for every case that does not raise, and N-4 for a stringify. The cases
+  the kind, the status and the errno), GN-13e for every case that does not raise, and N-4 for a stringify. A case
+  value of a class is written as in the other targets: an instance value (GN-13f), the call of the make member of a
+  class of origin value, or the pairs that fill another class (U-1, GN-13), each a local of the test; a case whose
+  receiver, argument or result is not written has a test that fails with the reason, and the other tests are written
+  (GN-13e). The cases
   that arm faults are `zz_generated_fault_test.go` with the build tag `polyspec_fault_test`, and they lock the
   goroutine to its thread, because the arming is of the thread; the poison tests of B-5c are
   `zz_generated_held_test.go` with the build tag `polyspec_panic_test`. The end-to-end check runs `go test` with the
