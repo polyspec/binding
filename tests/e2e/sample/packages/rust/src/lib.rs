@@ -212,6 +212,27 @@ pub fn count(lookup: &mut dyn Lookup, keys: &[String]) -> Result<u64, Failure<Er
     Ok(found)
 }
 
+/// The value of a key, as the lookup gives it. A key written `?<name>` is asked as `<name>` and tolerates a lookup that
+/// fails: the core answers the exception of the language code and drops it, so the call gives `None` and ends without
+/// the exception (U-3, GN-6u). Any other key lets the failure of the lookup through.
+///
+/// # Errors
+///
+/// The failure of the lookup of a key without `?`, and the failure of a lookup that is a kind of this library.
+pub fn tolerant(lookup: &mut dyn Lookup, key: &str) -> Result<Option<String>, Failure<Error>> {
+    let Some(name) = key.strip_prefix('?') else {
+        return lookup.find(key);
+    };
+    match lookup.find(name) {
+        Ok(found) => Ok(found),
+        Err(Failure::Raised(raised)) => {
+            drop(raised);
+            Ok(None)
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
 /// The value of a key in the first lookup that holds it (GN-6aa: callbacks in a list, which the core takes by value).
 ///
 /// # Errors
@@ -822,6 +843,33 @@ impl Store {
         Scoped::new(self.entries, function)
     }
 
+    /// Runs `function` as [`Store::transaction`] does and then writes the entry `audited` of the store by an I/O
+    /// future, also when the function raised: the machine goes on to a wait after language code raised, and returns
+    /// the exception when the wait is over (GN-6ae).
+    pub fn audited<F>(self, function: F) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        Scoped { audit: true, ..Scoped::new(self.entries, function) }
+    }
+
+    /// Runs `function` with a new scope whose entries are dropped, and gives whether it returned: the core drops the
+    /// value that it returned. A function that raised after it wrote an entry is an attempt that did not hold: the
+    /// core answers its exception by dropping the `Raised`, on another thread where the target has one, so the call
+    /// gives `false` and ends without the exception (U-3, GN-6u). A function that raised before it wrote an entry
+    /// made no attempt, and its exception returns.
+    pub fn attempt<F>(self, function: F) -> Attempted<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        Attempted {
+            scope: Scope { parent: self.entries, pending: Entries::default() },
+            function,
+            begun: false,
+            called: None,
+        }
+    }
+
     /// Runs `function` with a scope over a store of this one call, as [`Store::transaction`] does: a static member
     /// that takes a function (GN-6ae).
     pub fn once<F>(function: F) -> Scoped<F>
@@ -896,6 +944,8 @@ pub struct Scoped<F> {
     stage: Stage,
     called: Option<Result<binding_core::Passthrough, Failure<Error>>>,
     outcome: Option<Result<binding_core::Passthrough, Failure<Error>>>,
+    /// Whether the machine writes the entry `audited` of its parent before it ends ([`Store::audited`]).
+    audit: bool,
 }
 
 impl<F> Scoped<F> {
@@ -906,7 +956,22 @@ impl<F> Scoped<F> {
             stage: Stage::Begin,
             called: None,
             outcome: None,
+            audit: false,
         }
+    }
+
+    /// Ends with `failure` at once, or, with an audit, after the wait that writes the entry `audited`.
+    fn failed(&mut self, failure: Failure<Error>) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
+        if !self.audit {
+            self.stage = Stage::Ended;
+            return binding_core::machine::Step::Done(Err(failure));
+        }
+        let parent = self.scope.parent.clone();
+        self.outcome = Some(Err(failure));
+        self.stage = Stage::Commit;
+        binding_core::machine::Step::Io(Box::pin(async move {
+            entries_of(&parent).insert(String::from("audited"), String::from("yes"));
+        }))
     }
 
     /// Ends with the failure of an invariant of the machine.
@@ -940,10 +1005,7 @@ where
                     Step::Await(value)
                 }
                 // The function raised: its pending entries are dropped and its failure ends the scope.
-                Some(Err(failure)) => {
-                    self.stage = Stage::Ended;
-                    Step::Done(Err(failure))
-                }
+                Some(Err(failure)) => self.failed(failure),
                 None => self.broken("the function of the scope was not called"),
             },
             Stage::Settle => match self.outcome.take() {
@@ -952,15 +1014,17 @@ where
                     let parent = self.scope.parent.clone();
                     self.outcome = Some(Ok(value));
                     self.stage = Stage::Commit;
+                    let audit = self.audit;
                     Step::Io(Box::pin(async move {
-                        entries_of(&parent).extend(pending);
+                        let mut entries = entries_of(&parent);
+                        entries.extend(pending);
+                        if audit {
+                            entries.insert(String::from("audited"), String::from("yes"));
+                        }
                     }))
                 }
                 // The awaitable raised: the pending entries are dropped and its exception ends the scope.
-                Some(Err(failure)) => {
-                    self.stage = Stage::Ended;
-                    Step::Done(Err(failure))
-                }
+                Some(Err(failure)) => self.failed(failure),
                 None => self.broken("the value of the function of the scope was not settled"),
             },
             Stage::Commit => match self.outcome.take() {
@@ -981,4 +1045,63 @@ where
     fn settle(&mut self, outcome: Result<binding_core::Passthrough, binding_core::Raised>) {
         self.outcome = Some(outcome.map_err(Failure::Raised));
     }
+}
+
+/// The state machine of [`Store::attempt`] (GN-6ab, GN-6ae), which owns its function.
+pub struct Attempted<F> {
+    scope: Scope,
+    function: F,
+    begun: bool,
+    called: Option<Result<binding_core::Passthrough, Failure<Error>>>,
+}
+
+/// Drops a `Raised` on another thread where the target has threads, as a core does that answers a failure on a worker
+/// of its own; the binding releases what was thrown all the same (GN-6u).
+fn dropped_elsewhere(raised: binding_core::Raised) -> Result<(), Error> {
+    #[cfg(not(target_family = "wasm"))]
+    {
+        std::thread::spawn(move || drop(raised))
+            .join()
+            .map_err(|_panic| Error::Internal { detail: String::from("the drop of a Raised panicked") })
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        drop(raised);
+        Ok(())
+    }
+}
+
+impl<F> binding_core::machine::Machine for Attempted<F>
+where
+    F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+{
+    type Io = ();
+    type Done = Result<bool, Failure<Error>>;
+
+    fn resume(&mut self, _io: Option<()>) -> binding_core::machine::Step<(), Self::Done> {
+        use binding_core::machine::Step;
+        if !self.begun {
+            self.begun = true;
+            return Step::Io(Box::pin(async {}));
+        }
+        match self.called.take() {
+            None => Step::Call,
+            // The value of the function is dropped, which releases it in the table of the binding.
+            Some(Ok(value)) => {
+                drop(value);
+                Step::Done(Ok(true))
+            }
+            Some(Err(Failure::Raised(raised))) if !entries_of(&self.scope.pending).is_empty() => {
+                Step::Done(dropped_elsewhere(raised).map(|()| false).map_err(Failure::Kind))
+            }
+            Some(Err(failure)) => Step::Done(Err(failure)),
+        }
+    }
+
+    fn call(&mut self) {
+        self.called = Some((self.function)(self.scope.clone()));
+    }
+
+    /// The machine awaits no value of its function.
+    fn settle(&mut self, _outcome: Result<binding_core::Passthrough, binding_core::Raised>) {}
 }

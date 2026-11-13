@@ -1,11 +1,23 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 292ae05df37edffa490c57cc5858edda236f126d88c6453e53d9e5356a81b3d2 -->
+<!-- source-sha256: 633700c95c1230faa834590e5cebd504f7c62a09f69be08756cb26750ec67850 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- machine이 없는 Node member는 코어가 callback의 예외에 응답하고 값을 돌려줘도 그 예외로 끝났다. 예외가 환경에
+  pending으로 남았기 때문이다. machine이 소유하는 callback만 그것을 꺼냈다. 이제 모든 Node callback은 부르는 곳에서 예외를
+  환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 key 아래에 보관하고, `failure_error`가 그것을 다시
+  던진다(GN-6ab). 그래서 코어가 drop한 `Raised`는 pending을 남기지 않는다. sample에는 이것과 `Raised`의 drop(GN-6u,
+  GN-6ae)을 위한 member 셋이 있고, 각각 다섯 target의 case를 가진다. `sample.tolerant`는 `?<name>`으로 적은 key에 대해
+  lookup이 던진 것에 응답하고 값 없음을 준다. `store.audited`는 함수가 예외를 던진 뒤에 entry `audited`를 쓰는 wait로
+  나아간 다음 그 예외를 돌려주며, `after`의 호출이 그것을 읽는다. `store.attempt`는 entry를 쓴 뒤에 예외를 던진 함수의
+  `Raised`를, 스레드가 있는 target에서는 다른 스레드에서 drop하고 `false`를 돌려준다. 셋은 자기 case가 표시한 것에만
+  응답한다. callback이나 함수를 받는 모든 member의 생성 시험이 예외가 그대로 지나가기를 요구하기 때문이다.
+  `packages/ts`의 `npm test`로 검증했다. 새 시험은 변경 전에는 `kept`를 부르지 않던 `CbLookup`의 method에서 실패하고,
+  callback이 있고 machine이 없는 crate에 `kept`, variant `Held`, `thrown_again`이 있음을 요구한다. 생성된 crate와
+  sample의 코어는 이 변경에 대해 컴파일하지 않았으므로, 세 member의 어떤 case도 실행되지 않았다.
 - machine이 있는 member의 함수 parameter(GN-6ae)와 코어가 보관하는 함수 타입(GN-6z)을 함께 생성하고, `Raised`는 한 가지
   꼴을 갖는다. 반환이 `passthrough`인 함수 타입은 machine이 있는 member의 함수이고, 그 밖의 함수 타입은 GN-6z의 값이다.
   case는 앞의 것을 함수 fixture로, 뒤의 것을 그 행으로 준다(CK-22). 뒤의 것을 받는 machine member는 이름을 대어 거부하고,

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e954f6db8050ff9d030a24e8a821d3b61ff03f489c1f3844814fce939dbd54eb -->
+<!-- source-sha256: e69019e823ad8ec2b1d2bff5b4b7d8c5660414b5f65189361309b5fa8b9be26d -->
 # 생성기
 
 [English](generator.md)
@@ -865,6 +865,9 @@
     Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출을 실패시키기 때문이다. `failure_error`가 보관한 값을
     다시 던지므로 호출자는 같은 객체를 받는다. callback이 error unit으로 인식하는 예외(U-3)는 그 kind의 core error이며
     보관하지 않는다.
+    machine이 없는 member의 callback도 callback을 부르는 곳에서 예외를 같은 방식으로 보관한다. 코어는 `Raised`에
+    응답하고 값을 돌려줄 수 있는데(U-3), 환경에 pending으로 남은 예외는 코어가 실패를 돌려주지 않았어도 그 호출을 그
+    예외로 끝내기 때문이다.
   - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
     호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
     각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 언어 코드에 닿지 않는 `async_driver` member는 Go에서

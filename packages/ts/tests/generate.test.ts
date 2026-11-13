@@ -4534,7 +4534,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -4875,7 +4875,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
   // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
   const plain = text(scopedSample(['python'], (contract) => {
-    for (const id of ['store.transaction', 'store.once', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
+    for (const id of ['store.transaction', 'store.once', 'store.audited', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
   }), 'packages/python/generated/lib.rs');
   assert.match(plain, /\|io\| driven\(py\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);
@@ -5963,4 +5963,26 @@ test('the crates of every contract of the end-to-end check name their functions 
   }
   // HR-84: the test read the crates of the eight contracts.
   assert.equal(crates, 39);
+});
+
+test('Node takes the exception of every callback out of the environment where it is called, so a core that answers the Raised returns its value (U-3, GN-6ab)', () => {
+  // sample.tolerant answers what its lookup raised and returns no value. An exception that stayed pending in the
+  // environment would end the call with it, so the callback holds it as the callback of a machine does.
+  const lib = text(scopedSample(['node']), 'packages/ts/generated/lib.rs');
+  const borrowed = lib.slice(lib.indexOf("impl<'env> polyspec_sample::Lookup for CbLookup<'env>"));
+  assert.match(borrowed.slice(0, borrowed.indexOf('\n}\n')), /call\(\)\.map_err\(\|error\| recognized_lookup_find\(self\.env, error\)\)\.map_err\(\|failure\| kept\(self\.env, failure\)\)\n {4}\}/);
+  assert.match(lib, /let result = match with_faults\("sample\.tolerant", \|\| polyspec_sample::tolerant\(&mut \{ lookup \}, &key\)\) \{/);
+  // A contract with a callback and no machine holds the exception too: it has the function, the variant and the throw.
+  const plain = text(scopedSample(['node'], (contract) => {
+    for (const unit of contract.units) unit.members = (unit.members ?? []).filter((m: any) => m.core?.machine !== true);
+    const kept = new Set(contract.units.flatMap((unit: any) => (unit.members ?? []).map((m: any) => m.id)));
+    contract.cases = contract.cases.filter((k: any) => k.member === undefined || kept.has(k.member));
+  }), 'packages/ts/generated/lib.rs');
+  assert.doesNotMatch(plain, /struct Driven/);
+  assert.match(plain, /\nfn kept\(env: &Env, failure: /);
+  assert.match(plain, /\n {4}Held\(Owned\),\n/);
+  assert.match(plain, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
+  assert.match(plain, /\.map_err\(\|failure\| kept\(self\.env, failure\)\)/);
+  // Every variant of Thrown and every method of Owned that the crate names is used in it.
+  assert.doesNotMatch(plain.slice(plain.indexOf('struct Owned {'), plain.indexOf('impl Drop for Owned {')), /fn object</);
 });

@@ -890,7 +890,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`}).map_err(|failure| kept(self.env, failure))
     }`;
   }).join('\n');
   const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
@@ -1072,7 +1072,11 @@ const ownsAny = (model: Model): boolean => model.callbacks.some((c) => ownsCallb
 
 // GN-6ab, GN-6ae: whether a machine of the contract calls language code, a function or a callback that it owns, whose
 // exception is held until the member ends.
-const holdsThrown = (model: Model): boolean => passesAny(model) || ownsAny(model);
+const holdsThrown = (model: Model): boolean => passesAny(model) || callsBack(model);
+
+// U-3: whether a member of the contract calls a callback, whose exception is taken out of the environment where it is
+// called, also for a member without a machine: the core may answer the Raised and return a value.
+const callsBack = (model: Model): boolean => model.callbacks.length > 0 || model.foreignCallbacks.length > 0;
 
 // GN-6ab: the callback unit of a parameter type that a machine owns.
 function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
@@ -1253,9 +1257,10 @@ fn thrown_again(exception: &Owned) -> Fail {
     }
     Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
 }
-` : ''}${ownsAny(model) ? `
-/// GN-6ab: the failure of a callback that a machine owns. The machine goes on after the call, and an exception that
-/// stays pending fails every later call of Node-API in the advance, so the exception is taken out of the environment
+` : ''}${callsBack(model) ? `
+/// U-3, GN-6ab: the failure of a callback. A machine goes on after the call, and a core may answer the Raised and
+/// return a value; an exception that stays pending fails every later call of Node-API and ends the call with it, so
+/// the exception is taken out of the environment
 /// and held under the key of its Raised; failure_error throws the held value again.
 fn kept(env: &Env, failure: ${failure}) -> ${failure} {
     let binding_core::Failure::Raised(raised) = &failure else {

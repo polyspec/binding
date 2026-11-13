@@ -1051,6 +1051,9 @@ the design ids are those of the binding design.
     advance, such as the promise of the next Io future; `failure_error` throws the held value again, so the caller
     gets the same object. An exception that the callback recognizes as an error unit (U-3) is the core error of its
     kind and is not held.
+    The callback of a member without a machine holds its exception in the same way, where the callback is called:
+    the core may answer the `Raised` and return a value (U-3), and an exception that stayed pending in the environment
+    would end that call with it, although the core returned no failure.
   - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
     goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6

@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- A Node member without a machine whose core answered the exception of a callback and returned a value still ended
+  with that exception, because the exception stayed pending in the environment: only the callback that a machine owns
+  took it out. Every Node callback now takes its exception out of the environment where it is called
+  (`napi_get_and_clear_last_exception`), holds it under the key of its `Raised` and `failure_error` throws it again
+  (GN-6ab), so a `Raised` that the core drops leaves nothing pending. The sample has three members for it and for the
+  drop of a `Raised` (GN-6u, GN-6ae), each with cases for the five targets: `sample.tolerant` answers what its lookup
+  raised for a key written `?<name>` and gives no value; `store.audited` goes on to a wait that writes the entry
+  `audited` after its function raised, and then returns the exception, which the calls of `after` read; and
+  `store.attempt` drops the `Raised` of a function that raised after it wrote an entry, on another thread where the
+  target has one, and returns `false`. Each answers only what its case marks, because the generated tests of every
+  member that takes a callback or a function require that an exception passes through. Verified by `npm test` in
+  `packages/ts`, whose new test fails before the change at the method of `CbLookup`, which did not call `kept`, and
+  requires `kept`, the variant `Held` and `thrown_again` in a crate with a callback and no machine. The generated
+  crates and the core of the sample were not compiled for this change, so no case of the three members has run.
 - The function parameter of a member with machine (GN-6ae) and the function type that the core keeps (GN-6z) are
   generated together, and a `Raised` has one form. A function type whose return is `passthrough` is the function of a
   member with machine, and any other function type is the value of GN-6z; a case gives the first as a function
