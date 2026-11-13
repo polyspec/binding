@@ -22,7 +22,7 @@ export const wasmGlue = (model: Model): string => `${model.contract.library.repl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no WASM input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -45,12 +45,16 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Unsupported(`no WASM input conversion for ${JSON.stringify(type)}`);
 }
 
+// A scalar of T-1 that a conversion takes by value, so a place of it is passed as it is: a borrow of a Copy value
+// that the conversion takes as impl Borrow or a widening trait is needless (the lints deny it).
+const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
+
 function convertOut(model: Model, type: Type, value: string): string {
   if (typeof type === 'string') {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'Ok(JsValue::UNDEFINED)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', bytes: 'out_bytes' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
     const name = fn[type];
     if (name === undefined) throw new Unsupported(`no WASM output conversion for ${type}`);
     return `${name}(${value})`;
@@ -62,7 +66,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   // An optional is matched where it is, so its item is the value or the reference that the place holds, whose type no
   // generic conversion needs to infer.
   if ('optional' in type) return `match ${value} {\n        Some(value) => ${convertOut(model, type.optional, 'value')},\n        None => Ok(JsValue::NULL),\n    }`;
-  if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`).join(', ')}])`;
+  if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `${copied(t) ? '' : '&'}${value}.${i}`)}?`).join(', ')}])`;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
@@ -154,6 +158,14 @@ fn in_int(value: &JsValue, subject: &str) -> Result<i64, Fail> {
     safe_integer(value, subject, NumberType::Int)
 }
 
+/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2).
+fn in_int64(value: &JsValue, subject: &str) -> Result<i64, Fail> {
+    if !value.is_bigint() {
+        return safe_integer(value, subject, NumberType::Int);
+    }
+    i64::try_from(value.clone()).map_err(|_outside| binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int }))
+}
+
 fn in_float(value: &JsValue, subject: &str) -> Result<f64, Fail> {
     value.as_f64().ok_or_else(|| binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float }))
 }
@@ -203,6 +215,11 @@ fn out_int(value: impl WideInt) -> Result<JsValue, Fail> {
     #[allow(clippy::as_conversions, clippy::cast_precision_loss, reason = "B-2: a safe integer, which f64 holds exactly")]
     let double = value as f64;
     Ok(JsValue::from_f64(double))
+}
+
+/// T-1 int64: a bigint, so that the whole range of i64 leaves.
+fn out_int64(value: impl WideInt) -> Result<JsValue, Fail> {
+    Ok(JsValue::from(value.widen_int()))
 }
 
 fn out_uint(value: impl WideUint) -> Result<JsValue, Fail> {
@@ -340,7 +357,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
     const js = langName('wasm', f.name, 'variable');
     return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js))}?;`;
   });
-  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `&value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
+  const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
   return `
 /// T-4: a value of the record ${langName('wasm', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
 fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {

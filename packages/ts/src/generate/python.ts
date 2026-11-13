@@ -497,11 +497,16 @@ ${lines.join('\n')}
 }
 `;
   }
-  const attributes = fn.special === 'stringify' ? [] : ({ static: ['#[staticmethod]', `#[pyo3(signature = (${signature}))]`], method: [`#[pyo3(signature = (${signature}))]`], property: ['#[getter]'] }[fn.kind] ?? []);
+  // GN-6: the Rust name of a method is member_<name> and its Python name an attribute, so that no name of a member meets
+  // a naming convention of the lints for methods (from_*, to_*, into_*, is_*, the names of std traits); a hook keeps
+  // the name that Python calls (N-4).
+  const pyName = rustString(name);
+  const attributes = fn.special === 'stringify' ? [] : ({ static: ['#[staticmethod]', `#[pyo3(name = ${pyName}, signature = (${signature}))]`], method: [`#[pyo3(name = ${pyName}, signature = (${signature}))]`], property: [`#[getter(${name})]`] }[fn.kind] ?? []);
   const self = fn.receiver === undefined ? '' : '&self, ';
+  const ident = fn.special === 'stringify' ? name : `member_${name}`;
   return `
 ${attributes.map((a) => `    ${a}`).join('\n')}
-    fn ${name}<'py>(${self}py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
+    fn ${ident}<'py>(${self}py: Python<'py>${params}) -> PyResult<Bound<'py, PyAny>> {
         guard(py, || {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })

@@ -308,6 +308,50 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::total"
+        },
+        {
+          "id": "shapes.measure",
+          "name": [
+            "measure"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "measure"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::measure"
+        },
+        {
+          "id": "shapes.negate",
+          "name": [
+            "negate"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "int64",
+              "required": true
+            }
+          ],
+          "returns": "int64",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::negate"
         }
       ]
     },
@@ -348,6 +392,33 @@
           "default": {
             "computed": "SH-1"
           }
+        }
+      ]
+    },
+    {
+      "id": "measure",
+      "name": [
+        "measure"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Measure",
+      "fields": [
+        {
+          "name": [
+            "length"
+          ],
+          "type": "uint",
+          "required": true
+        },
+        {
+          "name": [
+            "empty"
+          ],
+          "type": "bool",
+          "required": true
         }
       ]
     },
@@ -458,6 +529,31 @@
             "path": "polyspec_shapes::Buffer::append",
             "receiver": "&mut self"
           }
+        },
+        {
+          "id": "buffer.from_end",
+          "name": [
+            "from",
+            "end"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": "bytes",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_shapes::Buffer::last",
+            "receiver": "&self"
+          }
         }
       ]
     }
@@ -508,6 +604,21 @@
       "member": "buffer.append",
       "file": "contracts/cases.json",
       "group": "buffer_append"
+    },
+    {
+      "member": "shapes.measure",
+      "file": "contracts/cases.json",
+      "group": "measure"
+    },
+    {
+      "member": "shapes.negate",
+      "file": "contracts/cases.json",
+      "group": "negate"
+    },
+    {
+      "member": "buffer.from_end",
+      "file": "contracts/cases.json",
+      "group": "buffer_from_end"
     }
   ]
 }

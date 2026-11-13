@@ -20,7 +20,7 @@ export const addonBase = (model: Model): string => {
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int64', float: 'in_float', bytes: 'in_bytes', source: 'in_source' };
     const name = fn[type];
     if (name === undefined) throw new Error(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -44,7 +44,7 @@ function convertOut(model: Model, type: Type, value: string): string {
     // T-2 never: the core's Infallible has no value, so the call has failed before.
     if (type === 'never') return `match ${value} {}`;
     if (type === 'none') return 'out_none(env)';
-    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int', float: 'out_float', bytes: 'out_bytes' };
+    const fn: Record<string, string> = { text: 'out_text', latin1: 'out_latin1', bool: 'out_bool', uint: 'out_uint', int: 'out_int', int64: 'out_int64', float: 'out_float', bytes: 'out_bytes' };
     const name = fn[type];
     if (name === undefined) throw new Error(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
@@ -163,6 +163,18 @@ fn in_int(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
     safe_integer(value, subject, NumberType::Int)
 }
 
+/// T-1 int64: a bigint of the range of i64, or a number of the safe integers (B-2).
+fn in_int64(value: Unknown<'_>, subject: &str) -> Result<i64, Fail> {
+    if value.get_type().map_err(internal)? != ValueType::BigInt {
+        return safe_integer(value, subject, NumberType::Int);
+    }
+    let big = unsafe { value.cast::<BigInt>() }.map_err(internal)?;
+    match big.get_i64() {
+        (integer, true) => Ok(integer),
+        (_truncated, false) => Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Int })),
+    }
+}
+
 fn in_float(value: Unknown<'_>, subject: &str) -> Result<f64, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Number {
         return Err(binding_error(BindingError::InvalidNumber { subject: subject.to_owned(), expected: NumberType::Float }));
@@ -224,6 +236,11 @@ fn out_int<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, F
         return Err(binding_error(BindingError::Internal { detail: format!("{value} is not a safe integer") }));
     }
     Ok(env.create_int64(value).map_err(internal)?.to_unknown())
+}
+
+/// T-1 int64: a bigint, so that the whole range of i64 leaves.
+fn out_int64<'env>(env: &'env Env, value: impl WideInt) -> Result<Unknown<'env>, Fail> {
+    ToNapiValue::into_unknown(BigInt::from(value.widen_int()), env).map_err(internal)
 }
 
 fn out_uint<'env>(env: &'env Env, value: impl WideUint) -> Result<Unknown<'env>, Fail> {
@@ -757,7 +774,7 @@ ${propertyArms}
 }
 
 // The names that the addon imports from napi's bindgen_prelude; the others are of the crate root.
-const PRELUDE: ReadonlySet<string> = new Set(['Array', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ToNapiValue', 'Uint8Array']);
+const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ToNapiValue', 'Uint8Array']);
 
 function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
@@ -776,7 +793,7 @@ function libRust(model: Model): string {
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
   const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
-  const napiTypes = ['Array', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'Uint8Array', 'ValueType']
+  const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|is_typedarray|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');

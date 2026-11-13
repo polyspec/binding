@@ -104,6 +104,10 @@ const contract = JSON.parse(readFileSync(contractPath, 'utf8')) as unknown;
 // Cargo for the workspace either: a binding manifest that an earlier scaffold wrote, which this one rewrites, may no
 // longer resolve (the core crate was renamed), and that must not stop the rewrite.
 const foreign = command === 'scaffold' ? new Map<string, unknown>() : dependencies(contract, dirname(contractPath));
+// G-5: an integer of a case file outside the safe integers is read as a bigint from its token, so it keeps its value
+// (an int64 such as 9223372036854775807); a number with a fraction or an exponent stays a number.
+const caseNumber = (_key: string, value: unknown, context?: { source?: string }): unknown =>
+  typeof value === 'number' && !Number.isSafeInteger(value) && context?.source !== undefined && /^-?(0|[1-9][0-9]*)$/.test(context.source) ? BigInt(context.source) : value;
 // K-1: the case files that cases names, from the repository root, for CK-22; a file that does not parse is left out
 // and reported as not found.
 const caseFiles = new Map<string, unknown>();
@@ -115,7 +119,7 @@ const caseFiles = new Map<string, unknown>();
     for (const row of raw.cases) {
       if (typeof row.file !== 'string' || caseFiles.has(row.file)) continue;
       try {
-        caseFiles.set(row.file, JSON.parse(readFileSync(join(top, row.file), 'utf8')));
+        caseFiles.set(row.file, JSON.parse(readFileSync(join(top, row.file), 'utf8'), caseNumber));
       } catch {
         // not found or not JSON: CK-22 reports the file
       }

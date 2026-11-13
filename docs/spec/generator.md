@@ -402,6 +402,16 @@ the design ids are those of the binding design.
   string keys, which a `Map` compares by identity, are refused by name (G-4), so nothing is left out silently; the
   generator takes them when a contract needs them.
 
+- **GN-12a** Node and WASM (T-1): an `int64` parameter takes a `bigint` of the range of i64 or a number of the safe
+  integers, and anything else is kind `invalid_number` (B-2); an `int64` result is a `bigint`, so that the whole range
+  of i64 leaves, as the declarations say (`number | bigint` in, `bigint` out). A case file gives an integer outside
+  the safe integers as its JSON token, which `binding` reads as a `bigint` and every test writes by its decimal
+  token, a Node test as a `bigint` literal (G-5).
+- **GN-6l** A method of a class has the Rust name `member_<name>` in the generated crates of Python and PHP, and its
+  name in the language is an attribute (`#[pyo3(name = ...)]`, `#[getter(...)]`, `#[php(name = ...)]`), so that no
+  name of a member meets a naming convention that the lints judge for methods (`from_*` with `self`, the names of the
+  methods of std traits); a hook keeps the name the language calls (N-4). A field of a scalar of T-1 is passed to its
+  WASM conversion by value, because a borrow of a `Copy` value is needless.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

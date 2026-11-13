@@ -604,11 +604,12 @@ ${lines.join('\n')}
 }
 `;
   }
-  // U-2: a property is a method in PHP (I-3).
+  // U-2: a property is a method in PHP (I-3). GN-6: the Rust name of a method is member_<name> and its PHP name an
+  // attribute, so that no name of a member meets a naming convention of the lints for methods (from_*, to_*, is_*).
   const self = fn.receiver === undefined ? [] : ['&self'];
   return `
     #[php(name = ${rustString(callable)})]
-    pub fn ${rustField(fn.member.name)}(${[...self, ...params].join(', ')}) -> Result<Zval, PhpException> {
+    pub fn member_${rustField(fn.member.name).replace(/^r#/, '')}(${[...self, ...params].join(', ')}) -> Result<Zval, PhpException> {
         guard(|| {
 ${lines.map((l) => `    ${l}`).join('\n')}
         })
