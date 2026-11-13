@@ -1809,3 +1809,44 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
+
+test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (change: (contract: any) => void = () => undefined, targets?: string[]): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), ...(targets === undefined ? {} : { targets: targets as Inputs['targets'] & string[] }) });
+  };
+  const out = classes();
+  const token = 'binding_core::Io::for_generated_call()';
+  // PHP: the call blocks the calling thread.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.ok(php.includes(`polyspec_classes::read(${token}, `), 'PHP passes the token to read');
+  assert.match(php, /polyspec_classes::Gate::enter_slowly\(&[a-z_]+, binding_core::Io::for_generated_call\(\)\)/);
+  // Python: the core call runs without the GIL, and a<name> runs <name> in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /py\.detach\(\|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);
+  assert.match(python, /#\[pyo3\(name = "aenter_slowly", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /#\[pyfunction\(name = "aread", signature = \(\*args, \*\*kwargs\)\)\]/);
+  assert.match(python, /"to_thread"/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/classes/_native.pyi'), /\nasync def aread\(name: str\) -> str: \.\.\./);
+  // Node: a Promise, whose work runs on the libuv pool and whose result is converted on the JavaScript thread.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /impl<'env, W, O> ScopedTask<'env> for Waiting<W, O>/);
+  assert.match(node, /waiting\(env, move \|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function read\(name: string\): Promise<string>;/);
+  assert.match(dts, /\n {2}enterSlowly\(\): Promise<string>;/);
+  const tests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(tests, /await pkg\.read\("a"\)/);
+  assert.match(tests, /await assert\.rejects\(/);
+  // WASM has no member that waits (only, Q-4); Go names it as not generated yet.
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /enterSlowly|\bread\b/);
+  const everywhere = (contract: any): void => {
+    for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
+    contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
+  };
+  assert.throws(() => classes(everywhere, ['go']), /classes\.read: wait blocking_io is not generated for Go yet \(GN-6m\)/);
+  // A constructor that waits has no awaited form: refused by name.
+  assert.throws(() => classes((c) => { member(c, 'tag.new').wait = 'blocking_io'; }, ['node']), /tag\.new: a constructor with wait blocking_io is not generated \(GN-6m\)/);
+});

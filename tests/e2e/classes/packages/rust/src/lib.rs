@@ -177,6 +177,15 @@ impl Gate {
         Ok(format!("{} passes", self.tag))
     }
 
+    /// What enters the gate, read as a blocking I/O call would be (B-5 (a): the token of wait blocking_io).
+    ///
+    /// # Errors
+    ///
+    /// Kind `closed` when the gate is closed.
+    pub fn enter_slowly(&self, _io: binding_core::Io) -> Result<String, Error> {
+        self.enter()
+    }
+
     /// Closes the gate.
     ///
     /// # Errors
@@ -189,6 +198,18 @@ impl Gate {
         self.open = false;
         Ok(())
     }
+}
+
+/// The text of a name, read as a blocking I/O call would be (B-5 (a): the token of wait blocking_io).
+///
+/// # Errors
+///
+/// Kind `missing` when the name is empty.
+pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
+    if name.is_empty() {
+        return Err(Error::Missing { key: String::from("name") });
+    }
+    Ok(format!("the text of {name}"))
 }
 
 /// The names of the tags, joined by commas.
