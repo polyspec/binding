@@ -2364,6 +2364,8 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(node, /env\s*\.spawn_future_with_callback\(driven\(binding_core::driver::Caught::new\(future\)\)/);
   assert.match(node, future);
   assert.match(node, method);
+  // GN-6h: Node moves the guard into the future, which binds the borrow of the guard inside it.
+  assert.match(node, /let receiver = self\.inner\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+driving\(env, async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
   assert.match(dts, /export declare function fetch\(name: string\): Promise<string>;/);
   assert.match(dts, /\n {2}enterLater\(\): Promise<string>;/);
@@ -2457,6 +2459,8 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /impl<'env, W, O> ScopedTask<'env> for Waiting<W, O>/);
   assert.match(node, /waiting\(env, move \|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);
+  // GN-6h: the closure on the pool owns the guard and binds the borrow of the guard inside it.
+  assert.match(node, /let receiver = self\.inner\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+waiting\(env, move \|\| \{ let receiver = &\*receiver; [^\n]*polyspec_classes::Gate::enter_slowly\(receiver, binding_core::Io::for_generated_call\(\)\)/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
   assert.match(dts, /export declare function read\(name: string\): Promise<string>;/);
   assert.match(dts, /\n {2}enterSlowly\(\): Promise<string>;/);
