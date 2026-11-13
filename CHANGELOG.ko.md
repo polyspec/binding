@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bbb4ab6205d406646d37d328eefe7920e0d22a0ef25b115bddf1471ebda33e21 -->
+<!-- source-sha256: 4c05a67cf74e92de1416d7939c3cc9c96f139b56ff0d736203fead048bb0dd00 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node crate의 machine이 소유하는 callback(`Owned<Callback>`)은 machine이 계속 진행하는 동안 예외를 환경에 pending으로
+  남겼고, 같은 advance에서 뒤따르는 Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출이 실패할 수 있었다.
+  이제 소유된 callback은 machine의 함수와 같이 예외를 환경에서 꺼내어 그 `Raised`의 handle 아래에 보관하고,
+  `failure_error`가 같은 객체를 다시 던진다(GN-6ab). machine이 callback을 소유하고 함수를 받지 않는 crate도 이제 variant
+  `Thrown::Held`, `Owned::boxed`, `thrown_again`을 가진다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 변경 전에
+  sample의 소유된 callback에서 `kept`를 찾지 못했다.
 - 함수 parameter의 argument로만 쓰이는 class(`store.transaction`의 `scope`)가 있는 계약의 Node crate는 그 class의 들어오는
   변환 `in_<class>`를 썼고 아무도 그것을 호출하지 않는다. 그것은 dead code이고 `-D warnings`에서 빌드를 실패시킨다. 함수
   parameter의 argument는 언어 코드로 나가고 들어오지 않으므로, 들어오는 class를 찾는 검사는 이제 함수 타입을 읽지

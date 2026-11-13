@@ -3563,3 +3563,26 @@ test('a class that only a function parameter takes as its argument has no conver
     assert.match(text(out, path), /\nfn in_tag[(<]/, path);
   }
 });
+
+test('Node takes the exception of a callback that a machine owns out of the environment and holds it (GN-6ab)', () => {
+  // The machine goes on after the call of its callback, so an exception that stays pending would fail the calls of
+  // Node-API that follow in the advance. The owned callback keeps it as the function of a machine does (GN-6ae).
+  const lib = text(scopedSample(['node']), 'packages/ts/generated/lib.rs');
+  const ownedImpl = lib.slice(lib.indexOf('impl polyspec_sample::Lookup for OwnedCbLookup'));
+  assert.match(ownedImpl.slice(0, ownedImpl.indexOf('\n}\n')), /let mut borrowed = CbLookup \{ object, env: &env[^}]*\};\n\s+polyspec_sample::Lookup::[a-z_]+\(&(?:mut )?borrowed[^\n]*\)\.map_err\(\|failure\| kept\(&env, failure\)\)\n/);
+  assert.match(lib, /fn kept\(env: &Env, failure: binding_core::Failure<polyspec_sample::Error>\) -> binding_core::Failure<polyspec_sample::Error> \{\n {4}let binding_core::Failure::Raised\(raised\) = &failure else \{\n {8}return failure;\n {4}\};/);
+  assert.match(lib, /let pending = THROWN\.with_borrow\(\|map\| matches!\(map\.get\(&handle\), Some\(Thrown::Js\(error\)\) if error\.status == napi::Status::PendingException\)\);/);
+  assert.match(lib, /napi::sys::napi_get_and_clear_last_exception\(env\.raw\(\), &mut exception\) \} == napi::sys::Status::napi_ok \{\n[^\n]*\n {8}match Owned::boxed\(env, unsafe \{ Unknown::from_raw_unchecked\(env\.raw\(\), exception\) \}\) \{\n {12}Ok\(held\) => Thrown::Held\(held\),/);
+  assert.match(lib, /THROWN\.with_borrow_mut\(\|map\| map\.insert\(handle, taken\)\);\n {4}failure\n\}/);
+  // A contract whose machine owns a callback and takes no function holds the exception in the same way.
+  const alone = text(scopedSample(['node'], (contract) => {
+    contract.units = contract.units.filter((unit: any) => !['store', 'scope'].includes(unit.id));
+    contract.cases = contract.cases.filter((k: any) => !/^(?:store|scope)\./.test(k.member ?? ''));
+  }), 'packages/ts/generated/lib.rs');
+  assert.doesNotMatch(alone, /fn function_in\(/);
+  assert.match(alone, /\n {4}Held\(Owned\),\n/);
+  assert.match(alone, /\n {4}fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{/);
+  assert.match(alone, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
+  assert.match(alone, /\nfn thrown_again\(exception: &Owned\) -> Fail \{/);
+  assert.match(alone, /\nfn kept\(env: &Env, /);
+});

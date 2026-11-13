@@ -725,6 +725,12 @@ the design ids are those of the binding design.
     `Owned<Callback>`, which holds a reference of napi (`napi_ref`) to the object and the environment of the
     JavaScript thread, makes the borrowed callback struct from them at each call, and deletes the reference when it
     is dropped, which happens on the JavaScript thread, where the `Driven` object ends.
+    An exception of a callback that the machine owns is taken out of the environment
+    (`napi_get_and_clear_last_exception`) and held as an `Owned` (GN-6ae) under the handle of its `Raised`, because
+    the machine goes on after the call and an exception that stays pending fails each later call of Node-API in the
+    advance, such as the promise of the next Io future; `failure_error` throws the held value again, so the caller
+    gets the same object. An exception that the callback recognizes as an error unit (U-3) is the core error of its
+    kind and is not held.
   - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
     goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6

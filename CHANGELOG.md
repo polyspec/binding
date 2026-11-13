@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A callback that a machine of the Node crate owns (`Owned<Callback>`) left its exception pending in the environment
+  while the machine went on, so a later call of Node-API in the same advance, such as the promise of the next Io
+  future, would fail. The owned callback now takes the exception out of the environment and holds it under the handle
+  of its `Raised`, as the function of a machine does, and `failure_error` throws the same object again (GN-6ab). A
+  crate whose machine owns a callback and takes no function now has the variant `Thrown::Held`, `Owned::boxed` and
+  `thrown_again`. Verified by `npm test` in `packages/ts`, whose test found no `kept` in the owned callback of the
+  sample before the change.
 - The Node crate of a contract with a class that is only the argument of a function parameter (the `scope` of
   `store.transaction`) wrote the conversion in of that class, `in_<class>`, which nothing calls: dead code that fails
   the build with `-D warnings`. The argument of a function parameter leaves to language code and never comes in, so

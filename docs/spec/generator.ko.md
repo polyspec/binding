@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4db4c50072ea3a32f3c5f02bbf117b2190147bee6b3e26425f8a7468c3dad28b -->
+<!-- source-sha256: ca4b1a2cb3f44e51f473e73acd7ea4adde195d85a9d1ed02debbf1562e333d56 -->
 # 생성기
 
 [English](generator.md)
@@ -601,6 +601,11 @@
     machine은 그것을 만든 호출보다 오래 살므로, machine이 소유하는 callback은 생성된 struct `Owned<Callback>`이다. 그것은
     객체에 대한 napi 참조(`napi_ref`)와 JavaScript 스레드의 환경을 지니고, 각 호출에서 그 둘로 빌린 callback struct를
     만들며, drop될 때 참조를 지운다. drop은 `Driven` 객체가 끝나는 JavaScript 스레드에서 일어난다.
+    machine이 소유하는 callback의 예외는 환경에서 꺼내어(`napi_get_and_clear_last_exception`) 그 `Raised`의 handle 아래에
+    `Owned`(GN-6ae)로 보관한다. machine은 그 호출 뒤에도 계속 진행하고, pending으로 남은 예외는 그 advance에서 뒤따르는
+    Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출을 실패시키기 때문이다. `failure_error`가 보관한 값을
+    다시 던지므로 호출자는 같은 객체를 받는다. callback이 error unit으로 인식하는 예외(U-3)는 그 kind의 core error이며
+    보관하지 않는다.
   - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
     호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
     각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 언어 코드에 닿지 않는 `async_driver` member는 Go에서

@@ -997,25 +997,17 @@ fn outcome_of(env: &Env, settled: Unknown<'_>) -> Result<Option<Result<binding_c
     Ok(Some(Err(raised(Thrown::Held(Owned::boxed(env, value)?)))))
 }
 
-/// GN-6ae: throws again the exception that a function of a machine raised, so that the caller gets the same object.
-fn thrown_again(exception: &Owned) -> Fail {
-    let env = Env::from_raw(exception.env);
-    let value = match exception.unboxed(&env) {
-        Ok(value) => value,
-        Err(fail) => return fail,
-    };
-    // SAFETY: value is a value of env, on the thread of env.
-    if unsafe { napi::sys::napi_throw(env.raw(), value.raw()) } != napi::sys::Status::napi_ok {
-        return binding_error(BindingError::Internal { detail: String::from("GN-6ae: the exception of the function could not be thrown again") });
-    }
-    Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
-}
 `;
 }
 
 // GN-6ab: the callback units that a parameter of a member with machine takes, which the machine owns.
 const ownsCallback = (model: Model, cb: CallbackUnit): boolean =>
   [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true && fn.params.some((p) => ownedCallback(model, p.type) === cb));
+const ownsAny = (model: Model): boolean => model.callbacks.some((c) => ownsCallback(model, c));
+
+// GN-6ab, GN-6ae: whether a machine of the contract calls language code, a function or a callback that it owns, whose
+// exception is held until the member ends.
+const holdsThrown = (model: Model): boolean => passesAny(model) || ownsAny(model);
 
 // GN-6ab: the callback unit of a parameter type that a machine owns.
 function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
@@ -1039,7 +1031,7 @@ function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
         let env = Env::from_raw(self.object.env);
         let object = self.object.object(&env).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let mut borrowed = ${struct} { object, env: &env${cb.owner ? ', owner: self.owner' : ''} };
-        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${m.receiver === '&mut self' ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${m.receiver === '&mut self' ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`}).map_err(|failure| kept(&env, failure))
     }`;
   }).join('\n');
   return `
@@ -1061,7 +1053,7 @@ impl ${cb.unit.core ?? ''} for Owned${struct} {${methods}
 
 // GN-6ab: a JavaScript value that a machine owns across the advances of its call: a reference of napi, which is deleted
 // when its owner drops it on the JavaScript thread, where the Driven object of the machine ends.
-const owned = (callbacks: boolean, passing: boolean): string => `
+const owned = (callbacks: boolean): string => `
 /// GN-6ab: a JavaScript value that a machine owns across the advances of its call.
 struct Owned {
     env: napi::sys::napi_env,
@@ -1092,9 +1084,9 @@ ${callbacks ? `
         // SAFETY: the reference holds the object that the check of the callback found.
         unsafe { self.value(env)?.cast() }.map_err(internal)
     }
-` : ''}${passing ? `
+` : ''}
     /// GN-6ae: holds any value, as the one element of an array: Node-API version 8 makes a reference only to an object, a
-    /// function or a symbol, and a function of JavaScript code returns and throws any value.
+    /// function or a symbol, and JavaScript code returns and throws any value.
     fn boxed(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
         Self::new(env, tuple_out(env, vec![value])?)
     }
@@ -1104,7 +1096,7 @@ ${callbacks ? `
         let [value] = tuple_in(self.value(env)?, "a held value")?;
         Ok(value)
     }
-` : ''}}
+}
 
 impl Drop for Owned {
     fn drop(&mut self) {
@@ -1152,7 +1144,7 @@ export function traitParam(model: Model, type: Type): string {
 function failureRust(model: Model): string {
   if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const passing = passesAny(model);
+  const passing = holdsThrown(model);
   // U-3, U-7: a callback and the walk of a value give an error of napi; a function of a machine gives none, because
   // its exception is held (GN-6ae), so a crate without them has no variant that nothing makes.
   const napiError = model.callbacks.length > 0 || model.aliases.length > 0;
@@ -1161,7 +1153,8 @@ function failureRust(model: Model): string {
 enum Thrown {${napiError ? `
     Js(napi::Error),` : ''}
     Binding(Fail),${passing ? `
-    /// GN-6ae: an exception of a function of a machine, taken out of the environment and held until the member ends.
+    /// GN-6ab, GN-6ae: an exception of a function or of a callback of a machine, taken out of the environment and held
+    /// until the member ends.
     Held(Owned),` : ''}
 }
 
@@ -1193,7 +1186,48 @@ fn failure_error(failure: ${failure}) -> Fail {
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-`;
+${passing ? `/// GN-6ab, GN-6ae: throws again the exception that a function or a callback of a machine raised, so that the caller gets
+/// the same object.
+fn thrown_again(exception: &Owned) -> Fail {
+    let env = Env::from_raw(exception.env);
+    let value = match exception.unboxed(&env) {
+        Ok(value) => value,
+        Err(fail) => return fail,
+    };
+    // SAFETY: value is a value of env, on the thread of env.
+    if unsafe { napi::sys::napi_throw(env.raw(), value.raw()) } != napi::sys::Status::napi_ok {
+        return binding_error(BindingError::Internal { detail: String::from("GN-6ae: the exception of the function could not be thrown again") });
+    }
+    Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
+}
+` : ''}${ownsAny(model) ? `
+/// GN-6ab: the failure of a callback that a machine owns. The machine goes on after the call, and an exception that
+/// stays pending fails every later call of Node-API in the advance, so the exception is taken out of the environment
+/// and held under the handle of its Raised; failure_error throws the held value again.
+fn kept(env: &Env, failure: ${failure}) -> ${failure} {
+    let binding_core::Failure::Raised(raised) = &failure else {
+        return failure;
+    };
+    let handle = raised.handle().raw();
+    let pending = THROWN.with_borrow(|map| matches!(map.get(&handle), Some(Thrown::Js(error)) if error.status == napi::Status::PendingException));
+    if !pending {
+        return failure;
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the callback ran on the thread of env, which holds the exception that it threw.
+    let taken = if unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } == napi::sys::Status::napi_ok {
+        // SAFETY: exception is the value that the callback threw, a value of env.
+        match Owned::boxed(env, unsafe { Unknown::from_raw_unchecked(env.raw(), exception) }) {
+            Ok(held) => Thrown::Held(held),
+            Err(fail) => Thrown::Binding(fail),
+        }
+    } else {
+        Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6ab: the exception of a callback could not be taken out of the environment") }))
+    };
+    THROWN.with_borrow_mut(|map| map.insert(handle, taken));
+    failure
+}
+` : ''}`;
 }
 
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
@@ -1362,7 +1396,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => ownsCallback(model, c)) || passesAny(model) ? owned(model.callbacks.some((c) => ownsCallback(model, c)), passesAny(model)) : '') + passingRust(model) + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
