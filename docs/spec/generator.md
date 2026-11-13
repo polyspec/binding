@@ -129,7 +129,7 @@ the design ids are those of the binding design.
   extension (type `php-ext`, also `<host package>-native` of GN-3b) names `php-ext.extension-name` and
   `php-ext.download-url-method` `["pre-packaged-binary"]`, so that PIE installs the binary of the release for the PHP
   and the platform of the machine. `binding check` compares these fields as it compares the whole file
-  (CK-19). The steps of such a release are recipes of the repository that holds the binding: the release utility of
+  (CK-19). The steps of such a release are recipes of the repository that holds the binding (GN-19): the release utility of
   the shared tools (`@polyspec/kit`) tags `vX.Y.Z` and packs the archives that one package manager packs on one
   machine, and it builds no platform package, no binary of a PHP extension and no commit of a Go module (GN-15g).
   Why: which files the release of a binding carries is a rule of this specification and of that repository, and a
@@ -1681,12 +1681,12 @@ the design ids are those of the binding design.
   `polyspec-<repository>-go` for each platform with the release profile and without a feature, removes the debug
   sections of each library with `llvm-strip --strip-debug` of the component `llvm-tools` of the Rust toolchain that
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
-  sections of the Rust standard library), and creates one
+  sections of the Rust standard library), and runs `binding release-go-module` (GN-19f), which creates one
   commit whose parent is that commit and whose tree adds, below the directory of the Go module, those generated
-  files and the library of each platform. It tags that commit `<directory of the Go module>/vX.Y.Z`
+  files and the library of each platform. The command tags that commit `<directory of the Go module>/vX.Y.Z`
   (`packages/go/vX.Y.Z`), the tag that Go reads for a module in a subdirectory of its repository. It creates no
   commit and no tag when the library of a platform is missing, holds a test entry point (GN-13b) or holds a debug
-  section. No branch holds
+  section, or when another check of GN-19f fails. No branch holds
   the commit, and no such commit or tag is made by hand. A consumer needs the line `require <module> vX.Y.Z` alone:
   no `CGO_LDFLAGS` and no `replace`, and its `go.sum` pins the module with its libraries. A build for another
   platform compiles no file that names a directory, so its link fails with the library that is not found.
@@ -2263,3 +2263,108 @@ the design ids are those of the binding design.
   its dependency as `DEPS`, before a commit is pushed or merged. Why: a job cannot check out a repository at a
   release that does not exist, an entry that names a missing directory fails for a reason that is no defect of the
   commit, and a contract that is silently left out of the job would look checked.
+
+## The release of a repository that holds a binding
+
+- **GN-19** A repository that holds a binding releases it by its own recipes, and the work is divided by one rule. A
+  step that a standard tool of an ecosystem performs (Cargo, maturin through `uv build`, the napi CLI, npm, `zip`,
+  `llvm-strip`) is a line of a recipe of the repository that starts that tool with the arguments of GN-19b to
+  GN-19e; binding gives no command for it, and `binding scaffold` writes no recipe, because the Makefile is the
+  repository's. A step that no tool performs and that follows from the form of a binding alone, the commit and the
+  tag of a Go module with their checks, is the command `binding release-go-module` (GN-19f). Why: a command that
+  wraps the call of a standard tool would hold the release procedure of a repository, which belongs to the
+  repository, and Git work that follows from the form alone, copied into every repository, would be wrong in all of
+  them at once when the form changes.
+- **GN-19a** The platforms of a release are `linux-x64-gnu`, `linux-arm64-gnu` and `darwin-arm64` (GN-3c), and each
+  asset of a platform is built on a runner of that platform, because no tool of GN-19b to GN-19e compiles for another
+  platform. The release workflow of the repository names the runners in its own matrix (`include`):
+
+  | Platform | Runner | Rust triple | PIE name part | Go directory |
+  |---|---|---|---|---|
+  | none (the archives of npm, Composer and the root package of GN-19e) | `ubuntu-24.04` | | | |
+  | `linux-x64-gnu` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
+  | `linux-arm64-gnu` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
+  | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
+
+  A PHP extension has one entry for each platform and each PHP minor that it supports, and that entry installs the PHP
+  of that minor before it builds. Every build runs in a copy of the tree of the tag `vX.Y.Z` with a `CARGO_TARGET_DIR`
+  of the run, so that an asset holds nothing of an earlier build. The workflow of CI builds the same assets of its
+  commit with the same matrix, and its last job requires those jobs: a release tags only a commit whose CI run
+  passed, so an asset that does not build stops the release before a tag exists.
+- **GN-19b** The static library of the Go module (GN-15g), on each platform: `cargo build --release --locked -p
+  polyspec-<repository>-go`, then `llvm-strip --strip-debug` on a copy of `libpolyspec_<repository>_go.a`, with the
+  `llvm-strip` of `<sysroot>/lib/rustlib/<host>/bin` of the pinned toolchain (`rustc --print sysroot`, `rustc --print
+  host-tuple`; the component `llvm-tools` of `rust-toolchain.toml`), never the `strip` of `PATH`, which differs by
+  machine. The job hands the library to the job that runs GN-19f as the file `<Go directory>/libpolyspec_<repository>_go.a`.
+- **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS=--locked SOURCE_DATE_EPOCH=<commit time of the
+  tag> uv build --wheel --python python3 --out-dir <assets> <package directory>`. maturin names the wheel with the
+  platform tag (`manylinux_*_x86_64`, `manylinux_*_aarch64`, `macosx_*_arm64`), and the wheel is abi3 (GN-1), so one
+  wheel of a platform serves every supported Python.
+- **GN-19d** The PHP extension, on each platform and PHP minor: `PHP=<php> PHP_CONFIG=<php-config> cargo build
+  --release --locked -p polyspec-<repository>-php-ext`, then the cdylib is copied as `<extension-name>.so`, and the
+  recipe requires that `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'` ends
+  with 0 (GN-3g) before it packs `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE name
+  part>[-debug]-<zts|nts>.zip <extension-name>.so`, the name by which PIE finds a pre-packaged binary (GN-3c). The
+  recipe reads `zts` and `debug` from that PHP (`PHP_ZTS`, `PHP_DEBUG`).
+- **GN-19e** The npm platform package (GN-3c), on each platform, with the napi CLI that the repository pins as the
+  devDependency `@napi-rs/cli`: `napi build --platform --release --no-js --manifest-path <Cargo.toml>
+  --package-json-path <package.json> --target-dir <target> --output-dir <addons> --target <Rust triple> -- --locked`;
+  then, with a configuration file of the run that names the Rust triple of that platform alone (`{"targets":
+  ["<Rust triple>"]}`, because `napi artifacts` fails for a configured platform whose addon another runner builds),
+  `napi create-npm-dirs --package-json-path <package.json> --config-path <config> --npm-dir <directory inside the
+  package>` and `napi artifacts --package-json-path <package.json> --config-path <config> --output-dir <addons>
+  --npm-dir <the same directory>`; then `npm pack --ignore-scripts --pack-destination <assets>` in `<npm-dir>/<platform>`.
+  The entry without a platform packs the package of the library itself with `npm pack --ignore-scripts` after it
+  wrote `<npm package>-<platform>` at the version of the release into `optionalDependencies` of the manifest of the
+  copy, for each platform; the tracked manifest names none (GN-3c).
+- **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
+  <directory> --work <directory> [--remote <name>]` makes the commit and the tag of GN-15g in the repository of the
+  contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target go` wrote the
+  files `zz_generated_*.go` of the Go module into the work tree; `--libraries` holds
+  `<Go directory>/libpolyspec_<repository>_go.a` of each platform (GN-19b); `--work` is a directory of the run, in
+  which the command keeps its index, the repository and the consumer of the proof and the caches of Go; `--remote`
+  is the Git remote of the repository, `origin` when it is not given. The command runs every check below to its end
+  and then names each failed one; with a failed check it creates no commit and no tag.
+  - The tag is `vX.Y.Z`, and `HEAD` is the commit that it names: the parent of the commit is the commit that the
+    release checked.
+  - The module path of `packages.go` is `github.com/<owner>/<repository>/<directory of the Go module>` (GN-14f), so
+    the tag `<directory>/vX.Y.Z` is the one that Go reads for it.
+  - The `go.mod` of that commit holds no `replace` line and requires no module at `v0.0.0`: both are development
+    forms (GN-15f), which a consumer of a tag cannot resolve.
+  - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
+    `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
+    the directory of a library.
+  - The library of each platform is a file that is not empty and an `ar` archive whose every member is an object of
+    that platform (ELF x86-64 for `linux_amd64`, ELF AArch64 for `linux_arm64`, Mach-O arm64 for `darwin_arm64`): a
+    library placed in the directory of another platform would fail only in the link of a consumer.
+  - `llvm-nm --defined-only` of the pinned toolchain (GN-19b) names no test entry point in a library (GN-13b), and
+    `llvm-size -A` names no debug section whose size is not 0.
+
+  The commit is made without a change of the checkout: with an index file of `--work` (`GIT_INDEX_FILE`), `git
+  read-tree` of the commit of the tag, `git update-index --add --cacheinfo` with mode 100644 for each generated file
+  and for `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a` of each platform, whose objects `git
+  hash-object -w --no-filters` writes, `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
+  message `chore(release): Carry the Go module of vX.Y.Z`. Its author and committer dates are the committer date of
+  the commit of the tag and its identity is the one of the Git of the run, so the same inputs under the same
+  identity give the same commit. A tag `<directory>/vX.Y.Z` of the repository or of the remote that names another
+  commit fails the command; one that names this commit is the result of an earlier run, which the command leaves as
+  it is.
+  Before the tag, a consumer proves the commit: the command pushes it as the tag into a bare repository of `--work`,
+  which Git reads in place of `https://github.com/<owner>/<repository>` (`url.<path>.insteadOf` of a configuration
+  file of the run), and writes a module whose `go.mod` requires the Go module at `vX.Y.Z` and whose test imports
+  every public package of it; `go mod tidy` and `go test -count=1 .` run with `GOPROXY=direct`, `GOSUMDB=off`,
+  `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
+  and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
+  removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
+  fetched from its own remote, so the repositories are released in the order of their Go requirements. The proof
+  links the library of the platform of the run alone; the libraries of the other platforms are checked by their
+  objects.
+  Then the command creates the annotated tag `<directory>/vX.Y.Z` at the commit (`git tag -a`, with the same date)
+  and writes to its standard output the one line `refs/tags/<directory>/vX.Y.Z`, the reference that the recipe
+  pushes to the remote, or nothing when the remote holds the tag already. The command pushes nothing to the remote.
+  Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
+  failed push gives the same reference.
+- **GN-19g** Before a recipe of a release builds an archive, it runs `binding check <interface.json> --release` for
+  each contract of the repository, every one to its end, and stops when one fails (CK-70). An asset of the GitHub
+  Release has the label `<vendor>-<product>-<runtime>-<version>`, followed by `-<platform>` for an asset of a
+  platform and by `-php<X.Y>-<platform>` for a PHP extension.

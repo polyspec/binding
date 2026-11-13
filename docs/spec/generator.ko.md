@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0878d8d661f2bcacc9a9e00212002ce79e9590e242838888320990a0258cdf4e -->
+<!-- source-sha256: 4b3a60a9da44d35594d4128a27b5a1219059c49cac25df0d2aa1258694b14967 -->
 # 생성기
 
 [English](generator.md)
@@ -100,7 +100,7 @@
   읽는다. PHP 확장(type `php-ext`, GN-3b의 `<host package>-native`도)의 `composer.json`은 `php-ext.extension-name`과
   `php-ext.download-url-method` `["pre-packaged-binary"]`를 적는다. 그래서 PIE가 그 기계의 PHP와 플랫폼에 맞는 배포의
   binary를 설치한다. `binding check`는 파일 전체를 비교하듯 이 필드도 비교한다(CK-19). 그런 release의 단계는 바인딩을 가진
-  레포의 recipe다. 공용 도구(`@polyspec/kit`)의 release utility는 `vX.Y.Z` tag를 달고 package manager 하나가 기계 하나에서
+  레포의 recipe다(GN-19). 공용 도구(`@polyspec/kit`)의 release utility는 `vX.Y.Z` tag를 달고 package manager 하나가 기계 하나에서
   pack하는 archive를 만들며, 플랫폼 패키지도 PHP 확장의 binary도 Go 모듈의 commit(GN-15g)도 만들지 않는다. 이유: 바인딩의
   release가 어떤 파일을 싣는지는 이 명세와 그 레포의 규칙이고, 레포의 recipe를 실행하는 도구는 레포의 규칙을 갖지 않는다.
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
@@ -1381,9 +1381,9 @@
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이 빌드하고,
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
-  그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
-  라이브러리를 더한다. release는 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
-  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담으면 release는
+  `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 그 생성 파일과 각 플랫폼의
+  라이브러리를 더한다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
+  레포의 하위 디렉터리에 있는 모듈에서 읽는 tag다. 어느 플랫폼의 라이브러리가 없거나 시험 진입점을 담거나(GN-13b) debug section을 담거나 GN-19f의 다른 검사가 실패하면 명령은
   commit도 tag도 만들지 않는다. 어느 branch도 그 commit을 담지 않으며, 그 commit과 tag를 손으로 만들지 않는다. 소비자는
   `require <module> vX.Y.Z` 한 줄만 필요하다. `CGO_LDFLAGS`도 `replace`도 없고, 소비자의 `go.sum`이 모듈을 라이브러리와
   함께 고정한다. 다른 플랫폼의 빌드는 디렉터리를 가리키는 파일을 컴파일하지 않으므로, 그 링크는 찾지 못한 라이브러리로
@@ -1826,3 +1826,96 @@
   `tests/e2e/relay`는 json의 첫 release tag까지 목록에 있다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존
   레포의 checkout을 `DEPS`로 준 `make e2e`로 확인한다. 이유: job은 존재하지 않는 release로 레포를 checkout할 수 없고,
   없는 디렉터리를 적은 항목은 commit의 결함이 아닌 이유로 실패하며, 말없이 job에서 빠진 계약은 확인된 것처럼 보인다.
+
+## 바인딩을 가진 레포의 release
+
+- **GN-19** 바인딩을 가진 레포는 자기 recipe로 그것을 release하며, 일은 한 규칙으로 나눈다. 생태계의 표준 도구(Cargo,
+  `uv build`를 통한 maturin, napi CLI, npm, `zip`, `llvm-strip`)가 하는 단계는 그 도구를 GN-19b~GN-19e의 인자로 시작하는
+  레포 recipe의 한 줄이다. binding은 그 단계의 명령을 주지 않고 `binding scaffold`는 recipe를 쓰지 않는다. Makefile은 레포의
+  것이기 때문이다. 어느 도구도 하지 않고 바인딩의 꼴에서만 나오는 단계, 곧 Go 모듈의 commit과 tag와 그 검사는 명령
+  `binding release-go-module`이다(GN-19f). 이유: 표준 도구의 호출을 감싸는 명령은 레포의 release 절차를 갖게 되는데 그
+  절차는 레포의 것이고, 꼴에서만 나오는 Git 작업을 레포마다 복사하면 꼴이 바뀔 때 모든 레포에서 한꺼번에 틀린다.
+- **GN-19a** release의 플랫폼은 `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-arm64`이고(GN-3c), 플랫폼의 asset은 그 플랫폼의
+  runner에서 빌드한다. GN-19b~GN-19e의 어느 도구도 다른 플랫폼용으로 compile하지 않기 때문이다. 레포의 release workflow는
+  자기 matrix(`include`)에 runner를 적는다.
+
+  | 플랫폼 | Runner | Rust triple | PIE 이름 부분 | Go 디렉터리 |
+  |---|---|---|---|---|
+  | 없음(npm, Composer의 archive와 GN-19e의 root 패키지) | `ubuntu-24.04` | | | |
+  | `linux-x64-gnu` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `x86_64-linux-glibc` | `linux_amd64` |
+  | `linux-arm64-gnu` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `arm64-linux-glibc` | `linux_arm64` |
+  | `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` | `arm64-darwin-bsdlibc` | `darwin_arm64` |
+
+  PHP 확장은 지원하는 플랫폼과 PHP minor마다 항목 하나를 갖고, 그 항목은 빌드 전에 그 minor의 PHP를 설치한다. 모든 빌드는
+  tag `vX.Y.Z`의 tree 사본에서 실행마다의 `CARGO_TARGET_DIR`로 실행하므로, asset은 이전 빌드의 것을 담지 않는다. CI의
+  workflow는 같은 matrix로 자기 commit의 같은 asset을 빌드하고 그 마지막 job이 그 job들을 요구한다. release는 CI 실행이
+  통과한 commit에만 tag를 달므로, 빌드되지 않는 asset은 tag가 생기기 전에 release를 막는다.
+- **GN-19b** Go 모듈의 정적 라이브러리(GN-15g), 플랫폼마다: `cargo build --release --locked -p polyspec-<repository>-go`,
+  그다음 `libpolyspec_<repository>_go.a`의 사본에 `llvm-strip --strip-debug`. `llvm-strip`은 고정한 toolchain의
+  `<sysroot>/lib/rustlib/<host>/bin`의 것이며(`rustc --print sysroot`, `rustc --print host-tuple`; `rust-toolchain.toml`의
+  component `llvm-tools`), 기계마다 다른 `PATH`의 `strip`은 쓰지 않는다. 그 job은 라이브러리를 파일
+  `<Go 디렉터리>/libpolyspec_<repository>_go.a`로 GN-19f를 실행하는 job에 넘긴다.
+- **GN-19c** Python wheel, 플랫폼마다: `MATURIN_PEP517_ARGS=--locked SOURCE_DATE_EPOCH=<tag의 commit 시각> uv build --wheel
+  --python python3 --out-dir <assets> <패키지 디렉터리>`. maturin이 wheel의 이름에 platform tag(`manylinux_*_x86_64`,
+  `manylinux_*_aarch64`, `macosx_*_arm64`)를 붙이고, wheel은 abi3이므로(GN-1) 플랫폼의 wheel 하나가 지원하는 모든 Python에
+  쓰인다.
+- **GN-19d** PHP 확장, 플랫폼과 PHP minor마다: `PHP=<php> PHP_CONFIG=<php-config> cargo build --release --locked -p
+  polyspec-<repository>-php-ext`, 그다음 cdylib을 `<extension-name>.so`로 복사한다. recipe는
+  `php -n -d extension=<path> -r 'exit(extension_loaded("<extension-name>") ? 0 : 1);'`이 0으로 끝나는 것을 요구한
+  뒤(GN-3g) `zip -q -9 -X php_<extension-name>-v<version>_php<X.Y>-<PIE 이름 부분>[-debug]-<zts|nts>.zip
+  <extension-name>.so`로 pack한다. 이 이름으로 PIE가 pre-packaged binary를 찾는다(GN-3c). recipe는 `zts`와 `debug`를 그
+  PHP에서 읽는다(`PHP_ZTS`, `PHP_DEBUG`).
+- **GN-19e** npm 플랫폼 패키지(GN-3c), 플랫폼마다, 레포가 devDependency `@napi-rs/cli`로 고정한 napi CLI로:
+  `napi build --platform --release --no-js --manifest-path <Cargo.toml> --package-json-path <package.json> --target-dir
+  <target> --output-dir <addons> --target <Rust triple> -- --locked`. 그다음 그 플랫폼의 Rust triple만 적은 실행의 설정
+  파일(`{"targets": ["<Rust triple>"]}`)로 `napi create-npm-dirs --package-json-path <package.json> --config-path <config>
+  --npm-dir <패키지 안의 디렉터리>`와 `napi artifacts --package-json-path <package.json> --config-path <config>
+  --output-dir <addons> --npm-dir <같은 디렉터리>`를 실행한다. 설정 파일이 플랫폼 하나만 적는 이유는, `napi artifacts`가
+  다른 runner가 addon을 빌드하는 설정된 플랫폼에서 실패하기 때문이다. 그다음 `<npm-dir>/<platform>`에서
+  `npm pack --ignore-scripts --pack-destination <assets>`를 실행한다. 플랫폼 없는 항목은 사본의 manifest의
+  `optionalDependencies`에 플랫폼마다 `<npm 패키지>-<platform>`을 release의 버전으로 적은 뒤 라이브러리 자체의 패키지를
+  `npm pack --ignore-scripts`로 pack한다. 추적하는 manifest는 그것을 적지 않는다(GN-3c).
+- **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
+  <directory> --work <directory> [--remote <name>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
+  tag `vX.Y.Z`의 commit에 있다. `binding generate --target go`가 Go 모듈의 파일 `zz_generated_*.go`를 work tree에 썼다.
+  `--libraries`는 플랫폼마다 `<Go 디렉터리>/libpolyspec_<repository>_go.a`를 갖는다(GN-19b). `--work`는 실행의 디렉터리이고
+  명령은 거기에 자기 index, 증명의 저장소와 소비자, Go의 cache를 둔다. `--remote`는 레포의 Git remote이고 주지 않으면
+  `origin`이다. 명령은 아래 검사를 모두 끝까지 실행한 뒤 실패한 것을 각각 적는다. 실패한 검사가 있으면 commit도 tag도
+  만들지 않는다.
+  - tag는 `vX.Y.Z`이고 `HEAD`는 그 tag가 가리키는 commit이다. commit의 부모가 release가 검사한 commit이 된다.
+  - `packages.go`의 module path는 `github.com/<owner>/<repository>/<Go 모듈 디렉터리>`다(GN-14f). 그래서 tag
+    `<directory>/vX.Y.Z`가 Go가 그 모듈에서 읽는 tag다.
+  - 그 commit의 `go.mod`에 `replace` 줄이 없고 `v0.0.0`으로 require하는 모듈이 없다. 둘 다 개발 꼴이며(GN-15f) tag의
+    소비자가 풀 수 없다.
+  - work tree가 플랫폼마다 `internal/binding/zz_generated_link_<platform>.go`와
+    `internal/ffi/lib/<platform>/zz_generated_lib.go`를 갖는다. 없으면 생성이 실행되지 않은 것이고, 라이브러리의 디렉터리를
+    적는 파일이 없다.
+  - 각 플랫폼의 라이브러리는 비어 있지 않은 파일이고, 모든 member가 그 플랫폼의 object인 `ar` archive다(`linux_amd64`는
+    ELF x86-64, `linux_arm64`는 ELF AArch64, `darwin_arm64`는 Mach-O arm64). 다른 플랫폼의 디렉터리에 놓인 라이브러리는
+    소비자의 링크에서야 실패한다.
+  - 고정한 toolchain의 `llvm-nm --defined-only`(GN-19b)가 라이브러리에서 시험 진입점을 찾지 않고(GN-13b), `llvm-size -A`가
+    크기가 0이 아닌 debug section을 찾지 않는다.
+
+  commit은 checkout을 바꾸지 않고 만든다. `--work`의 index 파일(`GIT_INDEX_FILE`)로 tag의 commit을 `git read-tree`하고,
+  생성 파일 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
+  `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `git write-tree`와
+  `git commit-tree -p <tag의 commit>`을 message `chore(release): Carry the Go module of vX.Y.Z`로 실행한다. author와
+  committer의 날짜는 tag의 commit의 committer 날짜이고 identity는 실행의 Git의 것이므로, 같은 identity의 같은 입력은 같은
+  commit을 준다. 레포나 remote의 tag `<directory>/vX.Y.Z`가 다른 commit을 가리키면 명령은 실패한다. 이 commit을
+  가리키면 이전 실행의 결과이며 명령은 그대로 둔다.
+  tag 전에 소비자가 commit을 증명한다. 명령은 commit을 `--work`의 bare 저장소에 그 tag로 push하고, Git이
+  `https://github.com/<owner>/<repository>` 대신 그 저장소를 읽게 하며(실행의 설정 파일의 `url.<path>.insteadOf`),
+  `go.mod`가 Go 모듈을 `vX.Y.Z`로 require하고 시험이 그 공개 package를 모두 import하는 모듈을 쓴다. `go mod tidy`와
+  `go test -count=1 .`를 `GOPROXY=direct`, `GOSUMDB=off`, `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, 빈 `GOFLAGS`와
+  `CGO_LDFLAGS`, `CGO_ENABLED=1`, `--work`의 module cache와 build cache로 실행하고, 그 뒤 소비자의 `go.mod`에 `replace`가
+  있으면 명령은 실패한다. module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기
+  remote에서 받으므로, 레포는 Go require의 순서로 release한다. 증명은 실행의 플랫폼의 라이브러리만 링크한다. 다른
+  플랫폼의 라이브러리는 그 object로 검사한다.
+  그다음 명령은 commit에 annotated tag `<directory>/vX.Y.Z`를 만들고(`git tag -a`, 같은 날짜), 표준 출력에 한 줄
+  `refs/tags/<directory>/vX.Y.Z`를 쓴다. recipe가 remote에 push하는 reference다. remote가 이미 그 tag를 가지면 아무것도
+  쓰지 않는다. 명령은 remote에 아무것도 push하지 않는다. 이유: 실행이 무엇을 공개하는지는 그것을 시작한 recipe가 정하고,
+  push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다.
+- **GN-19g** release의 recipe는 archive를 빌드하기 전에 레포의 contract마다 `binding check <interface.json> --release`를
+  실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). GitHub Release의 asset은 label
+  `<vendor>-<product>-<runtime>-<version>`을 갖고, 플랫폼의 asset은 그 뒤에 `-<platform>`, PHP 확장은
+  `-php<X.Y>-<platform>`이 붙는다.

@@ -1,11 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: ae152b16255306c04700ad816efdd00aaaf84e832b7770cab602eafcdee60697 -->
+<!-- source-sha256: c049b9b341b4bbf7f269c3e680299618f650d9a7d8998a9bcb04a2d49d0d5c7d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). 표준 도구가 하는 단계는 레포 recipe의 줄이며, asset
+  종류마다의 명령(Go 모듈의 정적 라이브러리, wheel, PHP 확장, npm 플랫폼 패키지), 플랫폼마다의 runner, CI에서의 asset
+  증명을 적는다. 어느 도구도 하지 않는 Go 모듈의 commit과 tag는 명령 `binding release-go-module`이며 그 검사, 소비자
+  증명, 출력을 적는다(B2.141).
 - 생성기 명세는 GN-3c의 release 필드가 없는 패키지를 거부하는 것으로 공용 도구의 규칙을, 플랫폼 패키지와 Go 모듈의
   commit(GN-15g)을 만드는 것으로 release 도구를 적었다. 공용 도구 0.0.112에는 둘 다 없으므로, 명세는 이제 그 필드를 누가
   읽는지(napi CLI와 PIE)와, 바인딩의 release 단계가 그것을 가진 레포의 recipe임을 적는다(B2.140).

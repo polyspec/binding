@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The generator specification states the release of a repository that holds a binding (GN-19 to GN-19g): the steps
+  that a standard tool performs are lines of the repository's recipes, with the command of each kind of asset (the
+  static library of the Go module, the wheel, the PHP extension, the npm platform packages), the runner of each
+  platform and the proof of the assets in CI; the commit and the tag of a Go module, which no tool performs, are the
+  command `binding release-go-module` with its checks, its consumer proof and its output (B2.141).
 - The generator specification named a rule of the shared tools as what refuses a package without the release fields
   of GN-3c, and a release tool as what builds the platform packages and the commit of a Go module (GN-15g). The
   shared tools 0.0.112 hold neither, so the specification now states who reads the fields (the napi CLI and PIE) and
