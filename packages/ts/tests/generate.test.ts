@@ -26,8 +26,7 @@ const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
-  // Go refuses the class ribbon that implements tail (GN-6w).
-  variants: ['php', 'python', 'node', 'wasm'],
+  variants: ['php', 'python', 'node', 'go', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
   classes: ['php', 'python', 'node', 'go', 'wasm'],
 };
@@ -1571,17 +1570,8 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
 });
 
-// The variants repository for Go without what Go refuses until GN-6w: the class that implements tail, and its case.
-const variantsGo = (): Map<string, string | Buffer> => {
-  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
-  delete unitOf(contract, 'ribbon').implements;
-  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8'));
-  cases.tail_of = cases.tail_of.filter((c: { id: string }) => c.id !== 'a_ribbon_is_a_tail');
-  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
-};
-
 test('a variant is an interface of Go and a struct of each case, which the C ABI converts by the number of the case (T-9, GN-6v)', () => {
-  const out = variantsGo();
+  const out = variants(undefined, ['go']);
   const pkg = text(out, 'packages/go/zz_generated_variants.go');
   assert.match(pkg, /type Figure interface \{\n\tisFigure\(\)\n\}/);
   assert.match(pkg, /type FigureDot struct\{\}\n\nfunc \(FigureDot\) isFigure\(\) \{\}/);
@@ -1642,7 +1632,12 @@ test('a class that implements a callback interface has its members and stands fo
   // GN-13f: an instance value stands at the place of the callback that its class implements.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tail_of\(pkg\.Ribbon\("abc"\), 2\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tailOf\(new pkg\.Ribbon\('abc'\), 2\)/);
-  assert.throws(() => variants(undefined, ['go']), /ribbon: a class that implements an interface is not generated for Go yet \(GN-6w\)/);
+  // Go: the pointer to the class has the method of the Go interface, which the dispatch of U-3 calls.
+  const go = text(variants(undefined, ['go']), 'packages/go/zz_generated_variants.go');
+  assert.match(go, /^func \(this \*Ribbon\) Last\(count uint64\) \(\[\]byte, error\) \{/m);
+  assert.match(go, /^var _ Tail = \(\*Ribbon\)\(nil\)$/m);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /<polyspec_variants::Ribbon as polyspec_variants::Tail>::last\(this, count\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /made0, failure1 := NewRibbon\(\[\]byte\("abc"\)\)\n[\s\S]*?TailOf\(made0, 2\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'tail').members[0].core.receiver = '&mut self'; }), /ribbon: the member tail\.last that it implements takes the receiver &mut self, which an implemented member is not generated for yet \(GN-6w\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'ribbon').abstract = true; }), /ribbon: an abstract class is not generated yet/);
 });
