@@ -1621,7 +1621,7 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
     if (typeof type === 'string') return false;
-    // GN-6m: generate() refuses a function type for Go by its own name.
+    // GN-6z: generate() refuses a function type for Go by its own name.
     if ('function' in type) return true;
     if ('unit' in type) return type.library === undefined && aliasOf(model, type) === undefined && !held.has(type.unit);
     return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(refusedBefore);

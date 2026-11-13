@@ -128,17 +128,17 @@ export function nodeTests(model: Model): string {
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
-  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
     return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
   };
-  // GN-6m: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
   };
-  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6m) the call
+  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
   // of a fixture whose one member is the call; the test reads the record of each after the call.
   const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined }; use: string }[] => [
     ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
@@ -154,11 +154,11 @@ export function nodeTests(model: Model): string {
     const call = (override: Map<unknown, string>): string =>
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
-    // GN-6m: a value of a function type that is not a function is refused as it enters.
+    // GN-6z: a value of a function type that is not a function is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
     if (functionArg !== undefined && reachable) {
       out.push(`
-test('GN-6m: ${name} refuses a ${langName('node', functionArg.name, 'variable')} that is not a function', () => {
+test('GN-6z: ${name} refuses a ${langName('node', functionArg.name, 'variable')} that is not a function', () => {
   assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
 });`);
     }
@@ -349,12 +349,12 @@ test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', t
   assert.deepEqual(addon().__faultLeft(armed), []);`}
 });`);
   }
-  // U-3, GN-6m: a function of the language called on a thread other than its owner is kind wrong_thread, through the
+  // U-3, GN-6z: a function of the language called on a thread other than its owner is kind wrong_thread, through the
   // entry point of the feature thread-test.
   if (takesFunction(model)) {
     usesAddon = true;
     out.push(`
-test('U-3: a function called on another thread is kind wrong_thread (GN-6m)', () => {
+test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', () => {
   assert.equal(addon().__threadTest(() => null), 'wrong_thread');
 });`);
   }

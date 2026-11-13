@@ -377,7 +377,7 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
   }).join('');
 }
 
-// GN-6u, GN-6m: the Natives of WebAssembly, which a value alias and a function type hold: the table of the one thread
+// GN-6u, GN-6z: the Natives of WebAssembly, which a value alias and a function type hold: the table of the one thread
 // of the module.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const WASM_NATIVE = (`
@@ -424,7 +424,7 @@ fn native_object(native: &Native) -> Result<JsValue, Fail> {
     found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: a native value that no JavaScript value entered as") }))
 }
 
-/// GN-6m: a value of a function type is a function (kind invalid_argument_type), held as a Native.
+/// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
 fn in_function(value: &JsValue, subject: &str) -> Result<Native, Fail> {
     if !value.is_function() {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));

@@ -29,9 +29,9 @@ export interface Context {
   objectNew?: (factory: Fn, args: string) => string;
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
-  // GN-6m: the expression of a function value of a case from its rows, where the test reads no record of its calls.
+  // GN-6z: the expression of a function value of a case from its rows, where the test reads no record of its calls.
   functionNew?: (rows: string[][]) => string;
-  // GN-6n: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
+  // GN-6aa: the expression of the object of a callback fixture inside another value, whose calls the test does not read.
   fixtureNew?: (values: { members: string[]; rows: string[][] }) => string;
 }
 
@@ -50,7 +50,7 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
   if ('list' in type) return rich ? `[${placeholder(model, ctx, type.list, rich)}]` : '[]';
   if ('keyed_map' in type || 'map' in type) return { python: '{}', node: 'new Map()', php: '[]' }[ctx.lang];
   if ('optional' in type) return ctx.lang === 'python' ? 'None' : 'null';
-  // GN-6m: a function that returns the placeholder of its return type, whatever its arguments.
+  // GN-6z: a function that returns the placeholder of its return type, whatever its arguments.
   if ('function' in type) {
     const returns = type.function.returns;
     const value = returns === 'none' ? { python: 'None', node: 'undefined', php: 'null' }[ctx.lang] : placeholder(model, ctx, returns, rich);
@@ -179,7 +179,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     );
   }
   // GN-13f: the value of a class is an instance value, at any place of the case.
-  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
   // value at a place of a callback is an instance of a class that implements it (GN-13f).
   if (unit?.origin === 'callback' && ctx.fixtureNew !== undefined && typeof value === 'object' && value !== null && 'callback' in value) {
     return ctx.fixtureNew(fixtureValues(model, ctx, fixtureOf(unit, value, 'a case value')));
@@ -189,7 +189,7 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     const of = typeof made === 'object' && 'unit' in made ? made.unit : unit.id;
     return ctx.instanceNew(instanceOf(model, of, value, `a case value of ${unit.id}`));
   }
-  // GN-6m: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
+  // GN-6z: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
   if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
@@ -808,7 +808,7 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Omit<Fixture,
   };
 }
 
-// GN-6m: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
+// GN-6z: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
 // with "result" (absent for a return of none) and "once". The contract check has judged the form (CK-22). The rows are
 // given as those of a fixture of one member, the call itself, whose name `call` each language gives.
 export function functionRows(model: Model, ctx: Context, type: { parameters: Type[]; returns: Type }, value: unknown, what: string, call: string): string[][] {
@@ -829,7 +829,7 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
   });
 }
 
-// GN-6m: the function value of a case for each parameter of a function type, as a fixture whose record the test reads.
+// GN-6z: the function value of a case for each parameter of a function type, as a fixture whose record the test reads.
 export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: string, args: Map<Arg, unknown>, call: string): { arg: Arg; members: string[]; rows: string[][] }[] {
   const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   return fn.args.flatMap((arg) => {

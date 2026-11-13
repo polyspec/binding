@@ -51,7 +51,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no PHP input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6m, GN-6u: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
+// GN-6z, GN-6u: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
 // out and the result in, and an exception of the PHP code, or a failure of the binding in the call (kind wrong_thread
 // on another thread), goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -137,9 +137,9 @@ pub fn panic_test() -> Result<Zval, PhpException> {
 }
 `;
 
-// U-3, GN-6m: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
 // gives on another thread, whose drop of the Native the owner releases at its next entry point.
-const THREAD_TEST = (layout: PhpLayout): string => `/// U-3, GN-6m: the entry point of the generated wrong_thread test.
+const THREAD_TEST = (layout: PhpLayout): string => `/// U-3, GN-6z: the entry point of the generated wrong_thread test.
 #[cfg(feature = "thread-test")]
 #[php_function]
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\threadTest`)})]

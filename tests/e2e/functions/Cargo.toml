@@ -1,4 +1,4 @@
-# A sample repository for the end-to-end check of binding: functions of the language (T-2, GN-6m).
+# A sample repository for the end-to-end check of binding: functions of the language (T-2, GN-6z).
 [workspace]
 resolver = "2"
 # The binding crates are members as in any repository (GN-4); binding scaffold of the run writes them (GN-14d), because

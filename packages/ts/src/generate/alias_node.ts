@@ -395,7 +395,7 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
   }).join('');
 }
 
-// GN-6u, GN-6m: the Natives of Node, which a value alias and a function type hold: the owner table, the env that
+// GN-6u, GN-6z: the Natives of Node, which a value alias and a function type hold: the owner table, the env that
 // releases its references and the call of a function on the owner thread.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const NODE_NATIVE = (`${ownedNatives('napi::UnknownRef<false>', 'release_references(references);')}
@@ -443,7 +443,7 @@ fn native_object<'env>(env: &'env Env, native: &Native) -> Result<Unknown<'env>,
     }
 }
 
-/// GN-6m: a value of a function type is a function (kind invalid_argument_type), held as a Native.
+/// GN-6z: a value of a function type is a function (kind invalid_argument_type), held as a Native.
 fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, Fail> {
     if value.get_type().map_err(internal)? != ValueType::Function {
         return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
@@ -451,7 +451,7 @@ fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Native, F
     js_native(env, value).map_err(internal)
 }
 
-/// GN-6m: the env of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
+/// GN-6z: the env of the owner of a Native for a call of its function: a call on another thread is kind wrong_thread,
 /// and a call after the cleanup of the env is kind internal. The failure is a BindingError, which any thread may keep.
 fn native_env(native: &Native, subject: &str) -> Result<Env, BindingError> {
     let Some(native) = native.downcast::<OwnedNative>() else {

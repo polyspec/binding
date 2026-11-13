@@ -447,7 +447,7 @@ function recordRust(model: Model, unit: Unit): string {
   // GN-6l: a scalar field is passed by value, any other by reference.
   const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
   const writes = (): string[] => fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `${f.default === undefined && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
-  // GN-6n: a record with a callback field has one lifetime and only enters.
+  // GN-6aa: a record with a callback field has one lifetime and only enters.
   const entersOnly = fields.some((f) => unitOf(model, f.type)?.origin === 'callback');
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.

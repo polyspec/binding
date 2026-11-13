@@ -1178,7 +1178,7 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
-// GN-6m: a member of shapes that takes a function type, which the core keeps or calls during the call.
+// GN-6z: a member of shapes that takes a function type, which the core keeps or calls during the call.
 const withFunction = (contract: any): void => {
   unitOf(contract, 'shapes').members.push({
     id: 'shapes.apply', name: ['apply'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_shapes::apply',
@@ -1189,7 +1189,7 @@ const withFunction = (contract: any): void => {
   });
 };
 
-test('a Python test gives a function value of a case as a fixture of the call and refuses a value that is not callable (G-5, GN-6m)', () => {
+test('a Python test gives a function value of a case as a fixture of the call and refuses a value that is not callable (G-5, GN-6z)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1202,7 +1202,7 @@ test('a Python test gives a function value of a case as a fixture of the call an
   assert.match(tests, /def test_gn6m_apply_refuses_a_convert_that_is_not_callable\(self\) -> None:\n        with self\.assertRaises\(pkg\.ShapesTypeError\) as caught:\n            pkg\.apply\(0, "a"\)\n        self\.assertEqual\(caught\.exception\.kind, "invalid_argument_type"\)/);
 });
 
-test('Python takes a function type as a boxed Fn that calls the callable; the other targets refuse it by name (T-2, GN-6m)', () => {
+test('Python takes a function type as a boxed Fn that calls the callable; the other targets refuse it by name (T-2, GN-6z)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] });
@@ -1220,7 +1220,7 @@ test('Python takes a function type as a boxed Fn that calls the callable; the ot
   }
 });
 
-test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6u)', () => {
+test('Node holds a function as a Native, which a call from another thread finds as kind wrong_thread (T-2, GN-6z, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1250,7 +1250,7 @@ test('Node holds a function as a Native, which a call from another thread finds 
   assert.match(tests, /assert\.throws\(\(\) => pkg\.apply\(0, [^\n]*\), \(error\) => error\.constructor === pkg\.ShapesTypeError && error\.kind === 'invalid_argument_type'\);/);
 });
 
-test('PHP holds a function as a Native, a Closure that a call from another thread finds as kind wrong_thread (T-2, GN-6m, GN-6u)', () => {
+test('PHP holds a function as a Native, a Closure that a call from another thread finds as kind wrong_thread (T-2, GN-6z, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1275,7 +1275,7 @@ test('PHP holds a function as a Native, a Closure that a call from another threa
   assert.match(tests, /self::assertSame\('wrong_thread', \\Polyspec\\Shapes\\Internal\\threadTest\(static fn \(\) => null\)\);/);
 });
 
-test('WASM holds a function as a Native of the table of its one thread (T-2, GN-6m, GN-6u)', () => {
+test('WASM holds a function as a Native of the table of its one thread (T-2, GN-6z, GN-6u)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
   contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
@@ -1950,7 +1950,7 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
 
-test('a callback inside a list, an optional or a record parameter enters as a box of the core trait, passed by value (U-3, GN-6n)', () => {
+test('a callback inside a list, an optional or a record parameter enters as a box of the core trait, passed by value (U-3, GN-6aa)', () => {
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   for (const [path, life] of [

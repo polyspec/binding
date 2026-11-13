@@ -321,7 +321,7 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
   }).join('');
 }
 
-// GN-6u, GN-6m: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
+// GN-6u, GN-6z: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
 // request shutdown, and the check of the thread of a call of a function.
 // usedHelpers splits helpers at blank lines, so a block keeps none inside it.
 export const PHP_NATIVE = (`${ownedNatives('Zval', 'drop(references);')}
@@ -358,7 +358,7 @@ fn php_failed(error: ext_php_rs::error::Error) -> Fail {
     binding_error(BindingError::Internal { detail: error.to_string() })
 }
 
-/// GN-6m: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
+/// GN-6z: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
 fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
     let closure = match value.object() {
         Some(object) => object.get_class_name().map_err(php_failed)? == "Closure",
@@ -370,7 +370,7 @@ fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
     php_native(value)
 }
 
-/// GN-6m: whether a call of the function of a Native may run here: a call on another thread is kind wrong_thread, and
+/// GN-6z: whether a call of the function of a Native may run here: a call on another thread is kind wrong_thread, and
 /// a call after the request of the function ended is kind internal. The failure is a BindingError, which any thread may
 /// keep, since a PHP error object is made on the owner thread only.
 fn native_thread(native: &Native, subject: &str) -> Result<(), BindingError> {

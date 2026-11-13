@@ -314,7 +314,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no Python input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6m: a function holds the callable that entered; a call converts the arguments out and the result in, and an
+// GN-6z: a function holds the callable that entered; a call converts the arguments out and the result in, and an
 // exception of the Python code, or a failure of the binding in the call, goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
   const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
@@ -336,7 +336,7 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
 }
 
 const FUNCTION_IN = `
-/// GN-6m: a value of a function type is callable (kind invalid_argument_type); the function holds it.
+/// GN-6z: a value of a function type is callable (kind invalid_argument_type); the function holds it.
 fn in_function(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<Py<PyAny>> {
     if !value.is_callable() {
         return Err(binding_error(py, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a callable") }));
@@ -933,7 +933,7 @@ function pyType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `dict[${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? 'object').join(' | ')}, ${pyType(model, type.keyed_map, input)}]`;
   if ('optional' in type) return `${pyType(model, type.optional, input)} | None`;
   if ('tuple' in type) return `tuple[${type.tuple.map((t) => pyType(model, t, input)).join(', ')}]`;
-  // GN-6m: the callable takes the arguments as the binding gives them and returns a value that the binding takes.
+  // GN-6z: the callable takes the arguments as the binding gives them and returns a value that the binding takes.
   if ('function' in type) return `Callable[[${type.function.parameters.map((t) => pyType(model, t, false)).join(', ')}], ${pyType(model, type.function.returns, true)}]`;
   const unit = unitOf(model, type);
   // U-7: a value alias is any value that its core judges.

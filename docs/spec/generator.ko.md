@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, Python 밖의 함수 타입(GN-6m), value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  recognize가 있는 callback, Python 밖의 함수 타입(GN-6z), value unit, `none`이 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -120,7 +120,7 @@
   | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`. WASM은 `__aliasIn<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
-  | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
@@ -202,7 +202,7 @@
   `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은 `Raised`의
   마지막 drop은 GN-6u대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
-- **GN-6m** 함수 타입(T-2)은 코어가
+- **GN-6z** 함수 타입(T-2)은 코어가
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
   callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
   코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
@@ -213,14 +213,14 @@
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
   `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
   만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
-- **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
+- **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
   `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가진다
   (`polyspec_x::Options<'a>`). 계약은 `core_type`에 그 경로를 적고, 생성기는 그 타입을 적는 곳에 lifetime을 적는다. callback이
   호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
   record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
-  뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6m대로 native 수명 위에서
+  뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6z대로 native 수명 위에서
   그것을 준다.
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
@@ -251,7 +251,7 @@
     버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
     둔다. 그 스레드의 drop은 항목을 곧바로 지우고, 다른 스레드의 drop은 그 스레드가 살아 있는 동안 key를 그 스레드의
     대기열에 넣는다. 그 스레드는 다음에 예외를 보관하거나 다시 던질 때 대기열의 key를 지우고, 끝날 때 대기열을 버린다. 다른
-    스레드에서 난 바인딩의 실패(GN-6m)의 `Native`는 `BindingError` 자체를 갖고, drop이 그것을 버린다.
+    스레드에서 난 바인딩의 실패(GN-6z)의 `Native`는 `BindingError` 자체를 갖고, drop이 그것을 버린다.
   - 값 alias가 그 target의 `native` 행을 갖고, 함수가 그 alias를 하나뿐인 parameter로 받아 그것을 돌려주면 왕복과 해제를
     시험한다. 시험은 준비 호출 한 번 뒤 바인딩이 가진 것을 세고, 시험의 class의 새 인스턴스를 그 함수에 주어 결과가 같은
     객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고(Node는 먼저 event loop를 한 번 돌린다), 다시
@@ -317,7 +317,7 @@
   코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 그런 경로의 오류는 `core.failure`가 참이면, 그리고
   그것이 없으면 parameter가 callback이나 함수를 담을 때 kind 또는 언어 코드가 던진 것인 `binding_core::Failure<E>`다.
   `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template `engine.render`)를 가리키며, 생성 코드는 그
-  오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6m). 생성 코드는 그런 경로를
+  오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6z). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는
   `core.result`는 컴파일되지 않는다(I-2). `errors.kinds`가 코어 오류를 가리키지 않는 계약의 `core.result: true`는 이름을
   대고 거부한다. 그 오류는 wildcard 없는 match로 kind의 category

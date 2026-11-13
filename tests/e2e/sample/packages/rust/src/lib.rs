@@ -127,7 +127,7 @@ pub fn count(lookup: &mut dyn Lookup, keys: &[String]) -> Result<u64, Failure<Er
     Ok(found)
 }
 
-/// The value of a key in the first lookup that holds it (GN-6n: callbacks in a list, which the core takes by value).
+/// The value of a key in the first lookup that holds it (GN-6aa: callbacks in a list, which the core takes by value).
 ///
 /// # Errors
 ///
@@ -141,7 +141,7 @@ pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Fa
     Err(Failure::Kind(Error::Missing { key: key.to_owned() }))
 }
 
-/// The value of a key in the lookup, and `None` without a lookup (GN-6n: an optional callback).
+/// The value of a key in the lookup, and `None` without a lookup (GN-6aa: an optional callback).
 ///
 /// # Errors
 ///
@@ -153,7 +153,7 @@ pub fn maybe(lookup: Option<Box<dyn Lookup + '_>>, key: &str) -> Result<Option<S
     }
 }
 
-/// A search for the value of a key (GN-6n: a record with a callback field, whose type has one lifetime).
+/// A search for the value of a key (GN-6aa: a record with a callback field, whose type has one lifetime).
 pub struct Search<'a> {
     /// The lookup that holds the value.
     pub lookup: Box<dyn Lookup + 'a>,

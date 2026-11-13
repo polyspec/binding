@@ -104,12 +104,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `(function () { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
-  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
     return phpFixture(values);
   };
-  // GN-6m: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
+  // GN-6z: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;
@@ -124,7 +124,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const call = (override: Map<unknown, string>): string =>
       qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
-    // GN-6m: a value of a function type that is not a Closure is refused as it enters.
+    // GN-6z: a value of a function type that is not a Closure is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
     if (functionArg !== undefined && reachable) {
       methods.push(`
@@ -226,7 +226,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
     // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
     const fixturesFor = (id: string, args: Map<Fn['args'][number], unknown>) => {
-      // GN-6m: a function value of a case is the call of a fixture whose one member is the call, as a Closure.
+      // GN-6z: a function value of a case is the call of a fixture whose one member is the call, as a Closure.
       const fixtures = [
         ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) as { members: string[]; rows: string[][]; calls: string[][] | undefined }, use: `$fixture${i}` })),
         ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `$function${i}`, values: { members: f.members, rows: f.rows, calls: undefined as string[][] | undefined }, use: `$function${i}->call(...)` })),
@@ -418,7 +418,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
         self::assertSame($before, \\${layout.namespace}\\Internal\\nativeCount());
     }`);
   }
-  // U-3, GN-6m: a function of the language called on a thread other than its owner is kind wrong_thread, through the
+  // U-3, GN-6z: a function of the language called on a thread other than its owner is kind wrong_thread, through the
   // entry point of the feature thread-test.
   if (takesFunction(model)) {
     methods.push(`

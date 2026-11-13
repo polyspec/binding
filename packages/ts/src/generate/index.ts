@@ -89,12 +89,12 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
-  // GN-6m: Node, PHP and WASM hold a function on the native lifetime, which binding_core does not have yet; Go does not
+  // GN-6z: Node, PHP and WASM hold a function on the native lifetime, which binding_core does not have yet; Go does not
   // generate a function type.
   for (const target of targets.filter((t) => t === 'go')) {
     for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
       for (const arg of fn.args.filter((a) => holdsFunction(a.type))) {
-        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} ${target === 'go' ? '(GN-6m)' : 'yet: it is held on the native lifetime, which binding_core does not have yet (GN-6m)'}`);
+        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} ${target === 'go' ? '(GN-6z)' : 'yet: it is held on the native lifetime, which binding_core does not have yet (GN-6z)'}`);
       }
     }
   }

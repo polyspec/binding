@@ -223,10 +223,10 @@ fn clean_up_native() {
 `;
 }
 
-// U-3, GN-6m: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is held
+// U-3, GN-6z: a failure of the binding in a call of a function on a thread other than its owner (wrong_thread) is held
 // by its Raised as its BindingError, which any thread may hold; the owner thread makes it its error.
 export const elsewhereRust = (model: Model): string => `
-/// U-3, GN-6m: what the Raised of a failure of the binding on another thread holds.
+/// U-3, GN-6z: what the Raised of a failure of the binding on another thread holds.
 #[derive(Debug)]
 struct Elsewhere(BindingError);
 

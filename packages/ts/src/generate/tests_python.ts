@@ -93,7 +93,7 @@ export function pythonTests(model: Model, module: string): string {
   };
   const out: string[] = [];
   let usesFixture = false;
-  // GN-6m: a function value of a case is a fixture whose one member is the call itself (__call__).
+  // GN-6z: a function value of a case is a fixture whose one member is the call itself (__call__).
   type Made = { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined } };
   const withFunctions = (fixtures: Made[], fn: Fn, id: string, args: Map<Arg, unknown>): Made[] => [
     ...fixtures,
@@ -114,12 +114,12 @@ export function pythonTests(model: Model, module: string): string {
     return `${helper}()`;
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
-  // GN-6n: a callback value inside another value is the object of a fixture, whose unexpected call raises.
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises.
   ctx.fixtureNew = (values) => {
     usesFixture = true;
     return `_fixture((${values.members.map((m) => `${m},`).join(' ')}), [${values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
   };
-  // GN-6m: a function value inside another value is the callable of a fixture, whose unexpected call raises.
+  // GN-6z: a function value inside another value is the callable of a fixture, whose unexpected call raises.
   ctx.functionNew = (rows) => {
     usesFixture = true;
     return `_fixture(("__call__",), [${rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
@@ -319,7 +319,7 @@ export function pythonTests(model: Model, module: string): string {
             ${with_({ returns: 'wrong' })}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
     }
-    // GN-6m: a value of a function type that is not callable is refused as it enters.
+    // GN-6z: a value of a function type that is not callable is refused as it enters.
     const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
     if (functionArg !== undefined && reachable) {
       out.push(`

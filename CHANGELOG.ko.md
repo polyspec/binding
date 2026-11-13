@@ -17,16 +17,16 @@
   개수(`binding.NativeCount`, build tag `polyspec_native_count_test`)로 본다. 들어오는 Go func는 이제 정적 라이브러리가 세는
   `Native`다. end-to-end 확인은 feature 없이 빌드한 정적 라이브러리에 `__native_count`가 있으면 실패한다.
 - `tests/e2e/functions`는 함수 타입을 Python에서만 확인했다. 이제 PHP, Node, WASM target도 선언하므로, end-to-end 확인이
-  함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6m).
-- WASM은 함수 타입을 받는 member를 거부했다(GN-6m). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6u)로 갖고
+  함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6z).
+- WASM은 함수 타입을 받는 member를 거부했다(GN-6z). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6u)로 갖고
   parameter를 TypeScript 함수 타입으로 선언한다. 함수가 아닌 값은 kind `invalid_argument_type`이다. WASM의 생성된 테스트는
   함수 fixture의 member 이름을 PHP 문자열로 썼는데, 이제 JavaScript 문자열로 쓴다.
-- PHP는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 Closure를 owner 표의 `Native`(GN-6u)로 갖고 `\Closure`로
+- PHP는 함수 타입을 받는 member를 거부했다(GN-6z). 이제 Closure를 owner 표의 `Native`(GN-6u)로 갖고 `\Closure`로
   선언한다. 다른 스레드의 호출은 kind `wrong_thread`이며 feature `thread-test`의 `Internal\threadTest`가 그것을 보이고,
   Closure가 아닌 값은 kind `invalid_argument_type`이다. Node와 PHP에서 다른 스레드의 호출 중 바인딩의 실패는 모든 스레드가
   닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만 만들어지므로, 호출이 실패할 때 owner가 그것을
   만든다.
-- Node는 함수 타입을 받는 member를 거부했다(GN-6m). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6u)로 갖고 parameter를
+- Node는 함수 타입을 받는 member를 거부했다(GN-6z). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6u)로 갖고 parameter를
   TypeScript 함수 타입으로 선언한다. 호출은 owner 스레드에서 표의 env 안에서 실행되고, 다른 스레드의 호출은 kind
   `wrong_thread`이며, 새 feature `thread-test`의 진입점 `__threadTest`가 그것을 보인다. 함수가 아닌 값은 kind
   `invalid_argument_type`이다. 생성된 테스트는 case의 함수 값을 fixture의 call로 준다.
@@ -55,19 +55,19 @@
   거부되었다("the type {"unit": ...} is not generated yet"). 이제 각 target은 그런 callback을 `Box<dyn <core trait> + 'a>`로,
   그것을 담은 list, `optional`, record를 값으로 코어에 준다. `'a`는 Node에서 `'env`, 다른 곳에서 `'static`이다. callback
   field를 가진 record의 코어 타입은 그 lifetime을 가지며, 그런 record는 record parameter가 아닌 자리에서 이름으로
-  거부한다(GN-6n). 생성된 시험은 다른 값 안의 callback 값을 fixture의 객체로, 또는 그 callback을 구현하는 class의 인스턴스
+  거부한다(GN-6aa). 생성된 시험은 다른 값 안의 callback 값을 fixture의 객체로, 또는 그 callback을 구현하는 class의 인스턴스
   값으로 준다. `tests/e2e/sample`은 `sample.first`(list), `sample.maybe`(`optional`), `sample.seek`(record field)를
   가진다. `packages/ts`의 `npm test`로 확인했다.
 - 함수 값 `{"function": [<행>]}`을 준 case는 생성기를 "no case value of the type"으로 멈추게 했다. 이제 Python 시험은
   그것을 호출 자체의 fixture로 주고 호출 뒤에 그 호출 기록을 읽는다. `then` 호출의 인자처럼 다른 값 안에 있으면 그런
-  fixture의 호출 가능한 객체로 준다. 또 호출 가능하지 않은 값이 kind `invalid_argument_type`인지 확인한다(G-5, GN-6m).
+  fixture의 호출 가능한 객체로 준다. 또 호출 가능하지 않은 값이 kind `invalid_argument_type`인지 확인한다(G-5, GN-6z).
   `tests/e2e/functions`는 코어가 호출 중에 함수를 부르고(`functions.apply`) class 안에 함수를 보관하는(`registry.register`,
   `registry.call`) Python 저장소다.
 - 함수 타입 parameter를 가진 member는 모든 target에서 거부되었다("the type {"function": ...} is not generated yet").
   그래서 template `engine.register` 같은 member가 있는 계약은 어떤 target도 생성되지 않았다. 이제 Python은 그것을
   생성한다. 코어는 `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`를 값으로 받고, 호출
   가능한 객체는 들어올 때 판정되며(kind `invalid_argument_type`), 호출은 인자를 내보내고 결과를 들이며, Python 코드의
-  예외는 `Raised`로 코어에 간다(GN-6m). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
+  예외는 `Raised`로 코어에 간다(GN-6z). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
   거부한다. callback member와 함수 타입은 빌린 parameter의 규칙 하나를 함께 쓴다(T-1). `packages/ts`의 `npm test`로
   확인했다.
 - 실패 주입점을 가진 코어는 저장소가 flag나 자기 dev-dependency를 주지 않으면 지점이 꺼진 채로 `cargo test`를 돌렸고, 저장소들은

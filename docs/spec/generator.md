@@ -18,7 +18,7 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type outside Python (GN-6m), a value unit, a wait other than `none`, a default
+  recognizing callback, a function type outside Python (GN-6z), a value unit, a wait other than `none`, a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
@@ -147,7 +147,7 @@ the design ids are those of the binding design.
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
-  | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6m) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
   | `native-count-test` | the count of the language objects that the owner table holds (GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
@@ -246,7 +246,7 @@ the design ids are those of the binding design.
   The last drop of a `Raised` that no caller threw again removes its entry, as GN-6u states.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
-- **GN-6m** A function type (T-2) is taken by the core as
+- **GN-6z** A function type (T-2) is taken by the core as
   `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
   borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
   and `E` is the core error. The core may keep the function after the call (template `engine.register`), so the form
@@ -259,7 +259,7 @@ the design ids are those of the binding design.
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
   either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
   error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
-- **GN-6n** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
+- **GN-6aa** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
   binding makes the value for each call, so it has nothing to keep, and a borrowed list would not let the core call a
@@ -268,7 +268,7 @@ the design ids are those of the binding design.
   where it names the type: `'env` in Node, whose callback lives in the environment of the call, and `'static` in the
   other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
   parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
-  Node, PHP and WASM give on the native lifetime as GN-6m states.
+  Node, PHP and WASM give on the native lifetime as GN-6z states.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -305,7 +305,7 @@ the design ids are those of the binding design.
     Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread
     removes the entry at once, and a drop on another thread queues the key for that thread while it lives, which
     removes the queued keys when it next keeps or throws again an exception and discards its queue when it ends. The
-    `Native` of a failure of the binding on another thread (GN-6m) holds the `BindingError` itself, which the drop
+    `Native` of a failure of the binding on another thread (GN-6z) holds the `BindingError` itself, which the drop
     discards.
   - The round trip and the release are tested where a value alias has a `native` row in the target and a function
     takes that alias as its one parameter and returns it: after one warm-up call, the test counts what the binding
@@ -388,7 +388,7 @@ the design ids are those of the binding design.
   such a path is `binding_core::Failure<E>`, a kind or what language code raised, when `core.failure` is true, and
   without it when a parameter holds a callback or a function; `core.failure: true` names a member that calls language
   code that its receiver keeps (template `engine.render`), whose error the generated code converts as that of a member
-  that takes a callback (GN-6d, GN-6m). The generated
+  that takes a callback (GN-6d, GN-6z). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
   `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose
   `errors.kinds` names no core error is refused by name. The error is matched without a wildcard into the

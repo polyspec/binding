@@ -33,7 +33,7 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
-  // GN-6n: the callback units whose fixture a case value inside another value makes.
+  // GN-6aa: the callback units whose fixture a case value inside another value makes.
   fixtures: Set<CallbackUnit>;
 }
 
@@ -141,7 +141,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     return made(v, b, instanceOf(v.model, object.unit.id, json, `a value of ${object.unit.id}`));
   }
   const unit = unitOf(v.model, type);
-  // GN-6n: a callback value inside another value is a fixture of the body, whose calls the test does not read.
+  // GN-6aa: a callback value inside another value is a fixture of the body, whose calls the test does not read.
   const callback = v.model.callbacks.find((c) => c.unit === unit);
   if (callback !== undefined && unit !== undefined && typeof json === 'object' && 'callback' in json) {
     v.fixtures.add(callback);

@@ -49,7 +49,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // that the conversion takes as impl Borrow or a widening trait is needless (the lints deny it).
 const copied = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
 
-// GN-6m, GN-6u: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
+// GN-6z, GN-6u: a function holds the JavaScript function as a Native of the table of the one thread of the module; a
 // call converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call, goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -1049,7 +1049,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
-  // GN-6m: a function takes the arguments that the core gives and returns a value that the binding judges.
+  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
   if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
   // T-3: a record of another repository is a plain object, declared here by its fields.

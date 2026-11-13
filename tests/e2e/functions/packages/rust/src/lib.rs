@@ -1,4 +1,4 @@
-//! A sample library for the end-to-end check of binding: functions of the language (T-2, GN-6m), which the core calls
+//! A sample library for the end-to-end check of binding: functions of the language (T-2, GN-6z), which the core calls
 //! during the call that receives them, and which a class keeps after the call and calls later.
 
 use binding_core::{Failure, Kinds};
@@ -58,7 +58,7 @@ impl Kinds for Error {
     }
 }
 
-/// A function of the language that converts a text, given with the lengths of its words (GN-6m).
+/// A function of the language that converts a text, given with the lengths of its words (GN-6z).
 pub type Convert = Box<dyn Fn(&str, &[i64]) -> Result<String, Failure<Error>> + Send + Sync>;
 
 /// The lengths of the words of a text, separated by spaces.

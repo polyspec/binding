@@ -41,7 +41,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   throw new Error(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
-// GN-6m, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
 function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
@@ -958,7 +958,7 @@ pub fn native_count() -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 `}${takesFunction(model) ? `
-/// U-3, GN-6m: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+/// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
 /// gives on another thread, whose drop of the Native the owner releases at its next entry point.
 #[cfg(feature = "thread-test")]
 #[napi(js_name = "__threadTest")]
@@ -1019,7 +1019,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
-  // GN-6m: a function takes the arguments that the core gives and returns a value that the binding judges.
+  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
   if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
   // T-3: a record of another repository is a plain object, declared here by its fields.

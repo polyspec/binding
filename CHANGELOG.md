@@ -20,17 +20,17 @@
   `Native` that the static library counts. The end-to-end check fails a static library without features that holds
   `__native_count`.
 - `tests/e2e/functions` checked a function type in Python only. It now declares the targets PHP, Node and WASM as
-  well, so the end-to-end check runs the stored functions of every target that takes one (GN-6m).
-- WASM refused a member that takes a function type (GN-6m). It now holds the function as a `Native` of the table of
+  well, so the end-to-end check runs the stored functions of every target that takes one (GN-6z).
+- WASM refused a member that takes a function type (GN-6z). It now holds the function as a `Native` of the table of
   the one thread of the module (GN-6u) and declares the parameter as a TypeScript function type; a value that is not a
   function is kind `invalid_argument_type`. The generated tests of WASM wrote the names of the members of a function
   fixture as PHP strings; they write them as JavaScript strings.
-- PHP refused a member that takes a function type (GN-6m). It now holds the Closure as a `Native` of its owner table
+- PHP refused a member that takes a function type (GN-6z). It now holds the Closure as a `Native` of its owner table
   (GN-6u), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
   feature `thread-test` shows, and a value that is not a Closure is kind `invalid_argument_type`. In Node and PHP a
   failure of the binding in a call on another thread is kept as its `BindingError` in a table that every thread
   reaches, because a language error object is made on the owner thread only, which makes it when the call fails.
-- Node refused a member that takes a function type (GN-6m). It now holds the JavaScript function as a `Native` of
+- Node refused a member that takes a function type (GN-6z). It now holds the JavaScript function as a `Native` of
   its owner table (GN-6u) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
   the env of the table, and a call on another thread is kind `wrong_thread`, which the entry point `__threadTest` of
   the new feature `thread-test` shows. A value that is not a function is kind `invalid_argument_type`. The generated
@@ -61,21 +61,21 @@
   parameter, was refused for every target ("the type {"unit": ...} is not generated yet"). Each target now gives the
   core such a callback as `Box<dyn <core trait> + 'a>` and the list, the `optional` or the record by value, `'a` being
   `'env` in Node and `'static` elsewhere; the core type of a record with a callback field has that lifetime, and such a
-  record is refused by name at a place other than a record parameter (GN-6n). A generated test gives a callback value
+  record is refused by name at a place other than a record parameter (GN-6aa). A generated test gives a callback value
   inside another value as the object of a fixture, or an instance value of a class that implements the callback.
   `tests/e2e/sample` has `sample.first` (a list), `sample.maybe` (an `optional`) and `sample.seek` (a record field).
   Verified by `npm test` in `packages/ts`.
 - A case that gave a function value `{"function": [<row>]}` stopped the generator with "no case value of the type".
   A Python test now gives it as a fixture of the call itself, whose record of calls the test reads after the call, or,
   inside another value such as an argument of a `then` call, as the callable of such a fixture; and it checks that a
-  value that is not callable is kind `invalid_argument_type` (G-5, GN-6m). `tests/e2e/functions` is a Python
+  value that is not callable is kind `invalid_argument_type` (G-5, GN-6z). `tests/e2e/functions` is a Python
   repository whose core calls a function during the call (`functions.apply`) and keeps one in a class
   (`registry.register`, `registry.call`).
 - A member with a parameter of a function type was refused for every target ("the type {"function": ...} is not
   generated yet"), so a contract with one, such as template `engine.register`, generated no target. Python now
   generates it: the core takes `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>` by
   value, the callable is checked as it enters (kind `invalid_argument_type`), and a call converts the arguments out
-  and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6m). Node, PHP and WASM
+  and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6z). Node, PHP and WASM
   refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
   function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
 - A core with fault injection points ran `cargo test` with its points off unless the repository gave a flag or a
