@@ -14,6 +14,10 @@ types of the design rules named below and no rule of any library.
   (the entries of `OrderedMap`).
 - Feature `construct`: makes the wait tokens and `Raised` constructible, and the handle of a `Raised` readable. A generated binding crate enables it; a core crate enables it
   only in its `[dev-dependencies]`, so that its library, built on its own, cannot make a token (I-2 (4)).
+- Feature `fault-test`: compiles the arming of fault injection points (`fault::Armed`, `arm`, `take`, `left`) with the
+  optional dependencies `serde_json` 1.0.154 (the list of faults of a case) and, on Unix, `libc` 0.2.191 (the value of
+  an errno symbol). A core that has points declares `fault-test = ["polyspec-binding-core/fault-test"]` and nothing
+  else of it; a binding turns on the feature of each core whose points its cases name. No release build has it (G-5).
 - Use from another repository during development: a path dependency on this folder,
   `binding_core = { package = "polyspec-binding-core", path = "<checkout>/packages/core/rust" }`, named by a local link
   and never by a tracked manifest (PRINCIPLES P30).
@@ -51,6 +55,12 @@ types of the design rules named below and no rule of any library.
 | `Prototype` | B-1 | `Object`, `Null`. |
 | `OutValues` | B-1, U-7 (d) | The trait through which generated code asks the core for the children of the handles of an `OutValue`; the core's `out` function of a value alias returns it beside the root. `item(&mut self, list, index) -> OutValue`, `entry(&mut self, map, index) -> (OutValue, OutValue)` (a map or an object, in order). The same handle is the same language object. |
 | `HostValues` | B-1 | The trait through which a core asks the binding for the children of the handles of a `HostValue`; generated code implements it. `item(&mut self, list, index) -> Result<HostValue, Raised>`, `entry(&mut self, map, index) -> Result<(HostValue, HostValue), Raised>` (a map, a PHP array, a plain object, a `stdClass`, in the language's order), `read(&mut self, value) -> Result<HostValue, Raised>` (the `read` member of a value table's class). A question may run language code, so its failure is that code's exception. |
+| `fault::point(name: &'static str) -> Option<fault::Injected>` | G-5, X-1 | A fault injection point of a core, named `<library>.<id>` by a `#[doc(hidden)] pub const` of the core that the contract's `faults` names. Always there and `#[inline(always)]`; `None` without `fault-test` and where no fault is armed for the point on this thread. Each call is a visit of the point. |
+| `fault::Injected` | G-5 | `Io { errno: Option<i32> }` (the I/O call of the place fails, with the target's value of the fault's errno symbol), `Short { bytes: u64 }` (the read or write handles that many bytes and ends), `Broken` (the invariant of the place is broken). |
+| `fault::arm(member, faults) -> Result<u64, ArmError>` | G-5 | With `fault-test`. Arms the JSON list of a case's `faults` (`point`, `kind`, `errno`, `bytes`, `nth`) for the next call of the member id from this thread and gives the id of the arming. A fault fires once, at the `nth` visit of its point (1 without `nth`). An errno symbol is one of POSIX that Linux and macOS both have; a symbol that the target does not have, or a target without errno, is `ArmError::Errno`. |
+| `fault::take(member) -> Armed`, `fault::Armed::{empty, run}` | G-5 | With `fault-test`. A generated entry point takes the arming of its member and thread, or an empty one, in its synchronous part, moves it with its work and runs the work in `run`, which installs the arming on the thread and puts the earlier one back, also after a panic. `point` reads only the installed arming, so an entry point that a callback enters does not see the outer arming, and a task or thread that the core starts does not inherit it. |
+| `fault::left(id) -> Result<Vec<String>, ArmError>` | G-5 | With `fault-test`. The points of the arming whose fault did not fire, and forgets the arming; a generated test requires it to be empty. |
+| `fault::ArmError` | G-5 | `Form(String)`, `Errno(String)`, `Id(u64)`, `Poisoned`; `Display`, `std::error::Error`. |
 
 ## Not yet in the crate
 

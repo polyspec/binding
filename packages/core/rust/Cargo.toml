@@ -17,10 +17,18 @@ path = "src/lib.rs"
 # core crate enables it only through its dev-dependency, so the library of a core crate, built alone, cannot make a
 # token: tests/construct.rs proves both sides.
 construct = []
+# Compiles the arming of fault injection points (design G-5): fault::point always exists and does nothing without it.
+# A core turns it on only through its own feature fault-test, and a binding through that of its core, for tests only.
+fault-test = ["dep:serde_json", "dep:libc"]
 
 [dependencies]
 indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 tokio-util = { version = "=0.7.20", default-features = false }
+# fault-test only: the list of faults of a case is JSON, and an errno symbol has the value of the target.
+serde_json = { version = "=1.0.154", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "=0.2.191", optional = true, default-features = false }
 
 [dev-dependencies]
 serde_json = "=1.0.154"
