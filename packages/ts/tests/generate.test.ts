@@ -608,3 +608,119 @@ test('WASM: map<T> is a Map of string keys, through the entries of the ES module
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
 });
+
+// The sample of the end-to-end check, with its case files, after a change.
+const sampleWith = (change: (contract: any, cases: any) => void, targets?: string[]): Map<string, string | Buffer> => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const files = sampleCases();
+  change(contract, files.get('contracts/cases.json'));
+  if (targets !== undefined) contract.targets = targets;
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: files });
+};
+const LIBS = ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs'] as const;
+const pythonTests = 'packages/python/generated/tests/test_generated.py';
+const nodeTests = 'packages/ts/generated/tests/generated.test.mjs';
+const phpTests = 'packages/php-ext/generated/tests/GeneratedTest.php';
+
+test('an entry point runs its work with the faults that a case armed, and the test requires each to fire (G-5)', () => {
+  const out = sampleWith(() => {});
+  for (const path of LIBS) {
+    const lib = text(out, path);
+    assert.match(lib, /const _: &str = polyspec_sample::fault::READ;\nconst _: &str = polyspec_sample::fault::INTERNAL;/, path);
+    assert.match(lib, /guard\((py, )?\|\| with_faults\("sample\.measure", \|\| \{/, path);
+    assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn with_faults<T>\(member: &str, work: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::take\(member\)\.run\(work\)/, path);
+    // Every entry point of a member takes its arming, the hooks and the iterate too.
+    assert.equal(lib.match(/guard\((py, )?\|\| (?!with_faults|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
+  }
+  const python = text(out, pythonTests);
+  assert.match(python, /arg_0 = "abc"\n        armed = _native\._arm_faults\("sample\.measure", "\[\{\\"point\\":\\"sample\.read\\",\\"kind\\":\\"io\\"\}\]"\)\n        with self\.assertRaises\(pkg\.SampleIoError\) as caught:\n            pkg\.measure\(arg_0\)\n        self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
+  assert.match(text(out, nodeTests), /const arg0 = 'abc';\n  const armed = addon\(\)\.__armFaults\('sample\.measure', '\[\{"point":"sample\.read","kind":"io"\}\]'\);\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)/);
+  assert.match(text(out, nodeTests), /assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);
+  assert.match(text(out, phpTests), /\$armed = \\Polyspec\\Sample\\Internal\\armFaults\("sample\.measure", .*\);\n        try \{\n            \\Polyspec\\Sample\\measure\(\$arg0\);/);
+  assert.match(text(out, phpTests), /self::assertSame\(\[\], \\Polyspec\\Sample\\Internal\\faultLeft\(\$armed\)\);/);
+});
+
+test('a contract without fault injection points has no item of them (G-5)', () => {
+  const out = sampleWith((c, cases) => {
+    delete c.faults;
+    cases.measure = [];
+  });
+  for (const path of LIBS) assert.doesNotMatch(text(out, path), /with_faults|fault::|fault-test/, path);
+  assert.throws(() => sampleWith((c) => { delete c.faults; }), /arms faults, but the contract names no fault injection point/);
+});
+
+test('the errno of a case is the value of its symbol in Python and Node, and PHP is refused by name (G-5)', () => {
+  const withErrno = (c: any, cases: any): void => {
+    cases.measure[0].faults[0].errno = 'ENOSPC';
+    cases.measure[0].raises.errno = 'ENOSPC';
+  };
+  const out = sampleWith(withErrno, ['python', 'node']);
+  assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
+  assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
+  assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
+  assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
+  assert.throws(() => sampleWith(withErrno), /a_read_that_fails_is_unreadable of sample\.measure: the errno symbol ENOSPC is not compared in PHP yet/);
+});
+
+test('fault injection points, the kinds of an alias and the point of another library are refused by name where they are not generated (G-4)', () => {
+  const drop = (c: any, cases: any): void => {
+    c.units = c.units.filter((u: any) => !['lookup', 'tag', 'data'].includes(u.id));
+    const kept = ['sample.measure', 'sample.checked', 'sample.touch'];
+    c.units.find((u: any) => u.id === 'sample').members = c.units.find((u: any) => u.id === 'sample').members.filter((m: any) => kept.includes(m.id));
+    c.cases = c.cases.filter((row: any) => kept.includes(row.member));
+    c.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+    void cases;
+  };
+  assert.throws(() => sampleWith(drop, ['go']), /faults: the entry points of the feature fault-test are not generated for go yet/);
+  assert.throws(() => sampleWith((c, cases) => { cases.measure[0].faults[0].point = 'other.read'; }), /the point other\.read of another library is not armed yet/);
+  assert.throws(() => sampleWith((c, cases) => { cases.data_in[0].value = { host: 'callable' }; }), /of the alias data: a value \{"host": \.\.\.\} is not generated yet/);
+});
+
+test('core.result says whether the core returns a Result, and a return of none is bound as the unit (E-1c)', () => {
+  const out = sampleWith(() => {});
+  for (const path of LIBS) {
+    const lib = text(out, path);
+    assert.match(lib, /let result = match polyspec_sample::checked\(&text\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(core_error\(/, path);
+    assert.match(lib, /let \(\): \(\) = polyspec_sample::touch\(&text\);/, path);
+  }
+  const plain = sampleWith((c) => { c.units.find((u: any) => u.id === 'sample').members.find((m: any) => m.id === 'sample.checked').core = 'polyspec_sample::checked'; });
+  assert.match(text(plain, LIBS[0]), /let result = polyspec_sample::checked\(&text\);/);
+  assert.throws(() => sampleWith((c) => {
+    c.errors.kinds = [];
+    delete c.faults;
+    c.units = c.units.filter((u: any) => !['lookup', 'tag', 'data'].includes(u.id));
+    const kept = ['sample.checked'];
+    c.units.find((u: any) => u.id === 'sample').members = c.units.find((u: any) => u.id === 'sample').members.filter((m: any) => kept.includes(m.id));
+    c.cases = c.cases.filter((row: any) => kept.includes(row.member));
+  }), /sample\.checked: its core returns a Result \(core\.result\), but errors\.kinds names no core error/);
+});
+
+test('the kinds of an alias are checked against its error, run alone and through each member that takes it (U-7)', () => {
+  const out = sampleWith(() => {});
+  for (const path of LIBS) {
+    const lib = text(out, path);
+    assert.match(lib, /#\[allow\(clippy::unneeded_struct_pattern, reason = "I-2"\)\]\nconst _: fn\(&polyspec_sample::Error\) -> bool = \|error\| matches!\(error, polyspec_sample::Error::Unsupported \{ \.\. \}\);/, path);
+    assert.match(lib, /#\[cfg\(feature = "codec-test"\)\]\n(#\[.*\]\n)+(pub )?fn _?alias_in_data/, path);
+  }
+  assert.match(text(out, pythonTests), /def test_u7_data_in_bytes_that_are_no_text_are_not_data\(self\) -> None:\n        with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n            _native\._alias_in_data\(bytes\.fromhex\("ff"\)\)/);
+  assert.match(text(out, pythonTests), /def test_u7_size_value_gives_the_kind_of_data\(self\) -> None:\n        with self\.assertRaises\(pkg\.SampleValueError\) as caught:\n            pkg\.size\(bytes\.fromhex\("ff"\)\)/);
+  assert.match(text(out, nodeTests), /addon\(\)\.__aliasInData\(new Uint8Array\(Buffer\.from\('ff', 'hex'\)\)\)/);
+  assert.match(text(out, phpTests), /\\Polyspec\\Sample\\Internal\\aliasInData\(hex2bin\("ff"\)\);/);
+  const without = sampleWith((c, cases) => {
+    delete c.units.find((u: any) => u.id === 'data').in_raises;
+    c.cases = c.cases.filter((row: any) => row.alias === undefined);
+    void cases;
+  });
+  for (const path of LIBS) assert.doesNotMatch(text(without, path), /alias_in_data|matches!\(error/, path);
+});
+
+test('a binding crate has the test features that its contract needs (GN-5)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const packages = trackedPackages(sample, '0.0.0');
+  for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) {
+    assert.match(String(packages.get(path)), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\n\n\[/, path);
+  }
+  delete sample.faults;
+  delete sample.units.find((u: any) => u.id === 'data').in_raises;
+  assert.match(String(trackedPackages(sample, '0.0.0').get('packages/python/Cargo.toml')), /\[features\]\npanic-test = \[\]\n\n\[dependencies\]/);
+});
