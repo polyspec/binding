@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- feature 없는 binding_core의 `cargo test`가 `tests/lock.rs`와 `tests/driver.rs`를 시험 없이 돌리고 통과했다. 각 파일이
+  crate 수준의 `#![cfg(feature = ...)]`로 막혀 있었기 때문이다. 이제 두 파일은 `required-features`를 가진 `[[test]]`
+  target이고, feature 없는 실행은 그것을 빌드하지 않는다(HR-84). `make check`로 확인했다: test-ts는 시험 290개를 돌려 모두
+  통과했고 `tests/core-tests.test.ts`의 시험이 그 안에 있다. test-rust는 모든 feature에서 lock과 driver를 돌렸고 feature
+  없이는 둘 다 목록에 없었다.
 - `tests/e2e/sample`의 e2e가 Node와 Go에서 실패했다. Node: `resolveSlowly`의 K-2 시험 가운데 묶음의 첫 시험만 async
   function이 되어, 생성된 시험 module이 해석되지 않았다(async가 아닌 function 안의 `await`). 이제 기다리는 묶음의 모든 시험이
   async다. Go: feature `fault-test`의 진입점만 쓰는 `out_list`가 feature 없는 정적 라이브러리에도 컴파일되어, 그 라이브러리가

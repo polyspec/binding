@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- `cargo test` of binding_core without features ran `tests/lock.rs` and `tests/driver.rs` with no test, because each
+  file was gated by a crate-level `#![cfg(feature = ...)]`, and passed while it checked nothing. The two files are
+  now `[[test]]` targets with `required-features`, which a run without the feature does not build (HR-84). Verified by
+  `make check`: test-ts ran 290 tests, all passed, with the test of `tests/core-tests.test.ts`; test-rust ran lock and
+  driver with all features and listed neither without features.
 - The e2e run of `tests/e2e/sample` failed in Node and Go. Node: of the K-2 tests of `resolveSlowly`, only the first
   test of the block became an async function, so the module of the generated tests did not parse (`await` in a
   function that is not async); every test of a block that awaits is now async. Go: `out_list`, which only the entry
