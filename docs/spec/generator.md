@@ -308,8 +308,9 @@ the design ids are those of the binding design.
   `text`. Any other `make` is refused by name (G-4). Python, Node and PHP take and give it so; WASM takes and gives it
   as Node does, through the JavaScript class of the owner's WASM package (GN-18b); Go takes it as the Go type of the
   owner's class, whose `by` and `read` members the answers of the host questions of GN-15c call, and gives it by the
-  exported functions of the owner's Go package that the `out` rows name. Not implemented: the generator refuses it for
-  Go by name, because the call of GN-15c has no description, read and making of an instance yet.
+  exported functions of the owner's Go package that the `out` rows name. Not implemented (defect 80, row B2.80): the
+  generator refuses it for Go by name, because the call of GN-15c has no description, read and making of an instance
+  yet.
 - **GN-6f** A member of kind `iterate` (N-4) of a class calls its core with `&self`, which gives an iterator of
   borrowed items, or of borrowed keys and values for `yields: {key, value}`; the binding converts every item when the
   iteration starts, a snapshot of the class's value (a value type by value, a class by a copy of its core value).
