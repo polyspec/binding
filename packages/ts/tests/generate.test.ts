@@ -1429,6 +1429,32 @@ test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name 
   assert.match(stub, /case Word = 'word';/);
 });
 
+test('the pairs of a case value of kind map fill the class that the make member of the kind takes (U-1, GN-13)', () => {
+  // As Value.object of json takes an OrderedMap, Token.of_map takes a TokenMap, which its constructor makes and its one
+  // member with the receiver &mut self and two parameters fills with each pair.
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  token.members.push({ id: 'token.of_map', name: ['of', 'map'], kind: 'static', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::of_map' } });
+  for (const row of token.out) if (row.kind === 'map') row.make = Object.fromEntries(FIVE.map((t) => [t, 'token.of_map']));
+  contract.units.push({
+    id: 'token_map', name: ['token', 'map'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::TokenMap', final: true,
+    members: [
+      { id: 'token_map.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [], returns: { unit: 'token_map' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::new' } },
+      { id: 'token_map.insert', name: ['insert'], kind: 'method', visibility: 'public', parameters: [{ name: ['key'], type: { unit: 'token' }, required: true }, { name: ['value'], type: { unit: 'token' }, required: true }], returns: 'none', raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::insert', receiver: '&mut self' } },
+      { id: 'token_map.size', name: ['size'], kind: 'property', visibility: 'public', returns: 'uint', raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::size', receiver: '&self' } },
+    ],
+  });
+  (caseFiles.get('contracts/cases.json') as any).show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  // An empty map is the class that the constructor makes, with no pair inserted.
+  assert.match(node, /test\('GN-13e: show a_map', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.show\(pkg\.Token\.ofMap\(new pkg\.TokenMap\(\)\)\)\)/);
+  assert.match(node, /pkg\.show\(pkg\.Token\.ofMap\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.word\('v'\)\); return made0; \}\)\(\)\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.Token\.ofMap\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.word\('v'\)\); return made0; \}\)\(\)\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0\.insert\(pkg\.Token\.word\("k"\), pkg\.Token\.word\("v"\)\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0->insert\([^\n]*Token::word\("k"\), [^\n]*Token::word\("v"\)\);/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
