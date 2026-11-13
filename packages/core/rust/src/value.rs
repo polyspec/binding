@@ -609,6 +609,24 @@ mod tests {
     }
 
     #[test]
+    fn a_text_of_code_units_keeps_its_unpaired_surrogates() {
+        // B2.81: the units of "\ud800", "\udc00", a paired pair and a text that mixes them leave as they are.
+        for units in [
+            vec![0xd800],
+            vec![0xdc00],
+            vec![0xd83d, 0xde00],
+            vec![0x61, 0xdc00, 0xd83d, 0xde00, 0xd800],
+        ] {
+            let value = OutValue::Text16(units.clone());
+            assert_eq!(value.kind(), ValueKind::Text16);
+            assert_eq!(value, OutValue::Text16(units));
+        }
+        assert_eq!(ValueKind::Text16.as_str(), "text16");
+        assert!(ValueKind::ALL.contains(&ValueKind::Text16));
+        assert_eq!(OutValue::Text16(vec![0xd800]).predicate(Predicate::Utf8), None);
+    }
+
+    #[test]
     fn a_handle_keeps_its_number() {
         assert_eq!(Handle::new(42).raw(), 42);
     }

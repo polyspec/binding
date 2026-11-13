@@ -902,6 +902,11 @@ test('a value class of another repository converts through the core of its owner
     // An instance of the owner's class is described by its in row, without opening it, and read by its read members.
     assert.match(lib, /HostValue::Value \{/, path);
     assert.doesNotMatch(lib, /no value class is read/, path);
+    // B2.81: a text leaves as its UTF-16 code units, made by from_units, and enters as the units that string_units gives,
+    // so a text with an unpaired surrogate keeps its units in every target.
+    assert.match(lib, /OutValue::Text16\(value\) =>/, path);
+    assert.match(lib, /ValueKind::Text16/, path);
+    assert.match(lib, /HostValue::Text\(HostText::Utf16\(/, path);
   }
 });
 

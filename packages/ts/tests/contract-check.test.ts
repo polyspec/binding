@@ -189,6 +189,10 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/3/make/php`, (c) => { unit(c, 'value').out[3].make.php = 'bigint'; }));
   test('make names a method, not a constructor', () =>
     fails('CK-8', `${at('value')}/out/1/make/node`, (c) => { unit(c, 'value').out[1].make.node = 'value.items'; }));
+  // GN-6x: a text with an unpaired surrogate is the kind text16, which a member of a class makes from code units; the
+  // string of PHP and Go cannot hold it, so no built-in form makes it.
+  test('a text16 row made by a built-in form', () =>
+    fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'text16'; }));
   test('a value that comes back as another kind', () =>
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => {
       // PHP makes text and bytes both as string, which the in table classifies as text.

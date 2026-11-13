@@ -757,13 +757,13 @@
           }
         },
         {
-          "kind": "text",
+          "kind": "text16",
           "make": {
-            "php": "value.string",
-            "python": "value.string",
-            "node": "value.string",
-            "go": "value.string",
-            "wasm": "value.string"
+            "php": "value.from_units",
+            "python": "value.from_units",
+            "node": "value.from_units",
+            "go": "value.from_units",
+            "wasm": "value.from_units"
           }
         },
         {
@@ -804,8 +804,8 @@
             },
             {
               "is": "string",
-              "kind": "text",
-              "read": "value.string_value"
+              "kind": "text16",
+              "read": "value.string_units"
             },
             {
               "is": "number",
@@ -839,8 +839,8 @@
             },
             {
               "is": "string",
-              "kind": "text",
-              "read": "value.string_value"
+              "kind": "text16",
+              "read": "value.string_units"
             },
             {
               "is": "number",
@@ -874,8 +874,8 @@
             },
             {
               "is": "string",
-              "kind": "text",
-              "read": "value.string_value"
+              "kind": "text16",
+              "read": "value.string_units"
             },
             {
               "is": "number",
@@ -909,8 +909,8 @@
             },
             {
               "is": "string",
-              "kind": "text",
-              "read": "value.string_value"
+              "kind": "text16",
+              "read": "value.string_units"
             },
             {
               "is": "number",
@@ -944,8 +944,8 @@
             },
             {
               "is": "string",
-              "kind": "text",
-              "read": "value.string_value"
+              "kind": "text16",
+              "read": "value.string_units"
             },
             {
               "is": "number",
