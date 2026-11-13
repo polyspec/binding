@@ -444,7 +444,9 @@ function recordRust(model: Model, unit: Unit): string {
     if (f.default !== undefined) return `    let ${rustField(f.name)}: Option<${rustType(model, f.type)}> = ${convertIn(model, { optional: f.type }, 'input', subject)}?;`;
     return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, 'input', subject)}?;`;
   });
-  const writes = fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `&value.${rustField(f.name)}`)};`);
+  // GN-6l: a scalar field is passed by value, any other by reference.
+  const scalar = (type: Type): boolean => typeof type === 'string' && ['bool', 'uint', 'int', 'int64', 'float'].includes(type);
+  const writes = fields.map((f) => `    ${convertOut(model, f.default === undefined ? f.type : { optional: f.type }, `${f.default === undefined && scalar(f.type) ? '' : '&'}value.${rustField(f.name)}`)};`);
   return `
 /// T-4: the record ${goName(unit.name)}, its fields in contract order.
 fn in_${name}(input: &mut &[u8]) -> Result<${core}, Fail> {
@@ -530,9 +532,11 @@ impl<T> Table<T> {
 // ---- entry points ----
 
 function entry(model: Model, symbol: string, doc: string, lines: string[], feature?: string): string {
+  // The arguments are read through a mutable slice, which an entry point without arguments does not need.
+  const read = lines.some((l) => l.includes('&mut input'));
   const body = model.faults.length === 0
-    ? `guard(|| {\n        let mut input = input;\n${lines.join('\n')}\n    })`
-    : `guard(|| {\n        shielded(|| {\n            let mut input = input;\n${lines.map((l) => `    ${l}`).join('\n')}\n        })\n    })`;
+    ? `guard(|| {\n${read ? '        let mut input = input;\n' : ''}${lines.join('\n')}\n    })`
+    : `guard(|| {\n        shielded(|| {\n${read ? '            let mut input = input;\n' : ''}${lines.map((l) => `    ${l}`).join('\n')}\n        })\n    })`;
   return `
 /// ${doc}
 ///
@@ -1115,7 +1119,7 @@ function rustUsed(model: Model): string {
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) || model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
