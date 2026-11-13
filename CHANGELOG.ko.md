@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: df25459d1a9b98f63cf2b6ca464ae205504df1951f4a8f809c81b39d13709a9c -->
+<!-- source-sha256: 2e5c5b379ad1806951241b5ca7bc33aea12d81e19a818af146bb5a114f57c0ba -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `wait: async_driver`인 Go member를 이름을 대고 거부했다. 이제 Go가 PHP처럼 그것을 생성한다. member의 cgo 호출이
+  호출 goroutine의 OS 스레드에서 `binding_core::driver::block_on`으로 future를 돌리고, 진입점은 결과를 변환할 때까지
+  자기 자리의 guard를 쥐며, `machine`이 있는 member는 그 스레드에서 `binding_core::machine::drive`가 돌린다. runtime은
+  process의 것이고 어떤 객체도 그것을 소유하지 않는다(GN-6n, GN-6ab). 그런 member가 있는 계약의 Go crate는
+  binding_core의 feature `driver`를 켠다. `tests/e2e/classes`의 member `classes.fetch`, `classes.settle`,
+  `gate.enter_later`가 Go를 적는다. `make test-ts`로 검증했다.
 - `wait: blocking_io`인 Go member를 이름을 대고 거부했다. 이제 Go가 그것을 생성한다. member의 cgo 호출이 호출
   goroutine의 OS 스레드에서 코어를 부르고 코어가 돌아올 때 돌아오며, C ABI의 진입점은 기다리는 동안 자기 자리의 lock을
   쥐고, 그 member는 기다리지 않는 member의 꼴을 갖는다(GN-6m). 언어 코드에 닿는 member는 그 스레드에서 callback을

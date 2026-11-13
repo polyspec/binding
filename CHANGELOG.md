@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A Go member with `wait: async_driver` was refused by name. Go now generates it as PHP does: the cgo call of the
+  member runs the future in `binding_core::driver::block_on` on the OS thread of the calling goroutine, the entry
+  point holds the guards of its places until the result is converted, and a member with `machine` is driven by
+  `binding_core::machine::drive` on that thread; the runtime is the one of the process, which no object owns (GN-6n,
+  GN-6ab). The Go crate of a contract with such a member turns on the feature `driver` of binding_core. The members
+  `classes.fetch`, `classes.settle` and `gate.enter_later` of `tests/e2e/classes` name Go. Verified by `make test-ts`.
 - A Go member with `wait: blocking_io` was refused by name. Go now generates it: the cgo call of the member calls
   the core on the OS thread of the calling goroutine and returns when the core returns, the entry point of the C ABI
   holds the locks of its places across the wait, and the member has the form of a member that does not wait (GN-6m);

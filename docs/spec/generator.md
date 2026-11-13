@@ -812,7 +812,13 @@ the design ids are those of the binding design.
   - Node returns a `Promise`: the future runs on the tokio runtime of napi (`Env::spawn_future_with_callback`, the
     napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
     error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
-  - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
+  - Go runs the future in `binding_core::driver::block_on` in the cgo call of the member, on the OS thread of the
+    calling goroutine, as PHP does: that thread polls the future, the tasks that the core starts run on the worker
+    threads of the runtime, and the call returns when the future ends, so the goroutine keeps its thread as GN-6m
+    states. The entry point holds the guards of its places until the result is converted. The runtime is the one of
+    the process, which `block_on` makes at the first such call and which lives until the process ends: no object owns
+    it, so the release of the last object stops no thread, and a connection that a core keeps is closed by the drop of
+    the core value that holds it. No call is cancelled, as GN-6m states.
   - WASM returns a `Promise` of `wasm_bindgen_futures::future_to_promise`: the event loop of JavaScript polls the
     future on the thread of the module, in a browser as in Node, and its result or error is converted when it ends,
     so a failure rejects the promise. The WASM crate depends on `wasm-bindgen-futures` of the release that pins its
@@ -976,9 +982,9 @@ the design ids are those of the binding design.
     of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
     future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
     on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
-  - Go refuses such a member by name, as it refuses every member with `async_driver` (GN-6n): the completion channel of
-    GN-6m, which would wait for an Io future, is not generated, and Go needs no owner thread for a callback, because a
-    cgo call from any thread may call Go (c6 6.4).
+  - Go drives the machine as PHP does, with `binding_core::machine::drive` in the cgo call of the member on the thread
+    of the calling goroutine, which waits for each Io future in `binding_core::driver::block_on`, so a callback is
+    called on the thread that gave it (GN-6q).
   - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
     module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
     `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and

@@ -3822,12 +3822,22 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('B-4: settle an_empty_name_is_missing_when_settled', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await pkg\.settle\(''\)\)/);
   assert.match(String(crates.get('packages/ts/wasm/Cargo.toml')), /\nwasm-bindgen-futures = "=0\.4\.80"\n/);
   assert.doesNotMatch(String(crates.get('packages/ts/wasm/Cargo.toml')), /"driver"/);
-  // Go names such a member as not generated yet; a WASM method's future owns the guard of its receiver, and a
-  // constructor that awaits is refused by name.
+  // A WASM method's future owns the guard of its receiver, and a constructor that awaits is refused by name.
   const everywhere = (contract: any): void => {
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait !== undefined && member.wait !== 'none') delete member.only;
   };
-  assert.throws(() => classes(everywhere, ['go']), /classes\.fetch: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  // Go: the cgo call of the member blocks on the runtime of binding_core, on the thread of the calling goroutine, with
+  // the guard of the receiver held by the entry point.
+  const go = classes(everywhere, ['go']);
+  const goLib = text(go, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goLib, /driven\(binding_core::driver::block_on\(binding_core::driver::Caught::new\(async move \{ polyspec_classes::fetch\(&name\)\.await \}\)\)\)\.map_err\(binding_error\)\?/);
+  assert.match(goLib, /let receiver = held\.read\("Gate", &\[\]\)[^\n]*\?;\n\s+let receiver = &\*receiver;\n[^\n]*block_on\([^\n]*polyspec_classes::Gate::enter_later\(receiver\)\.await/);
+  assert.match(goLib, /\nfn driven<T>\(/);
+  assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc Fetch\(name string\) \(string, error\) \{/);
+  assert.match(text(go, 'packages/go/zz_generated_classes.go'), /\nfunc \(this \*Gate\) EnterLater\(\) \(string, error\) \{/);
+  const everywhereContract = read('packages/rust/interface.json');
+  everywhere(everywhereContract);
+  assert.match(String(trackedPackages(everywhereContract, '0.0.0').get('packages/go/internal/ffi/Cargo.toml')), /polyspec-binding-core = \{[^\n]*features = \[[^\]\n]*"driver"/);
   const wasmEverywhere = classes(everywhere, ['wasm']);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/lib.rs'), /let receiver = held\.read\("Gate", &\[\]\)\.map_err\(binding_error\)\?;\n\s*awaited\(async move \{ let receiver = &\*receiver; polyspec_classes::Gate::enter_later\(receiver\)\.await\.map_err\(core_error\) \}, out_text\)/);
   assert.match(text(wasmEverywhere, 'packages/ts/wasm/generated/index.mjs'), /\n {2}async enterLater\(\.\.\.args\) \{/);
@@ -4021,7 +4031,9 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveSlowly\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveSlowly lets the exception of a callback through', async \(\) => \{/);
   // Go refuses it with every member with async_driver; a method with machine is refused by name.
-  assert.throws(() => sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), /sample\.resolve_slowly: wait async_driver is not generated for Go yet \(GN-6n\)/);
+  // Go drives the machine in the cgo call, on the thread of the calling goroutine, as PHP does.
+  const goMachine = text(sample((c) => { machine(c); delete member(c, 'sample.resolve_slowly').only; c.targets = c.targets.filter((t: string) => t !== 'wasm'); }, ['go']), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(goMachine, /binding_core::machine::drive\(&mut machine, \|io\| driven\(binding_core::driver::block_on\(/);
   assert.throws(() => sample((c) => { const m = member(c, 'ledger.known'); m.wait = 'async_driver'; m.core.machine = true; }, ['php']), /ledger\.known: a method with machine is not generated, because its machine would borrow its receiver \(GN-6ab\)/);
 });
 

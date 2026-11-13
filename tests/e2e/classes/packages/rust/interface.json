@@ -223,7 +223,8 @@
             "targets": [
               "php",
               "python",
-              "node"
+              "node",
+              "go"
             ],
             "reason": "GN-6n"
           },
@@ -255,6 +256,7 @@
               "php",
               "python",
               "node",
+              "go",
               "wasm"
             ],
             "reason": "GN-6n"
@@ -662,7 +664,8 @@
             "targets": [
               "php",
               "python",
-              "node"
+              "node",
+              "go"
             ],
             "reason": "GN-6n"
           },

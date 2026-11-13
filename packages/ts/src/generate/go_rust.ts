@@ -12,7 +12,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf,
+  takesObject, unitOf, DRIVEN, drivenCall, waitsAsync,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
   errorMatched,
   recognizedFn,
@@ -718,7 +718,8 @@ function functionRust(model: Model, fn: Fn): string {
     lines.push('        }', '        Ok(buffer)');
     return entry(model, cSymbol(model, fn), doc, lines);
   }
-  const call = armedCall(model, fn, coreCall(model, fn));
+  // GN-6n: the thread of the calling goroutine blocks on the future of an async member, on the runtime of binding_core.
+  const call = waitsAsync(fn) ? drivenCall(model, fn, coreCall(model, fn), (wait) => wait, 'binding_error') : armedCall(model, fn, coreCall(model, fn));
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
@@ -1476,7 +1477,7 @@ function rustUsed(model: Model): string {
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
   const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
-  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
+  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${DRIVEN}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
 }
 
 // GN-6x: the value classes of other repositories of the model, in the order of their numbers in node 11 of a result.

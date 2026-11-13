@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 45f0a871d050bd14fa0cddf58a9a362ca72ae412f294ac024b36ccebc2083696 -->
+<!-- source-sha256: 3d8277cc00031d2afd9e2ae24144365f804c4216d54b6fb1f386303e5275a120 -->
 # 생성기
 
 [English](generator.md)
@@ -664,7 +664,12 @@
   - Node는 `Promise`를 돌려준다. future는 napi의 tokio runtime에서 돌고(`Env::spawn_future_with_callback`, napi feature
     `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
     JavaScript 진입은 GN-6m처럼 async 함수다.
-  - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - Go는 PHP처럼 member의 cgo 호출 안에서, 호출 goroutine의 OS 스레드에서 `binding_core::driver::block_on`으로 future를
+    돌린다. 그 스레드가 future를 poll하고, 코어가 시작한 task는 runtime의 worker 스레드에서 돌며, future가 끝날 때 호출이
+    돌아온다. 그래서 goroutine은 GN-6m대로 자기 스레드를 쥔다. 진입점은 결과를 변환할 때까지 자기 자리의 guard를 쥔다.
+    runtime은 process의 것이다. `block_on`이 그런 첫 호출에서 만들고 process가 끝날 때까지 산다. 어떤 객체도 그것을
+    소유하지 않으므로 마지막 객체의 해제는 어떤 스레드도 멈추지 않고, 코어가 쥔 연결은 그것을 담은 코어 값의 drop이
+    닫는다. GN-6m대로 어떤 호출도 취소되지 않는다.
   - WASM은 `wasm_bindgen_futures::future_to_promise`의 `Promise`를 돌려준다. 브라우저에서도 Node에서도 JavaScript의
     event loop가 모듈의 스레드에서 future를 poll하고, 끝나면 그 결과나 오류를 변환하므로 실패는 promise를 reject한다.
     WASM crate는 자기 `wasm-bindgen`과 `js-sys`를 고정한 release의 `wasm-bindgen-futures`에 의존하고 binding_core의
@@ -803,9 +808,9 @@
     JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
     tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
     돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
-  - Go는 `async_driver`인 모든 member처럼(GN-6n) 그런 member를 이름을 대고 거부한다. Io future를 기다릴 GN-6m의 완료
-    channel을 생성하지 않으며, 어느 스레드의 cgo 호출도 Go를 부를 수 있으므로 Go의 callback에는 owner 스레드가 필요
-    없다(c6 6.4).
+  - Go는 PHP처럼 member의 cgo 호출 안에서, 호출 goroutine의 스레드에서 `binding_core::machine::drive`로 machine을
+    돌리고, 그것은 각 Io future를 `binding_core::driver::block_on`에서 기다린다. 그래서 callback은 그것을 넘긴
+    스레드에서 불린다(GN-6q).
   - WASM: Node처럼 진입은 모듈의 스레드에서 machine을 만들고 모듈의 `Driven` 객체를 돌려주며, async 함수인 ES 진입은
     machine이 끝날 때까지 그 `advance()`를 부른 뒤 그것을 해제한다. 각 `advance()`는 마지막 기다림의 출력을 machine에 주고,
     모듈의 스레드에서 machine의 call을 하며, Io future에 대해서는 GN-6n의 promise인 `[false, promise]`를, 끝에서는
