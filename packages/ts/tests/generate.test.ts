@@ -787,6 +787,28 @@ test('a language object that a core may keep enters as a Native, which each targ
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
+test('a Raised holds the key of the thrown object as a Native, whose last drop removes the entry (U-3, GN-6d, GN-6o)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  const libs = [['python', 'packages/python/generated/lib.rs'], ['node', 'packages/ts/generated/lib.rs'], ['php', 'packages/php-ext/generated/lib.rs'], ['wasm', 'packages/ts/wasm/generated/lib.rs'], ['go', 'packages/go/internal/ffi/generated/lib.rs']] as const;
+  for (const [lang, path] of libs) {
+    const lib = text(out, path);
+    assert.match(lib, /Raised::from_generated\((?:binding_core::)?Native::new\(ThrownKey \{/, lang);
+    assert.match(lib, /impl binding_core::NativeObject for ThrownKey \{\}/, lang);
+    assert.match(lib, /impl Drop for ThrownKey \{\n    fn drop\(&mut self\) \{/, lang);
+    assert.match(lib, /raised\.native\(\)\.downcast::<ThrownKey>\(\)/, lang);
+    assert.doesNotMatch(lib, /raised\.handle\(\)|Raised::from_generated\((?:binding_core::)?Handle::new/, lang);
+  }
+  // Node and PHP keep the table on the thread that threw: a drop elsewhere queues the key for that thread while it lives.
+  for (const [lang, path] of libs.filter(([lang]) => lang === 'node' || lang === 'php')) {
+    const lib = text(out, path);
+    assert.match(lib, /struct ThrownKey \{\n    thread: u64,\n    key: u64,\n\}/, lang);
+    assert.match(lib, /static DROPPED: Mutex<Dropped> = Mutex::new\(Dropped \{ live: BTreeSet::new\(\), keys: Vec::new\(\) \}\);/, lang);
+    assert.match(lib, /impl Drop for ThrownThread \{/, lang);
+    assert.match(lib, /fn release_dropped\(\) \{/, lang);
+  }
+});
+
 test('a generated test gives an object through a native row and back, and counts that the binding released it (GN-6o)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const sample = read('sample/packages/rust/interface.json');

@@ -2,7 +2,7 @@
 //! same object, a clone shares it, it crosses threads, and the object is released when the last `Native` is dropped.
 #![cfg(feature = "construct")]
 
-use binding_core::{HostValue, Native, NativeObject, OutValue, ValueKind};
+use binding_core::{Failure, HostValue, Native, NativeObject, OutValue, Raised, ValueKind};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -55,6 +55,22 @@ fn the_object_is_released_when_the_last_native_is_dropped() {
     assert_eq!(released.load(Ordering::SeqCst), 0, "the out value still holds it");
     // A core may drop the value on another thread.
     let dropped = std::thread::spawn(move || drop(held)).join();
+    assert!(dropped.is_ok(), "the thread panicked");
+    assert_eq!(released.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_raised_exception_releases_its_object_when_its_last_copy_is_dropped() {
+    // U-3, GN-6o: a core may drop a Raised instead of returning it; the binding's entry is released all the same.
+    let released = Arc::new(AtomicUsize::new(0));
+    let raised = Raised::from_generated(kept(3, &released));
+    let copy = raised.clone();
+    assert_eq!(raised, copy);
+    assert_eq!(raised.native().downcast::<Kept>().map(|k| k.key), Some(3));
+    let failure: Failure<()> = Failure::from(raised);
+    drop(failure);
+    assert_eq!(released.load(Ordering::SeqCst), 0, "the copy still holds it");
+    let dropped = std::thread::spawn(move || drop(copy)).join();
     assert!(dropped.is_ok(), "the thread panicked");
     assert_eq!(released.load(Ordering::SeqCst), 1);
 }
