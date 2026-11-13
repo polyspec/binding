@@ -182,8 +182,11 @@ fn in_list<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fai
 
 /// GN-6t: a tuple is a list of exactly its parts.
 fn in_tuple<'a, const N: usize>(value: &'a Zval, subject: &str) -> Result<[&'a Zval; N], Fail> {
-    let parts = in_list(value, subject, Ok)?;
-    <[&'a Zval; N]>::try_from(parts).map_err(|_other| type_error(subject, &format!("a list of {N} items")))
+    let Some(array) = value.array() else { return Err(type_error(subject, "list")) };
+    if !array.has_sequential_keys() {
+        return Err(type_error(subject, "list"));
+    }
+    <[&'a Zval; N]>::try_from(array.values().collect::<Vec<&'a Zval>>()).map_err(|_other| type_error(subject, &format!("a list of {N} items")))
 }
 
 /// null is the absence; any other value is converted.
