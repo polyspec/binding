@@ -162,6 +162,37 @@ interface ThenFaults {
   any: boolean;
 }
 
+// CK-81: the names that package binding of a Go module declares itself, the types and the functions of the Go files that
+// the generator writes for every contract (packages/ts/src/generate/go.ts); a test compares this list with that file.
+export const GO_BINDING_NAMES: ReadonlySet<string> = new Set([
+  'ArmFaults', 'BytesKey', 'Call', 'Callback', 'FaultLeft', 'Function', 'IntKey', 'Kept', 'Key', 'KeyedMap', 'Malformed', 'Map', 'NativeCount', 'NewCall',
+  'NewReader', 'NewRef', 'NewWriter', 'PanicTestHeld', 'Reader', 'Ref', 'TextKey', 'ThrownCount', 'Token', 'Writer',
+]);
+
+// GN-17: the words of a name in snake_case, the prefix of the C symbols of a contract, and whether Go takes a unit or
+// a member by its `only`.
+const goSnake = (name: Name): string => name.map((w) => (typeof w === 'string' ? w : w.acronym.toLowerCase())).join('_');
+const goPrefix = (contract: Contract): string => `polyspec_${contract.library.replaceAll('-', '_')}`;
+const goTakes = (only: { targets: readonly string[] } | undefined): boolean => only === undefined || only.targets.includes('go');
+
+// GN-17: the C symbols of the members of a contract that names the target go, each with the id of its member and the
+// path of its name: <prefix>_, each segment of the module followed by ___, the class followed by __, and the member.
+function goSymbolsOf(contract: Contract): Map<string, { id: string; path: string }> {
+  const symbols = new Map<string, { id: string; path: string }>();
+  if (!contract.targets.includes('go')) return symbols;
+  contract.units.forEach((unit, u) => {
+    if ((unit.kind !== 'functions' && unit.kind !== 'class') || unit.origin === 'host' || !goTakes(unit.only)) return;
+    const module = unit.module.split('/').filter((segment) => segment !== '').map((segment) => `${segment.split(/[^a-z0-9]+/).filter((word) => word !== '').join('_')}___`).join('');
+    (unit.members ?? []).forEach((member, m) => {
+      if (!goTakes(member.only) || member.kind === 'constant') return;
+      const name = member.kind === 'constructor' ? 'new' : goSnake(member.name);
+      const symbol = `${goPrefix(contract)}_${module}${unit.kind === 'class' ? `${goSnake(unit.name)}__` : ''}${name}`;
+      if (!symbols.has(symbol)) symbols.set(symbol, { id: member.id, path: `/units/${u}/members/${m}/name` });
+    });
+  });
+  return symbols;
+}
+
 class Checker {
   readonly contract: Contract;
   readonly dependencies: ReadonlyMap<string, unknown>;
@@ -194,6 +225,7 @@ class Checker {
     this.wrappedErrors();
     this.records();
     this.goNames();
+    this.goSymbols();
     this.modules();
     this.wasmOnly();
     this.awaitableNames();
@@ -1102,6 +1134,42 @@ class Checker {
       for (const [m, member] of (unit.kind === 'class' ? unit.members ?? [] : []).entries()) {
         if (member.kind !== 'static' || (member.only !== undefined && !member.only.targets.includes('go'))) continue;
         declare(unit.module, `${typeName}${this.langName('go', unit, member.name, 'callable', member)}`, `${path}${pointer('members', m)}`);
+      }
+    }
+  }
+
+  // ---- CK-79, CK-80, CK-81: the names of the C ABI of Go (GN-17) ----
+
+  goSymbols(): void {
+    if (!this.contract.targets.includes('go')) return;
+    const own = goSymbolsOf(this.contract);
+    // CK-79: a Go program links the static library of each library that it uses, so no two of them define one symbol.
+    for (const [library, raw] of this.dependencies) {
+      if (library === this.contract.library || validate(raw) !== true) continue;
+      const other = goSymbolsOf(raw as Contract);
+      for (const [symbol, at] of own) {
+        const there = other.get(symbol);
+        if (there !== undefined) this.report('CK-79', at.path, `${at.id} has the C symbol ${symbol}, which ${there.id} of the library ${library} has too, so a Go program that links both libraries defines it twice; rename one of the two (GN-17)`);
+      }
+    }
+    const prefix = goPrefix(this.contract);
+    const releases = new Map<string, string>();
+    for (const { value: unit } of this.units.values()) {
+      if (unit.kind === 'class' && unit.origin !== 'host' && goTakes(unit.only)) releases.set(`Release${convert(unit.name, 'go', 'class')}`, unit.id);
+    }
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'functions' || unit.module !== '' || unit.origin === 'host' || !goTakes(unit.only)) continue;
+      for (const [m, member] of (unit.members ?? []).entries()) {
+        if (member.kind !== 'function' || !goTakes(member.only)) continue;
+        const at = `${path}${pointer('members', m)}/name`;
+        const snake = goSnake(member.name);
+        // CK-80: the result of every call of the C ABI is the C type <prefix>_buffer.
+        if (snake === 'buffer') this.report('CK-80', at, `${member.id} has the C symbol ${prefix}_buffer, which is the C type of the result of the C ABI; rename the function (GN-17)`);
+        // CK-81: the function of package binding of a function of the root module is its name in CamelCase.
+        const name = convert(member.name, 'go', 'class');
+        if (GO_BINDING_NAMES.has(name)) this.report('CK-81', at, `${member.id} is the function ${name} of package binding, which the package declares itself; rename the function (GN-17)`);
+        const released = releases.get(name);
+        if (released !== undefined) this.report('CK-81', at, `${member.id} is the function ${name} of package binding, which is the release of the class ${released}; rename the function or the class (GN-17)`);
       }
     }
   }

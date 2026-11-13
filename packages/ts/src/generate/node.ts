@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -39,8 +39,9 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined)) return `${unitFn('in', unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
-  // GN-6c, GN-6v: the conversion of a record or a variant takes the env, which a value alias or a class in it reads.
-  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(env, ${value}, ${subject})`;
+  // GN-6c, GN-6v: the conversion of a record or a variant takes the env when a value alias, a class or a callback in it
+  // reads it, and no env otherwise.
+  if (unit?.kind === 'record' || unit?.kind === 'variant') return `${unitFn('in', unit, libraryOf(type))}(${readsEnv(model, unit, libraryOf(type)) ? 'env, ' : ''}${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
 }
 
@@ -470,7 +471,47 @@ ${outArms}
 }
 
 // The name of the env parameter of a conversion: env when its body names it, and _env when no field reads it.
-const envParam = (body: string): string => (/\benv\b/.test(body) ? 'env' : '_env');
+// GN-6c, GN-6v: the records and the variants whose conversion in reads the env, by the path of the conversion: a unit
+// with a field whose conversion reads it, directly (a value alias, a class, a callback, a function) or through the
+// conversion of another such unit. A unit that holds itself reads no env by that alone, so its conversion has no
+// parameter that only its own call uses, which the lints deny (clippy only_used_in_recursion). The set is the least
+// one: it starts empty, and a unit joins it when the conversions of its fields, written with the set so far, name env.
+const ENV_READERS = new WeakMap<Model, Set<string>>();
+function readsEnv(model: Model, unit: Unit, library: string | undefined): boolean {
+  let readers = ENV_READERS.get(model);
+  if (readers === undefined) {
+    const found = new Set<string>();
+    ENV_READERS.set(model, found);
+    const units = [
+      ...model.contract.units.map((u) => ({ unit: u, library: undefined as string | undefined })),
+      ...[...model.foreign].flatMap(([name, owner]) => owner.units.map((u) => ({ unit: u, library: name as string | undefined }))),
+    ].filter(({ unit: u }) => u.kind === 'record' || u.kind === 'variant');
+    const reads = (u: Unit): boolean => {
+      const types = u.kind === 'record' ? (u.fields ?? []).map((f) => f.type) : (u.cases ?? []).flatMap((c) => c.fields.map((f) => f.type));
+      try {
+        return types.some((type) => /\benv\b/.test(convertIn(model, type, 'value', '"subject"')));
+      } catch (error) {
+        // A unit with a type that Node does not generate is refused where it is written; it is counted as a reader.
+        if (error instanceof Unsupported) return true;
+        throw error;
+      }
+    };
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const { unit: u, library: of } of units) {
+        const path = unitFn('in', u, of);
+        if (!found.has(path) && reads(u)) {
+          found.add(path);
+          grew = true;
+        }
+      }
+    }
+    readers = found;
+  }
+  return readers.has(unitFn('in', unit, library));
+}
+// The env parameter of the conversion in of a record or a variant, with its comma, or nothing (readsEnv).
+const envParam = (model: Model, unit: Unit, library: string | undefined): string => (readsEnv(model, unit, library) ? 'env: &Env, ' : '');
 
 // T-4: the result form of a record, a plain object with a member per field.
 function recordRust(model: Model, unit: Unit, library?: string): string {
@@ -484,7 +525,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
 /// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
-fn in_${name}(${envParam(reads.join('\n'))}: &Env, value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+fn in_${name}(${envParam(model, unit, library)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
 ${reads.join('\n')}
     Ok(${core} { ${fields.map((f) => rustField(f.name)).join(', ')} })
 }
@@ -526,7 +567,7 @@ function variantRust(model: Model, variant: Variant): string {
   });
   return `
 /// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(${envParam(ins.join('\n'))}: &Env, value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
+fn in_${name}(${envParam(model, variant.unit, undefined)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
     let tag = text_in(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
     match tag.as_str() {
 ${ins.join('\n')}
@@ -924,7 +965,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
             let returned = function.apply(self.object, args).map_err(Thrown::Js)?;
             ${m.returns === 'none' ? 'let _returned: Unknown<\'env> = returned;\n            Ok(())' : `${returned.replace(/\?$/, '')}.map_err(Thrown::Binding)`}
         };
-        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`})
+        call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env, error)`}).map_err(|failure| kept(self.env, failure))
     }`;
   }).join('\n');
   const classIndex = (u: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(u);
@@ -1106,7 +1147,11 @@ const ownsAny = (model: Model): boolean => model.callbacks.some((c) => ownsCallb
 
 // GN-6ab, GN-6ae: whether a machine of the contract calls language code, a function or a callback that it owns, whose
 // exception is held until the member ends.
-const holdsThrown = (model: Model): boolean => passesAny(model) || ownsAny(model);
+const holdsThrown = (model: Model): boolean => passesAny(model) || callsBack(model);
+
+// U-3: whether a member of the contract calls a callback, whose exception is taken out of the environment where it is
+// called, also for a member without a machine: the core may answer the Raised and return a value.
+const callsBack = (model: Model): boolean => model.callbacks.length > 0 || model.foreignCallbacks.length > 0;
 
 // GN-6ab: the callback unit of a parameter type that a machine owns.
 function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
@@ -1252,7 +1297,17 @@ thread_local! {
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
 ${THREAD_THROWN}
-${model.aliases.length > 0 || passing ? `/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
+${!countsThrown(model.contract, model.foreign) ? '' : `/// GN-6ae: the entry point of the generated tests of the cases that call JavaScript code: the count of what the table
+/// of this thread keeps, after the keys that a drop on another thread queued are removed.
+#[cfg(feature = "thrown-count-test")]
+#[napi(js_name = "__thrownCount")]
+pub fn thrown_count() -> u32 {
+    release_dropped();
+    let count = THROWN.with_borrow(|map| map.len());
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+`}${model.aliases.length > 0 || passing ? `/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
 fn raised(error: Thrown) -> binding_core::Raised {
     keep_thrown(error)
 }
@@ -1287,9 +1342,10 @@ fn thrown_again(exception: &Owned) -> Fail {
     }
     Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
 }
-` : ''}${ownsAny(model) ? `
-/// GN-6ab: the failure of a callback that a machine owns. The machine goes on after the call, and an exception that
-/// stays pending fails every later call of Node-API in the advance, so the exception is taken out of the environment
+` : ''}${callsBack(model) ? `
+/// U-3, GN-6ab: the failure of a callback. A machine goes on after the call, and a core may answer the Raised and
+/// return a value; an exception that stays pending fails every later call of Node-API and ends the call with it, so
+/// the exception is taken out of the environment
 /// and held under the key of its Raised; failure_error throws the held value again.
 fn kept(env: &Env, failure: ${failure}) -> ${failure} {
     let binding_core::Failure::Raised(raised) = &failure else {

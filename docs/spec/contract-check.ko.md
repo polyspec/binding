@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 44a107be88bd28c9f3badb73a44d9feee0e48cd193b07a7457e38ffc81b148b6 -->
+<!-- source-sha256: 9315ac14682b2bcf2c9cf4c5af9d0e1cfcbc2d6bdd8d00cbb6032da73024a931 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -204,6 +204,18 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   생성기의 현재 상태가 아니므로, 두 origin 어느 쪽의 class도 PHP를 적지 않는다. finding은 그 unit과 그런
   target 각각을 적는다. 이유: 생성기는 그런 target에서 그 unit을 거부하며, 계약의 오류는 생성기가 돌기 전에 검사가
   보고한다.
+- **CK-79** 두 라이브러리의 C symbol(생성기 GN-17): target `go`에서 이 계약의 어떤 C symbol도 계약이 이름하는
+  라이브러리의 C symbol이 아니다. symbol의 접두는 `polyspec_<library>`이고 그 뒤에 밑줄 하나가 오므로, 라이브러리 `a`의
+  함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 둘 다 `polyspec_a_b_c`이며, Go 프로그램은 두 정적 라이브러리를 함께
+  링크한다. finding은 그 symbol과 이 계약의 member, 다른 라이브러리의 member, 그리고 해결 방법을 적는다: 둘 중 하나의
+  이름을 바꾼다.
+- **CK-80** C ABI의 C 타입 이름을 가진 함수(생성기 GN-17): target `go`에서 root module의 어떤 함수도 이름이 `buffer`가
+  아니다. 그 symbol `<prefix>_buffer`가 C ABI의 모든 호출 결과의 C 타입이기 때문이다. finding은 그 함수와 symbol을
+  적는다.
+- **CK-81** package `binding`의 선언 이름을 가진 함수(생성기 GN-17): target `go`에서 root module 함수의 package `binding`
+  함수, 곧 CamelCase로 쓴 그 이름은 package `binding`이 스스로 선언하는 이름이 아니다. 그 이름은 package 자신의 타입과
+  함수(`Reader`, `Writer`, `NewReader`, `NewWriter`, `Call`, `NewCall`, `Map`, `KeyedMap`, `Key`, `IntKey`, `BytesKey`,
+  `TextKey`와 생성기의 나머지)이거나 계약의 class의 `Release<Class>`다. finding은 그 함수와 선언을 적는다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

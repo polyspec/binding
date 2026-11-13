@@ -396,6 +396,39 @@
           "core": "polyspec_sample::count"
         },
         {
+          "id": "sample.tolerant",
+          "name": [
+            "tolerant"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "unit": "lookup"
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::tolerant",
+          "optional_reason": "U-3"
+        },
+        {
           "id": "sample.join",
           "name": [
             "join"
@@ -1685,6 +1718,82 @@
             "path": "polyspec_sample::Store::once",
             "machine": true
           }
+        },
+        {
+          "id": "store.audited",
+          "name": [
+            "audited"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::audited",
+            "receiver": "&self",
+            "machine": true
+          }
+        },
+        {
+          "id": "store.attempt",
+          "name": [
+            "attempt"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": false
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::attempt",
+            "receiver": "&self",
+            "machine": true
+          }
         }
       ]
     },
@@ -2124,6 +2233,21 @@
       "member": "sample.seek",
       "file": "contracts/cases.json",
       "group": "seek"
+    },
+    {
+      "member": "sample.tolerant",
+      "file": "contracts/cases.json",
+      "group": "tolerant"
+    },
+    {
+      "member": "store.audited",
+      "file": "contracts/cases.json",
+      "group": "store_audited"
+    },
+    {
+      "member": "store.attempt",
+      "file": "contracts/cases.json",
+      "group": "store_attempt"
     }
   ]
 }

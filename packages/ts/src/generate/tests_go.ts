@@ -17,7 +17,7 @@
 
 import type { Member, Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
-import { numberTypes } from './go_rust.ts';
+import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   goPackage, goParam, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerType,
@@ -25,6 +25,8 @@ import {
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
   nativeRoundTrip,
+  callsCode,
+  machineFunction,
 } from './model.ts';
 import {
   type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps,
@@ -37,6 +39,9 @@ interface Values {
   usesPtr: boolean;
   // GN-6aa: the callback units whose fixture a case value inside another value makes.
   fixtures: Set<CallbackUnit>;
+  // GN-6z: the statement that ends every func of a function type that the values of a test give, in the place of its
+  // fixture: the test of the error or of the panic of a func that the core kept in an earlier call.
+  keptEnd?: (returns: Type) => string;
 }
 
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
@@ -45,6 +50,8 @@ class Body {
   // GN-13f: whether a call of then of an instance value of the body arms faults, so the test goes with the cases that
   // arm faults and locks its goroutine to its thread.
   armed = false;
+  // GN-6z: the fixtures of the funcs of a function type that the body made, which the test reads after its call.
+  functions: string[] = [];
   // The count of the locals of a test, which the bodies of its funcs share, so that no local has the name of another.
   private readonly counter: { next: number };
   constructor(counter: { next: number } = { next: 0 }) {
@@ -149,7 +156,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     throw new Unsupported(`no Go case value of the type ${type}`);
   }
   // GN-6ae: a function is its fixture, a func of the test, and a passthrough is a value of GN-13.
-  if ('function' in type) return functionValue(v, b, type.function, json);
+  if ('function' in type) return machineFunction(type) ? functionValue(v, b, type.function, json) : keptFunctionValue(v, b, type.function, json);
   if ('passthrough' in type) return aliasValue(v.model, b, undefined, json, 'a passthrough');
   if ('optional' in type) return pointerTo(v, type.optional, value(v, b, type.optional, json));
   if ('list' in type) return `${typeName(v, type)}{${(json as unknown[]).map((item) => value(v, b, type.list, item)).join(', ')}}`;
@@ -430,9 +437,57 @@ function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: s
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated for Go yet (GN-13)`);
 }
 
-// GN-6ae: the head of a func literal of a function type, its parameters named by `name`.
-const funcHead = (v: Values, parts: Type[], name: (index: number) => string): string =>
-  `func(${parts.map((part, i) => `${name(i)} ${typeName(v, part)}`).join(', ')}) (any, error)`;
+// GN-6ae, GN-6z: the head of a func literal of a function type, its parameters named by `name`: the function of a
+// machine returns any value and an error, and a function that the core may keep its result and an error, or the error
+// alone for none.
+type FunctionType = Extract<Type, { function: unknown }>['function'];
+const funcHead = (v: Values, type: FunctionType, name: (index: number) => string): string => {
+  const params = type.parameters.map((part, i) => `${name(i)} ${typeName(v, part)}`).join(', ');
+  if (machineFunction({ function: type })) return `func(${params}) (any, error)`;
+  return type.returns === 'none' ? `func(${params}) error` : `func(${params}) (${typeName(v, type.returns)}, error)`;
+};
+
+// GN-6z: the statement that ends a func of a function type that the core may keep with an error, with a zero result.
+const keptReturn = (v: Values, returns: Type, err: string): string =>
+  (returns === 'none' ? `return ${err}` : `var zero ${typeName(v, returns)}; return zero, ${err}`);
+
+// GN-6z: the func of a function value of a case, {"function": [<row>]} (CK-22 has judged the form): a row is
+// {"args": {"0": ..., "1": ...}} by position, with "result" (absent for a return of none) and "once". The func answers
+// by a fixture of one member, the call itself, which records every call; a call that no row answers returns an error.
+function keptFunctionValue(v: Values, b: Body, type: FunctionType, json: unknown): string {
+  const head = funcHead(v, type, (i) => `arg${i}`);
+  if (v.keptEnd !== undefined) {
+    const name = b.fresh('call');
+    b.lines.push(`${name} := ${funcHead(v, type, () => '_')} {`, ...v.keptEnd(type.returns).split('; ').map((line) => `\t${line}`), '}');
+    return name;
+  }
+  const rows = (json as { function?: unknown } | null)?.function;
+  if (!Array.isArray(rows)) throw new Unsupported(`a case value of a function type is {"function": [<row>]}, not ${JSON.stringify(json)} (GN-6z)`);
+  const texts = (rows as Record<string, unknown>[]).map((row) => {
+    const given = (row['args'] ?? {}) as Record<string, unknown>;
+    const args = type.parameters.map((part, i) => {
+      if (!(String(i) in given)) throw new Unsupported(`a row of a function value gives no argument ${String(i)} (G-5)`);
+      return typed(part, value(v, b, part, given[String(i)] ?? null));
+    });
+    const result = row['result'] === undefined || row['result'] === null || type.returns === 'none' ? 'nil' : typed(type.returns, value(v, b, type.returns, row['result']));
+    return `{member: "call", args: []any{${args.join(', ')}}, result: ${result}, once: ${String(row['once'] === true)}}`;
+  });
+  const fixture = b.fresh('function');
+  b.lines.push(`${fixture} := &fixture{rows: []fixtureRow{${texts.join(', ')}}}`);
+  b.functions.push(fixture);
+  const answer = `${fixture}.answer(${['"call"', ...type.parameters.map((_part, i) => `arg${i}`)].join(', ')})`;
+  const name = b.fresh('call');
+  b.lines.push(
+    `${name} := ${head} {`,
+    ...(type.returns === 'none' ? [`\t_, err := ${answer}`, '\treturn err'] : [`\tresult, err := ${answer}`, `\tvalue, _ := result.(${typeName(v, type.returns)})`, '\treturn value, err']),
+    '}',
+  );
+  return name;
+}
+
+// GN-6z: after the call of a case, no func of a function type of the case was called in a way that no row answers.
+const functionChecks = (b: Body): string[] =>
+  b.functions.flatMap((name) => [`if len(${name}.unexpected) != 0 {`, `\tt.Fatalf("G-5: calls that no row answers: %v", ${name}.unexpected)`, '}']);
 
 // GN-6ae (CK-22): the statements of a call of a member on a receiver whose results are compared with the value that a
 // case names, when it names one: `failed` is the statement for an error of the call, and `differs` the statement
@@ -478,7 +533,7 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
   else if (raise === 'exception') inner.lines.push('return nil, raised');
   else throw new Unsupported(`a function fixture raises the error unit ${String((raise as { error?: unknown }).error)}, which is not generated for Go yet (GN-6ae, GN-13)`);
   const name = b.fresh('function');
-  b.lines.push(`${name} := ${funcHead(v, type.parameters, (i) => `arg${i}`)} {`, ...inner.lines.map((line) => `\t${line}`), '}');
+  b.lines.push(`${name} := ${funcHead(v, type, (i) => `arg${i}`)} {`, ...inner.lines.map((line) => `\t${line}`), '}');
   return name;
 }
 
@@ -487,7 +542,11 @@ function functionValue(v: Values, b: Body, type: Extract<Type, { function: unkno
 function placeholder(v: Values, b: Body, type: Type, rich = false): string {
   if (typeof type === 'string') return ({ bool: 'false', text: '"a"', latin1: '"a"', bytes: 'nil', source: '[]byte("a")', path: '"a"' } as Record<string, string>)[type] ?? '0';
   // GN-6ae: a func that returns no value.
-  if ('function' in type) return `${funcHead(v, type.function.parameters, () => '_')} { return nil, nil }`;
+  if ('function' in type) {
+    if (machineFunction(type)) return `${funcHead(v, type.function, () => '_')} { return nil, nil }`;
+    // GN-6z: a func that returns a value of its result type.
+    return `${funcHead(v, type.function, () => '_')} { return ${type.function.returns === 'none' ? '' : `${placeholder(v, b, type.function.returns, rich)}, `}nil }`;
+  }
   if ('list' in type) return rich ? `${typeName(v, type)}{${placeholder(v, b, type.list, rich)}}` : 'nil';
   if ('optional' in type || 'map' in type || 'keyed_map' in type) return 'nil';
   if ('tuple' in type) return `${typeName(v, type)}{}`;
@@ -709,10 +768,17 @@ interface Out {
   main: string[];
   fault: string[];
   held: string[];
+  // GN-6ae: the tests of the build tag polyspec_thrown_count_test, and those that also arm faults.
+  thrown: string[];
+  thrownFault: string[];
   callbacks: Set<CallbackUnit>;
   // GN-6p: a B-10 test reads the warnings of the standard logger.
   warns?: boolean;
 }
+
+// GN-6ae: the lines that require, after the call of a case and the calls of its after, that the static library keeps
+// nothing that was thrown.
+const KEPT_NOTHING = ['if count, err := binding.ThrownCount(); err != nil || count != 0 {', '\tt.Fatalf("GN-6ae: %d values that were thrown are kept after the call (%v)", count, err)', '}'];
 
 const labelOf = (fn: Fn): string => {
   const owner = goName(fn.unit.name);
@@ -849,8 +915,42 @@ ${indent([
     }
     // GN-6ae: a nil func is kind invalid_callback; the error that a func returns is the error of the call, the same
     // value; and a panic of a func is the panic of the call, with the same value.
-    if (typeof arg.type === 'object' && 'function' in arg.type) {
-      const head = funcHead(v, arg.type.function.parameters, () => '_');
+    if (typeof arg.type === 'object' && 'function' in arg.type && !machineFunction(arg.type)) {
+      // GN-6z: a nil func is no function, kind invalid_argument_type. The error that the func returns is the error of
+      // the call in which the core runs it, the same value, and its panic is the panic of that call: each is tested
+      // with the arguments of a case in which the core calls the func, which a case with a row shows.
+      const kept = arg.type.function;
+      single('GN-6z', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_argument_type', 'GN-6z'));
+      const calling = resultCases(model, fn).find((k) => k.refused === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
+      const ends = (end: string): { lines: string[]; call: string } | string => {
+        const b = new Body();
+        return written(fn, calling?.id ?? '', () => {
+          const receiver = calling?.receiver === undefined ? '' : made(v, b, calling.receiver);
+          const args = callArgs(v, b, fn, (a) => {
+            if (a !== arg) return caseValue(v, b, a, calling?.args ?? new Map());
+            // A func of several lines, which gofmt keeps as it is written.
+            const name = b.fresh('call');
+            b.lines.push(`${name} := ${funcHead(v, kept, () => '_')} {`, ...end.split('; ').map((line) => `\t${line}`), '}');
+            return name;
+          });
+          return { lines: b.lines, call: callLine(fn, invoke(v, fn, args, receiver)) };
+        });
+      };
+      if (calling !== undefined) {
+        const returned = ends(keptReturn(v, kept.returns, 'raised'));
+        out.main.push(`
+func TestGN6z${label}ReturnsTheErrorOf${testName(argName)}(t *testing.T) {
+${indent(typeof returned === 'string' ? [`t.Fatal(${goString(returned)})`] : [`raised := errors.New(${goString(FIXTURE_RAISED)})`, ...returned.lines, returned.call, 'if err != raised {', '\tt.Fatalf("GN-6z: %#v is not the error of the function", err)', '}'], 1)}
+}`);
+        const panicked = ends('panic(raised)');
+        out.main.push(`
+func TestGN6z${label}PanicsWithThePanicOf${testName(argName)}(t *testing.T) {
+${indent(typeof panicked === 'string' ? [`t.Fatal(${goString(panicked)})`] : [`raised := errors.New(${goString(FIXTURE_RAISED)})`, ...panicked.lines, 'defer func() {', '\tif value := recover(); value != any(raised) {', '\t\tt.Fatalf("GN-6z: %#v is not the panic of the function", value)', '\t}', '}()', panicked.call, 't.Fatalf("GN-6z: the call returned %v", err)'], 1)}
+}`);
+      }
+    }
+    if (machineFunction(arg.type)) {
+      const head = funcHead(v, arg.type.function, () => '_');
       single('GN-6ae', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_callback', 'GN-6ae'));
       const ends = (end: string): { lines: string[]; call: string } => {
         const b = new Body();
@@ -899,6 +999,9 @@ func TestU2${label}Without${testName(goParam(arg.name, v.model))}IsTheCallWithIt
 ${indent([...b.lines, 'if !reflect.DeepEqual(value0, value1) || !sameFailure(err0, err1) {', '\tt.Fatalf("U-2: %#v, %v is not %#v, %v", value0, err0, value1, err1)', '}'], 1)}
 }`);
   }
+  // GN-6ae: a case of a member that takes a callback or a function runs again in a test of the build tag
+  // polyspec_thrown_count_test, which reads the count of what was thrown after it.
+  const counted = countsThrownGo(model) && callsCode(model, fn);
   // B-4: every case that raises.
   for (const kase of raisingCases(model, fn)) {
     const b = new Body();
@@ -920,11 +1023,15 @@ func TestB4${label}${testName(kase.id)}(t *testing.T) {
     if (kase.faults !== undefined) {
       lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(kase.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
     }
-    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
+    lines.push(callLine(fn, invoke(v, fn, args, receiver)), ...raisedLines(v, kase), ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver));
     if (kase.faults !== undefined) lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
     (kase.faults === undefined && !b.armed ? out.main : out.fault).push(`
 func TestB4${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
+}`);
+    if (counted) (kase.faults === undefined && !b.armed ? out.thrown : out.thrownFault).push(`
+func TestB4${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
 }`);
   }
   // GN-6ae: a case whose function fixture returns the error that the test holds gets the same error value.
@@ -948,6 +1055,50 @@ ${indent(lines, 1)}
     out.main.push(`
 func TestGN6ae${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
+}`);
+    if (counted && typeof call !== 'string') (b.armed ? out.thrownFault : out.thrown).push(`
+func TestGN6ae${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
+}`);
+  }
+  // GN-6z: a case whose receiver was given a func in an earlier call, which the core kept, and whose member calls
+  // language code that its receiver keeps (E-1c): the error that the kept func returns is the error of this later
+  // call, the same value, and its panic is the panic of this call.
+  const keepsFunc = (r: Receiver | undefined): boolean => r !== undefined && (keepsFunc(r.on)
+    || (r.then ?? []).some((step) => [...step.args].some(([arg, given]) => typeof arg.type === 'object' && 'function' in arg.type && !machineFunction(arg.type) && (((given as { function?: unknown } | null)?.function as unknown[] | undefined)?.length ?? 0) > 0)));
+  for (const kase of fn.failure ? resultCases(model, fn).filter((k) => k.refused === undefined && keepsFunc(k.receiver)) : []) {
+    const later = (end: (returns: Type) => string): { lines: string[]; call: string; armed: boolean } | string => {
+      const b = new Body();
+      return written(fn, kase.id, () => {
+        v.keptEnd = end;
+        let receiver: string;
+        try {
+          receiver = kase.receiver === undefined ? '' : made(v, b, kase.receiver);
+        } finally {
+          delete v.keptEnd;
+        }
+        const args = callArgs(v, b, fn, (arg) => caseValue(v, b, arg, kase.args));
+        return { lines: b.lines, call: callLine(fn, invoke(v, fn, args, receiver)), armed: b.armed };
+      });
+    };
+    const returned = later((returns) => keptReturn(v, returns, 'raised'));
+    const returnedLines = typeof returned === 'string'
+      ? [`t.Fatal(${goString(returned)})`]
+      : [...(returned.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), `raised := errors.New(${goString(FIXTURE_RAISED)})`, ...returned.lines, returned.call, 'if err != raised {', '\tt.Fatalf("GN-6z: %#v is not the error of the kept function", err)', '}'];
+    const armed = typeof returned !== 'string' && returned.armed;
+    (armed ? out.fault : out.main).push(`
+func TestGN6z${label}${testName(kase.id)}ReturnsTheErrorOfTheKeptFunction(t *testing.T) {
+${indent(returnedLines, 1)}
+}`);
+    // GN-6ae: the member takes no func, and its call ran one that returned an error, so the count is read after it.
+    if (countsThrownGo(model) && typeof returned !== 'string') (armed ? out.thrownFault : out.thrown).push(`
+func TestGN6z${label}${testName(kase.id)}ReturnsTheErrorOfTheKeptFunctionKeepsNothingThrown(t *testing.T) {
+${indent([...returnedLines, ...KEPT_NOTHING], 1)}
+}`);
+    const panicked = later(() => 'panic(raised)');
+    (armed ? out.fault : out.main).push(`
+func TestGN6z${label}${testName(kase.id)}PanicsWithThePanicOfTheKeptFunction(t *testing.T) {
+${indent(typeof panicked === 'string' ? [`t.Fatal(${goString(panicked)})`] : [...(panicked.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), `raised := errors.New(${goString(FIXTURE_RAISED)})`, ...panicked.lines, 'defer func() {', '\tif value := recover(); value != any(raised) {', '\t\tt.Fatalf("GN-6z: %#v is not the panic of the kept function", value)', '\t}', '}()', panicked.call, 't.Fatalf("GN-6z: the call returned %v", err)'], 1)}
 }`);
   }
   // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -993,11 +1144,15 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
       }
     }
     const lines = refused === undefined
-      ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...afterLines(v, b, fn, kase.id, kase.after, receiver)]
+      ? [...(b.armed ? ['runtime.LockOSThread()', 'defer runtime.UnlockOSThread()'] : []), ...raisedLine(kase.args), ...b.lines, callLine(fn, invoke(v, fn, args, receiver), names), 'if err != nil {', '\tt.Fatalf("GN-13e: %v", err)', '}', ...compared, ...fixtureChecks(fixtures, v, b), ...functionChecks(b), ...afterLines(v, b, fn, kase.id, kase.after, receiver)]
       : [`t.Fatal(${goString(refused)})`];
     (b.armed && refused === undefined ? out.fault : out.main).push(`
 func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
 ${indent(lines, 1)}
+}`);
+    if (counted && refused === undefined) (b.armed ? out.thrownFault : out.thrown).push(`
+func TestGN13e${label}${testName(kase.id)}KeepsNothingThrown(t *testing.T) {
+${indent([...lines, ...KEPT_NOTHING], 1)}
 }`);
   }
   // N-4: the text of a stringify is the result of its case.
@@ -1385,7 +1540,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
   checkCaseNames(model, casePascal, false);
   const scope: GoScope = { model, module, imports: new Set() };
   const v: Values = { model, module, scope, usesPtr: false, fixtures: new Set() };
-  const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
+  const out: Out = { main: [], fault: [], held: [], thrown: [], thrownFault: [], callbacks: new Set() };
   for (const fn of [...callablesOf(model), ...model.kept.flatMap((k) => k.members)].filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
   consumerTests(v, out, model.objects.filter((o) => o.unit.module === module));
@@ -1432,7 +1587,7 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(out.warns === true ? [WARNINGS] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
-    ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
+    ...(/\bfixture[A-Z]|&fixture\{/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = ''): string => {
@@ -1448,6 +1603,8 @@ ${testImports(model, module, body, scope)}${body}`;
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
   if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
+  if (out.thrown.length > 0) files.push(['zz_generated_thrown_count_test.go', file('polyspec_thrown_count_test', out.thrown)]);
+  if (out.thrownFault.length > 0) files.push(['zz_generated_thrown_count_fault_test.go', file('polyspec_thrown_count_test && polyspec_fault_test', out.thrownFault)]);
   return files;
 }
 

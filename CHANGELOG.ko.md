@@ -1,11 +1,88 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d89f39a4eab5f60a15c8e9c8ed3e635b3a7605dcb96ad0790f5d65b5f60333d9 -->
+<!-- source-sha256: 128fe2e62de3d794c0ff16e168154ee8ddd7f24ac0e0cdeacd1dade1d9879952 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node의 모든 record와 variant의 in 변환이 env를 받았고, env를 읽지 않는 unit도 그랬다. 그래서 `tests/e2e/variants`의
+  `figure`처럼 자기 자신을 담는 variant의 변환은 자기 호출만 쓰는 parameter를 가졌고, 생성된 Node crate는 lint
+  `clippy::only_used_in_recursion`으로 실패했다. 이제 record나 variant의 변환은 그 field가 env를 직접 읽거나 다른 unit의
+  변환을 거쳐 읽을 때에만 env를 받고, 호출도 그때에만 넘긴다(GN-6c, GN-6v). `make test-ts`로 검증했다: 시험이
+  `tests/e2e/variants`의 다섯 crate의 어떤 `in_`·`out_` 변환도 자기 호출만 쓰는 parameter `env`나 `py`를 갖지 않기를
+  요구한다. 변경 전 생성기는 `fn in_figure(env: &Env, ...)`와 호출 `in_figure(env, ...)` 다섯 개를 썼다. 실행하지 않은
+  것: `tests/e2e/variants`의 `make e2e`로 도는 생성된 crate의 clippy.
+- 계약의 세 가지 이름이 Go 바인딩에 한 이름을 두 번 주었고, 그것은 Go 컴파일러나 linker만 보고했다. 라이브러리 `a`의
+  함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 한 프로그램의 두 정적 라이브러리에서 둘 다 C symbol `polyspec_a_b_c`다.
+  root module의 함수 `buffer`는 symbol `<prefix>_buffer`가 C ABI 결과의 C 타입이다. root module 함수의 package `binding`
+  함수가 그 package가 스스로 선언하는 이름인 경우도 있다(`new_writer`는 `NewWriter`, `release_tag`는 class `tag`의
+  release). 이제 `binding check`가 target `go`에서 각각을 이름과 해결 방법과 함께 보고한다: CK-79, CK-80, CK-81(GN-17).
+  `make test-ts`로 검증했다: 세 검사의 시험과, 검사가 가진 package `binding`의 이름을 생성기의 Go 파일의 선언과 비교하는
+  시험이다.
+- `tests/e2e`의 손으로 쓴 WASM case는 생성된 모듈을 그 export의 이름으로 부르는데, 생성기가 그 이름을 바꾼 것은 end-to-end
+  실행에서만 `glue.<name> is not a function`으로 드러났다. 이제 단위 시험이 `cases.wasm.test.mjs`가 `glue` 이름을 부르는
+  `tests/e2e`의 각 계약의 WASM crate를 생성하고, 그 이름 각각이 생성된 crate의 export이기를 요구한다. `make test-ts`로
+  검증했다: class의 release를 예전 이름으로 부르던 classes의 case 파일로는 시험이 그 이름을 대며 실패한다.
+- `tests/e2e/functions`의 계약은 네 target을 이름하고 `go`를 이름하지 않았다. `tests/e2e`의 모든 계약은 다섯 target을
+  이름한다(BD-27). 생성기가 Go의 함수 타입을 거부했기 때문이다. 타입이
+  `{"function": {"parameters": ["text", {"list": "int"}], "returns": "text"}}`인 parameter에서 생성은 "a function type is
+  not generated for go (GN-6z)"로 실패했다. 이제 Go는 코어가 보관할 수 있는 함수 타입을 생성한다(GN-6z). parameter는
+  `func(<parameters>) (<R>, error)`이고 `none`이면 `func(<parameters>) error`이며, nil func는 kind
+  `invalid_argument_type`이다. func는 자기 호출의 func로 들어온다. C ABI는 export `<prefix>__go_keep`에 `cgo.Handle`을
+  묻고, package `binding`은 그때부터 그 handle 아래에 func를 가지며, C ABI는 그 handle을 `Native`로 갖는다. 그 `Native`의
+  마지막 drop이 handle을 지운다. 그래서 func는 호출보다 오래 살고, C ABI가 읽지 않은 func는 자기 호출과 함께 끝난다.
+  box된 `Fn`은 어느 호출 안도 아닌 곳에서 `Native`의 handle로 export `<prefix>__go_function`을 통해 func를 부른다. func가
+  돌려준 error와 export가 recover한 panic의 값은 package `binding`의 mutex 뒤의 table에, `Raised`가 이름하는 key 아래에
+  보관한다. func가 실행된 호출의 member는 같은 error 값을 돌려주거나 같은 값으로 panic하고, 코어가 drop한 `Raised`는
+  `<prefix>__go_release_raised`로 항목을 지운다. 결과가 값 alias, callback, 함수를 담은 함수 타입은 Go에서 이름으로
+  거부한다. 생성된 Go 시험은 case의 함수 값을 case의 행으로 답하는 func로 주고, nil func를 시험하며, func의 error와
+  panic을 그것을 실행한 호출에서, 그리고 보관된 func를 실행하는 나중의 호출에서 시험한다. `tests/e2e/functions`의 계약은
+  Go module과 함께 `go`를 이름하고, 그 workspace는 crate `packages/go/internal/ffi`를 이름한다. Go crate가 import를 고를
+  때 주석 안의 이름은 더 이상 `binding_core`의 타입의 사용으로 세지 않는다. `make test-ts`로 검증했다. 시험은 이 계약과
+  함수 타입을 넣은 shapes의 계약의 Go crate, package, 시험을 생성하고, 위의 형태, 두 번 정의된 함수가 없음, GN-4c의 이름,
+  package `binding`의 모든 import의 사용을 요구하며, 여덟 계약의 crate를 읽는 시험은 crate 40개를 읽는다. 이 변경에서
+  생성된 crate는 컴파일하지 않았다.
+
+- Go crate의 member의 C 심볼은 module, class, member를 밑줄 하나로 이었고, package `binding`의 그 함수는 구분자 없이
+  이었다. 그래서 두 member가 한 이름을 가졌다. class `tag`의 member `new_x`와 class `tag_new`의 member `x`가 있는
+  계약에서 static library는 `polyspec_sample_tag_new_x`를 두 번, package `binding`은 함수 `TagNewX`를 두 번 정의했다.
+  module `tag`의 함수 `x`는 class `tag`의 member `x`의 심볼을 가졌고, module `a/b_c`와 `a_b/c`의 함수 `x`는 한 심볼을,
+  module `tag`의 class `k`와 root의 class `tag_k`는 한 함수 `ReleaseTagK`를 가졌다. member마다 자기 심볼과 자기 함수가
+  있어야 한다. 이제 심볼은 `<prefix>_`, `___`가 붙은 module의 각 segment, `__`가 붙은 class, member의 순서다
+  (`polyspec_sample_tag__new_x`, `polyspec_sample_tag_new__x`, `polyspec_sample_tag___x`). package `binding`의 함수는 같은
+  부분을 CamelCase로 쓰고 각 구분자의 밑줄이 하나 적다(`Tag_NewX`, `TagNew_X`, `Tag__X`). class의 해제 함수는 class만
+  이름하는 `Release<Class>`다(GN-4c, GN-17). end-to-end 검사는 feature 없이 빌드한 static library에서 시험 진입점을
+  `polyspec_`과 밑줄 둘 사이의 어떤 글자든 받는 패턴으로 찾았고, 그 패턴은 class의 member `echo_x`를 진입 `__echo_`로
+  읽는다. 이제 그 실행의 계약의 접두어, 밑줄 둘, 진입을 읽는다(`scripts/e2e-lint.mts`의 `testEntrySymbol`). `make test-ts`로
+  검증했다. 한 시험은 이 class, 함수, module을 넣은 sample의 Go crate를 생성하고 어떤 C 심볼도, C 선언도, package
+  `binding`의 함수도 두 번 정의되지 않음을 요구하며, 패턴의 시험은 각 시험 진입점을 요구하고 member의 심볼을 거부한다.
+  이 변경에서 생성된 crate는 컴파일하지 않았다.
+
+- 코어가 drop한 `Raised`가 던져진 것의 table을 떠나는지 확인하는 생성된 시험이 없었다. `sample.tolerant`처럼 코어가
+  callback의 예외에 응답하고 값을 돌려주는 member는 항목이 table에 남아도 case를 통과했다. 이제 member가 callback이나
+  함수 타입을 받거나 값 alias가 있는 계약의 crate는 시험 feature `thrown-count-test`를 갖고, 그 진입점은 table의 항목
+  수를 준다(Node와 WASM은 `__thrownCount`, PHP는 `<namespace>\Internal\thrownCount`, Python은 `_thrown_count`, Go는
+  `<prefix>__thrown_count`). Node와 PHP는 다른 스레드의 drop이 대기열에 넣은 key를 제거한 뒤에 센다(GN-5, GN-6ae).
+  callback이나 함수 타입을 받는 member의 case마다 생성된 시험은 그 case의 호출과 `after`의 호출 뒤에 수가 0일 것을
+  요구한다. Go에서는 그 case들을 build tag `polyspec_thrown_count_test`를 가진 `zz_generated_thrown_count_test.go`에서
+  다시 실행하고, 실패를 주입하는 case는 `polyspec_fault_test`도 필요한 `zz_generated_thrown_count_fault_test.go`에서
+  다시 실행한다. 끝에서 끝까지 확인은 feature 없이 빌드한 정적 라이브러리에 없어야 하는 시험용 진입점에
+  `__thrown_count`를 더했다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 sample과, callback·함수 타입·값 alias가
+  없는 계약에 대해 각 manifest의 feature 줄을 그 crate의 table과 진입점에 비교하고, 다섯 target의 생성된 시험에서 수를
+  읽는 줄을 확인한다. 이 변경에서 생성된 crate와 시험은 컴파일하거나 실행하지 않았다.
+- machine이 없는 Node member는 코어가 callback의 예외에 응답하고 값을 돌려줘도 그 예외로 끝났다. 예외가 환경에
+  pending으로 남았기 때문이다. machine이 소유하는 callback만 그것을 꺼냈다. 이제 모든 Node callback은 부르는 곳에서 예외를
+  환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 key 아래에 보관하고, `failure_error`가 그것을 다시
+  던진다(GN-6ab). 그래서 코어가 drop한 `Raised`는 pending을 남기지 않는다. sample에는 이것과 `Raised`의 drop(GN-6u,
+  GN-6ae)을 위한 member 셋이 있고, 각각 다섯 target의 case를 가진다. `sample.tolerant`는 `?<name>`으로 적은 key에 대해
+  lookup이 던진 것에 응답하고 값 없음을 준다. `store.audited`는 함수가 예외를 던진 뒤에 entry `audited`를 쓰는 wait로
+  나아간 다음 그 예외를 돌려주며, `after`의 호출이 그것을 읽는다. `store.attempt`는 entry를 쓴 뒤에 예외를 던진 함수의
+  `Raised`를, 스레드가 있는 target에서는 다른 스레드에서 drop하고 `false`를 돌려준다. 셋은 자기 case가 표시한 것에만
+  응답한다. callback이나 함수를 받는 모든 member의 생성 시험이 예외가 그대로 지나가기를 요구하기 때문이다.
+  `packages/ts`의 `npm test`로 검증했다. 새 시험은 변경 전에는 `kept`를 부르지 않던 `CbLookup`의 method에서 실패하고,
+  callback이 있고 machine이 없는 crate에 `kept`, variant `Held`, `thrown_again`이 있음을 요구한다. 생성된 crate와
+  sample의 코어는 이 변경에 대해 컴파일하지 않았으므로, 세 member의 어떤 case도 실행되지 않았다.
 - GN-4c: classes 계약의 손으로 쓴 WASM case가 class의 release를 `__free_<Class>` 이름으로 부른다. `__<Class>_free`를 불렀는데 WASM crate가 더는 그 이름을 내보내지 않아, 수거된 instance의 case가 `glue.__Tag_free is not a function`으로 실패했다.
 - `scaffold`가 쓰는 `package.json`과 `composer.json`이 다른 라이브러리를 적지 않았다. 그래서 entry가 값 class owner의 npm
   package를 import하는(`require('@polyspec/<library>')`, GN-6x) release된 npm package가 그 package 없이 설치되었고, release된

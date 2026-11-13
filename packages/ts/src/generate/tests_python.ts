@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
+import { POISON_ENTRY, callsCode, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
 import { internalModule } from './python.ts';
 import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
@@ -283,6 +283,12 @@ export function pythonTests(model: Model, module: string): string {
     usesAsyncio = true;
     return `asyncio.run(${invokeAwaited(fn, args, receiver)})`;
   };
+  // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
+  // was thrown, which the entry point of thrown-count-test counts.
+  const kept = (fn: Fn): string => {
+    if (!callsCode(model, fn)) return '';
+    return '\n        self.assertEqual(_native._thrown_count(), 0)';
+  };
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
     (after ?? []).map((call, i) => {
@@ -456,7 +462,7 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
-        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}`);
+        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {
@@ -477,7 +483,7 @@ export function pythonTests(model: Model, module: string): string {
         _raised[:] = [raised]
         with self.assertRaises(LookupError) as caught:
             ${call}
-        self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}`);
+        self.assertIs(caught.exception, raised)${afterChecks(kase.after, 'receiver')}${kept(fn)}`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
@@ -558,7 +564,7 @@ export function pythonTests(model: Model, module: string): string {
               : `\n        result = ${call}\n        expected = json.loads(${pyString(expected.tokens)})\n        self.assertEqual(_tokens(result), expected)\n        self.assertEqual(_tokens(_native._alias_round_${langName('python', expected.round, 'variable')}(result)), expected)`
             : `\n        result = ${call}\n        expected = ${expected.text}\n        self.assertTrue(_same(result, expected), f"{result!r} is not {expected!r}")`;
       out.push(`
-    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}`);
+    def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${kept(fn)}`);
     }
     const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
     const callback = callbackArg(model, fn);
