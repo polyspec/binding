@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The Python crate of a contract whose class is only an argument of a function parameter, as `scope` of the sample
+  is, did not pass clippy: the crate held the conversion `in_<class>`, which nothing called, because the parameters
+  of a function type were read as values that come in. They go out to the function, so only what a function type
+  returns counts as coming in, and the conversion is not written. Found by `make e2e` of the sample, where clippy of
+  the Python crate failed with "function `in_scope` is never used"; verified by `npm test` in `packages/ts`, whose
+  test of the Python crate requires that it holds no `in_scope`.
 - The PHP and Python crates of a contract with a function named as a helper of the crate, such as `pass`, `guard` or
   `raised`, did not compile: the entry of a function of a functions unit had the bare name of the function, which the
   helper also had. The entry is now `function_<name>`, with the name of its language given by an attribute, the

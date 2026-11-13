@@ -1021,6 +1021,8 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
+    // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
+    if (typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
     return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
   };
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];

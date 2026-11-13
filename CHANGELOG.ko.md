@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 00603486a1f5f9def425448e8876c1f857c69e682c3d49516cdefef3985bfde9 -->
+<!-- source-sha256: 8682603e3bb1daec3e52f23209d12eb26a759816aca19f1f1656bf88ad77f046 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- sample의 `scope`처럼 class가 함수 parameter의 인자로만 쓰이는 계약의 Python crate는 clippy를 통과하지 못했다. 함수
+  타입의 parameter를 들어오는 값으로 읽어서, 아무도 부르지 않는 변환 `in_<class>`가 crate에 있었기 때문이다. 그
+  parameter는 함수로 나가는 값이므로 이제 함수 타입이 돌려주는 것만 들어오는 값으로 세고, 그 변환은 쓰지 않는다.
+  sample의 `make e2e`에서 찾았다. Python crate의 clippy가 "function `in_scope` is never used"로 실패했다.
+  `packages/ts`의 `npm test`로 검증했고, Python crate의 시험은 `in_scope`가 없을 것을 요구한다.
 - `pass`, `guard`, `raised`처럼 crate의 helper와 이름이 같은 함수가 있는 계약의 PHP와 Python crate는 컴파일되지 않았다.
   functions unit의 함수의 진입이 함수의 이름을 그대로 가졌고 helper도 그 이름이었기 때문이다. 진입은 이제
   `function_<name>`이고 언어의 이름은 attribute가 준다. event loop를 받는 Python 진입은 `loop_function_<name>`이고,

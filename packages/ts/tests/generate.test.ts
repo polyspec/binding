@@ -3242,6 +3242,9 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(lib, /\.ok_or_else\(\|\| BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)/);
   assert.match(lib, /\n\s+passed_out\(py, result\)\n/);
   assert.match(lib, /\nuse std::cell::RefCell;\n/);
+  // A class that only a function takes goes out to the function and has no conversion in (T-5).
+  assert.match(lib, /\nfn out_scope\(/);
+  assert.doesNotMatch(lib, /\bfn in_scope\b/);
   // The declaration: a callable of the scope that returns any object, which the member returns.
   const stub = text(out, 'packages/python/generated/python/polyspec/sample/_native.pyi');
   assert.match(stub, /^from collections\.abc import Callable, /m);
