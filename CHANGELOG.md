@@ -9,7 +9,8 @@
   of json, which takes an `OrderedMap`, failed its test with "takes more than one value" or "no case value of the
   type", because the `[key, value]` pairs of the case are no value of that class. The pairs now fill the class: its
   constructor without parameters makes it, and its one member with the receiver `&mut self` and two parameters takes
-  each pair, a text key as a value of kind text where the parameter is a class of origin value (GN-13). Verified by
+  each pair, a text key as a value of kind text where the parameter is a class of origin value; a case value of such a
+  class at another place, such as `members` of `value.object`, is the same list of pairs (GN-13). Verified by
   `npm test` in `packages/ts`.
 - A PHP enum with a case named by a keyword or a type name, such as `object`, `array`, `string` and `null` of the
   enum `kind` of json, did not compile: the macro `php_enum` of ext-php-rs refuses those names, also as the name of

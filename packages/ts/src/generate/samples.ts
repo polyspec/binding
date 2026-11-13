@@ -176,6 +176,9 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
   }
   // U-1, GN-13: a value of a class of origin value is made by the member that its out row of the kind names.
   if (unit?.kind === 'class' && unit.origin === 'value' && !out) return valueClassFromJson(model, ctx, unit, value);
+  // U-1, GN-13: a value of another class is the [key, value] pairs that fill it, as those of a kind map do.
+  const filled = objectUnit(model, type);
+  if (filled !== undefined && Array.isArray(value) && !out) return pairsInto(model, ctx, filled, value);
   throw new Unsupported(`no case value of the type ${shown(type)} is written yet (G-5)`);
 }
 

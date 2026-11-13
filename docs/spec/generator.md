@@ -622,7 +622,8 @@ the design ids are those of the binding design.
   the values of the class. When that one parameter is another class of the contract, the `[key, value]` pairs of a
   kind `map` fill it: its constructor without parameters makes it, and its one member with the receiver `&mut self`
   and two parameters takes each pair in order, a text key as a value of kind `text` where that parameter is a class
-  of origin value (`Value.object` of an `OrderedMap` that `OrderedMap.insert` fills). A kind that no row makes by such a member (a member of two parameters, a built-in form, or
+  of origin value (`Value.object` of an `OrderedMap` that `OrderedMap.insert` fills). A case value of such a class at
+  any other place is the same list of pairs. A kind that no row makes by such a member (a member of two parameters, a built-in form, or
   two rows of the kind that name two members) is not written. A case whose receiver or argument the generator does not
   write has a test that fails with the reason, the case and the member, and the other tests of the target are written
   (G-4, GN-13e); every other value that no test can make, such as the placeholder of a class without a factory, is a
