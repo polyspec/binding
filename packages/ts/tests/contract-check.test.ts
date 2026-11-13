@@ -925,3 +925,25 @@ describe('CK-64 integers of a case (T-1)', () => {
     ]);
   });
 });
+
+describe('CK-22 values of the type cancel (GN-13)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/shapes/${path}`, import.meta.url), 'utf8'));
+  // shapes.measure with a parameter of the type cancel, given by its first case.
+  const run = (value: unknown): string[] => {
+    const contract = read('packages/rust/interface.json');
+    const measure = contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === 'shapes.measure');
+    measure.parameters.push({ name: ['cancel'], type: { optional: 'cancel' }, default: { literal: null } });
+    const cases = read('contracts/cases.json');
+    cases.measure[0].cancel = value;
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).filter((f) => f.check === 'CK-22').map((f) => f.message);
+  };
+  test('a cancellation that fired before the call, one that does not fire, and none', () => {
+    for (const value of [{ cancel: 'fired' }, { cancel: 'open' }, null]) assert.deepEqual(run(value), [], JSON.stringify(value));
+  });
+  test('any other value', () => {
+    for (const value of [true, { cancel: 'later' }, { cancel: 'fired', after: 1 }]) {
+      assert.deepEqual(run(value).filter((m) => m.includes('the argument cancel')).length, 1, JSON.stringify(value));
+      assert.match(run(value).join('\n'), /the argument cancel is \{"cancel": "fired" \| "open"\}/);
+    }
+  });
+});
