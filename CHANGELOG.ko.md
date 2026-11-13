@@ -5,6 +5,20 @@
 
 ## Unreleased
 
+- 생성기는 타입 `path`를 "the type path is not generated yet"로 거부했다. 그래서 `host_options.files: optional<path>`
+  같은 path를 가진 member나 record field에 바인딩이 없었다. 이제 `path`는 Python, Node, PHP, Go에서 모든 자리에 OS
+  경로의 바이트이고, 코어는 `&Path`를 받고 `PathBuf`를 준다. Python은 `str`, `bytes`, `os.PathLike`를 `os.fsencode`로
+  받고 `os.fsdecode`한 `str`을 준다. Node는 string을 그 UTF-8로, 또는 `Uint8Array`를 받고, string을 주되 UTF-8이 아닌
+  바이트에는 `Uint8Array`를 준다. PHP와 Go는 그 바이트의 string을 받고 준다. NUL 바이트, `os.fsencode`가 인코딩하지
+  못하는 Python `str`, Windows에서 UTF-8이 아닌 바이트는 kind `invalid_path`이고, 짝 없는 surrogate가 든 Node string은
+  kind `invalid_text`이며, 그 밖의 값은 kind `invalid_argument_type`이다. 새 함수 `binding_core::path_from_bytes`와
+  `binding_core::path_bytes`가 모든 target의 바이트를 바꾼다. WASM은 path를 이름으로 거부한다. 계약이 그런 member를
+  WASM에서 빼기 때문이다(CK-15). path의 case 값은 상대 경로이고, 생성된 시험마다 자기 임시 디렉터리에서 풀고 지운다.
+  빈 경로, 절대 경로, `..` 부분은 이름으로 거부한다(GN-6y). `tests/e2e/shapes`에 함수 `joined`와 `parent_of`가 있다.
+  `packages/ts`의 `npm test`(시험 290개)로 확인했다. `binding_core::path`의 단위 시험은 이 변경의 디스크 여유에서
+  빌드를 돌리지 않아 아직 돌리지 않았다.
+- 기본값이 있는 optional 타입 field의 결과 형태를 spec에 적은 커밋 9977442에는 optional 타입 기본값의 Green 일부(`defaults.ts`, `model.ts`, `node.ts`,
+  `php.ts`, `python.ts`, `wasm.ts`)도 들어 있다. patch를 stage한 것이 그 커밋에 함께 들어갔고, 나머지는 3a19444에 있다.
 - 생성기는 `optional` 타입의 기본값을 "a default of an optional type is not generated yet (U-2)"로, enum의
   `{literal}` 기본값과 값 타입의 `{literal: null}` 기본값을 "a {literal} or {const} default names the constant of the
   core in default_core (U-2)"로 거부했다. 그래서 `format_options.delimiters: optional<text> = {literal: null}` 같은

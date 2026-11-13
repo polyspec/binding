@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+- The generator refused the type `path` with "the type path is not generated yet", so a member or a record field with a
+  path, such as `host_options.files: optional<path>`, had no binding. A `path` is now the bytes of an OS path in
+  Python, Node, PHP and Go, in every place: the core takes `&Path` and gives `PathBuf`. Python takes a `str`, `bytes`
+  or `os.PathLike` through `os.fsencode` and gives the `str` of `os.fsdecode`; Node takes a string as its UTF-8 or a
+  `Uint8Array` and gives a string, or a `Uint8Array` for bytes that are not UTF-8; PHP and Go take and give a string of
+  the bytes. A NUL byte, a Python `str` that `os.fsencode` cannot encode, and on Windows bytes that are not UTF-8 are
+  kind `invalid_path`; a Node string with an unpaired surrogate is kind `invalid_text`; any other value is kind
+  `invalid_argument_type`. The new functions `binding_core::path_from_bytes` and `binding_core::path_bytes` convert the
+  bytes for every target. WASM refuses a path by name, because the contract leaves such a member out of WASM (CK-15).
+  A case value of a path is a relative path, which each generated test resolves in its own temporary directory and
+  removes; an empty or absolute path or a part `..` is refused by name (GN-6y). `tests/e2e/shapes` has the functions
+  `joined` and `parent_of`. Verified by `npm test` in `packages/ts` (290 tests); the unit tests of `binding_core::path`
+  are not run yet, because no build ran with the free disk of this change.
+- The commit 9977442, which states in the spec the result form of a field of an optional type with a default, also
+  holds part of the Green of the defaults of an optional type (`defaults.ts`, `model.ts`, `node.ts`, `php.ts`, `python.ts`, `wasm.ts`), which the staging of a patch put
+  into it; 3a19444 holds the rest.
 - The generator refused a default of an `optional` type with "a default of an optional type is not generated yet
   (U-2)", a `{literal}` default of an enum, and a `{literal: null}` default of a value type with "a {literal} or
   {const} default names the constant of the core in default_core (U-2)", so a record field such as
