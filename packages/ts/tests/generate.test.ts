@@ -1109,6 +1109,19 @@ const withFunction = (contract: any): void => {
   });
 };
 
+test('a Python test gives a function value of a case as a fixture of the call and refuses a value that is not callable (G-5, GN-6m)', () => {
+  const { contract, caseFiles } = shapes();
+  withFunction(contract);
+  contract.cases.push({ member: 'shapes.apply', file: 'contracts/cases.json', group: 'apply' });
+  (caseFiles.get('contracts/cases.json') as any).apply = [
+    { id: 'the_function_converts_the_value', convert: { function: [{ args: { 0: 'a', 1: [1] }, result: 'A' }, { args: { 0: 'b', 1: [] }, result: 'B', once: true }] }, value: 'a', result: 'A' },
+  ];
+  const tests = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: ['python'] }), 'packages/python/generated/tests/test_generated.py');
+  assert.ok(tests.includes(`function_0, function_0_unexpected, function_0_calls = _fixture(("__call__",), [("__call__", ("a", [1],), "A", False), ("__call__", ("b", [],), "B", True)])`), tests);
+  assert.match(tests, /result = pkg\.apply\(function_0, "a"\)\n[^\n]+\n[^\n]+\n        self\.assertEqual\(function_0_unexpected, \[\]\)/);
+  assert.match(tests, /def test_gn6m_apply_refuses_a_convert_that_is_not_callable\(self\) -> None:\n        with self\.assertRaises\(pkg\.ShapesTypeError\) as caught:\n            pkg\.apply\(0, "a"\)\n        self\.assertEqual\(caught\.exception\.kind, "invalid_argument_type"\)/);
+});
+
 test('Python takes a function type as a boxed Fn that calls the callable; the other targets refuse it by name (T-2, GN-6m)', () => {
   const { contract, caseFiles } = shapes();
   withFunction(contract);
