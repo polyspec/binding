@@ -262,7 +262,10 @@
     센다. 두 수는 같아야 한다. 세는 것은 Python에서는 대상의 살아 있는 참조 수(`sys.getrefcount`)이고, 대상을 지운 뒤 죽은
     weak reference를 함께 본다. 다른 target에서는 `native-count-test`의 진입점이다. Node, PHP, WASM은 owner 표의 항목 수,
     Go는 Native의 살아 있는 `cgo.Handle` 수이며, Go의 func는 비교할 수 없으므로 시험은 수만 확인한다. `out`의 바이트는 `Native`보다 오래 살므로,
-    `native` 행은 func의 새 `cgo.Handle`을 쓰고 값의 디코더가 그것을 지운다.
+    `native` 행은 func의 새 `cgo.Handle`을 준다. Rust가 Go에 주는 모든 버퍼(결과, 실패, callback의 인자)는 그 버퍼가 주는
+    handle의 목록으로 시작하고, func의 node는 그 목록 안 handle의 위치다. Go는 다른 무엇을 디코딩하기 전에 그 목록을 읽어
+    handle마다 func를 꺼내고 handle을 곧바로 지운다. 그래서 디코딩이 이후에 무엇을 만나든(Go 형태가 없는 값, 잘못된 node),
+    호출자가 버퍼를 디코딩하든 않든, 어떤 handle도 그 버퍼보다 오래 살지 않는다.
 - **GN-6k** 다른 레포의 값 alias(T-3, U-7 (a'))는 자기 레포의 alias(GN-6e)와 같은 방식으로 주고받는다. 바인딩이 언어 값을
   `HostValue`로 기술해 소유 코어의 `in` 함수를 부르고, 소유 코어의 `out` 함수가 주는 `OutValue`를 alias의 `out` 행으로
   만든다. `out` 행은 소유 레포의 계약에서 읽는다. 소유 코어의 두 함수가 유일한 변환이다(P-1). 변환의 이름은

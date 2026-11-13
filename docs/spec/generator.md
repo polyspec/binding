@@ -322,7 +322,11 @@ the design ids are those of the binding design.
     (`sys.getrefcount`) in Python, with a weak reference that is dead after the subject is deleted, and the entry point
     of `native-count-test` in the other targets: the entries of the owner table in Node, PHP and WASM, the live
     `cgo.Handle` of the Natives in Go, where a func is not comparable, so the test checks the count only. The bytes of an `out` outlive the
-    `Native`, so its `native` row writes a new `cgo.Handle` of the func, which the decoder of the value deletes.
+    `Native`, so its `native` row gives a new `cgo.Handle` of the func. Every buffer that Rust gives Go (a result, a
+    failure, the arguments of a callback) starts with the list of the handles that it gives, and the node of a func
+    is the index of its handle in that list. Go reads the list before it decodes anything else: it takes the func of
+    each handle and deletes the handle at once, so no handle outlives its buffer, whatever the decoding then finds
+    (a value without a Go form, a malformed node) and whether the caller decodes the buffer at all.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
