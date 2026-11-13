@@ -823,6 +823,8 @@ the design ids are those of the binding design.
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
   value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
+  `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
+  `--dep tests/e2e/points`;
   `DEPS` names each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
