@@ -5,7 +5,8 @@
 
 import type { Type } from '../contract.ts';
 import type { Unit } from '../contract.ts';
-import { type Arg, type Fn, type Model, Unsupported, langName, unitOf } from './model.ts';
+import { defaultCaseValue } from './defaults.ts';
+import { type Arg, type Fn, type Model, Unsupported, kindText, langName, objectUnit, unitOf } from './model.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
 export type Lang3 = 'python' | 'node' | 'php';
@@ -29,9 +30,9 @@ export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: str
 export function placeholder(model: Model, ctx: Context, type: Type, rich = false): string {
   if (typeof type === 'string') {
     const table: Record<Lang3, Record<string, string>> = {
-      python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""' },
-      node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()' },
-      php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""' },
+      python: { text: '"a"', latin1: '"a"', bool: 'False', uint: '0', int: '0', int64: '0', float: '0.0', bytes: 'b""', source: '"a"' },
+      node: { text: "'a'", latin1: "'a'", bool: 'false', uint: '0', int: '0', int64: '0', float: '0', bytes: 'new Uint8Array()', source: "'a'" },
+      php: { text: '"a"', latin1: '"a"', bool: 'false', uint: '0', int: '0', int64: '0', float: '0.0', bytes: '""', source: '"a"' },
     };
     return table[ctx.lang][type] ?? 'null';
   }
@@ -142,18 +143,112 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown)
 
 // The arguments of a call in the form of each language: positional parameters, then the record's fields as Python
 // keywords, PHP named arguments or one Node options object (T-4).
-export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) => string, extra?: string): string {
-  const positional = fn.args.filter((a) => !a.field).map(value);
-  if (extra !== undefined) positional.push(extra);
-  const fields = fn.args.filter((a) => a.field);
-  if (fields.length === 0) return positional.join(', ');
-  if (ctx.lang === 'node') {
-    const object = fields.map((a) => `${langName('node', a.name, 'variable')}: ${value(a)}`).join(', ');
-    return [...positional, `{ ${object} }`].join(', ');
+// U-2: an argument whose value is undefined is left out: a positional one after it goes by its name in Python and PHP,
+// and Node passes undefined in its place; a field is no member of the options record.
+export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) => string | undefined, extra?: string): string {
+  const name = (a: Arg, text: string): string => `${langName(ctx.lang, a.name, 'variable')}${ctx.lang === 'python' ? '=' : ': '}${text}`;
+  const positional: string[] = [];
+  let skipped = false;
+  for (const arg of fn.args.filter((a) => !a.field)) {
+    const text = value(arg);
+    if (text === undefined) {
+      skipped = true;
+      if (ctx.lang === 'node') positional.push('undefined');
+    } else {
+      positional.push(skipped && ctx.lang !== 'node' ? name(arg, text) : text);
+    }
   }
-  const named = fields.map((a) => `${langName(ctx.lang, a.name, 'variable')}${ctx.lang === 'python' ? '=' : ': '}${value(a)}`);
-  return [...positional, ...named].join(', ');
+  while (ctx.lang === 'node' && positional.at(-1) === 'undefined') positional.pop();
+  if (extra !== undefined) positional.push(extra);
+  const fields = fn.args.filter((a) => a.field).flatMap((a) => {
+    const text = value(a);
+    return text === undefined ? [] : [{ arg: a, text }];
+  });
+  if (fn.record === undefined) return positional.join(', ');
+  if (ctx.lang === 'node') {
+    const object = fields.map((f) => `${langName('node', f.arg.name, 'variable')}: ${f.text}`).join(', ');
+    return [...positional, object === '' ? '{}' : `{ ${object} }`].join(', ');
+  }
+  return [...positional, ...fields.map((f) => name(f.arg, f.text))].join(', ');
 }
+
+// The value of an argument in a case: undefined when the case leaves an argument with a default out (U-2).
+export function caseValue(model: Model, ctx: Context, arg: Arg, args: ReadonlyMap<Arg, unknown>): string | undefined {
+  if (arg.default !== undefined && !args.has(arg)) return undefined;
+  return fromJson(model, ctx, arg.type, args.get(arg) ?? null);
+}
+
+// E-2, B-4: the class that a failure of a case is an instance of: the error unit of its kind's row, or the class of its
+// category; and the class of the category, which that class extends.
+export function raisedClass(model: Model, raises: { kind: string; category: string }): { exact: string; category: string } {
+  const category = model.classes.find((c) => c.unit === undefined && c.category === raises.category)?.name ?? '';
+  const kind = model.kinds.find((k) => kindText(k.variant) === raises.kind && k.category === raises.category);
+  return { exact: kind?.className ?? category, category };
+}
+
+// Whether the language compares two results of the type by their values: a class instance holds a core value, which
+// only its members show, and a return of none shows nothing.
+function comparable(model: Model, type: Type): boolean {
+  if (type === 'none' || type === 'never') return false;
+  if (typeof type === 'string') return true;
+  if ('list' in type) return comparable(model, type.list);
+  if ('optional' in type) return comparable(model, type.optional);
+  if ('map' in type) return comparable(model, type.map);
+  if ('keyed_map' in type) return comparable(model, type.keyed_map);
+  if ('tuple' in type) return type.tuple.every((t) => comparable(model, t));
+  if ('unit' in type) {
+    if (objectUnit(model, type) !== undefined) return false;
+    const unit = unitOf(model, type);
+    return unit?.kind !== 'record' || (unit.fields ?? []).every((f) => comparable(model, f.type));
+  }
+  return false;
+}
+
+// G-5: two calls of a member whose results the generated test requires to be the same (the outcome is the result, or
+// the class and kind of the failure): for each argument with a {literal}, {const} or {empty} default, the call that
+// leaves it out and the call that gives its default (U-2); for each source parameter, the call with a text and the
+// call with its UTF-8 bytes (T-1; PHP has one string). The other arguments are those of the first case of the member
+// that does not raise, or placeholders. A member whose result the language cannot compare, or that takes a callback,
+// has no such test (GN-13a).
+export interface SamePair {
+  rule: 'U-2' | 'T-1';
+  arg: Arg;
+  left: (arg: Arg) => string | undefined;
+  right: (arg: Arg) => string | undefined;
+}
+
+export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
+  if (!comparable(model, fn.returns) || callbackArg(model, fn) !== undefined || fn.special !== undefined) return [];
+  let given: Map<Arg, unknown> | undefined;
+  for (const kase of model.cases.get(fn.member.id) ?? []) {
+    const record = kase as Record<string, unknown>;
+    if (record['raises'] !== undefined) continue;
+    given = argsOf(fn, record);
+    if (given !== undefined) break;
+  }
+  const other = (arg: Arg): string | undefined => (given === undefined ? placeholder(model, ctx, arg.type) : caseValue(model, ctx, arg, given));
+  const pairs: SamePair[] = [];
+  for (const arg of fn.args) {
+    const declared = defaultCaseValue(model, arg);
+    if (declared !== undefined) {
+      const explicit = fromJson(model, ctx, arg.type, declared.value);
+      pairs.push({ rule: 'U-2', arg, left: (a) => (a === arg ? undefined : other(a)), right: (a) => (a === arg ? explicit : other(a)) });
+    }
+    const base = typeof arg.type === 'object' && 'optional' in arg.type ? arg.type.optional : arg.type;
+    if (base === 'source' && ctx.lang !== 'php') {
+      const text = fromJson(model, ctx, 'source', 'a\u00e9');
+      const bytes = fromJson(model, ctx, 'source', { hex: '61c3a9' });
+      pairs.push({ rule: 'T-1', arg, left: (a) => (a === arg ? text : other(a)), right: (a) => (a === arg ? bytes : other(a)) });
+    }
+  }
+  return pairs;
+}
+
+// T-1, T-7: the base type of a parameter that takes bytes: bytes, or a source, which takes a text too.
+export const bytesKind = (type: Type): 'bytes' | 'source' | undefined => {
+  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+  return base === 'bytes' || base === 'source' ? base : undefined;
+};
 
 // The cases of the contract that make a member raise, with the arguments the case gives (K-1).
 export interface RaisingCase {
@@ -181,7 +276,12 @@ function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | un
     const snake = langName('python', arg.name, 'variable');
     const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
     const holder = holderKey === undefined ? record : record[holderKey];
-    if (typeof holder !== 'object' || holder === null || !(snake in holder)) return undefined;
+    if (typeof holder !== 'object' || holder === null) return undefined;
+    // U-2: a case that has no key of an argument with a default leaves it out.
+    if (!(snake in holder)) {
+      if (arg.default !== undefined) continue;
+      return undefined;
+    }
     args.set(arg, (holder as Record<string, unknown>)[snake]);
   }
   return args;

@@ -13,13 +13,16 @@ the design ids are those of the binding design.
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
-  records (as parameters and in their result form, also of another repository), enums, constants and error classes.
+  records (as parameters and in their result form, also of another repository), enums, constants and error classes,
+  and for Python, Node and PHP the type `source` of a parameter (GN-6j), the defaults of parameters and record fields
+  (GN-6i) and error units without members (GN-7a).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
+  recognizing callback, a function type, a value unit, the members of an error unit, a wait other than `none`, a default
+  that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a dependency kind, the
-  type `source`) is refused by name
+  type `source` outside a parameter) is refused by name
   before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
-  repository (T-3, T-5, U-3); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  repository (T-3, T-5, U-3), and the type `source`, a default and an error unit; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -193,10 +196,41 @@ the design ids are those of the binding design.
   in PHP and TypeScript and `NoReturn` in Python, and a `never` return without `raises` is refused by name. A member
   with `only` (Q-4) is generated for the targets that it lists and is absent from the binding, the declarations and
   the tests of every other target.
+- **GN-6i** A parameter, or a field of a record parameter, with a default (U-2, T-4) may be left out. Its core
+  parameter or field is `Option<T>`, and the binding passes `None` for a value that was left out and fills no value
+  in, so the core alone decides the value (B-1). The borrowed forms are `Option<&str>` for text, `Option<&[u8]>` for
+  latin1, bytes and source, `Option<&[T]>` for a list, `Option<&Map>` for a map, and the value itself for a number or
+  a bool. A `{literal}` or `{const}` default names in `default_core` the constant of the core that the core uses for
+  `None`; the generated crate asserts at compile time that the constant equals the declared value (a text by its
+  bytes, a float by its bits), and the declarations show the value. A `{computed}` or `{empty}` default has no
+  constant; the declarations show `...` in Python, `null` or `[]` in PHP, and an optional parameter in TypeScript,
+  with the rule id of a `{computed}` default in the comment. What "left out" is in each language: Python, an argument
+  that the call does not give, so an explicit `None` is a value and is judged as one; Node, a missing trailing
+  argument, a missing member of the options record, or `undefined`, so `null` is a value and is judged as one; PHP,
+  an argument that the call does not give, or `null`, because the engine gives `null` for a parameter that a call
+  with named arguments skips and the extension cannot tell the two apart. Refused by name (G-4): a default of the
+  record parameter itself (`{empty: "object"}`), a default of an `optional` type, a default of a type that is no
+  number, bool, text, latin1, bytes, source, list or map, a `{literal}` or `{const}` default without `default_core`,
+  a required parameter after a parameter with a default, a `rest` parameter, and a field default of a record that
+  also has the result form.
+- **GN-6j** A parameter of type `source` (T-1), also inside `optional`, takes a text or bytes and reaches the core as
+  `&[u8]`, which the core judges: Python takes a `str` as its UTF-8, or a value that PyO3 reads as bytes; Node takes a
+  string as its UTF-8, or a `Uint8Array`; PHP takes a string, whose bytes are passed as they are, because a PHP string
+  is its bytes. A text with an unpaired surrogate is kind `invalid_text` (B-3), and any other value is kind
+  `invalid_argument_type`. A `source` in any other place (a result, a field, an element) is refused by name (G-4).
+  In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
+  value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
 - **GN-7** A member with `raises` calls a core that returns `Result`; its error is matched without a wildcard into the
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
+- **GN-7a** An error unit without members (E-2) is a library class that extends the class of its `parent`, or the
+  class of its `category` when it names no parent; the classes are written parents first (P-4), a `final` unit is a
+  final class in PHP, and a cycle of parents is refused by name. A row of `errors.kinds` with `class: <error unit id>`
+  is thrown as that class in place of the class of its category; the kind, the status and the errno stay those of
+  `binding_core::Kinds`, and in PHP the private properties stay those of the category class, read and written in its
+  scope. Refused by name (G-4): an error unit with members (E-3), an error unit in a module other than the root, and a
+  `class` that names no error unit.
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
 
@@ -307,11 +341,11 @@ the design ids are those of the binding design.
 - **GN-13** For every function, each language's test module checks: B-2, every number parameter or field with the values
   of G-5 (NaN, the infinities, 1.5, true, "7", -1 for uint, 2^53 in Node) as kind `invalid_number` of the value class;
   B-3, a text with an unpaired surrogate (PHP: bytes that are not UTF-8) and a latin1 text with U+0100 as kind
-  `invalid_text`; B-4, every contract case that raises, with the exact class, the base class of E-2, the kind, the status
+  `invalid_text`; B-4, every contract case that raises, with the exact class (GN-13d), the base class of E-2, the kind, the status
   and errno; B-7, the panic entry point as kind `internal`; G-7, a missing argument, one argument more and an unknown
   name (PHP named argument, Python keyword, a member of the Node options record, and a missing member). The arguments
   of a case are its keys in snake_case, a record parameter an object of its fields, an enum its value text and a latin1
-  value a text of U+0000 to U+00FF; a case without the key of a parameter is refused by its id. Values that JSON
+  value a text of U+0000 to U+00FF; a case without the key of a parameter that has no default is refused by its id. Values that JSON
   cannot write: bytes are `{"hex": "<two lower-case hex digits per byte>"}`; a `source` is its text, or the same
   `{"hex": ...}` for bytes that are no text; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
@@ -349,10 +383,20 @@ the design ids are those of the binding design.
   constructor or static member of the class that returns it, with placeholder arguments.
 - **GN-13a** Open items of G-5, not generated yet: B-5b, B-6 and B-10; of B-5c, the tests of a call that
   overlaps a waiting call and of a call that re-enters an object from a callback, and the tests of a class that no
-  constructor or static member makes; the identity of a default; the round trip
+  constructor or static member makes; the identity of a default of a member that GN-13d leaves out; the round trip
   of a value unit's rows; and, of the callback fixture, a row that raises (`raise`), an `async` row, a function value
   and a callback inside another type, each refused by name when a case gives it (G-4).
-
+- **GN-13d** Python, Node and PHP also check, for the shapes of GN-6i, GN-6j and GN-7a: U-2, for every parameter or
+  field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
+  value give the same result, or the same class and kind of failure; the other arguments are those of the first case
+  of the member that does not raise, or placeholders. The test is written for a member whose result the language
+  compares by value (no class, no result of `none`) and that takes no callback and is no hook. In Python and Node an
+  explicit `None` or `null` for such a parameter is tested as a value that is refused. T-1: a `source` parameter gives
+  the same for a text and for the bytes of its UTF-8 (Python, Node), a text with an unpaired surrogate is kind
+  `invalid_text`, and a value that is neither is kind `invalid_argument_type`. T-7: a `bytes` parameter refuses a
+  value that is no bytes, in Node a string too. B-4: a case whose kind names a `class` expects that exact class and is
+  caught as the class of its category. A case may leave out the key of a parameter with a default, which is then left
+  out of the call.
 - **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
   every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
   contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
@@ -378,7 +422,8 @@ the design ids are those of the binding design.
 ## End-to-end check
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
-  [--add-targets go,wasm]` (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet;
+  [--add-targets go,wasm]` (`tests/e2e/sample` and `tests/e2e/shapes` are repositories of the items that no polyspec repository generates alone yet,
+  the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP;
   `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding

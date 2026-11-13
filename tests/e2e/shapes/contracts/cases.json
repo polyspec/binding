@@ -1,0 +1,122 @@
+{
+  "length": [
+    {
+      "id": "three_characters",
+      "source": "abc",
+      "result": 3
+    },
+    {
+      "id": "a_source_without_a_byte_is_empty",
+      "source": "",
+      "raises": {
+        "kind": "empty",
+        "status": null,
+        "category": "value",
+        "message": "no byte"
+      }
+    },
+    {
+      "id": "bytes_that_are_no_utf8",
+      "source": {
+        "hex": "61ff"
+      },
+      "raises": {
+        "kind": "not_utf8",
+        "status": null,
+        "category": "value",
+        "message": "the byte at 1 is no UTF-8"
+      }
+    }
+  ],
+  "repeat": [
+    {
+      "id": "twice_with_a_separator",
+      "text": "a",
+      "times": 2,
+      "separator": "-",
+      "result": "a-a"
+    },
+    {
+      "id": "once_by_default",
+      "text": "a",
+      "result": "a"
+    },
+    {
+      "id": "more_than_the_most",
+      "text": "a",
+      "times": 1001,
+      "raises": {
+        "kind": "too_many",
+        "status": null,
+        "category": "value",
+        "message": "1001 is more than 1000"
+      }
+    }
+  ],
+  "frame": [
+    {
+      "id": "only_the_prefix",
+      "text": "a",
+      "options": {
+        "prefix": ">"
+      },
+      "result": ">a"
+    },
+    {
+      "id": "upper_and_wide",
+      "text": "a",
+      "options": {
+        "prefix": ">",
+        "upper": true,
+        "width": 3
+      },
+      "result": ">A  "
+    }
+  ],
+  "checksum": [
+    {
+      "id": "the_sum_of_two_bytes",
+      "data": {
+        "hex": "0102"
+      },
+      "result": 3
+    },
+    {
+      "id": "no_byte_is_empty",
+      "data": {
+        "hex": ""
+      },
+      "raises": {
+        "kind": "empty",
+        "status": null,
+        "category": "value",
+        "message": "no byte"
+      }
+    }
+  ],
+  "reversed": [
+    {
+      "id": "two_bytes",
+      "data": {
+        "hex": "0102"
+      },
+      "result": {
+        "hex": "0201"
+      }
+    }
+  ],
+  "total": [
+    {
+      "id": "two_numbers",
+      "numbers": [
+        1,
+        2
+      ],
+      "result": 3
+    },
+    {
+      "id": "no_number_by_default",
+      "result": 0
+    }
+  ]
+}

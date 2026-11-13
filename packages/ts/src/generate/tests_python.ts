@@ -3,7 +3,7 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, raisedClass, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
@@ -43,6 +43,16 @@ def _fixture(members, rows):
     return type("Fixture", (), {name: member(name) for name in members})(), unexpected, calls
 `;
 
+// G-5: what a call gives: its result, or the class and the kind of its failure.
+const PYTHON_OUTCOME = `
+
+def _outcome(call):
+    try:
+        return ("result", call())
+    except Exception as error:
+        return ("error", type(error), getattr(error, "kind", None))
+`;
+
 export function pythonTests(model: Model, module: string): string {
   const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
     callbackNew: (unit, how) => {
@@ -59,7 +69,8 @@ export function pythonTests(model: Model, module: string): string {
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
   ctx.objectNew = (factory, args) => invoke(factory, args, '');
-  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+  const made = (receiver: Receiver, value: (arg: Fn['args'][number]) => string | undefined): string => invoke(receiver.factory, callArgs(model, ctx, receiver.factory, value), '');
+  let usesOutcome = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
@@ -74,7 +85,7 @@ export function pythonTests(model: Model, module: string): string {
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('python', fn.member.name, 'callable') : `${langName('python', fn.unit.name, 'variable')}_${fn.kind === 'constructor' ? 'new' : langName('python', fn.member.name, 'callable')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
-    const recv = sample === undefined ? '' : made(sample, (arg) => fromJson(model, ctx, arg.type, sample.args.get(arg) ?? null));
+    const recv = sample === undefined ? '' : made(sample, (arg) => caseValue(model, ctx, arg, sample.args));
     const target = (args: string): string => invoke(fn, args, recv);
     const call = (override: Map<unknown, string>): string =>
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
@@ -100,6 +111,28 @@ export function pythonTests(model: Model, module: string): string {
             ${call(new Map([[arg, refused.value]]))}
         self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
       }
+      if (arg.default !== undefined) {
+        out.push(`
+    def test_u2_${name}_${argName}_takes_none_as_a_value(self) -> None:
+        with self.assertRaises((pkg.${cls('value')}, pkg.${cls('type')})) as caught:
+            ${call(new Map([[arg, 'None']]))}
+        self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))`);
+      }
+      const bytes = bytesKind(arg.type);
+      if (bytes !== undefined) {
+        out.push(`
+    def test_t7_${name}_${argName}_refuses_what_is_not_${bytes === 'source' ? 'a_text_or_bytes' : 'bytes'}(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${call(new Map([[arg, '1']]))}
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
+      }
+      if (bytes === 'source') {
+        out.push(`
+    def test_b3_${name}_${argName}_refuses_an_unpaired_surrogate(self) -> None:
+        with self.assertRaises(pkg.${cls('value')}) as caught:
+            ${call(new Map([[arg, '"\\ud800"']]))}
+        self.assertEqual(caught.exception.kind, "invalid_text")`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? pyString('Ā') : '"\\ud800"';
@@ -110,8 +143,19 @@ export function pythonTests(model: Model, module: string): string {
         self.assertEqual(caught.exception.kind, "invalid_text")`);
       }
     }
+    for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
+      usesOutcome = true;
+      const argName = langName('python', pair.arg.name, 'variable');
+      out.push(`
+    def test_${pair.rule === 'U-2' ? `u2_${name}_${argName}_left_out_is_its_default` : `t1_${name}_${argName}_takes_a_text_as_its_utf8_bytes`}(self) -> None:
+        self.assertEqual(
+            _outcome(lambda: ${target(callArgs(model, ctx, fn, pair.left))}),
+            _outcome(lambda: ${target(callArgs(model, ctx, fn, pair.right))}),
+        )`);
+    }
     for (const kase of raisingCases(model, fn)) {
-      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => fromJson(model, ctx, arg.type, kase.receiver?.args.get(arg) ?? null));
+      const raised = raisedClass(model, kase.raises);
+      const receiver = kase.receiver === undefined ? '' : made(kase.receiver, (arg) => (kase.receiver === undefined ? undefined : caseValue(model, ctx, arg, kase.receiver.args)));
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
       const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
       usesFixture ||= fixtures.length > 0;
@@ -120,16 +164,16 @@ export function pythonTests(model: Model, module: string): string {
       const after = fixtures
         .map((f) => `\n        self.assertEqual(${f.name}_unexpected, [])${f.values.calls === undefined ? '' : `\n        self.assertEqual(${f.name}_calls, [${f.values.calls.map((call) => `(${call.join(', ')})`).join(', ')}])`}`)
         .join('');
-      const caseArg = (arg: Fn['args'][number]): string => {
+      const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? fromJson(model, ctx, arg.type, kase.args.get(arg) ?? null) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
       };
       out.push(`
     def test_b4_${name}_${kase.id}(self) -> None:${before}
-        with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
+        with self.assertRaises(pkg.${raised.category}) as caught:
             ${invoke(fn, callArgs(model, ctx, fn, caseArg), receiver)}
         error = caught.exception
-        self.assertIs(type(error), pkg.${cls(kase.raises.category)})
+        self.assertIs(type(error), pkg.${raised.exact})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
@@ -161,12 +205,12 @@ export function pythonTests(model: Model, module: string): string {
     for (const kase of stringCases(model, fn)) {
       out.push(`
     def test_n4_${name}_${kase.id}(self) -> None:
-        self.assertEqual(${invoke(fn, '', made(kase.receiver, (arg) => fromJson(model, ctx, arg.type, kase.receiver.args.get(arg) ?? null)))}, ${pyString(kase.result)})`);
+        self.assertEqual(${invoke(fn, '', made(kase.receiver, (arg) => caseValue(model, ctx, arg, kase.receiver.args)))}, ${pyString(kase.result)})`);
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     out.push(`
-    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.length === 0 ? '' : `
+    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
             ${target('')}`}
         with self.assertRaisesRegex(TypeError, "positional"):
@@ -198,7 +242,7 @@ import unittest
 
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:

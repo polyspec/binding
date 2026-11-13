@@ -1,0 +1,399 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "shapes",
+  "core": {
+    "crate": "polyspec-shapes",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/shapes",
+      "namespace": "Polyspec\\Shapes"
+    },
+    "python": {
+      "package": "polyspec-shapes",
+      "module": "polyspec.shapes"
+    },
+    "node": {
+      "package": "@polyspec/shapes",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ]
+        }
+      }
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Shapes\\ShapesValueError",
+        "python": "ShapesValueError",
+        "node": "ShapesValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Shapes\\ShapesTypeError",
+        "python": "ShapesTypeError",
+        "node": "ShapesTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Shapes\\ShapesIoError",
+        "python": "ShapesIoError",
+        "node": "ShapesIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Shapes\\ShapesStoreError",
+        "python": "ShapesStoreError",
+        "node": "ShapesStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Shapes\\ShapesBusyError",
+        "python": "ShapesBusyError",
+        "node": "ShapesBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Shapes\\ShapesInternalError",
+        "python": "ShapesInternalError",
+        "node": "ShapesInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_shapes::Error::Empty",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_shapes::Error::NotUtf8",
+        "category": "value",
+        "class": "utf8_error"
+      },
+      {
+        "variant": "polyspec_shapes::Error::TooMany",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "shapes",
+      "name": [
+        "shapes"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "shapes.default_times",
+          "name": [
+            "default",
+            "times"
+          ],
+          "kind": "constant",
+          "visibility": "public",
+          "type": "uint",
+          "value": 1,
+          "core": "polyspec_shapes::DEFAULT_TIMES"
+        },
+        {
+          "id": "shapes.length",
+          "name": [
+            "length"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "source",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_shapes::Error::Empty",
+            "polyspec_shapes::Error::NotUtf8"
+          ],
+          "wait": "none",
+          "core": "polyspec_shapes::length"
+        },
+        {
+          "id": "shapes.repeat",
+          "name": [
+            "repeat"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "times"
+              ],
+              "type": "uint",
+              "default": {
+                "const": "shapes.default_times"
+              },
+              "default_core": "polyspec_shapes::DEFAULT_TIMES"
+            },
+            {
+              "name": [
+                "separator"
+              ],
+              "type": "text",
+              "default": {
+                "literal": ","
+              },
+              "default_core": "polyspec_shapes::DEFAULT_SEPARATOR"
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_shapes::Error::TooMany"
+          ],
+          "wait": "none",
+          "core": "polyspec_shapes::repeat"
+        },
+        {
+          "id": "shapes.frame",
+          "name": [
+            "frame"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "frame_options"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::frame"
+        },
+        {
+          "id": "shapes.checksum",
+          "name": [
+            "checksum"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "data"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_shapes::Error::Empty"
+          ],
+          "wait": "none",
+          "core": "polyspec_shapes::checksum"
+        },
+        {
+          "id": "shapes.reversed",
+          "name": [
+            "reversed"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "data"
+              ],
+              "type": "bytes",
+              "required": true
+            }
+          ],
+          "returns": "bytes",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::reversed"
+        },
+        {
+          "id": "shapes.total",
+          "name": [
+            "total"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "numbers"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "default": {
+                "empty": "list"
+              }
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::total"
+        }
+      ]
+    },
+    {
+      "id": "frame_options",
+      "name": [
+        "frame",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::FrameOptions",
+      "fields": [
+        {
+          "name": [
+            "prefix"
+          ],
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": [
+            "upper"
+          ],
+          "type": "bool",
+          "default": {
+            "literal": false
+          },
+          "default_core": "polyspec_shapes::DEFAULT_UPPER"
+        },
+        {
+          "name": [
+            "width"
+          ],
+          "type": "uint",
+          "default": {
+            "computed": "SH-1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "parse_error",
+      "name": [
+        "parse",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value"
+    },
+    {
+      "id": "utf8_error",
+      "name": [
+        "utf8",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "parent": "parse_error",
+      "final": true
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "shapes.length",
+      "file": "contracts/cases.json",
+      "group": "length"
+    },
+    {
+      "member": "shapes.repeat",
+      "file": "contracts/cases.json",
+      "group": "repeat"
+    },
+    {
+      "member": "shapes.frame",
+      "file": "contracts/cases.json",
+      "group": "frame"
+    },
+    {
+      "member": "shapes.checksum",
+      "file": "contracts/cases.json",
+      "group": "checksum"
+    },
+    {
+      "member": "shapes.reversed",
+      "file": "contracts/cases.json",
+      "group": "reversed"
+    },
+    {
+      "member": "shapes.total",
+      "file": "contracts/cases.json",
+      "group": "total"
+    }
+  ]
+}

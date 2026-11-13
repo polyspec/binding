@@ -697,3 +697,116 @@ test('the binding crates of Python, Node and PHP turn on the locks of binding_co
   for (const path of ['packages/python/Cargo.toml', 'packages/ts/Cargo.toml', 'packages/php-ext/Cargo.toml']) assert.match(core(path), /features = \["construct", "lock"\] \}$/, path);
   for (const path of ['packages/go/internal/ffi/Cargo.toml', 'packages/ts/wasm/Cargo.toml']) assert.match(core(path), /features = \["construct"\] \}$/, path);
 });
+
+// The repository of the end-to-end check that holds a source, defaults and error units (tests/e2e/shapes).
+const shapes = (): { contract: any; caseFiles: Map<string, unknown> } => ({
+  contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/interface.json', import.meta.url), 'utf8')),
+  caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/shapes/contracts/cases.json', import.meta.url), 'utf8'))]]),
+});
+const shaped = (change: (contract: any) => void = () => undefined): Map<string, string | Buffer> => {
+  const { contract, caseFiles } = shapes();
+  change(contract);
+  return generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles });
+};
+const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
+const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+
+test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array (T-1, T-7, GN-6j)', () => {
+  const out = shaped();
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /let source: Vec<u8> = in_source\(py, source, "source"\)\?;/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def length\(source: str \| bytes \| bytearray \| memoryview\) -> int: \.\.\./);
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /in_bytes\(value, subject\)\.map_err\(\|_other\| type_error\(subject, "string or Uint8Array"\)\)/);
+  assert.match(node, /match unsafe \{ value\.cast::<Uint8Array>\(\) \}/);
+  assert.match(node, /Uint8Array::new\(value\.as_ref\(\)\.to_vec\(\)\)/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function reversed\(data: Uint8Array\): Uint8Array;/);
+  // A PHP string is its bytes, which the core judges.
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /let source: Vec<u8> = in_latin1\(source, "source"\)\?;/);
+  // G-5: a text and its UTF-8 give the same, and what is neither is refused.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_t1_length_source_takes_a_text_as_its_utf8_bytes/);
+  const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(nodeTests, /test\('T-1: length takes a text in source as its UTF-8 bytes'/);
+  assert.match(nodeTests, /test\('T-7: reversed refuses a data that is not a Uint8Array'/);
+  // G-4: a source is a parameter only, and Go and WASM generate none.
+  assert.throws(() => shaped((c) => { member(c, 'shapes.reversed').returns = 'source'; }), /the type source is generated as a parameter only \(T-1\)/);
+  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; }), /shapes\.length\.source: the type source is not generated for go yet \(T-1\)/);
+});
+
+test('a parameter or field with a default is None for the core when it is left out (U-2, T-4, GN-6i)', () => {
+  const out = shaped();
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /#\[pyo3\(signature = \(text, times = Given::Omitted, separator = Given::Omitted\)\)\]/);
+  assert.match(python, /let times: Option<u64> = in_default\(&times, \|value\| in_uint\(py, value, "times"\)\)\?;/);
+  assert.match(python, /#\[pyo3\(signature = \(text, \*, prefix, upper = Given::Omitted, width = Given::Omitted\)\)\]/);
+  // The constant of the core that default_core names is the declared value; a {const} default whose constant is
+  // default_core itself is asserted once, by the constant (U-5).
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /const _: \(\) = assert!\(same_text\(polyspec_shapes::DEFAULT_SEPARATOR, ","\)\);/);
+    assert.match(lib, /const _: \(\) = assert!\(!polyspec_shapes::DEFAULT_UPPER\);/);
+    assert.doesNotMatch(lib, /DEFAULT_TIMES == polyspec_shapes::DEFAULT_TIMES/);
+  }
+  const pyi = text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi');
+  assert.match(pyi, /def repeat\(text: str, times: int = 1, separator: str = ","\) -> str: \.\.\./);
+  assert.match(pyi, /def frame\(text: str, \*, prefix: str, upper: bool = False, width: int = \.\.\.\) -> str: \.\.\./);
+  assert.match(pyi, /def total\(numbers: Sequence\[int\] = \.\.\.\) -> int: \.\.\./);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare function repeat\(text: string, times\?: number, separator\?: string\): string;/);
+  assert.match(dts, /export declare function total\(numbers\?: Iterable<number>\): number;/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php');
+  assert.match(stub, /function repeat\(mixed \$text, mixed \$times = 1, mixed \$separator = ","\): string \{\}/);
+  assert.match(stub, /function frame\(mixed \$text, mixed \$prefix, mixed \$upper = false, mixed \$width = null\): string \{\}/);
+  assert.match(stub, /function total\(mixed \$numbers = \[\]\): int \{\}/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn in_default<T>\(value: Option<&Zval>/);
+  // G-5: the call without the argument and the call with its declared value give the same.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_repeat_times_left_out_is_its_default/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_repeat_times_takes_none_as_a_value/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('U-2: total without numbers is the call with its default'/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /function testU2repeatSeparatorLeftOutIsItsDefault\(\)/);
+  // A {computed} default has no declared value, so it has no such test.
+  assert.doesNotMatch(text(out, 'packages/python/generated/tests/test_generated.py'), /test_u2_frame_width_left_out/);
+  // G-4: each default that is not generated is refused by name.
+  const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
+  const field = (c: any, name: string): any => unitOf(c, 'frame_options').fields.find((f: any) => f.name.join('_') === name);
+  assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /a default of a record parameter is not generated yet \(U-2 \{empty: "object"\}\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /a default of an optional type is not generated yet \(U-2\)/);
+  assert.throws(() => shaped((c) => { delete parameter(c, 'shapes.repeat', 'separator').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
+  assert.throws(() => shaped((c) => { delete field(c, 'upper').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
+  assert.throws(() => shaped((c) => { member(c, 'shapes.repeat').parameters.push({ name: ['last'], type: 'uint', required: true }); }), /shapes\.repeat: the required last follows a parameter with a default, which is not generated yet \(U-2\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.total', 'numbers').default = { empty: 'map' }; }), /the default \{empty: "map"\} of the type \{"list":"uint"\} is not generated \(U-2\)/);
+  assert.throws(() => shaped((c) => { member(c, 'shapes.frame').returns = { unit: 'frame_options' }; }), /frame_options\.upper: a field default of a record with the result form is not generated yet \(T-4\)/);
+  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'wasm']; member(c, 'shapes.length').parameters[0].type = 'text'; }), /shapes\.repeat\.times: a default is not generated for wasm yet \(U-2, T-4\)/);
+});
+
+test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {
+  const out = shaped();
+  const errors = text(out, 'packages/python/generated/python/polyspec/shapes/_errors.py');
+  assert.match(errors, /class ParseError\(ShapesValueError\):/);
+  assert.match(errors, /class Utf8Error\(ParseError\):/);
+  // P-4: a parent is written before the class that extends it.
+  assert.ok(errors.indexOf('class ParseError(') < errors.indexOf('class Utf8Error('));
+  const cjs = text(out, 'packages/ts/generated/index.cjs');
+  assert.match(cjs, /class ParseError extends ShapesValueError \{/);
+  assert.match(cjs, /class Utf8Error extends ParseError \{/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php');
+  assert.match(stub, /\n {4}class ParseError extends ShapesValueError\n/);
+  assert.match(stub, /\n {4}final class Utf8Error extends ParseError\n/);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /\.extends\(\(library_class_0, "\\\\Polyspec\\\\Shapes\\\\ShapesValueError"\)\)/);
+  assert.match(php, /\.extends\(\(library_class_6, "\\\\Polyspec\\\\Shapes\\\\ParseError"\)\)\n\s+\.flags\(ClassFlags::Final\)/);
+  assert.match(php, /match CLASSES\.first\(\)\.and_then\(OnceLock::get\)/);
+  // A kind with `class` is thrown as that class, one without as the class of its category.
+  for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    assert.match(text(out, path), /Error::Empty \{ \.\. \} => 6,\n\s+polyspec_shapes::Error::NotUtf8 \{ \.\. \} => 7,\n\s+polyspec_shapes::Error::TooMany \{ \.\. \} => 0,/);
+  }
+  // B-4: the exact class of a case is the class of its kind.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /self\.assertIs\(type\(error\), pkg\.Utf8Error\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Utf8Error::class, \$error::class\)/);
+  // G-4: what E-2 and E-3 hold beyond that is refused by name.
+  assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').members = [{ id: 'parse_error.offset', name: ['offset'], kind: 'property', visibility: 'public', type: 'uint', core: 'polyspec_shapes::Error::offset' }]; }), /parse_error: the members of an error unit are not generated yet \(E-2, E-3\)/);
+  assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').module = 'errors'; }), /parse_error: an error unit in the module errors is not generated yet/);
+  assert.throws(() => shaped((c) => { c.errors.kinds[2].class = 'frame_options'; }), /TooMany: the class frame_options is no error unit that is generated/);
+  assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').parent = 'utf8_error'; }), /the parents of the error units make a cycle/);
+  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
+});

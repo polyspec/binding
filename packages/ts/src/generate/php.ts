@@ -1,10 +1,11 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { defaultAsserts, declaredValue } from './defaults.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, kindClass, parentClass, byValue, type ObjectClass, coreCallArgs, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
-import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -29,7 +30,7 @@ const phpEnumType = (unit: Unit): string => `Php${langName('php', unit.name, 'cl
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
   if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_latin1' };
+    const fn: Record<string, string> = { text: 'in_text', latin1: 'in_latin1', bool: 'in_bool', uint: 'in_uint', int: 'in_int', int64: 'in_int', float: 'in_float', bytes: 'in_latin1', source: 'in_latin1' };
     const name = fn[type];
     if (name === undefined) throw new Error(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
@@ -90,11 +91,20 @@ fn in_text(value: &Zval, subject: &str) -> Result<String, Fail> {
         .map_err(|_not_utf8| binding_error(BindingError::InvalidText { subject: subject.to_owned(), cause: TextCause::NotUtf8 }))
 }
 
-/// T-1 latin1: the bytes of a string, one character each.
+/// T-1 latin1, bytes and source: the bytes of a string; a PHP string is its bytes, which the core judges.
 fn in_latin1(value: &Zval, subject: &str) -> Result<Vec<u8>, Fail> {
     match value.zend_str() {
         Some(text) => Ok(text.as_bytes().to_vec()),
         None => Err(type_error(subject, "string")),
+    }
+}
+
+/// U-2: an argument that the caller left out is None, whose value the core decides. The engine gives null for a
+/// parameter that a call with named arguments skips, so null is an argument that was left out (GN-10).
+fn in_default<T>(value: Option<&Zval>, item: impl FnOnce(&Zval) -> Result<T, Fail>) -> Result<Option<T>, Fail> {
+    match value.filter(|value| !value.is_null()) {
+        Some(value) => item(value).map(Some),
+        None => Ok(None),
     }
 }
 
@@ -483,8 +493,9 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
     const held = arg.field ? undefined : heldParam(model, arg.type);
+    const converted = arg.default === undefined ? convertIn(model, arg.type, rustIdent(variable), rustString(variable)) : `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
     lines.push(held === undefined
-      ? `        let ${rustField(arg.name)}: ${rustType(model, arg.type)} = ${convertIn(model, arg.type, rustIdent(variable), rustString(variable))}?;`
+      ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
   }
   if (fn.record !== undefined) {
@@ -499,7 +510,8 @@ function functionRust(model: Model, layout: PhpLayout, fn: Fn): string {
   } else {
     lines.push(`        ${resultLet(fn)} = ${call};`);
   }
-  const params = variables.map((v) => `${rustIdent(v)}: &Zval`);
+  // U-2: a parameter that may be left out is an Option, which PHP lets a caller omit.
+  const params = variables.map((v, i) => `${rustIdent(v)}: ${fn.args[i]?.default === undefined ? '&Zval' : 'Option<&Zval>'}`);
   if (fn.kind === 'constructor') {
     lines.push(`        Ok(Self { inner: ${heldNew(objectUnit(model, { unit: fn.unit.id }) ?? { unit: fn.unit, members: [], constructible: true }, 'result')} })`);
     return `
@@ -738,7 +750,7 @@ fn out_${rustField(object.unit.name)}(value: ${object.unit.core_type ?? ''}) -> 
 }
 
 function libRust(model: Model, layout: PhpLayout): string {
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n');
+  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const iterates = model.objects.some((o) => o.members.some((fn) => fn.kind === 'iterate'));
   const functions = model.functions.map((fn) => functionRust(model, layout, fn)).join('') + model.objects.map((o) => objectRust(model, layout, o)).join('') + (iterates ? PAIRS(layout) : '');
   const enums = [
@@ -767,12 +779,24 @@ fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${classOf(k.category)},`).join('\n')}
+${model.kinds.map((k) => `        ${k.variant} { .. } => ${kindClass(model, k)},`).join('\n')}
     };
     library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
 }
 `;
-  const registerClasses = model.classes.map((c, i) => `
+  // E-2: the class of an error unit extends the class of its parent or of its category, registered before it (P-4),
+  // and inherits kind(), status() and errno().
+  const registerClasses = model.classes.map((c, i) => c.unit !== undefined ? `
+    let registered = ClassBuilder::new(${rustString(`${layout.namespace}\\${c.name}`)})
+        .extends((library_class_${model.classes.indexOf(parentClass(model, c) ?? c)}, ${rustString(`\\${layout.namespace}\\${parentClass(model, c)?.name ?? ''}`)}))${c.unit.final === true ? '\n        .flags(ClassFlags::Final)' : ''}
+        .registration(|class, tables| {
+            remember(${i}, class);
+            std::mem::forget(tables);
+        })
+        .register();
+    if registered.is_err() {
+        return 1;
+    }` : `
     let registered = ClassBuilder::new(${rustString(`${layout.namespace}\\${c.name}`)})
         .extends((${phpBaseFn(c.category)}, ${rustString(`\\${phpBase(c.category)}`)}))
         .property(private_property("kind"))
@@ -837,10 +861,19 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
+  const parents = [...new Set(model.classes.filter((c) => c.unit !== undefined).map((c) => model.classes.indexOf(parentClass(model, c) ?? c)))];
   const baseFns = [...new Set(bases)].map((fnName) => {
     const category = model.classes.find((c) => phpBaseFn(c.category) === fnName)?.category ?? 'value';
     return `fn ${fnName}() -> &'static ClassEntry {\n    builtin_class(${rustString(phpBase(category))})\n}\n`;
-  }).join('\n');
+  }).join('\n') + parents.map((index) => `
+/// E-2: the library class that an error unit extends, registered before it.
+fn library_class_${index}() -> &'static ClassEntry {
+    match CLASSES.${index === 0 ? 'first()' : `get(${index})`}.and_then(OnceLock::get) {
+        Some(Class(entry)) => entry,
+        None => panic!("B-4: the class that an error unit extends is not registered"),
+    }
+}
+`).join('');
   return `${header('//')}
 // The extension ${layout.extension}. Its functions take the raw values and judge them (T-8); PHP counts the arguments
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
@@ -849,7 +882,7 @@ use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? 
 ${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.classes.some((c) => c.unit?.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
@@ -941,9 +974,24 @@ fn in_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
     result
 }
 
+/// E-2: the category class that declares the private properties of an error; a class that extends it does not see
+/// them, so they are read and written in its scope.
+fn declaring(class: &'static ClassEntry) -> &'static ClassEntry {
+    let mut current = class;
+    loop {
+        if CLASSES.iter().take(${model.classes.filter((c) => c.unit === undefined).length}).any(|slot| slot.get().is_some_and(|Class(entry)| std::ptr::eq(*entry, current))) {
+            return current;
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => return class,
+        }
+    }
+}
+
 fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     let Some(this) = ex.get_self() else { return };
-    let class = this.get_class_entry();
+    let class = declaring(this.get_class_entry());
     if name == "kind" {
         if let Ok(kind) = in_scope(class, || this.get_property::<String>(name)) {
             if retval.set_string(&kind, false).is_err() {
@@ -986,7 +1034,7 @@ fn library_error(class: usize, message: &str, kind: &str, status: Option<u16>, e
         return PhpException::from_message(format!("B-4: the class of {kind} is not registered"));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(entry, || -> ext_php_rs::error::Result<()> {
+    let written = in_scope(declaring(entry), || -> ext_php_rs::error::Result<()> {
         object.set_property("message", message)?;
         object.set_property("kind", kind)?;
         object.set_property("status", status.map(i64::from))?;
@@ -1066,7 +1114,7 @@ const phpBaseFn = (category: string): string => `base_${phpBase(category).toLowe
 function stub(model: Model, layout: PhpLayout): string {
   const phpType = (type: Type): string => {
     if (typeof type === 'string') {
-      return ({ text: 'string', latin1: 'string', bytes: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
+      return ({ text: 'string', latin1: 'string', bytes: 'string', source: 'string', bool: 'bool', uint: 'int', int: 'int', int64: 'int', float: 'float', none: 'void', never: 'never' } as Record<string, string>)[type] ?? 'mixed';
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
@@ -1086,7 +1134,11 @@ function stub(model: Model, layout: PhpLayout): string {
   };
   const blocks: string[] = [];
   blocks.push(`namespace ${layout.namespace} {
-${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). */
+${model.classes.map((c) => c.unit !== undefined ? `    /** E-2: an error of category ${c.category} that a kind of the contract is thrown as. */
+    ${c.unit.final === true ? 'final ' : ''}class ${c.name} extends ${parentClass(model, c)?.name ?? ''}
+    {
+    }
+` : `    /** The errors of category ${c.category} (E-2). */
     class ${c.name} extends \\${phpBase(c.category)}
     {
         public function kind(): string {}
@@ -1101,8 +1153,14 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
     ...model.resultRecords.map((u) => u.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module),
   ])].sort();
   const method = (fn: Fn, indent: string): string => {
-    const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}`);
-    const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}`);
+    // U-2: the declaration shows a {literal} or {const} default; null stands for a default whose value is the core's.
+    const shown = (a: Arg): string => {
+      if (a.default === undefined) return '';
+      const value = declaredValue(model, a)?.value;
+      return ` = ${value === undefined ? ('empty' in a.default ? '[]' : 'null') : typeof value === 'string' ? phpText(value) : JSON.stringify(value)}`;
+    };
+    const docs = fn.args.map((a) => `${indent} * @param ${docType(a.type)} $${langName('php', a.name, 'variable')}${a.default !== undefined && 'computed' in a.default ? ` the core decides its value when it is left out (${a.default.computed})` : ''}`);
+    const params = fn.args.map((a) => `mixed $${langName('php', a.name, 'variable')}${shown(a)}`);
     if (fn.kind === 'iterate') {
       const yields = fn.yields ?? { value: 'none' };
       return `${indent}/**
