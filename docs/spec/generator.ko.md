@@ -14,7 +14,7 @@
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
-  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -235,7 +235,7 @@
   raises가 있는 iterate와 class의 두 번째 iterate는 이름을 대고 거부한다(G-4).
 - **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
   코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
-  `toJSON`, PHP `jsonSerialize`이고 그 PHP class는 `\JsonSerializable`을 구현한다. Python에는 JSON hook이 없으므로 그
+  `toJSON`, PHP `jsonSerialize`(그 PHP class는 `\JsonSerializable`을 구현한다), Go `MarshalJSON`(GN-15a)이다. Python에는 JSON hook이 없으므로 그
   member가 없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
   인터페이스를 주고, 그것을 한 번 더 적은 class를 확장이 로드될 때 거부하기 때문이다. stub은 그 인터페이스를 선언한다. Node의
   hook은 진입 파일의 인자 검사(G-7) 없이 자기 이름을 가진 addon의 메서드다. 언어가 hook을 자기 규약의 인자로 부르기
@@ -394,8 +394,10 @@
   `New<Class>`(`constructible`이 false이면 없음), static member는 함수 `<Class><Member>`(CK-13), method와 property는
   호출이 끝날 때까지 receiver를 살려 두는(`runtime.KeepAlive`) `*<Class>`의 method다. iterate는 C ABI가 모은 항목에 대한
   `iter.Seq[T]`나 `iter.Seq2[K, V]`를 돌려주고, stringify는 `String()`이며 `fmt.Stringer`에 오류 결과가 없으므로 코어의
-  오류로 panic한다. 다른 module의 class·callback unit은 이름으로 거부하고(handle과 dispatch가 내보내지 않은 것이다),
-  member `to_json`도 거부한다(encoding/json은 값의 내보낸 field를 읽는데 class는 handle만 담는다).
+  오류로 panic한다. 다른 module의 class·callback unit은 이름으로 거부한다(handle과 dispatch가 내보내지 않은 것이다).
+  to_json은 `json.Marshaler`의 `MarshalJSON`이다. 코어가 준 값을 `encoding/json`으로 marshal하고 코어의 오류를 돌려주므로
+  인스턴스의 `json.Marshal`은 코어가 정한 JSON 꼴을 준다. `never`를 돌려주는 to_json은 오류만 돌려준다. `never`를
+  돌려주는 member는 `error` 앞에 결과가 없다.
 - **GN-15b** Go callback unit(U-3, K-2): callback unit은 결과와 `error`를 돌려주는 method의 Go interface다. C ABI는
   callback을 호출과 Go 값의 handle로 잡고 export `<prefix>__go_callback`으로 되부르며, nil callback은 kind
   `invalid_callback`이다. method가 돌려준 오류는 코어를 멈추고 같은 오류 값으로 호출자에게 돌아온다. 호출은 그 값을 끝날
@@ -530,7 +532,7 @@
   `{"function": [<행>]}`로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
-  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`나 `json_encode`를 부른다. 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
+  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`, `json_encode`, Go에서는 내보내지 않은 `toJSON`을 부른다(Go의 stringify 시험이 `stringify`를 부르는 것과 같다). 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
   poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
   parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
   가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한 뒤

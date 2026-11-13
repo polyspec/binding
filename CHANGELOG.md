@@ -13,6 +13,12 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a class with a member `to_json`, so `tag.to_json` of `tests/e2e/sample`
+  and `tests/e2e/classes` named only PHP and Node and the Go binding had no JSON form. Go now gives a to_json as
+  `MarshalJSON` of `json.Marshaler` over the unexported `toJSON`, which marshals the value of the core with
+  `encoding/json` and returns the error of the core; a to_json that returns `never` returns the error alone, and the
+  B-4 test calls `toJSON` (GN-15a). Both contracts name Go for `tag.to_json`. Verified by `npm test` in `packages/ts`
+  and `gofmt` and `go vet` of the generated packages.
 - The generator refused the Go binding of a contract with a tuple of different part types inside another type or with
   a tuple parameter, so the fixture, whose `words.split` returns a list of a tuple of text and uint, had no Go
   binding. Go now gives such a tuple as `Tuple<N>[T0, ...]`, a generic struct of `internal/binding` with the fields

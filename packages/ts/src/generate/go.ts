@@ -71,12 +71,13 @@ export function goParam(name: Name): string {
 export const goName = (name: Name): string => langName('go', name, 'class');
 
 // The Go name of a member of a class unit, or of a function: the constructor is New<Class>, a static member
-// <Class><Member>, a stringify String, any other member a method of the class with its own name (N-2, N-4, CK-13).
+// <Class><Member>, a stringify String, a to_json MarshalJSON, any other member a method of the class with its own name (N-2, N-4, CK-13).
 export function goMemberName(fn: Fn): string {
   const member = langName('go', fn.member.name, 'callable');
   if (fn.kind === 'constructor') return `New${goName(fn.unit.name)}`;
   if (fn.kind === 'static') return `${goName(fn.unit.name)}${member}`;
   if (fn.special === 'stringify') return 'String';
+  if (fn.special === 'to_json') return 'MarshalJSON';
   return member;
 }
 
@@ -98,6 +99,7 @@ export interface GoScope {
   usesTuples?: Set<number>;
   // Whether a body keeps an instance alive after its call (runtime.KeepAlive) or returns an iterator (iter).
   usesRuntime?: boolean;
+  usesJson?: boolean;
   usesIter?: boolean;
 }
 
@@ -342,7 +344,7 @@ export function goDecode(scope: GoScope, type: Type, target: string, indent: num
 
 // E-7: the results of a function: the parts of a tuple return, then error.
 export function goResults(scope: GoScope, returns: Type): string[] {
-  if (returns === 'none') return [];
+  if (returns === 'none' || returns === 'never') return [];
   if (typeof returns === 'object' && 'tuple' in returns) return returns.tuple.map((t) => goType(scope, t));
   return [goType(scope, returns)];
 }
@@ -362,10 +364,11 @@ function memberResults(scope: GoScope, fn: Fn): string[] {
   return [yields.key === undefined ? `iter.Seq[${goType(scope, yields.value)}]` : `iter.Seq2[${goType(scope, yields.key)}, ${goType(scope, yields.value)}]`];
 }
 
-// The count of the results of a member in Go before its error: 1 for an iterate, the parts of a tuple, 0 for none.
+// The count of the results of a member in Go before its error: 1 for an iterate, the parts of a tuple, 0 for none and
+// never.
 export const goResultCount = (fn: Fn): number => {
   if (fn.kind === 'iterate') return 1;
-  if (fn.returns === 'none') return 0;
+  if (fn.returns === 'none' || fn.returns === 'never') return 0;
   return typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple.length : 1;
 };
 
@@ -409,7 +412,7 @@ function goCallable(scope: GoScope, fn: Fn): string {
       '\t}, nil',
     );
   } else {
-    const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' ? [] : [fn.returns];
+    const parts = typeof fn.returns === 'object' && 'tuple' in fn.returns ? fn.returns.tuple : fn.returns === 'none' || fn.returns === 'never' ? [] : [fn.returns];
     parts.forEach((type, i) => {
       lines.push(`\tvar value${i} ${results[i] ?? ''}`);
       lines.push(...goDecode(scope, type, `value${i}`, 1, 0));
@@ -423,6 +426,24 @@ function goCallable(scope: GoScope, fn: Fn): string {
 // ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
 func ${name}(${params}) ${signature} {
 ${lines.join('\n')}
+}
+`;
+  }
+  if (fn.special === 'to_json') {
+    // GN-15a: json.Marshal of an instance calls MarshalJSON, which marshals the value of the core.
+    const marshal = results.length === 0
+      ? '\treturn nil, this.toJSON()'
+      : '\tvalue, err := this.toJSON()\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn json.Marshal(value)';
+    if (results.length > 0) scope.usesJson = true;
+    return `
+// toJSON calls ${fn.corePath} (contract member ${fn.member.id}).
+func (this *${className}) toJSON() ${signature} {
+${lines.join('\n')}
+}
+
+// MarshalJSON is the JSON form of the ${className} (N-4: to_json), which encoding/json calls through json.Marshaler.
+func (this *${className}) MarshalJSON() ([]byte, error) {
+${marshal}
 }
 `;
   }
@@ -644,7 +665,7 @@ func BytesKey(value []byte) Key { return binding.BytesKey(value) }
 func TextKey(value string) Key { return binding.TextKey(value) }
 `
     : '';
-  const std = [...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
+  const std = [...(scope.usesJson === true ? ['"encoding/json"'] : []), ...(scope.usesIter === true ? ['"iter"'] : []), ...(scope.usesRuntime === true ? ['"runtime"'] : [])];
   const own = [...(usesBinding ? [`"${goImport(model.contract, 'internal/binding')}"`] : []), ...[...scope.imports].map((m) => `"${goImport(model.contract, m)}"`)];
   const imports = std.length + own.length > 0 ? `\n${goImportBlock(std, own)}` : '';
   return `${goHeader()}
@@ -1609,12 +1630,9 @@ ${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'st
 
 // G-4: what the Go binding does not generate, each refused by name with its reason: a record of another repository
 // (its Go type is in the Go module of that repository, which go.mod does not require), a class or a callback named in
-// another module than its own (its handle and dispatch are unexported), and a JSON hook (GN-6g).
+// another module than its own (its handle and dispatch are unexported).
 export function refuseForGo(model: Model, refusals: Refusals): void {
   for (const foreign of model.foreignRecords) refusals.refuse(`${foreign.library}.${foreign.unit.id}: a record of another repository is not generated for Go yet: its Go type is in the Go module of that repository, which go.mod of this module does not require`);
-  for (const fn of model.objects.flatMap((o) => o.members).filter((m) => m.special === 'to_json')) {
-    refusals.refuse(`${fn.member.id}: a to_json member is not generated for Go (GN-6g: encoding/json reads the exported fields of a value, and a class holds only a handle)`);
-  }
   // GN-6m: a Go member that waits on blocking I/O waits on the completion channel of its work, which is not generated yet.
   for (const fn of callablesOf(model).filter(waitsIo)) refusals.refuse(`${fn.member.id}: wait blocking_io is not generated for Go yet (GN-6m)`);
   // A unit of this repository that the model does not hold was refused when the model was made, by its own name.
