@@ -291,13 +291,14 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
       }),
     );
   }
-  // G-5, GN-6v: a value of a variant is an object of its tag, whose value is the tag text of its case, and its fields.
+  // G-5, GN-6v: a value of a variant is an object of its tag, whose value is the value of its case as the contract
+  // states it, and its fields.
   const variant = variantOf(model, type);
   if (variant !== undefined) {
     const tag = langName('python', variant.unit.tag ?? [], 'variable');
     const fields = typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
     const kase = variant.cases.find((c) => c.value === fields?.[tag]);
-    if (fields === undefined || kase === undefined) throw new Error(`a case value of the variant ${variant.unit.id} is an object whose ${tag} is the text of one of its cases, not ${shown(value)}`);
+    if (fields === undefined || kase === undefined) throw new Error(`a case value of the variant ${variant.unit.id} is an object whose ${tag} is the value of one of its cases, not ${shown(value)}`);
     const extra = Object.keys(fields).find((key) => key !== tag && !(kase.unit.fields ?? []).some((f) => langName('python', f.name, 'variable') === key));
     if (extra !== undefined) throw new Error(`a case value of the case ${kase.value} of the variant ${variant.unit.id} has no field ${extra}`);
     return caseNew(ctx, variant, kase, (kase.unit.fields ?? []).map((f) => {

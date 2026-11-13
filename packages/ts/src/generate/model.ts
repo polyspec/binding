@@ -358,7 +358,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
     return;
   }
   if ('list' in type) return supportedType(type.list, units, where, foreign, entering);
-  // T-2: map<T> is generated for Go only; generate() refuses it for the other targets (G-4).
+  // T-2: map<T> is generated for every target, in the form that the rule of each language states.
   if ('map' in type) return supportedType(type.map, units, where, foreign);
   // T-2, U-7 (c): keyed_map<T>{key}, an ordered map whose keys mix the listed kinds.
   if ('keyed_map' in type) return supportedType(type.keyed_map, units, where, foreign);

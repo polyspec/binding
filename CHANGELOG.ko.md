@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c15f339009a8c3bfdca492e8622363f21ae70c7c22bfe3cb0890543f1b09f8af -->
+<!-- source-sha256: 289a18847adef49ddd773cd84aab3fbaee7214144d6470b8a5ca13bb01b5c987 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- tag가 어느 case도 이름하지 않는 variant의 case 값을 거부하는 문장은 tag가 "is the text of one of its cases"라고
+  했고, 이것은 소문자 text로 읽힌다. 그 값은 계약이 적은 case의 `value`이므로 이제 문장은 "is the value of one of its
+  cases"라고 한다. `supportedType`의 주석은 `map<T>`를 Go에서만 생성하고 다른 target에서는 거부한다고 했으나 그렇게 하는
+  코드는 없다. 이제 주석은 모든 target이 그것을 생성한다고 한다. `packages/ts`의 `npm test`로 검증했다. 그 문장의 새 시험은
+  변경 전에 실패했다.
 - 다른 라이브러리의 실패 주입 지점(`<library>.<id>`)을 장전하는 case를 모든 target이 "the point <point> of another
   library is not armed yet (G-5)"로 거부했다. 그래서 자기 코어가 부르는 코어의 지점을 장전하는 case를 가진 계약은 생성된
   시험이 없었다. 이제 그런 지점은 다섯 target에서 member의 장전으로 장전한다. 바인딩 crate는 그 라이브러리의 코어를 하나의

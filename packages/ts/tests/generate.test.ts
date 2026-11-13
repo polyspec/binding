@@ -2909,6 +2909,20 @@ test('a variant is an interface of Go and a struct of each case, which the C ABI
   assert.match(tests, /Back: ptr\[Figure\]\(FigureGroup\{/);
 });
 
+test('a case value of a variant whose tag names no case is named with the value of a case, as the contract states it (G-5, GN-6v)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8');
+  assert.match(cases, /"type": ?"label"/);
+  const caseFiles = new Map([['contracts/cases.json', JSON.parse(cases.replace(/"type": ?"label"/, '"type": "Label"'))]]);
+  let message = '';
+  try {
+    message = [...generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles, targets: ['python'] }).values()].map(String).join('\n');
+  } catch (error) {
+    message = String(error);
+  }
+  assert.match(message, /a case value of the variant figure is an object whose type is the value of one of its cases, not /);
+});
+
 test('an optional field of a case whose default is {literal: null} may be left out, and is null (T-4, T-9, GN-6v)', () => {
   const out = variants();
   assert.match(text(out, 'packages/python/generated/python/polyspec/variants/_types.py'), /class FigureLabel:\n[^\n]*\n\n    text: str\n    at: int \| None = None\n/);

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The refusal of a case value of a variant whose tag names no case said that the tag "is the text of one of its
+  cases", which reads as a text in lower case; the value is the `value` of the case as the contract states it, so
+  the message now says "is the value of one of its cases". A comment of `supportedType` said that `map<T>` is
+  generated for Go only and refused for the other targets, which no code does; it now says that every target
+  generates it. Verified by `npm test` in `packages/ts`: the new test of the message failed before the change.
 - A case that arms a fault injection point of another library (`<library>.<id>`) was refused in every target as "the
   point <point> of another library is not armed yet (G-5)", so a contract whose cases arm the points of the cores that
   its core calls had no generated test. Such a point is now armed by the arming of the member, in the five targets:
