@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- `machine`이 있는 member를 가진 계약의 binding crate는 compile되지도 lint를 통과하지도 못해서, `tests/e2e/sample`의
+  `make e2e`는 모든 target에서 테스트가 돌기 전에 실패했다. PHP, Python, Go는 결과를 match하는 식이 block인 곳에서
+  machine을 만들었고(clippy `blocks_in_conditions`) 각 Io future를 `async move { io.await }`로 감쌌다(clippy
+  `redundant_async_block`). WASM 함수 `caught`는 `async move` block에서 `impl Future`를 돌려주었다(clippy
+  `manual_async_fn`). Node machine은 호출의 `Env`를 빌리는 callback struct를 소유했는데 `Driven` 객체는 그 호출보다 오래
+  산다(E0521). 이제 machine은 `drive` 호출의 임시 값이고, 각 Io future는 machine이 준 그대로, 계약이 fault를 적으면
+  `armed_future` 안에서 poll되며, `caught`는 `async fn`이고, machine이 소유하는 Node callback은 객체에 대한 napi 참조를
+  지니고 drop될 때 그것을 지우는 struct `Owned<Callback>`이다(GN-6ab). `packages/ts`의 `npm test`(그 WASM future
+  테스트는 rustc로 `caught`를 compile한다)와 sample의 `make e2e`로 확인했다.
 - 생성된 machine driver는 `machine::drive`에 함수 두 개를 주고 `Next::Await`를 match하지 않아서, passthrough 값을
   기다리는 binding_core로는 어느 binding crate도 compile되지 않았다. 이제 PHP, Python, Go는 값을 바로 settle하는 함수
   `|value| Ok(Ok(value))`를 `drive`에 주고, Node와 WASM은 함수 parameter가 없는 member의 `Next::Await`에 그 member를

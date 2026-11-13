@@ -538,7 +538,10 @@ function entryRust(model: Model, fn: Fn): string {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       const held = heldParam(model, parameter.type);
       const subject = rustString(langName('node', parameter.name, 'variable'));
-      lines.push(held === undefined
+      const owned = fn.machine === true ? ownedCallback(model, parameter.type) : undefined;
+      lines.push(owned !== undefined
+        ? `        let ${variable} = owned_${rustField(owned.unit.name)}(env, ${variable}, ${subject})?;`
+        : held === undefined
         ? `        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, variable, subject)}?;`
         : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${subject})?;`);
       if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
@@ -854,8 +857,97 @@ ${checks}
 
 impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 }
-${recognizing}`;
+${recognizing}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 }
+
+// GN-6ab: the callback units that a parameter of a member with machine takes, which the machine owns.
+const ownsCallback = (model: Model, cb: CallbackUnit): boolean =>
+  [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true && fn.params.some((p) => ownedCallback(model, p.type) === cb));
+
+// GN-6ab: the callback unit of a parameter type that a machine owns.
+function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
+  const unit = unitOf(model, type);
+  return libraryOf(type) === undefined ? model.callbacks.find((c) => c.unit === unit) : undefined;
+}
+
+// GN-6ab: a callback that a machine owns outlives the call that made it, so it holds a reference of napi to its object
+// and makes the borrowed callback struct from it at each call.
+function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
+  const name = rustField(cb.unit.name);
+  const struct = rustType(model, { unit: cb.unit.id });
+  const jsName = langName('node', cb.unit.name, 'class');
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const methods = cb.members.map((m) => {
+    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
+    const passed = m.params.map((p) => rustField(p.name)).join(', ');
+    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
+    return `
+    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+        let env = Env::from_raw(self.object.env);
+        let object = self.object.object(&env).map_err(|fail| thrown(Thrown::Binding(fail)))?;
+        let mut borrowed = ${struct} { object, env: &env${cb.owner ? ', owner: self.owner' : ''} };
+        ${cb.unit.core ?? ''}::${rustField(m.member.name)}(&${m.receiver === '&mut self' ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
+    }`;
+  }).join('\n');
+  return `
+/// GN-6ab: ${jsName}, owned by a machine, which outlives the call that made it.
+pub struct Owned${struct} {
+    object: Owned,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+}
+
+/// GN-6ab: a callback object that a machine owns is checked when it enters, as in_${name} checks it.
+fn owned_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<Owned${struct}, Fail> {
+    let checked = in_${name}(env, value, subject)?;
+    Ok(Owned${struct} { object: Owned::new(env, checked.object.to_unknown())?${cb.owner ? ', owner: checked.owner' : ''} })
+}
+
+impl ${cb.unit.core ?? ''} for Owned${struct} {${methods}
+}
+`;
+}
+
+// GN-6ab: a JavaScript value that a machine owns across the advances of its call: a reference of napi, which is deleted
+// when its owner drops it on the JavaScript thread, where the Driven object of the machine ends.
+const OWNED = `
+/// GN-6ab: a JavaScript value that a machine owns across the advances of its call.
+struct Owned {
+    env: napi::sys::napi_env,
+    reference: napi::sys::napi_ref,
+}
+
+impl Owned {
+    fn new(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
+        let mut reference = std::ptr::null_mut();
+        // SAFETY: value is a value of env, on the thread of env.
+        if unsafe { napi::sys::napi_create_reference(env.raw(), value.raw(), 1, &mut reference) } != napi::sys::Status::napi_ok {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6ab: a reference to a JavaScript value could not be made") }));
+        }
+        Ok(Self { env: env.raw(), reference })
+    }
+
+    fn value<'env>(&self, env: &'env Env) -> Result<Unknown<'env>, Fail> {
+        let mut value = std::ptr::null_mut();
+        // SAFETY: the reference is alive until this value is dropped, and the machine runs on the thread of env.
+        if unsafe { napi::sys::napi_get_reference_value(env.raw(), self.reference, &mut value) } != napi::sys::Status::napi_ok || value.is_null() {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6ab: a referenced JavaScript value is gone") }));
+        }
+        // SAFETY: value is a value of env.
+        Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), value) })
+    }
+
+    fn object<'env>(&self, env: &'env Env) -> Result<Object<'env>, Fail> {
+        // SAFETY: the reference holds the object that the check of the callback found.
+        unsafe { self.value(env)?.cast() }.map_err(internal)
+    }
+}
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        // SAFETY: the owner of the reference drops it on the thread of its env (GN-6ab); a failed delete leaves the value to the engine.
+        unsafe { napi::sys::napi_delete_reference(self.env, self.reference) };
+    }
+}
+`;
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
 // members that recognize error units.
@@ -1094,7 +1186,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => ownsCallback(model, c)) ? OWNED : '') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),

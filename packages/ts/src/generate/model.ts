@@ -1231,12 +1231,12 @@ export function futureOf(model: Model, fn: Fn, body: string): string {
 
 // GN-6n: the core call of a member with wait async_driver that waits on the calling thread (PHP, Python): blocked
 // gives the form of the wait around block_on, and failed the conversion of a BindingError. GN-6ab: the core call of a
-// member with machine makes the machine, and drive makes its calls on the calling thread and waits for each of its
-// futures in the same form. GN-6ae: awaited gives the outcome of a value that a function of the machine returned; PHP
+// member with machine makes the machine, a temporary of the call of drive, and drive makes its calls on the calling
+// thread and waits for each of its futures in the same form. GN-6ae: awaited gives the outcome of a value that a function of the machine returned; PHP
 // and Go have no awaitable, so they settle the value at once.
 export const drivenCall = (model: Model, fn: Fn, core: string, blocked: (wait: string) => string, failed: string, awaited = '|value| Ok(Ok(value))'): string =>
   fn.machine === true
-    ? `{\n            let mut machine = ${core};\n            binding_core::machine::drive(&mut machine, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, 'io.await')}))`)}), ${awaited}).map_err(${failed})?\n        }`
+    ? `binding_core::machine::drive(&mut ${core}, |io| driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${model.faults.length === 0 ? 'io' : `armed_future(${JSON.stringify(fn.member.id)}, io)`}))`)}), ${awaited}).map_err(${failed})?`
     : `driven(${blocked(`binding_core::driver::block_on(binding_core::driver::Caught::new(${futureOf(model, fn, `${core}.await`)}))`)}).map_err(${failed})?`;
 
 // GN-6ae: the arm of an awaited value of a machine that Node or WASM advances, for a member without a function

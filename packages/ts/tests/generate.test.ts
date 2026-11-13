@@ -2519,7 +2519,7 @@ test('the generated WASM future of a member with wait async_driver compiles agai
     else params.push(`${input[1]}: ${input[2]}`);
   }
   const helper = (name: string): string => {
-    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    const found = new RegExp(`(?:///[^\\n]*\\n)*(?:async )?fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
     assert.ok(found !== null, `no helper ${name}`);
     return found[0];
   };

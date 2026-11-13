@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- No binding crate of a contract with a member with `machine` compiled or passed its lints, so `make e2e` of
+  `tests/e2e/sample` failed in every target before any test ran: PHP, Python and Go made the machine in a block that
+  was the scrutinee of the match of its result (clippy `blocks_in_conditions`) and wrapped each Io future in
+  `async move { io.await }` (clippy `redundant_async_block`); the WASM function `caught` returned `impl Future` from an
+  `async move` block (clippy `manual_async_fn`); and the Node machine owned the callback struct that borrows the
+  `Env` of the call, which the `Driven` object outlives (E0521). The machine is now a temporary of the call of
+  `drive`, each Io future is polled as the machine gave it, in `armed_future` when the contract names faults,
+  `caught` is an `async fn`, and a Node callback that a machine owns is the struct `Owned<Callback>`, which holds a
+  reference of napi to its object and deletes it when it is dropped (GN-6ab). Verified by `npm test` in
+  `packages/ts`, whose test of the WASM future compiles `caught` with rustc, and by `make e2e` of the sample.
 - The generated driver of a machine passed `machine::drive` two functions and matched no `Next::Await`, so no
   binding crate compiled against the binding_core that awaits a passthrough value. PHP, Python and Go now give
   `drive` the function `|value| Ok(Ok(value))`, which settles a value at once; Node and WASM answer `Next::Await` of a
