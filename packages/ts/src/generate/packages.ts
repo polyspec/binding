@@ -80,8 +80,8 @@ function testFeatures(contract: Contract, suffix: string): string {
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
-// staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm).
-function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }): string {
+// staticlib at packages/go/internal/ffi, the WASM crate at packages/ts/wasm). libExtra: lines of [lib] after its type.
+function manifest(contract: Contract, version: string, suffix: string, lib: string, dependencies: string[], extra = '', host = false, crate?: { type: string; core: string }, libExtra = ''): string {
   return `${header('#')}
 [package]
 name = ${JSON.stringify(`polyspec-${contract.library}-${suffix}`)}
@@ -93,7 +93,7 @@ publish = false${extra}
 [lib]
 name = ${JSON.stringify(lib)}
 path = "src/lib.rs"
-crate-type = ["${crate?.type ?? 'cdylib'}"]
+crate-type = ["${crate?.type ?? 'cdylib'}"]${libExtra}
 
 [features]
 panic-test = []
@@ -203,7 +203,10 @@ python-source = "generated/python"
   }
   if (contract.targets.includes('php')) {
     const php = contract.packages['php'] as { package: string };
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '', isHost(contract, 'php')));
+    // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
+    // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false'));
+    files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
       ['non_snake_case', 'G-7: a parameter is named as the PHP named argument, in camelCase'],
       MANY,
@@ -233,6 +236,29 @@ python-source = "generated/python"
   }
   return placed(contract, files);
 }
+
+// BD-9: the build script of the PHP binding crate. PHP resolves the symbols of an extension when it loads it, so the
+// macOS linker has to leave them undefined (-undefined dynamic_lookup). cargo:rustc-cdylib-link-arg applies to the
+// cdylib of this crate alone, so the executables of the other crates still fail on a symbol that does not resolve,
+// which RUSTFLAGS or rustflags of .cargo/config.toml would hide; and a build script is read wherever Cargo is started,
+// which .cargo/config.toml is not. The OS is CARGO_CFG_TARGET_OS, the target's, because a build script runs on the
+// host; without it the script fails (P-3).
+const PHP_BUILD = `${header('//')}
+// BD-9: PHP resolves the symbols of an extension when it loads it, so on macOS the linker
+// leaves them undefined, for the cdylib of this crate alone. The target OS is the one that
+// Cargo gives the build script, not the OS of the host.
+
+const TARGET_OS: &str = "CARGO_CFG_TARGET_OS";
+
+fn main() -> Result<(), String> {
+    let os = std::env::var(TARGET_OS).map_err(|error| format!("{TARGET_OS}: {error}"))?;
+    if os == "macos" {
+        println!("cargo:rustc-cdylib-link-arg=-undefined");
+        println!("cargo:rustc-cdylib-link-arg=dynamic_lookup");
+    }
+    Ok(())
+}
+`;
 
 // The release of wasm-bindgen: the crate and the wasm-bindgen CLI that writes the glue are the same release.
 export const WASM_BINDGEN = '0.2.130';

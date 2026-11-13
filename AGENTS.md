@@ -29,6 +29,12 @@ rules of this repository.
   a module of its own release. Why: a result of a tool that the repository does not pin cannot be repeated, so it is a
   diagnosis and not evidence.
   Enforced by: `make install`, whose `mise install --locked` fails a tool that `mise.lock` does not pin.
+- Own: A link setting of a binding crate is in a build script of that crate, and never in `RUSTFLAGS` or
+  `.cargo/config.toml`: the PHP extension links on macOS by its `build.rs` (GN-3d, BD-9). Why: a build script applies to
+  that crate wherever Cargo starts, while `rustflags` apply to every crate, and `.cargo/config.toml` holds only below the
+  directory where Cargo starts and gives way to `RUSTFLAGS`, so the same tree would link differently by how it is built.
+  Enforced by: `npm test` in `packages/ts`, whose test of BD-9 compares the scaffold with the build script; CK-19 compares
+  a repository's build script with it.
 - Own: Every check of the contract check has a test that fails for its own reason (PRINCIPLES P19).
   Enforced by: `npm test` in `packages/ts`
 - Own: The end-to-end check runs every target of the contract on the tools of the checkout, and a target whose tool

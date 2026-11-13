@@ -25,6 +25,12 @@
   CLI는 생성 manifest의 `wasm-bindgen` crate와 같은 릴리스다(GN-18). CLI는 자기 릴리스의 모듈만 읽기 때문이다. 이유:
   저장소가 고정하지 않은 도구로 얻은 결과는 되풀이할 수 없으므로 진단이지 증거가 아니다.
   Enforced by: `make install`, 그 `mise install --locked`가 `mise.lock`이 고정하지 않은 도구를 실패시킨다.
+- Own: 바인딩 crate의 링크 설정은 그 crate의 build script에 두고, `RUSTFLAGS`나 `.cargo/config.toml`에 두지 않는다. PHP 확장은
+  macOS에서 그 `build.rs`로 링크된다(GN-3d, BD-9). 이유: build script는 Cargo를 어디서 시작하든 그 crate에 걸리지만 `rustflags`는
+  모든 crate에 걸리고, `.cargo/config.toml`은 Cargo가 시작한 디렉터리 아래에서만 유효하며 `RUSTFLAGS`에 밀리므로, 같은 tree가
+  빌드 방법에 따라 다르게 링크된다.
+  Enforced by: `packages/ts`의 `npm test`, 그 BD-9 시험이 scaffold를 build script와 비교한다. CK-19가 저장소의 build script를
+  그것과 비교한다.
 - Own: 계약 검사의 모든 검사는 자기 이유로 실패하는 시험을 가진다(PRINCIPLES P19).
   Enforced by: `packages/ts`의 `npm test`
 - Own: 끝에서 끝까지 확인은 계약의 모든 target을 checkout의 도구로 실행하고, 도구가 없는 target은 그 target, 도구,

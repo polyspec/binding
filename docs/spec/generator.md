@@ -55,8 +55,8 @@ the design ids are those of the binding design.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
   entry `src/lib.rs`, which holds the crate's attributes and includes `generated/lib.rs` (an included file cannot hold
   them), the language's manifest (`pyproject.toml`, `package.json`, `composer.json`), which a language's packager
-  needs beside the crate, and a file of the crate that does not depend on the contract (the Node `build.rs`, which the
-  manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
+  needs beside the crate, and a file of the crate that does not depend on the contract (the `build.rs` of Node and of
+  PHP, which the manifest names), so `cargo fmt --all` and the workspace's metadata work before a generation. A core at
   `packages/<component>/rust` (L-1) has its binding packages and generated directories at
   `packages/<component>/<python|ts|php-ext>`; `scaffold` and `generate` take its contract with `--contract`.
   `scaffold` writes under `--out` when it is given, and a unit that is still `todo` (CK-2) does not stop it, because the
@@ -90,6 +90,18 @@ the design ids are those of the binding design.
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
   entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
   release does and installs both tarballs.
+- **GN-3d** The PHP binding crate links on macOS by its `build.rs` alone (BD-9): the script emits
+  `cargo:rustc-cdylib-link-arg=-undefined` and `cargo:rustc-cdylib-link-arg=dynamic_lookup` when `CARGO_CFG_TARGET_OS`
+  is `macos`, emits nothing for another target, and fails when that variable cannot be read (P-3). The crate's `[lib]`
+  has `test = false` and `doctest = false`. No tracked file of binding or of a repository and no run of the end-to-end
+  check gives a link setting in `RUSTFLAGS` or `.cargo/config.toml`. Why: PHP resolves the symbols of an extension when
+  it loads it, so the macOS linker has to leave them undefined, and ext-php-rs 0.16.4 gives no such argument to a crate
+  that depends on it. `cargo:rustc-cdylib-link-arg` applies to the cdylib of this crate alone, so the test executables
+  of the core and of the other crates still fail on a symbol that does not resolve, which `rustflags` would let through
+  for every crate; `.cargo/config.toml` is read only below the directory where Cargo starts, and `RUSTFLAGS` replaces
+  it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
+  of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
+  symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and carries the lints of R-1 itself,
   with `unsafe_code` deny rather than forbid: the macros of ext-php-rs and napi-rs expand to unsafe code, which a core's
   workspace may forbid, and each unsafe block of the generated code carries an allow with its reason. The generated
@@ -587,9 +599,8 @@ the design ids are those of the binding design.
   -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
   counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
   that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
-  test is named and fails the run, because it verifies nothing. On macOS the PHP extension links only when the linker leaves the PHP symbols to the
-  load (`-undefined dynamic_lookup`); until the PHP binding crate has the `build.rs` of BD-9, that setting is not in a
-  tracked file and a run on macOS gives it by hand, which the report of the run states.
+  test is named and fails the run, because it verifies nothing. On macOS the PHP extension links by the `build.rs` of its
+  crate (GN-3d), so a run gives no link setting by hand.
 - **GN-14b** A run checks one commit of binding: `BINDING`, `HEAD` by default. The check writes the tree of that commit
   into `<work>/binding` with `git archive`, installs the packages of the generator from the lock of that tree and runs
   the script of that tree, so the generator, `binding_core` (the lock of each copy pins that commit), the case runners of
