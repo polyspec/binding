@@ -20,6 +20,12 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a value alias whose Go `out` row makes the value by a member, such as
+  `"go": "tag.new"`, with "a Go make by a member (tag.new) is not generated yet (U-7)". Go now gives such a value as
+  the instance of the class: the C ABI writes the number of the class in the contract and the handle of the value,
+  `Reader.ValueWith` of `internal/binding` reads them, and `aliasInstance` of the package of the class makes the
+  instance; a member of another module that gives the value is refused by name (GN-15c). Verified by `npm test` in
+  `packages/ts` and `gofmt` and `go vet` of the generated packages.
 - The generator refused the Go binding of a class with a member `to_json`, so `tag.to_json` of `tests/e2e/sample`
   and `tests/e2e/classes` named only PHP and Node and the Go binding had no JSON form. Go now gives a to_json as
   `MarshalJSON` of `json.Marshaler` over the unexported `toJSON`, which marshals the value of the core with

@@ -423,7 +423,9 @@
   Go 값을 읽으므로(종류, 항목, `fmt.Sprint` 순서의 map key) 코어의 `in` 함수가 복사 없이 값을 돈다. `in` 함수의 kind는 그
   category의 오류이며, 다른 레포의 alias는 소유 레포의 E-1을 따른다. 코어 값은 내장 형태인 첫 `out` 행의 Go 값으로
   나간다: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`, `map[string]any`, `*KeyedMap[any]`.
-  `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
+  member로 값을 만드는 행(GN-6e)은 class의 인스턴스를 준다. C ABI는 계약 안 class의 번호와 값의 handle을 적고, class의
+  module 패키지가 그 번호로 인스턴스를 만든다. `internal/binding`은 그 패키지를 import하지 않기 때문이다. 그런 값을
+  주는 다른 module의 member는 이름으로 거부한다. 그 class의 패키지만 인스턴스를 만들기 때문이다. `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
