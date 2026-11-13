@@ -179,6 +179,9 @@ const load = (): { contract: any; caseFiles: Map<string, unknown> } => ({
   caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]),
 });
 const text = (out: Map<string, string | Buffer>, path: string): string => String(out.get(path) ?? '');
+// GN-4c: the name of a helper of the generated crate at a path, given as `in_<word>` or `out_<word>`: the crates of
+// Python and PHP name it `<word>_in` and `<word>_out`, and the crates of Node, WASM and Go do not apply the rule yet.
+const helperName = (path: string, name: string): string => (/^packages\/(python|php-ext)\//.test(path) ? name.replace(/^(in|out)_(.*)$/, '$2_$1') : name);
 // The case files of the sample of the end-to-end check (tests/e2e/sample).
 const sampleCases = (): Map<string, unknown> =>
   new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]);
@@ -198,7 +201,7 @@ test('an integer return widens a narrower Rust integer with From (T-1)', () => {
   const { contract, caseFiles } = load();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
-    assert.match(text(out, path), /fn out_uint[^\n]*value: impl WideUint\)/, path);
+    assert.match(text(out, path), new RegExp(`fn ${helperName(path, 'out_uint')}[^\\n]*value: impl WideUint\\)`), path);
     assert.match(text(out, path), /wide_uint!\(u8, u16, u32, u64\);/, path);
   }
 });
@@ -402,7 +405,7 @@ test('Go: map<T> is an ordered Map, and every target generates map<T> (T-2, G-4)
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { map: { list: 'text' } };
   // Every target generates map<T>; the Go form is checked below.
-  assert.match(text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), 'packages/php-ext/generated/lib.rs'), /fn out_map<T>/);
+  assert.match(text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), 'packages/php-ext/generated/lib.rs'), /fn map_out<T>/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
   for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
@@ -455,8 +458,8 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a map<T> or keyed_map<T> inside another type is not generated for node, wasm yet/);
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
   const all = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
-  assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn out_keyed_map<T>/);
-  assert.match(text(all, 'packages/python/generated/lib.rs'), /fn out_keyed_map<'py, T>/);
+  assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn keyed_map_out<T>/);
+  assert.match(text(all, 'packages/python/generated/lib.rs'), /fn keyed_map_out<'py, T>/);
   assert.match(text(all, 'packages/ts/generated/index.cjs'), /return fromEntries\(addon\./);
   assert.match(text(all, 'packages/ts/generated/index.d.ts'), /ReadonlyMap<number \| string, string>/);
   contract.targets = ['go'];
@@ -906,7 +909,7 @@ test('a value alias of another repository converts through the core of its owner
     assert.match(lib, /polyspec_sample::data_from_host\(&mut host, described\)\.map_err\(\|failure: binding_core::Failure<polyspec_sample::Error>\| sample_failure_error\(/, path);
     assert.match(lib, /fn sample_error\([^)]*error: polyspec_sample::Error\)[^{]*\{\n    let class(: usize)? = match error \{\n        polyspec_sample::Error::Missing \{ \.\. \} => [^\n]*\n        polyspec_sample::Error::Unsupported \{ \.\. \} => [^\n]*\n(?:        polyspec_sample::Error::[^\n]*\n)*    \};/, path);
     // The callback gives the alias through the same conversions.
-    assert.match(lib, /in_optional\([^\n]*in_sample_data\(/, path);
+    assert.match(lib, new RegExp(`${helperName(path, 'in_optional')}\\([^\\n]*in_sample_data\\(`), path);
     assert.match(lib, /out_sample_data\((py|self\.env), value\)|out_sample_data\(value\)/, path);
   }
   assert.match(text(out, 'packages/python/generated/lib.rs'), /polyspec_sample::Error::Unsupported \{ \.\. \} => "ConsumerValueError",/);
@@ -955,7 +958,7 @@ test('an error unit is the class of the kinds that name it, with the properties 
   assert.match(errors, /__all__ = \[[^\]]*"AbsentError"\]/);
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /polyspec_consumer::Error::Absent \{ \.\. \} => "AbsentError",/);
-  assert.match(python, /let value = polyspec_consumer::Error::key\(error\);\n    object\.setattr\("_key", out_text\(py, value\)\?\)\?;/);
+  assert.match(python, /let value = polyspec_consumer::Error::key\(error\);\n    object\.setattr\("_key", text_out\(py, value\)\?\)\?;/);
   assert.match(python, /polyspec_consumer::Error::Absent \{ \.\. \} => absent_error_properties\(py, &raised, &error\),/);
   // Node: the class after the six of the categories, with properties that the addon defines read-only.
   const node = text(out, 'packages/ts/generated/lib.rs');
@@ -991,7 +994,7 @@ test('a property of an error unit that raises raises in place of the error, and 
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'go', 'wasm'] });
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /let value = match polyspec_consumer::Error::key\(error\) \{ Ok\(value\) => value, Err\(failure\) => return Err\(core_error\(py, failure\)\) \};/);
-  assert.match(python, /let value = polyspec_consumer::Error::trace\(error\);\n    object\.setattr\("_trace", out_list\(py, value, /);
+  assert.match(python, /let value = polyspec_consumer::Error::trace\(error\);\n    object\.setattr\("_trace", list_out\(py, value, /);
   assert.match(text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py'), /    def trace\(self\) -> list\[str\] \| None:\n/);
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /fn absent_error_properties\(error: &polyspec_consumer::Error\) -> Result<Properties, Fail> \{/);
@@ -1270,14 +1273,15 @@ const unitOf = (contract: any, id: string): any => contract.units.find((u: any) 
 test('a tuple enters as the sequence of exactly its parts in each language (T-1, GN-6t)', () => {
   const out = shaped();
   const python = text(out, 'packages/python/generated/lib.rs');
-  assert.match(python, /fn in_tuple<'py, const N: usize>\(/);
-  assert.match(python, /in_tuple\(py, [a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(py, &part_0, "span"\)\?, in_uint\(py, &part_1, "span"\)\?\)\)\)/);
-  assert.match(python, /in_tuple\(py, [a-z_]+, "pair"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_text\(py, &part_0, "pair"\)\?, in_uint\(py, &part_1, "pair"\)\?\)\)\)/);
-  assert.match(python, /in_list\(py, [a-z_]+, "spans", \|py, item\| in_tuple\(py, item, "spans"\)/);
+  assert.match(python, /fn tuple_in<'py, const N: usize>\(/);
+  assert.match(python, /tuple_in\(py, [a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(uint_in\(py, &part_0, "span"\)\?, uint_in\(py, &part_1, "span"\)\?\)\)\)/);
+  assert.match(python, /tuple_in\(py, [a-z_]+, "pair"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(text_in\(py, &part_0, "pair"\)\?, uint_in\(py, &part_1, "pair"\)\?\)\)\)/);
+  assert.match(python, /list_in\(py, [a-z_]+, "spans", \|py, item\| tuple_in\(py, item, "spans"\)/);
   for (const path of ['packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     const rust = text(out, path);
-    assert.match(rust, /fn in_tuple<'[a-z]+, const N: usize>\(/, path);
-    assert.match(rust, /in_tuple\([a-z_]+, "span"\)\.and_then\(\|\[part_0, part_1\]\| Ok\(\(in_uint\(part_0, "span"\)\?, in_uint\(part_1, "span"\)\?\)\)\)/, path);
+    const [tuple, uint] = [helperName(path, 'in_tuple'), helperName(path, 'in_uint')];
+    assert.match(rust, new RegExp(`fn ${tuple}<'[a-z]+, const N: usize>\\(`), path);
+    assert.match(rust, new RegExp(`${tuple}\\([a-z_]+, "span"\\)\\.and_then\\(\\|\\[part_0, part_1\\]\\| Ok\\(\\(${uint}\\(part_0, "span"\\)\\?, ${uint}\\(part_1, "span"\\)\\?\\)\\)\\)`), path);
   }
   const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
   assert.match(wasm, /fn in_tuple<const N: usize>\(value: &JsValue, subject: &str\) -> Result<\[JsValue; N\], Fail>/);
@@ -1421,7 +1425,7 @@ test('a variant is the core enum, converted by a match of its cases, and a union
     // A case without fields is a struct pattern, and a field that holds the variant again is boxed; a list is not.
     assert.match(rust, /polyspec_variants::Figure::Dot \{\}/, path);
     assert.match(rust, /let field_frame: Box<polyspec_variants::Figure> = [\s\S]*?Box::new\(in_figure\(/, path);
-    assert.match(rust, /let field_back: Option<Box<polyspec_variants::Figure>> = [\s\S]*?in_optional\([^\n]*\.map\(Box::new\)/, path);
+    assert.match(rust, new RegExp(`let field_back: Option<Box<polyspec_variants::Figure>> = [\\s\\S]*?${helperName(path, 'in_optional')}\\([^\\n]*\\.map\\(Box::new\\)`), path);
     assert.match(rust, /let field_items: Vec<polyspec_variants::Figure> = /, path);
     assert.match(rust, /polyspec_variants::Figure::Group \{ items: field_items, frame: field_frame, back: field_back \}/, path);
     assert.doesNotMatch(rust, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/, path);
@@ -1502,9 +1506,9 @@ test('an integer key of a keyed_map outside the safe integers is kind invalid_nu
   assert.match(node, /ValueType::Number if kinds\.contains\(&0\) => \(0, binding_core::Key::Int\(safe_integer\(key, subject, NumberType::Int\)\?\)\)/, 'Node: a number key of a listed int is invalid_number when it is no safe integer');
   const wasm = rustFn(text(out, 'packages/ts/wasm/generated/lib.rs'), 'in_keyed_map');
   assert.match(wasm, /key\.as_f64\(\)\.is_some\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(safe_integer\(&key, subject, NumberType::Int\)\?\)\)/, 'WASM: as Node');
-  const python = rustFn(text(out, 'packages/python/generated/lib.rs'), 'in_keyed_map');
-  assert.match(python, /key\.is_exact_instance_of::<PyInt>\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(in_int\(py, &key, subject\)\?\)\)/, 'Python: in_int, the safe integers');
-  const php = rustFn(text(out, 'packages/php-ext/generated/lib.rs'), 'in_keyed_map');
+  const python = rustFn(text(out, 'packages/python/generated/lib.rs'), 'keyed_map_in');
+  assert.match(python, /key\.is_exact_instance_of::<PyInt>\(\) && kinds\.contains\(&0\) \{\n\s+\(0, binding_core::Key::Int\(int_in\(py, &key, subject\)\?\)\)/, 'Python: int_in, the safe integers');
+  const php = rustFn(text(out, 'packages/php-ext/generated/lib.rs'), 'keyed_map_in');
   assert.match(php, safe, 'PHP: an int key is a safe integer');
   assert.match(php, /BindingError::InvalidNumber/, 'PHP: an int key outside is invalid_number');
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\{2\*\*53: [^\n]*\n\s+self\.assertEqual\(caught\.exception\.kind, "invalid_number"\)/);
@@ -1531,10 +1535,10 @@ test('an int or a uint outside the safe integers is kind invalid_number in every
   const safe = /9_007_199_254_740_991/;
   for (const path of ['packages/python/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
     const lib = text(out, path);
-    assert.match(rustFn(lib, 'in_int'), safe, `${path}: in_int refuses an int outside the safe integers`);
-    assert.match(rustFn(lib, 'in_uint'), safe, `${path}: in_uint refuses a uint above 2^53 - 1`);
-    assert.notEqual(rustFn(lib, 'in_int64'), '', `${path}: in_int64 takes an int64`);
-    assert.doesNotMatch(rustFn(lib, 'in_int64'), safe, `${path}: in_int64 takes the range of i64`);
+    assert.match(rustFn(lib, 'int_in'), safe, `${path}: int_in refuses an int outside the safe integers`);
+    assert.match(rustFn(lib, 'uint_in'), safe, `${path}: uint_in refuses a uint above 2^53 - 1`);
+    assert.notEqual(rustFn(lib, 'int64_in'), '', `${path}: int64_in takes an int64`);
+    assert.doesNotMatch(rustFn(lib, 'int64_in'), safe, `${path}: int64_in takes the range of i64`);
   }
   const ffi = text(out, 'packages/go/internal/ffi/generated/lib.rs');
   assert.match(rustFn(ffi, 'in_safe_int'), safe, 'the Go C ABI refuses an int outside the safe integers');
@@ -1557,9 +1561,9 @@ test('a member that writes its receiver takes a source and a default in one call
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
   const lines: Record<string, RegExp> = {
-    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/python/generated/lib.rs': /let source: Vec<u8> = source_in\(py, source, "source"\)\?;\n\s+let times: Option<u64> = default_in\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
     'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
-    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = latin1_in\(source, "source"\)\?;\n\s+let times: Option<u64> = default_in\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
   };
   for (const [path, line] of Object.entries(lines)) {
     assert.match(text(out, path), line, path);
@@ -1575,7 +1579,7 @@ test('a member that writes its receiver takes a source and a default in one call
 test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array (T-1, T-7, GN-6j)', () => {
   const out = shaped();
   const python = text(out, 'packages/python/generated/lib.rs');
-  assert.match(python, /let source: Vec<u8> = in_source\(py, source, "source"\)\?;/);
+  assert.match(python, /let source: Vec<u8> = source_in\(py, source, "source"\)\?;/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def length\(source: str \| bytes \| bytearray \| memoryview\) -> int: \.\.\./);
   const node = text(out, 'packages/ts/generated/lib.rs');
   assert.match(node, /in_bytes\(value, subject\)\.map_err\(\|_other\| type_error\(subject, "string or Uint8Array"\)\)/);
@@ -1583,7 +1587,7 @@ test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array 
   assert.match(node, /Uint8Array::new\(value\.as_ref\(\)\.to_vec\(\)\)/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function reversed\(data: Uint8Array\): Uint8Array;/);
   // A PHP string is its bytes, which the core judges.
-  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /let source: Vec<u8> = in_latin1\(source, "source"\)\?;/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /let source: Vec<u8> = latin1_in\(source, "source"\)\?;/);
   // G-5: a text and its UTF-8 give the same, and what is neither is refused.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_t1_length_source_takes_a_text_as_its_utf8_bytes/);
   const nodeTests = text(out, 'packages/ts/generated/tests/generated.test.mjs');
@@ -1599,7 +1603,7 @@ test('a parameter or field with a default is None for the core when it is left o
   const out = shaped();
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /#\[pyo3\(signature = \(text, times = Given::Omitted, separator = Given::Omitted\)\)\]/);
-  assert.match(python, /let times: Option<u64> = in_default\(&times, \|value\| in_uint\(py, value, "times"\)\)\?;/);
+  assert.match(python, /let times: Option<u64> = default_in\(&times, \|value\| uint_in\(py, value, "times"\)\)\?;/);
   assert.match(python, /#\[pyo3\(signature = \(text, \*, prefix, upper = Given::Omitted, width = Given::Omitted\)\)\]/);
   // The constant of the core that default_core names is the declared value; a {const} default whose constant is
   // default_core itself is asserted once, by the constant (U-5).
@@ -1620,7 +1624,7 @@ test('a parameter or field with a default is None for the core when it is left o
   assert.match(stub, /function repeat\(mixed \$text, mixed \$times = 1, mixed \$separator = ","\): string \{\}/);
   assert.match(stub, /function frame\(mixed \$text, mixed \$prefix, mixed \$upper = false, mixed \$width = null\): string \{\}/);
   assert.match(stub, /function total\(mixed \$numbers = \[\]\): int \{\}/);
-  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn in_default<T>\(value: Option<&Zval>/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn default_in<T>\(value: Option<&Zval>/);
   // G-5: the call without the argument and the call with its declared value give the same.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_repeat_times_left_out_is_its_default/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_repeat_times_takes_none_as_a_value/);
@@ -3095,12 +3099,12 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   const out = scopedSample(['php']);
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   // The callable is checked when it enters (kind invalid_callback), and the closure owns a reference to it.
-  assert.match(lib, /let work = in_callable\(work, "work"\)\?;/);
+  assert.match(lib, /let work = callable_in\(work, "work"\)\?;/);
   // No helper of the crate has a name of the form in_<unit>, which the conversion of a class named scope would have,
   // and a class that only a function takes has no conversion in (T-5).
   assert.match(lib, /\nfn with_scope<R>\(class: &ClassEntry, body: impl FnOnce\(\) -> R\) -> R \{/);
   assert.doesNotMatch(lib, /\bfn in_scope\b/);
-  assert.match(lib, /fn in_callable\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
+  assert.match(lib, /fn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{\n {4}if !value\.is_callable\(\) \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);/);
   // The closure makes a new instance of the class of each class argument, calls the callable and stores what it
   // returned in the table; an exception of the callable is a Raised.
   assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0: Zval = out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+Ok\(pass\(called\(&work, vec!\[&arg0\]\)\?\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
@@ -3115,8 +3119,8 @@ test('PHP makes a closure of a callable, holds its value in the passthrough tabl
   // A handle is a count that is never given again, and a result whose handle names no value is kind internal.
   assert.match(lib, /let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);/);
   assert.match(lib, /\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n\s+\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)/);
-  assert.match(lib, /fn out_passed\(value: binding_core::Passthrough\) -> Result<Zval, Fail> \{/);
-  assert.match(lib, /\n\s+out_passed\(result\)\n/);
+  assert.match(lib, /fn passed_out\(value: binding_core::Passthrough\) -> Result<Zval, Fail> \{/);
+  assert.match(lib, /\n\s+passed_out\(result\)\n/);
   // The declaration: a callable of the scope that returns any value, which the member returns.
   const stub = text(out, 'packages/php-ext/generated/polyspec_sample.stub.php');
   assert.match(stub, /\* @param callable\(\\Polyspec\\Sample\\Scope\): mixed \$work\n(?:[^\n]*\n)*? {9}\*\/\n {8}public function transaction\(mixed \$work\): mixed \{\}/);
@@ -3150,4 +3154,42 @@ test('a function fixture with awaits is a plain function in PHP, which has no aw
   const tests = text(scopedSample(['php']), 'packages/php-ext/generated/tests/GeneratedTest.php');
   assert.match(tests, /public function testGn13eStoreTransactionTheEntriesOfAFunctionThatAwaitsAreCommitted\(\): void\n {4}\{\n {8}\$receiver = new \\Polyspec\\Sample\\Store\(\);\n {8}self::assertSame\(self::same\("awaited"\), self::same\(\$receiver->transaction\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("a", "1"\); \$args\[0\]->nested\(function \(mixed \.\.\.\$args\): mixed \{ \$args\[0\]->put\("b", "2"\); self::assertSame\(self::same\("1"\), self::same\(\$args\[0\]->get\("a"\)\)\); return null; \}\); self::assertSame\(self::same\("2"\), self::same\(\$args\[0\]->get\("b"\)\)\); return "awaited"; \}\)\)\);\n {8}self::assertSame\(self::same\("1"\), self::same\(\$receiver->get\("a"\)\)\);\n {8}self::assertSame\(self::same\("2"\), self::same\(\$receiver->get\("b"\)\)\);\n {4}\}/);
   assert.match(tests, /public function testGn6aeStoreTransactionTheEntriesOfAnAwaitableThatRaisesAreDropped\(\): void\n/);
+});
+
+// GN-4c: the sample with units whose names are those of helpers of the generated crates: the enums default, callable
+// and text, and a function that takes each and a parameter with a default.
+const helperNamed = (contract: any): void => {
+  const named = (id: string): any => ({ id, name: [id], module: '', kind: 'enum', visibility: 'public', origin: 'generated', core_type: `polyspec_sample::${id[0]?.toUpperCase() ?? ''}${id.slice(1)}`, variants: [{ name: ['plain'], value: 'plain' }] });
+  contract.units.push(named('default'), named('callable'), named('text'));
+  const functions = contract.units.find((u: any) => u.id === 'sample');
+  functions.members.push({ id: 'sample.default_times', name: ['default', 'times'], kind: 'constant', visibility: 'public', type: 'uint', value: 1, core: 'polyspec_sample::DEFAULT_TIMES' });
+  functions.members.push({
+    id: 'sample.pick', name: ['pick'], kind: 'function', visibility: 'public', wait: 'none', raises: [], returns: { unit: 'default' }, core: 'polyspec_sample::pick',
+    parameters: [
+      { name: ['first'], type: { unit: 'default' }, required: true }, { name: ['second'], type: { unit: 'callable' }, required: true }, { name: ['third'], type: { unit: 'text' }, required: true },
+      { name: ['times'], type: 'uint', default: { const: 'sample.default_times' }, default_core: 'polyspec_sample::DEFAULT_TIMES' },
+    ],
+  });
+};
+// The names of the functions of a generated crate, each with the number of its definitions that no cfg separates.
+const functionNames = (lib: string): Map<string, number> => {
+  const names = new Map<string, number>();
+  for (const [, name] of lib.matchAll(/^(?:pub )?fn ([a-z0-9_]+)/gm)) names.set(name ?? '', (names.get(name ?? '') ?? 0) + 1);
+  return names;
+};
+
+test('no helper of a generated PHP crate has a name of the conversions of a unit, in_<unit> and out_<unit> (GN-4c)', () => {
+  const lib = text(scopedSample(['php'], helperNamed), 'packages/php-ext/generated/lib.rs');
+  const names = functionNames(lib);
+  // The conversions of the units named default, callable and text are defined once each, beside the helpers of a
+  // default, of a callable and of a text.
+  for (const name of ['in_default', 'out_default', 'in_callable', 'in_text']) assert.equal(names.get(name), 1, name);
+  assert.match(lib, /\/\/\/ T-6: a value of the enum is one of its cases; any other value is refused\.\nfn in_default\(value: &Zval, subject: &str\) -> Result<polyspec_sample::Default, Fail> \{/);
+  assert.match(lib, /\nfn default_in<T>\(value: Option<&Zval>,/);
+  assert.match(lib, /\nfn callable_in\(value: &Zval, subject: &str\) -> Result<Zval, Fail> \{/);
+  assert.match(lib, /\nfn text_in\(value: &Zval, subject: &str\) -> Result<String, Fail> \{/);
+  // Every function named in_<...> or out_<...> is the conversion of a unit of the contract.
+  const units = new Set(['default', 'callable', 'text', 'tag', 'data', 'lookup', 'scope', 'counter', 'ledger', 'store']);
+  const others = [...names.keys()].filter((name) => /^(in|out)_/.test(name) && !units.has(name.replace(/^(in|out)_/, '')));
+  assert.deepEqual(others, []);
 });

@@ -141,6 +141,15 @@ the design ids are those of the binding design.
   an unsupported OS with the feature stops there. A member or unit that uses an item of a feature that WASM turns off
   is `only` of the other targets; the WASM build, not the contract check, judges that, because the check reads no Rust
   source.
+- **GN-4c** The names of the functions of a generated crate: `in_<name>` and `out_<name>` are the conversions of
+  the units of the contract, where `<name>` is the snake_case name of the unit (`<library>_<name>` for a unit of
+  another repository), and no other function of the crate has a name that starts with `in_` or `out_`. A helper
+  states its direction last: the conversion of a built-in type is `<type>_in` and `<type>_out` (`text_in`,
+  `list_out`), and the helpers of a default, of a callable and of a passthrough are `default_in`, `callable_in` and
+  `passed_out`. A new helper follows the same rule. Why: a unit takes any name, also `default`, `callable`, `text`,
+  `list` or `scope`, and a helper named `in_<word>` is defined a second time in the crate of a contract that has a
+  unit of that name, which does not compile. Not applied yet (G-4): the crates of Node, WASM and Go name their
+  helpers `in_<word>` and `out_<word>`; the crates of PHP and Python apply the rule.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

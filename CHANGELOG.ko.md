@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 647a1576f37f83e86db3fd2eb5d7c8932316679f20a9eca7195fe27d4e1e449c -->
+<!-- source-sha256: b3bddc1ae97056a9c926232107ad18ac7afeb1871132789dde24a3a27d5cf677 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `default`, `callable`, `text`, `list`처럼 helper의 단어를 이름으로 가진 unit이 있는 계약의 생성 crate는 컴파일되지
+  않았다. 그 unit의 변환 `in_<unit>`이나 `out_<unit>`이 helper `in_<word>`나 `out_<word>`와 같은 이름이어서 함수가 두 번
+  정의되었기 때문이다. 이제 `in_<...>`과 `out_<...>`은 unit의 변환만 갖는 이름이고, helper는 방향을 끝에 적는다:
+  `text_in`, `list_out`, `default_in`, `callable_in`, `passed_out`(GN-4c). PHP와 Python의 crate는 이 규칙을 적용하고,
+  Node, WASM, Go의 crate는 아직 적용하지 않는다. `packages/ts`의 `npm test`로 검증했다. 그 시험은 enum `default`,
+  `callable`, `text`가 있는 sample의 PHP crate를 생성하고 각 변환의 정의가 하나이며 `in_<...>`이나 `out_<...>`이라는
+  이름의 다른 함수가 없을 것을 요구한다. 변경 전에 그 시험은 `in_default`의 정의 둘을 찾았다.
 - awaitable을 돌려주는 함수를 주는 case가 없어서, awaitable이 나중에 settle되거나 예외를 내는 `Step::Await`의 경로에는
   case가 없었다. 함수 fixture는 이제 `"awaits": true`를 적을 수 있다. 그 함수는 그 언어의 awaitable을 돌려주고 그
   결과는 fixture의 `result`나 `raise`다. 계약 검사는 그 표시를 값이 `true`일 때만, `async_allowed: true`인 함수 타입에만,
