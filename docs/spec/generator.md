@@ -716,9 +716,24 @@ the design ids are those of the binding design.
   each part of a tuple return. The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
-  call alone and fails when it raises. A case whose result has no case form (a class, a result of `none`), whose
-  value alias has no out row that makes the built-in form of its kind in the language, or that gives no argument of
-  a parameter or of the factory of its receiver fails its test with that reason, so the case is never left out.
+  call alone and fails when it raises. A result that is a value alias of the contract (not inside another type, and
+  not a property of a value class, which gives the value that its constructor took) is compared as the texts of its
+  places in pre-order, depth first, which a loop writes on both sides, so a value nested deeper than a recursion
+  takes is compared too. The generator writes the texts of the case value by the out rows of the alias: for each
+  place, the row of its kind whose predicate the value has (`utf8`, `safe_integer`, `integral_float`,
+  `sequence_keys`; a case value of the kind `list` or `text` takes the rows of `map` or `bytes` when the alias has no
+  row of its kind) and the form of the row in the language. The test writes the texts of the result by the type of
+  each place. A text names the form: `null`; `bool true` or `bool false`; `int <decimal>` in Python and PHP; `number
+  <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
+  PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
+  `list <n>`, then its items; `map <n>`, then each key and its value, a key in the form of its keyed map (a PHP key
+  that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
+  `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
+  then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. A case whose result
+  has no case form (a class, a result of `none`), whose value alias has no out row that makes the built-in form of
+  its kind in the language or a form of the texts, or that gives no argument of a parameter or of the factory of its
+  receiver fails its test with that reason, so the case is never left out.
 - **GN-13f** A case of a method gives its receiver either as the arguments of a factory of its class among its own
   keys, or under the key `receiver` as an instance value, which earlier calls make:
   `{"new": "<member id>", "receiver": <instance value>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`

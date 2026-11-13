@@ -589,9 +589,21 @@
   타입과 값으로(`dict`의 항목은 순서대로, NaN은 NaN과 같다), PHP는 객체를 클래스와 property로 바꾼 뒤 `assertSame`으로, Go는
   tuple 반환의 부분마다 `reflect.DeepEqual`로 비교한다. 결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
-  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. 결과에 case 형식이 없는
-  case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의 내장 형태를 만드는 out 행이 없는 case, parameter나 receiver
-  factory의 인자를 주지 않는 case는 그 이유로 시험이 실패하므로, case는 빠지지 않는다.
+  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. 계약의 값 alias인
+  결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
+  적은 텍스트로 비교한다. 양쪽 모두 반복문이 쓰므로, 재귀가 받지 못하는 깊이의 값도 비교한다. 생성기는 case 값의
+  텍스트를 alias의 out 행으로 쓴다. 각 자리에서 그 kind의 행 가운데 값이 가진 predicate(`utf8`, `safe_integer`,
+  `integral_float`, `sequence_keys`)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
+  `map`이나 `bytes`의 행을 쓴다), 그 행의 그 언어 형태를 쓴다. 시험은 결과의 텍스트를 각 자리의 타입으로 쓴다. 텍스트는
+  형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
+  bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
+  `text <hex>`와 `bytes <hex>`, PHP의 `string <hex>`, `list <n>`과 그 항목들, `map <n>`과 각 key와 그 값(key는 그 keyed
+  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
+  인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
+  `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
+  자리의 동일성과 각 순환을 비교한다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
+  시험이 실패하므로, case는 빠지지 않는다.
 - **GN-13f** 메서드의 case는 receiver를 자기 키 가운데 그 class의 factory 인자로 주거나, 키 `receiver` 아래에 앞선
   호출들이 만드는 인스턴스 값으로 준다:
   `{"new": "<member id>", "receiver": <인스턴스 값>, "args": {...}, "then": [{"call": "<member id>", "args": {...}}]}`

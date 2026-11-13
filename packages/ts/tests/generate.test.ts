@@ -1472,7 +1472,8 @@ test('the errno of a case is the value of its symbol in Python and Node, and PHP
     cases.measure[0].raises.errno = 'ENOSPC';
   };
   const out = sampleWith(withErrno, ['python', 'node']);
-  assert.match(text(out, pythonTests), /^import errno\nimport unittest$/m);
+  // GN-13e: sample.echo returns the alias data, whose result the tokens compare, which read json and struct.
+  assert.match(text(out, pythonTests), /^import errno\nimport json\nimport struct\nimport unittest$/m);
   assert.match(text(out, pythonTests), /self\.assertEqual\(error\.errno, errno\.ENOSPC\)/);
   assert.match(text(out, nodeTests), /const errnoOf = constants\.errno;/);
   assert.match(text(out, nodeTests), /error\.errno === errnoOf\.ENOSPC\);/);
@@ -1922,6 +1923,62 @@ test('a case value names a reference or an object by its id after its first plac
   assert.match(lib, /let object_0 = host\.reserve\(\);\n\s*let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(/);
   assert.match(lib, /let entries = vec!\[\(HostValue::Text\(HostText::Bytes\(vec!\[97_u8\]\)\), HostValue::Null\)\];\n\s*host\.fill\(object_0, entries\);\n\s*HostValue::StdClass \{ handle: object_0, len: 1 \}/);
   assert.match(lib, /\(HostValue::Int\(1\), HostValue::StdClass \{ handle: object_0, len: 1 \}\)/);
+});
+
+test('a result of a value alias is compared by the texts of its places in pre-order, which name the form, the identity and the cycles (GN-13e)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const only = { targets: ['python', 'node', 'wasm'], reason: 'the test of GN-13e' };
+  sample.units.push(
+    {
+      id: 'boxed', name: ['boxed'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'boxed.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type: { unit: 'data' }, default: { literal: null } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_boxed' },
+        { id: 'boxed.value', name: ['value'], kind: 'property', visibility: 'public', returns: { unit: 'data' }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+    {
+      id: 'bag', name: ['bag'], module: '', kind: 'class', visibility: 'public', origin: 'value', only,
+      members: [
+        { id: 'bag.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['entries'], type: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, default: { empty: 'map' } }], raises: ['polyspec_sample::Error::Unsupported'], wait: 'none', core: 'polyspec_sample::check_bag' },
+        { id: 'bag.entries', name: ['entries'], kind: 'property', visibility: 'public', returns: { keyed_map: { unit: 'data' }, key: ['text', 'bytes'] }, raises: [], wait: 'none', writable: true },
+      ],
+    },
+  );
+  const data = sample.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'reference', make: { php: 'php_reference', python: 'boxed.constructor', node: 'boxed.constructor', go: 'null', wasm: 'boxed.constructor' } },
+    { kind: 'object', make: { php: 'php_object', python: 'bag.constructor', node: 'bag.constructor', go: 'null', wasm: 'bag.constructor' } },
+  );
+  const cases = sampleCases();
+  const file = cases.get('contracts/cases.json') as Record<string, unknown[]>;
+  const reference = { kind: 'reference', value: { id: 0, value: { kind: 'text', value: 'x' } } };
+  const object = { kind: 'object', id: 0, value: [['a', { kind: 'null' }]] };
+  file['echo'] = [
+    { id: 'shared_places', value: { kind: 'text', value: 'x' }, result: { kind: 'list', value: [reference, { kind: 'reference', value: { id: 0 } }, object, { kind: 'object', id: 0 }, { kind: 'float', value: 1.5 }] } },
+    { id: 'a_deep_list', value: { kind: 'text', value: 'x' }, result: { kind: 'list', repeat: 3000, value: { kind: 'null' } } },
+  ];
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  const wasm = text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  const shared = (lang: 'python' | 'node' | 'php'): string[] => lang === 'php'
+    ? ['list 5', 'php_reference #0', 'string 78', 'php_reference again 0', 'php_object #1 1', 'string 61', 'null', 'php_object again 1', 'float 3ff8000000000000']
+    : ['list 5', 'boxed #0', 'text 78', 'boxed again 0', 'bag #1', 'map 1', 'text 61', 'null', 'bag again 1', `${lang === 'node' ? 'number' : 'float'} 3ff8000000000000`];
+  const json = (lang: 'python' | 'node' | 'php'): string => JSON.stringify(shared(lang));
+  assert.ok(python.includes(`self.assertEqual(_tokens(pkg.same("x")), json.loads(${JSON.stringify(json('python'))}))`), python);
+  assert.match(python, /^import json\nimport struct\n/m);
+  assert.match(python, /^_KEPT = \(\(pkg\.Boxed, "boxed", "value"\), \(pkg\.Bag, "bag", "entries"\), \)$/m);
+  for (const js of [node, wasm]) {
+    assert.ok(js.includes(`assert.deepStrictEqual(tokens(pkg.same('x')), JSON.parse('${json('node')}'));`), js);
+    assert.match(js, /^const KEPT = \[\[pkg\.Boxed, 'boxed', 'value'\], \[pkg\.Bag, 'bag', 'entries'\]\];$/m);
+  }
+  assert.ok(php.includes(`self::assertSame(json_decode(${JSON.stringify(json('php'))}, true, 512, JSON_THROW_ON_ERROR), self::tokens(\\Polyspec\\Sample\\same("x")));`), php);
+  assert.match(php, /private static function tokens\(mixed \$top\): array/);
+  // A value nested deeper than a recursion takes is its texts, one per place.
+  const deep = JSON.stringify([...Array.from({ length: 3000 }, () => 'list 1'), 'null']);
+  assert.ok(python.includes(JSON.stringify(deep)), 'deep');
+  assert.doesNotMatch(python + node + wasm + php, /with which a result is not compared yet/);
 });
 
 test('PHP makes a stdClass and a reference with their identity, and a case value with references in a closure (U-7, GN-6m, GN-13)', () => {
