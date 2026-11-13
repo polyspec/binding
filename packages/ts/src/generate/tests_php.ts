@@ -305,7 +305,9 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     methods.push(`
     public function testB5c${langName('php', test.fn.unit.name, 'class')}${langName('php', test.fn.member.name, 'class')}RefusesTheInstanceAtTwoPlaces(): void
     {
-        $held = ${test.instance};${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}
+        $held = ${test.instance};${test.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(test.fn.member.id)}, ${phpText(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}${test.armed === undefined ? '' : `
+        // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
+        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

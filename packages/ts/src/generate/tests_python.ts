@@ -256,7 +256,9 @@ export function pythonTests(model: Model, module: string): string {
   for (const test of held.busy) {
     out.push(`
     def test_b5c_${langName('python', test.fn.unit.name, 'variable')}_${langName('python', test.fn.member.name, 'callable')}_refuses_the_instance_at_two_places(self) -> None:
-        held = ${test.instance}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}`);
+        held = ${test.instance}${test.armed === undefined ? '' : `\n        armed = _native._arm_faults(${pyString(test.fn.member.id)}, ${pyString(test.armed.faults)})`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after}`}${test.armed === undefined ? '' : `
+        # GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
+        self.assertEqual(_native._fault_left(armed), [])`}`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {

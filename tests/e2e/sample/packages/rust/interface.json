@@ -132,6 +132,18 @@
       ],
       "reason": "X-1",
       "place": "polyspec_sample::measure"
+    },
+    {
+      "id": "draw",
+      "core": "polyspec_sample::fault::DRAW",
+      "inject": [
+        "broken"
+      ],
+      "fills": [
+        "internal"
+      ],
+      "reason": "X-1",
+      "place": "polyspec_sample::Counter::draw"
     }
   ],
   "units": [
@@ -885,6 +897,34 @@
             "path": "polyspec_sample::Counter::absorb",
             "receiver": "&mut self"
           }
+        },
+        {
+          "id": "counter.draw",
+          "name": [
+            "draw"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "other"
+              ],
+              "type": {
+                "unit": "counter"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [
+            "polyspec_sample::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Counter::draw",
+            "receiver": "&mut self"
+          }
         }
       ]
     },
@@ -1065,6 +1105,11 @@
       "member": "counter.absorb",
       "file": "contracts/cases.json",
       "group": "counter_absorb"
+    },
+    {
+      "member": "counter.draw",
+      "file": "contracts/cases.json",
+      "group": "counter_draw"
     },
     {
       "member": "ledger.new",

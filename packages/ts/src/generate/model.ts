@@ -1005,33 +1005,62 @@ export const argType = (model: Model, arg: Arg): string => (arg.default === unde
 export const pointName = (model: Model, point: FaultPoint): string => `${model.contract.library.replaceAll('-', '_')}.${point.id}`;
 
 // G-5: the Rust items of a binding crate for the fault injection points. Each constant that the contract names exists
-// in the core (I-2); with_faults runs the work of an entry point with the faults that a test armed for its member.
+// in the core (I-2); with_faults runs the core call of an entry point with the faults that a test armed for its
+// member, and shielded runs the work of an entry point with none.
 export function faultRust(model: Model): string {
   if (model.faults.length === 0) return '';
   return `
 /// G-5: the fault injection points that the contract names are constants of the core (I-2).
 ${model.faults.map((point) => `const _: &str = ${point.core};`).join('\n')}
 
-/// G-5: the work of an entry point runs with the faults that a test armed for its member on this thread, or with none,
-/// so an entry point that a callback enters does not see the faults of the call around it.
+/// G-5: the core call of an entry point runs with the faults that a test armed for its member on this thread, or with
+/// none. The arming is taken where the core is called, so a call that fails before it leaves the arming (GN-8a).
 #[cfg(feature = "fault-test")]
-fn with_faults<T>(member: &str, work: impl FnOnce() -> T) -> T {
-    binding_core::fault::take(member).run(work)
+fn with_faults<T>(member: &str, call: impl FnOnce() -> T) -> T {
+    binding_core::fault::take(member).run(call)
 }
 
 #[cfg(not(feature = "fault-test"))]
-fn with_faults<T>(_member: &str, work: impl FnOnce() -> T) -> T {
-    work()
-}
-`;
+fn with_faults<T>(_member: &str, call: impl FnOnce() -> T) -> T {
+    call()
 }
 
-// G-5: the entry point of a member, whose work is the closure of its guard call, runs that work in with_faults. A
+/// G-5: the work of an entry point runs with no fault, so an entry point that a callback enters does not see the
+/// faults of the call around it.
+#[cfg(feature = "fault-test")]
+fn shielded<T>(work: impl FnOnce() -> T) -> T {
+    binding_core::fault::Armed::empty().run(work)
+}
+
+#[cfg(not(feature = "fault-test"))]
+fn shielded<T>(work: impl FnOnce() -> T) -> T {
+    work()
+}
+${model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? `
+/// G-5: the items of an iterate, which its entry point collects inside with_faults: the core may reach a fault
+/// injection point while it gives an item.
+fn collected<I: IntoIterator>(items: I) -> Vec<I::Item> {
+    items.into_iter().collect()
+}
+` : ''}`;
+}
+
+// G-5, GN-8a: the core call of an entry point, which runs in with_faults after the arguments are converted and the
+// locks are taken. A call without an argument is passed as the function (a closure that only calls is refused by
+// clippy), and the items of an iterate are collected inside, because the core may reach a point while it iterates.
+export function armedCall(model: Model, fn: Fn, call: string): string {
+  if (model.faults.length === 0) return call;
+  const member = JSON.stringify(fn.member.id);
+  if (fn.kind === 'iterate') return `with_faults(${member}, || collected(${call}))`;
+  return call === `${fn.corePath}()` ? `with_faults(${member}, ${fn.corePath})` : `with_faults(${member}, || ${call})`;
+}
+
+// G-5: the entry point of a member, whose work is the closure of its guard call, runs that work in shielded. A
 // member with two entry points (the keys and the pairs of an iterate) has two guard calls.
 export function withFaults(model: Model, fn: Fn, text: string): string {
   if (model.faults.length === 0) return text;
   const guard = /guard\((py, )?\|\| /;
-  const open = `$&with_faults(${JSON.stringify(fn.member.id)}, || `;
+  const open = '$&shielded(|| ';
   const lines = text.split('\n');
   let found = 0;
   for (const [at, line] of lines.entries()) {

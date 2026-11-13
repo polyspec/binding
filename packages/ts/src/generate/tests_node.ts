@@ -249,7 +249,9 @@ test('B-5c: ${langName('node', test.object.unit.name, 'class')} refuses a poison
   for (const test of held.busy) {
     out.push(`
 test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', test.fn.member.name, 'callable')} refuses the instance at two places', () => {
-  const held = ${test.instance};${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n  ${test.after};`}
+  const held = ${test.instance};${test.armed === undefined ? '' : `\n  const armed = addon().__armFaults(${jsString(test.fn.member.id)}, ${jsString(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n  ${test.after};`}${test.armed === undefined ? '' : `
+  // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
+  assert.deepEqual(addon().__faultLeft(armed), []);`}
 });`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.

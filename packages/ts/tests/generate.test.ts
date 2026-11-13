@@ -765,10 +765,10 @@ test('a class with a write place holds its value in a tried lock, which each cal
     assert.match(lib, /sync::<polyspec_sample::Tag>\(\);/, lang);
     assert.doesNotMatch(lib, /sync::<polyspec_sample::Counter>/, lang);
     // The receiver &mut self writes and &self reads; a parameter of the class reads, and the core borrows the guards.
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let result = polyspec_sample::Counter::add\(&mut receiver, amount\);/, lang);
-    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let result = polyspec_sample::Counter::total\(&receiver\);/, lang);
-    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let \(\): \(\) = polyspec_sample::Counter::absorb\(&mut receiver, &other\);/, lang);
-    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let result = polyspec_sample::shout\(&tag\);/, lang);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(&mut receiver, amount\)\);/, lang);
+    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(&receiver\)\);/, lang);
+    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(&mut receiver, &other\)\);/, lang);
+    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(&tag\)\);/, lang);
     // A value inside another type is read, cloned and released by the conversion in.
     assert.match(lib, /fn in_tag[^\n]*\n(?:[^\n]*\n){1,4}?[^\n]*inner\.read\("Tag", &\[\]\) \{\n\s+Ok\(held\) => Ok\(\(\*held\)\.clone\(\)\),/, lang);
     assert.doesNotMatch(lib, /fn in_counter/, lang);
@@ -1074,19 +1074,32 @@ const pythonTests = 'packages/python/generated/tests/test_generated.py';
 const nodeTests = 'packages/ts/generated/tests/generated.test.mjs';
 const phpTests = 'packages/php-ext/generated/tests/GeneratedTest.php';
 
-test('an entry point runs its work with the faults that a case armed, and the test requires each to fire (G-5)', () => {
+test('an entry point runs its core call with the faults that a case armed, and the test requires each to fire (G-5, GN-8a)', () => {
   const out = sampleWith(() => {});
   for (const path of LIBS) {
     const lib = text(out, path);
     assert.match(lib, /const _: &str = polyspec_sample::fault::READ;\nconst _: &str = polyspec_sample::fault::INTERNAL;/, path);
-    assert.match(lib, /guard\((py, )?\|\| with_faults\("sample\.measure", \|\| \{/, path);
-    assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn with_faults<T>\(member: &str, work: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::take\(member\)\.run\(work\)/, path);
-    // Every entry point of a member takes its arming, the hooks and the iterate too; the poison entry point of B-5c
-    // (GN-5) is no member.
+    assert.match(lib, /guard\((py, )?\|\| shielded\(\|\| \{/, path);
+    assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn with_faults<T>\(member: &str, call: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::take\(member\)\.run\(call\)/, path);
+    assert.match(lib, /#\[cfg\(feature = "fault-test"\)\]\nfn shielded<T>\(work: impl FnOnce\(\) -> T\) -> T \{\n    binding_core::fault::Armed::empty\(\)\.run\(work\)/, path);
+    // The work of every entry point of a member is shielded, the hooks and the iterate too; the poison entry point
+    // of B-5c (GN-5) is no member.
     const members = lib.replace(/\n(?:pub )?fn _?panic_test_held\([\s\S]*?\n\}\n/, '\n');
     assert.notEqual(members, lib, path);
-    assert.equal(members.match(/guard\((py, )?\|\| (?!with_faults|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
+    assert.equal(members.match(/guard\((py, )?\|\| (?!shielded|panic!|binding_core::fault|\{\n        let (id: u64|_value))/g), null, path);
+    // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
+    // taken, so a call that fails before the core leaves it.
+    assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(&mut receiver, &other\)\) \{/, path);
+    // The core call of an iterate is the whole iteration.
+    assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(&receiver\)\)\)/, path);
+    // Each core call is armed for its own member, and none twice.
+    assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
+  // GN-8a: the call that is refused as busy leaves the arming, which the next call of the member takes.
+  assert.match(text(out, pythonTests), /held = pkg\.Counter\(0\)\n {8}armed = _native\._arm_faults\("counter\.draw", "\[\{\\"point\\":\\"sample\.draw\\",\\"kind\\":\\"broken\\"\}\]"\)\n {8}with self\.assertRaises\(pkg\.SampleBusyError\) as caught:\n {12}held\.draw\(held\)\n(?:[^\n]*\n)+? {8}with self\.assertRaises\(pkg\.SampleInternalError\) as caught:\n {12}held\.draw\(pkg\.Counter\(0\)\)\n(?:[^\n]*\n){2} {8}self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
+  assert.match(text(out, nodeTests), /const armed = addon\(\)\.__armFaults\('counter\.draw', [^\n]*\n {2}assert\.throws\(\(\) => held\.draw\(held\), [^\n]*'busy'\);\n(?:[^\n]*\n)+? {2}assert\.throws\(\(\) => held\.draw\(new pkg\.Counter\(0\)\), [^\n]*'internal'\);\n {2}assert\.deepEqual\(addon\(\)\.__faultLeft\(armed\), \[\]\);/);
+  assert.match(text(out, phpTests), /\$armed = \\Polyspec\\Sample\\Internal\\armFaults\("counter\.draw", [^\n]*\n {8}try \{\n {12}\$held->draw\(\$held\);[\s\S]*?\$held->draw\(new \\Polyspec\\Sample\\Counter\(0\)\);[\s\S]*?self::assertSame\(\[\], \\Polyspec\\Sample\\Internal\\faultLeft\(\$armed\)\);/);
   const python = text(out, pythonTests);
   assert.match(python, /arg_0 = "abc"\n        armed = _native\._arm_faults\("sample\.measure", "\[\{\\"point\\":\\"sample\.read\\",\\"kind\\":\\"io\\"\}\]"\)\n        with self\.assertRaises\(pkg\.SampleIoError\) as caught:\n            pkg\.measure\(arg_0\)\n        self\.assertEqual\(_native\._fault_left\(armed\), \[\]\)/);
   assert.match(text(out, nodeTests), /const arg0 = 'abc';\n  const armed = addon\(\)\.__armFaults\('sample\.measure', '\[\{"point":"sample\.read","kind":"io"\}\]'\);\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)/);
@@ -1135,11 +1148,11 @@ test('core.result says whether the core returns a Result, and a return of none i
   const out = sampleWith(() => {});
   for (const path of LIBS) {
     const lib = text(out, path);
-    assert.match(lib, /let result = match polyspec_sample::checked\(&text\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(core_error\(/, path);
-    assert.match(lib, /let \(\): \(\) = polyspec_sample::touch\(&text\);/, path);
+    assert.match(lib, /let result = match with_faults\("sample\.checked", \|\| polyspec_sample::checked\(&text\)\) \{\n\s+Ok\(value\) => value,\n\s+Err\(error\) => return Err\(core_error\(/, path);
+    assert.match(lib, /let \(\): \(\) = with_faults\("sample\.touch", \|\| polyspec_sample::touch\(&text\)\);/, path);
   }
   const plain = sampleWith((c) => { c.units.find((u: any) => u.id === 'sample').members.find((m: any) => m.id === 'sample.checked').core = 'polyspec_sample::checked'; });
-  assert.match(text(plain, LIBS[0]), /let result = polyspec_sample::checked\(&text\);/);
+  assert.match(text(plain, LIBS[0]), /let result = with_faults\("sample\.checked", \|\| polyspec_sample::checked\(&text\)\);/);
   assert.throws(() => sampleWith((c) => {
     c.errors.kinds = [];
     delete c.faults;

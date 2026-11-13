@@ -232,10 +232,14 @@
   (`<바깥>/<안쪽 경로>`, E-1b), code enum을 담은 오류 구조체의 투영 함수.
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
-  포함) 작업을 `with_faults("<member id>", …)` 안에서 실행한다. feature `fault-test`가 켜지면 그 함수는 시험이 이
-  스레드에서 그 member에 장전한 것을 꺼내고(`binding_core::fault::take`), 없으면 빈 장전을 꺼내, 작업 동안 설치한다.
-  꺼지면 작업만 실행한다. 그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback
-  안에서 다시 들어온 진입점은 바깥 장전을 보지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
+  포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature
+  `fault-test`가 켜지면 `with_faults`는 시험이 이 스레드에서 그 member에 장전한 것을 꺼내고
+  (`binding_core::fault::take`), 없으면 빈 장전을 꺼내, 코어 호출 동안 설치한다. `shielded`는 작업 동안 빈 장전을
+  설치한다. 꺼지면 둘 다 받은 것만 실행한다. 장전은 코어 호출에만 걸린다: 진입점은 `with_faults`보다 먼저 인자를
+  변환하고 place의 잠금을 잡는다(GN-6h). 그래서 코어에 닿기 전에 실패한 호출은(거부된 인자, kind `busy`) 장전을 그
+  member의 다음 호출에 남긴다. iterate의 코어 호출은 순회 전체이며, 진입점은 그 항목을 `with_faults` 안에서 모은다.
+  그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback 안에서 다시 들어온
+  진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.
   `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
   동기 작업에만 설치된다.
@@ -374,7 +378,10 @@
   poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
   parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
   가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한 뒤
-  그 인스턴스의 member를 부른다. 거부된 호출은 잠금을 쥐고 있지 않으므로 그 호출은 성공한다. 이 시험들의 인스턴스는 그
+  그 인스턴스의 member를 부른다. 거부된 호출은 잠금을 쥐고 있지 않으므로 그 호출은 성공한다. 그 member의 코어 함수가
+  category 클래스의 kind 하나를 채우는 실패 주입점의 `place`이면, 시험은 거부될 호출보다 먼저 그 member에 그 점을
+  장전하고, 이어 그 인스턴스와 다른 인스턴스로 그 member를 불러 그 점이 채우는 kind와 남은 fault가 없음을 요구한다:
+  거부된 호출은 장전을 가져가지 않았다(GN-8a). 이 시험들의 인스턴스는 그
   class를 돌려주는 첫 생성자나 static member가 placeholder 인자로 만든다.
   실패하는 case가 `faults`를 가지면(CK-22) 그것을 장전하고 실행한다. 시험은 receiver와 모든 인자를 먼저 지역 값으로
   만들고, 그 member에 fault를 장전하고(`_arm_faults`), 곧바로 member를 부르고, 기대한 실패 뒤에 `_fault_left`가

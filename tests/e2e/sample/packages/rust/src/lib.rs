@@ -36,6 +36,9 @@ pub mod fault {
     /// The invariant of `measure`.
     #[doc(hidden)]
     pub const INTERNAL: &str = "sample.internal";
+    /// The invariant of `Counter::draw`.
+    #[doc(hidden)]
+    pub const DRAW: &str = "sample.draw";
 }
 
 impl Error {
@@ -368,6 +371,20 @@ impl Counter {
     /// Adds the total of another counter.
     pub fn absorb(&mut self, other: &Self) {
         self.total = self.total.saturating_add(other.total);
+    }
+
+    /// Adds the total of another counter and gives the new total (GN-8a: a member that takes two locks before a
+    /// core that holds a fault injection point).
+    ///
+    /// # Errors
+    ///
+    /// Kind `internal` when the invariant of the sample is broken.
+    pub fn draw(&mut self, other: &Self) -> Result<u64, Error> {
+        if binding_core::fault::point(fault::DRAW).is_some() {
+            return Err(Error::Internal { detail: String::from("the total of a counter is unknown") });
+        }
+        self.total = self.total.saturating_add(other.total);
+        Ok(self.total)
     }
 }
 

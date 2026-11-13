@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -470,7 +470,7 @@ function iterateRust(model: Model, fn: Fn): string {
     pub fn get_iterator(&self) -> Result<Zval, PhpException> {
         guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut pairs = Vec::new();
-            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})${yields.key === undefined ? '.enumerate()' : ''} {
+            for ${yields.key === undefined ? '(position, item)' : 'item'} in ${armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`)}${yields.key === undefined ? `${model.faults.length === 0 ? '' : '.into_iter()'}.enumerate()` : ''} {
 ${body}
             }
             pairs_iterator(pairs)
@@ -548,7 +548,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     #[php(name = "__toString")]
     pub fn to_string_form(&self) -> Result<String, PhpException> {
         guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
-            Ok(${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')}))
+            Ok(${armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`)})
         })
     }
 `;
@@ -571,7 +571,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
-  const call = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
+  const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`);
   if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {

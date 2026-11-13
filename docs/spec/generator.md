@@ -278,11 +278,16 @@ the design ids are those of the binding design.
   (`<outer>/<inner path>`, E-1b), and the projection function of an error struct that holds a code enum.
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
-  every entry point of a member, a hook and an iterate too, runs its work in `with_faults("<member id>", …)`. With
-  the feature `fault-test` that function takes the arming that a test made for the member on this thread
-  (`binding_core::fault::take`), or an empty one, and installs it while the work runs; without the feature it only
-  runs the work. So the call that makes a receiver or an argument does not take the arming of the member under test,
-  and an entry point that a callback enters does not see the arming around it. `_arm_faults(member, faults)` takes
+  every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`
+  and its whole work in `shielded(…)`. With the feature `fault-test`, `with_faults` takes the arming that a test
+  made for the member on this thread (`binding_core::fault::take`), or an empty one, and installs it while the core
+  call runs, and `shielded` installs an empty arming while the work runs; without the feature each only runs what it
+  is given. An arming applies to the core call alone: the entry point converts its arguments and takes the locks of
+  its places (GN-6h) before `with_faults`, so a call that fails before the core, with a refused argument or with
+  kind `busy`, leaves the arming for the next call of the member, and the core call of an iterate is the whole
+  iteration, whose items the entry point collects inside `with_faults`. So the call that makes a receiver or an
+  argument does not take the arming of the member under test, and an entry point that a callback enters, the
+  conversion of its arguments too, does not see the arming around it. `_arm_faults(member, faults)` takes
   the member id and the JSON list of a case's `faults` and gives the id of the arming; a list that is not armed, such
   as one with an errno symbol that the target does not have, is kind `internal` with the reason. `_fault_left(id)`
   gives the names of the points whose fault did not fire. A member that waits is not generated yet (GN-1), so the
@@ -453,7 +458,10 @@ the design ids are those of the binding design.
   from a member that takes the instance as its receiver and, when a member takes the class as a parameter, from that
   member with the instance as the argument; for every member with a write receiver that takes its own class as a
   parameter, a test passes the instance as that argument and requires kind `busy` of the busy class, and then calls a member on
-  the instance, which works because the refused call holds no lock. The instance of these tests is made by the first
+  the instance, which works because the refused call holds no lock. Where the core function of that member is the
+  `place` of a fault injection point that fills one kind of a category class, the test arms the point for the member
+  before the refused call, then calls the member with the instance and another one, and requires the kind that the
+  point fills and no fault left: the refused call did not take the arming (GN-8a). The instance of these tests is made by the first
   constructor or static member of the class that returns it, with placeholder arguments.
   A case that raises and has `faults` (CK-22) is run with them armed: the test makes the receiver and every argument
   as local values first, arms the faults for the member (`_arm_faults`), calls the member at once, and requires

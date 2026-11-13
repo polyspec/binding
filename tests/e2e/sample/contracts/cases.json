@@ -126,6 +126,7 @@
     }
   ],
   "counter_absorb": [],
+  "counter_draw": [],
   "ledger_new": [
     {
       "id": "a_ledger_starts_with_a_key",

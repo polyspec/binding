@@ -1,9 +1,10 @@
 // The B-5c tests of the generated test modules (G-5, GN-13), as the calls that each language writes in its own form:
 // for every class with a write place, the calls that must fail with kind internal after the poison entry point ran on
 // an instance; for every member with a write receiver that takes its own class as a parameter, the call that takes the
-// instance at both places and must fail with kind busy.
+// instance at both places and must fail with kind busy. Where the core function of such a member holds a fault
+// injection point, the test arms it before the refused call: the next call takes the arming (GN-8a).
 
-import { type Arg, type Fn, type Model, type ObjectClass, heldParam, places, unitOf } from './model.ts';
+import { type Arg, type Fn, type Model, type ObjectClass, heldParam, kindText, places, pointName, unitOf } from './model.ts';
 import { type Context, callArgs, placeholder } from './samples.ts';
 
 export interface PoisonTest {
@@ -23,6 +24,9 @@ export interface BusyTest {
   call: string;
   // A call on the instance after the refused call, which must work: the refused call holds no lock.
   after: string | undefined;
+  // GN-8a: the faults that the test arms for the member before the refused call, and the call that takes them: the
+  // same receiver with another instance, which fails with the kind that the point fills.
+  armed: { faults: string; again: string; kind: string; category: string } | undefined;
 }
 
 // T-5: whether the language can make an instance of the class: a constructor or a static member that returns it.
@@ -65,7 +69,14 @@ export function heldTests(
     for (const fn of object.members) {
       const arg = takes(fn, object);
       if (arg === undefined || !places(model, fn).some((p) => p.param === undefined && p.write)) continue;
-      busy.push({ fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held) });
+      // A point that fills one kind, whose class is the class of its category, by an injection that needs no value.
+      const point = model.faults.find((p) => p.place === fn.corePath && p.fills.length === 1 && p.inject.some((i) => i !== 'short'));
+      const filled = point === undefined ? undefined : model.kinds.find((k) => k.unit === undefined && kindText(k.variant) === point.fills[0]);
+      const inject = point?.inject.find((i) => i !== 'short');
+      const armed = point === undefined || filled === undefined || inject === undefined
+        ? undefined
+        : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held), kind: kindText(filled.variant), category: filled.category };
+      busy.push({ fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed });
     }
   }
   return { poison, busy };
