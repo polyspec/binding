@@ -440,13 +440,13 @@ function goCallable(scope: GoScope, fn: Fn): string {
   lines.push('\tenc := binding.NewWriter()');
   if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
   for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
-  lines.push(`\tout, err := binding.${bindingFn(fn)}(enc.Done())`);
+  lines.push(`\tdec, err := binding.${bindingFn(fn)}(enc.Done())`);
   // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
   // the call.
   const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name, scope.model))];
   for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
   if (alive.length > 0) scope.usesRuntime = true;
-  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}', '\tdec := binding.NewReader(out)');
+  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}');
   if (fn.kind === 'iterate') {
     // N-4 iterate: the items are converted when the call returns, and the iterator gives them in order.
     const yields = fn.yields ?? { value: 'none' };
@@ -837,7 +837,7 @@ function goBinding(model: Model): string {
   const fns = callablesOf(model);
   const calls = fns.map((fn) => `
 // ${bindingFn(fn)} calls ${cSymbol(model, fn)} with the encoded arguments (B-8).
-func ${bindingFn(fn)}(args []byte) ([]byte, error) {
+func ${bindingFn(fn)}(args []byte) (*Reader, error) {
 	return invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${cSymbol(model, fn)}(pointer, length, result)
 	}, args)
@@ -893,9 +893,27 @@ ${std.map((s) => `\t"${s}"`).join('\n')}
 // entry is a function of the C ABI: the encoded arguments in, the encoded result or failure out, 0 or 1 back.
 type entry func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t
 
+${back ? `// readerOf reads a buffer that Rust gave: first the cgo.Handle of each func that the buffer gives, whose func it takes
+// and whose handle it deletes at once, so no handle outlives the buffer whatever the decoding then finds (GN-6u).
+func readerOf(bytes []byte) *Reader {
+	r := &Reader{bytes: bytes}
+	count := r.Uint()
+	for index := uint64(0); index < count && !r.failed; index++ {
+		handle := cgo.Handle(uintptr(r.Uint()))
+		if r.failed {
+			break
+		}
+		r.funcs = append(r.funcs, handle.Value())
+		handle.Delete()
+	}
+	return r
+}
+` : `// readerOf reads a buffer that Rust gave, which gives no func (GN-6u).
+func readerOf(bytes []byte) *Reader { return NewReader(bytes) }
+`}
 // invoke runs an entry with the encoded arguments and copies its result out of the buffer that Rust allocated, which
-// it then frees. The call returns when the core returns (wait none).
-func invoke(fn entry, args []byte) ([]byte, error) {
+// it then frees, and reads it. The call returns when the core returns (wait none).
+func invoke(fn entry, args []byte) (*Reader, error) {
 	var pointer *C.uint8_t
 	if len(args) > 0 {
 		pointer = (*C.uint8_t)(unsafe.Pointer(&args[0]))
@@ -908,10 +926,11 @@ func invoke(fn entry, args []byte) ([]byte, error) {
 		copy(out, unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), int(result.len)))
 	}
 	C.${p}__free(result)
+	r := readerOf(out)
 	if status != 0 {
-		return nil, decodeFailure(out)
+		return nil, decodeFailure(r)
 	}
-	return out, nil
+	return r, nil
 }
 ${calls}${releases}${model.objects.length === 0 ? '' : `
 // Ref is the handle of the value of an instance of a class unit (T-5), which the release function frees when the Go
@@ -979,6 +998,8 @@ type Reader struct {
 	bytes   []byte
 	failed  bool
 	problem string
+	// funcs are the funcs of the cgo.Handle list of a buffer that Rust gave, by their indexes (GN-6u).
+	funcs []any
 }
 
 // NewReader reads an encoded result.
@@ -1240,8 +1261,7 @@ func finished(err error, properties *Reader) error {
 // decodeFailure reads an encoded failure: the category, the message, the kind, the status, the errno, the class of
 // the kind with the properties of its unit (E-2, I-3), and the error that a Go callback returned (U-3), which the call
 // returns unchanged.
-func decodeFailure(bytes []byte) error {
-	r := NewReader(bytes)
+func decodeFailure(r *Reader) error {
 	head := r.take(1)
 	f := failure{message: r.Text(), kind: r.Text()}
 	if r.Tag() {
@@ -1252,6 +1272,7 @@ func decodeFailure(bytes []byte) error {
 	}
 	class := r.take(1)
 	properties := NewReader(r.Bytes())
+	properties.funcs = r.funcs
 	var call, index uint64
 	present := r.Tag()
 	if present {
@@ -1420,7 +1441,7 @@ func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) 
 		return c.raise(Malformed())
 	}
 	enc := NewWriter()
-	if err := c.callbacks[callback-1](c, member, NewReader(args), enc); err != nil {
+	if err := c.callbacks[callback-1](c, member, readerOf(args), enc); err != nil {
 		return c.raise(err)
 	}
 	return 0, enc.Done()
@@ -1503,8 +1524,9 @@ type Token struct{}
 const GO_VALUE = `
 // Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
 // 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], 10 an
-// instance of a class by the number of the class and its handle, 11 the func of a Native by a new cgo.Handle, which
-// it deletes (GN-6u), and 255 a value that the out rows give no Go form, which fails Finish with kind internal.
+// instance of a class by the number of the class and its handle, 11 the func of a Native by the index of its
+// cgo.Handle in the list of the buffer, which readerOf deleted (GN-6u), and 255 a value that the out rows give no Go
+// form, which fails Finish with kind internal.
 func (r *Reader) Value() any {
 	return r.ValueWith(nil)
 }
@@ -1593,13 +1615,12 @@ func (r *Reader) value(made *[]any, instance func(class uint64, handle uint64) a
 		}
 		return made
 	case 11:
-		handle := cgo.Handle(uintptr(r.Uint()))
-		if r.failed {
+		index := r.Uint()
+		if r.failed || index >= uint64(len(r.funcs)) {
+			r.failed = true
 			return nil
 		}
-		value := handle.Value()
-		handle.Delete()
-		return value
+		return r.funcs[index]
 	case 255:
 		r.fail(r.Text())
 		return nil
@@ -1672,13 +1693,12 @@ import "C"
 // NativeCount gives the count of the live Natives of the static library, each of which holds a cgo.Handle (GN-6u), or
 // the failure of the call.
 func NativeCount() (uint64, error) {
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${p}__native_count(pointer, length, result)
 	}, nil)
 	if err != nil {
 		return 0, err
 	}
-	dec := NewReader(out)
 	count := dec.Uint()
 	if err := dec.Finish(); err != nil {
 		return 0, err
@@ -1709,13 +1729,12 @@ func ArmFaults(member, faults string) (uint64, error) {
 	enc := NewWriter()
 	enc.Text(member)
 	enc.Text(faults)
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${p}__arm_faults(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return 0, err
 	}
-	dec := NewReader(out)
 	id := dec.Uint()
 	return id, dec.Finish()
 }
@@ -1724,13 +1743,12 @@ func ArmFaults(member, faults string) (uint64, error) {
 func FaultLeft(id uint64) ([]string, error) {
 	enc := NewWriter()
 	enc.Uint(id)
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${p}__fault_left(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return nil, err
 	}
-	dec := NewReader(out)
 	left := make([]string, dec.Len())
 	for at := range left {
 		left[at] = dec.Text()
@@ -1768,13 +1786,12 @@ func echo${goName(symbol.slice(`${p}__echo_`.length).split('_'))}(${params}) (${
 	var zero ${result}
 	enc := NewWriter()
 ${encode.map((l) => `	${l}`).join('\n')}
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${symbol}(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return zero, err
 	}
-	dec := NewReader(out)
 ${decode.map((l) => `	${l}`).join('\n')}
 	if err := dec.Finish(); err != nil {
 		return zero, err

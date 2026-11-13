@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Go deleted the `cgo.Handle` of a func that a value gave only when its decoder reached the node of the func, so a
+  decoding that failed before it (a value without a Go form, a malformed node) or a result that the caller did not
+  decode kept the handle and its func. Every buffer that Rust gives Go now starts with the list of the handles that it
+  gives, the node of a func is the index of its handle in that list, and `invoke` and the arguments of a callback read
+  the list first, take each func and delete each handle before anything else is decoded (GN-6u).
 - In Node, a `Native` dropped on another thread was released only at the next entry point of its owner, so a
   program that made no further call kept the reference until the env ended. The owner now makes an unref threadsafe
   function with its table, which a drop on another thread calls under the lock of the owners, and which empties the

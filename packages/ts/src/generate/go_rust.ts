@@ -778,6 +778,32 @@ impl Drop for GoNative {
 /// GN-6u: the count of the live Natives, which the entry point of native-count-test gives.
 static NATIVE_COUNT: AtomicU64 = AtomicU64::new(0);
 
+thread_local! {
+    /// GN-6u: the cgo.Handle of each func that the buffer being written gives Go, in the order of their indexes.
+    static GIVEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+}
+
+/// GN-6u: gives Go a new cgo.Handle of a func in the buffer being written, as its index in the list of the buffer.
+fn give(handle: u64) -> usize {
+    GIVEN.with_borrow_mut(|given| {
+        given.push(handle);
+        given.len() - 1
+    })
+}
+
+/// GN-6u: a buffer for Go: the list of the handles that it gives, which Go deletes before it decodes anything, then
+/// its bytes.
+fn given_first(bytes: Vec<u8>) -> Vec<u8> {
+    let given = GIVEN.with_borrow_mut(std::mem::take);
+    let mut output = Vec::new();
+    write_length(&mut output, given.len());
+    for handle in given {
+        output.extend_from_slice(&handle.to_le_bytes());
+    }
+    output.extend_from_slice(&bytes);
+    output
+}
+
 /// GN-6u: the func of a cgo.Handle that package binding made, as a Native.
 fn go_native(handle: u64) -> Native {
     NATIVE_COUNT.fetch_add(1, Ordering::SeqCst);
@@ -837,7 +863,9 @@ impl HostValues for GoHost {
 /// the error that the Go method returned.
 fn go_callback(call: u64, callback: u64, member: u32, args: &[u8]) -> (i32, Vec<u8>) {
     let mut buffer = Buffer { ptr: std::ptr::null_mut(), len: 0, cap: 0 };
-    // SAFETY: the call is alive while the entry point that named it runs, args is a slice and the buffer is writable.
+${model.aliases.length === 0 ? '' : `    // GN-6u: the arguments give the handles of their funcs first.
+    let args = given_first(args.to_vec());
+`}    // SAFETY: the call is alive while the entry point that named it runs, args is a slice and the buffer is writable.
     let status = unsafe { ${p}__go_callback(call, callback, member, args.as_ptr(), args.len(), &mut buffer) };
     (status, taken(buffer))
 }
@@ -1012,7 +1040,7 @@ function goBuiltin(model: Model, alias: ValueAlias, form: string, kind: string):
             Some(object) => {
                 output.push(11);
                 // SAFETY: the handle is the cgo.Handle of the Native, which is alive while the Native is.
-                out_uint(output, unsafe { ${prefix(model)}__go_native(object.handle) });
+                write_length(output, give(unsafe { ${prefix(model)}__go_native(object.handle) }));
             }
             None => out_no_form(output, "GN-6u: a native value that no Go func entered as"),
         }`;
@@ -1283,7 +1311,7 @@ export function libRust(model: Model): string {
 // in a buffer that Go copies and frees with ${prefix(model)}__free.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(all) ? ', NumberType' : ''}${/\bTextCause\b/.test(all) ? ', TextCause' : ''}${hostTypes.map((t) => `, ${t}`).join('')}};
-${/Borrow</.test(all) ? 'use std::borrow::Borrow;\n' : ''}${usesMap ? 'use std::collections::BTreeMap;\n' : ''}use std::mem::ManuallyDrop;
+${/Borrow</.test(all) ? 'use std::borrow::Borrow;\n' : ''}${model.aliases.length > 0 ? 'use std::cell::RefCell;\n' : ''}${usesMap ? 'use std::collections::BTreeMap;\n' : ''}use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length > 0 ? 'use std::sync::Arc;\n' : ''}${model.callbacks.length > 0 || model.aliases.length > 0 ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}${usesMutex ? 'use std::sync::{Mutex, MutexGuard};\n' : ''}
 // U-5: the constants of the contract are the constants of the core.
@@ -1393,9 +1421,11 @@ ${categoryIndex}
 ///
 /// \`result\` points to a writable \`Buffer\`.
 unsafe fn respond(result: *mut Buffer, outcome: Result<Vec<u8>, Fail>) -> i32 {
-    let (status, bytes) = match outcome {
+    let (status, bytes) = match outcome {${model.aliases.length === 0 ? `
         Ok(bytes) => (0, bytes),
-        Err(fail) => (1, encode_fail(fail)),
+        Err(fail) => (1, encode_fail(fail)),` : `
+        Ok(bytes) => (0, given_first(bytes)),
+        Err(fail) => (1, given_first(encode_fail(fail))),`}
     };
     let mut bytes = ManuallyDrop::new(bytes);
     let buffer = Buffer { ptr: bytes.as_mut_ptr(), len: bytes.len(), cap: bytes.capacity() };

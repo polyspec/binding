@@ -830,9 +830,9 @@ test('a language object that a core may keep enters as a Native, which each targ
   const goBinding = [...out].filter(([path]) => path.startsWith('packages/go/') && path.endsWith('.go')).map(([, bytes]) => String(bytes)).join('\n');
   assert.match(goBinding, /case reflect\.Func:\n\t\tenc\.bytes = append\(enc\.bytes, 9\)\n\t\tenc\.Uint\(uint64\(cgo\.NewHandle\(value\.Interface\(\)\)\)\)/);
   assert.match(goBinding, /\/\/export polyspec_sample__go_release\nfunc polyspec_sample__go_release\(handle C\.uint64_t\) \{\n\tcgo\.Handle\(uintptr\(handle\)\)\.Delete\(\)\n\}/);
-  // The bytes of an out outlive the Native, so they carry a new cgo.Handle of the func, which the decoder deletes.
   assert.match(goBinding, /func polyspec_sample__go_native\(handle C\.uint64_t\) C\.uint64_t \{\n\treturn C\.uint64_t\(cgo\.NewHandle\(cgo\.Handle\(uintptr\(handle\)\)\.Value\(\)\)\)\n\}/);
-  assert.match(goBinding, /case 11:\n\t\thandle := cgo\.Handle\(uintptr\(r\.Uint\(\)\)\)\n(?:[^\n]*\n){3}\t\tvalue := handle\.Value\(\)\n\t\thandle\.Delete\(\)/);
+  // The bytes of an out outlive the Native, so they give a new cgo.Handle of the func, which Go deletes before it decodes.
+  assert.match(goBinding, /case 11:\n\t\tindex := r\.Uint\(\)\n(?:[^\n]*\n){4}\t\treturn r\.funcs\[index\]/);
   for (const [path, lib] of [['python', python], ['wasm', wasm], ['php', php], ['go', go]] as const) assert.doesNotMatch(lib, /fn native_handle\(/, path);
 });
 
@@ -863,7 +863,7 @@ test('Go deletes the cgo.Handle of every func that a buffer gives before it deco
   assert.match(lib, /static GIVEN: RefCell<Vec<u64>> = const \{ RefCell::new\(Vec::new\(\)\) \};/);
   assert.match(lib, /fn given_first\(bytes: Vec<u8>\) -> Vec<u8> \{/);
   assert.match(lib, /Ok\(bytes\) => \(0, given_first\(bytes\)\),\n\s+Err\(fail\) => \(1, given_first\(encode_fail\(fail\)\)\),/);
-  assert.match(lib, /output\.push\(11\);\n\s+out_uint\(output, give\(/);
+  assert.match(lib, /output\.push\(11\);\n\s+\/\/ SAFETY: [^\n]*\n\s+write_length\(output, give\(/);
   const binding = text(out, 'packages/go/internal/binding/zz_generated_binding.go');
   // Go takes the func of each handle and deletes the handle before it decodes anything else.
   assert.match(binding, /func readerOf\(bytes \[\]byte\) \*Reader \{\n\tr := &Reader\{bytes: bytes\}\n\tcount := r\.Uint\(\)\n/);

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Go는 값이 준 func의 `cgo.Handle`을 디코더가 그 func의 node에 닿을 때만 지웠다. 그래서 그 앞에서 실패한 디코딩(Go
+  형태가 없는 값, 잘못된 node)이나 호출자가 디코딩하지 않은 결과는 handle과 그 func를 남겼다. 이제 Rust가 Go에 주는 모든
+  버퍼는 그 버퍼가 주는 handle의 목록으로 시작하고, func의 node는 그 목록 안 handle의 위치다. `invoke`와 callback의 인자는
+  다른 무엇을 디코딩하기 전에 목록을 먼저 읽어 func를 꺼내고 handle을 모두 지운다(GN-6u).
 - Node에서 다른 스레드가 drop한 `Native`는 그 owner의 다음 진입점에서야 해제되어, 더 부르지 않는 프로그램은 env가 끝날
   때까지 참조를 가졌다. 이제 owner는 표를 만들 때 unref한 threadsafe function을 만든다. 다른 스레드의 drop은 owner들의 lock
   안에서 그것을 부르고, 그 함수는 owner 스레드에서 대기열을 비운다. env cleanup hook은 generation을 올린 뒤 같은 lock 안에서
