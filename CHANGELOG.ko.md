@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 128fe2e62de3d794c0ff16e168154ee8ddd7f24ac0e0cdeacd1dade1d9879952 -->
+<!-- source-sha256: e786453152b17150719db938eacb08c4a62130bf9c4508814192ced601c78eb8 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/plot`처럼 class가 variant나 generated interface의 것뿐인 계약의 PHP crate가 `ClassFlags`의 import 없이
+  `ClassFlags::Interface`와 `ClassFlags::Final`을 적어서 컴파일되지 않았다. import를 record, class, callback, final error
+  unit에 대해서만 썼기 때문이다. 이제 variant와 generated interface에 대해서도 쓴다. 같은 계약의 Go package는 optional
+  record의 field를 `*case0.End.X`, 곧 field의 pointer로 encode했고 `go vet`이 int64에 대해 거부했다. 이제 pointer를 거쳐
+  field를 고른다(`(*case0.End).X`). `make test-ts`로 검증했다: 새 시험 둘이 변경 전에는 실패했다. 실행하지 않은 것:
+  `tests/e2e/plot`의 `make e2e`로 도는 컴파일러.
 - Node의 모든 record와 variant의 in 변환이 env를 받았고, env를 읽지 않는 unit도 그랬다. 그래서 `tests/e2e/variants`의
   `figure`처럼 자기 자신을 담는 variant의 변환은 자기 호출만 쓰는 parameter를 가졌고, 생성된 Node crate는 lint
   `clippy::only_used_in_recursion`으로 실패했다. 이제 record나 variant의 변환은 그 field가 env를 직접 읽거나 다른 unit의

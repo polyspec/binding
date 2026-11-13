@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 7e5c605b7816bf04c3257cfcb65d854f2a13d24a4801521259c26bfb616213bd -->
+<!-- source-sha256: 2e6b84e6896ea856d0e3e651107b2adf8d00d737f9b40afc5de4246f1d3079c1 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -40,3 +40,4 @@
 | B2.122 | 검사가 이 계약과 계약이 이름하는 라이브러리가 함께 가진 C symbol을 거부한다(CK-79, GN-17). 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 둘 다 `polyspec_a_b_c`이고, 두 정적 라이브러리를 링크하는 Go 프로그램은 symbol이 두 번 정의되어 실패한다. 기대하는 것은 그 symbol과 두 member를 적는 finding이다 | `packages/ts/src/check.ts`, `packages/ts/tests/contract-check.test.ts`, `docs/spec/contract-check.md` | `make test-ts` | [o] |
 | B2.123 | 검사가 target `go`에서 root module의 함수 `buffer`를 거부한다(CK-80, GN-17). 그 symbol `<prefix>_buffer`는 C ABI 결과의 C 타입이어서 cgo preamble이 한 이름을 타입과 함수로 선언한다. 기대하는 것은 그 함수와 symbol을 적는 finding이다 | `packages/ts/src/check.ts`, `packages/ts/tests/contract-check.test.ts`, `docs/spec/contract-check.md` | `make test-ts` | [o] |
 | B2.124 | 검사가 package `binding`의 함수가 그 package의 선언과 같은 root module 함수를 거부한다(CK-81, GN-17). 함수 `new_writer`는 package `binding`이 스스로 선언하는 `NewWriter`이고, 함수 `release_tag`는 class `tag`의 release인 `ReleaseTag`여서 package가 한 이름을 두 번 선언한다. 기대하는 것은 그 함수와 선언을 적는 finding이다 | `packages/ts/src/check.ts`, `packages/ts/tests/contract-check.test.ts`, `docs/spec/contract-check.md` | `make test-ts` | [o] |
+| B2.125 | 서로 이름하지 않는 두 라이브러리가 같은 C symbol을 갖지 않는다(CK-79, GN-17). CK-79는 계약을 자기가 읽는 계약과 비교하므로, 라이브러리 `a`의 함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 각 계약의 검사를 통과하고, 두 정적 라이브러리를 링크하는 Go 프로그램은 `polyspec_a_b_c`가 두 번 정의되어 실패한다. 기대하는 것은 symbol의 규칙이나 두 라이브러리를 함께 보는 검사다 | `docs/spec/generator.md`(GN-17), `packages/ts/src/check.ts` 또는 `packages/ts/src/generate/go_rust.ts`, 그 시험 | `make test-ts` | [ ] |

@@ -1437,7 +1437,7 @@ use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
+use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 || model.variants.length > 0 || model.interfaces.length > 0 || model.errorUnits.some((u) => u.unit.final === true) ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};

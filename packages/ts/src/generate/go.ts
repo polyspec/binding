@@ -426,7 +426,9 @@ function goEncode(scope: GoScope, type: Type, expr: string, indent: number, dept
   }
   const unit = unitOf(scope.model, type);
   if (unit?.kind === 'enum') return [`${t}enc.Text(string(${expr}))`];
-  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goEncode(scope, fieldWire(f), `${expr}.${goName(f.name)}`, indent, depth));
+  // A field of what a pointer points to is selected through the pointer in parentheses: `*value.Field` is the pointer of
+  // the field.
+  if (unit?.kind === 'record') return (unit.fields ?? []).flatMap((f) => goEncode(scope, fieldWire(f), `${expr.startsWith('*') ? `(${expr})` : expr}.${goName(f.name)}`, indent, depth));
   // T-9, GN-6v: a variant, which may hold itself, is encoded by the function of its package.
   const variant = variantOf(scope.model, type);
   // A variant that holds a value alias or a callback passes the call of the member on (GN-6v).

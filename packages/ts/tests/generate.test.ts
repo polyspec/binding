@@ -2875,6 +2875,32 @@ const variants = (change: (contract: any) => void = () => undefined, targets?: I
   return generate({ contract, version: '0.0.0', coreLib: 'polyspec_variants', caseFiles, ...(targets === undefined ? {} : { targets }) });
 };
 
+test('the PHP crate of a contract whose only classes are those of a variant imports ClassFlags, which they name (T-9, GN-6v)', () => {
+  // plot has a variant and no record, class or callback of its own: the interface of the variant and the classes of its
+  // cases name ClassFlags.
+  const { contract, caseFiles, foreign } = plotSample();
+  assert.deepEqual(contract.units.filter((u: any) => ['record', 'class', 'interface'].includes(u.kind)).map((u: any) => u.id), []);
+  const php = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /\.flags\(ClassFlags::Interface\)/);
+  assert.match(php, /\.flags\(ClassFlags::Final\)/);
+  assert.match(php, /\nuse ext_php_rs::flags::\{[^}\n]*\bClassFlags\b[^}\n]*\};\n/);
+  // A crate that names no flag of a class imports none, which the lints would deny as unused.
+  const sample = text(generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/functions/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_functions', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/functions/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.equal(/\bClassFlags::/.test(sample), /\nuse ext_php_rs::flags::\{[^}\n]*\bClassFlags\b/.test(sample));
+});
+
+test('Go encodes the fields of an optional record through the pointer, not a pointer of a field (T-4, GN-6v, GN-6c)', () => {
+  // The case line of the variant mark of plot holds end: optional<point of points>. `*case0.End.X` reads the field X
+  // of the pointer and takes what it points to, which Go refuses for an int64.
+  const { contract, caseFiles, foreign } = plotSample();
+  const go = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['go'] }), 'packages/go/zz_generated_plot.go');
+  assert.match(go, /\n\t\t\tenc\.Tag\(true\)\n\t\t\tenc\.Int\(\(\*case0\.End\)\.X\)\n\t\t\tenc\.Int\(\(\*case0\.End\)\.Y\)\n/);
+  // No file of the Go package takes the pointer of a selected field or of a call.
+  for (const [path, bytes] of generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['go'] })) {
+    if (path.endsWith('.go')) assert.doesNotMatch(String(bytes), /[(, ]\*[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\.[A-Za-z_][A-Za-z0-9_]*[),(]/, path);
+  }
+});
+
 // The conversions of a generated crate, `in_<unit>` and `out_<unit>`, whose parameter `env` or `py` only their own call
 // uses: the lints deny such a parameter (clippy only_used_in_recursion).
 function onlyInRecursion(rust: string): string[] {

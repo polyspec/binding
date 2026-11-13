@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The PHP crate of a contract whose only classes are those of a variant or of a generated interface, such as
+  `tests/e2e/plot`, named `ClassFlags::Interface` and `ClassFlags::Final` without the import of `ClassFlags`, so it
+  did not compile: the import was written for a record, a class, a callback or a final error unit alone. It is now
+  written for a variant and a generated interface too. The Go package of the same contract encoded the fields of an
+  optional record as `*case0.End.X`, the pointer of a field, which `go vet` refuses for an int64; it now selects the
+  field through the pointer, `(*case0.End).X`. Verified by `make test-ts`: the two new tests failed before the change.
+  Not run: the compilers, by `make e2e` of `tests/e2e/plot`.
 - The Node conversion in of every record and variant took the env, also of a unit that reads none, so the conversion
   of a variant that holds itself, such as `figure` of `tests/e2e/variants`, had a parameter that only its own call
   used, and the generated Node crate failed the lint `clippy::only_used_in_recursion`. The conversion of a record or a

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 9315ac14682b2bcf2c9cf4c5af9d0e1cfcbc2d6bdd8d00cbb6032da73024a931 -->
+<!-- source-sha256: c1986bbac09885618c7669a497684d4a9e00a9cf46759cdcd4f926395644b35a -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -208,7 +208,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   라이브러리의 C symbol이 아니다. symbol의 접두는 `polyspec_<library>`이고 그 뒤에 밑줄 하나가 오므로, 라이브러리 `a`의
   함수 `b_c`와 라이브러리 `a_b`의 함수 `c`는 둘 다 `polyspec_a_b_c`이며, Go 프로그램은 두 정적 라이브러리를 함께
   링크한다. finding은 그 symbol과 이 계약의 member, 다른 라이브러리의 member, 그리고 해결 방법을 적는다: 둘 중 하나의
-  이름을 바꾼다.
+  이름을 바꾼다. 이 검사는 이 계약을 자기가 읽는 계약, 곧 계약이 이름하는 라이브러리와 그 라이브러리가 이름하는
+  라이브러리의 계약과 비교한다. 서로 이름하지 않는 두 라이브러리는 보지 못한다: 둘을 함께 링크하는 Go 프로그램은 어느
+  계약의 검사도 받지 않는다(구현되지 않음, task B2.125).
 - **CK-80** C ABI의 C 타입 이름을 가진 함수(생성기 GN-17): target `go`에서 root module의 어떤 함수도 이름이 `buffer`가
   아니다. 그 symbol `<prefix>_buffer`가 C ABI의 모든 호출 결과의 C 타입이기 때문이다. finding은 그 함수와 symbol을
   적는다.
