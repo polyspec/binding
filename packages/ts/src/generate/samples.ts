@@ -270,6 +270,8 @@ export function callArgs(model: Model, ctx: Context, fn: Fn, value: (arg: Arg) =
   if (fn.record === undefined) return positional.join(', ');
   if (ctx.lang === 'node') {
     const object = fields.map((f) => `${langName('node', f.arg.name, 'variable')}: ${f.text}`).join(', ');
+    // U-2 {empty: "object"}: a record without a field that is given is left out, when it may be.
+    if (object === '' && fn.record.param.default !== undefined) return positional.join(', ');
     return [...positional, object === '' ? '{}' : `{ ${object} }`].join(', ');
   }
   return [...positional, ...fields.map((f) => name(f.arg, f.text))].join(', ');
@@ -510,7 +512,8 @@ function argsOf(fn: Fn, record: Record<string, unknown>): Map<Arg, unknown> | un
   for (const arg of fn.args) {
     const snake = langName('python', arg.name, 'variable');
     const holderKey = arg.field && fn.record !== undefined ? langName('python', fn.record.param.name, 'variable') : undefined;
-    const holder = holderKey === undefined ? record : record[holderKey];
+    // U-2 {empty: "object"}: a case without the key of a record that may be left out leaves out each of its fields.
+    const holder = holderKey === undefined ? record : !(holderKey in record) && fn.record?.param.default !== undefined ? {} : record[holderKey];
     if (typeof holder !== 'object' || holder === null) return undefined;
     // U-2: a case that has no key of an argument with a default leaves it out.
     if (!(snake in holder)) {

@@ -9,6 +9,13 @@
   registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
   WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
   `errors`, so the end-to-end check raises it through each target.
+- A record parameter with the default `{empty: "object"}` was refused for every target ("a default of a record
+  parameter is not generated yet"), so a contract with one, such as `parse(source, options = {})`, generated no
+  target. Such a parameter is generated when every field of the record has a default: the core takes the record with
+  every field `None`, Python and PHP leave out the keywords and named arguments of the fields, and Node and WASM take
+  the options record as a trailing argument that may be missing or `undefined`; a record with a field without a
+  default is refused by name (GN-6i). `tests/e2e/shapes` has the member `shapes.wrap` of this form. Verified by
+  `npm test` in `packages/ts` and `make e2e` of `tests/e2e/shapes`.
 - The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
   of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
   with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`

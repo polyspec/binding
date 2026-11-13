@@ -20,6 +20,12 @@ pub const DEFAULT_SEPARATOR: &str = ",";
 /// Whether `frame` makes the text upper case when the caller does not say (T-4: a `{literal}` field default).
 pub const DEFAULT_UPPER: bool = false;
 
+/// What `wrap` puts before the text when the caller does not say (U-2: a field of a record that may be left out).
+pub const DEFAULT_LEFT: &str = "[";
+
+/// What `wrap` puts after the text when the caller does not say.
+pub const DEFAULT_RIGHT: &str = "]";
+
 /// The most texts that `repeat` joins.
 const MOST_TIMES: u64 = 1000;
 
@@ -145,6 +151,30 @@ pub fn frame(text: &str, options: &FrameOptions) -> String {
     framed
 }
 
+/// The options of `wrap` (U-2 `{empty: "object"}`: a record whose every field the caller may leave out, so the caller
+/// may leave out the record).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WrapOptions {
+    /// What comes before the text; `None` is `DEFAULT_LEFT`.
+    pub left: Option<String>,
+    /// What comes after the text; `None` is `DEFAULT_RIGHT`.
+    pub right: Option<String>,
+}
+
+/// The text between the left and the right of the options.
+#[must_use]
+pub fn wrap(text: &str, options: &WrapOptions) -> String {
+    let left = match &options.left {
+        Some(left) => left.as_str(),
+        None => DEFAULT_LEFT,
+    };
+    let right = match &options.right {
+        Some(right) => right.as_str(),
+        None => DEFAULT_RIGHT,
+    };
+    format!("{left}{text}{right}")
+}
+
 /// The length and the emptiness of a text (T-4: a record with a bool field as a return).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Measure {
@@ -237,7 +267,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, frame, length, repeat, reversed, total, Buffer, Error, FrameOptions};
+    use super::{checksum, frame, length, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, WrapOptions};
 
     #[test]
     fn none_is_the_default() {
@@ -249,6 +279,8 @@ mod tests {
         assert_eq!(frame("a", &FrameOptions { upper: Some(super::DEFAULT_UPPER), ..plain.clone() }), ">a");
         assert_eq!(frame("a", &FrameOptions { upper: Some(true), width: Some(3), ..plain }), ">A  ");
         assert_eq!(total(None), total(Some(&[])));
+        assert_eq!(wrap("a", &WrapOptions::default()), "[a]");
+        assert_eq!(wrap("a", &WrapOptions { left: Some(String::from("<")), right: None }), "<a]");
     }
 
     #[test]
