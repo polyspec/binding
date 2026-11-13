@@ -754,7 +754,10 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
     py.import(module)
 }
 `;
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreErrorRust(model)}`);
+  // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
+  // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
+  const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
@@ -800,7 +803,7 @@ fn binding_error(py: Python<'_>, error: BindingError) -> PyErr {
     };
     library_error(py, class, error.to_string(), error.kind(), error.status(), error.errno())
 }
-${coreErrorRust(model)}
+${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal.
 fn guard<'py, T>(py: Python<'py>, body: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
     match catch_unwind(AssertUnwindSafe(body)) {

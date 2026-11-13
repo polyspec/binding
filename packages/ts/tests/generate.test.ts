@@ -974,6 +974,19 @@ test('Go, WASM: each variant that a member raises is asserted against the core e
   }
 });
 
+test('Python: a crate whose only raising member is a to_json holds no core_error (GN-6g)', () => {
+  // Python generates no to_json (GN-6g), so nothing calls the conversion of the core error there: a function that
+  // nothing calls fails the build of the crate as dead code.
+  const sample = classSample([]);
+  const raising = sample.units.flatMap((u: any) => u.members ?? []).filter((m: any) => (m.raises ?? []).length > 0).map((m: any) => m.id);
+  assert.deepEqual(raising, ['tag.to_json']);
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  assert.doesNotMatch(text(out, 'packages/python/generated/lib.rs'), /fn core_error\(/);
+  // Node and PHP generate the hook, which converts the error of the core.
+  assert.match(text(out, 'packages/ts/generated/lib.rs'), /fn core_error\(/);
+  assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn core_error\(/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
