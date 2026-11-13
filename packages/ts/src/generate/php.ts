@@ -3,7 +3,8 @@
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
-import { PHP_HOST, aliasPhp, foreignFailurePhp, phpMaking } from './alias_php.ts';
+import { PHP_HOST, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpMaking } from './alias_php.ts';
+import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -1011,6 +1012,8 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
     ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
+  // GN-13: the case-test entry points of the cases whose value has no PHP form.
+  const caseTests = phpCaseTestEntries(model, phpCaseTests(model), layout.namespace);
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
   // B-4: the classes of PHP that the library classes extend or implement, found by startup before any registration.
   const jsonHook = model.objects.some((o) => o.members.some((fn) => fn.special === 'to_json'));
@@ -1266,7 +1269,7 @@ pub fn alias_in_${rustField(alias.unit.name)}(value: &Zval) -> Result<(), PhpExc
     })
 }
 `).join('')}
-${poisonRust(model, layout)}
+${poisonRust(model, layout)}${caseTests.entries}
     #[php_module]
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
@@ -1281,7 +1284,7 @@ ${poisonRust(model, layout)}
         #[cfg(feature = "fault-test")]
         let module = module.function(wrap_function!(arm_faults)).function(wrap_function!(fault_left));`}${aliasesWithKinds(model).map((alias) => `
         #[cfg(feature = "codec-test")]
-        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));`).join('')}
+        let module = module.function(wrap_function!(alias_in_${rustField(alias.unit.name)}));`).join('')}${caseTests.registers}
         module
     }
 }

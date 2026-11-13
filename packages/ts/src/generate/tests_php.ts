@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, CaseRefused, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, CaseRefused, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -18,6 +18,7 @@ const BAD_NUMBERS: Record<string, string[]> = {
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
 
 export function phpTests(model: Model, layout: PhpLayout): string {
+  const caseTestList = phpCaseTests(model);
   const enumRef = (name: string, value: string): string => {
     const unit = model.enums.find((u) => langName('python', u.name, 'class') === name);
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
@@ -217,8 +218,35 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         self::fail(${phpText(error.message)});
     }`);
     };
+    // GN-13: a case whose value has no PHP form runs the in function of its alias on the value as host values, through
+    // the entry point of the feature case-test.
+    const caseTestOf = (caseId: string): number => caseTestList.findIndex((t) => t.fn === fn && t.id === caseId);
     for (const kase of raisingCases(model, fn)) {
       const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const entry = caseTestOf(kase.id);
+      if (entry >= 0) {
+        const errno = expectedErrno(kase);
+        if (errno !== null && 'symbol' in errno) throw new Unsupported(`the case ${kase.id} of ${fn.member.id}: the errno symbol ${errno.symbol} is not compared in PHP yet (G-5)`);
+        methods.push(`
+    /**
+     * GN-13: the in function of ${caseTestList[entry]?.alias.unit.id ?? ''} runs on the value of the case as host values,
+     * because the value has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */
+    public function testB4${name}${id}(): void
+    {
+        try {
+            \\${layout.namespace}\\Internal\\caseTest${entry}();
+            self::fail('no error');
+        } catch (${cls(kase.raises.category)} $error) {
+            self::assertSame(${exactClass(kase.raises)}::class, $error::class);
+            self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
+            self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
+            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());
+            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${String(errno.value)}, $error->errno());`}
+        }
+    }`);
+        continue;
+      }
       try {
         const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
         const caseArg = (arg: Fn['args'][number]): string | undefined => {
@@ -261,6 +289,20 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     public function testGn13e${name}${id}(): void
     {
         self::fail(${phpText(kase.refused)});
+    }`);
+        continue;
+      }
+      const entry = caseTestOf(kase.id);
+      if (entry >= 0) {
+        methods.push(`
+    /**
+     * GN-13: the in function of ${caseTestList[entry]?.alias.unit.id ?? ''} runs on the value of the case as host values,
+     * because the value has no PHP form: ${caseTestList[entry]?.reason ?? ''}.
+     */
+    public function testGn13e${name}${id}(): void
+    {
+        \\${layout.namespace}\\Internal\\caseTest${entry}();
+        self::addToAssertionCount(1);
     }`);
         continue;
       }

@@ -6,6 +6,8 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { type CaseTest, caseKey } from './samples.ts';
+import { rustString } from './text.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -460,3 +462,120 @@ fn ${library}_failure_error(failure: binding_core::Failure<${error.path}>) -> Fa
 `;
   }).join('');
 }
+
+// GN-13: the case-test entry points of the cases whose value has no PHP form. Each makes the value of its case as the
+// host values that describe gives for a PHP value (B-1), held by CaseHost, and gives them to the in function of the
+// alias, so the core judges them as it judges a PHP value; its failure is thrown as the failure of a call.
+export function phpCaseTestEntries(model: Model, tests: CaseTest[], namespace: string): { entries: string; registers: string } {
+  if (tests.length === 0) return { entries: '', registers: '' };
+  const bytes = (data: Uint8Array): string => `HostValue::Text(HostText::Bytes(vec![${[...data].map((b) => `${b}_u8`).join(', ')}]))`;
+  const hex = (raw: unknown): Uint8Array => Buffer.from(String((raw as { hex?: unknown } | null)?.['hex' as never] ?? (raw as { hex: string }).hex), 'hex');
+  const key = (raw: unknown): string => caseKey(raw, (kind, held) => (kind === 'int' ? `HostValue::Int(${String(held)}_i64)` : kind === 'text' ? bytes(Buffer.from(String(held), 'utf8')) : bytes(hex(held))));
+  const hold = (pairs: string[], variant: (len: number) => string): string => `{
+            let handle = host.hold(vec![${pairs.join(', ')}]);
+            ${variant(pairs.length)}
+        }`;
+  const value = (v: unknown): string => {
+    const record = v as Record<string, unknown>;
+    const held = record['value'];
+    switch (record['kind']) {
+      case 'null': return 'HostValue::Null';
+      case 'bool': return `HostValue::Bool(${String(held === true)})`;
+      case 'int': return `HostValue::Int(${String(held)}_i64)`;
+      case 'float': {
+        const number = Number(held);
+        return `HostValue::Float(${Number.isInteger(number) ? `${String(number)}.0` : String(number)}_f64)`;
+      }
+      case 'text': return bytes(Buffer.from(String(held), 'utf8'));
+      case 'bytes': return bytes(hex(held));
+      case 'list': {
+        if (record['repeat'] !== undefined) return `{
+            let mut value = ${value(held)};
+            for _ in 0..${String(record['repeat'])}_u32 {
+                let handle = host.hold(vec![(HostValue::Int(0), value)]);
+                value = HostValue::PhpArray { handle, len: 1, is_list: true };
+            }
+            value
+        }`;
+        const items = held as unknown[];
+        return hold(items.map((item, i) => `(HostValue::Int(${i}), ${value(item)})`), (len) => `HostValue::PhpArray { handle, len: ${len}, is_list: true }`);
+      }
+      case 'map': {
+        const pairs = held as unknown[][];
+        const list = pairs.every((pair, i) => { const k = pair[0] as { int?: unknown } | null; return typeof k === 'object' && k !== null && k.int === i; });
+        return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::PhpArray { handle, len: ${len}, is_list: ${String(list)} }`);
+      }
+      case 'object': {
+        const pairs = held as unknown[][];
+        return hold(pairs.map((pair) => `(${key(pair[0])}, ${value(pair[1])})`), (len) => `HostValue::StdClass { handle, len: ${len} }`);
+      }
+      case 'reference': {
+        const ref = held as Record<string, unknown>;
+        return `HostValue::PhpReference { identity: Handle::new(${String(ref['id'])}), target: Box::new(${value(ref['value'])}) }`;
+      }
+      default:
+        throw new Unsupported(`a case value of the kind ${String(record['kind'])} is not made as host values yet (GN-13)`);
+    }
+  };
+  const entries = tests.map((t, i) => {
+    const failure = `binding_core::Failure<${t.alias.error?.path ?? model.coreError ?? '()'}>`;
+    return `
+    /// GN-13: the case ${t.id} of ${t.fn.member.id}, as the host values that PHP would describe, given to the in
+    /// function of ${t.alias.unit.id}. Its value has no PHP form: ${t.reason}.
+    #[cfg(feature = "case-test")]
+    #[php_function]
+    #[php(name = ${rustString(`${namespace}\\Internal\\caseTest${i}`)})]
+    pub fn case_test_${i}() -> Result<(), PhpException> {
+        guard(|| {
+            let mut host = CaseHost::default();
+            let value = ${value(t.value).replaceAll('\n', '\n    ')};
+            let _value: ${t.alias.unit.core_type ?? ''} = ${t.alias.coreIn}(&mut host, value).map_err(|failure: ${failure}| ${aliasFailureFn(t.alias)}(failure))?;
+            Ok(())
+        })
+    }
+`;
+  }).join('');
+  const registers = tests.map((_t, i) => `
+        #[cfg(feature = "case-test")]
+        let module = module.function(wrap_function!(case_test_${i}));`).join('');
+  return { entries: `${CASE_HOST}${entries}`, registers };
+}
+
+const CASE_HOST = `
+    /// GN-13: the entries of the arrays and the objects that a case-test entry point made, under their handles.
+    #[cfg(feature = "case-test")]
+    #[derive(Default)]
+    struct CaseHost {
+        held: Vec<Vec<(HostValue, HostValue)>>,
+    }
+
+    #[cfg(feature = "case-test")]
+    impl CaseHost {
+        fn hold(&mut self, entries: Vec<(HostValue, HostValue)>) -> Handle {
+            self.held.push(entries);
+            Handle::new(handle_count(self.held.len() - 1))
+        }
+
+        fn entry(&self, handle: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
+            match self.held.get(handle_position(handle.raw())).and_then(|entries| entries.get(handle_position(index))) {
+                Some(entry) => Ok(entry.clone()),
+                None => Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no such entry") })))),
+            }
+        }
+    }
+
+    #[cfg(feature = "case-test")]
+    impl HostValues for CaseHost {
+        fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {
+            Ok(CaseHost::entry(self, list, index)?.1)
+        }
+
+        fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {
+            CaseHost::entry(self, map, index)
+        }
+
+        fn read(&mut self, _value: Handle) -> Result<HostValue, binding_core::Raised> {
+            Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no value class is read") }))))
+        }
+    }
+`;

@@ -924,3 +924,56 @@ export function aliasRepresentative(model: Model, ctx: Context, type: Type): { k
   if (place === undefined || kase === undefined) return undefined;
   return { kase, value: place(fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)) };
 }
+
+// GN-13: why a case value has no PHP form, or undefined when it has one. A PHP reference is a place of an array or of a
+// property, so a reference that is the value itself or the value of a reference has none.
+export function phpFormless(value: unknown, slot = false): string | undefined {
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const held = record?.['value'];
+  switch (record?.['kind']) {
+    case 'list':
+      if (record?.['repeat'] !== undefined) return phpFormless(held, false);
+      return Array.isArray(held) ? held.map((item) => phpFormless(item, true)).find((reason) => reason !== undefined) : undefined;
+    case 'map':
+    case 'object':
+      return Array.isArray(held) ? (held as unknown[][]).map((pair) => phpFormless(pair[1], true)).find((reason) => reason !== undefined) : undefined;
+    case 'reference':
+      if (!slot) return 'a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place';
+      return phpFormless((held as Record<string, unknown> | undefined)?.['value'], false);
+    default:
+      return undefined;
+  }
+}
+
+// GN-13: a case whose value of a value alias has no form in PHP. Its test calls the entry point of the feature
+// case-test, which makes the value as the host values that PHP would describe and gives them to the in function of the
+// alias, so the rule of the core that refuses the value runs in the binding. raises is what the case expects.
+export interface CaseTest {
+  fn: Fn;
+  id: string;
+  alias: ValueAlias;
+  value: unknown;
+  reason: string;
+  raises?: RaisingCase['raises'];
+}
+
+export function phpCaseTests(model: Model): CaseTest[] {
+  const out: CaseTest[] = [];
+  for (const fn of callables(model)) {
+    // The cases are read as the case files give them, without the checks of raisingCases and resultCases, so that
+    // binding scaffold, which reads no contract of another library, finds them too.
+    for (const record of (model.cases.get(fn.member.id) ?? []) as Record<string, unknown>[]) {
+      const args = fn.special === undefined ? argsOf(fn, record) : undefined;
+      const raises = record['raises'] as RaisingCase['raises'] | undefined;
+      if (args === undefined || (raises === undefined && record['faults'] !== undefined)) continue;
+      const kase = { id: String(record['id']), args, ...(raises === undefined ? {} : { raises }) };
+      for (const [arg, value] of kase.args) {
+        const alias = aliasOf(model, arg.type);
+        const reason = alias === undefined ? undefined : phpFormless(value);
+        if (alias === undefined || reason === undefined) continue;
+        out.push({ fn, id: kase.id, alias, value, reason, ...(kase.raises === undefined ? {} : { raises: kase.raises }) });
+      }
+    }
+  }
+  return out;
+}

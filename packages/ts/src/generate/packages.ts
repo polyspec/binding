@@ -171,7 +171,9 @@ const pointName = (library: string): string => library.replaceAll('-', '_');
 
 // armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
 // (casePointLibraries).
-export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = []): Files {
+export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], caseTargets: Iterable<string> = []): Files {
+  // GN-13: a target with a case whose value has no form in its language has the feature case-test.
+  const caseTest = new Set(caseTargets);
   const files: Files = new Map();
   // G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
   const armed = [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
@@ -235,7 +237,8 @@ python-source = "generated/python"
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false'));
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
+      .replace('panic-test = []\n', caseTest.has('php') ? 'panic-test = []\ncase-test = []\n' : 'panic-test = []\n'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
       ['non_snake_case', 'G-7: a parameter is named as the PHP named argument, in camelCase'],

@@ -16,7 +16,7 @@ import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
-import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
+import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
 
@@ -163,7 +163,7 @@ if (typeof version === 'object' && version.workspace === true) {
 }
 if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 // G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles));
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.

@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- 값이 배열이나 property의 자리가 아닌 reference인 case(예: `serialize`의 맨 위 값)의 PHP 시험은 `self::fail`로 실패했다.
+  어떤 PHP 호출도 그 값을 줄 수 없어서, 코어의 거부가 PHP에서 한 번도 실행되지 않았다. 이제 그런 case는 feature
+  `case-test`의 진입점 `<namespace>\Internal\caseTest<n>`으로 실행한다. 진입점은 PHP가 기술할 host 값으로 그 값을 만들어
+  alias의 `in` 함수에 주고, 시험은 case의 클래스와 kind를 요구한다. binding scaffold는 그런 case가 있는 계약의 PHP crate에
+  `case-test = []`를 쓰고, 종단 검사는 `llvm-nm`으로 feature 없이 빌드한 확장에 그 진입점이 없고 feature를 켠 확장에는
+  있음을 요구한다(GN-13, GN-5). 다른 kind의 인자를 받는 Go의 case는 C ABI에 같은 진입점이 필요하며, Go 생성기가 생성한다.
+  `packages/ts`의 `npm test`로 확인했다.
 - PHP 확장은 라이브러리 클래스가 상속하는 PHP 클래스가 없을 때("B-4: the class {name} is missing")와 라이브러리 클래스가
   등록되지 않았을 때 panic했다. 그래서 `clippy::panic`을 deny하는 레포는 바인딩의 clippy에서 실패했다. 이제 startup은 무엇이든
   등록하기 전에 라이브러리 클래스가 상속하거나 구현하는 PHP 클래스를 모두 찾고, 없는 클래스가 있으면 module 시작이
