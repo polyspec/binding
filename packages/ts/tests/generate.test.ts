@@ -1552,6 +1552,39 @@ test('the test of a case holds the words of its id, and two ids that give one na
   assert.deepEqual(refused(['a-word', 'a_word'], 'node'), []);
 });
 
+test('a Python case value deeper than the parser takes is made step by step in local variables (GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  // 300 lists, each the one item of the one around it, as array_past_limit of json gives them.
+  let deep: unknown = { kind: 'null' };
+  for (let i = 0; i < 300; i += 1) deep = { kind: 'list', value: [deep] };
+  (caseFiles.get('contracts/cases.json') as any).show = [{ id: 'deep', value: deep, result: '"x"' }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['python'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  // The deepest nesting of brackets of any line, outside the strings.
+  const nesting = (line: string): number => {
+    let depth = 0;
+    let most = 0;
+    let quote = '';
+    for (let i = 0; i < line.length; i += 1) {
+      const c = line[i] ?? '';
+      if (quote !== '') {
+        if (c === '\\') i += 1;
+        else if (c === quote) quote = '';
+        continue;
+      }
+      if (c === '"' || c === "'") quote = c;
+      else if ('([{'.includes(c)) most = Math.max(most, (depth += 1));
+      else if (')]}'.includes(c)) depth -= 1;
+    }
+    return most;
+  };
+  assert.ok(Math.max(...py.split('\n').map(nesting)) <= 60, 'no line of the Python tests nests its brackets deeper than 60');
+  // The value is whole: 300 calls of Token.list and the null inside them.
+  assert.equal(py.match(/pkg\.Token\.list\(/g)?.length, 300);
+  assert.match(py, /\n {4}step_0 = [^\n]*pkg\.Token\.none\(\)/);
+  assert.match(py, /def test_gn13e_show_deep\(self\) -> None:\n[^\n]*pkg\.show\(_deep_0\(\)\)/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
