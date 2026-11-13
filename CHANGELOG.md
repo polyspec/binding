@@ -21,6 +21,20 @@
   `polyspec-consumer-go` failed with "cannot find type `Table`" and "cannot find type `Arc`". The helper is now
   `insert_held`, which only an instance that leaves names. Verified by `npm test` in `packages/ts` and `cargo clippy`
   of the Go crate of `tests/e2e/consumer`.
+- The e2e run of `tests/e2e/classes` failed in three targets after the class unit `lease` (GN-6p). Python: a `Lease`
+  that a failed call left as a temporary warned while the `TypeError` of the call was set, so the call ended with
+  `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
+  `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
+  requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
+  block had dropped because only that test entry uses it; the helper is now kept.
+- A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
+  ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
+  and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
+  states, and each Python callback call takes the GIL on the thread on which the core calls it, without the check of
+  kind `wrong_thread`, so the callback also runs on the worker thread of `a<name>`. Node runs the call synchronously
+  on the JavaScript thread, which owns the callback objects, and returns a settled promise. A member with
+  `async_driver` that reaches language code stays refused by name. `sample.resolve_slowly` of `tests/e2e/sample`
+  covers it, with a Python test that awaits `aresolve_slowly` with a callback that raises (GN-6q).
 - A method with the core receiver `self` and a class unit with `cleanup` were refused by every target ("a receiver
   self is not generated yet", "cleanup is not generated yet"), so a resource that its close call consumes had no
   binding. PHP, Python and Node now take the value out of the lock of the class (`take` of `Exclusive` and `Shared`,
@@ -34,6 +48,27 @@
   WASM, because the conversion of the result of a member that waits was a closure that only called a function, which
   clippy denies (`redundant_closure`). Python now builds the tuple from a vector, and Node passes the function itself
   (GN-6m, GN-6n). Verified by `make e2e` of `tests/e2e/classes`.
+- The Go C ABI of fsm did not compile (E0283, type annotations needed): `out_optional` took `impl Into<Option<T>>`, which
+  an `Option<i64>` of an optional property of an error unit and the `&Option<String>` of an optional text field meet
+  for two types `T`, and the generic `out_int` and `out_text` left `T` unknown. `out_optional` now takes `Option<T>`,
+  given the `as_ref` of the value of the core, as in PHP, Python and Node (GN-16). Verified by `npm test` in
+  `packages/ts`: 280 of 280 pass.
+- The test of a Go tuple parameter required `in_uint` for its `uint` part, while GN-12a holds a `uint` part to the
+  safe integers with `in_safe_uint`; the test now requires `in_safe_uint`. Verified by `npm test` in `packages/ts`:
+  277 of 277 pass.
+- The same integer key of a `keyed_map` gave two results: Node and WASM refused a number key that is no safe integer
+  as `invalid_argument_type`, and PHP, Python and Go took any key of the range of i64. A key of a listed `int` is now
+  a safe integer in every target, and a key outside is kind `invalid_number` (GN-12a); a key of a kind that the
+  contract does not list stays `invalid_argument_type`, and that kind is judged first. The generated tests give the
+  key 2^53 in every target (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 269 pass; the 7 failures are the
+  tests of GN-6m (wait `blocking_io`), which this change does not touch.
+- PHP and Python took an `int` argument of the range of i64 and the Go C ABI any `int64`, so a contract case with
+  9223372036854775807 for an `int` gave `invalid_number` in Node and the error of the core in PHP and Python. An `int`
+  is now a safe integer and a `uint` 0 to 2^53 - 1 in every target and at every place that the binding takes (an
+  argument, an item, a field), and an integer outside is kind `invalid_number` (GN-12a); an `int64` and a key of a
+  `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
+  (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
+  `blocking_io`), which this change does not touch.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio
   runtime (GN-6n): PHP blocks on `binding_core::driver::block_on`, Python runs it in `py.detach` and adds `a<name>`,

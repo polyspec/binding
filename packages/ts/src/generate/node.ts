@@ -324,7 +324,8 @@ fn in_keyed_map<'env, T>(
     for entry in entries {
         let [key, value] = <[Unknown<'env>; 2]>::try_from(entry).map_err(|_not_a_pair| type_error(subject, expected))?;
         let (tag, key) = match key.get_type().map_err(internal)? {
-            ValueType::Number => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int).map_err(|_not_safe| type_error(subject, expected))?)),
+            // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
+            ValueType::Number if kinds.contains(&0) => (0, binding_core::Key::Int(safe_integer(key, subject, NumberType::Int)?)),
             ValueType::String => (2, binding_core::Key::Text(in_text(key, subject)?)),
             _ => return Err(type_error(subject, expected)),
         };
@@ -455,6 +456,10 @@ const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => ru
 
 const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
 
+// GN-6m, GN-6q: a member with wait blocking_io runs its core call on the libuv pool, unless it reaches language code,
+// which only the JavaScript thread may call; then the call runs on that thread and the entry still returns a promise.
+const pooled = (fn: Fn): boolean => waitsIo(fn) && fn.reaches !== true;
+
 function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   const jsName = memberName('node', fn);
@@ -493,7 +498,7 @@ function entryRust(model: Model, fn: Fn): string {
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
-  } else if (waitsIo(fn)) {
+  } else if (pooled(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
     const faults = model.faults.length > 0;
@@ -513,7 +518,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!awaits(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -611,7 +616,7 @@ where
 
 // G-5, GN-6m: the arming of a member that waits is taken on the JavaScript thread and installed where the work runs.
 function waitingFaults(model: Model): string {
-  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(waitsIo)) return '';
+  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(pooled)) return '';
   return `
 /// G-5, GN-6m: the arming that a test armed for a member that waits, which its work installs on the libuv pool.
 #[cfg(feature = "fault-test")]

@@ -5,13 +5,13 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', 'null'],
-  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", 'null'],
+  uint: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '-1', '2 ** 53', 'null'],
+  int: ['NAN', 'INF', '-INF', '1.5', 'true', "'7'", '2 ** 53', '-(2 ** 53)', 'null'],
   float: ['true', "'7'", '1', 'null'],
 };
 
@@ -119,6 +119,19 @@ export function phpTests(model: Model, layout: PhpLayout): string {
             self::fail('no error');
         } catch (${cls('type')} $error) {
             self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+      }
+      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
+      if (unsafeKey !== undefined) {
+        methods.push(`
+    public function testB2${name}${argName}RefusesAKeyOutsideTheSafeIntegers(): void
+    {
+        try {
+            ${call(new Map([[arg, unsafeKey]]))};
+            self::fail('no error');
+        } catch (${cls('value')} $error) {
+            self::assertSame('invalid_number', $error->kind());
         }
     }`);
       }
@@ -419,10 +432,13 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } finally {
             restore_error_handler();
         }
-        self::assertSame(${expected}, $warnings);`;
+        ${expected}`;
+    // GN-6p: PHP puts the name of the running function before the message of a warning, which ends with the B-10 text.
     methods.push(`
     public function testB10${label}WarnsWithout${langName('php', cleanup.member.name, 'class')}(): void
-    {${warned('', `[[E_WARNING, ${phpText(cleanupWarning(label, memberName('php', cleanup)))}]]`)}
+    {${warned('', `self::assertCount(1, $warnings);
+        self::assertSame(E_WARNING, $warnings[0][0]);
+        self::assertStringEndsWith(${phpText(cleanupWarning(label, memberName('php', cleanup)))}, $warnings[0][1]);`)}
     }
 
     public function testB10${label}DoesNotWarnAfter${langName('php', cleanup.member.name, 'class')}(): void
@@ -431,7 +447,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
                 ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), '$held')};
             } catch (\\Throwable) {
                 // B-10: the cleanup call consumed the value whatever it gave.
-            }`, '[]')}
+            }`, 'self::assertSame([], $warnings);')}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
