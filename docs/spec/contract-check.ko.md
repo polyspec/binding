@@ -92,7 +92,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   같은 unit의 다른 member의 Python 이름이 아니다.
 - **CK-17** callback(U-3, T-3): `async_allowed`와 `errors`는 callback member만 갖고, 모든 callback member는 `async_allowed`를
   적고, trait 메서드와 receiver를 `core: {path, receiver}`에 receiver `&self`나 `&mut self`로 적는다. 생성된 struct가 그
-  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리킨다. 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌
+  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리키며, callback member가 자기 오류
+  unit을 recognize하는 계약은 recognize한 kind의 코어 오류를 만드는 코어 함수를 `errors.recognized`에 적는다(generator GN-6d). 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌
   member가 있으면 같은 이름의 callback member는 `async_allowed: true`다.
 
 - **CK-18** 패키지 이름(P-1): 코어 crate는 `polyspec-<library>`, Composer `polyspec/<library>`, PHP namespace

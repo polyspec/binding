@@ -789,6 +789,10 @@
             }
           }
         },
+        "recognized": {
+          "description": "The core function fn(<kind value>, &str) -> E that makes the core error of a kind that a callback raised as an instance of a recognized error unit, with its message (U-3, GN-6d).",
+          "$ref": "#/$defs/rustPath"
+        },
         "binding": {
           "description": "Class overrides of the kinds of BindingError (E-1a, E-2).",
           "type": "array",

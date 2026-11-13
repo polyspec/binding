@@ -17,8 +17,8 @@ the design ids are those of the binding design.
   repository, GN-6k), enums, constants, error classes and error units (GN-7a),
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
-  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
+  callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async
+  callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
@@ -250,6 +250,19 @@ the design ids are those of the binding design.
   as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+  A member whose `errors.recognize` names error units (U-3) reads an exception of its language code that is an
+  instance of one of them (Python `isinstance`, PHP `instanceof`, the prototype chain in Node and WASM, `errors.As` in
+  Go): its `kind` and its message. When the kind is that of a row of `errors.kinds` whose `class` is that unit or a
+  unit that extends it, the core gets `Failure::Kind(<recognized>(<kind value>, &message))`: `errors.recognized`
+  names the core function `fn(<kind value>, &str) -> E`, and the kind value is the variant path of the row as an
+  expression, `<path>` or `<outer>(<inner>)` for a nested path (GN-7b), which is a value of the code enum when
+  `errors.code` names one. Any other exception, and an instance whose kind is no kind of those rows, goes to the core
+  as a `Raised`, and the caller throws the same object. Node takes the pending exception to read it and throws it
+  again when it is not recognized; Go passes the kind and the message of a recognized error to the C ABI in place of
+  the index of the error. Why: the core decides what a recognized failure means (U-3), and binding reads no Rust
+  source, so the contract names the function that makes the core error; the properties of the instance do not reach
+  the core, because an instance that language code makes has none (GN-7a). A recognized error unit of another
+  library is refused by name (G-4).
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.

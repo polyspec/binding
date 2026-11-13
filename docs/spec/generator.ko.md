@@ -12,8 +12,8 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
+  callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit, member `to_json`은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다. Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -205,6 +205,16 @@
   바인딩의 실패(다른 타입의 결과, `thread: owner`에서 다른 스레드의 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
   `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+  `errors.recognize`가 오류 unit을 적은 member(U-3)는 언어 코드의 예외가 그중 하나의 인스턴스이면(Python `isinstance`, PHP
+  `instanceof`, Node·WASM의 prototype 사슬, Go의 `errors.As`) 그 `kind`와 메시지를 읽는다. 그 kind가 `class`가 그 unit이거나
+  그 unit을 확장한 unit인 `errors.kinds` 행의 kind이면 코어는 `Failure::Kind(<recognized>(<kind 값>, &message))`를 받는다.
+  `errors.recognized`는 코어 함수 `fn(<kind 값>, &str) -> E`를 적고, kind 값은 그 행의 variant 경로를 식으로 쓴 것(중첩 경로는
+  `<바깥>(<안쪽>)`, GN-7b)이며 `errors.code`가 있으면 code enum의 값이다. 그 밖의 예외와 kind가 그 행들의 kind가 아닌
+  인스턴스는 `Raised`로 코어에 가고 호출자가 같은 객체를 던진다. Node는 읽으려고 대기 중인 예외를 꺼내고, recognize하지
+  않으면 다시 던져 둔다. Go는 recognize한 오류의 kind와 메시지를 오류의 index 대신 C ABI에 넘긴다. 이유: recognize한 실패의
+  뜻은 코어가 정하고(U-3), binding은 Rust 소스를 읽지 않으므로 코어 오류를 만드는 함수를 계약이 적는다. 언어 코드가 만든
+  인스턴스는 property 값이 없으므로(GN-7a) 인스턴스의 property는 코어에 가지 않는다. 다른 라이브러리의 오류 unit을
+  recognize하는 것은 이름을 대어 거부한다(G-4).
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고

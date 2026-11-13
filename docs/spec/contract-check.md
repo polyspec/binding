@@ -112,7 +112,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-17** Callbacks (U-3, T-3): only callback members have `async_allowed` and `errors`, and every callback member
   states `async_allowed` and names its trait method and receiver in `core: {path, receiver}` with the receiver `&self`
   or `&mut self`, because the generated struct implements the trait and binding reads no Rust source; `recognize`
-  names error units; a generated class of this contract that implements a callback
+  names error units, and a contract whose callback member recognizes an error unit of its own names in
+  `errors.recognized` the core function that makes the core error of a recognized kind (generator GN-6d); a generated class of this contract that implements a callback
   of this contract with a member whose wait is not `none` makes the callback member of the same name
   `async_allowed: true`.
 
