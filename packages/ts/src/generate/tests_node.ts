@@ -92,7 +92,13 @@ export function nodeTests(model: Model): string {
   // entry is the host's.
   const esm = isHost(model.contract, 'node') ? '../index.mjs' : npm;
   const cjsEntry = isHost(model.contract, 'node') ? '../index.cjs' : npm;
+  const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
+    // GN-6x: a static member of a value class of another repository, through the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('node', unit.name, 'class')}.${langName('node', member.name, 'callable')}()`;
+    },
     callbackNew: (unit, how) => {
       if ('missing' in how) return '{}';
       const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
@@ -432,6 +438,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
+${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}`)};\n`).join('')}
 
 const require = createRequire(import.meta.url);
 ${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}

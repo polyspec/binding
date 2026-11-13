@@ -406,6 +406,31 @@ impl<A, B, C, D, E, F, G, H, P: Parts8<A, B, C, D, E, F, G, H> + ?Sized> Parts8<
 }
 `;
 
+// T-5, GN-6b: a value of a class reaches the binding owned or borrowed, as the core gives a result or takes an argument.
+// The trait turns it into the form that the place asks for: the value itself, or a copy of a borrowed value. One block,
+// as usedHelpers splits helpers at blank lines.
+export const CORE_FORM = `
+/// T-5, GN-6b: a class value in the form that its place asks for; only a borrowed value that is asked for owned is cloned.
+trait CoreForm<T> {
+    fn core_form(self) -> T;
+}
+impl<T> CoreForm<T> for T {
+    fn core_form(self) -> T {
+        self
+    }
+}
+impl<T: Clone> CoreForm<T> for &T {
+    fn core_form(self) -> T {
+        self.clone()
+    }
+}
+impl<T: Clone> CoreForm<T> for &&T {
+    fn core_form(self) -> T {
+        (*self).clone()
+    }
+}
+`;
+
 // A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure).
 export function closure(params: string[], body: string): string {
   const call = /^([a-z_][a-z_0-9]*)\((.*)\)$/.exec(body);
@@ -416,3 +441,22 @@ export function closure(params: string[], body: string): string {
 // An optional value as Option<&T>, whether the Rust code holds the Option or a reference to it (T-1: a return is read
 // in either form).
 export const optionRef = (value: string): string => (value.startsWith('&') ? `${value.slice(1)}.as_ref()` : `${value}.as_ref()`);
+
+// GN-13e: the deepest nesting of the brackets of a Python expression, outside its string literals.
+export function bracketDepth(expr: string): number {
+  let depth = 0;
+  let most = 0;
+  let quote = '';
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i] ?? '';
+    if (quote !== '') {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if ('([{'.includes(c)) most = Math.max(most, (depth += 1));
+    else if (')]}'.includes(c)) depth -= 1;
+  }
+  return most;
+}

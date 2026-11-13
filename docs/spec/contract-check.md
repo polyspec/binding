@@ -48,7 +48,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-8** Value units (U-1, U-7):
   - a value alias names in `core: {in, out}` the core functions that judge a language value described as `HostValue`
     (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`) and give a core value as `OutValue`
-    (a function from `&T` to `(OutValue, V)` where `V: OutValues` may borrow the value); a value class has no such `core`, because its `in` rows read its members;
+    (a function from `&T` to `(OutValue, V)` where `V: OutValues` may borrow the value); a value class that represents its value type
+    may name such a `core` with its `core_type`, through which another repository takes and gives its values (GN-6x);
+    its own binding does not call them, because its `in` rows read its members and its own repository takes out the
+    native object (T-3); no other unit has `core: {in, out}`;
   - the unit that represents a value type holds `out` and `in`: a `value` class that no alias gathers, or an `alias`
     (whose origin is `value`); a class that an alias gathers (an `in` row of the alias names it) holds neither; the
     members of an alias are the language types of its `in` rows (U-7 (a));

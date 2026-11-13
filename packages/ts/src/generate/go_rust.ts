@@ -16,7 +16,7 @@ import {
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN } from './text.ts';
+import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -520,8 +520,8 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 }
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
-fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+fn out_${plain}(output: &mut Vec<u8>, value: impl CoreForm<${core}>) {
+    out_uint(output, insert_held(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
@@ -978,6 +978,10 @@ export function aliasInstances(model: Model, alias: ValueAlias): ObjectClass[] {
 }
 
 function aliasRust(model: Model, alias: ValueAlias): string {
+  // GN-6x: the call protocol of GN-15c describes no instance of a value class and makes none, so Go refuses it by name.
+  if (alias.owner !== undefined) {
+    throw new Unsupported(`${alias.library ?? ''}.${alias.unit.id}: a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and making of an instance (GN-6x)`);
+  }
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
@@ -1178,7 +1182,7 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
 }
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion

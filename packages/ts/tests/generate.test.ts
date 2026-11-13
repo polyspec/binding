@@ -944,6 +944,48 @@ test('a value alias of another repository is refused by name where it is not gen
   }), (error: Error) => error.constructor.name === 'Unsupported' && /data: a python make by a member \(tag\.new\) is not generated yet/.test(error.message));
 });
 
+// The consumer sample with the function relay, which takes and gives the value class of the owner fixture (GN-6x).
+const valueClassSample = (): ReturnType<typeof consumerSample> => {
+  const parts = consumerSample();
+  const owner = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+  parts.foreign.set('owner', owner);
+  const functions = parts.contract.units.find((u: any) => u.id === 'consumer');
+  functions.members.push({
+    id: 'consumer.relay', name: ['relay'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['value'], type: { library: 'owner', unit: 'value' }, required: true }],
+    returns: { library: 'owner', unit: 'value' }, raises: [], wait: 'none', core: 'polyspec_consumer::relay',
+  });
+  return parts;
+};
+
+test('a value class of another repository converts through the core of its owner in Python, Node, PHP and WASM (T-3, U-1, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node', 'wasm'] });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The owner's two core functions are the conversion, under names that carry the library.
+    assert.match(lib, /\nfn in_owner_value[(<]/, path);
+    assert.match(lib, /polyspec_owner::value_in\(&mut host, described\)/, path);
+    assert.match(lib, /polyspec_owner::value_out\(/, path);
+    // An instance of the owner's class is described by its in row, without opening it, and read by its read members.
+    assert.match(lib, /HostValue::Value \{/, path);
+    assert.doesNotMatch(lib, /no value class is read/, path);
+  }
+});
+
+test('Go refuses a value class of another repository by name, whose call protocol has no form of an instance (G-4, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['go'] }),
+    /owner\.value: a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and making of an instance \(GN-6x\)/);
+});
+
+test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  delete foreign.get('owner').units.find((u: any) => u.id === 'value').core;
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }),
+    /owner\.value: a value class of another repository without core: \{in, out\} and core_type is not generated \(GN-6x\)/);
+});
+
 test('an error unit is the class of the kinds that name it, with the properties of the core error (E-2, I-3, GN-7a)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
@@ -1149,10 +1191,10 @@ test('a class with a write place holds its value in a tried lock, which each cal
     assert.match(lib, /sync::<polyspec_sample::Tag>\(\);/, lang);
     assert.doesNotMatch(lib, /sync::<polyspec_sample::Counter>/, lang);
     // The receiver &mut self writes and &self reads; a parameter of the class reads, and the core borrows the guards.
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(&mut receiver, amount\)\);/, lang);
-    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(&receiver\)\);/, lang);
-    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(&mut receiver, &other\)\);/, lang);
-    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(&tag\)\);/, lang);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &mut \*receiver;\n\s+let result = with_faults\("counter\.add", \|\| polyspec_sample::Counter::add\(receiver, amount\)\);/, lang);
+    assert.match(lib, /let receiver = self\.inner\.read\("Counter", &\[\]\)\.map_err\([^\n]*\)\?;\n\s+let receiver = &\*receiver;\n\s+let result = with_faults\("counter\.total", \|\| polyspec_sample::Counter::total\(receiver\)\);/, lang);
+    assert.match(lib, /let other = held_counter\([^\n]*\)\?;\n\s+let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let \(\): \(\) = with_faults\("counter\.absorb", \|\| polyspec_sample::Counter::absorb\(receiver, CoreForm::core_form\(other\)\)\);/, lang);
+    assert.match(lib, /let tag = tag\.read\("Tag", &\[\]\)[^\n]*\n\s+let tag = &\*tag;\n\s+let result = with_faults\("sample\.shout", \|\| polyspec_sample::shout\(CoreForm::core_form\(tag\)\)\);/, lang);
     // A value inside another type is read, cloned and released by the conversion in.
     assert.match(lib, /fn in_tag[^\n]*\n(?:[^\n]*\n){1,4}?[^\n]*inner\.read\("Tag", &\[\]\) \{\n\s+Ok\(held\) => Ok\(\(\*held\)\.clone\(\)\),/, lang);
     assert.doesNotMatch(lib, /fn in_counter/, lang);
@@ -1551,9 +1593,9 @@ test('a member that writes its receiver takes a source and a default in one call
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
   const lines: Record<string, RegExp> = {
-    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
-    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
-    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
+    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
+    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let receiver = &mut \*receiver;\n\s+let result = polyspec_shapes::Buffer::append\(receiver, &source, times\);/,
   };
   for (const [path, line] of Object.entries(lines)) {
     assert.match(text(out, path), line, path);
@@ -1826,6 +1868,261 @@ test('a case value that the generator does not write fails the test of its case 
   assert.throws(() => generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] }), (error: any) => Array.isArray(error.refusals) && error.refusals.includes('no placeholder for {"unit":"gate"} is written yet (G-5)'));
 });
 
+test('a class value that the core gives by reference leaves as a new instance of a copy of it (T-5, GN-6b)', () => {
+  const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  const files = ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs'];
+  for (const file of files) {
+    const lib = text(out, file);
+    // An accessor of the core returns `&Token`, a computed value `Token`, and an item of an optional or a list a
+    // reference to either; the conversion takes each of them and copies only a borrowed value.
+    assert.match(lib, /fn out_token\((?:py: Python<'_>, |env: &Env, )?value: impl CoreForm<polyspec_classes::Token>\)/, file);
+    assert.match(lib, /trait CoreForm<T> \{\n\s+fn core_form\(self\) -> T;\n\}/, file);
+    assert.match(lib, /impl<T: Clone> CoreForm<T> for &&T \{/, file);
+  }
+});
+
+test('the core gets the value that the guard of a place holds, also where its path is a generic function (GN-6h)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  // A path of a trait, such as ToString::to_string, takes `&T` of any T, so a borrow of the guard is no `&Token` there.
+  token.members.push({ id: 'token.to_string', name: ['to', 'string'], kind: 'stringify', visibility: 'public', parameters: [], returns: 'text', raises: [], wait: 'none', core: { path: 'std::string::ToString::to_string', receiver: '&self' } });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const file of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, file);
+    assert.match(lib, /let receiver = &\*receiver;\n[^\n]*std::string::ToString::to_string\(receiver\)/, file);
+    assert.match(lib, /let receiver = &\*receiver;\n[^\n]*polyspec_classes::Token::kind\(receiver\)/, file);
+  }
+});
+
+test('a parameter of a class gives the core the value in the form that the core path takes, borrowed or a copy (GN-6h)', () => {
+  // The core of json takes `OrderedMap::insert(&mut self, key: Value, value: Value)` and `show(value: &Token)`; the
+  // contract names neither form, so the argument takes the one that the core path asks for.
+  const out = generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const file of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, file), /let value = &\*value;\n[^\n]*polyspec_classes::show\(CoreForm::core_form\(value\)\)/, file);
+  }
+});
+
+test('a PHP enum case whose name ext-php-rs refuses as a keyword or a type name takes a trailing _ (GN-10, N-2)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.id === 'token_kind').variants.push({ name: ['object'], value: 'object' }, { name: ['string'], value: 'string' });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // PHP takes every one of these names as an enum case; the macro php_enum of ext-php-rs refuses a PHP keyword and a
+  // type name, case-insensitively, also as the name of #[php(name)].
+  assert.match(lib, /#\[php\(name = "List_", value = "list"\)\]\n\s+List,/);
+  assert.match(lib, /#\[php\(name = "Object_", value = "object"\)\]\n\s+Object,/);
+  assert.match(lib, /#\[php\(name = "String_", value = "string"\)\]\n\s+String,/);
+  assert.match(lib, /#\[php\(name = "Word", value = "word"\)\]\n\s+Word,/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_classes.stub.php');
+  assert.match(stub, /case List_ = 'list';/);
+  assert.match(stub, /case Object_ = 'object';/);
+  assert.match(stub, /case Word = 'word';/);
+});
+
+// The token classes with Token.of_map, which takes a TokenMap, as Value.object of json takes an OrderedMap.
+function tokenMapClasses(): { contract: any; caseFiles: Map<string, unknown> } {
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  token.members.push({ id: 'token.of_map', name: ['of', 'map'], kind: 'static', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::of_map' } });
+  for (const row of token.out) if (row.kind === 'map') row.make = Object.fromEntries(FIVE.map((t) => [t, 'token.of_map']));
+  contract.units.push({
+    id: 'token_map', name: ['token', 'map'], module: '', kind: 'class', visibility: 'public', origin: 'generated', core_type: 'polyspec_classes::TokenMap', final: true,
+    members: [
+      { id: 'token_map.constructor', name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [], returns: { unit: 'token_map' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::new' } },
+      { id: 'token_map.insert', name: ['insert'], kind: 'method', visibility: 'public', parameters: [{ name: ['key'], type: { unit: 'token' }, required: true }, { name: ['value'], type: { unit: 'token' }, required: true }], returns: 'none', raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::insert', receiver: '&mut self' } },
+      { id: 'token_map.size', name: ['size'], kind: 'property', visibility: 'public', returns: 'uint', raises: [], wait: 'none', core: { path: 'polyspec_classes::TokenMap::size', receiver: '&self' } },
+    ],
+  });
+  return { contract, caseFiles };
+}
+
+test('the pairs of a case value of kind map fill the class that the make member of the kind takes (U-1, GN-13)', () => {
+  // As Value.object of json takes an OrderedMap, Token.of_map takes a TokenMap, which its constructor makes and its one
+  // member with the receiver &mut self and two parameters fills with each pair.
+  const { contract, caseFiles } = tokenMapClasses();
+  (caseFiles.get('contracts/cases.json') as any).show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  // An empty map is the class that the constructor makes, with no pair inserted.
+  assert.match(node, /test\('GN-13e: show a_map', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.show\(pkg\.Token\.ofMap\(new pkg\.TokenMap\(\)\)\)\)/);
+  assert.match(node, /pkg\.show\(pkg\.Token\.ofMap\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.word\('v'\)\); return made0; \}\)\(\)\)\)/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.Token\.ofMap\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.word\('v'\)\); return made0; \}\)\(\)\)/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /made0\.insert\(pkg\.Token\.word\("k"\), pkg\.Token\.word\("v"\)\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made0->insert\([^\n]*Token::word\("k"\), [^\n]*Token::word\("v"\)\);/);
+});
+
+test('a case value of a class that is no value class is the pairs that fill it (U-1, GN-13)', () => {
+  const { contract, caseFiles } = tokenMapClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
+  (caseFiles.get('contracts/cases.json') as any).count = [{ id: 'one', members: [['k', { kind: 'null' }]], result: 1 }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node'] });
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.count\(\(\(\) => \{ const made0 = new pkg\.TokenMap\(\); made0\.insert\(pkg\.Token\.word\('k'\), pkg\.Token\.none\(\)\); return made0; \}\)\(\)\)/);
+});
+
+test('a Go case value of a class is made as in the other targets, and a case that is not written fails by name (U-1, GN-13, GN-13f)', () => {
+  // A class of origin value is made by the make member of the kind, and another class by its constructor and the
+  // inserts of its pairs, each a local of the test.
+  const { contract, caseFiles } = tokenMapClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.count', name: ['count'], kind: 'function', visibility: 'public', parameters: [{ name: ['members'], type: { unit: 'token_map' }, required: true }], returns: 'uint', raises: [], wait: 'none', core: 'polyspec_classes::count' });
+  contract.cases.push({ member: 'classes.count', file: 'contracts/cases.json', group: 'count' });
+  const cases = caseFiles.get('contracts/cases.json') as any;
+  cases.show.push({ id: 'a_pair', value: { kind: 'map', value: [['k', { kind: 'text', value: 'v' }]] }, result: '{"k":"v"}' });
+  cases.count = [{ id: 'one', members: [['k', { kind: 'null' }]], result: 1 }];
+  const go = text(generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(go, /func TestGN13eShowAWord\(t \*testing\.T\) \{\n\tmade0, failure1 := TokenWord\("a"\)\n\tif failure1 != nil \{\n\t\tt\.Fatalf\("GN-13f: %v", failure1\)\n\t\}\n\tvalue0, err := Show\(made0\)/);
+  assert.match(go, /made0, failure1 := TokenNone\(\)\n[^]*?made2, failure3 := TokenFlag\(true\)\n[^]*?made4, failure5 := TokenList\(\[\]\*Token\{made0, made2\}\)\n[^]*?Show\(made4\)/);
+  assert.match(go, /made0, failure1 := NewTokenMap\(\)\n[^]*?made2, failure3 := TokenWord\("k"\)\n[^]*?made4, failure5 := TokenWord\("v"\)\n[^]*?failure6 := made0\.Insert\(made2, made4\)\n[^]*?made7, failure8 := TokenOfMap\(made0\)\n[^]*?Show\(made7\)/);
+  assert.match(go, /func TestGN13eCountOne\(t \*testing\.T\) \{\n\tmade0, failure1 := NewTokenMap\(\)\n[^]*?TokenNone\(\)\n[^]*?made0\.Insert\(made2, made4\)\n[^]*?Count\(made0\)/);
+  // G-4, GN-13e: a kind whose member takes more than one value is not written, so its case fails by name and the other
+  // tests of the target are written.
+  const plain = text(generate({ ...tokenClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] }), 'packages/go/zz_generated_test.go');
+  assert.match(plain, /func TestGN13eShowAMap\(t \*testing\.T\) \{\n\tt\.Fatal\("the case a_map of classes\.show: the kind map of token is made by token\.pair, which takes more than one value, so a case value of it is not written \(U-1, G-5\)"\)\n\}/);
+  assert.match(plain, /func TestGN13eShowAWord\(t \*testing\.T\) \{/);
+});
+
+test('the test of a case holds the words of its id, and two ids that give one name refuse the target (GN-13e)', () => {
+  const withIds = (ids: string[]): { contract: any; caseFiles: Map<string, unknown> } => {
+    const fixture = tokenClasses();
+    (fixture.caseFiles.get('contracts/cases.json') as any).show = ids.map((id) => ({ id, value: { kind: 'text', value: 'a' }, result: '"a"' }));
+    return fixture;
+  };
+  const out = generate({ ...withIds(['document-order', 'x.y z']), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node'] });
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eshowDocumentOrder\(\): void/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13eshowXYZ\(\): void/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_document_order\(self\) -> None:/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_show_x_y_z\(self\) -> None:/);
+  // Node names a test by a string, which holds the id as it is.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: show document-order', /);
+  const refused = (ids: string[], target: string): string[] => {
+    try {
+      generate({ ...withIds(ids), version: '0.0.0', coreLib: 'polyspec_classes', targets: [target] as Inputs['targets'] & string[] });
+    } catch (error: any) {
+      return error.refusals ?? [String(error)];
+    }
+    return [];
+  };
+  const clash = 'the cases a-word and a_word of classes.show give one test name a_word (GN-13e)';
+  assert.ok(refused(['a-word', 'a_word'], 'python').includes(clash), 'Python');
+  assert.ok(refused(['a-word', 'a_word'], 'php').some((r) => r.startsWith('the cases a-word and a_word of classes.show give one test name')), 'PHP');
+  // PHP compares the names of methods without case, Python with it.
+  assert.ok(refused(['a_b', 'ab'], 'php').some((r) => r.startsWith('the cases a_b and ab of classes.show give one test name')), 'PHP without case');
+  assert.deepEqual(refused(['a_b', 'ab'], 'python'), []);
+  assert.deepEqual(refused(['a-word', 'a_word'], 'node'), []);
+});
+
+test('a Python case value deeper than the parser takes is made step by step in local variables (GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  // 300 lists, each the one item of the one around it, as array_past_limit of json gives them.
+  let deep: unknown = { kind: 'null' };
+  for (let i = 0; i < 300; i += 1) deep = { kind: 'list', value: [deep] };
+  (caseFiles.get('contracts/cases.json') as any).show = [{ id: 'deep', value: deep, result: '"x"' }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['python'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  // The deepest nesting of brackets of any line, outside the strings.
+  const nesting = (line: string): number => {
+    let depth = 0;
+    let most = 0;
+    let quote = '';
+    for (let i = 0; i < line.length; i += 1) {
+      const c = line[i] ?? '';
+      if (quote !== '') {
+        if (c === '\\') i += 1;
+        else if (c === quote) quote = '';
+        continue;
+      }
+      if (c === '"' || c === "'") quote = c;
+      else if ('([{'.includes(c)) most = Math.max(most, (depth += 1));
+      else if (')]}'.includes(c)) depth -= 1;
+    }
+    return most;
+  };
+  assert.ok(Math.max(...py.split('\n').map(nesting)) <= 60, 'no line of the Python tests nests its brackets deeper than 60');
+  // The value is whole: 300 calls of Token.list and the null inside them.
+  const body = py.slice(py.indexOf('def _deep_0():'), py.indexOf('\n\n', py.indexOf('def _deep_0():')));
+  assert.equal(body.match(/pkg\.Token\.list\(/g)?.length, 300);
+  assert.match(py, /\n {4}step_0 = [^\n]*pkg\.Token\.none\(\)/);
+  assert.match(py, /def test_gn13e_show_deep\(self\) -> None:\n[^\n]*pkg\.show\(_deep_0\(\)\)/);
+});
+
+test('a member named by a word that JavaScript reserves is defined by its key, and the entry parses (GN-6b, GN-18a)', () => {
+  const RESERVED = [
+    'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum',
+    'export', 'extends', 'false', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof',
+    'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
+    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'eval', 'arguments',
+  ];
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  for (const word of RESERVED) {
+    token.members.push({ id: `token.${word}_static`, name: [word], kind: 'static', visibility: 'public', parameters: [{ name: ['text'], type: 'text', required: true }], returns: { unit: 'token' }, raises: [], wait: 'none', core: { path: 'polyspec_classes::Token::word' } });
+  }
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['node', 'wasm'] });
+  const node = text(out, 'packages/ts/generated/index.cjs');
+  for (const word of RESERVED) assert.ok(!new RegExp(`function ${word}\\(`).test(node), `no function expression is named ${word}`);
+  assert.match(node, /Object\.defineProperty\(Token, 'null', \{\n\s+value: \{ \['null'\]\(\.\.\.args\) \{/);
+  const dir = mkdtempSync(join(tmpdir(), 'binding-reserved-'));
+  try {
+    writeFileSync(join(dir, 'index.cjs'), node);
+    writeFileSync(join(dir, 'index.mjs'), text(out, 'packages/ts/wasm/generated/index.mjs'));
+    for (const file of ['index.cjs', 'index.mjs']) {
+      const checked = spawnSync(process.execPath, ['--check', join(dir, file)], { encoding: 'utf8' });
+      assert.equal(checked.status, 0, `${file} parses: ${checked.stderr}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the result null of an optional of a class is compared with the null of each target (GN-13e)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.find', name: ['find'], kind: 'function', visibility: 'public', parameters: [{ name: ['key'], type: 'text', required: true }], returns: { optional: { unit: 'token' } }, raises: [], wait: 'none', core: 'polyspec_classes::find' });
+  contract.cases.push({ member: 'classes.find', file: 'contracts/cases.json', group: 'find' });
+  (caseFiles.get('contracts/cases.json') as any).find = [{ id: 'absent', key: 'a', result: null }, { id: 'present', key: 'b', result: { kind: 'text', value: 'b' } }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find absent', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n\s+result = pkg\.find\("a"\)\n\s+expected = None\n/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13efindAbsent\(\): void\n\s+\{\n\s+self::assertSame\(self::same\(null\), self::same\([^\n]*find\("a"\)\)\);/);
+  // Go compares with the nil of the type of the result, as its other results. Go writes no case value of a class of
+  // origin value yet, so its contract has the cases of find alone.
+  const goContract = { ...contract, cases: contract.cases.filter((row: any) => row.member === 'classes.find') };
+  const go = generate({ contract: goContract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] });
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
+  // A result that is a class still has no case form, so its test fails with the reason.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
+});
+
+test('a float case value is a float literal in Python and PHP, also where JSON writes an integer (B-2, G-5)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  contract.units.find((u: any) => u.kind === 'functions').members.push({ id: 'classes.scale', name: ['scale'], kind: 'function', visibility: 'public', parameters: [{ name: ['value'], type: 'float', required: true }], returns: 'float', raises: [], wait: 'none', core: 'polyspec_classes::scale' });
+  contract.cases.push({ member: 'classes.scale', file: 'contracts/cases.json', group: 'scale' });
+  (caseFiles.get('contracts/cases.json') as any).scale = [{ id: 'zero', value: 0, result: 0 }, { id: 'negative_zero', value: -0, result: -0 }, { id: 'e20', value: 1e20, result: 1e20 }, { id: 'half', value: 0.5, result: 0.5 }];
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /result = pkg\.scale\(0\.0\)\n\s+expected = 0\.0\n/);
+  assert.match(py, /result = pkg\.scale\(-0\.0\)\n\s+expected = -0\.0\n/);
+  assert.match(py, /result = pkg\.scale\(1e\+20\)\n\s+expected = 1e\+20\n/);
+  assert.match(py, /result = pkg\.scale\(0\.5\)\n\s+expected = 0\.5\n/);
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /self::assertSame\(self::same\(0\.0\), self::same\([^\n]*scale\(0\.0\)\)\);/);
+  assert.match(php, /self::assertSame\(self::same\(-0\.0\), self::same\([^\n]*scale\(-0\.0\)\)\);/);
+  assert.match(php, /self::assertSame\(self::same\(1e\+20\), self::same\([^\n]*scale\(1e\+20\)\)\);/);
+  // Node has one number type, and a negative zero keeps its sign.
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.match(node, /pkg\.scale\(0\), ordered\(0\)|ordered\(pkg\.scale\(0\)\), ordered\(0\)/);
+  assert.match(node, /ordered\(pkg\.scale\(-0\)\), ordered\(-0\)/);
+});
+
+test('the Python G-7 test of a constructor without parameters expects the words of PyO3 (G-7)', () => {
+  const out = generate({ ...tokenMapClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['python'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /def test_g7_token_map_new_counts_and_names_its_arguments\(self\) -> None:\n\s+with self\.assertRaisesRegex\(TypeError, "takes 0 positional arguments"\):\n\s+pkg\.TokenMap\(None\)\n\s+with self\.assertRaisesRegex\(TypeError, "unexpected keyword argument"\):\n\s+pkg\.TokenMap\(not_a_parameter=1\)/);
+  // A static member without parameters is a function of no arguments.
+  assert.match(py, /def test_g7_token_none_counts_and_names_its_arguments\(self\) -> None:\n\s+with self\.assertRaisesRegex\(TypeError, "takes no arguments"\):/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
@@ -1880,7 +2177,7 @@ test('WASM: a class unit is a class of the ES module over the handle of its valu
   // The constructor gives the handle; a method reads the value of its handle and shares it for the call.
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_new"\)\]\n {4}pub fn class_tag_new\(name: JsValue\) -> Result<u32, JsValue> \{/);
   // GN-6h: a value of the class comes in from the language, so the class holds it in a lock that each call reads.
-  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let result = polyspec_sample::Tag::name\(&receiver\);/);
+  assert.match(lib, /pub fn class_tag_name\(this: u32\) -> Result<JsValue, JsValue> \{\n {8}guard\(\|\| \{\n {12}let held = held_tag\(this\)\?;\n {12}let receiver = held\.read\("Tag", &\[\]\)\.map_err\(binding_error\)\?;\n {12}let receiver = &\*receiver;\n {12}let result = polyspec_sample::Tag::name\(receiver\);/);
   assert.match(lib, /#\[wasm_bindgen\(js_name = "__Tag_free"\)\]/);
   assert.match(lib, /\nfn in_tag\(value: &JsValue, subject: &str\) -> Result<polyspec_sample::Tag, Fail> \{\n {4}let handle = handle_of\(0, value\)\?/);
   assert.match(lib, /pub fn register\(classes: Vec<Function>, makers: Vec<Function>, readers: Vec<Function>\)/);
@@ -1971,9 +2268,9 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // GN-8a: the arming is taken where the core is called, after the arguments are converted and the locks are
     // taken, so a call that fails before the core leaves it.
     assert.match(lib, /let result = match with_faults\("sample\.measure", \|\| polyspec_sample::measure\(&text\)\) \{/, path);
-    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(&mut receiver, &other\)\) \{/, path);
+    assert.match(lib, /let mut receiver = self\.inner\.write\("Counter"\)[^\n]*\?;\n\s+let other = other\.read\("Counter", &\[\]\)[^\n]*\?;\n\s+let receiver = &mut \*receiver;\n\s+let other = &\*other;\n\s+let result = match with_faults\("counter\.draw", \|\| polyspec_sample::Counter::draw\(receiver, CoreForm::core_form\(other\)\)\) \{/, path);
     // The core call of an iterate is the whole iteration.
-    assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(&receiver\)\)\)/, path);
+    assert.match(lib, /in with_faults\("tag\.entries", \|\| collected\(polyspec_sample::Tag::entries\(receiver\)\)\)/, path);
     // Each core call is armed for its own member, and none twice.
     assert.equal((lib.match(/with_faults\("/g) ?? []).length, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
@@ -2335,7 +2632,7 @@ test('a member with wait async_driver runs its future on a tokio runtime in the 
   const out = classes();
   // The future owns the converted arguments and the guards, and awaits the async fn of the core.
   const future = /async move \{[^\n]*polyspec_classes::fetch\(&name\)\.await/;
-  const method = /async move \{[^\n]*polyspec_classes::Gate::enter_later\(&[a-z_]+\)\.await/;
+  const method = /async move \{[^\n]*polyspec_classes::Gate::enter_later\(receiver\)\.await/;
   // PHP: the calling thread blocks on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, /binding_core::driver::block_on\(binding_core::driver::Caught::new\(/);
@@ -2423,7 +2720,7 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
   // PHP: the call blocks the calling thread.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.ok(php.includes(`polyspec_classes::read(${token}, `), 'PHP passes the token to read');
-  assert.match(php, /polyspec_classes::Gate::enter_slowly\(&[a-z_]+, binding_core::Io::for_generated_call\(\)\)/);
+  assert.match(php, /polyspec_classes::Gate::enter_slowly\(receiver, binding_core::Io::for_generated_call\(\)\)/);
   // Python: the core call runs without the GIL, and a<name> runs <name> in asyncio.to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, /py\.detach\(\|\| [^\n]*polyspec_classes::read\(binding_core::Io::for_generated_call\(\), /);

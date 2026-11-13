@@ -2,12 +2,12 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
+import { aliasNode, foreignFailureNode, foreignRegistration, nodeHost } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -850,8 +850,8 @@ const _: () = {
     sync::<${core}>();
 };
 
-` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value')} }, env).map_err(internal)
+` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: impl CoreForm<${core}>) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value.core_form()')} }, env).map_err(internal)
 }
 
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${jsClass} inside another type is an instance of it, whose value is read, cloned and
@@ -978,11 +978,11 @@ function libRust(model: Model): string {
     // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
-    model.aliases.length > 0 ? NODE_HOST : '',
+    model.aliases.length > 0 ? nodeHost(model) : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
@@ -999,7 +999,7 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -1242,9 +1242,9 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
-    },
+    } }[${jsString(name)}],
     writable: true,
     configurable: true,
   });
@@ -1298,7 +1298,7 @@ ${classes}${units === '' ? '' : `\n${units}`}
 
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
-
+${foreignRegistration(model)}
 // T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {

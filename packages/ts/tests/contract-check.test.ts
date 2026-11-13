@@ -157,6 +157,17 @@ describe('CK-6 cycles', () => {
 
 describe('CK-8 value units', () => {
   const inRows = (c: any): any[] => unit(c, 'value').in;
+  // GN-6x: the class that represents its value type names the functions through which another repository takes and
+  // gives its values; its core type is named with them.
+  const owned = (c: any): void => {
+    unit(c, 'value').core = { in: 'forms::value_in', out: 'forms::value_out' };
+    unit(c, 'value').core_type = 'forms::Value';
+  };
+  test('a value class that represents its value type names core: {in, out} with its core_type', () => {
+    assert.deepEqual(findings(owned), []);
+  });
+  test('a value class with core: {in, out} and no core_type', () =>
+    fails('CK-8', at('value'), (c) => { owned(c); delete unit(c, 'value').core_type; }));
   test('a by enum value without a case', () =>
     fails('CK-8', `${at('value')}/in/0/cases`, (c) => { inRows(c)[0].cases.pop(); }));
   test('a by enum value in two cases', () =>
@@ -429,8 +440,8 @@ describe('CK-8 representative units and predicate round trips', () => {
       delete value.in;
       value.origin = 'value';
     }));
-  test('a value class with core functions (U-7)', () =>
-    fails('CK-8', `${at('value')}/core`, (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
+  test('a value class with core functions and no core_type (U-7, GN-6x)', () =>
+    fails('CK-8', at('value'), (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
   const gather = (c: any): void => {
     const value = unit(c, 'value');
     c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, out: value.out, in: value.in });

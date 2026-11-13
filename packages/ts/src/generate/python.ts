@@ -3,11 +3,11 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
-import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
+import { aliasPython, foreignFailurePython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
 
 const ROOT = 'packages/python/generated';
@@ -663,8 +663,8 @@ impl Drop for ${struct} {
 }
 `}
 ${givesOut ? `
-fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
-    Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
+fn out_${rustField(object.unit.name)}(py: Python<'_>, value: impl CoreForm<${core}>) -> PyResult<Bound<'_, PyAny>> {
+    Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value.core_form()')} })?.into_any())
 }
 ` : ''}
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${pyClass} inside another type is an instance of it, whose value is read, cloned and
@@ -866,7 +866,7 @@ function libRust(model: Model, layout: PythonLayout): string {
     ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)),
     ...model.variants.map((v) => variantRust(model, v)),
     ...model.aliases.map((a) => aliasPython(model, a)),
-    model.aliases.length > 0 ? PYTHON_HOST : '',
+    model.aliases.length > 0 ? pythonHost(model) : '',
   ].join('\n');
   // The conversion out of a class is written when a call gives the class: the constructor wraps the value itself, so
   // a class that no member returns has none (the lints deny dead code).
@@ -888,7 +888,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),
@@ -900,7 +900,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
 // The native module ${layout.module}._native of ${model.contract.library}.
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use pyo3::prelude::*;
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{${pyTypes.join(', ')}};
 ${/Borrow</.test(`${used}${objects}`) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeMap\b/.test(`${used}${objects}`) ? 'use std::collections::BTreeMap;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};${/\bTHROWN\b/.test(objects) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};\nuse std::sync::{Mutex, MutexGuard};' : ''}

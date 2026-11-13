@@ -4,13 +4,13 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowed, tupleOut, RECEIVER_GUARD } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
-import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
+import { aliasWasm, foreignFailureWasm, foreignRegistrationWasm, wasmHost } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
+import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -487,7 +487,7 @@ pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
 ${[...receiverLines(model, fn), ...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel)].join('\n')}
         let items = Array::new();
-        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'})`)} {
+        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? RECEIVER_GUARD : 'this'})`)} {
 ${body}
         }
         Ok(items.into())
@@ -591,8 +591,8 @@ fn held_param_${plain}(value: &JsValue, subject: &str) -> Result<Rc<${heldType(o
 ` : ''}
 
 /// T-5: a value of ${jsClass} leaves as a new instance, which the ES module makes around the handle of the value.
-fn out_${name}(value: ${core}) -> Result<JsValue, Fail> {
-    let handle = insert_${plain}(value)?;
+fn out_${name}(value: impl CoreForm<${core}>) -> Result<JsValue, Fail> {
+    let handle = insert_${plain}(value.core_form())?;
     make_instance(${index}, handle).inspect_err(|_fail| ${table}.with(|table| table.borrow_mut().remove(handle)))
 }
 ${takesObject(model, object) ? `
@@ -871,11 +871,11 @@ function libRust(model: Model): string {
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
-  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), WASM_HOST];
+  const aliasUnits = model.aliases.length === 0 ? [] : [...model.aliases.map((a) => aliasWasm(model, a)), wasmHost(model)];
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
@@ -889,7 +889,7 @@ function libRust(model: Model): string {
 // (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
+${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use js_sys::{${[...jsTypes, 'Function', 'Reflect'].sort().join(', ')}};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::cell::RefCell;
 ${model.objects.length === 0 && !carriesThrown(model) ? '' : 'use std::collections::BTreeMap;\n'}use std::panic::{catch_unwind, AssertUnwindSafe};
 ${model.objects.length === 0 ? '' : 'use std::rc::Rc;\n'}${carriesThrown(model) ? 'use std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use wasm_bindgen::prelude::wasm_bindgen;
@@ -1200,7 +1200,7 @@ const released = new FinalizationRegistry(([free, handle]) => {
   return `${header('//')}
 import load, * as glue from './${glue}.js';
 import { ${model.objects.length === 0 ? 'enter' : 'broken, enter'} } from './state.mjs';
-${classes}${units}
+${foreignRegistrationWasm(model).imports}${classes}${units}
 ${objectState}${objects === '' ? '' : `${objects}\n`}
 // GW-5: the import loads the WebAssembly module (top-level await), so no export runs before it is ready. A file: URL
 // is read from the file system (Node, through the subpath ./wasm), any other URL is fetched (a browser).
@@ -1209,7 +1209,7 @@ const source = url.protocol === 'file:' ? (await import('node:fs/promises')).rea
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
 glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class'))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
-
+${foreignRegistrationWasm(model).register}
 // T-7: a list parameter takes any iterable but a string; the module judges anything else.
 function toList(value) {
   if (typeof value !== 'string' && value !== null && value !== undefined && typeof value[Symbol.iterator] === 'function') {

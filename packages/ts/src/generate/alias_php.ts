@@ -6,6 +6,9 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { classIn, classMakes } from './value_class.ts';
+import type { Member, Unit } from '../contract.ts';
+import { rustString } from './text.ts';
 
 // The PHP value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -85,16 +88,267 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
   }
 }
 
+// GN-6x: the PHP name of a class of the owner of a value class of another repository.
+function ownerName(alias: ValueAlias, unit: Unit): string {
+  const namespace = (alias.owner?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+  const module = unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`;
+  return `${namespace}${module}\\${langName('php', unit.name, 'class')}`;
+}
+
+// GN-6x: the PHP conversions of a value class of another repository: an instance enters as HostValue::Value, which the
+// owner's in function reads through the read members of its in row; a core value leaves as the instance that the
+// owner's members of its out rows make.
+function valueClassPhp(alias: ValueAlias, name: string, core: string, failure: string): string {
+  const label = langName('php', alias.unit.name, 'class');
+  const own = ownerName(alias, alias.unit);
+  const call = (member: Member, args: string): string =>
+    `php_static(${rustString(`${own}::${langName('php', member.name, 'callable')}`)}, vec![${args}]).map_err(php_thrown)`;
+  const arms = classMakes(alias, 'php').map((make) => {
+    if (make.form === 'content') {
+      if (make.kind === 'null') return `        OutValue::Null => ${call(make.member, '')},`;
+      const variant = make.kind === 'bool' ? 'Bool' : make.kind === 'number' ? 'Number' : 'Text';
+      return `        OutValue::${variant}(value) => ${call(make.member, '&value')},`;
+    }
+    if (make.form === 'list') {
+      return `        OutValue::List { handle, len } => {
+            let mut items = ZendHashTable::new();
+            for index in 0..len {
+                let item = source.item(handle, index);
+                items.push(make(item, source)?).map_err(php_failed)?;
+            }
+            let items = items.into_zval(false).map_err(php_failed)?;
+            ${call(make.member, '&items')}
+        }`;
+    }
+    return `        OutValue::Map(value) => {
+            let handle = value.handle();
+            let len = value.len();
+            let map = php_new(${rustString(ownerName(alias, make.map))}).map_err(php_thrown)?;
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(key, source)?;
+                let item = make(item, source)?;
+                php_method(&map, ${rustString(langName('php', make.insert.name, 'callable'))}, vec![&key, &item]).map_err(php_thrown)?;
+            }
+            ${call(make.member, '&map')}
+        }`;
+  });
+  return `
+/// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
+fn in_${name}(value: &Zval, subject: &str) -> Result<${core}, Fail> {
+    let instance = match (value.object(), ClassEntry::try_find(${rustString(own)})) {
+        (Some(object), Some(class)) => object.instance_of(class),
+        _ => false,
+    };
+    if !instance {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(own)}) }));
+    }
+    let mut host = PhpHost { held: Vec::new(), owned: Vec::new(), values: Vec::new() };
+    let described = host.describe(value)?;
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
+}
+
+/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<Zval, Fail> {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(root, &mut source)
+}
+
+fn make_${name}(out: OutValue, source: &mut dyn OutValues) -> Result<Zval, Fail> {
+    let make = make_${name};
+    match out {
+${arms.join('\n')}
+        other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
+    }
+}
+`;
+}
+
+// GN-6x: the description of an instance of each value class of another repository by its in row, and of the values
+// that its read members give, which the host owns because the calls made them.
+function valueClassesPhpHost(model: Model): string {
+  const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
+    const row = classIn(alias, 'php');
+    const own = ownerName(alias, alias.unit);
+    const arms = row.cases.map((kase) => {
+      const read = kase.read === undefined ? 'None' : `Some(${rustString(langName('php', kase.read.name, 'callable'))})`;
+      return `            ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
+    }).join('\n');
+    return [`    if php_instance(value, ${rustString(own)}) {
+        // I-3: a property of the owner is a method in PHP; a backed enum case gives its value.
+        let by = php_method(value, ${rustString(langName('php', row.by.name, 'callable'))}, vec![]).map_err(php_thrown)?;
+        let by: String = match by.object() {
+            Some(case) => case.get_property::<String>("value").map_err(php_failed)?,
+            None => match by.string() {
+                Some(text) => text,
+                None => return Err(binding_error(BindingError::Internal { detail: String::from("GN-6x: the kind of ${own} is no enum case") })),
+            },
+        };
+        let (kind, read) = match by.as_str() {
+${arms}
+            other => return Err(binding_error(BindingError::Internal { detail: format!("GN-6x: ${own} gives the kind {other}, which its in row has no case for") })),
+        };
+        values.push((value.shallow_clone(), read));
+        return Ok(Some(HostValue::Value { kind, handle: Handle::new(VALUE | handle_count(values.len() - 1)) }));
+    }`, ...row.maps.map((map) => `    if php_instance(value, ${rustString(ownerName(alias, map.unit))}) {
+        let iterator = php_method(value, "getIterator", vec![]).map_err(php_thrown)?;
+        let mut entries = Vec::new();
+        while php_method(&iterator, "valid", vec![]).map_err(php_thrown)?.is_true() {
+            let key = php_method(&iterator, "key", vec![]).map_err(php_thrown)?;
+            let item = php_method(&iterator, "current", vec![]).map_err(php_thrown)?;
+            entries.push((key, item));
+            php_method(&iterator, "next", vec![]).map_err(php_thrown)?;
+        }
+        let len = handle_count(entries.len());
+        owned.push(entries);
+        return Ok(Some(HostValue::Map { handle: Handle::new(OWNED | handle_count(owned.len() - 1)), len }));
+    }`)];
+  });
+  return `
+/// GN-6x: the bits of a handle of a value that the host owns: an instance of a value class of another repository, or
+/// the entries of a value that a read member gave; any other handle is of a value that the caller lent.
+const VALUE: u64 = 1 << 62;
+const OWNED: u64 = 1 << 61;
+
+/// GN-6x: whether a value is an instance of the class of that name of another repository's extension.
+fn php_instance(value: &Zval, class: &str) -> bool {
+    match (value.object(), ClassEntry::try_find(class)) {
+        (Some(object), Some(class)) => object.instance_of(class),
+        _ => false,
+    }
+}
+
+/// GN-6x: a method of an object of another repository; its exception is the exception of the call.
+fn php_method(object: &Zval, name: &str, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
+    let Some(target) = object.object() else {
+        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6x: no object") })));
+    };
+    let returned = target.try_call_method(name, args).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    if let Some(exception) = ExecutorGlobals::take_exception() {
+        return Err(Thrown::Php(exception));
+    }
+    Ok(returned)
+}
+
+/// GN-6x: a static member of a class of another repository, named Class::member.
+fn php_static(name: &str, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
+    let callable = ext_php_rs::types::ZendCallable::try_from_name(name).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    let returned = callable.try_call(args).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    if let Some(exception) = ExecutorGlobals::take_exception() {
+        return Err(Thrown::Php(exception));
+    }
+    Ok(returned)
+}
+
+/// GN-6x: a new instance of a class of another repository by its constructor without arguments.
+fn php_new(name: &str) -> Result<Zval, Thrown> {
+    let Some(class) = ClassEntry::try_find(name) else {
+        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: format!("T-3: the class {name} is not loaded") })));
+    };
+    let object = ZendObject::new(class).into_zval(false).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    php_method(&object, "__construct", vec![])?;
+    Ok(object)
+}
+
+/// GN-6x: the failure of a call into another repository: its PHP exception unchanged, or the binding's.
+fn php_thrown(error: Thrown) -> Fail {
+    match error {
+        Thrown::Php(exception) => match exception.into_zval(false) {
+            Ok(object) => PhpException::from_message(String::new()).with_object(object),
+            Err(error) => php_failed(error),
+        },
+        Thrown::Binding(fail) => fail,
+    }
+}
+
+/// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance of
+/// a class of its owner that a read member gives, as a map of the pairs of its iterator.
+fn php_value_class(value: &Zval, values: &mut Vec<(Zval, Option<&'static str>)>, owned: &mut Vec<Vec<(Zval, Zval)>>) -> Result<Option<HostValue>, Fail> {
+${checks.join('\n')}
+    Ok(None)
+}
+
+impl PhpHost<'_> {
+    /// GN-6x: a value that the host owns, which a read member gave: an array as its entries, an instance as describe
+    /// gives it, and a scalar or a string as its kind.
+    fn describe_owned(&mut self, value: Zval) -> Result<HostValue, Fail> {
+        if let Some(described) = php_value_class(&value, &mut self.values, &mut self.owned)? {
+            return Ok(described);
+        }
+        if let Some(array) = value.array() {
+            let is_list = array.has_sequential_keys();
+            let mut entries = Vec::new();
+            let mut iterator = array.iter();
+            while let Some((key, item)) = iterator.next_zval() {
+                entries.push((key, item.shallow_clone()));
+            }
+            let len = handle_count(entries.len());
+            self.owned.push(entries);
+            return Ok(HostValue::PhpArray { handle: Handle::new(OWNED | handle_count(self.owned.len() - 1)), len, is_list });
+        }
+        if value.object().is_some() || value.array().is_some() {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6x: a read member gave an object that no in row describes") }));
+        }
+        let mut scalar = PhpHost { held: Vec::new(), owned: Vec::new(), values: Vec::new() };
+        scalar.describe(&value)
+    }
+
+    /// GN-6x: the item or the entry of a value that the host owns, its key described as an owned value.
+    fn owned_entry(&mut self, handle: Handle, index: u64) -> Result<Option<(HostValue, HostValue)>, binding_core::Raised> {
+        if handle.raw() & OWNED == 0 {
+            return Ok(None);
+        }
+        let entry = self.owned.get(handle_position(handle.raw() & !OWNED)).and_then(|entries| entries.get(handle_position(index)));
+        let Some((key, item)) = entry.map(|(key, item)| (key.shallow_clone(), item.shallow_clone())) else {
+            return Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no such entry") }))));
+        };
+        let key = self.describe_owned(key).map_err(|fail| raised(Thrown::Binding(fail)))?;
+        let item = self.describe_owned(item).map_err(|fail| raised(Thrown::Binding(fail)))?;
+        Ok(Some((key, item)))
+    }
+
+    /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
+    fn read_value(&mut self, value: Handle) -> Result<HostValue, Fail> {
+        let held = match self.values.get(handle_position(value.raw() & !VALUE)) {
+            Some((object, Some(read))) => Some((object.shallow_clone(), *read)),
+            _ => None,
+        };
+        let Some((object, read)) = held else {
+            return Err(binding_error(BindingError::Internal { detail: String::from("B-1: no such value") }));
+        };
+        let content = php_method(&object, read, vec![]).map_err(php_thrown)?;
+        self.describe_owned(content)
+    }
+}
+`;
+}
+
+// B-1: the host of the PHP values, with the description of the value classes of other repositories (GN-6x).
+export function phpHost(model: Model): string {
+  if (!model.aliases.some((a) => a.owner !== undefined)) return PHP_HOST;
+  const host = PHP_HOST
+    .replace("    held: Vec<Vec<(HostValue, &'a Zval)>>,\n}", "    held: Vec<Vec<(HostValue, &'a Zval)>>,\n    owned: Vec<Vec<(Zval, Zval)>>,\n    values: Vec<(Zval, Option<&'static str>)>,\n}")
+    .replace("        if let Some(object) = value.object() {\n            let type_name", "        if let Some(described) = php_value_class(value, &mut self.values, &mut self.owned)? {\n            return Ok(described);\n        }\n        if let Some(object) = value.object() {\n            let type_name")
+    .replace("    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n", "    fn item(&mut self, list: Handle, index: u64) -> Result<HostValue, binding_core::Raised> {\n        if let Some((_key, item)) = self.owned_entry(list, index)? {\n            return Ok(item);\n        }\n")
+    .replace("    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n", "    fn entry(&mut self, map: Handle, index: u64) -> Result<(HostValue, HostValue), binding_core::Raised> {\n        if let Some(entry) = self.owned_entry(map, index)? {\n            return Ok(entry);\n        }\n")
+    .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
+        self.read_value(value).map_err(|fail| raised(Thrown::Binding(fail)))
+    }
+`);
+  return host + valueClassesPhpHost(model);
+}
+
 export function aliasPhp(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('php', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
+  if (alias.owner !== undefined) return valueClassPhp(alias, name, core, failure);
   const arms = outArms(model, alias, 'php', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '');
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = PhpHost { held: Vec::new() };
+    let mut host = PhpHost { held: Vec::new()${model.aliases.some((a) => a.owner !== undefined) ? ', owned: Vec::new(), values: Vec::new()' : ''} };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }

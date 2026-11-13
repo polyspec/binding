@@ -7,6 +7,10 @@
 
 import { type Model, type ValueAlias, langName, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { foreignClasses } from './alias_node.ts';
+import { classIn, classMakes } from './value_class.ts';
+import { jsString, rustString } from './text.ts';
+import type { Member, Unit } from '../contract.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -71,11 +75,208 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
   }
 }
 
+// GN-6x: the classes of other repositories that the module calls, in the order of foreignClasses.
+const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
+
+// GN-6x: the JavaScript call of a member of the owner on an object: a property read or a method call.
+function jsCall(member: Member, object: string, args: string[]): string {
+  const name = `&JsValue::from_str(${rustString(langName('wasm', member.name, 'callable'))})`;
+  if (member.kind === 'property') return `Reflect::get(${object}, ${name}).map_err(js_fail)?`;
+  const call = args.length === 0 ? 'call0(object)' : `call${args.length}(object, ${args.join(', ')})`;
+  return `{
+                let object = ${object};
+                let function: Function = Reflect::get(object, ${name}).and_then(JsCast::dyn_into).map_err(js_fail)?;
+                function.${call}.map_err(js_fail)?
+            }`;
+}
+
+// GN-6x: the WASM conversions of a value class of another repository, as in Node (GN-18b): an instance enters as
+// HostValue::Value, which the owner's in function reads through the read members of its in row; a core value leaves as
+// the instance that the owner's members of its out rows make.
+function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
+  const label = langName('wasm', alias.unit.name, 'class');
+  const own = classIndex(model, alias.unit);
+  const arms = classMakes(alias, 'wasm').map((make) => {
+    if (make.form === 'content') {
+      if (make.kind === 'null') return `        OutValue::Null => Ok(${jsCall(make.member, '&class', [])}),`;
+      const [variant, arg] = make.kind === 'bool' ? ['Bool', '&JsValue::from_bool(value)'] : [make.kind === 'number' ? 'Number' : 'Text', '&JsValue::from_str(&value)'];
+      return `        OutValue::${variant}(value) => Ok(${jsCall(make.member, '&class', [arg])}),`;
+    }
+    if (make.form === 'list') {
+      return `        OutValue::List { handle, len } => {
+            let items = Array::new();
+            for index in 0..len {
+                let item = source.item(handle, index);
+                items.push(&make(item, source)?);
+            }
+            Ok(${jsCall(make.member, '&class', ['&items'])})
+        }`;
+    }
+    return `        OutValue::Map(value) => {
+            let handle = value.handle();
+            let len = value.len();
+            let map_class: Function = foreign_class(${classIndex(model, make.map)}).map_err(js_fail)?;
+            let map = Reflect::construct(&map_class, &Array::new()).map_err(js_fail)?;
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(key, source)?;
+                let item = make(item, source)?;
+                let insert: Function = Reflect::get(&map, &JsValue::from_str(${rustString(langName('wasm', make.insert.name, 'callable'))})).and_then(JsCast::dyn_into).map_err(js_fail)?;
+                insert.call2(&map, &key, &item).map_err(js_fail)?;
+            }
+            Ok(${jsCall(make.member, '&class', ['&map'])})
+        }`;
+  });
+  return `
+/// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
+fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
+    let class = foreign_class(${own}).map_err(js_fail)?;
+    if !value.is_object() || !foreign_instance(value, &class).map_err(js_fail)? {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from(${rustString(label)}) }));
+    }
+    let mut host = JsHost { held: Vec::new() };
+    let described = host.describe(value).map_err(js_fail)?;
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
+}
+
+/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
+fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(root, &mut source)
+}
+
+fn make_${name}(out: OutValue, source: &mut dyn OutValues) -> Result<JsValue, Fail> {
+    let make = make_${name};
+    let class: JsValue = foreign_class(${own}).map_err(js_fail)?.into();
+    match out {
+${arms.join('\n')}
+        other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
+    }
+}
+`;
+}
+
+// GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
+function valueClassesWasmHost(model: Model): string {
+  const classes = foreignClasses(model);
+  const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
+    const row = classIn(alias, 'wasm');
+    const label = langName('wasm', alias.unit.name, 'class');
+    const arms = row.cases.map((kase) => {
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('wasm', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}))`;
+      return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
+    }).join('\n');
+    const byName = `&JsValue::from_str(${rustString(langName('wasm', row.by.name, 'callable'))})`;
+    const by = row.by.kind === 'property'
+      ? `Reflect::get(value, ${byName})?`
+      : `Reflect::get(value, ${byName})?.dyn_into::<Function>()?.call0(value)?`;
+    return [`        if foreign_instance(value, &foreign_class(${classIndex(model, alias.unit)})?)? {
+            let Some(by) = ${by}.as_string() else {
+                return Err(JsValue::from_str("GN-6x: the kind of ${label} is no string"));
+            };
+            let (kind, read) = match by.as_str() {
+${arms}
+                other => return Err(JsValue::from_str(&format!("GN-6x: ${label} gives the kind {other}, which its in row has no case for"))),
+            };
+            return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Value(value.clone(), read)) }));
+        }`, ...row.maps.map((map) => `        if foreign_instance(value, &foreign_class(${classIndex(model, map.unit)})?)? {
+            let pairs = js::array_from(value)?;
+            let len = u64::from(pairs.length());
+            return Ok(Some(HostValue::Map { handle: self.hold(Held::Pairs(pairs)), len }));
+        }`)];
+  });
+  return `
+thread_local! {
+    /// GN-6x: the classes of other repositories that the JavaScript entry hands over when the module loads, in the
+    /// order of the generator: each value class and the classes of its owner that its read members give.
+    static FOREIGN: RefCell<Vec<Function>> = const { RefCell::new(Vec::new()) };
+}
+
+/// GN-6x: the module keeps each class of another repository when it loads; a missing class fails the load.
+#[allow(clippy::disallowed_methods, reason = "GN-18: the wasm_bindgen expansion")]
+mod foreign_exports {
+    use super::*;
+
+    #[wasm_bindgen(js_name = "__register_foreign")]
+    pub fn register_foreign(classes: Vec<Function>) -> Result<(), JsValue> {
+        if classes.len() != ${classes.length} {
+            return Err(JsValue::from_str(&format!("GN-6x: ${classes.length} classes of other repositories, {} given", classes.len())));
+        }
+        FOREIGN.with(|registered| registered.replace(classes));
+        Ok(())
+    }
+}
+
+/// GN-6x: the class of another repository at its position.
+fn foreign_class(index: usize) -> Result<Function, JsValue> {
+    match FOREIGN.with(|classes| classes.borrow().get(index).cloned()) {
+        Some(class) => Ok(class),
+        None => Err(JsValue::from_str("GN-6x: the classes of other repositories are not registered")),
+    }
+}
+
+/// GN-6x: value instanceof class, as JavaScript runs it.
+fn foreign_instance(value: &JsValue, class: &Function) -> Result<bool, JsValue> {
+    let has_instance: Function = Reflect::get(class, &js_sys::Symbol::has_instance())?.dyn_into()?;
+    Ok(has_instance.call1(class, value)?.is_truthy())
+}
+
+impl JsHost {
+    /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance
+    /// of a class of its owner that a read member gives, as a map of the pairs of its iteration.
+    fn value_class(&mut self, value: &JsValue) -> Result<Option<HostValue>, JsValue> {
+${checks.join('\n')}
+        Ok(None)
+    }
+
+    /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
+    fn read_value(&mut self, value: Handle) -> Result<HostValue, JsValue> {
+        let held = match self.held.get(handle_position(value.raw())) {
+            Some(Held::Value(object, Some(read))) => Some((object.clone(), *read)),
+            _ => None,
+        };
+        let Some((object, (name, call))) = held else {
+            return Err(JsValue::from_str("B-1: no such value"));
+        };
+        let content = Reflect::get(&object, &JsValue::from_str(name))?;
+        let content = if call { content.dyn_into::<Function>()?.call0(&object)? } else { content };
+        self.describe(&content)
+    }
+}
+`;
+}
+
+// B-1: the host of the JavaScript values, with the description of the value classes of other repositories (GN-6x).
+export function wasmHost(model: Model): string {
+  if (!model.aliases.some((a) => a.owner !== undefined)) return WASM_HOST;
+  const host = WASM_HOST
+    .replace("    Properties(JsValue, Array),\n}", "    Properties(JsValue, Array),\n    Value(JsValue, Option<(&'static str, bool)>),\n}")
+    .replace("    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n", "    fn describe_object(&mut self, value: &JsValue) -> Result<HostValue, JsValue> {\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }\n")
+    .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
+        self.read_value(value).map_err(js_raised)
+    }
+`);
+  return host + valueClassesWasmHost(model);
+}
+
+// GN-6x: the lines of the JavaScript entry that hand the classes of other repositories to the module.
+export function foreignRegistrationWasm(model: Model): { imports: string; register: string } {
+  const classes = foreignClasses(model);
+  if (classes.length === 0) return { imports: '', register: '' };
+  const libraries = [...new Set(classes.map((c) => c.alias.library ?? ''))];
+  const imports = libraries.map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(classes.find((c) => c.alias.library === library)?.alias.owner?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('');
+  const register = `// GN-6x: the module calls the classes of the value classes of other repositories; it keeps them from here on.
+glue.__register_foreign([${classes.map((c) => `foreign_${(c.alias.library ?? '').replaceAll('-', '_')}.${langName('wasm', c.unit.name, 'class')}`).join(', ')}]);
+`;
+  return { imports, register };
+}
+
 export function aliasWasm(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('wasm', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
+  if (alias.owner !== undefined) return valueClassWasm(model, alias, name, core, failure);
   const arms = outArms(model, alias, 'wasm', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', '');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.

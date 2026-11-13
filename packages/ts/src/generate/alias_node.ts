@@ -6,6 +6,9 @@
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
 import { container, outArms } from './alias_shared.ts';
+import { classIn, classMakes } from './value_class.ts';
+import { jsString, rustString } from './text.ts';
+import type { Member, Unit } from '../contract.ts';
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string): string {
@@ -72,11 +75,208 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
   }
 }
 
+// GN-6x: the classes of other repositories that the generated code calls: each value class of another repository and
+// the classes of its owner that its read members give, in this order, which the JavaScript entry hands over.
+export function foreignClasses(model: Model): { alias: ValueAlias; unit: Unit }[] {
+  return model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => [
+    { alias, unit: alias.unit },
+    ...classIn(alias, 'node').maps.map((map) => ({ alias, unit: map.unit })),
+  ]);
+}
+
+const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
+
+// GN-6x: the JavaScript call of a member of the owner on an object: a property read or a method call, with the
+// arguments `args` of the types `types`.
+function jsCall(member: Member, object: string, args: string, types: string): string {
+  const name = rustString(langName('node', member.name, 'callable'));
+  if (member.kind === 'property') return `${object}.get_named_property::<Unknown<'env>>(${name}).map_err(js_fail)?`;
+  const fnType = args === '' ? "Function<'env, (), Unknown<'env>>" : `Function<'env, FnArgs<(${types},)>, Unknown<'env>>`;
+  return `${object}.get_named_property::<${fnType}>(${name}).and_then(|function| function.apply(${object}, ${args === '' ? '()' : `FnArgs::from((${args},))`})).map_err(js_fail)?`;
+}
+
+// GN-6x: the Node conversions of a value class of another repository: an instance enters as HostValue::Value, which
+// the owner's in function reads through the read members of its in row; a core value leaves as the instance that the
+// owner's members of its out rows make.
+function valueClassNode(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
+  const label = langName('node', alias.unit.name, 'class');
+  const own = classIndex(model, alias.unit);
+  const arms = classMakes(alias, 'node').map((make) => {
+    if (make.form === 'content') {
+      if (make.kind === 'null') return `        OutValue::Null => Ok(${jsCall(make.member, 'class', '', '')}),`;
+      const [variant, type] = make.kind === 'bool' ? ['Bool', 'bool'] : make.kind === 'number' ? ['Number', 'String'] : ['Text', 'String'];
+      return `        OutValue::${variant}(value) => Ok(${jsCall(make.member, 'class', 'value', type)}),`;
+    }
+    if (make.form === 'list') {
+      return `        OutValue::List { handle, len } => {
+            let mut items = env.create_array(js_index(len)?).map_err(internal)?;
+            for index in 0..len {
+                let item = source.item(handle, index);
+                let item = make(env, item, source)?;
+                items.set(js_index(index)?, item).map_err(internal)?;
+            }
+            let items = items.to_unknown();
+            Ok(${jsCall(make.member, 'class', 'items', "Unknown<'env>")})
+        }`;
+    }
+    return `        OutValue::Map(value) => {
+            let handle = value.handle();
+            let len = value.len();
+            let map_class = foreign_class(env, ${classIndex(model, make.map) < 0 ? 0 : classIndex(model, make.map)}).map_err(internal)?;
+            let constructor: Function<'env, (), Unknown<'env>> = unsafe { map_class.to_unknown().cast() }.map_err(internal)?;
+            let map: Object<'env> = unsafe { constructor.new_instance(()).map_err(js_fail)?.cast() }.map_err(internal)?;
+            for index in 0..len {
+                let (key, item) = source.entry(handle, index);
+                let key = make(env, key, source)?;
+                let item = make(env, item, source)?;
+                map.get_named_property::<Function<'env, FnArgs<(Unknown<'env>, Unknown<'env>)>, Unknown<'env>>>(${rustString(langName('node', make.insert.name, 'callable'))})
+                    .and_then(|insert| insert.apply(map, FnArgs::from((key, item))))
+                    .map_err(js_fail)?;
+            }
+            let map = map.to_unknown();
+            Ok(${jsCall(make.member, 'class', 'map', "Unknown<'env>")})
+        }`;
+  });
+  return `
+/// GN-6x: an instance of ${label} of ${alias.library ?? ''} enters as HostValue::Value, which the core of its owner judges.
+fn in_${name}<'env>(env: &'env Env, value: Unknown<'env>, subject: &str) -> Result<${core}, Fail> {
+    let class = foreign_class(env, ${own}).map_err(internal)?;
+    if value.get_type().map_err(internal)? != ValueType::Object || !value.instanceof(class).map_err(js_fail)? {
+        return Err(type_error(subject, ${rustString(label)}));
+    }
+    let mut host = JsHost { env, held: Vec::new() };
+    let described = host.describe(value).map_err(js_fail)?;
+    ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
+}
+
+/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
+fn out_${name}<'env>(env: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
+    let (root, mut source) = ${alias.coreOut}(value.borrow());
+    make_${name}(env, root, &mut source)
+}
+
+fn make_${name}<'env>(env: &'env Env, out: OutValue, source: &mut dyn OutValues) -> Result<Unknown<'env>, Fail> {
+    let make = make_${name};
+    let class = foreign_class(env, ${own}).map_err(internal)?;
+    match out {
+${arms.join('\n')}
+        other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),
+    }
+}
+`;
+}
+
+// GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
+function valueClassesNodeHost(model: Model): string {
+  const classes = foreignClasses(model);
+  const checks = model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => {
+    const row = classIn(alias, 'node');
+    const label = langName('node', alias.unit.name, 'class');
+    const arms = row.cases.map((kase) => {
+      const read = kase.read === undefined ? 'None' : `Some((${rustString(langName('node', kase.read.name, 'callable'))}, ${String(kase.read.kind !== 'property')}))`;
+      return `                ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
+    }).join('\n');
+    const by = row.by.kind === 'property'
+      ? `object.get_named_property::<String>(${rustString(langName('node', row.by.name, 'callable'))})?`
+      : `object.get_named_property::<Function<'env, (), String>>(${rustString(langName('node', row.by.name, 'callable'))})?.apply(object, ())?`;
+    return [`        if value.instanceof(foreign_class(self.env, ${classIndex(model, alias.unit)})?)? {
+            let by: String = ${by};
+            let (kind, read) = match by.as_str() {
+${arms}
+                other => return Err(napi::Error::from_reason(format!("GN-6x: ${label} gives the kind {other}, which its in row has no case for"))),
+            };
+            return Ok(Some(HostValue::Value { kind, handle: self.hold(Held::Value(object, read)) }));
+        }`, ...row.maps.map((map) => `        if value.instanceof(foreign_class(self.env, ${classIndex(model, map.unit)})?)? {
+            let pairs: Object<'env> = js_global_member_call(self.env, "Array", "from", value)?;
+            let len = u64::from(pairs.get_array_length()?);
+            return Ok(Some(HostValue::Map { handle: self.hold(Held::Pairs(pairs)), len }));
+        }`)];
+  });
+  return `
+/// GN-6x: the classes of other repositories that the JavaScript entry hands over when the module loads, in the order
+/// of the generator: each value class and the classes of its owner that its read members give.
+static FOREIGN: OnceLock<Vec<FunctionRef<(), ()>>> = OnceLock::new();
+
+/// GN-6x: the module keeps a reference to each class of another repository when it loads; a missing class fails the
+/// load.
+#[napi(js_name = "__register_foreign")]
+pub fn register_foreign(classes: Vec<Function<'_, (), ()>>) -> napi::Result<()> {
+    if classes.len() != ${classes.length} {
+        return Err(napi::Error::from_reason(format!("GN-6x: ${classes.length} classes of other repositories, {} given", classes.len())));
+    }
+    let references = classes.iter().map(Function::create_ref).collect::<napi::Result<Vec<_>>>()?;
+    FOREIGN.set(references).map_err(|_registered| napi::Error::from_reason("GN-6x: the classes of other repositories are registered once"))
+}
+
+/// GN-6x: the class of another repository at its position, as the object that holds its static members.
+fn foreign_class(env: &Env, index: usize) -> napi::Result<Object<'_>> {
+    let Some(class) = FOREIGN.get().and_then(|classes| classes.get(index)) else {
+        return Err(napi::Error::from_reason("GN-6x: the classes of other repositories are not registered"));
+    };
+    let function = class.borrow_back(env)?;
+    unsafe { function.to_unknown().cast() }
+}
+
+impl<'env> JsHost<'env> {
+    /// GN-6x: an instance of a value class of another repository, described by the in row of the class, or an instance
+    /// of a class of its owner that a read member gives, as a map of the pairs of its iteration.
+    fn value_class(&mut self, value: Unknown<'env>, object: Object<'env>) -> napi::Result<Option<HostValue>> {
+${checks.join('\n')}
+        Ok(None)
+    }
+
+    /// GN-6x: the content of an instance that describe held, which the read member of its in case gives.
+    fn read_value(&mut self, value: Handle) -> napi::Result<HostValue> {
+        let held = match self.held.get(handle_position(value.raw())) {
+            Some(Held::Value(object, Some(read))) => Some((*object, *read)),
+            _ => None,
+        };
+        let Some((object, (name, call))) = held else {
+            return Err(napi::Error::from_reason("B-1: no such value"));
+        };
+        let content: Unknown<'env> = if call {
+            object.get_named_property::<Function<'env, (), Unknown<'env>>>(name)?.apply(object, ())?
+        } else {
+            object.get_named_property(name)?
+        };
+        self.describe(content)
+    }
+}
+`;
+}
+
+// B-1: the host of the JavaScript values, with the description of the value classes of other repositories (GN-6x).
+export function nodeHost(model: Model): string {
+  if (!model.aliases.some((a) => a.owner !== undefined)) return NODE_HOST;
+  const host = NODE_HOST
+    .replace("    Properties(Object<'env>, Object<'env>),\n", "    Properties(Object<'env>, Object<'env>),\n    Value(Object<'env>, Option<(&'static str, bool)>),\n")
+    .replace("        let object: Object<'env> = unsafe { value.cast() }?;\n        if value.is_array()? {", "        let object: Object<'env> = unsafe { value.cast() }?;\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }\n        if value.is_array()? {")
+    .replace(/    fn read\(&mut self, _value: Handle\)[^]*?\n    \}\n/, `    fn read(&mut self, value: Handle) -> Result<HostValue, binding_core::Raised> {
+        self.read_value(value).map_err(|error| raised(Thrown::Js(error)))
+    }
+`);
+  return host + valueClassesNodeHost(model);
+}
+
+// GN-6x: the lines of the JavaScript entry that hand the classes of other repositories to the addon.
+export function foreignRegistration(model: Model): string {
+  const classes = foreignClasses(model);
+  if (classes.length === 0) return '';
+  const libraries = [...new Set(classes.map((c) => c.alias.library ?? ''))];
+  const requires = libraries.map((library) => `const foreign_${library.replaceAll('-', '_')} = require(${jsString((classes.find((c) => c.alias.library === library)?.alias.owner?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('\n');
+  return `
+// GN-6x: the addon calls the classes of the value classes of other repositories; it keeps them from here on.
+${requires}
+addon.__register_foreign([${classes.map((c) => `foreign_${(c.alias.library ?? '').replaceAll('-', '_')}.${langName('node', c.unit.name, 'class')}`).join(', ')}]);
+`;
+}
+
 export function aliasNode(model: Model, alias: ValueAlias): string {
   const name = aliasFn(alias);
   const core = alias.unit.core_type ?? '';
   const label = langName('node', alias.unit.name, 'class');
   const failure = `binding_core::Failure<${alias.error?.path ?? model.coreError ?? '()'}>`;
+  if (alias.owner !== undefined) return valueClassNode(model, alias, name, core, failure);
   const arms = outArms(model, alias, 'node', (form, kind) => builtin(alias, form, kind), 'Err(binding_error(BindingError::Internal { detail: String::from("U-7: no out row takes the value") }))', 'env, ');
   return `
 /// U-7: a JavaScript value of ${label} enters as HostValue, which the core judges.

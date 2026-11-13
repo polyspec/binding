@@ -548,6 +548,9 @@ class Checker {
       if (unit.origin !== 'value') continue;
       const by = gathered.get(unit.id);
       const holds = unit.out !== undefined || unit.in !== undefined;
+      if (by !== undefined && typeof unit.core === 'object' && unit.core !== null) {
+        this.report('CK-8', `${path}/core`, `${unit.id} is gathered by the alias ${by}, which names core: {in, out} (U-1, GN-6x)`);
+      }
       if (by !== undefined && holds) {
         this.report('CK-8', path, `${unit.id} is gathered by the alias ${by}, which holds the out and in tables (U-1)`);
       } else if (by === undefined && (unit.out === undefined || unit.in === undefined)) {
@@ -611,7 +614,11 @@ class Checker {
     if (unit.kind === 'alias' && (typeof unit.core !== 'object' || unit.core === null)) {
       this.report('CK-8', path, `the value alias ${unit.id} names the core functions that judge and give its values in core: {in, out} (U-7)`);
     }
-    if (unit.kind !== 'alias' && typeof unit.core === 'object') this.report('CK-8', `${path}/core`, 'only a value alias has core: {in, out} (U-7)');
+    // GN-6x: the class that represents its value type may name the functions through which another repository takes
+    // and gives its values, with the core type that they take and give.
+    if (unit.kind !== 'alias' && typeof unit.core === 'object' && unit.core !== null && unit.core_type === undefined) {
+      this.report('CK-8', path, `the value class ${unit.id} names core: {in, out} and no core_type (GN-6x)`);
+    }
     // The unit types this representative may name: itself when it is a class, its gathered classes when it is an alias.
     const ownTypes = new Set(unit.kind === 'alias' ? [...gathered].filter(([, by]) => by === unit.id).map(([id]) => id) : [unit.id]);
     const rows = new Map<string, InRow>();
