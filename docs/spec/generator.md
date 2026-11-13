@@ -498,8 +498,11 @@ the design ids are those of the binding design.
   from the contract. When an object whose value was not consumed is destroyed, its destructor drops the core value,
   whose `Drop` releases the resource, and warns that the cleanup call was not made, with the message
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)`:
-  - PHP raises `E_WARNING` when the object is freed;
-  - Python warns with `ResourceWarning` when the object is finalized;
+  - PHP raises `E_WARNING` when the object is freed, and PHP puts the name of the running function before the message
+    (`php_error_docref`), so the B-10 test requires a message that ends with it;
+  - Python warns with `ResourceWarning` when the object is finalized; the destructor keeps an exception that is being
+    raised while it runs (the object may be a temporary of the failed call) and sets it again after the warning, because
+    a warning call with an exception set fails;
   - Node emits the warning with `process.emitWarning` and the type `ResourceWarning` when the class is finalized.
   Go and WASM refuse such a unit by name until their finalizer (`runtime.SetFinalizer`, `FinalizationRegistry`) is
   generated (G-4). G-5 generates for each such unit a B-10 test that makes an object through its sample receiver,

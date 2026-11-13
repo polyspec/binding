@@ -415,8 +415,11 @@
   실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않은 객체가 사라지면 그
   소멸자가 코어 값을 drop하고, 그 `Drop`이 자원을 놓으며, 정리 호출이 없었다는 경고를
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)` 메시지로 낸다:
-  - PHP는 객체가 해제될 때 `E_WARNING`을 낸다.
-  - Python은 객체가 finalize될 때 `ResourceWarning`으로 경고한다.
+  - PHP는 객체가 해제될 때 `E_WARNING`을 낸다. PHP는 메시지 앞에 실행 중인 함수의 이름을 붙이므로(`php_error_docref`)
+    B-10 시험은 그 메시지로 끝나는 메시지를 요구한다.
+  - Python은 객체가 finalize될 때 `ResourceWarning`으로 경고한다. 소멸자는 자기가 도는 동안 던져지고 있는 예외(객체가
+    실패한 호출의 임시 값일 수 있다)를 맡아 두었다가 경고 뒤에 다시 설정한다. 예외가 설정된 채 부른 경고 호출은 실패하기
+    때문이다.
   - Node는 class가 finalize될 때 `process.emitWarning`으로 type `ResourceWarning`의 경고를 낸다.
   Go와 WASM은 finalizer(`runtime.SetFinalizer`, `FinalizationRegistry`)를 생성할 때까지 그런 unit을 이름을 대고 거부한다
   (G-4). G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험을 생성하고,
