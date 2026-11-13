@@ -1135,13 +1135,14 @@ test('an internal unit is generated in every target and marked as no public API 
     const dts = text(out, path);
     assert.match(dts, /\/\*\* T-5\. @internal \*\/\nexport declare class Buffer/, path);
     assert.match(dts, /\/\*\* T-4: the options record; a member whose value is undefined is absent\. @internal \*\/\nexport interface FrameOptions/, path);
-    assert.match(dts, / \* @internal\n \*\/\nexport declare function repeat\(/, path);
+    // Node documents the defaults of repeat in its JSDoc, which then holds the tag; WASM documents none.
+    assert.match(dts, path.includes('/wasm/') ? /\/\*\* @internal \*\/\nexport declare function repeat\(/ : / \* @internal\n \*\/\nexport declare function repeat\(/, path);
     assert.match(dts, /\/\*\* @internal \*\/\nexport declare function length\(/, path);
     assert.match(dts, /\/\*\* @internal \*\/\nexport declare const DEFAULT_TIMES/, path);
   }
   // Go: the doc comment of each declaration ends with the sentence of U-1.
   const go = text(out, 'packages/go/zz_generated_shapes.go');
-  assert.match(go, /\/\/ Repeat calls polyspec_shapes::repeat \(contract member shapes\.repeat\)\. It is internal to shapes \(U-1\) and is\n\/\/ no public API\.\nfunc Repeat\(/);
+  assert.match(go, /\/\/ Repeat calls polyspec_shapes::repeat \(contract member shapes\.repeat\)\.\n\/\/ It is internal to shapes \(U-1\) and is no public API\.\nfunc Repeat\(/);
   assert.match(go, /\/\/ It is internal to shapes \(U-1\) and is no public API\.\ntype FrameOptions struct/);
   assert.match(text(out, 'packages/go/store/zz_generated_store.go'), /\/\/ It is internal to shapes \(U-1\) and is no public API\.\ntype Buffer struct/);
   // A public unit has no mark.

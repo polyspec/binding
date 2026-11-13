@@ -44,6 +44,9 @@ export class Refusals {
   }
 }
 
+// GN-6n, U-1: a unit of visibility internal is no public API of its package.
+export const isInternal = (unit: Unit): boolean => unit.visibility === 'internal';
+
 export interface Arg {
   name: Name;
   type: Type;
@@ -398,7 +401,12 @@ export function collectModel(
     if (refusals.found.length > before) refusedUnits.add(unit.id);
   }
   function collectUnit(unit: Unit): void {
-    if (unit.visibility !== 'public') throw new Unsupported(`${unit.id}: an internal unit is not generated yet`);
+    // GN-6n: an internal unit is generated as a public one and marked by each target; a member of a public unit has
+    // one form in every language, so an internal one is refused.
+    if (unit.visibility === 'public') {
+      const hidden = (unit.members ?? []).filter((m) => m.visibility !== 'public');
+      if (hidden.length > 0) throw new Unsupported(hidden.map((m) => `${m.id}: an internal member of a public unit is not generated yet (GN-6n)`));
+    }
     if (unit.only !== undefined || unit.native !== undefined) throw new Unsupported(`${unit.id}: only and native are not generated yet`);
     if (unit.kind === 'enum') {
       enums.push(unit);

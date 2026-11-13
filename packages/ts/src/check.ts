@@ -1125,7 +1125,8 @@ class Checker {
       if (reserved === undefined) continue;
       const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
       for (const { value: unit, path } of this.units.values()) {
-        if (unit.origin === 'host' || unit.visibility !== 'public') continue;
+        // GN-6n: the generated code declares the names of an internal unit as those of a public one.
+        if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');
         if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
@@ -1134,7 +1135,6 @@ class Checker {
           if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
         }
         for (const [m, member] of (unit.members ?? []).entries()) {
-          if (member.visibility !== 'public') continue;
           const memberPath = `${path}${pointer('members', m)}`;
           const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
           const name = this.langName(lang, unit, member.name, role, member);

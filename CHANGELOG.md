@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- A contract with a unit of visibility `internal` generated no target: every such unit was refused with "an internal
+  unit is not generated yet". An internal unit is now generated as a public unit of its kind and marked as no public
+  API: `@internal` in the PHP stub and in the Node and WASM declarations, its Python names in no `__all__` (the root
+  module keeps them in `<root>._root`, another module `m` in `<root>._m`), and a sentence of U-1 in its Go doc comment.
+  An internal member of a public unit, which the generator generated as a public one, is refused by name, and the
+  contract check judges the reserved words of an internal unit (CK-23) (GN-6n). Verified by `npm test` in
+  `packages/ts`.
 - The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
   the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
   each with its reason (GN-14b).

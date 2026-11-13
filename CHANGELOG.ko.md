@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- visibility가 `internal`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. 그런 unit마다 "an internal unit is not generated
+  yet"으로 거부되었기 때문이다. 이제 internal unit은 같은 kind의 public unit처럼 생성되고 공개 API가 아니라고 표시된다. PHP stub과
+  Node·WASM 선언에는 `@internal`이 있고, Python 이름은 어느 `__all__`에도 없으며(루트 module은 `<root>._root`에, 다른 module `m`은
+  `<root>._m`에 둔다), Go doc comment에는 U-1의 문장이 있다. 생성기가 public처럼 생성하던 public unit의 internal member는 이름을 대고
+  거부하며, 계약 검사는 internal unit의 예약어를 판정한다(CK-23)(GN-6n). `packages/ts`의 `npm test`로 검증했다.
 - CI와 release workflow 파일, 그리고 `config/release.json`은 GN-14b의 어느 목록에도 없었다. 그래서 이 파일들을 더한 뒤 종단 실행의
   입력 시험이 실패했다. 이제 이 파일들은 실행이 읽지 않는 파일로 각각 이유와 함께 목록에 있다(GN-14b).
 - origin value class를 받는 member의 case는 값을 `{"kind": "text", "value": ...}`로 주었고, 생성기는 어떤 항목도 대지 않는 예외

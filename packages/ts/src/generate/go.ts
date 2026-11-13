@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type Refusals, Unsupported, isInternal, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf } from './model.ts';
 import { type Echoes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -371,7 +371,7 @@ function goCallable(scope: GoScope, fn: Fn): string {
   const name = goMemberName(fn);
   if (fn.kind === 'function' || fn.kind === 'constructor' || fn.kind === 'static') {
     return `
-// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
+// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).${internalDoc(scope.model, fn.unit)}
 func ${name}(${params}) ${signature} {
 ${lines.join('\n')}
 }
@@ -385,7 +385,7 @@ ${lines.join('\n')}
 }
 
 // String is the text of the ${className} (N-4: stringify). fmt.Stringer has no error result, so a failure of the core
-// panics with its error.
+// panics with its error.${internalDoc(scope.model, fn.unit)}
 func (this *${className}) String() string {
 	text, err := this.stringify()
 	if err != nil {
@@ -396,32 +396,36 @@ func (this *${className}) String() string {
 `;
   }
   return `
-// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).
+// ${name} calls ${fn.corePath} (contract member ${fn.member.id}).${internalDoc(scope.model, fn.unit)}
 func (this *${className}) ${name}(${params}) ${signature} {
 ${lines.join('\n')}
 }
 `;
 }
 
-function goConstant(c: Constant): string {
+// GN-6n: the doc comment of a declaration of an internal unit ends with the sentence that it is no public API, because
+// Go has no marker of an exported name that only one module uses.
+const internalDoc = (model: Model, unit: Unit): string => (isInternal(unit) ? `\n// It is internal to ${model.contract.library} (U-1) and is no public API.` : '');
+
+function goConstant(model: Model, c: Constant): string {
   const name = langName('go', c.member.name, 'constant');
   const type: Record<string, string> = { uint: 'uint64', int: 'int64', text: 'string', bool: 'bool' };
   const value = c.member.type === 'text' ? goString(String(c.member.value)) : String(c.member.value);
   return `
-// ${name} is the constant ${c.member.core as string} of the core (U-5).
+// ${name} is the constant ${c.member.core as string} of the core (U-5).${internalDoc(model, c.unit)}
 const ${name} ${type[c.member.type as string] ?? ''} = ${value}
 `;
 }
 
-function goEnum(unit: Unit): string {
+function goEnum(model: Model, unit: Unit): string {
   const name = goName(unit.name);
   const variants = (unit.variants ?? []).map((v) => ({ id: `${name}${goName(v.name)}`, value: v.value }));
   const width = Math.max(...variants.map((v) => v.id.length));
   return `
-// ${name} is the enum ${unit.id} (T-6): a typed string whose values are the constants below.
+// ${name} is the enum ${unit.id} (T-6): a typed string whose values are the constants below.${internalDoc(model, unit)}
 type ${name} string
 
-// The values of ${name}.
+// The values of ${name}.${internalDoc(model, unit)}
 const (
 ${variants.map((v) => `\t${pad(v.id, width)} ${name} = ${goString(v.value)}`).join('\n')}
 )
@@ -434,7 +438,7 @@ function goRecord(scope: GoScope, unit: Unit): string {
   const width = Math.max(...fields.map((f) => f.name.length));
   const defaults = (unit.fields ?? []).some((f) => f.default !== undefined) ? ' A field that is a pointer has a default: nil leaves it to\n// the core (U-2).' : '';
   return `
-// ${name} is the record ${unit.id} (T-4): the last argument of the functions that take it, and a result.${defaults}
+// ${name} is the record ${unit.id} (T-4): the last argument of the functions that take it, and a result.${defaults}${internalDoc(scope.model, unit)}
 type ${name} struct {
 ${fields.map((f) => `\t${pad(f.name, width)} ${f.type}`).join('\n')}
 }
@@ -443,12 +447,12 @@ ${fields.map((f) => `\t${pad(f.name, width)} ${f.type}`).join('\n')}
 
 // T-5: a class unit is a struct around the handle of its value in the static library, which the binding releases when
 // the Go runtime finds the instance unreachable (runtime.AddCleanup).
-function goClass(unit: Unit): string {
+function goClass(model: Model, unit: Unit): string {
   const name = goName(unit.name);
   return `
 // ${name} is the class ${unit.id} (T-5): it holds a value of ${unit.core_type ?? ''} in the static library, which
 // the binding releases when the Go runtime finds the ${name} unreachable. nil and the zero value hold no value: a call
-// that takes one fails with kind invalid_argument_type.
+// that takes one fails with kind invalid_argument_type.${internalDoc(model, unit)}
 type ${name} struct{ ref *binding.Ref }
 
 // new${name} holds the value under the handle that a call gave.
@@ -494,7 +498,7 @@ function goCallback(scope: GoScope, cb: CallbackUnit): string {
   return `
 // ${name} is the callback interface ${cb.unit.id} (U-3): Go code implements it, and the core calls its methods during
 // the call that takes it, on the goroutine of that call. An error that a method returns ends that call, which returns
-// the same error.
+// the same error.${internalDoc(scope.model, cb.unit)}
 type ${name} interface {
 ${methods.map(({ m, method, params, signature }) => `\t// ${method} is the member ${m.member.id}.\n\t${method}(${params}) ${signature}`).join('\n')}
 }
@@ -554,12 +558,12 @@ function goPackageFile(model: Model, module: string): string {
   const objects = model.objects.filter((o) => o.unit.module === module);
   const callbacks = model.callbacks.filter((c) => c.unit.module === module);
   const body = [
-    ...model.enums.filter((u) => u.module === module).map(goEnum),
+    ...model.enums.filter((u) => u.module === module).map((u) => goEnum(model, u)),
     ...model.records.filter((u) => u.module === module).map((u) => goRecord(scope, u)),
-    ...model.constants.filter((c) => c.module === module).map(goConstant),
+    ...model.constants.filter((c) => c.module === module).map((c) => goConstant(model, c)),
     ...callbacks.map((c) => goCallback(scope, c)),
     ...model.functions.filter((f) => f.module === module).map((f) => goCallable(scope, f)),
-    ...objects.flatMap((o) => [goClass(o.unit), ...o.members.map((f) => goCallable(scope, f))]),
+    ...objects.flatMap((o) => [goClass(model, o.unit), ...o.members.map((f) => goCallable(scope, f))]),
   ].join('');
   const usesBinding = model.functions.some((f) => f.module === module) || objects.length > 0 || callbacks.length > 0 || scope.usesMap === true || scope.usesKeyed === true;
   const alias = scope.usesMap === true

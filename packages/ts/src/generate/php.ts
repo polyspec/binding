@@ -2,7 +2,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, isInternal, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -1331,7 +1331,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
 ${indent} * N-4: the items${yields.key === undefined ? ' under their positions' : ' under their keys'}, a snapshot of the value.
 ${indent} *
 ${indent} * @return \\Iterator<${yields.key === undefined ? 'int' : docType(yields.key)}, ${docType(yields.value)}>
-${indent} */
+${isInternal(fn.unit) ? `${indent} * @internal\n` : ''}${indent} */
 ${indent}public function getIterator(): \\Iterator {}
 `;
     }
@@ -1340,16 +1340,20 @@ ${indent}public function getIterator(): \\Iterator {}
     const returns = fn.kind === 'constructor' ? '' : `: ${phpType(fn.returns)}`;
     return `${indent}/**
 ${indent} * T-8: the parameters take any value, which the extension judges.
-${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'constructor' ? '' : `${indent} * @return ${docType(fn.returns)}\n`}${indent} */
+${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'constructor' ? '' : `${indent} * @return ${docType(fn.returns)}\n`}${isInternal(fn.unit) ? `${indent} * @internal\n` : ''}${indent} */
 ${indent}${prefix} ${name}(${params.join(', ')})${returns} {}
 `;
+  };
+  // GN-6n: the docblock of a declaration of an internal unit holds @internal.
+  const doc = (unit: Unit, line: string | undefined, indent: string): string => {
+    if (!isInternal(unit)) return line === undefined ? '' : `${indent}/** ${line} */\n`;
+    return line === undefined ? `${indent}/** @internal */\n` : `${indent}/**\n${indent} * ${line}\n${indent} *\n${indent} * @internal\n${indent} */\n`;
   };
   for (const module of modules) {
     const items: string[] = [];
     for (const unit of model.resultRecords.filter((u) => u.module === module)) {
       const props = (unit.fields ?? []).map((f) => `            public readonly mixed $${langName('php', f.name, 'variable')},`);
-      items.push(`    /** T-4: the result form of the record; the constructor holds the values, which the extension judges when they enter. */
-    final class ${langName('php', unit.name, 'class')}
+      items.push(`${doc(unit, 'T-4: the result form of the record; the constructor holds the values, which the extension judges when they enter.', '    ')}    final class ${langName('php', unit.name, 'class')}
     {
         public function __construct(
 ${props.join('\n')}
@@ -1364,12 +1368,11 @@ ${props.join('\n')}
          * U-3: the extension calls it; the value it returns is judged as it enters (T-8).
          *
 ${docs.join('\n')}${docs.length > 0 ? '\n' : ''}         * @return ${docType(m.returns)}
-         */
+${isInternal(cb.unit) ? '         * @internal\n' : ''}         */
         public function ${langName('php', m.member.name, 'callable')}(${m.params.map((p) => `mixed $${langName('php', p.name, 'variable')}`).join(', ')}): mixed;
 `;
       });
-      items.push(`    /** U-3: a callback that PHP code implements. */
-    interface ${langName('php', cb.unit.name, 'class')}
+      items.push(`${doc(cb.unit, 'U-3: a callback that PHP code implements.', '    ')}    interface ${langName('php', cb.unit.name, 'class')}
     {
 ${lines.join('\n')}    }
 `);
@@ -1377,21 +1380,20 @@ ${lines.join('\n')}    }
     for (const object of model.objects.filter((o) => o.unit.module === module)) {
       const members = object.members.map((fn) => method(fn, '        '));
       if (!object.constructible) members.unshift('        private function __construct() {}\n');
-      items.push(`    /** T-5. */
-    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
+      items.push(`${doc(object.unit, 'T-5.', '    ')}    final class ${langName('php', object.unit.name, 'class')}${phpImplements(object)}
     {
 ${members.join('\n')}    }
 `);
     }
     for (const unit of model.enums.filter((u) => u.module === module)) {
-      items.push(`    enum ${langName('php', unit.name, 'class')}: string
+      items.push(`${doc(unit, undefined, '    ')}    enum ${langName('php', unit.name, 'class')}: string
     {
 ${(unit.variants ?? []).map((v) => `        case ${langName('php', v.name, 'class')} = '${v.value}';`).join('\n')}
     }
 `);
     }
     for (const constant of model.constants.filter((c) => c.module === module)) {
-      items.push(`    const ${langName('php', constant.member.name, 'constant')} = ${JSON.stringify(constant.member.value)};\n`);
+      items.push(`${doc(constant.unit, undefined, '    ')}    const ${langName('php', constant.member.name, 'constant')} = ${JSON.stringify(constant.member.value)};\n`);
     }
     for (const fn of model.functions.filter((f) => f.module === module)) items.push(method(fn, '    '));
     blocks.push(`namespace ${phpNamespace(layout, module)} {

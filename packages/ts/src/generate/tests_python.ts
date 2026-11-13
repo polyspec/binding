@@ -1,7 +1,9 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, isInternal, langName, unitOf } from './model.ts';
+import { internalModule } from './python.ts';
+import type { Unit } from '../contract.ts';
 import { heldTests } from './tests_held.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -75,14 +77,23 @@ def _outcome(call):
 `;
 
 export function pythonTests(model: Model, module: string): string {
-  const ctx: Context = { lang: 'python', enumRef: (name, value) => `pkg.${name}(${pyString(value)})`,
+  // GN-6n: a name of an internal unit is called in the module of the internal names of its module, which the test
+  // imports when it is not the root module.
+  const internalModules = new Set<string>();
+  const ref = (unit: Unit | undefined): string => {
+    if (unit === undefined || !isInternal(unit)) return 'pkg.';
+    if (unit.module !== '') internalModules.add(internalModule(unit.module));
+    return `pkg.${internalModule(unit.module)}.`;
+  };
+  const enumUnit = (name: string): Unit | undefined => model.enums.find((u) => langName('python', u.name, 'class') === name);
+  const ctx: Context = { lang: 'python', enumRef: (name, value) => `${ref(enumUnit(name))}${name}(${pyString(value)})`,
     callbackNew: (unit, how) => {
       const body = 'missing' in how ? '' : 'raise' in how ? `lambda self, *args: (_ for _ in ()).throw(${how.raise})` : how.returns === 'wrong' ? 'lambda self, *args: object()' : 'lambda self, *args: None';
       const members = 'missing' in how ? '' : (unit.members ?? []).map((m) => `${pyString(langName('python', m.name, 'callable'))}: ${body}`).join(', ');
       return `type(${pyString(langName('python', unit.name, 'class'))}, (), {${members}})()`;
     },
     recordNew: (unit, fields) =>
-      `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
+      `${ref(unit)}${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
@@ -132,8 +143,8 @@ export function pythonTests(model: Model, module: string): string {
     const hook = hookCall('python', fn, receiver);
     if (hook !== undefined) return hook;
     const member = langName('python', fn.member.name, 'callable');
-    const cls = `pkg.${langName('python', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `pkg.${member}(${args})`;
+    const cls = `${ref(fn.unit)}${langName('python', fn.unit.name, 'class')}`;
+    if (fn.kind === 'function') return `${ref(fn.unit)}${member}(${args})`;
     if (fn.kind === 'constructor') return `${cls}(${args})`;
     if (fn.kind === 'static') return `${cls}.${member}(${args})`;
     if (fn.kind === 'property') return `${receiver}.${member}`;
@@ -368,7 +379,7 @@ export function pythonTests(model: Model, module: string): string {
 ${usesSame ? 'import dataclasses\n' : ''}${usesErrno ? 'import errno\n' : ''}import unittest
 
 import ${module} as pkg
-from ${module} import _native
+${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}from ${module} import _native
 ${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
