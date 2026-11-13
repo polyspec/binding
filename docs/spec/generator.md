@@ -25,7 +25,7 @@ the design ids are those of the binding design.
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
   refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
-  Go generates a variant unit as GN-6v states and refuses a class that implements an interface (GN-6w).
+  Go generates a variant unit and a class that implements an interface as GN-6v and GN-6w state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -321,7 +321,10 @@ the design ids are those of the binding design.
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
   name the interface: Node and WASM `class <Class> implements <Interface>`, and PHP the interface that the extension
-  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names. An instance
+  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names; Go has the
+  method of the Go interface of the callback on the pointer to the class, so the pointer satisfies that interface,
+  which `var _ <Interface> = (*<Class>)(nil)` asserts, and the call of the callback runs the method through the
+  dispatch of U-3, which calls the trait method through the C ABI. An instance
   of the class therefore enters where the callback is taken as any language object with those members does, and the
   call of the callback reaches the held value through the method. In a case an instance value (GN-13f) may stand at
   a place of the callback. Refused by name, not generated yet: an interface of another repository, a member that the
