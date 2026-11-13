@@ -1393,6 +1393,10 @@
                 "result": {
                   "description": "Whether the core path returns a Result (E-1c). Absent, it does when raises names a variant or a parameter is a callback or a function.",
                   "type": "boolean"
+                },
+                "failure": {
+                  "description": "Whether the error of the core path is binding_core::Failure<E>, a kind or what language code raised (E-1c, GN-7). Absent, it is when a parameter holds a callback or a function; true names a member that calls language code its receiver keeps.",
+                  "type": "boolean"
                 }
               }
             },

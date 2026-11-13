@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A member that calls language code that its receiver keeps, such as `registry.call` of `tests/e2e/functions`,
+  whose core returns `Result<T, Failure<E>>`, was generated as if its core error were `E`, so the binding crate did
+  not compile (E0308). The contract now names such a member with `core.failure: true`, whose error the generated code
+  converts as that of a member that takes a callback; `binding check` refuses `core.failure: true` on a member whose
+  receiver keeps no language code, `core.failure: false` on a member that takes a callback or a function, and
+  `core.failure: true` with `core.result: false` (E-1c, GN-7, CK-21). Verified by `npm test` in `packages/ts`.
 - A parameter that held a callback inside another type, an item of a list, an `optional` or a field of a record
   parameter, was refused for every target ("the type {"unit": ...} is not generated yet"). Each target now gives the
   core such a callback as `Box<dyn <core trait> + 'a>` and the list, the `optional` or the record by value, `'a` being

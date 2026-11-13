@@ -399,8 +399,9 @@ export function collectModel(
       ...(yields === undefined ? {} : { yields }),
       // E-1c: core.result says whether the core path returns a Result; without it, a path does when raises names a
       // variant of the core error of this contract or the member takes a callback.
-      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback),
-      failure: takesCallback,
+      // E-1c, GN-7: core.failure names a member that calls language code that its receiver keeps.
+      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback || (typeof core === 'object' && core.failure === true)),
+      failure: (typeof core === 'object' ? core.failure : undefined) ?? takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
     };

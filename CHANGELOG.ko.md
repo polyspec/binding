@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `tests/e2e/functions`의 `registry.call`처럼 receiver가 보관한 언어 코드를 부르는 member는 코어가
+  `Result<T, Failure<E>>`를 돌려주는데도, 코어 오류가 `E`인 것처럼 생성되어 바인딩 crate가 컴파일되지 않았다(E0308).
+  이제 계약은 그런 member를 `core.failure: true`로 적고, 생성 코드는 그 오류를 callback을 받는 member의 오류처럼 변환한다.
+  `binding check`는 receiver가 언어 코드를 보관하지 않는 member의 `core.failure: true`, callback이나 함수를 받는 member의
+  `core.failure: false`, `core.result: false`와 함께 쓴 `core.failure: true`를 거부한다(E-1c, GN-7, CK-21).
+  `packages/ts`의 `npm test`로 확인했다.
 - 다른 타입 안(list의 항목, `optional`, record parameter의 field)에 callback을 가진 parameter는 모든 target에서
   거부되었다("the type {"unit": ...} is not generated yet"). 이제 각 target은 그런 callback을 `Box<dyn <core trait> + 'a>`로,
   그것을 담은 list, `optional`, record를 값으로 코어에 준다. `'a`는 Node에서 `'env`, 다른 곳에서 `'static`이다. callback

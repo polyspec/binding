@@ -20,6 +20,7 @@ import {
   type Unit,
   kindsOf,
 } from './contract.ts';
+import { carriers } from './generate/model.ts';
 import { convert, libraryName, sameName, type Role } from './names.ts';
 import { BUILTIN_FORMS, CONTENTLESS_KINDS, MADE_TYPE, PREDICATE_KIND, builtinTypes, madePredicates } from './values.ts';
 
@@ -1712,6 +1713,18 @@ class Checker {
 
   coreBuild(): void {
     // E-1c: a core that returns no Result has no variant to return and no place for the failure of a callback.
+    // E-1c, GN-6h: the error is a Failure only where language code can fail: a parameter that holds a callback or a
+    // function, or a receiver that keeps language code.
+    const keeps = carriers(this.contract.units).classes;
+    for (const { member, unit, path } of this.members.values()) {
+      if (typeof member.core !== 'object') continue;
+      const failure = member.core.failure;
+      const takes = (member.parameters ?? []).some((p) => this.takesCode(p.type));
+      const receiver = member.core.receiver !== undefined && keeps.has(unit.id);
+      if (failure === true && !receiver && !takes) this.report('CK-21', `${path}/core/failure`, `${member.id} reaches no language code, a callback or a function that it takes or that its receiver keeps, so its core error is no Failure (E-1c)`);
+      if (failure === false && takes) this.report('CK-21', `${path}/core/failure`, `${member.id} takes a callback or a function, so its core error is a Failure (E-1c)`);
+      if (failure === true && member.core.result === false) this.report('CK-21', `${path}/core/failure`, `${member.id} has core.failure, so its core returns a Result (E-1c)`);
+    }
     for (const { member, path } of this.members.values()) {
       if (typeof member.core !== 'object' || member.core.result !== false) continue;
       if ((member.raises ?? []).length > 0) this.report('CK-21', `${path}/core/result`, `${member.id} has raises, so its core returns a Result (E-1c)`);

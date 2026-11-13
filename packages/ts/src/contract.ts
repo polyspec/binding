@@ -66,7 +66,7 @@ export interface Member {
   raises?: string[];
   wait?: Wait;
   // result (E-1c): whether the core path returns a Result; absent, the default of coreResult below.
-  core?: { path: string; receiver?: string; result?: boolean } | string;
+  core?: { path: string; receiver?: string; result?: boolean; failure?: boolean } | string;
   type?: Type;
   value?: unknown;
   writable?: boolean;
