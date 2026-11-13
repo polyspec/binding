@@ -809,6 +809,22 @@ const consumerSample = (): { contract: any; caseFiles: Map<string, unknown>; for
   };
 };
 
+test('Go: an optional output is an Option of a reference to the value of the core, so a generic item takes one type (GN-16)', () => {
+  // An optional property of an error unit (absent_error.length, of the form of machine_error.expected of fsm).
+  const { contract: consumer, caseFiles, foreign } = consumerSample();
+  const ffi = text(generate({ contract: consumer, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(ffi, /\nfn out_optional<T>\(output: &mut Vec<u8>, value: Option<T>, item: impl FnOnce\(&mut Vec<u8>, T\)\) \{/);
+  assert.match(ffi, /out_optional\(output, polyspec_consumer::Error::length\(&error\)\.as_ref\(\), out_uint\);/);
+  // An optional uint and an optional text field of a record that leaves the C ABI.
+  const { contract } = load();
+  contract.units[0].members[0].returns = { unit: 'options' };
+  unitOf(contract, 'options').fields.push({ name: ['label'], type: { optional: 'text' }, required: true, reason: 'S-1' });
+  contract.cases = [];
+  const sample = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() }), 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(sample, /out_optional\(output, value\.max_words\.as_ref\(\), out_uint\);/);
+  assert.match(sample, /out_optional\(output, value\.label\.as_ref\(\), out_text\);/);
+});
+
 test('a value alias of another repository converts through the core of its owner (T-3, U-7, GN-6k)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
