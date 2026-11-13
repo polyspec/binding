@@ -255,7 +255,8 @@ the design ids are those of the binding design.
   one environment, so the function holds it as a `Native` (GN-6o) and declares the parameter as a function type
   (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
   `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
-  either goes to the core as a `Raised`. Go refuses it (G-4).
+  either goes to the core as a `Raised`, kept as its `BindingError` in a table that every thread reaches, because the
+  error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
 - **GN-6n** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
   `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
   an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the

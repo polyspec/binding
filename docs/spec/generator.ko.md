@@ -209,7 +209,8 @@
   `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수가 그것을
   `Native`(GN-6o)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
   스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
-  `Raised`로 코어에 간다. Go는 거부한다(G-4).
+  `Raised`로 코어에 간다. 그 실패는 모든 스레드가 닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만
+  만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
 - **GN-6n** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
   `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
   넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
