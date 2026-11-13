@@ -22,8 +22,8 @@ the design ids are those of the binding design.
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5), a callback unit and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses a
-  record of another repository, the type `source`, a default and an error unit (GN-7a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
+  record of another repository, a class or a callback unit of another module, and a member `to_json` (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
@@ -140,13 +140,14 @@ the design ids are those of the binding design.
 
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
-  | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`; WASM `__aliasIn<Alias>` |
-  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet; WASM `__armFaults`, `__faultLeft` |
+  | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>` |
+  | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
-  A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, and
+  A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, the Go crate always
+  (for its round-trip entry points), and every crate has
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
   `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
   library (`<library>.<id>`, G-5): then the feature of each binding crate also names `polyspec-<library>/fault-test`
@@ -154,8 +155,9 @@ the design ids are those of the binding design.
   feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
   its name, and `binding check` compares the manifests with them (CK-19). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
-  (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. Go has neither of
-  the two yet: a contract with `in_raises` or with `faults` and Go is refused by name (G-4).
+  (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. The Go tests reach
+  them through functions of `internal/binding` with the build tags `polyspec_fault_test` and `polyspec_codec_test`
+  (GN-13b).
 
 ## The core boundary (T-1, I-2 (1))
 
@@ -258,7 +260,7 @@ the design ids are those of the binding design.
   (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again unchanged.
   The binding crate depends on the owner's crate, and the Python package on the owner's package (GN-6c). An alias
   whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name, as is an
-  `out` row by a member (GN-6e) and the target Go (G-4); WASM takes it as GN-18b states. The `in_raises` of an alias of another repository
+  `out` row by a member (GN-6e) (G-4); WASM takes it as GN-18b states and Go as GN-15c states. The `in_raises` of an alias of another repository
   give this repository nothing to generate: the cases of the alias, the assertions of its kinds and the entry point
   of the feature `codec-test` (GN-5, GN-13) belong to the binding of the owner, which runs them once, and the crate of
   this repository has that feature only for an alias of its own.
@@ -333,7 +335,8 @@ the design ids are those of the binding design.
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
   `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
-  an error unit in a module other than the root, and an error unit for Go are refused by name (G-4). WASM generates an
+  and an error unit in a module other than the root are refused by name (G-4). Go generates an error unit as GN-15d
+  states. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
@@ -417,6 +420,34 @@ the design ids are those of the binding design.
   directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
   is a Go keyword or a name of the generated body takes a trailing `_`.
+- **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
+  holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
+  (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
+  through `<prefix>__release_<class>` when Go collects the struct. A constructor is `New<Class>` (none when
+  `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
+  `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
+  `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
+  panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
+  module is refused by name (its handle and dispatch are unexported), and a member `to_json` too (encoding/json reads
+  the exported fields of a value, and a class holds only a handle).
+- **GN-15b** Go callback units (U-3, K-2): a callback unit is a Go interface whose methods return their result and
+  `error`. The C ABI holds a callback as the handle of the call and of the Go value, calls back through the export
+  `<prefix>__go_callback`, and a nil callback is kind `invalid_callback`. An error that a method returns stops the
+  core and comes back to the caller as the same error value, which the call keeps by its index until it returns.
+- **GN-15c** Go value aliases (U-7, T-3): a value alias, also of another repository, is `any`. The C ABI reads the Go
+  value through questions to the export `<prefix>__go_host` (its kind, its items, the keys of a map in the order of
+  `fmt.Sprint`), so the `in` function of the core walks the value without a copy; a kind of the `in` function is the
+  error of its category, for an alias of another repository by the E-1 of its owner. A core value leaves as the Go
+  value of the first `out` row of a built-in form: `nil`, `bool`, `int64`, `float64`, `string`, `[]byte`, `[]any`,
+  `map[string]any`, or `*KeyedMap[any]`. `AliasIn<Alias>` of `internal/binding` (feature `codec-test`) runs the `in`
+  function of an alias of this repository alone.
+- **GN-15d** Go error units (E-2, E-7, I-3): an error unit is a struct `<Unit>` of `internal/binding` that embeds a
+  pointer to its parent (its parent unit, or the category type), so `errors.As` finds the parent and the category
+  through `Unwrap`; package `errors` names it as an alias, and each property is a method that returns the value that
+  the C ABI read from the core error. A kind whose row names the unit is created as that struct.
+- **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
+  text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
+  it out, and the core decides its value.
 - **GN-16** Go types (T-1, T-2, B-8): bool `bool`, int and int64 `int64`, uint `uint64`, float `float64`, text and latin1
   `string`, bytes `[]byte`, `list<T>` `[]T`, `map<T>` `*Map[T]` (below), `optional<T>` `*T`, a tuple inside another type `[N]T` (one element
   type), a tuple return several results. A Go string is bytes: text is passed as its bytes and the C ABI refuses bytes
@@ -624,21 +655,29 @@ the design ids are those of the binding design.
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
-- **GN-13b** Go: the tests of a package are its external test package `zz_generated_test.go`, run by `go test`: B-3 for
-  every text parameter or field (the bytes FF), the enum check of GN-16 for every enum parameter or field, B-4 for every
-  contract case that raises (the exact type of E-7, the kind, the status and the errno). B-7 is
+- **GN-13b** Go: the tests of a package are `zz_generated_test.go` in the package itself, so that a test reads the
+  handle of an instance, run by `go test`: B-3 for every text parameter or field (the bytes FF), the enum check of
+  GN-16 for every enum parameter or field, U-2 (a call without an argument with a default gives the call with its
+  default), U-7 (a kind of an alias through the member), K-2 (a nil callback, and the error of a callback is the error
+  of the call), B-4 for every contract case that raises (the exact type of E-2 and E-7, `errors.As` of its category,
+  the kind, the status and the errno), GN-13e for every case that does not raise, and N-4 for a stringify. The cases
+  that arm faults are `zz_generated_fault_test.go` with the build tag `polyspec_fault_test`, and they lock the
+  goroutine to its thread, because the arming is of the thread; the poison tests of B-5c are
+  `zz_generated_held_test.go` with the build tag `polyspec_panic_test`. The end-to-end check runs `go test` with the
+  tag `polyspec_<feature>` of each test feature of the crate. B-7 is
   `internal/binding/zz_generated_panic_test.go` with the build tag `polyspec_panic_test`, which also declares the C
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
   `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
   default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
-  without features and fails if it holds a test entry point (`__panic_test`, `__echo_`). With the build tag
+  without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
+  `__fault_left`, `__alias_in_`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
   U+00FF, the order of a map and the order and kinds of the keys of a keyed map come back the same and that U+0100 is
-  refused. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
+  refused; the cases of an alias of this repository run its `in` function alone through `AliasIn<Alias>`. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
 - **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
