@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -452,7 +452,7 @@ ${body}
 const classLabel = (object: ObjectClass): string => langName('node', object.unit.name, 'class');
 
 // GN-6h: the lines that take the locks of the places of a call.
-const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel);
+const locks = (model: Model, fn: Fn, borrowed = true): string[] => lockLines(model, fn, (p) => rustField(p.name), 'self.inner', 'binding_error', classLabel, borrowed);
 
 const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
 
@@ -489,13 +489,16 @@ function entryRust(model: Model, fn: Fn): string {
         : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${subject})?;`);
     }
   }
-  lines.push(...locks(model, fn));
+  // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
+  const moved = waitsAsync(fn) || pooled(fn);
+  lines.push(...locks(model, fn, !moved));
+  const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
   const call = armedCall(model, fn, core);
   if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
-    const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
+    const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (pooled(fn)) {
@@ -506,7 +509,7 @@ function entryRust(model: Model, fn: Fn): string {
     const armed = faults ? `faults.run(|| ${core})` : core;
     const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
-    lines.push(`        waiting(env, move || ${work}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
+    lines.push(`        waiting(env, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
     lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
   } else {
