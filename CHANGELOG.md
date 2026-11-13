@@ -20,6 +20,14 @@
   function, so every failure rejects the promise. Go refuses such a member by name, and a constructor, property,
   iterate or hook that waits is refused by name. CK-16 also reports an awaitable name that is a reserved word of
   Python. Verified by `make test-ts`.
+- The generator refused the Go binding of a member that names a class or a callback unit of another module, with "a
+  class unit of the module tags in the module (the root) is not generated for Go yet". Go now reaches such a unit
+  through `<Class>Handle`, `<Class>FromHandle` and `Dispatch<Callback>` of the package of its module, whose first
+  parameter `binding.Token` only the packages of the Go module can name; a package has them only for a unit that
+  another module names, CK-13 counts their names, a parameter that has the name of a package of the contract takes a
+  trailing `_`, a test calls a constructor of another module by its package, and modules whose packages would import
+  each other are refused by name (GN-15a). Verified by `npm test` in `packages/ts` and `gofmt` and `go vet` of the
+  generated packages of the sample with its class and its callback in two other modules.
 - The generator refused the Go binding of a value alias whose Go `out` row makes the value by a member, such as
   `"go": "tag.new"`, with "a Go make by a member (tag.new) is not generated yet (U-7)". Go now gives such a value as
   the instance of the class: the C ABI writes the number of the class in the contract and the handle of the value,

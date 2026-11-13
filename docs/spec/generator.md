@@ -23,7 +23,7 @@ the design ids are those of the binding design.
   that GN-6i does not list, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default and an error unit as GN-15a to GN-15e state, and Go refuses a
-  record of another repository, and a class or a callback unit of another module (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
+  record of another repository and modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -510,7 +510,7 @@ the design ids are those of the binding design.
   (crate-type `staticlib`, lib `polyspec_<repository>_go`), which Go links with `-lpolyspec_<repository>_go`; the
   directory of the library is given by `CGO_LDFLAGS=-L<dir>`, because a Go module is fetched as source and how a
   consumer gets the platform's static library is not decided yet (plan T-2). A parameter is lower camel case; one that
-  is a Go keyword or a name of the generated body takes a trailing `_`.
+  is a Go keyword, a name of the generated body or the package name of a module of the contract takes a trailing `_`.
 - **GN-15a** Go class units (T-5, GN-6h): a class unit is the struct `<Class>` of the package of its module, which
   holds a handle of the C ABI in an unexported reference; the C ABI keeps the core value in a table under that handle
   (handle 0 is no value, kind `invalid_argument_type`) behind the lock of GN-6h, and `runtime.AddCleanup` releases it
@@ -518,8 +518,12 @@ the design ids are those of the binding design.
   `constructible` is false), a static member the function `<Class><Member>` (CK-13), a method or property a method of
   `*<Class>` that keeps the receiver alive until the call returns (`runtime.KeepAlive`); an iterate returns an
   `iter.Seq[T]` or `iter.Seq2[K, V]` over the items that the C ABI collected, and a stringify is `String()`, which
-  panics with the error of the core because `fmt.Stringer` has no error result. A class or a callback unit of another
-  module is refused by name (its handle and dispatch are unexported). A to_json is `MarshalJSON` of `json.Marshaler`,
+  panics with the error of the core because `fmt.Stringer` has no error result. A member of another module reaches a
+  class or a callback unit through functions of its package whose first parameter is `binding.Token` of
+  `internal/binding`, a type that only the packages of the Go module can name: `<Class>Handle` gives the handle of an
+  instance, `<Class>FromHandle` makes the instance of a handle, and `Dispatch<Callback>` gives the dispatch of a Go
+  value of the callback. A package has them only for a unit that another module names, and CK-13 counts their names.
+  Modules whose packages would import each other are refused by name, because Go refuses an import cycle. A to_json is `MarshalJSON` of `json.Marshaler`,
   which marshals the value that the core gives with `encoding/json` and returns the error of the core, so
   `json.Marshal` of an instance gives the JSON form that the core decides; a to_json that returns `never` returns the
   error alone. A member that returns `never` has no result before its `error`.
