@@ -6,6 +6,8 @@
 //! language value is, and the core that receives it decides what it accepts (B-1). The predicates of an `OutValue`
 //! (U-1 `when`) are computed here, in Rust, so the generated code selects a row of the `out` table without judging.
 
+use crate::native::Native;
+
 /// An opaque reference to a language value or a core value that the side holding it resolves (B-1, T-3).
 ///
 /// The number means something only to the side that made it: a binding's table of language objects for a
@@ -45,6 +47,9 @@ pub enum ValueKind {
     Number,
     /// A Unicode text.
     Text,
+    /// A text as UTF-16 code units, unpaired surrogates included, which a value class gives and makes by a list of
+    /// `uint` (GN-6x).
+    Text16,
     /// A byte string (F-1 (c)).
     Bytes,
     /// A sequence of values.
@@ -91,7 +96,7 @@ impl ValueType {
 
 impl ValueKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Null,
         Self::Bool,
         Self::Int,
@@ -99,6 +104,7 @@ impl ValueKind {
         Self::Float,
         Self::Number,
         Self::Text,
+        Self::Text16,
         Self::Bytes,
         Self::List,
         Self::Map,
@@ -122,6 +128,7 @@ impl ValueKind {
             Self::Float => "float",
             Self::Number => "number",
             Self::Text => "text",
+            Self::Text16 => "text16",
             Self::Bytes => "bytes",
             Self::List => "list",
             Self::Map => "map",
@@ -330,6 +337,9 @@ pub enum OutValue {
     Number(String),
     /// Kind `text`.
     Text(String),
+    /// Kind `text16`: a text as UTF-16 code units, unpaired surrogates included, which a Rust `String` cannot hold
+    /// (GN-6x).
+    Text16(Vec<u16>),
     /// Kind `bytes`.
     Bytes(BytesOut),
     /// Kind `list`: the children are asked for through the handle.
@@ -357,8 +367,8 @@ pub enum OutValue {
     },
     /// Kind `safe_text`.
     SafeText(String),
-    /// Kind `native`: the language object that entered as this handle goes back unchanged.
-    Native(Handle),
+    /// Kind `native`: the language object that entered as this `Native` goes back unchanged.
+    Native(Native),
     /// Kind `nested:<value type>`: a value of another repository's value type, which that repository's binding makes
     /// from its own `out` table (U-1).
     Nested {
@@ -381,6 +391,7 @@ impl OutValue {
             Self::Float(_) => ValueKind::Float,
             Self::Number(_) => ValueKind::Number,
             Self::Text(_) => ValueKind::Text,
+            Self::Text16(_) => ValueKind::Text16,
             Self::Bytes(_) => ValueKind::Bytes,
             Self::List { .. } => ValueKind::List,
             Self::Map(_) => ValueKind::Map,
@@ -503,12 +514,12 @@ pub enum HostValue {
     },
     /// A JavaScript `Date`.
     Date(Handle),
-    /// A JavaScript function, a PHP `Closure`, a Python function or method.
-    Callable(Handle),
-    /// An instance of a class of the language or of the application.
+    /// A JavaScript function, a PHP `Closure`, a Python function or method, which a core may keep.
+    Callable(Native),
+    /// An instance of a class of the language or of the application, which a core may keep.
     Object {
-        /// The handle of the object.
-        handle: Handle,
+        /// The object.
+        native: Native,
         /// The class name as the language reports it.
         type_name: String,
         /// Whether a PHP object implements `JsonSerializable`; false in other languages.
@@ -606,6 +617,24 @@ mod tests {
         assert_eq!(nested.kind(), ValueKind::Nested(ValueType::Json));
         assert_eq!(nested.kind().as_str(), "nested:json_value");
         assert_eq!(OutValue::Int64(1).kind().as_str(), "int64");
+    }
+
+    #[test]
+    fn a_text_of_code_units_keeps_its_unpaired_surrogates() {
+        // B2.81: the units of "\ud800", "\udc00", a paired pair and a text that mixes them leave as they are.
+        for units in [
+            vec![0xd800],
+            vec![0xdc00],
+            vec![0xd83d, 0xde00],
+            vec![0x61, 0xdc00, 0xd83d, 0xde00, 0xd800],
+        ] {
+            let value = OutValue::Text16(units.clone());
+            assert_eq!(value.kind(), ValueKind::Text16);
+            assert_eq!(value, OutValue::Text16(units));
+        }
+        assert_eq!(ValueKind::Text16.as_str(), "text16");
+        assert!(ValueKind::ALL.contains(&ValueKind::Text16));
+        assert_eq!(OutValue::Text16(vec![0xd800]).predicate(Predicate::Utf8), None);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 // constants, error classes and the core error enum. An item that the generator does not support yet is refused here,
 // by name, so that nothing is left out silently (G-4, P-4).
 
-import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit } from '../contract.ts';
+import { CATEGORIES, type Category, type Contract, type Default, type FaultPoint, type Field, type Lang, type Member, type Name, type Parameter, type Type, type Unit, type UnitRef, innerVariant, outerVariant, variantPattern } from '../contract.ts';
 import { convert, sameName } from '../names.ts';
 
 // G-4: the refusal of the items that the generator does not support yet; refusals holds one line for each item.
@@ -44,6 +44,9 @@ export class Refusals {
   }
 }
 
+// GN-6r, U-1: a unit of visibility internal is no public API of its package.
+export const isInternal = (unit: Unit): boolean => unit.visibility === 'internal';
+
 export interface Arg {
   name: Name;
   type: Type;
@@ -61,6 +64,10 @@ export interface CallbackUnit {
   members: CallbackMember[];
   // thread owner: a call from another thread is kind wrong_thread.
   owner: boolean;
+  // GN-6s: a callback unit of another repository, whose trait methods return the failure of that repository's core
+  // error; its types name that repository's units with their library.
+  library?: string;
+  error?: string;
 }
 
 export interface CallbackMember {
@@ -85,6 +92,9 @@ export interface ValueAlias {
   // function and the category that the owner's E-1 gives each variant.
   library?: string;
   error?: { path: string; code?: string; kinds: { variant: string; category: Category }[] };
+  // GN-6x: the contract of the owner of a value class of another repository, whose in rows describe an instance of
+  // the class and whose out rows make one through the members of that contract.
+  owner?: Contract;
 }
 
 export interface Fn {
@@ -100,7 +110,7 @@ export interface Fn {
   args: Arg[];
   returns: Type;
   // N-4: a method that is the language's string form (stringify) or JSON hook (to_json), named by each language.
-  special?: 'stringify' | 'to_json';
+  special?: 'stringify' | 'to_json' | 'primitive';
   // N-4 iterate: what the core's iterator gives, an item or the key and the value of an entry, each borrowed.
   yields?: { key?: Type; value: Type };
   fallible: boolean;
@@ -124,6 +134,28 @@ export interface ObjectClass {
   lock?: Lock;
   // GN-6p: the method that a unit with cleanup names, whose call consumes the value (B-10).
   cleanup?: Fn;
+}
+
+// GN-6af: a class of origin value without core_type, a class of the language that keeps the language values that its
+// constructor was given; the core function of the constructor only judges them.
+export interface KeptClass {
+  unit: Unit;
+  // The constructor, whose core path judges the arguments, described as HostValues, and returns Result<(), Failure<E>>.
+  constructor: Fn;
+  // One kept value per parameter of the constructor, with its property, when the class has one of that name.
+  fields: KeptField[];
+  // GN-13: the constructor and the properties as the members that the tests call; a property has no core path.
+  members: Fn[];
+}
+
+export interface KeptField {
+  name: Name;
+  // A value alias of this contract, or a list or a keyed map of one.
+  type: Type;
+  // The value kept when the argument is left out: the null or a new empty map or list of the language.
+  default?: 'null' | 'map' | 'list';
+  property?: Member;
+  writable: boolean;
 }
 
 export interface Lock {
@@ -236,21 +268,14 @@ export const kindText = (variant: string): string =>
 
 // GN-7b: the enum of a variant path, the outer one of a nested path <outer>/<inner>.
 export const variantEnum = (variant: string): string => {
-  const outer = variant.split('/')[0] ?? variant;
+  const outer = outerVariant(variant) ?? variant;
   return outer.slice(0, outer.lastIndexOf('::'));
-};
-
-// GN-7b: the pattern of a variant path: <path> { .. }, or <outer>(<inner> { .. }) for a nested path. The pattern
-// { .. } matches a variant with or without data, which the generator does not see (I-2).
-export const variantPattern = (variant: string): string => {
-  const [outer, inner] = variant.split('/');
-  return inner === undefined ? `${variant} { .. }` : `${outer ?? ''}(${inner} { .. })`;
 };
 
 // GN-6d: the value of a variant path as an expression: <path>, or <outer>(<inner>) for a nested path.
 export const variantValue = (variant: string): string => {
-  const [outer, inner] = variant.split('/');
-  return inner === undefined ? variant : `${outer ?? ''}(${inner})`;
+  const outer = outerVariant(variant);
+  return outer === undefined ? variant : `${outer}(${innerVariant(variant)})`;
 };
 
 // U-3, GN-6d: the name of the function that recognizes the exceptions of a callback member.
@@ -284,14 +309,21 @@ export interface Model {
   // T-4: the records that have the result form (a class with a public constructor), in contract order: those in a
   // return, in a parameter other than the expanded record parameter, and in a field of such a record.
   resultRecords: Unit[];
+  // GN-6aa: the lifetime of a callback in a box of the core trait: 'env in Node, whose callback lives in the environment
+  // of the call, and 'static elsewhere.
+  callbackLife?: string;
   // T-3: the records of other repositories that this contract's types name, in the order they are first named.
   foreignRecords: ForeignRecord[];
   // The contracts of the libraries that the contract names (T-3).
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
+  // GN-6af: the value classes without core_type.
+  kept: KeptClass[];
   // T-9: the variant units, in contract order (GN-6v).
   variants: Variant[];
   callbacks: CallbackUnit[];
+  // GN-6s: the callback units of other repositories that a parameter takes; the owning package declares them.
+  foreignCallbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
   // E-2: the error units, a parent before the units that extend it (P-4).
@@ -312,38 +344,54 @@ export interface Model {
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
 
-function supportedType(type: Type, units: Map<string, Unit>, where: string, foreign: ReadonlyMap<string, Contract> = new Map()): void {
+// `entering`: the type is of a value that enters the core, a parameter or a field of a record, where a callback is
+// generated at its place, in a list or in an optional (U-3, GN-6aa).
+function supportedType(type: Type, units: Map<string, Unit>, where: string, foreign: ReadonlyMap<string, Contract> = new Map(), entering = false): void {
   if (typeof type === 'string') {
     // T-1: a source is the original of a parsing operation, so it is a parameter (toFn) and no other place.
     if (type === 'source') throw new Unsupported(`${where}: the type source is generated as a parameter only (T-1)`);
-    if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'none'].includes(type)) {
+    if (!['bool', 'int', 'int64', 'uint', 'float', 'text', 'latin1', 'bytes', 'path', 'none'].includes(type)) {
       throw new Unsupported(`${where}: the type ${type} is not generated yet`);
     }
     return;
   }
-  if ('list' in type) return supportedType(type.list, units, where, foreign);
+  if ('list' in type) return supportedType(type.list, units, where, foreign, entering);
   // T-2: map<T> is generated for Go only; generate() refuses it for the other targets (G-4).
   if ('map' in type) return supportedType(type.map, units, where, foreign);
   // T-2, U-7 (c): keyed_map<T>{key}, an ordered map whose keys mix the listed kinds.
   if ('keyed_map' in type) return supportedType(type.keyed_map, units, where, foreign);
-  if ('optional' in type) return supportedType(type.optional, units, where, foreign);
+  if ('optional' in type) return supportedType(type.optional, units, where, foreign, entering);
   if ('tuple' in type) {
     for (const part of type.tuple) supportedType(part, units, where, foreign);
     return;
   }
+  // GN-6z: a function type, whose parameters and return are types of the boundary; a target that does not hold it
+  // refuses it by name (generate()).
+  if ('function' in type) {
+    for (const part of type.function.parameters) supportedType(part, units, where, foreign);
+    if (type.function.returns !== 'none') supportedType(type.function.returns, units, where, foreign);
+    return;
+  }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
+    // GN-6ag: the binding converts only the types that it generates, and it generates nothing of a host unit.
+    if (unit?.origin === 'host') throw new Unsupported(`${where}: a host unit ${unit.id} in a type of a generated unit is not generated (GN-6ag)`);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'variant' && unit.origin === 'generated') return;
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
-    if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
+    if (unit?.kind === 'interface' && unit.origin === 'callback' && entering) return;
   }
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
     // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
+    // T-3, U-1, GN-6x: a value class of another repository, whose core functions this binding calls.
+    if (unit?.kind === 'class' && unit.origin === 'value') {
+      if (typeof unit.core === 'object' && unit.core !== null && unit.core_type !== undefined) return;
+      throw new Unsupported(`${type.library}.${type.unit}: a value class of another repository without core: {in, out} and core_type is not generated (GN-6x)`);
+    }
     if (unit === undefined) throw new Unsupported(`${where}: ${type.library} has no unit ${type.unit} (T-3)`);
   }
   throw new Unsupported(`${where}: the type ${JSON.stringify(type)} is not generated yet`);
@@ -384,12 +432,54 @@ export function collectModel(
   const enums: Unit[] = [];
   const records: Unit[] = [];
   const objects: ObjectClass[] = [];
+  const kept: KeptClass[] = [];
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const variants: Variant[] = [];
   const errorUnits: ErrorUnit[] = [];
-  const ownVariants = new Set(contract.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant));
-  const carrying = carriers(contract.units);
+  // GN-6s: the callback units of other repositories that parameters take, each wrapped once. A unit of the owning
+  // contract that a member names without a library is that repository's unit.
+  const foreignCallbacks: CallbackUnit[] = [];
+  const foreignCallback = (id: string, library: string, where: string): boolean => {
+    const owner = foreign.get(library);
+    const unit = owner?.units.find((u) => u.id === id);
+    if (owner === undefined || unit?.kind !== 'interface' || unit.origin !== 'callback') return false;
+    if (units.has(id)) throw new Unsupported(`${where}: the callback unit ${id} of ${library} has the name of a unit of this contract (GN-6s)`);
+    if (foreignCallbacks.some((c) => c.unit.id === id && c.library === library)) return true;
+    const resolved = resolveNamedTypes(owner).units.find((u) => u.id === id) ?? unit;
+    const qualify = (type: Type): Type => {
+      if (typeof type === 'string') return type;
+      if ('list' in type) return { ...type, list: qualify(type.list) };
+      if ('optional' in type) return { ...type, optional: qualify(type.optional) };
+      if ('map' in type) return { ...type, map: qualify(type.map) };
+      if ('keyed_map' in type) return { ...type, keyed_map: qualify(type.keyed_map) };
+      if ('tuple' in type) return { ...type, tuple: type.tuple.map(qualify) };
+      if ('unit' in type && type.library === undefined) return { ...type, library };
+      return type;
+    };
+    const members: CallbackMember[] = (resolved.members ?? []).map((member) => {
+      if (member.kind !== 'method') throw new Unsupported(`${member.id}: a callback ${member.kind} is not generated yet`);
+      if (member.async_allowed === true) throw new Unsupported(`${member.id}: an async callback is not generated yet`);
+      if (member.errors !== undefined) throw new Unsupported(`${member.id}: recognized callback errors are not generated yet`);
+      const receiver = typeof member.core === 'object' ? member.core.receiver : undefined;
+      if (receiver !== '&self' && receiver !== '&mut self') throw new Unsupported(`${member.id}: a callback member names its trait receiver &self or &mut self in core.receiver`);
+      const params = (member.parameters ?? []).map((parameter) => {
+        if (parameter.required !== true) throw new Unsupported(`${member.id}: a default or rest parameter is not generated yet`);
+        const typed = { ...parameter, type: qualify(parameter.type) };
+        supportedType(typed.type, units, `${library}.${member.id}.${parameter.name.join('_')}`, foreign);
+        return typed;
+      });
+      const returns = qualify(member.returns ?? 'none');
+      supportedType(returns, units, `${library}.${member.id} returns`, foreign);
+      return { member, params, returns, receiver };
+    });
+    const paths = new Set(owner.errors.kinds.filter((row) => row.library === undefined).map((row) => row.variant.slice(0, row.variant.lastIndexOf('::'))));
+    foreignCallbacks.push({ unit, members, owner: unit.thread === 'owner', library, ...(paths.size === 1 ? { error: [...paths][0] } : {}) });
+    return true;
+  };
+  // GN-7c: a kind that the core passes on is a variant of the core error too, the outer one that holds it.
+  const ownVariants = new Set(contract.errors.kinds.map((row) => row.variant));
+  const carrying = carriers(contract.units, foreign);
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
@@ -442,32 +532,37 @@ export function collectModel(
           if (lacking !== undefined) throw new Unsupported(`${where}: the default {empty: "object"} leaves out the record, but its field ${lacking.name.join('_')} has no default (U-2)`);
         }
         record = { unit: recordUnit, param: parameter };
-        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true) });
+        for (const field of recordUnit.fields ?? []) args.push({ name: field.name, type: field.type, field: true, ...declaredDefault(field, `${recordUnit.id}.${field.name.join('_')}`, true, units) });
         continue;
       }
-      // GN-6ae: a parameter of a function type belongs to a member with machine, and its function returns passthrough,
-      // which the core moves without reading.
-      if (typeof type === 'object' && 'function' in type) {
-        if (!(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${where}: a parameter of a function type is generated for a member with machine only (GN-6ae)`);
-        if (typeof type.function.returns !== 'object' || !('passthrough' in type.function.returns)) throw new Unsupported(`${where}: a function parameter of a member with machine returns passthrough (GN-6ae)`);
+      // GN-6ae: a parameter of a function type whose function returns passthrough belongs to a member with machine;
+      // the core moves that value without reading it. Any other function type is a value of GN-6z.
+      // A function of a member with machine that returns another type is refused by name: the machine owns its function
+      // and settles what it returned as a Passthrough, which GN-6z does not make.
+      if (typeof type === 'object' && 'function' in type && !machineFunction(type) && reachesCode && member.wait === 'async_driver') throw new Unsupported(`${where}: a function parameter of a member with machine returns passthrough (GN-6ae)`);
+      if (machineFunction(type)) {
+        if (!(reachesCode && member.wait === 'async_driver')) throw new Unsupported(`${where}: a parameter of a function type that returns passthrough is generated for a member with machine only (GN-6ae)`);
         if (type.function.errors !== undefined) throw new Unsupported(`${where}: the recognized errors of a function parameter are not generated yet (GN-6ae)`);
         for (const [i, part] of type.function.parameters.entries()) supportedType(part, units, `${where} parameter ${i}`, foreign);
-        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
+        args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
         continue;
       }
-      const direct = typeof type === 'object' && 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
+      // GN-6s: a callback unit of another repository as a parameter, which this wraps and has judged.
+      const foreignDirect = typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallback(type.unit, type.library, where);
       // T-1: a source is taken as a parameter, or an optional one.
       const source = type === 'source' || (typeof type === 'object' && 'optional' in type && type.optional === 'source');
-      if (!source) supportedType(type, units, `${where}${direct ? '#parameter' : ''}`, foreign);
-      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false) });
+      if (!source && !foreignDirect) supportedType(type, units, where, foreign, true);
+      args.push({ name: parameter.name, type, field: false, ...declaredDefault(parameter, where, false, units) });
     }
     // U-2: a parameter that may be left out is followed by such parameters only: PHP and Python take the positional
     // parameters in order, and PHP also the fields of the record that follow them.
     const firstDefault = args.findIndex((a) => a.default !== undefined);
     const late = firstDefault < 0 ? undefined : args.slice(firstDefault).find((a) => a.default === undefined);
     if (late !== undefined) throw new Unsupported(`${member.id}: the required ${late.name.join('_')} follows a parameter with a default, which is not generated yet (U-2)`);
-    // E-1c, GN-6ae: a callback and a function of language code fail with Failure<E>.
-    const takesCallback = params.some((p) => typeof p.type === 'object' && (('unit' in p.type && p.type.library === undefined && units.get(p.type.unit)?.origin === 'callback') || 'function' in p.type));
+    const isForeignCallback = (type: Type): boolean => typeof type === 'object' && 'unit' in type && type.library !== undefined && foreignCallbacks.some((c) => c.unit.id === type.unit && c.library === type.library);
+    // E-1c: a member that calls language code, a callback or a function (GN-6z, GN-6ae), fails with the core error or with
+    // what that code raised.
+    const takesCallback = args.some((a) => holdsCallback(units, a.type) || holdsFunction(a.type) || isForeignCallback(a.type));
     const returns = kind === 'constructor' ? { unit: unit.id } : (member.returns ?? 'none');
     // T-2 never: a member that always fails returns Result<Infallible, E>, so it raises.
     if (returns === 'never' && (member.raises ?? []).length === 0) throw new Unsupported(`${member.id}: a never return without raises`);
@@ -497,13 +592,74 @@ export function collectModel(
       ...(yields === undefined ? {} : { yields }),
       // E-1c: core.result says whether the core path returns a Result; without it, a path does when raises names a
       // variant of the core error of this contract or the member takes a callback.
-      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback),
-      failure: takesCallback,
+      // E-1c, GN-7: core.failure names a member that calls language code that its receiver keeps.
+      fallible: (typeof core === 'object' ? core.result : undefined) ?? ((member.raises ?? []).some((variant) => ownVariants.has(variant)) || takesCallback || (typeof core === 'object' && core.failure === true)),
+      failure: (typeof core === 'object' ? core.failure : undefined) ?? takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
       ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
       ...(reachesCode && member.wait === 'async_driver' ? { machine: true as const } : {}),
     };
+  };
+  // GN-6af: a value class without core_type keeps the language values that its constructor takes, which the core path
+  // of the constructor judges as HostValues; a property gives the value kept under its name.
+  const keptClass = (unit: Unit): KeptClass => {
+    const valueType = (type: Type): boolean => {
+      if (typeof type === 'string') return false;
+      if ('list' in type) return valueType(type.list);
+      if ('keyed_map' in type) return valueType(type.keyed_map);
+      if (!('unit' in type) || type.library !== undefined) return false;
+      const alias = units.get(type.unit);
+      return alias?.kind === 'alias' && alias.origin === 'value';
+    };
+    const members = unit.members ?? [];
+    const made = members.filter((m) => m.kind === 'constructor');
+    const [construct] = made;
+    if (construct === undefined || made.length > 1 || unit.constructible === false) throw new Unsupported(`${unit.id}: a value class without core_type has one constructor (GN-6af)`);
+    const fields: KeptField[] = [];
+    for (const parameter of construct.parameters ?? []) {
+      const where = `${construct.id}.${parameter.name.join('_')}`;
+      if (!valueType(parameter.type)) throw new Unsupported(`${where}: a parameter of a value class without core_type is a value alias, or a list or a keyed map of one (GN-6af)`);
+      const declared = parameter.default;
+      let kept: KeptField['default'];
+      if (declared !== undefined) {
+        const container = typeof parameter.type === 'object' && 'list' in parameter.type ? 'list' : typeof parameter.type === 'object' && 'keyed_map' in parameter.type ? 'map' : undefined;
+        if ('literal' in declared && declared.literal === null && container === undefined) kept = 'null';
+        else if ('empty' in declared && declared.empty === container && container !== undefined) kept = container;
+        else throw new Unsupported(`${where}: the default ${JSON.stringify(declared)} of a value class without core_type is not generated (GN-6af)`);
+      }
+      fields.push({ name: parameter.name, type: parameter.type, ...(kept === undefined ? {} : { default: kept }), writable: false });
+    }
+    const fn = toFn(unit, { ...construct, parameters: (construct.parameters ?? []).map(({ default: _default, ...parameter }) => parameter) }, 'constructor');
+    fn.args = fn.args.map((arg, index) => {
+      const declared = construct.parameters?.[index]?.default;
+      return declared === undefined ? arg : { ...arg, default: declared };
+    });
+    // G-7: the tests count the parameters that the call may leave out.
+    fn.params = fn.params.map((param, index) => {
+      const declared = construct.parameters?.[index]?.default;
+      return declared === undefined ? param : { ...param, default: declared };
+    });
+    if (!fn.fallible) throw new Unsupported(`${construct.id}: the constructor of a value class without core_type judges its arguments and returns a Result (GN-6af)`);
+    for (const member of members) {
+      if (member.kind === 'constructor') continue;
+      const name = member.name.join('_');
+      const field = fields.find((f) => f.name.join('_') === name);
+      if (member.kind !== 'property' || member.core !== undefined || (member.parameters ?? []).length > 0 || field === undefined || JSON.stringify(member.returns) !== JSON.stringify(field.type)) {
+        throw new Unsupported(`${member.id}: a member of a value class without core_type is a property without core that gives the constructor parameter of its name (GN-6af)`);
+      }
+      if (member.native !== undefined || (member.wait !== undefined && member.wait !== 'none') || (member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: a property of a value class without core_type neither waits nor raises (GN-6af)`);
+      field.property = member;
+      field.writable = member.writable === true;
+    }
+    const hidden = fields.find((f) => f.property === undefined);
+    if (hidden !== undefined) throw new Unsupported(`${construct.id}.${hidden.name.join('_')}: a value class without core_type has a property for each value that it keeps (GN-6af)`);
+    const properties = fields.flatMap((f): Fn[] =>
+      f.property === undefined
+        ? []
+        : [{ unit, member: f.property, kind: 'property', receiver: '&self', module: unit.module, params: [], args: [], returns: f.type, fallible: false, failure: false, corePath: '' }],
+    );
+    return { unit, constructor: fn, fields, members: [fn, ...properties] };
   };
   for (const unit of contract.units) {
     const before = refusals.found.length;
@@ -511,8 +667,15 @@ export function collectModel(
     if (refusals.found.length > before) refusedUnits.add(unit.id);
   }
   function collectUnit(unit: Unit): void {
-    if (unit.visibility !== 'public') throw new Unsupported(`${unit.id}: an internal unit is not generated yet`);
-    if (unit.only !== undefined || unit.native !== undefined) throw new Unsupported(`${unit.id}: only and native are not generated yet`);
+    // GN-6ag, I-1: a host unit is code of the repository whose source is its declaration; the binding writes nothing of it.
+    if (unit.origin === 'host') return;
+    // GN-6r: an internal unit is generated as a public one and marked by each target; a member of a public unit has
+    // one form in every language, so an internal one is refused.
+    if (unit.visibility === 'public') {
+      const hidden = (unit.members ?? []).filter((m) => m.visibility !== 'public');
+      if (hidden.length > 0) throw new Unsupported(hidden.map((m) => `${m.id}: an internal member of a public unit is not generated yet (GN-6r)`));
+    }
+    if (unit.native !== undefined) throw new Unsupported(`${unit.id}: native is not generated yet`);
     if (unit.kind === 'enum') {
       enums.push(unit);
       return;
@@ -521,8 +684,8 @@ export function collectModel(
       let refused = false;
       for (const field of unit.fields ?? []) {
         refused = refusals.attempt(() => {
-          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true);
-          supportedType(field.type, units, `${unit.id}.${field.name.join('_')}`, foreign);
+          declaredDefault(field, `${unit.id}.${field.name.join('_')}`, true, units);
+          supportedType(field.type, units, `${unit.id}.${field.name.join('_')}`, foreign, true);
           return true;
         }) === undefined || refused;
       }
@@ -534,13 +697,17 @@ export function collectModel(
     // value of the value type is an instance of it (a value alias with core in/out is generated by its conversions).
     if (unit.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) {
       if (unit.abstract === true) throw new Unsupported(`${unit.id}: an abstract class is not generated yet`);
-      if (unit.core_type === undefined) throw new Unsupported(`${unit.id}: a class without core_type`);
+      if (unit.core_type === undefined) {
+        kept.push(keptClass(unit));
+        return;
+      }
       const members: Fn[] = [];
       let refused = false;
       for (const member of unit.members ?? []) refused = refusals.attempt(() => classMember(member)) === undefined || refused;
       function classMember(member: Member): true {
-        if (!['constructor', 'static', 'method', 'property', 'iterate', 'stringify', 'to_json'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
-        if (member.kind === 'stringify' || member.kind === 'to_json') {
+        if (!['constructor', 'static', 'method', 'property', 'iterate', 'stringify', 'to_json', 'primitive'].includes(member.kind)) throw new Unsupported(`${member.id}: a ${member.kind} is not generated yet`);
+        if (member.kind === 'primitive' && (typeof member.returns !== 'string' || !['int', 'int64', 'uint', 'float'].includes(member.returns))) throw new Unsupported(`${member.id}: a primitive returns a number (N-4, GN-6g)`);
+        if (member.kind === 'stringify' || member.kind === 'to_json' || member.kind === 'primitive') {
           if ((unit.members ?? []).filter((m) => m.kind === member.kind).length > 1) throw new Unsupported(`${unit.id}: a class has one ${member.kind} (N-4)`);
           if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a ${member.kind} takes no parameter (N-4)`);
           if (member.kind === 'stringify' && member.returns !== 'text') throw new Unsupported(`${member.id}: a stringify returns text (N-4)`);
@@ -601,8 +768,8 @@ export function collectModel(
           refused = refusals.attempt(() => {
             if (convert(field.name, 'rust', 'variable') === tag) throw new Unsupported(`${where}: a field has the name of the tag (GN-6v)`);
             // GN-6v: an optional field whose default is {literal: null} may be left out, which is the null it holds.
-            if (!leftOut(field)) {
-              declaredDefault(field, where, true);
+            if (!caseLeftOut(field)) {
+              declaredDefault(field, where, true, units);
               if (field.default !== undefined) throw new Unsupported(`${where}: a field default of a case other than {literal: null} of an optional field is not generated yet (T-4, T-9)`);
             }
             supportedType(field.type, units, where, foreign);
@@ -697,7 +864,7 @@ export function collectModel(
       return true;
     }
   }
-  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks));
+  refusals.attempt(() => assignLocks(contract, units, objects, [...functions, ...objects.flatMap((o) => o.members)], callbacks, foreign));
   const classes: ErrorClass[] = CATEGORIES.map((category) => {
     const row = contract.errors.classes[category] ?? {};
     // E-7: Go has no class table; its category types have fixed names, so a contract whose only target is Go names none.
@@ -728,17 +895,23 @@ export function collectModel(
     if (twice !== undefined) refusals.refuse(`${unit.unit.id}: the property ${twice} is declared twice (E-3 names kind, status and errno)`);
   }
   const kinds: CoreKind[] = contract.errors.kinds.flatMap((row) => refusals.attempt((): CoreKind[] => {
-    // E-1b (a): a row of another library, whose variant holds the error of that library, is not generated yet. A row
-    // with `source` is a variant of this crate (E-1b (b)) and is generated as any other.
-    if (row.library !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a kind of another library (E-1b (a)) is not generated yet`);
+    // GN-7c, E-1b (a): a row of another library names <outer>/<inner>, the variant of the core error that holds the error
+    // of the library and the variant of that error, and takes the category of the library's row of <inner>. A row with
+    // `source` is a variant of this crate (E-1b (b)) and is generated as any other.
+    if (row.library !== undefined && outerVariant(row.variant) === undefined) {
+      throw new Unsupported(`${row.variant}: a kind of another library names the variant of the core error that holds it, <outer>/<inner> (GN-7c)`);
     }
-    if (row.class === undefined) return [{ variant: row.variant, category: row.category, className: className(row.category) }];
+    if (row.library === undefined && outerVariant(row.variant) !== undefined) throw new Unsupported(`${row.variant}: a kind of this library names no inner variant (GN-7c)`);
+    const category = row.library === undefined ? row.category : foreign.get(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
+    if (category === undefined) {
+      throw new Unsupported(row.library === undefined ? `${row.variant}: a kind of this library names its category` : `${row.variant}: ${row.library} declares no kind ${innerVariant(row.variant)} (GN-7c)`);
+    }
+    if (row.class === undefined) return [{ variant: row.variant, category, className: className(category) }];
     // The unit that the row names was refused, and is named already.
     if (refusedUnits.has(row.class)) return [];
     const unit = errorUnits.find((u) => u.unit.id === row.class);
-    if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
-    return [{ variant: row.variant, category: row.category, className: className(row.category), unit }];
+    if (unit === undefined || unit.category !== category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${category} (E-2)`);
+    return [{ variant: row.variant, category, className: className(category), unit }];
   }) ?? []);
   // GN-7a: a variant that a property raises is a kind whose class has no property that raises, so that making one
   // error makes at most one other.
@@ -796,6 +969,9 @@ export function collectModel(
   const visit = (type: Type): void => {
     if (typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
+    // T-2: a record that is the value of a map or of a keyed map leaves in its result form too.
+    if ('map' in type) return visit(type.map);
+    if ('keyed_map' in type) return visit(type.keyed_map);
     if ('optional' in type) return visit(type.optional);
     if ('tuple' in type) return type.tuple.forEach(visit);
     if ('unit' in type && type.library === undefined) {
@@ -825,9 +1001,14 @@ export function collectModel(
     for (const field of fn.record?.unit.fields ?? []) visit(field.type);
   }
   const resultRecords = records.filter((r) => result.has(r.id));
-  // T-4: what the result form of a field with a default holds when the core gives None is not decided.
+  // GN-6aa: a record with a callback field is made from the arguments of a call, as a record parameter (T-4).
+  for (const unit of resultRecords.filter((r) => (r.fields ?? []).some((f) => holdsCallback(units, f.type)))) {
+    refusals.refuse(`${unit.id}: a record with a callback field is generated as a record parameter only (GN-6aa)`);
+  }
+  // T-4: what the result form of a field with a default holds when the core gives None is not decided, except for a
+  // field of an optional type, whose None is the null of its result form (GN-6i).
   for (const unit of resultRecords) {
-    const field = (unit.fields ?? []).find((f) => f.default !== undefined);
+    const field = (unit.fields ?? []).find((f) => f.default !== undefined && !ownOption(f));
     if (field !== undefined) refusals.refuse(`${unit.id}.${field.name.join('_')}: a field default of a record with the result form is not generated yet (T-4)`);
   }
   // T-3, U-7 (a'): the value aliases of other repositories that a type of this contract names, in the order they are
@@ -846,7 +1027,8 @@ export function collectModel(
     }
   };
   const foreignAlias = (unit: Unit, library: string): void => {
-    if (unit.kind !== 'alias' || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
+    const valueClass = unit.kind === 'class' && unit.origin === 'value';
+    if ((unit.kind !== 'alias' && !valueClass) || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
     const rows = foreign.get(library)?.errors.kinds ?? [];
     const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);
     if (dependent !== undefined) throw new Unsupported(`${library}.${unit.id}: a value alias whose owner forwards the kind ${dependent.variant} of another library is not generated yet`);
@@ -857,16 +1039,19 @@ export function collectModel(
     const code = foreign.get(library)?.errors.code;
     const path = code?.error ?? enumPath;
     // U-7: the cases of in_raises and the entry point of codec-test belong to the binding of the owner (GN-5).
-    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error: { path, ...(code === undefined ? {} : { code: code.path }), kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) } });
+    const error = { path, ...(code === undefined ? {} : { code: code.path }), kinds: rows.map((row) => ({ variant: row.variant, category: row.category as Category })) };
+    // GN-6x: a value class is described by its in rows and made by its out rows, members of the owner's contract.
+    const owner = valueClass ? foreign.get(library) : undefined;
+    aliases.push({ unit, coreIn: unit.core.in, coreOut: unit.core.out, inRaises: [], library, error, ...(owner === undefined ? {} : { owner }) });
   };
   for (const fn of [...functions, ...objects.flatMap((o) => o.members)]) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, fn.yields?.key, fn.yields?.value]) if (type !== undefined && type !== 'never') eachType(type, foreignAlias);
   }
   for (const record of records) for (const field of record.fields ?? []) eachType(field.type, foreignAlias);
-  for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
+  for (const callback of [...callbacks, ...foreignCallbacks]) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, variants, callbacks, aliases, classes, errorUnits, coreError, codeOf, kinds, faults: contract.faults ?? [], cases, aliasCases,
+    objects, variants, kept, callbacks, foreignCallbacks, aliases, classes, errorUnits, coreError, codeOf, kinds, faults: contract.faults ?? [], cases, aliasCases,
   };
 }
 
@@ -880,7 +1065,7 @@ const waits = (member: Member): boolean => member.wait !== undefined && member.w
 
 // GN-6h: the class units that carry language code, the least set that satisfies the two definitions. The set is read
 // from the contract alone, so it also counts members that the generator refuses for another reason.
-export function carriers(units: readonly Unit[]): { classes: Set<string>; carries: (type: Type) => boolean } {
+export function carriers(units: readonly Unit[], foreign: ReadonlyMap<string, Contract> = new Map()): { classes: Set<string>; carries: (type: Type) => boolean } {
   const byId = new Map(units.map((u) => [u.id, u]));
   const found = new Set<string>();
   const carries = (type: Type, seen: Set<string> = new Set()): boolean => {
@@ -891,7 +1076,9 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
     if ('map' in type) return carries(type.map, seen);
     if ('keyed_map' in type) return carries(type.keyed_map, seen);
     if ('tuple' in type) return type.tuple.some((part) => carries(part, seen));
-    if (!('unit' in type) || type.library !== undefined) return false;
+    if (!('unit' in type)) return false;
+    // GN-6s: a callback unit of another repository carries language code as one of this repository does.
+    if (type.library !== undefined) return foreign.get(type.library)?.units.find((u) => u.id === type.unit)?.origin === 'callback';
     const unit = byId.get(type.unit);
     if (unit === undefined) return false;
     if (unit.origin === 'callback') return true;
@@ -934,8 +1121,8 @@ export function carriers(units: readonly Unit[]): { classes: Set<string>; carrie
 }
 
 // GN-6h: the lock of each class unit.
-function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[]): void {
-  const carrying = carriers(contract.units);
+function assignLocks(contract: Contract, units: Map<string, Unit>, objects: ObjectClass[], fns: Fn[], callbacks: CallbackUnit[], foreign: ReadonlyMap<string, Contract>): void {
+  const carrying = carriers(contract.units, foreign);
   const names = (value: unknown, id: string, seen: Set<string> = new Set()): boolean => {
     if (Array.isArray(value)) return value.some((item) => names(item, id, seen));
     if (typeof value !== 'object' || value === null) return false;
@@ -1085,25 +1272,34 @@ export function guardBorrows(model: Model, fn: Fn, variable: (parameter: Paramet
 }
 
 // The Rust type of a contract type at the core boundary (T-1, T-2).
-export function rustType(model: Model, type: Type): string {
+// `inside`: the type is inside another type, or a field of a record, where a callback is a box of the core trait (GN-6aa).
+export function rustType(model: Model, type: Type, inside = false): string {
   if (typeof type === 'string') {
     const base: Record<string, string> = {
-      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', none: '()',
+      bool: 'bool', int: 'i64', int64: 'i64', uint: 'u64', float: 'f64', text: 'String', latin1: 'Vec<u8>', bytes: 'Vec<u8>', source: 'Vec<u8>', path: 'std::path::PathBuf', none: '()',
     };
     const found = base[type];
     if (found === undefined) throw new Unsupported(`the type ${type}`);
     return found;
   }
-  if ('list' in type) return `Vec<${rustType(model, type.list)}>`;
-  if ('map' in type) return `binding_core::OrderedMap<${rustType(model, type.map)}>`;
-  if ('keyed_map' in type) return `binding_core::KeyedMap<${rustType(model, type.keyed_map)}>`;
-  if ('optional' in type) return `Option<${rustType(model, type.optional)}>`;
-  if ('tuple' in type) return `(${type.tuple.map((t) => rustType(model, t)).join(', ')})`;
+  if ('list' in type) return `Vec<${rustType(model, type.list, true)}>`;
+  if ('map' in type) return `binding_core::OrderedMap<${rustType(model, type.map, true)}>`;
+  if ('keyed_map' in type) return `binding_core::KeyedMap<${rustType(model, type.keyed_map, true)}>`;
+  if ('optional' in type) return `Option<${rustType(model, type.optional, true)}>`;
+  if ('tuple' in type) return `(${type.tuple.map((t) => rustType(model, t, true)).join(', ')})`;
+  // GN-6z: the core takes a function by value in the form that it may keep, its parameters borrowed as those of a
+  // callback member (T-1).
+  if ('function' in type) {
+    const { parameters, returns } = type.function;
+    return `Box<dyn Fn(${parameters.map((p) => traitParam(model, p)).join(', ')}) -> Result<${returns === 'none' ? '()' : rustType(model, returns)}, binding_core::Failure<${model.coreError ?? '()'}>> + Send + Sync>`;
+  }
   if ('unit' in type) {
     const unit = unitOf(model, type);
     // U-3: a callback is the generated struct that implements the core trait over the language object.
-    if (unit?.origin === 'callback') return `Cb${convert(unit.name, 'rust', 'class')}`;
+    if (unit?.origin === 'callback') return inside ? `Box<dyn ${unit.core ?? ''} + ${model.callbackLife ?? "'static"}>` : `Cb${convert(unit.name, 'rust', 'class')}`;
     if (unit?.core_type === undefined) throw new Unsupported(`${type.unit} has no core_type`);
+    // GN-6aa: the core type of a record with a callback field has one lifetime, which the binding writes.
+    if (unit.kind === 'record' && (unit.fields ?? []).some((f) => holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), f.type))) return `${unit.core_type}<${model.callbackLife ?? "'static"}>`;
     return unit.core_type;
   }
   throw new Unsupported(JSON.stringify(type));
@@ -1113,7 +1309,10 @@ export function rustType(model: Model, type: Type): string {
 // source Vec<u8>/&[u8], path PathBuf/&Path) is taken borrowed, and optional<T> of one as Option<borrowed>, which the
 // generated code passes with as_deref(); a Copy type is taken by value; any other type by reference.
 export function coreArg(model: Model, type: Type, variable: string): string {
-  if (byValue(model, type)) return variable;
+  // GN-6z: a function moves into the core, which may keep it.
+  if (byValue(model, type) || (typeof type === 'object' && 'function' in type)) return variable;
+  // GN-6aa: a list or an optional that holds a callback moves into the core, which may call a member of &mut self.
+  if (typeof type === 'object' && !('unit' in type) && holdsCallback(new Map(model.contract.units.map((u) => [u.id, u])), type)) return variable;
   // U-3: the core takes a callback as &mut (or, by coercion, &) of the struct, which the block moves into a temporary.
   if (unitOf(model, type)?.origin === 'callback') return `&mut { ${variable} }`;
   if (typeof type === 'object' && 'optional' in type) {
@@ -1124,6 +1323,66 @@ export function coreArg(model: Model, type: Type, variable: string): string {
   // GN-6ad: a list whose items narrow is a Vec of the core's item type, whose slice the core borrows.
   if (typeof type === 'object' && 'list' in type && narrows(type)) return `&${variable}[..]`;
   return `&${variable}`;
+}
+
+// GN-6aa: whether a type holds a callback unit of this contract, in a list, an optional, a map or a tuple.
+export function holdsCallback(units: ReadonlyMap<string, Unit>, type: Type): boolean {
+  if (typeof type === 'string' || 'function' in type) return false;
+  if ('list' in type) return holdsCallback(units, type.list);
+  if ('optional' in type) return holdsCallback(units, type.optional);
+  if ('map' in type) return holdsCallback(units, type.map);
+  if ('keyed_map' in type) return holdsCallback(units, type.keyed_map);
+  if ('tuple' in type) return type.tuple.some((part) => holdsCallback(units, part));
+  return 'unit' in type && type.library === undefined && units.get(type.unit)?.origin === 'callback';
+}
+
+// GN-6ae: whether a type is a function type whose function returns passthrough, the function parameter of a member
+// with machine; any other function type is a value of GN-6z.
+export type MachineFunction = { function: { parameters: Type[]; returns: { passthrough: string }; async_allowed?: boolean; errors?: { recognize: UnitRef[]; reason: string } } };
+export function machineFunction(type: Type): type is MachineFunction {
+  return typeof type === 'object' && 'function' in type && typeof type.function.returns === 'object' && 'passthrough' in type.function.returns;
+}
+
+// GN-6z: whether a type holds a function type, at any place of a list, an optional, a map or a tuple.
+export function holdsFunction(type: Type): boolean {
+  if (typeof type === 'string') return false;
+  if ('function' in type) return true;
+  if ('list' in type) return holdsFunction(type.list);
+  if ('optional' in type) return holdsFunction(type.optional);
+  if ('map' in type) return holdsFunction(type.map);
+  if ('keyed_map' in type) return holdsFunction(type.keyed_map);
+  if ('tuple' in type) return type.tuple.some(holdsFunction);
+  return false;
+}
+
+// GN-6z: whether a member of the contract takes a function type that the core may keep; the function of a member with
+// machine (GN-6ae) is no such value, so it brings none of the helpers of GN-6z.
+export function takesFunction(model: Model): boolean {
+  return [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
+}
+
+// U-3: whether a contract has a callback or a function type, of GN-6z or of GN-6ae, whose call keeps what the language
+// code threw.
+export function keepsThrown(model: Model): boolean {
+  return model.callbacks.length > 0 || model.foreignCallbacks.length > 0 || [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type)));
+}
+
+// GN-6u: whether the binding holds Natives: for a value alias, or for a function type.
+export function usesNative(model: Model): boolean {
+  return model.aliases.length > 0 || takesFunction(model);
+}
+
+// T-1: the type of a parameter of a callback member or of a function type: a type with two forms is borrowed, a Copy
+// type by value, a list as a slice, and any other type by reference.
+export function traitParam(model: Model, type: Type): string {
+  if (typeof type === 'string') {
+    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
+    return borrowed[type] ?? rustType(model, type);
+  }
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('list' in type) return `&[${rustType(model, type.list)}]`;
+  if (byValue(model, type)) return rustType(model, type);
+  return `&${rustType(model, type)}`;
 }
 
 // Whether the core takes the value itself (a Copy type) rather than a reference (T-1).
@@ -1203,11 +1462,13 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     return [held.some((h) => h.param === undefined) ? `Clone::clone(${RECEIVER_GUARD})` : `Clone::clone(&*${receiver})`, ...owned];
   }
   const args = fn.params.map((p) => {
-    if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
+    // GN-6aa: a record that holds a callback moves into the core.
+    if (fn.record !== undefined && p === fn.record.param) return fn.args.some((a) => a.field && unitOf(model, a.type)?.origin === 'callback') ? rustField(p.name) : `&${rustField(p.name)}`;
     // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
     // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
-    if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
-    return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
+    // A parameter whose `core` is `value` gives a clone of the value under its read guard, as the contract names it.
+    if (held.some((h) => h.param === p)) return paramBorrow(p) === 'value' ? `(*${variable(p)}).clone()` : `CoreForm::core_form(${variable(p)})`;
+    return p.default === undefined || ownOption(p) ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
   if (waitsIo(fn)) args.unshift(IO_TOKEN);
@@ -1330,6 +1591,7 @@ export function takesObject(model: Model, object: ObjectClass): boolean {
 export function memberName(lang: Lang, fn: Fn): string {
   if (fn.special === 'stringify') return lang === 'python' ? '__str__' : lang === 'php' ? '__toString' : 'toString';
   if (fn.special === 'to_json') return lang === 'php' ? 'jsonSerialize' : 'toJSON';
+  if (fn.special === 'primitive') return 'valueOf';
   return langName(lang, fn.member.name, 'callable');
 }
 
@@ -1338,18 +1600,30 @@ export function memberName(lang: Lang, fn: Fn): string {
 export function hookCall(lang: 'python' | 'node' | 'php', fn: Fn, receiver: string): string | undefined {
   if (fn.special === 'stringify') return { python: `str(${receiver})`, node: `String(${receiver})`, php: `(string) ${receiver}` }[lang];
   if (fn.special === 'to_json') return { python: undefined, node: `JSON.stringify(${receiver})`, php: `\\json_encode(${receiver})` }[lang];
+  if (fn.special === 'primitive') return { python: undefined, node: `Number(${receiver})`, php: undefined }[lang];
   return undefined;
 }
 
-// Q-4 only: the members that a language has; a member whose only names other targets is not generated there. N-4:
-// Python has no JSON hook, so a to_json is no member of Python.
+// Q-4 only: the units and the members that a language has; a unit or a member whose only names other targets is not
+// generated there (GN-6af). N-4: Python has no JSON hook, so a to_json is no member of Python; only JavaScript has the
+// hook of a primitive (valueOf).
 export function membersFor(model: Model, lang: Lang): Model {
+  const unitHas = (unit: Unit): boolean => unit.only === undefined || unit.only.targets.includes(lang);
   const has = (fn: Fn): boolean =>
-    (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json');
+    unitHas(fn.unit) && (fn.member.only === undefined || fn.member.only.targets.includes(lang)) && !(lang === 'python' && fn.special === 'to_json') &&
+    !(fn.special === 'primitive' && lang !== 'node' && lang !== 'wasm');
   return {
     ...model,
     functions: model.functions.filter(has),
-    objects: model.objects.map((o) => ({ ...o, members: o.members.filter(has) })),
+    constants: model.constants.filter((c) => unitHas(c.unit)),
+    enums: model.enums.filter(unitHas),
+    records: model.records.filter(unitHas),
+    resultRecords: model.resultRecords.filter(unitHas),
+    objects: model.objects.filter((o) => unitHas(o.unit)).map((o) => ({ ...o, members: o.members.filter(has) })),
+    kept: model.kept.filter((k) => unitHas(k.unit)),
+    callbacks: model.callbacks.filter((c) => unitHas(c.unit)),
+    aliases: model.aliases.filter((a) => unitHas(a.unit)),
+    errorUnits: model.errorUnits.filter((u) => unitHas(u.unit)),
   };
 }
 
@@ -1358,7 +1632,7 @@ export function membersFor(model: Model, lang: Lang): Model {
 export function forLanguage(model: Model, lang: Lang): Model {
   const classes = model.classes.map((c) => ({ ...c, name: c.names[lang] ?? c.name }));
   const nameOf = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
-  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })) };
+  return { ...membersFor(model, lang), classes, kinds: model.kinds.map((k) => ({ ...k, className: nameOf(k.category) })), callbackLife: lang === 'node' ? "'env" : "'static" };
 }
 
 // T-3: a value type named in `types` (json_value, template_value, php_value) is the unit that represents it; this
@@ -1400,6 +1674,12 @@ export function resolveNamedTypes(contract: Contract): Contract {
 }
 
 // U-7: the value alias of a type, when the type is one.
+// GN-6af: the value class without core_type that a type names.
+export const keptUnit = (model: Model, type: Type): KeptClass | undefined => {
+  const unit = unitOf(model, type);
+  return libraryOf(type) === undefined ? model.kept.find((k) => k.unit === unit) : undefined;
+};
+
 export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
   const unit = unitOf(model, type);
   return unit === undefined ? undefined : model.aliases.find((a) => a.unit === unit && a.library === libraryOf(type));
@@ -1407,12 +1687,19 @@ export const aliasOf = (model: Model, type: Type): ValueAlias | undefined => {
 
 // U-2, T-4: the declared default of a parameter or a field, with the forms that are generated; any other is refused by
 // name (G-4). The core takes Option<T> and decides the value of None; a {literal} or {const} default, which every
-// declaration shows, names the constant of the core that it equals in default_core.
-function declaredDefault(item: Parameter | Field, where: string, field: boolean): { default?: Default; defaultCore?: string } {
+// declaration shows, names the constant of the core that it equals in default_core. A default of an optional type is
+// {literal: null} or {computed}, and the core takes the Option of the optional type itself (GN-6i); a {literal: null}
+// default of a value type names no constant, because the core decides what no value is.
+function declaredDefault(item: Parameter | Field, where: string, field: boolean, units: Map<string, Unit>): { default?: Default; defaultCore?: string } {
   const declared = item.default;
   if (declared === undefined) return {};
   const type = item.type;
-  if (typeof type === 'object' && 'optional' in type) throw new Unsupported(`${where}: a default of an optional type is not generated yet (U-2)`);
+  if (typeof type === 'object' && 'optional' in type) {
+    if (('literal' in declared && declared.literal === null) || 'computed' in declared) return { default: declared };
+    throw new Unsupported(`${where}: a default of an optional type is {literal: null} or {computed} (U-2)`);
+  }
+  const unit = typeof type === 'object' && 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
+  if (unit?.kind === 'alias' && unit.origin === 'value' && 'literal' in declared && declared.literal === null) return { default: declared };
   const container = typeof type !== 'object' ? undefined : 'list' in type ? 'list' : 'map' in type || 'keyed_map' in type ? 'map' : undefined;
   if ('empty' in declared) {
     if (declared.empty !== container) throw new Unsupported(`${where}: the default {empty: ${JSON.stringify(declared.empty)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
@@ -1427,6 +1714,10 @@ function declaredDefault(item: Parameter | Field, where: string, field: boolean)
   if (item.default_core === undefined) throw new Unsupported(`${where}: a {literal} or {const} default names the constant of the core in default_core (U-2)`);
   if ('literal' in declared) {
     const value = declared.literal;
+    if (unit?.kind === 'enum') {
+      if (!(unit.variants ?? []).some((v) => v.value === value)) throw new Unsupported(`${where}: the default {literal: ${JSON.stringify(value)}} of the type ${JSON.stringify(type)} is not generated (U-2)`);
+      return { default: declared, defaultCore: item.default_core };
+    }
     const fits =
       (type === 'bool' && typeof value === 'boolean') ||
       ((type === 'uint' || type === 'int' || type === 'int64') && typeof value === 'number' && Number.isSafeInteger(value) && (type !== 'uint' || value >= 0)) ||
@@ -1446,8 +1737,31 @@ function defaultArg(model: Model, type: Type, variable: string): string {
   return `${variable}.as_ref()`;
 }
 
-// The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2).
-export const argType = (model: Model, arg: Arg): string => (arg.default === undefined ? rustType(model, arg.type) : `Option<${rustType(model, arg.type)}>`);
+// GN-6i: whether an argument with a default is of an optional type, whose own Option the core takes: a value that was
+// left out and a null are both None.
+export const ownOption = (arg: { type: Type; default?: Default }): boolean => arg.default !== undefined && typeof arg.type === 'object' && 'optional' in arg.type;
+
+// The Rust type of the variable of an argument: Option<T> for one that may be left out (U-2), and the optional type
+// itself for one of an optional type.
+export const argType = (model: Model, arg: Arg): string => (arg.default === undefined || ownOption(arg) ? rustType(model, arg.type, arg.field) : `Option<${rustType(model, arg.type, arg.field)}>`);
+
+// GN-6i, GN-13d: whether a type takes null as a value: an optional type, and a value alias, which its core judges.
+export const takesNull = (model: Model, type: Type): boolean => (typeof type === 'object' && 'optional' in type) || aliasOf(model, type) !== undefined;
+
+// U-2, GN-15e: whether Go takes an argument as a pointer to its type, nil when it is left out; an optional type with a
+// default keeps its own pointer.
+export const pointed = (arg: { type: Type; default?: Default }): boolean => arg.default !== undefined && !ownOption(arg);
+
+// U-2, GN-6i: the conversion of an argument that may be left out, from the call of in_default; the Option of an
+// optional type is flattened, so that a value left out and a null are both None.
+export const leftOut = (arg: Arg, call: string): string => (ownOption(arg) ? `${call}.map(Option::flatten)` : call);
+
+// GN-6aa: the conversion of a callback that enters inside another type, or as a field of a record, as a box of the core
+// trait; any other conversion as it is.
+export function boxed(model: Model, type: Type, converted: string): string {
+  if (unitOf(model, type)?.origin !== 'callback') return converted;
+  return `${converted}.map(|callback| -> ${rustType(model, type, true)} { Box::new(callback) })`;
+}
 
 // G-5: the name that a case gives a fault injection point of this contract, <library>.<id> with the library in
 // snake_case.
@@ -1578,6 +1892,23 @@ export const aliasFailureFn = (alias: ValueAlias): string =>
 export const foreignAliasLibraries = (model: Model): ValueAlias[] =>
   model.aliases.filter((a, i) => a.library !== undefined && model.aliases.findIndex((b) => b.library === a.library) === i);
 
+// GN-6u: the member whose generated test gives an object through a native row and back: a function without a receiver
+// that takes a value alias of this repository, with an out row of kind native in the target, as its one parameter and
+// returns it. The contract alone decides it, so that the manifest and the tests agree.
+export function nativeRoundTrip(contract: Contract, lang: Lang): Member | undefined {
+  const isUnit = (type: Type | undefined, id: string): boolean => typeof type === 'object' && 'unit' in type && type.unit === id && type.library === undefined;
+  for (const unit of contract.units) {
+    if (unit.kind !== 'alias' || unit.origin !== 'value') continue;
+    if (!(unit.out ?? []).some((row) => row.kind === 'native' && row.make[lang] !== undefined)) continue;
+    for (const owner of contract.units) {
+      if (owner.kind !== 'functions') continue;
+      const found = (owner.members ?? []).find((m) => m.kind === 'function' && (m.parameters ?? []).length === 1 && isUnit(m.parameters?.[0]?.type, unit.id) && isUnit(m.returns, unit.id));
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 // GN-6v: the words of the tag text of a case, split at an underscore and before a capital: IfBlock and if_block are the
 // words if and block.
 export const caseWords = (value: string): string[] =>
@@ -1696,7 +2027,7 @@ export const tupleIn = (parts: Type[], taken: string, part: (type: Type, name: s
 };
 
 // T-9, GN-6v: an optional field of a case whose default is {literal: null} may be left out, and is then null.
-export const leftOut = (field: { type: Type; default?: Default }): boolean =>
+export const caseLeftOut = (field: { type: Type; default?: Default }): boolean =>
   typeof field.type === 'object' && 'optional' in field.type && field.default !== undefined && 'literal' in field.default && field.default.literal === null;
 
 // GN-6ac, GN-6ad: whether a value of the type, an argument too, enters the core through IntoCore, which takes the

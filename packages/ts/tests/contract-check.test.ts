@@ -157,6 +157,17 @@ describe('CK-6 cycles', () => {
 
 describe('CK-8 value units', () => {
   const inRows = (c: any): any[] => unit(c, 'value').in;
+  // GN-6x: the class that represents its value type names the functions through which another repository takes and
+  // gives its values; its core type is named with them.
+  const owned = (c: any): void => {
+    unit(c, 'value').core = { in: 'forms::value_in', out: 'forms::value_out' };
+    unit(c, 'value').core_type = 'forms::Value';
+  };
+  test('a value class that represents its value type names core: {in, out} with its core_type', () => {
+    assert.deepEqual(findings(owned), []);
+  });
+  test('a value class with core: {in, out} and no core_type', () =>
+    fails('CK-8', at('value'), (c) => { owned(c); delete unit(c, 'value').core_type; }));
   test('a by enum value without a case', () =>
     fails('CK-8', `${at('value')}/in/0/cases`, (c) => { inRows(c)[0].cases.pop(); }));
   test('a by enum value in two cases', () =>
@@ -178,6 +189,44 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/3/make/php`, (c) => { unit(c, 'value').out[3].make.php = 'bigint'; }));
   test('make names a method, not a constructor', () =>
     fails('CK-8', `${at('value')}/out/1/make/node`, (c) => { unit(c, 'value').out[1].make.node = 'value.items'; }));
+  // GN-6x: a text with an unpaired surrogate is the kind text16, which a member of a class makes from code units; the
+  // string of PHP and Go cannot hold it, so no built-in form makes it.
+  // GN-6x, P-3, B2.89: a value class makes a text by a text row and a text with an unpaired surrogate by a text16 row,
+  // and reads a string by one case of the kind text whose read gives an optional text and whose units member gives the
+  // UTF-16 code units of a text with an unpaired surrogate; that case is the case of both kinds.
+  const owner = (change: (unit: any) => void = () => {}): Finding[] => {
+    const parsed = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+    change(parsed.units.find((u: any) => u.id === 'value'));
+    // The fixture holds no case files (CK-22); the round trip is CK-8.
+    return checkContract(parsed).filter((f) => f.check === 'CK-8' || f.check === 'CK-1');
+  };
+  const strings = (value: any): any[] => value.in.map((row: any) => row.cases.find((c: any) => c.is === 'string'));
+  test('a text row and a text16 row that come back by the case of the kind text with units', () => {
+    assert.deepEqual(owner(), []);
+  });
+  test('a text row whose string case is the kind text16, which reads every text as its code units', () => {
+    const result = owner((value) => { for (const kase of strings(value)) { kase.kind = 'text16'; kase.read = 'value.string_units'; delete kase.units; } });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /has 0 cases of kind text\b/.test(f.message)), JSON.stringify(result, null, 2));
+  });
+  test('units on a case of another kind than text', () => {
+    const result = owner((value) => { for (const row of value.in) Object.assign(row.cases.find((c: any) => c.is === 'number'), { units: 'value.string_units' }); });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/3\/units$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units whose read gives no optional text', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.read = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/read$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('units that gives no list of uint', () => {
+    const result = owner((value) => { for (const kase of strings(value)) kase.units = 'value.string_value'; });
+    assert.ok(result.some((f) => f.check === 'CK-8' && /\/in\/0\/cases\/2\/units$/.test(f.path)), JSON.stringify(result, null, 2));
+  });
+  test('a text16 row that comes back by the case of the kind text', () =>
+    fails('CK-8', `${at('value')}/out/0/make`, (c) => {
+      unit(c, 'value').out[0].kind = 'text16';
+      unit(c, 'value').out[0].make = Object.fromEntries(Object.keys(unit(c, 'value').out[0].make).map((lang) => [lang, 'value.new']));
+    }));
+  test('a text16 row made by a built-in form', () =>
+    fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'text16'; }));
   test('a value that comes back as another kind', () =>
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => {
       // PHP makes text and bytes both as string, which the in table classifies as text.
@@ -243,14 +292,23 @@ describe('CK-10 errors', () => {
     fails('CK-10', '/errors/fixed/5', (c) => { c.errors.fixed.push({ lang: 'go', class: 'error' }); }));
   test('a kind of a dependency that it does not declare', () =>
     fails('CK-10', '/errors/kinds/2/variant', (c) => {
-      c.errors.kinds.push({ variant: 'forms_dep::Error::Nothing', library: 'forms-dep' });
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Nothing', library: 'forms-dep' });
       c.errors.wrapped.push({ library: 'forms-dep', unit: 'dep_error', property: ['field'], drop: { reason: 'P-4' } });
+    }));
+  test('a kind of a dependency without the variant of the core error that holds it (GN-7c)', () =>
+    fails('CK-10', '/errors/kinds/2/variant', (c) => {
+      c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
+      c.errors.wrapped.push({ library: 'forms-dep', unit: 'dep_error', property: ['field'], drop: { reason: 'P-4' } });
+    }));
+  test('a kind of its own with the path of a dependency (GN-7c)', () =>
+    fails('CK-10', '/errors/kinds/2/variant', (c) => {
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', category: 'value' });
     }));
 });
 
 describe('CK-11 wrapped dependency errors', () => {
   const wrap = (c: any): void => {
-    c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
+    c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', library: 'forms-dep' });
   };
   test('a dropped property with a rule is accepted', () => {
     const result = findings((c) => {
@@ -431,8 +489,8 @@ describe('CK-8 representative units and predicate round trips', () => {
       delete value.in;
       value.origin = 'value';
     }));
-  test('a value class with core functions (U-7)', () =>
-    fails('CK-8', `${at('value')}/core`, (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
+  test('a value class with core functions and no core_type (U-7, GN-6x)', () =>
+    fails('CK-8', at('value'), (c) => { unit(c, 'value').core = { in: 'sample::a', out: 'sample::b' }; }));
   const gather = (c: any): void => {
     const value = unit(c, 'value');
     c.units.push({ id: 'values', name: ['values'], module: 'value', kind: 'alias', visibility: 'public', origin: 'value', core: { in: 'sample::value_from_host', out: 'sample::value_to_out' }, out: value.out, in: value.in });
@@ -609,6 +667,24 @@ describe('CK-21 the build of the core and exclusive members', () => {
       m.core.result = false;
       m.parameters.push({ name: ['store'], type: { unit: 'store' }, required: true });
     }));
+  test('core.failure on a member whose receiver keeps language code is accepted (E-1c, GN-6h)', () => {
+    // session.new takes the callback store, so a session keeps language code.
+    assert.deepEqual(findings((c) => { member(c, 'session.load').core.failure = true; }), []);
+  });
+  test('core.failure on a member whose receiver keeps no language code (E-1c)', () =>
+    fails('CK-21', `${at('forms')}/members/0/core/failure`, (c) => { member(c, 'forms.parse').core.failure = true; }));
+  test('core.failure false on a member that takes a callback (E-1c)', () =>
+    fails('CK-21', `${at('session')}/members/0/core/failure`, (c) => {
+      const m = member(c, 'session.new');
+      m.core = { path: typeof m.core === 'string' ? m.core : m.core.path, failure: false };
+    }));
+  test('core.failure without a Result (E-1c)', () =>
+    fails('CK-21', `${at('session')}/members/2/core/failure`, (c) => {
+      const m = member(c, 'session.load');
+      m.raises = [];
+      m.core.result = false;
+      m.core.failure = true;
+    }));
   test('features of the core for each target are accepted (I-1)', () => {
     assert.deepEqual(findings((c) => { c.core.features = { wasm: ['pure'], node: ['io', 'redis'] }; }), []);
   });
@@ -700,8 +776,8 @@ describe('CK-22 every member names its cases (K-1)', () => {
     const passOn = (c: any, d: any): void => {
       d.errors.kinds[0] = { variant: 'forms_dep::Error::Limit', category: 'internal' };
       d.faults = [{ id: 'internal', core: 'forms_dep::fault::INTERNAL', inject: ['broken'], fills: ['limit'], reason: 'X-1', place: 'forms_dep::limit' }];
-      c.errors.kinds.push({ variant: 'forms_dep::Error::Limit', library: 'forms-dep' });
-      member(c, 'forms.parse').raises.push('forms_dep::Error::Limit');
+      c.errors.kinds.push({ variant: 'sample::Error::Dep/forms_dep::Error::Limit', library: 'forms-dep' });
+      member(c, 'forms.parse').raises.push('sample::Error::Dep/forms_dep::Error::Limit');
     };
     const index = contract().errors.kinds.length + 1;
     const withDep = { id: 'dep_broken', body: { hex: '00' }, faults: [{ point: 'forms_dep.internal', kind: 'broken' }], raises: { kind: 'limit' } };
@@ -844,7 +920,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.match(withParam(stores, 'stores', [{ new: 'session.new', args: {} }]).map((f) => f.message).join('\n'), /stores\[0\] is an instance value of session, which does not implement store/);
   });
   test('a case gives a function as a function fixture: its steps, and a result or a raise (G-5, GN-6ae)', () => {
-    const takes = (parameters: unknown[], extra: object = {}): object => ({ name: ['convert'], type: { function: { parameters, returns: 'text', async_allowed: false, ...extra } } });
+    const takes = (parameters: unknown[], extra: object = {}): object => ({ name: ['convert'], type: { function: { parameters, returns: { passthrough: 'T' }, async_allowed: false, ...extra } } });
     const scoped = takes([{ unit: 'session' }, 'text'], { errors: { recognize: [{ unit: 'too_large' }], reason: 'HY-24' } });
     const step = { on: '0', call: 'session.load', args: { file: 'a' } };
     assert.deepEqual(withParam(takes(['text']), 'convert', { function: { calls: [], result: 'b' } }), []);
@@ -882,7 +958,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
     }
     // An argument of a function type of a step is again a function fixture.
     const nested = (c: any): void => {
-      unit(c, 'session').members.push({ id: 'session.within', name: ['within'], kind: 'method', visibility: 'public', wait: 'none', parameters: [{ name: ['work'], type: { function: { parameters: [{ unit: 'session' }], returns: 'text', async_allowed: false } }, required: true }], returns: 'text', raises: [], core: { path: 'sample::Session::within', receiver: '&self' } });
+      unit(c, 'session').members.push({ id: 'session.within', name: ['within'], kind: 'method', visibility: 'public', wait: 'none', parameters: [{ name: ['work'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } }, required: true }], returns: { passthrough: 'T' }, raises: [], core: { path: 'sample::Session::within', receiver: '&self' } });
     };
     const inner = (work: unknown): unknown => ({ function: { calls: [{ on: '0', call: 'session.within', args: { work } }], result: 'b' } });
     const cases = (found: Finding[]): Finding[] => found.filter((f) => f.check === 'CK-22' && f.path === parseCases());
@@ -900,7 +976,7 @@ describe('CK-22 every member names its cases (K-1)', () => {
     assert.match(cases(withParam(both, 'convert', outer({}, { function: { calls: [], result: 'c', awaits: true } }), waits))[0]?.message ?? '', /the function fixture work of step 0 of convert names awaits, and the fixture of its step does not/);
   });
   test('a case that raises "callback" has a function fixture that raises an exception, and after observes the receiver (G-5, GN-6ae)', () => {
-    const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: 'text', async_allowed: false } } };
+    const scoped = { name: ['convert'], type: { function: { parameters: [{ unit: 'session' }], returns: { passthrough: 'T' }, async_allowed: false } } };
     const kase = (extra: object, convert: unknown): Finding[] => {
       const c = contract();
       const load = member(c, 'session.load');
@@ -947,6 +1023,11 @@ describe('CK-23 reserved words of the target languages (N-2)', () => {
     fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['from']; }));
   test('a JavaScript parameter named function', () =>
     fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['function']; }));
+  test('a PHP class named List of an internal unit, which the generator declares too (GN-6r)', () =>
+    fails('CK-23', at('session'), (c) => {
+      unit(c, 'session').visibility = 'internal';
+      unit(c, 'session').name = ['list'];
+    }));
   test('a reserved word where the language allows it is accepted: a PHP or Node method named list', () => {
     const c = contract();
     c.targets = ['php', 'node'];
@@ -1066,6 +1147,39 @@ describe('CK-22 instance values (GN-13f)', () => {
   });
   test('a receiver of a member that has none', () => {
     assert.match(messages((c) => { c.tag_parse[0].receiver = { new: 'tag.new', args: { name: 'a' } }; }), /tag\.parse has no receiver, so the case gives none/);
+  });
+});
+
+describe('CK-22 the faults and the receiver of a call of then (GN-13f)', () => {
+  const read = (repo: string, path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  const run = (repo: string, change: (cases: any) => void): Finding[] => {
+    const cases = read(repo, 'contracts/cases.json');
+    change(cases);
+    return checkContract(read(repo, 'packages/rust/interface.json'), { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const messages = (repo: string, change: (cases: any) => void): string => run(repo, change).map((f) => `${f.check} ${f.message}`).join('\n');
+  // A counter whose draw ran with the faults of the call, then the total of the counter.
+  const drawn = (step: object) => (c: any) => {
+    c.counter_total.push({ id: 'the_total_after_a_draw', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.draw', args: { other: { new: 'counter.new', args: { start: 1 } } }, ...step }] }, result: 2 });
+  };
+  test('a call of then arms the faults of its own call', () => {
+    assert.deepEqual(run('sample', drawn({ faults: [{ point: 'sample.draw', kind: 'broken' }], raises: { kind: 'internal' } })), []);
+  });
+  test('the faults of a call of then are the faults of a case, and a failure that it expects is a kind of its points', () => {
+    assert.match(messages('sample', drawn({ faults: [{ point: 'sample.nothing', kind: 'broken' }] })), /CK-22 .*sample\.nothing/);
+    assert.match(messages('sample', drawn({ faults: [{ point: 'sample.read', kind: 'io' }], raises: { kind: 'internal' } })), /then 0 of the receiver expects counter\.draw to fail with internal, which no point that it arms fills/);
+  });
+  test('a case whose instance values arm faults fills only the kinds of their points', () => {
+    const added = (c: any) => {
+      c.counter_draw.push({ id: 'a_draw_after_an_add', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.add', args: { amount: 1 }, faults: [{ point: 'sample.read', kind: 'io' }] }] }, other: { new: 'counter.new', args: { start: 1 } }, raises: { kind: 'internal', status: null, category: 'internal', message: 'the draw is broken' } });
+    };
+    assert.match(messages('sample', added), /the case a_draw_after_an_add of counter\.draw: no point that the case arms fills the kind internal/);
+  });
+  test('a call of then on the receiver of the value', () => {
+    assert.deepEqual(run('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'receiver' }]; }), []);
+    assert.match(messages('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'gate.close', on: 'receiver' }]; }), /then 0 of the receiver calls gate\.close on its receiver, which is no method of tag/);
+    assert.match(messages('classes', (c) => { c.gate_enter[0].receiver.receiver.then = [{ call: 'tag.name', on: 'receiver' }]; }), /then 0 of the receiver of the receiver calls tag\.name on its receiver, but tag\.new gives the value without one/);
+    assert.match(messages('classes', (c) => { c.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'self' }]; }), /then 0 of the receiver calls on self, but on names only receiver/);
   });
 });
 

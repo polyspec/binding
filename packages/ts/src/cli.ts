@@ -12,11 +12,12 @@ import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
 import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
-import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
+import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
 import { casePointLibraries, hostRequirements, trackedPackages } from './generate/packages.ts';
 
@@ -186,7 +187,7 @@ function scaffolded(): Map<string, unknown> {
   if (others) for (const [library, other] of dependencies(contract, join(root, checked.core.path))) if (!found.has(library)) found.set(library, other);
   return found;
 }
-const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>);
+const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles), (command === 'scaffold' ? scaffolded() : foreign) as ReadonlyMap<string, Contract>, caseTestTargets({ contract: checked, caseFiles, foreign: foreign as ReadonlyMap<string, Contract> }));
 
 if (command === 'check') {
   // L-2: each tracked file of the binding packages is what binding scaffold writes.
@@ -234,7 +235,7 @@ if (command === 'check') {
       process.stderr.write(`${full}: CK-19 ${found === undefined ? 'is missing' : 'differs from what binding scaffold writes'} (L-2)\n`);
     }
   }
-  // L-2a: a host package's manifest holds what its native module needs.
+  // L-2a: a host package's manifest holds what its native module and its release need (GN-3b).
   for (const requirement of names ? [] : hostRequirements(checked, parse)) {
     const full = join(root, requirement.path);
     let found: unknown;
@@ -243,9 +244,9 @@ if (command === 'check') {
     } catch {
       found = undefined;
     }
-    if (found !== requirement.want) {
+    if (!isDeepStrictEqual(found, requirement.want)) {
       differs = true;
-      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module needs (L-2a)\n`);
+      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module and its release need (L-2a)\n`);
     }
   }
   process.exit(differs || findings.length > 0 ? 1 : 0);

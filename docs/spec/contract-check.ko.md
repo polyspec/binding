@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 8882362cd7197d25bdf2c79d7330b26fbb8efe16d1f61354d8178aada227154d -->
+<!-- source-sha256: d4a1ee8163e7651accc58b87c4cc67b1aacd7b627ea7b8d355d3d9d62c014e76 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -43,8 +43,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-8** value unit(U-1, U-7):
   - value alias는 `HostValue`로 설명한 언어 값을 판정하는 코어 함수
     (`fn(&mut dyn HostValues, HostValue) -> Result<T, Failure<E>>`)와 코어 값을 `OutValue`로 주는 코어 함수(`&T`를 받아
-    `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. value class는
-    `in` 행이 그 member를 읽으므로 그런 `core`를 갖지 않는다.
+    `(OutValue, V)`를 돌려주며 `V: OutValues`가 그 값을 빌릴 수 있는 함수)를 `core: {in, out}`에 적는다. 값 타입을 대표하는
+    value class는 그런 `core`와 `core_type`을 적을 수 있고, 다른 레포는 그 함수로 그 값을 주고받는다(GN-6x). 자기 바인딩은
+    그 함수를 부르지 않는다. `in` 행이 그 member를 읽고, 자기 레포는 native 객체를 꺼내기 때문이다(T-3). 그 밖의 unit은
+    `core: {in, out}`을 갖지 않는다.
   - 값 타입을 대표하는 unit이 `out`과 `in`을 갖는다. alias가 모으지 않는 `value` class이거나 `alias`(origin `value`)다.
     alias가 모으는 class(alias의 `in` 행이 그것을 가리킨다)는 둘 다 갖지 않는다. alias의 구성원은 그 `in` 행의 언어
     타입이다(U-7 (a)).
@@ -57,6 +59,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     `native`인 case는 내용이 없거나 코어가 열어 보지 않으므로 `read`가 없다(U-1, VAL-18). kind `native`는 형태
     `native`로 만들고 그 형태는 다른 kind를 만들지 않는다. native 값은 `OutValue::Native`의 handle로 들어온 언어 객체
     그대로이기 때문이다(VAL-18).
+  - `by`가 있는 class의 kind `text` case는 `uint`의 list를 주는 공개 member인 `units`를 적을 수 있다. 그러면 `read`는
+    optional `text`를 주고, 없음은 그 text가 Unicode text가 아니어서 `units`가 주는 UTF-16 code unit으로 읽는다는
+    뜻이다(GN-6x). 그래서 `read` 한 번의 호출이 언어의 모든 text를 한 번 판정하고, code unit은 짝 없는 surrogate를
+    가진 text에서만 경계를 건넌다(B2.89).
   - `out` 행은 모든 target에서 값을 만든다. `make`는 그 언어에 있는 내장 형태(`keyed_map`은 `{keyed_map: {key: [...]}}`),
     대표 class나 alias가 모으는 class의 공개 `constructor`·`static` member, 또는 kind `nested:X`의 `{value: X}`다.
   - `when`은 행의 kind에 해당하는 술어이거나 `else`다. 한 kind의 행과 한 내장 `in` 행의 case는 `when` 없는 것 하나, 같은
@@ -65,7 +71,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     binding의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
     `text`는 UTF-8, `int`는 정수인 안전 정수, `list`는 키 0~n-1). `when`이 맞는 첫 case가 그 case이며, 표가 정하지 않는
     술어는 finding이다. `by`가 있는 class는 `is`를 실행 때만 알 수 있으므로 행의 kind가 case 하나를 정확히
-    가리켜야 한다. case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
+    가리켜야 하며, `units`를 가진 kind `text`의 case는 kind `text16`의 case이기도 하다. 짝 없는 surrogate를 가진 text를
+    그 UTF-16 code unit으로 읽기 때문이다(GN-6x). case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
     시험은 남는다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼
@@ -80,9 +87,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `HttpCookieValueError`와 `HTTPCookieValueError`. 레포 이름의 약어 낱말은 아래 binding의 표다). PHP 클래스는
   `packages.php`의 namespace 안에 있다. `errors.fixed`에는 Go 행이 없다(Go에서 G-7은 컴파일 오류다). `kinds`·`binding`의
   `class` 덮어쓰기는 그 kind의 category인 오류 unit이다(의존 kind는 의존 계약의 category를 쓴다, E-1b). variant와 binding
-  kind는 한 번만 선언한다. `kinds`·`raises`·`in_raises`의 variant는 Rust 경로이거나 중첩 경로 `<바깥>/<안쪽>`이고,
-  `errors.code`는 코어 오류 타입과 kinds의 code enum으로 가는 투영을 적는다(`{error, path}`, generator GN-7b). 그것이
-  코어의 variant, 타입, 함수를 가리키는지는 생성된 crate를 컴파일러가 판정한다(I-2).
+  kind는 한 번만 선언한다. `library`가 있는 행은 variant `<바깥>/<안쪽>`을 적고 그
+  `<안쪽>`은 라이브러리 계약이 선언한 것이며, `library`가 없는 행은 `/`를 적지 않는다(GN-7c). `kinds`·`raises`·`in_raises`의
+  variant는 Rust 경로이거나 GN-7c의 중첩 경로 `<바깥>/<안쪽>`이고, `errors.code`는 코어 오류 타입과 kinds의 code enum으로 가는
+  투영을 적는다(`{error, path}`, generator GN-7b). 그것이 코어의 variant, 타입, 함수를 가리키는지는 생성된 crate를 컴파일러가
+  판정한다(I-2).
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
@@ -100,10 +109,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   같은 unit의 다른 member의 Python 이름이 아니고 Python의 예약어도 아니다. 그래야 GN-6m의 awaitable을 생성할 수 있다.
 - **CK-17** callback(U-3, T-3): `async_allowed`와 `errors`는 callback member만 갖고, 모든 callback member는 `async_allowed`를
   적고, trait 메서드와 receiver를 `core: {path, receiver}`에 receiver `&self`나 `&mut self`로 적는다. 생성된 struct가 그
-  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리키며, callback member가 자기
-  오류 unit을 recognize하는 계약은 recognize한 kind의 코어 오류를 만드는 코어 함수를 `errors.recognized`에
-  적는다(generator GN-6d). 이 계약의 callback을 구현하는 이 계약의 generated class에 wait가 `none`이 아닌 member가 있으면
-  같은 이름의 callback member는 `async_allowed: true`다.
+  trait를 구현하는데 binding은 Rust 소스를 읽지 않기 때문이다. `recognize`는 오류 unit을 가리키며, callback member가 자기 오류
+  unit을 recognize하는 계약은 recognize한 kind의 코어 오류를 만드는 코어 함수를 `errors.recognized`에 적는다(generator GN-6d). 이 계약의 callback을
+  구현하는 이 계약의 generated class에 wait가 `none`이 아닌 member가 있으면 같은 이름의 callback member는
+  `async_allowed: true`다.
 
 - **CK-18** 패키지 이름(P-1): 코어 crate는 `polyspec-<library>`, Composer `polyspec/<library>`, PHP namespace
   `Polyspec\<Repository>`, PyPI `polyspec-<library>`, Python 루트 `polyspec.<repository의 - 를 _로>`, npm
@@ -113,13 +122,16 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 
 - **CK-19** 추적하는 바인딩 package(L-2): `binding check`는 바인딩 package의 추적 파일(docs/spec/generator.md
   GN-3a)을 `binding scaffold`가 쓸 내용과 비교한다. 없거나 다른 파일은 finding이다. host 패키지(L-2a, GN-3b)는 host
-  manifest에서 네이티브 모듈에 필요한 항목만 읽는다.
+  manifest에서 네이티브 모듈과 그 release에 필요한 항목만 읽고, 없거나 다른 항목마다 그 이름과 가져야 할 값을 적는다.
 - **CK-21** 코어의 빌드, exclusive member, 코어 경로의 결과(I-1, U-6, E-1c): `core.features`는 target만 가리킨다.
   `exclusive`는 generated class의 receiver `&self` member에만 둔다. `core.result`가 `false`인 member는 `raises`가 없고
   callback이나 함수를 담은 parameter가 없다. `Result`를 돌려주지 않는 코어에는 돌려줄 variant도, callback의 실패를 둘
   자리도 없기 때문이다. `core.result`가 없으면, `raises`가 이 계약 자신의 코어 오류 variant를 가리키거나 parameter가
   callback이나 함수일 때 코어 경로가 `Result`를 돌려준다. `core.result`가 코어와 맞는지는 생성 crate를 컴파일러가
-  판정하며(I-2) 이 검사는 판정하지 않는다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
+  판정하며(I-2) 이 검사는 판정하지 않는다. `core.failure: true`는 receiver unit이 언어 코드를 가진(GN-6h) member에만 둔다.
+  다른 member는 실패할 수 있는 언어 코드에 닿지 않기 때문이다. callback이나 함수를 담은 parameter가 있는 member에는
+  `core.failure: false`를 두지 않고, `core.result: false`인 member에는 `core.failure: true`를 두지 않는다. 언어 코드의
+  실패는 `Result` 안의 `Failure<E>`로 돌아오기 때문이다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).
 - **CK-63** WASM 코어(GN-4b): `core.features.wasm`은 플랫폼 I/O의 feature `fs`, `blocking-io`, `process`, `net`을
   적지 않는다.
@@ -143,12 +155,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
   행이 내는 kind마다 그 kind를 내는 case를 가진다. member의 `cases` 행은 `result`로 그 case들에서 member의 결과를 담은
-  snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1).
-  case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다. 그 member가 있고 `pick`을 거쳐 그 class를 주며,
-  메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 모두 그 class의 메서드이고, 그 `raises`는
-  주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인
-  `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다.
-  case는 실패 주입점(G-5)을
+  snake_case 키를 적을 수 있다(GN-13e). 적지 않은 행은 키 `result`를 읽고, alias의 행은 그것을 갖지 않는다(CK-1). case의 `receiver`와 class 타입 인자는 GN-13f의 인스턴스 값일 수 있다: 그 member가 있고 `pick`을 거쳐 그 class를
+  주며, 메서드는 `receiver`를 갖고, `args`는 member의 parameter이며, `then`의 호출은 그 class의 메서드이거나, `"on": "receiver"`이면 receiver를 가진 값의 `receiver`의 class의 메서드이며, 그 `raises`는 주어지면 그 메서드 `raises`의 kind인 `{"kind": <kind>}`다. 그 `faults`는 주어지면 그 메서드의 case의 faults이고, `faults`와 `raises`를 함께 가진 호출은 그 점들이 채우는 kind를 기대한다. 인스턴스 값이 fault를 장전하는 case는 `faults`를 가진 case처럼 case와 그 호출들의 점이 `fills`에 가진 kind만 채운다. 타입 `cancel`의 인자는 호출 전에 발동한 취소인 `{"cancel": "fired"}`이거나 발동하지
+  않는 취소인 `{"cancel": "open"}`이고, `optional<cancel>`은 `null`일 수 있다. case는 실패 주입점(G-5)을
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<기호>", "bytes": <n>,
   "nth": <n>}]`로 장전할 수 있다. `<library>`는 snake_case로 쓴 라이브러리 이름이며 이 계약이나 검사가 받은 라이브러리의
   것이고, `<id>`는 그 계약 `faults`의 점이다. `kind`는 그 점의 `inject` 중 하나다. `bytes`는 `short`에만, 그리고 `short`에는
@@ -167,7 +176,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   member가 recognize하지 않는 오류 unit의 `raise`(U-3), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
   field, list의 항목, `optional`에서도 같다. 그 자리에는 그 interface를 `implements`하는 계약의 class의 인스턴스 값(GN-13f)이
-  fixture 대신 올 수 있다. 함수 타입의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
+  fixture 대신 올 수 있다. 함수 타입의 값은 `{"function": [<행>]}`이고(generator GN-6z), 그 행의 키는 `args`, `result`, `once`뿐이며
+  `args`에 parameter의 위치 `"0"`, `"1"` 등을 준다. 언어 객체를 받는 함수는 행을 갖지 않는다. 반환이 `passthrough`인 함수 타입,
+  곧 state machine을 가진 member의 함수의 값은 함수 fixture(generator GN-6ae) `{"function": {"calls": [<step>], "result":
   <값>}}`이거나 `"result"` 자리에 `"raise"`를 둔 것이다. fixture의 키는 `function`뿐이고, 그 객체는 list `calls`와
   `result`, `raise` 중 하나를 가지며 `awaits` 말고 다른 키는 없다. `"awaits": true`는 함수가 그 언어의 awaitable을
   돌려주고 그 awaitable의 결과가 fixture의 `result`나 `raise`임을 적는다(generator GN-6ae). `async_allowed: true`인 함수
@@ -182,7 +193,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   method의 case는 `after`를 적을 수 있다. `after`는 `{"call": "<member id>", "args": {...}, "result": <값>}`의 list이고
   다른 키는 없다. 각 `call`은 receiver의 class의 method이고 `args`는 정확히 그 parameter이며, 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
-- **CK-23** 예약어(N-2): 대상 언어가 public unit, member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
+- **CK-23** 예약어(N-2): 대상 언어가 public unit이나 internal unit(GN-6r), member, parameter, field에 주는 이름은 바인딩이 그 이름을 쓰는 자리에서
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
   parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는
@@ -202,9 +213,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - 레포 이름의 약어 낱말(P-1, E-2, N-2): `api`, `crud`, `csrf`, `css`, `fsm`, `html`, `http`, `id`, `io`, `json`, `orm`,
   `php`, `sql`, `ui`, `uri`, `url`, `xml`. 레포 이름의 새 약어는 이 표(`packages/ts/src/names.ts`의 `LIBRARY_ACRONYMS`, 그것을 갖는
   유일한 곳)에 더한다.
-- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`,
+- 값 kind: `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `text16`, `bytes`, `list`, `map`, `object`, `reference`,
   `safe_text`, `native`, `nested:json_value`, `nested:template_value`, `nested:php_value`(`ValueKind`). `int`와 `int64`는 같은 이름의
-  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1).
+  계약 타입의 형태를 갖는다(Node `number`와 `bigint`, T-1). `text16`은 짝 없는 surrogate까지 담는 UTF-16 code
+  unit의 text이고, 값 class가 `uint`의 list를 읽거나 받는 member로 주고 만든다(GN-6x). PHP와 Go의 문자열은 짝 없는
+  surrogate를 담지 못하므로 어떤 내장 형태도 그것을 만들지 않는다.
 - 술어와 그 kind: `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float)(`Predicate`). 행은
   `when: {predicate, is}`로 적는다.
 - 내장 형태와 각각이 만드는 언어 타입:

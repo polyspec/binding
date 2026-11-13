@@ -68,7 +68,7 @@ export interface Member {
   raises?: string[];
   wait?: Wait;
   // result (E-1c): whether the core path returns a Result; absent, the default of coreResult below.
-  core?: { path: string; receiver?: string; result?: boolean; machine?: boolean } | string;
+  core?: { path: string; receiver?: string; result?: boolean; failure?: boolean; machine?: boolean } | string;
   type?: Type;
   value?: unknown;
   writable?: boolean;
@@ -94,7 +94,7 @@ export interface OutRow {
 
 export interface InRow extends Partial<Record<Lang, string>> {
   by?: string;
-  cases: { is?: string; when?: When; kind: string; read?: string }[];
+  cases: { is?: string; when?: When; kind: string; read?: string; units?: string }[];
 }
 
 export interface Unit {
@@ -166,6 +166,15 @@ export interface FaultPoint {
 export type CaseRow = { member: string; alias?: undefined; file: string; group: string; result?: string } | { alias: string; member?: undefined; file: string; group: string; result?: undefined };
 
 // E-3: the kind of a variant whose row names no kinds is its name in snake_case.
+// GN-7c, E-1b (a): a kind that the core passes on names <outer>/<inner>, the variant of the core error that holds the
+// error of the library and the variant of that error; any other kind names a variant of the core error.
+export const innerVariant = (variant: string): string => variant.slice(variant.indexOf('/') + 1);
+export const outerVariant = (variant: string): string | undefined => (variant.includes('/') ? variant.slice(0, variant.indexOf('/')) : undefined);
+// The Rust pattern of a variant: <outer>(<inner> { .. }) for a kind that the core passes on, <variant> { .. } otherwise.
+export const variantPattern = (variant: string): string => {
+  const outer = outerVariant(variant);
+  return outer === undefined ? `${variant} { .. }` : `${outer}(${innerVariant(variant)} { .. })`;
+};
 export const variantKind = (variant: string): string =>
   variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
 export const kindsOf = (row: { variant: string; kinds?: string[] }): string[] => row.kinds ?? [variantKind(row.variant)];

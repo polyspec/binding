@@ -1,8 +1,8 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { type After, FIXTURE_RAISED, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction } from './model.ts';
+import { type After, FIXTURE_RAISED, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -16,11 +16,22 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
+// G-5: the target of WASM has no errno (binding_core::errno::value gives none, and an arming that names a symbol is
+// refused, GN-8a), so the faults of a case are armed without their errno.
+const withoutErrno = (faults: string): string =>
+  JSON.stringify((JSON.parse(faults) as Record<string, unknown>[]).map(({ errno: _errno, ...fault }) => fault));
+
 export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
+  const foreignModules = new Set<string>();
   const ctx: Context = { lang: 'node', target: 'wasm', enumRef: (_name, value) => jsString(value),
+    // GN-6x: a static member of a value class of another repository, through the owner's package.
+    foreignValue: (library, unit, member) => {
+      foreignModules.add(library);
+      return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}.${langName('wasm', member.name, 'callable')}()`;
+    },
     errorNew: (unit, kind, message) => `new pkg.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`,
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
     // GN-6v: a case is an object of its tag and its fields, as for Node.
@@ -41,9 +52,10 @@ export function wasmTests(model: Model): string {
   const out: string[] = [];
   let usesOutcome = false;
   let usesGlue = false;
+  let usesStepGlue = false;
   let usesOrdered = false;
+  let usesTokens = false;
   let usesFixture = false;
-  let usesErrno = false;
   // GN-6n: a call of a member that waits is awaited where it is made, as for Node.
   const invoke = (fn: Fn, args: string, receiver: string): string => (awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver));
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
@@ -72,6 +84,14 @@ export function wasmTests(model: Model): string {
       return `assert.equal(outcome(() => ${expr}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
     },
     pick: (expr, step) => ('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`),
+    // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in
+    // calls that do not wait.
+    arm: (local, member, faults) => {
+      usesGlue = true;
+      usesStepGlue = true;
+      return `const ${local} = stepGlue.__armFaults(${jsString(member)}, ${jsString(withoutErrno(faults))});`;
+    },
+    left: (local, what) => `assert.deepEqual(stepGlue.__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
   };
   const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
     if (receiver === undefined) return { lines: '', expr: '' };
@@ -88,7 +108,7 @@ export function wasmTests(model: Model): string {
   // GN-6ae: the function of a function fixture, as for Node: each step calls a method on one of its arguments; it then
   // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
   // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
-  ctx.functionNew = (fixture) => {
+  ctx.machineFunctionNew = (fixture) => {
     const steps = fixture.steps.map((step) => {
       const call = invoke(step.fn, step.args, `args[${step.on}]`);
       // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
@@ -105,7 +125,7 @@ export function wasmTests(model: Model): string {
   // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
   const afterChecks = (after: After[] | undefined, receiver: string): string =>
     (after ?? []).map((call) => {
-      const expected = expectedText(model, ctx, call.fn, call.result);
+      const expected = stepExpected(model, ctx, call.fn, call.result);
       if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
       usesOrdered = true;
       return `\n  assert.deepStrictEqual(ordered(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}), ordered(${expected.text}));`;
@@ -113,6 +133,22 @@ export function wasmTests(model: Model): string {
   // GN-6ae: a case with after holds its receiver, which the calls of after observe.
   const heldReceiver = (receiverMade: { lines: string; expr: string }, after: After[] | undefined): { lines: string; expr: string } =>
     after === undefined || receiverMade.expr === '' ? receiverMade : { lines: `${receiverMade.lines}\n  const receiver = ${receiverMade.expr};`, expr: 'receiver' };
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
+  };
+  // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+  };
+  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
+  // of a fixture whose one member is the call; the test reads the record of each after the call.
+  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined }; use: string }[] => [
+    ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
+    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined }, use: `function${i}.object.call` })),
+  ];
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -129,6 +165,14 @@ export function wasmTests(model: Model): string {
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     // A method is tested on an instance, which a case of the class gives (GN-13).
     const reachable = fn.receiver === undefined || sample !== undefined;
+    // GN-6z: a value of a function type that is not a function is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
+    if (functionArg !== undefined && reachable) {
+      out.push(`
+test('GN-6z: ${name} refuses a ${langName('wasm', functionArg.name, 'variable')} that is not a function', () => {
+  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+});`);
+    }
     for (const arg of reachable ? fn.args : []) {
       const argName = langName('wasm', arg.name, 'variable');
       const number = isNumber(arg.type);
@@ -154,7 +198,8 @@ test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () =>
   assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
 });`);
       }
-      if (arg.default !== undefined) {
+      // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
+      if (refusesNull(arg) && !takesNull(model, arg.type)) {
         out.push(`
 test('U-2: ${name} takes null in ${argName} as a value', () => {
   assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
@@ -193,7 +238,7 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
       }
     }
     // GN-6ae: a parameter of a function type takes a function, and any other value is kind invalid_callback.
-    for (const arg of reachable ? fn.args.filter((a) => typeof a.type === 'object' && 'function' in a.type) : []) {
+    for (const arg of reachable ? fn.args.filter((a) => machineFunction(a.type)) : []) {
       out.push(`
 test('GN-6ae: ${name} refuses a ${langName('wasm', arg.name, 'variable')} that is no function', () => {
   assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
@@ -217,22 +262,21 @@ test('B-4: ${name} ${kase.id}', () => {
         continue;
       }
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
       const receiverMade = kase.faults === undefined ? heldReceiver(receiverOfCase(kase.receiver), kase.after) : receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
       const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg${i}`, value]]; })];
-      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(kase.faults)});`;
+      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(withoutErrno(kase.faults))});`;
       const args = callArgs(model, ctx, fn, kase.faults === undefined ? caseArg : (arg) => (caseArg(arg) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
       const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
       const errno = expectedErrno(kase);
-      usesErrno ||= errno !== null && 'symbol' in errno;
       usesGlue ||= kase.faults !== undefined;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
@@ -246,7 +290,7 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
+    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
@@ -284,7 +328,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
 });`);
         continue;
       }
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
@@ -292,15 +336,26 @@ test('GN-13e: ${name} ${kase.id}', () => {
         .join('');
       const args = callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       });
       const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after);
       const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      usesTokens ||= expected !== undefined && 'tokens' in expected;
+      const round = expected !== undefined && 'round' in expected && expected.round !== undefined;
+      usesGlue ||= round;
+      const check = expected === undefined
+        ? `\n  ${call};`
+        : 'refused' in expected
+          ? `\n  assert.fail(${jsString(expected.refused)});`
+          : 'tokens' in expected
+            ? expected.round === undefined
+              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
+              : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
+            : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
+test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.
@@ -322,6 +377,14 @@ test('K-2: ${name} lets the exception of a callback through', () => {
 test('K-2: ${name} refuses a callback result of another type', () => {
   assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
 });` : ''}`);
+    }
+    for (const kase of primitiveCases(model, ctx, fn)) {
+      const instance = receiverOfCase(kase.receiver);
+      const number = invoke(fn, '', instance.expr);
+      out.push(`
+test('N-4: ${name} ${kase.id}', () => {${instance.lines}
+  ${kase.result === undefined ? `${number};` : `assert.strictEqual(${number}, ${kase.result});`}
+});`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -347,6 +410,23 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
+  const roundTrip = nativeRoundTrip(model.contract, 'wasm');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    usesGlue = true;
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  ${same('new Subject()')};
+  const before = (await glueModule()).__nativeCount();
+  const subject = new Subject();
+  assert.equal(${same('subject')}, subject);
+  await new Promise(setImmediate);
+  ${same('new Subject()')};
+  assert.equal((await glueModule()).__nativeCount(), before);
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesGlue = true;
@@ -364,9 +444,10 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
   const usesSettled = blocks.some((block) => block.includes('settled('));
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
-${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
-${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import * as pkg from ${jsString(entry)};
+${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {
@@ -378,6 +459,12 @@ function outcome(call) {
 ` : ''}${usesGlue ? `
 // G-5: the module that wasm-bindgen writes, whose test entry points arm the faults of a case.
 const glueModule = () => import(new URL('./${wasmGlue(model)}.js', import.meta.resolve(${jsString(entry)})).href);
+` : ''}${usesStepGlue ? `
+// GN-13f: the module for the calls of then that arm faults, loaded before the tests.
+let stepGlue;
+before(async () => {
+  stepGlue = await glueModule();
+});
 ` : ''}${usesSettled ? NODE_SETTLED : ''}${blocks.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.

@@ -102,7 +102,9 @@ pub fn pair(value: &Data) -> Data {
 pub fn fetch(holder: &mut dyn Holder, key: &str) -> Result<Data, Failure<Error>> {
     match holder.get(key)? {
         Some(value) => Ok(value),
-        None => Err(Failure::Kind(Error::Absent { key: key.to_owned() })),
+        None => Err(Failure::Kind(Error::Absent {
+            key: key.to_owned(),
+        })),
     }
 }
 
@@ -131,7 +133,11 @@ mod tests {
 
     impl Holder for One {
         fn get(&mut self, key: &str) -> Result<Option<Data>, Failure<Error>> {
-            Ok(self.0.iter().find(|(held, _value)| held == key).map(|(_key, value)| value.clone()))
+            Ok(self
+                .0
+                .iter()
+                .find(|(held, _value)| held == key)
+                .map(|(_key, value)| value.clone()))
         }
 
         fn set(&mut self, key: &str, value: &Data) -> Result<(), Failure<Error>> {
@@ -145,7 +151,10 @@ mod tests {
         assert_eq!(measure(&pair(&Data::Null)), 2);
         let mut holder = One(vec![(String::from("a"), Data::Bool(true))]);
         assert!(matches!(fetch(&mut holder, "a"), Ok(Data::Bool(true))));
-        assert!(matches!(fetch(&mut holder, "b"), Err(Failure::Kind(Error::Absent { .. }))));
+        assert!(matches!(
+            fetch(&mut holder, "b"),
+            Err(Failure::Kind(Error::Absent { .. }))
+        ));
         assert!(matches!(copy(&mut holder, "a", "b"), Ok(true)));
         assert!(matches!(copy(&mut holder, "c", "d"), Ok(false)));
         assert!(matches!(fetch(&mut holder, "b"), Ok(Data::Bool(true))));

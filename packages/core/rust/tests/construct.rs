@@ -45,8 +45,8 @@ fn check(root: &Path) -> Result<(bool, String), String> {
 const MAKES_TOKENS: &str = "pub fn make() -> (binding_core::Io, binding_core::ProcessWait) {\n    \
     (binding_core::Io::for_generated_call(), binding_core::ProcessWait::for_generated_call())\n}\n";
 
-const OPENS_RAISED: &str = "pub fn open(raised: &binding_core::Raised) -> binding_core::Handle {\n    \
-    let _made = binding_core::Raised::from_generated(binding_core::Handle::new(1));\n    raised.handle()\n}\n";
+const OPENS_RAISED: &str = "pub fn open(raised: &binding_core::Raised) -> binding_core::Native {\n    \
+    let _made = binding_core::Raised::from_generated(raised.native().clone());\n    raised.native().clone()\n}\n";
 
 #[test]
 fn a_crate_without_the_feature_cannot_make_a_token() -> Result<(), String> {
@@ -67,7 +67,7 @@ fn a_crate_without_the_feature_cannot_make_or_open_a_raised_exception() -> Resul
     let (success, stderr) = check(&root)?;
     assert!(!success, "the crate compiled without the feature construct");
     assert!(
-        stderr.contains("`from_generated`") && stderr.contains("`handle`"),
+        stderr.contains("`from_generated`") && stderr.contains("`native`"),
         "the build failed for another reason:\n{stderr}"
     );
     Ok(())

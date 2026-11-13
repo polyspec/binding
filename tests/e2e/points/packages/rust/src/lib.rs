@@ -58,7 +58,10 @@ pub fn shift(by: i64, point: &Point) -> Result<Point, Error> {
     if by < 0 {
         return Err(Error::Backward { by });
     }
-    Ok(Point { x: point.x.saturating_add(by), y: point.y.saturating_add(by) })
+    Ok(Point {
+        x: point.x.saturating_add(by),
+        y: point.y.saturating_add(by),
+    })
 }
 
 #[cfg(test)]
@@ -68,6 +71,9 @@ mod tests {
     #[test]
     fn a_point_moves_forward_only() {
         assert_eq!(shift(3, &Point { x: 1, y: 2 }), Ok(Point { x: 4, y: 5 }));
-        assert_eq!(shift(-1, &Point { x: 1, y: 2 }), Err(Error::Backward { by: -1 }));
+        assert_eq!(
+            shift(-1, &Point { x: 1, y: 2 }),
+            Err(Error::Backward { by: -1 })
+        );
     }
 }

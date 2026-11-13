@@ -63,13 +63,13 @@ export function usedHelpers(block: string, code: string, gated: Readonly<Record<
   const named = [...parse(block, ''), ...Object.entries(modules).flatMap(([module, text]) => parse(text, module))];
   const paths = Object.keys(modules);
   const outside = paths.length === 0 ? '' : `(?<!\\b(?:${paths.join('|')})::)`;
-  // A helper is used where its name is a word of the code, called or passed; comments and a field of that name
-  // (`member: ...`) do not count. An item of a module is used where its path is, or its name in the text of its own
+  // A helper is used where its name is a word of the code, called or passed; comments, a field of that name
+  // (`member: ...`) and a method of that name (`map.insert(...)`) do not count (GN-4). An item of a module is used where its path is, or its name in the text of its own
   // module, where it also hides an item of the root of the same name.
   const strip = (text: string): string => text.replace(/\/\/[^\n]*/g, '');
   type Text = { text: string; module: string };
   const uses = (from: Text, item: { name: string; module: string }): boolean => {
-    const bare = new RegExp(`${outside}\\b${item.name}\\b(?!\\s*:[^:])`);
+    const bare = new RegExp(`${outside}(?<![.\\w])${item.name}\\b(?!\\s*:[^:])`);
     if (item.module === '') return bare.test(from.text) && (from.module === '' || item.name === '' || !named.some((other) => other.module === from.module && other.name === item.name));
     if (new RegExp(`\\b${item.module}::${item.name}\\b`).test(from.text)) return true;
     return from.module === item.module && bare.test(from.text);

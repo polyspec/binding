@@ -98,10 +98,16 @@ fn driving_returns_at_each_wait_and_takes_its_output() -> Result<(), BindingErro
 mod awaits {
     use super::ready;
     use binding_core::machine::{drive, Driving, Machine, Next, Step};
-    use binding_core::{BindingError, Handle, Passthrough, Raised};
+    use binding_core::{BindingError, Handle, Native, NativeObject, Passthrough, Raised};
 
     /// The handles that the release function of a [`Passthrough`] released, as the table of a binding would remove them.
     static RELEASED: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
+
+    /// What a binding keeps for an exception that the awaitable of a function raised (GN-6u).
+    #[derive(Debug, PartialEq)]
+    struct Thrown(u64);
+
+    impl NativeObject for Thrown {}
 
     /// Removes `handle` from the table of the test binding.
     fn release(handle: Handle) {
@@ -160,9 +166,9 @@ mod awaits {
     fn drive_settles_the_failure_of_an_awaitable() -> Result<(), BindingError> {
         let mut machine = Awaits::default();
         let done = drive(&mut machine, ready, |_value| {
-            Ok(Err(Raised::from_generated(Handle::new(9))))
+            Ok(Err(Raised::from_generated(Native::new(Thrown(9)))))
         })?;
-        assert!(matches!(done, Some(Err(raised)) if raised.handle().raw() == 9));
+        assert!(matches!(done, Some(Err(raised)) if raised.native().downcast::<Thrown>() == Some(&Thrown(9))));
         Ok(())
     }
 

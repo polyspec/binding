@@ -72,7 +72,9 @@ impl Tag {
     /// A tag of the name.
     #[must_use]
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_owned() }
+        Self {
+            name: name.to_owned(),
+        }
     }
 
     /// A tag of a text that is not empty (U-2: a static member that returns the class).
@@ -82,7 +84,9 @@ impl Tag {
     /// Kind `missing` for the empty text.
     pub fn parse(text: &str) -> Result<Self, Error> {
         if text.is_empty() {
-            return Err(Error::Missing { key: String::from("text") });
+            return Err(Error::Missing {
+                key: String::from("text"),
+            });
         }
         Ok(Self::new(text))
     }
@@ -100,9 +104,13 @@ impl Tag {
     /// Kind `missing` for the empty suffix.
     pub fn with_suffix(&self, suffix: &str) -> Result<Self, Error> {
         if suffix.is_empty() {
-            return Err(Error::Missing { key: String::from("suffix") });
+            return Err(Error::Missing {
+                key: String::from("suffix"),
+            });
         }
-        Ok(Self { name: format!("{}{suffix}", self.name) })
+        Ok(Self {
+            name: format!("{}{suffix}", self.name),
+        })
     }
 
     /// Whether the tag has the name of another (T-5: a method that takes the class).
@@ -129,7 +137,9 @@ impl Tag {
     ///
     /// Always kind `unsupported`: a tag has no JSON form.
     pub fn host_json(&self) -> Result<std::convert::Infallible, Error> {
-        Err(Error::Unsupported { what: format!("the JSON form of the tag {}", self.name) })
+        Err(Error::Unsupported {
+            what: format!("the JSON form of the tag {}", self.name),
+        })
     }
 
     /// The entries of the tag, its name with the tag itself (N-4: iterate with a key and a value).
@@ -140,13 +150,18 @@ impl Tag {
     /// The open gate of the tag (G-5: a class that only a method of another class makes).
     #[must_use]
     pub fn gate(&self) -> Gate {
-        Gate { tag: self.name.clone(), open: true }
+        Gate {
+            tag: self.name.clone(),
+            open: true,
+        }
     }
 
     /// The lease of the tag, a resource whose release call ends it (B-10).
     #[must_use]
     pub fn lease(&self) -> Lease {
-        Lease { tag: self.name.clone() }
+        Lease {
+            tag: self.name.clone(),
+        }
     }
 
     /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
@@ -155,7 +170,10 @@ impl Tag {
         let mut dots = String::new();
         (0..count)
             .map(|_index| {
-                let gate = Gate { tag: format!("{}{dots}", self.name), open: true };
+                let gate = Gate {
+                    tag: format!("{}{dots}", self.name),
+                    open: true,
+                };
                 dots.push('.');
                 gate
             })
@@ -200,7 +218,9 @@ impl Gate {
     /// Kind `closed` when the gate is closed.
     pub fn enter(&self) -> Result<String, Error> {
         if !self.open {
-            return Err(Error::Closed { tag: self.tag.clone() });
+            return Err(Error::Closed {
+                tag: self.tag.clone(),
+            });
         }
         Ok(format!("{} passes", self.tag))
     }
@@ -231,7 +251,9 @@ impl Gate {
     /// Kind `closed` when the gate is closed already.
     pub fn close(&mut self) -> Result<(), Error> {
         if !self.open {
-            return Err(Error::Closed { tag: self.tag.clone() });
+            return Err(Error::Closed {
+                tag: self.tag.clone(),
+            });
         }
         self.open = false;
         Ok(())
@@ -245,7 +267,9 @@ impl Gate {
 /// Kind `missing` when the name is empty.
 pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
     if name.is_empty() {
-        return Err(Error::Missing { key: String::from("name") });
+        return Err(Error::Missing {
+            key: String::from("name"),
+        });
     }
     Ok(format!("the text of {name}"))
 }
@@ -258,7 +282,9 @@ pub fn read(_io: binding_core::Io, name: &str) -> Result<String, Error> {
 pub async fn fetch(name: &str) -> Result<String, Error> {
     on_runtime().await?;
     if name.is_empty() {
-        return Err(Error::Missing { key: String::from("name") });
+        return Err(Error::Missing {
+            key: String::from("name"),
+        });
     }
     Ok(format!("the fetched text of {name}"))
 }
@@ -272,7 +298,9 @@ pub async fn fetch(name: &str) -> Result<String, Error> {
 pub async fn settle(name: &str) -> Result<String, Error> {
     Pending::default().await;
     if name.is_empty() {
-        return Err(Error::Missing { key: String::from("name") });
+        return Err(Error::Missing {
+            key: String::from("name"),
+        });
     }
     Ok(format!("the settled text of {name}"))
 }
@@ -286,7 +314,10 @@ struct Pending {
 impl std::future::Future for Pending {
     type Output = ();
 
-    fn poll(mut self: std::pin::Pin<&mut Self>, context: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
         if self.polled {
             return std::task::Poll::Ready(());
         }
@@ -302,7 +333,9 @@ async fn on_runtime() -> Result<(), Error> {
     tokio::task::yield_now().await;
     match tokio::runtime::Handle::try_current() {
         Ok(_handle) => Ok(()),
-        Err(error) => Err(Error::Unsupported { what: format!("a call outside a tokio runtime: {error}") }),
+        Err(error) => Err(Error::Unsupported {
+            what: format!("a call outside a tokio runtime: {error}"),
+        }),
     }
 }
 
@@ -315,7 +348,9 @@ pub fn join(tags: &[Tag]) -> String {
 /// The tag with the name in upper case.
 #[must_use]
 pub fn shout(tag: &Tag) -> Tag {
-    Tag { name: tag.name.to_uppercase() }
+    Tag {
+        name: tag.name.to_uppercase(),
+    }
 }
 
 #[cfg(test)]
@@ -326,9 +361,22 @@ mod tests {
     fn a_tag_and_its_members() {
         let tag = Tag::new("a");
         assert_eq!(Tag::parse("a"), Ok(tag.clone()));
-        assert_eq!(Tag::parse(""), Err(Error::Missing { key: String::from("text") }));
-        assert_eq!(tag.with_suffix("b").map(|tag| tag.name().to_owned()), Ok(String::from("ab")));
-        assert_eq!(tag.with_suffix(""), Err(Error::Missing { key: String::from("suffix") }));
+        assert_eq!(
+            Tag::parse(""),
+            Err(Error::Missing {
+                key: String::from("text")
+            })
+        );
+        assert_eq!(
+            tag.with_suffix("b").map(|tag| tag.name().to_owned()),
+            Ok(String::from("ab"))
+        );
+        assert_eq!(
+            tag.with_suffix(""),
+            Err(Error::Missing {
+                key: String::from("suffix")
+            })
+        );
         assert!(tag.same(&Tag::new("a")));
         assert_eq!(tag.repeat(2).len(), 2);
         assert_eq!(tag.label(), "#a");
@@ -336,8 +384,21 @@ mod tests {
         let mut gate = tag.gate();
         assert_eq!(gate.enter(), Ok(String::from("a passes")));
         assert_eq!(gate.close(), Ok(()));
-        assert_eq!(gate.enter(), Err(Error::Closed { tag: String::from("a") }));
-        assert_eq!(gate.close(), Err(Error::Closed { tag: String::from("a") }));
-        assert_eq!(tag.gates(2).iter().map(Gate::enter).collect::<Vec<_>>(), vec![Ok(String::from("a passes")), Ok(String::from("a. passes"))]);
+        assert_eq!(
+            gate.enter(),
+            Err(Error::Closed {
+                tag: String::from("a")
+            })
+        );
+        assert_eq!(
+            gate.close(),
+            Err(Error::Closed {
+                tag: String::from("a")
+            })
+        );
+        assert_eq!(
+            tag.gates(2).iter().map(Gate::enter).collect::<Vec<_>>(),
+            vec![Ok(String::from("a passes")), Ok(String::from("a. passes"))]
+        );
     }
 }

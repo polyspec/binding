@@ -7,6 +7,7 @@
 import { posix } from 'node:path';
 import type { Contract } from '../contract.ts';
 import { type Files, header } from './text.ts';
+import { holdsFunction, nativeRoundTrip, machineFunction } from './model.ts';
 
 // Before its first release, binding is a Git dependency; the repository's Cargo.lock pins the commit.
 // The binding crates make the tokens and handles that only generated code makes (feature construct: Raised, Io).
@@ -104,7 +105,15 @@ function testFeatures(contract: Contract, suffix: string, armed: string[]): stri
   const cores = [...((contract.faults ?? []).length > 0 ? [contract.core.crate] : []), ...armed.map((library) => `polyspec-${library}`)];
   const faults = cores.length > 0 ? `fault-test = [${cores.map((crate) => JSON.stringify(`${crate}/fault-test`)).join(', ')}]\n` : '';
   const codec = suffix === 'go' || contract.units.some((unit) => (unit.in_raises ?? []).length > 0) ? 'codec-test = []\n' : '';
-  return `${faults}${codec}`;
+  // U-3, GN-6z: thread-test adds the entry point that calls a function of the language on another thread, in a target
+  // that holds a function on its owner thread.
+  const owned = suffix === 'node' || suffix === 'php-ext';
+  const thread = owned && contract.units.some((unit) => (unit.members ?? []).some((member) => (member.parameters ?? []).some((p) => holdsFunction(p.type) && !machineFunction(p.type)))) ? 'thread-test = []\n' : '';
+  // GN-6u: native-count-test adds the entry point that counts the Natives that the binding holds, in a target that
+  // gives a Native back through a round trip.
+  const lang = ({ node: 'node', 'php-ext': 'php', wasm: 'wasm', go: 'go' } as const)[suffix as 'node' | 'php-ext' | 'wasm' | 'go'];
+  const count = lang !== undefined && nativeRoundTrip(contract, lang) !== undefined ? 'native-count-test = []\n' : '';
+  return `${faults}${codec}${thread}${count}`;
 }
 
 // crate: the crate type and the path of the core, for a binding crate that is not a cdylib beside the core (the Go
@@ -187,7 +196,9 @@ const pointName = (library: string): string => library.replaceAll('-', '_');
 // armedPoints: the libraries, in the snake_case of a point name, of the fault injection points that the cases arm
 // (casePointLibraries).
 // foreign: the contracts of the libraries that the contract names, whose records go.mod requires (GN-15f).
-export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map()): Files {
+export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map(), armedPoints: Iterable<string> = [], foreign: ReadonlyMap<string, Contract> = new Map(), caseTargets: Iterable<string> = []): Files {
+  // GN-13: a target with a case whose value has no form in its language has the feature case-test.
+  const caseTest = new Set(caseTargets);
   const files: Files = new Map();
   // G-5: the other libraries whose points a case arms, by the crates polyspec-<library> that the core depends on.
   const armed = [...new Set(armedPoints)].filter((prefix) => prefix !== pointName(contract.library)).sort().map((prefix) => {
@@ -204,7 +215,8 @@ export function trackedPackages(contract: Contract, version: string, coreDepende
   };
   if (contract.targets.includes('python')) {
     const python = contract.packages['python'] as { package: string; module: string };
-    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '', isHost(contract, 'python')));
+    files.set('packages/python/Cargo.toml', manifest(contract, version, armed, 'python', '_native', [...foreignOf('python'), 'pyo3 = { version = "=0.30.1", features = ["abi3-py314", "extension-module"] }'], '\nbuild = "build.rs"', isHost(contract, 'python')));
+    files.set('packages/python/build.rs', PYTHON_BUILD);
     // L-2a: the native module of a host package is in the generated subpackage of its module.
     const nativeModule = isHost(contract, 'python') ? `${python.module}.${HOST_PYTHON_SUBPACKAGE}._native` : `${python.module}._native`;
     files.set('packages/python/src/lib.rs', entry(`The native module ${nativeModule}.`, [MANY]));
@@ -254,7 +266,8 @@ python-source = "generated/python"
     const php = contract.packages['php'] as { package: string };
     // BD-9: the extension links on macOS by its build script, and the crate has no Rust test target, whose executable
     // would need the symbols of PHP; the generated tests run in PHP, which loads the extension.
-    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false'));
+    files.set('packages/php-ext/Cargo.toml', manifest(contract, version, armed, 'php-ext', extensionName(contract), [...foreignOf('php'), 'ext-php-rs = "=0.16.4"'], '\nbuild = "build.rs"', isHost(contract, 'php'), undefined, '\ntest = false\ndoctest = false')
+      .replace('panic-test = []\n', caseTest.has('php') ? 'panic-test = []\ncase-test = []\n' : 'panic-test = []\n'));
     files.set('packages/php-ext/build.rs', PHP_BUILD);
     files.set('packages/php-ext/src/lib.rs', entry(`The PHP extension ${extensionName(contract)}.`, [
       ['non_snake_case', 'G-7: a parameter is named as the PHP named argument, in camelCase'],
@@ -268,7 +281,8 @@ python-source = "generated/python"
       type: 'php-ext',
       license: 'MIT',
       require: { php: '>=8.4' },
-      'php-ext': { 'extension-name': extensionName(contract) },
+      // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
+      'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
   }
   if (contract.targets.includes('go')) {
@@ -283,6 +297,18 @@ python-source = "generated/python"
   }
   return placed(contract, files);
 }
+
+// GN-6u: the build script of the Python binding crate. The generated code reads the cfg pyo3_disable_reference_pool,
+// which a build of PyO3 without its reference pool sets for every crate, and rustc refuses a cfg that no crate
+// declares (unexpected_cfgs). The crate takes its lints from the workspace, so its manifest cannot declare the cfg.
+const PYTHON_BUILD = `${header('//')}
+// GN-6u: the generated code refuses a build with the cfg pyo3_disable_reference_pool,
+// which this script declares, because rustc refuses a cfg that no crate declares.
+
+fn main() {
+    println!("cargo::rustc-check-cfg=cfg(pyo3_disable_reference_pool)");
+}
+`;
 
 // BD-9: the build script of the PHP binding crate. PHP resolves the symbols of an extension when it loads it, so the
 // macOS linker has to leave them undefined (-undefined dynamic_lookup). cargo:rustc-cdylib-link-arg applies to the
@@ -332,31 +358,34 @@ function npmManifest(contract: Contract, version: string): string {
     version,
     description: `The ${contract.library} library of polyspec for ${[node ? 'Node' : '', wasm ? 'the browser' : ''].filter((x) => x !== '').join(' and ')}`,
     license: 'MIT',
+    // GN-3c: the only .js files of the package are the glue of wasm-bindgen --target web, an ES module.
+    type: 'module',
     ...(node ? { main: './generated/index.cjs', types: './generated/index.d.ts' } : {}),
     exports,
     files: [
       ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
-    ...(node ? { optionalDependencies: Object.fromEntries(NODE_PLATFORMS.map((p) => [platformPackage(npm.package, p.name), version])) } : {}),
+    // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
+    // loads, and builds it for the Rust triples of the platforms.
+    ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
   }, null, 2)}\n`;
 }
 
 // T-2: the platforms of a release, as napi-rs names them, and the npm package of each that holds the Node addon. The
-// npm package of a library (or its host package, L-2a) holds no addon; it names these packages in
-// optionalDependencies at its own version, and npm installs the one of the machine's platform.
+// npm package of a library (or its host package, L-2a) holds no addon; the release writes these packages into
+// optionalDependencies of the manifest it packs, and npm installs the one of the machine's platform (GN-3c).
 export const NODE_PLATFORMS = [
-  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc' },
-  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc' },
-  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64' },
+  { name: 'linux-x64-gnu', os: 'linux', cpu: 'x64', libc: 'glibc', triple: 'x86_64-unknown-linux-gnu' },
+  { name: 'linux-arm64-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc', triple: 'aarch64-unknown-linux-gnu' },
+  { name: 'darwin-arm64', os: 'darwin', cpu: 'arm64', triple: 'aarch64-apple-darwin' },
 ] as const;
-
-export const platformPackage = (npm: string, platform: string): string => `${npm}-${platform}`;
 
 // The Go release of the go directive of the Go module, the release that every polyspec Go module pins.
 export const GO_VERSION = '1.27.3';
 
-// GN-15f: the libraries of the records that the contract names, each of whose Go module go.mod requires.
+// GN-15f: the libraries of the records and of the value classes (GN-6x) that the contract names, each of whose Go
+// module go.mod requires, because the Go binding imports the package of each (B2.87).
 function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contract>): string[] {
   const found = new Set<string>();
   const walk = (value: unknown): void => {
@@ -366,7 +395,7 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
       if (typeof unit === 'string' && typeof library === 'string' && library !== contract.library) {
         const owner = foreign.get(library);
         if (owner === undefined) throw new Error(`${library}: the contract of the library is not found, so binding scaffold cannot tell whether go.mod requires its Go module (GN-15f)`);
-        if (owner.units.some((u) => u.id === unit && u.kind === 'record')) found.add(library);
+        if (owner.units.some((u) => u.id === unit && (u.kind === 'record' || (u.kind === 'class' && u.origin === 'value')))) found.add(library);
       }
       Object.values(value).forEach(walk);
     }
@@ -376,7 +405,7 @@ function recordLibraries(contract: Contract, foreign: ReadonlyMap<string, Contra
   return [...found].sort();
 }
 
-// GN-15f: the require lines of go.mod, a Go module of each library whose records the contract names, at the version of
+// GN-15f: the require lines of go.mod, a Go module of each library whose records or value classes the contract names, at the version of
 // the dependency line of the core: an exact version or a tag, or a path with a replace line to the Go module there.
 function goRequires(contract: Contract, dependencies: CoreDependencies, foreign: ReadonlyMap<string, Contract>): string {
   const requires: string[] = [];
@@ -384,7 +413,7 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
   for (const library of recordLibraries(contract, foreign)) {
     const owner = foreign.get(library) as Contract;
     const module = (owner.packages['go'] as { module?: string } | undefined)?.module;
-    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record the Go binding names (GN-15f)`);
+    if (module === undefined) throw new Error(`${library}: the library has no Go module (packages.go), whose record or value class the Go binding names (GN-15f)`);
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
     const fields = typeof spec === 'object' && spec !== null ? spec as { path?: unknown; version?: unknown; tag?: unknown; branch?: unknown; rev?: unknown } : { version: spec };
@@ -408,11 +437,11 @@ function goRequires(contract: Contract, dependencies: CoreDependencies, foreign:
 }
 
 // L-2a: what a host package's hand-written manifest must say for its native module, checked by binding check (CK-19):
-// the path of the manifest, the item and the value it must have.
+// the path of the manifest, the item and the value it must have, compared deeply.
 export interface HostRequirement {
   path: string;
   item: string;
-  want: string;
+  want: unknown;
   found: (manifest: string) => unknown;
 }
 
@@ -435,14 +464,11 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const npm = (contract.packages['node'] as { package: string }).package;
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
+    // GN-3b: the host package is the package of a release, which reads the fields of GN-3c.
+    out.push({ path, item: 'type', want: 'module', found: (t) => json(t)['type'] });
+    out.push({ path, item: 'napi.binaryName', want: npm.slice(npm.indexOf('/') + 1), found: (t) => json(t)['napi']?.['binaryName'] });
+    out.push({ path, item: 'napi.targets', want: NODE_PLATFORMS.map((p) => p.triple), found: (t) => json(t)['napi']?.['targets'] });
     // The generated entry, its declarations and the addon (<name>.<platform>-<arch>[-gnu].node) are in the package.
-    for (const platform of NODE_PLATFORMS) {
-      const dependency = platformPackage(npm, platform.name);
-      out.push({
-        path, item: `optionalDependencies.${dependency}`, want: 'the version of the package',
-        found: (t) => (json(t)['optionalDependencies']?.[dependency] === json(t)['version'] ? 'the version of the package' : json(t)['optionalDependencies']?.[dependency]),
-      });
-    }
     // The module of WASM, its glue and its declarations are native/wasm/generated/ of the package (GN-3b).
     const wasmFiles = contract.targets.includes('wasm') ? ['native/wasm/generated/*.mjs', 'native/wasm/generated/*.js', 'native/wasm/generated/*.d.ts', 'native/wasm/generated/*.wasm'] : [];
     for (const file of ['native/generated/index.cjs', 'native/generated/index.mjs', 'native/generated/index.d.ts', ...wasmFiles]) {

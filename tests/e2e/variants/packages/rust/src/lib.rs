@@ -5,7 +5,10 @@ use binding_core::{Failure, Kinds};
 use std::fmt;
 
 /// The count of a length, which widens: usize is at most 64 bits wide on every target of the workspace.
-#[allow(clippy::as_conversions, reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless")]
+#[allow(
+    clippy::as_conversions,
+    reason = "usize is at most 64 bits wide on every target of the workspace, so the conversion is lossless"
+)]
 const fn widen(length: usize) -> u64 {
     length as u64
 }
@@ -104,8 +107,13 @@ fn tally_one(figure: &Figure) -> u64 {
 pub fn grown(figure: &Figure) -> Figure {
     match figure {
         Figure::Dot => Figure::Dot,
-        Figure::Circle { radius } => Figure::Circle { radius: radius * 2.0 },
-        Figure::Label { text, at } => Figure::Label { text: text.to_uppercase(), at: *at },
+        Figure::Circle { radius } => Figure::Circle {
+            radius: radius * 2.0,
+        },
+        Figure::Label { text, at } => Figure::Label {
+            text: text.to_uppercase(),
+            at: *at,
+        },
         Figure::Group { items, frame, back } => Figure::Group {
             items: items.iter().map(grown).collect(),
             frame: Box::new(grown(frame)),
@@ -134,7 +142,9 @@ impl Ribbon {
     /// A ribbon that starts with the bytes of a source.
     #[must_use]
     pub fn new(start: &[u8]) -> Self {
-        Self { bytes: start.to_vec() }
+        Self {
+            bytes: start.to_vec(),
+        }
     }
 
     /// The number of the bytes.
@@ -146,7 +156,8 @@ impl Ribbon {
 
 impl Tail for Ribbon {
     fn last(&self, count: u64) -> Result<Vec<u8>, Failure<Error>> {
-        let keep = usize::try_from(count).map_or(self.bytes.len(), |count| count.min(self.bytes.len()));
+        let keep =
+            usize::try_from(count).map_or(self.bytes.len(), |count| count.min(self.bytes.len()));
         Ok(self.bytes[self.bytes.len() - keep..].to_vec())
     }
 }
@@ -168,13 +179,19 @@ mod tests {
     fn a_group_counts_and_grows_its_figures() {
         let group = Figure::Group {
             items: vec![Figure::Circle { radius: 1.5 }],
-            frame: Box::new(Figure::Label { text: String::from("a"), at: None }),
+            frame: Box::new(Figure::Label {
+                text: String::from("a"),
+                at: None,
+            }),
             back: Some(Box::new(Figure::Dot)),
         };
         assert_eq!(tally(&[Figure::Dot, group.clone()]), 5);
         let grew = Figure::Group {
             items: vec![Figure::Circle { radius: 3.0 }],
-            frame: Box::new(Figure::Label { text: String::from("A"), at: None }),
+            frame: Box::new(Figure::Label {
+                text: String::from("A"),
+                at: None,
+            }),
             back: Some(Box::new(Figure::Dot)),
         };
         assert_eq!(grown(&group), grew);

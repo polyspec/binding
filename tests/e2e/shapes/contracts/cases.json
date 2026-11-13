@@ -88,6 +88,55 @@
       "result": "<a]"
     }
   ],
+  "pad": [
+    {
+      "id": "everything_left_out",
+      "text": "ab",
+      "result": "ab"
+    },
+    {
+      "id": "fill_null_is_left_out",
+      "text": "ab",
+      "fill": null,
+      "options": {
+        "width": 4
+      },
+      "result": "  ab"
+    },
+    {
+      "id": "a_fill_on_the_right",
+      "text": "ab",
+      "fill": ".",
+      "options": {
+        "side": "right",
+        "width": 4
+      },
+      "result": "ab.."
+    },
+    {
+      "id": "an_end",
+      "text": "ab",
+      "options": {
+        "end": "!"
+      },
+      "result": "ab!"
+    }
+  ],
+  "joined": [
+    {
+      "id": "a_name_in_a_directory",
+      "dir": "a",
+      "name": "b",
+      "result": "a/b"
+    }
+  ],
+  "parent_of": [
+    {
+      "id": "the_directory_of_a_file",
+      "path": "a/b",
+      "result": "a"
+    }
+  ],
   "checksum": [
     {
       "id": "the_sum_of_two_bytes",
@@ -394,6 +443,176 @@
         "category": "value",
         "message": "start is not a value of the type uint"
       }
+    }
+  ],
+  "tally_of": [
+    {
+      "id": "words_counted_in_their_order",
+      "words": [
+        "b",
+        "a",
+        "b"
+      ],
+      "result": {
+        "counts": {
+          "b": 2,
+          "a": 1
+        },
+        "labels": [
+          [
+            {
+              "int": 0
+            },
+            "b"
+          ],
+          [
+            {
+              "int": 1
+            },
+            "a"
+          ],
+          [
+            "first",
+            "b"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "no_word",
+      "words": [],
+      "result": {
+        "counts": {},
+        "labels": []
+      }
+    }
+  ],
+  "tally_total": [
+    {
+      "id": "counts_and_labels",
+      "tally": {
+        "counts": {
+          "b": 2,
+          "a": 1
+        },
+        "labels": [
+          [
+            {
+              "int": 0
+            },
+            "b"
+          ]
+        ]
+      },
+      "result": 4
+    },
+    {
+      "id": "an_empty_tally",
+      "tally": {
+        "counts": {},
+        "labels": []
+      },
+      "result": 0
+    }
+  ],
+  "merged": [
+    {
+      "id": "two_maps_in_a_list",
+      "maps": [
+        {
+          "a": 1,
+          "b": 2
+        },
+        {
+          "b": 3,
+          "c": 4
+        }
+      ],
+      "result": {
+        "a": 1,
+        "b": 5,
+        "c": 4
+      }
+    },
+    {
+      "id": "an_empty_list",
+      "maps": [],
+      "result": {}
+    }
+  ],
+  "split_counts": [
+    {
+      "id": "one_map_of_each_entry",
+      "counts": {
+        "a": 1,
+        "b": 2
+      },
+      "result": [
+        {
+          "a": 1
+        },
+        {
+          "b": 2
+        }
+      ]
+    }
+  ],
+  "doubled": [
+    {
+      "id": "a_map_in_a_map",
+      "groups": {
+        "x": {
+          "a": 1,
+          "b": 2
+        },
+        "y": {}
+      },
+      "result": {
+        "x": {
+          "a": 2,
+          "b": 4
+        },
+        "y": {}
+      }
+    }
+  ],
+  "present": [
+    {
+      "id": "keyed_maps_and_an_absence_in_a_list",
+      "maps": [
+        [
+          [
+            "k",
+            "v"
+          ]
+        ],
+        null,
+        [
+          [
+            {
+              "int": 7
+            },
+            "seven"
+          ]
+        ]
+      ],
+      "result": [
+        [
+          [
+            {
+              "int": 7
+            },
+            "seven"
+          ]
+        ],
+        null,
+        [
+          [
+            "k",
+            "v"
+          ]
+        ]
+      ]
     }
   ]
 }

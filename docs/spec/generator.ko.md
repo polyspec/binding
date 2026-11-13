@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 216e97d15d7a01b46a7b7cfbe8aa8dc299e45c8890ec7bdb39edc9af78170e43 -->
+<!-- source-sha256: e954f6db8050ff9d030a24e8a821d3b61ff03f489c1f3844814fce939dbd54eb -->
 # 생성기
 
 [English](generator.md)
@@ -13,9 +13,9 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a), variant unit(GN-6v), class가 구현하는 이 계약의 callback interface(GN-6w)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해, Python·Node·PHP는 receiver가 `self`인 method(GN-6o), `cleanup`이 있는 class unit(GN-6p)과 언어 코드에 닿는 `blocking_io` member(GN-6q)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
-  callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
-  Go는 variant unit과 interface를 구현하는 class를 거부한다(GN-6v, GN-6w).
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6ag). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기
+  callback, Go의 함수 타입(GN-6z), value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, abstract class, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit, 다른 레포의 record를 GN-15a~GN-15f대로 생성하고, 패키지가 서로 import하게 될 module은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
+  Go는 variant unit과 interface를 구현하는 class를 GN-6v와 GN-6w대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
   검사가 거부한 것을 읽기 때문이다. 통째로 거부된 unit은 그것에 기대는 항목 때문에 다시 이름하지 않는다. target이 자기 파일을
@@ -47,7 +47,7 @@
 - **GN-3a** 바인딩마다 최종 자리에 추적하는 얇은 package가 있다: `packages/<python|ts|php-ext>/Cargo.toml`, crate의 속성을
   갖고 `generated/lib.rs`를 include하는 진입 `src/lib.rs`(include된 파일은 그 속성을 가질 수 없다), 언어의 manifest
   (`pyproject.toml`, `package.json`, `composer.json`, 언어의 패키저가 crate 옆에 필요로 한다), 계약과 무관한 crate 파일(manifest가
-  가리키는 Node와 PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
+  가리키는 Python, Node, PHP의 `build.rs`; 그래서 생성 전에도 `cargo fmt --all`과 workspace metadata가 된다). Rust 파일은 모두
   rustfmt가 기본 설정에서도 레포의 설정(`use_small_heuristics = "Max"`, 더 넓은 `max_width`)에서도 그대로 두는 꼴이므로,
   레포의 `rustfmt.toml`이 이 값을 어떻게 적든 `cargo fmt --all --check`가 통과한다: allow 속성은 80칸 이하의 한 줄이며 이는 두
   설정의 함수꼴 속성 폭보다 좁다. 한 줄에 들어가지 않는 이유는 속성 위의 주석이 되고, 속성은 규칙 id만 적는다. 코어가
@@ -68,21 +68,35 @@
     `src`, `tool.maturin.module-name` `<module>._binding._native`를 갖는다.
   - Node: 바인딩 crate는 Node `build.rs`가 든 `packages/<component>/ts/native/`이고, 생성된 진입점과 선언은
     `native/generated/`다. host의 `package.json`은 `name`, `files`의 `native/generated/index.cjs`,
-    `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 `optionalDependencies`에 자기 `version`으로 적은
-    GN-3c의 플랫폼 패키지를 갖는다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
+    `native/generated/index.mjs`, `native/generated/index.d.ts`, 그리고 GN-3c의 release 필드 `"type": "module"`, `napi.binaryName`, `napi.targets`를 갖는다. release가
+    빌드하고 배포하는 패키지가 host 패키지이기 때문이다. host 코드는 `native/generated/index.mjs`(또는 `index.cjs`)를 상대 경로로 import하고,
     생성 시험도 `native/generated/tests/`에서 그렇게 한다. WASM crate는 `native/wasm/`이고, 그 module, glue, 선언은
     `native/wasm/generated/`이며 host의 `files`가 그것을 적는다(`native/wasm/generated/*.mjs`, `*.js`, `*.d.ts`,
     `*.wasm`). 그 시험은 `native/wasm/generated/index.mjs`를 상대 경로로 import한다.
   - PHP: 확장은 별도 Composer 패키지(type `php-ext`) `<host 패키지>-native`이고 자리는
     `packages/<component>/php/native/`다. `scaffold`가 그 crate와 `composer.json`을 거기에 쓰고 `generated/`도 그 옆이다.
     host 라이브러리 `packages/<component>/php/composer.json`은 `ext-<확장 이름>`(`*`)을 require하며, 확장은 PHP가 로드할 때
-    클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다.
+    클래스와 함수를 등록한다. host 배치에는 `php-ext/` 디렉터리가 없다. 확장의 `composer.json`은 `scaffold`가 쓰므로 `check`는
+    GN-3c의 `php-ext.download-url-method`를 포함해 그 파일 전체를 비교한다.
 - **GN-3c** Node addon은 T-2(계획)의 플랫폼마다 npm 패키지 하나에 든다. 이름은 napi-rs 플랫폼 이름 `linux-x64-gnu`,
   `linux-arm64-gnu`, `darwin-arm64`를 붙인 `<npm 패키지>-<platform>`이고, `<scope 없는 npm 이름>.<platform>.node`를 `main`으로
-  `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는 addon을 갖지 않고 모든 플랫폼 패키지를 자기
-  버전으로 `optionalDependencies`에 적어 npm이 그 기계의 것을 설치하게 한다. 플랫폼 패키지는 배포 도구가 빌드해 낸다(K-3).
+  `os`, `cpu`, `libc`와 함께 갖는다. 라이브러리의 npm 패키지나 host 패키지(L-2a)는
+  addon을 갖지 않는다. 플랫폼 패키지는 배포 도구가 빌드해 내고(K-3), 배포 도구는 패키지를 pack할 때 pack하는 manifest의
+  `optionalDependencies`에 모든 플랫폼 패키지를 그 release의 버전으로 적어 npm이 그 기계의 것을 설치하게 한다. source manifest와
+  workspace의 lock은 그것을 적지 않는다. 한 버전의 플랫폼 패키지는 그 버전의 release가 만들므로, 그것을 적은 lock은 그 release
+  전에는 설치할 수 없고, `npm ci`는 lock에 없는 의존을 적은 manifest를 거부한다.
   생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
-  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치한다.
+  `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치하므로, 진입점은
+  `optionalDependencies` 없이도 플랫폼 패키지를 찾는다.
+  target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
+  `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
+  플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. 이것이 없으면
+  배포가 그 패키지를 거부한다(kit K1189). `scaffold`가 쓰는 npm 패키지의 manifest는 모두 `"type": "module"`을 갖는다.
+  패키지의 `.js` 파일은 `wasm-bindgen --target web`의 글루뿐이고 그것은 ES 모듈이며, Node 진입점은 확장자가 꼴을 정하는
+  `.cjs`와 `.mjs`이기 때문이다. 이 필드가 없으면 Node는 ES 모듈인 `.js` 파일을 `MODULE_TYPELESS_PACKAGE_JSON` 경고와 함께
+  읽는다. PHP 확장(type `php-ext`, GN-3b의 `<host package>-native`도)의 `composer.json`은 `php-ext.extension-name`과
+  `php-ext.download-url-method` `["pre-packaged-binary"]`를 적는다. 그래서 PIE가 그 기계의 PHP와 플랫폼에 맞는 배포의
+  binary를 설치한다(kit K1189). `binding check`는 파일 전체를 비교하듯 이 필드도 비교한다(CK-19).
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
   `macos`일 때 `cargo:rustc-cdylib-link-arg=-undefined`와 `cargo:rustc-cdylib-link-arg=dynamic_lookup`을 내고, 다른 target에서는
   아무것도 내지 않으며, 그 변수를 읽을 수 없으면 실패한다(P-3). 그 crate의 `[lib]`은 `test = false`와 `doctest = false`를
@@ -101,6 +115,9 @@
   attribute(`#![allow(<lint>, reason = "...")]`)다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
   시험 feature(`panic-test`, `fault-test`, `codec-test`)의 진입점만 쓰는 Go C ABI의 도우미는 그 feature에서만
   컴파일된다(`#[cfg(any(feature = ...))]`). 그 feature 없는 정적 라이브러리에는 그런 진입점이 없어서 도우미가 쓰이지 않기
+  때문이다.
+  도우미를 쓰는 것은 코드가 그 이름으로 그것을 부르거나 넘길 때다. 같은 이름의 method(`map.insert(...)`)는 도우미
+  `insert`를 쓰는 것이 아니다. method만 그 이름을 적는 도우미는 죽은 코드이고, crate가 선언하지 않은 타입을 적을 수 있기
   때문이다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
@@ -122,13 +139,16 @@
   함수처럼 계열을 먼저 적는다. 라이브러리는 어떤 이름이든 가질 수 있고 `std`, `core`, `exports`나 생성된 코드가 쓰는
   crate의 이름도 그렇기 때문이다. 그 이름 그대로의 module은 그 crate를 가리거나, 생성된 코드의 module의 두 번째 정의가
   된다. helper는 방향을 끝에 적는다: 내장 타입의 변환은 `<type>_in`과 `<type>_out`이고(`text_in`, `list_out`),
-  default, callable, passthrough의 helper는 `default_in`, `callable_in`, `passed_out`이다. 새 helper도 같은 규칙을
+  default, callable, passthrough의 helper는 `default_in`, `callable_in`, `passed_out`이다. 코어가 보관할 수 있는 GN-6z의
+  함수를 만드는 helper는 `kept_function_in`이다. `function_`은 진입의 계열이고 `callable_in`은 machine의 함수(GN-6ae)를
+  검사하기 때문이다. 새 helper도 같은 규칙을
   따른다. 이유: unit은 어떤 이름이든 가질 수 있고 `default`, `callable`, `text`, `list`, `scope`도 그렇다. `in_<word>`라는
   이름의 helper는 그 이름의 unit이 있는 계약의 crate에서 두 번 정의되어 컴파일되지 않는다. 계약에서 이름이 오는 모든
   함수에 같은 것이 적용된다: 계약의 이름과 crate의 helper는 같은 이름을 쓰지 않는다. 그런 함수는 자기 계열을 앞에 적고,
   helper는 어느 계열의 접두로도 시작하지 않는다: `in_`과 `out_`(unit), `held_`(parameter 자리의 class), `make_`(값
   alias), `alias_in_`(`codec-test`의 진입), `recognized_<callback>_<member>`, `error_of_<library>`와
-  `failure_of_<library>`(다른 library의 오류, U-7), 그리고 functions unit의 함수의 진입인
+  `failure_of_<library>`(다른 library의 오류, U-7), `check_<unit>`(`core_type`이 없는 value class의 검사, GN-6af),
+  `alias_round_<unit>`(alias의 왕복 진입, GN-13e), 그리고 functions unit의 함수의 진입인
   `function_`이다. 그 진입에는 attribute가 언어의 이름을 준다(`#[php(name = ...)]`, `#[pyfunction(name = ...)]`,
   `#[napi(js_name = ...)]`, `#[wasm_bindgen(js_name = ...)]`).
   event loop를 받는 함수의 Python 진입(GN-6ae)은 `loop_function_<name>`이다. class의 member는 그 `impl` 블록의
@@ -154,16 +174,26 @@
 
   | feature | 용도 | Python | Node | PHP | Go C 기호 |
   |---|---|---|---|---|---|
-  | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
-  | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`. WASM은 `__aliasIn<Alias>` |
+  | `panic-test` | B-7, B-5c의 poison(GN-6h), PHP 시험의 errno 기호 값(GN-8a) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld`, `errnoOf` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
+  | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7), 그 `in` 함수 다음에 `out` 함수 실행(GN-13e), 수 parameter 자리의 다른 타입 Go 값(GN-13g) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`, `<prefix>__number_in`. WASM은 `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
+  | `case-test` | 인자가 그 언어에서 꼴을 갖지 않는 case(GN-13) | 아직 없음 | 아직 없음 | `<namespace>\Internal\caseTest<n>` | 아직 없음. WASM도 아직 없음 |
+  | `thread-test` | 다른 스레드에서 부른 함수의 kind `wrong_thread`(GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `native-count-test` | owner 표가 가진 언어 객체의 수(GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`. WASM은 `__nativeCount` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
-  인스턴스를 받아 쓰기 guard를 얻고 panic한다. 진입점은 target이 생성자나 그 class를 돌려주는 static member로 만드는 class의
+  인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
+  `#[allow(clippy::panic)]`를 갖는다. `clippy::panic`을 deny하는 레포는 다른 모든 항목에 그 deny를 유지하며, 다른 생성
+  항목은 panic하지 않는다.
+  시험 feature의 진입점만 쓰는 import, helper, 타입은 그 feature 아래에서 생성된다(`use` 줄이나 그 항목의
+  `#[cfg(feature = "<feature>")]`). feature 없는 빌드는 그 진입점을 컴파일하지 않으므로, 그 항목은 거기서 쓰이지
+  않고, lint가 쓰이지 않는 import와 죽은 코드를 deny하기 때문이다(GN-4).
+  진입점은 target이 생성자나 그 class를 돌려주는 static member로 만드는 class의
   인스턴스를 받는다. target이 만들 수 없는 class의 시험에는 줄 인스턴스가 없고, Go 진입점이 그런 class의 인스턴스 표를
   `panic-test`에서만 읽으면 그 feature가 없을 때 읽는 함수가 쓰이지 않기 때문이다.
   Python·Node·PHP·WASM crate는 계약의 alias에 `in_raises`가 있으면 `codec-test`를 갖고, Go crate는 왕복 진입점 때문에
-  늘 갖는다. 모든 crate는 계약에 `faults`가 있으면 `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
+  늘 갖는다. Node·PHP crate는 member가 함수 타입을 받으면 `thread-test`를 갖는다. 그 target은 함수를 owner 스레드에 두기
+  때문이며, 그 진입점은 함수를 다른 스레드에서 불러 실패의 kind를 준다. 모든 crate는 계약에 `faults`가 있으면 `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
   `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. case는 다른 라이브러리의
   지점(`<library>.<id>`, G-5)을 장전할 수 있다. 그러면 각 바인딩 crate의 그 feature는 그런 라이브러리마다
   `polyspec-<library>/fault-test`도 적고, crate는 코어가 하듯이 그 코어에 의존한다(T-3). Cargo feature는 직접 의존의
@@ -206,17 +236,17 @@
   읽으며, 이것은 Rust tuple, 배열, 그 둘의 참조에서 각 부분의 참조를 준다. `usize`나 `isize`인 정수 결과는 assertion
   `const _: () = assert!(usize::BITS <= 64);`(`isize`도 같다) 뒤에 `as`로 넓힌다. assertion은 그보다 넓은 target에서 빌드를
   실패시키고, 표준 라이브러리는 둘 어느 것에도 `From`을 구현하지 않기 때문이다. 넓힌 값은 각 언어에서 u64나 i64처럼 그 계약
-  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go는 아직 바꾸지 않는다(구현되지 않음): Go 바인딩은
-  표의 타입을 넘기므로 더 좁은 타입의 코어는 거기서 컴파일되지 않는다. GN-6ad의 컴파일 시험은 이 꼴들을 덮는다: `[usize; 2]`인
-  tuple parameter, `u32`와 `u8` parameter, `[u32; 2]`인 tuple 결과, struct literal이 `[usize; 2]`와 `u32` field를 받는
-  record parameter, `usize`와 `isize` 결과.
+  타입의 결과 규칙대로 나간다. list parameter는 GN-6ad대로 넘긴다. Go C ABI의 crate도 인코딩된 인자에서 각 parameter를
+  읽은 뒤 같은 방식으로 바꾼다. GN-6ad의 컴파일 시험은 이 꼴들을 덮는다: `[usize; 2]`인 tuple parameter, `u32`와 `u8`
+  parameter, `[u32; 2]`인 tuple 결과, struct literal이 `[usize; 2]`와 `u32` field를 받는 record parameter, `usize`와
+  `isize` 결과.
   이유: 코어는 index나 길이의 `usize`처럼 자기 코드가 필요로 하는 정수 타입을 유지하고, 계약은 값의 범위만 적는다. 코어의
   signature가 대상을 정하는 trait는 계약에 코어 타입 없이 바꾸므로, 값을 가진 어떤 코어에도 계약은 같다.
 - **GN-6ad** 항목이 좁혀지는(GN-6ac) list parameter, 곧 정수나 정수를 가진 tuple의 list는 표의 타입으로 된 지역 `Vec`으로
   바뀌고, `IntoCore`가 그것을 코어 항목 타입의 `Vec`으로 바꾸며, 코어 호출은 `&values[..]`를 받는다. 그래서 `&[usize]`,
   `&[u32]`, `&[[usize; 2]]`처럼 더 좁은 항목의 slice를 빌리는 코어가 그것을 받는다. 코어 타입의 범위 밖의 항목은
-  parameter의 이름을 subject로 하는 kind `invalid_number`다(B-2). 다른 항목의 list는 GN-6대로 `&values`로 넘긴다. Go는 아직
-  바꾸지 않는다(구현되지 않음).
+  parameter의 이름을 subject로 하는 kind `invalid_number`다(B-2). 다른 항목의 list는 GN-6대로 `&values`로 넘긴다. Go도
+  같은 방식으로 바꾼다.
   이유: 코어는 list를 slice로 빌리고, `&values[..]`는 그 slice를 자기 타입 `&[T]`로 주며, 그 항목 타입은 호출 자리의 deref
   coercion 없이 코어의 parameter가 정한다. 단위 시험은 생성기가 `tests/e2e/shapes`에 쓰는 WASM 진입점의 본문을 GN-6ac의
   helper, 그 fixture의 코어 함수와 함께 host와 wasm32로 컴파일하므로, 생성된 호출과 추론을 컴파일러가 확인한다.
@@ -228,11 +258,15 @@
   각 case는 그 field의 record의 결과 형태(GN-6a)를 `<Variant><Case>`라는 이름으로 갖는다: Python은 `<root>._types`의 frozen
   keyword-only `dataclass`와 alias `type <Variant> = <Variant><Case> | ...`, Node와 WASM은 tag member(unit의 `tag`, 그 언어의
   이름)가 case 값을 가진 plain object이고 선언은 case interface의 union, PHP는 interface `<Variant>`를 구현하는 case마다의
-  final 클래스다. case가 아닌 값(tag가 없는 객체, 어느 case도 이름하지 않는 tag, 다른 class의 인스턴스)은 kind
-  `invalid_argument_type`이다. case 파일에서 variant 값은 tag 키가 case 값을 갖고 나머지 키가 snake_case 이름의 field인
+  final 클래스다. Go는 module 패키지의 interface `<Variant>`이고 그 유일한 method는 unexported `is<Variant>()`이며, 각
+  case는 계약 타입의 Go 타입인 field들의 struct `<Variant><Case>`로서 value receiver로 그 interface를 구현한다. 그래서 variant를
+  담는 field는 그 interface다. Go C ABI는 variant를 계약 안의 case 번호와 그 뒤의 field들로 차례대로 읽고 쓰며, Go는 case
+  struct가 아닌 값(nil이나 case struct의 포인터)을 수 2^64 - 1로 인코딩한다. case가 아닌 값(tag가 없는 객체, 어느 case도
+  이름하지 않는 tag, 다른 class의 인스턴스, case struct가 아닌 Go 값)은 kind `invalid_argument_type`이다. case 파일에서 variant 값은 tag 키가 case 값을 갖고 나머지 키가 snake_case 이름의 field인
   객체다(G-5). 기본값이 `{literal: null}`(T-4)인 `optional` field는 빠질 수 있고, 빠진 field는 null이며 코어는 `None`으로
   받는다: Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
-  선택적으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고(GN-6i), case 값은 그 키를 뺄 수 있다. 그런 field는 늘 그 값이나
+  선택적으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고(GN-6i), Go는 field의 포인터를 nil로 두며, case 값은 그 키를
+  뺄 수 있다. 그런 field는 늘 그 값이나
   null로 나간다. 이름으로 거부한다: `core_type`이 없는 variant, Rust 이름이 같은 두 case, tag의 이름을 가진 field, 그리고 아직
   생성하지 않는 그 밖의 case field 기본값과 class·callback·값 alias·다른 레포의 unit을 담는 field.
   이유: case의 언어 값이 어느 case인지 말하므로 바인딩은 짐작 없이 바꾸고, wildcard 없는 match는 한쪽에 없는 case를 실행 중
@@ -257,7 +291,7 @@
   그 class 자체인 parameter. 쓰기 쪽 자리는 receiver `&mut self`·`self`, 그리고 `core`가 `&mut`인 parameter다. 그 밖의
   자리는 모두 읽기 쪽 자리다. class unit은 다음 중 하나이면 코어 값을 try로만 얻는 잠금에 담는다: (1) 그
   unit의 member에 쓰기 쪽 자리가 있다, (2) 그 class의 값이 언어에서 들어온다(parameter, 그 안의 record field나 list 원소,
-  callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit, 함수 타입,
+  callback의 반환), (3) 그 unit의 member가 언어 코드에 닿는다. 타입이 언어 코드를 담는 것은 callback unit(다른 레포의 것 포함, GN-6s), 함수 타입,
   `host_value`, kind `native`인 `out` 행을 가진 값 alias, 언어 코드를 담는 class일 때이며, record field, `optional`, `list`,
   `tuple`, map 값을 거쳐서도 그렇다. class가 언어 코드를 담는 것은 그 class를 receiver로 받는 member가 언어 코드를 담는
   타입의 parameter를 갖거나, 그 class를 돌려주는 member가 그런 parameter를 갖거나 언어 코드를 담는 다른 class의 receiver를
@@ -272,40 +306,67 @@
   (`try_write_owned`, mutex는 `try_lock_owned`) 얻는다. 호출은 코어를 부르기 전에 모든 자리의 잠금을 얻고 결과를 변환할 때까지
   쥔다. 한 호출의 읽기 쪽 자리들이 같은 인스턴스이면 잠금 하나를 함께 쓰고(`Arc::ptr_eq`), 한 호출이 같은 인스턴스를 쓰기
   쪽 자리와 다른 자리에 함께 받으면 kind `busy`로 실패한다. 코어에 같은 값의 `&mut`와 다른 빌림을 함께 줄 수 없기
-  때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받는다. 생성 코드는 모든 잠금을 얻은 뒤 그
-  참조를 자리의 이름으로 묶으므로, 어떤 `T`의 `&T`든 받아 guard의 참조를 deref하지 않는 trait의 코어
-  경로(`std::string::ToString::to_string`)도 값을 받는다. 코어 호출이 future나 호출이 다른 스레드로 옮기는 closure 안에서
-  돌면(Node: GN-6n의 `driving`과 GN-6m의 pool), guard는 그 안으로 옮겨지고 참조는 그 안에서 묶인다. 호출의 지역 변수를 빌린
-  참조는 호출보다 오래 살지 못하기 때문이다. 타입이 generated class이거나 그 `optional`인 parameter는 코어가 받는 빌림을
-  `core`에 적고(`&`, `&mut`, `value`), 적지 않은 parameter는 이름을 대어 거부한다(G-4). 기본값은 아무도 적지 않은 빌림을
-  주장하게 되고, 호출만으로는 틀린 빌림을 찾지 못하기 때문이다. `&mut`는 그 parameter를 쓰기 쪽 자리로, `&`와 `value`는 읽기
-  쪽 자리로 만든다. class의 parameter는 자기 guard의 참조의 `CoreForm::core_form`을 코어에 준다(GN-6b): 코어 parameter의
-  타입이 `&T`면 참조를, `T`면 사본을 고른다(`OrderedMap::insert(&mut self, key: Value, value: Value)`). 그래서 `core`가
-  `value`인 parameter는 읽기 guard 아래 값의 복제를 받고, 그 class는 `Clone`이다. 모든 바인딩 crate는 빌림을 적은
-  parameter를 가진 member마다 단언 `const _: () = { let _: fn(<receiver>, <param>, ...) -> _ = <core path>; };`을 둔다.
-  receiver는 그 class 코어 타입의 `&T`·`&mut T`·`T`이고, 빌림을 적은 parameter는 그 class 코어 타입의 `&T`·`&mut T`·`T`이며,
-  다른 parameter는 `_`다. 그래서 코어와 다른 빌림은 컴파일되지 않는다(I-2). 이유: binding은 Rust 소스를 읽지 않으므로 계약이
-  빌림을 적는다. 또 `&mut`는 `&`로 강제 변환되므로 호출만으로는 코어가 `&`를 받는데 계약이 `&mut`를 적은 것을 찾지 못하고,
-  `CoreForm`이 두 형태를 모두 주므로 코어가 값을 받는데 계약이 `&`를 적은 것도 찾지 못한다. 타입이 class의 `optional`인
+  때문이다. 코어는 읽기 쪽 자리에 `&*guard`를, 쓰기 쪽 자리에 `&mut *guard`를 받는다. 생성 코드는 모든 잠금을 얻은 뒤 그 참조를 자리의 이름으로
+  묶으므로, 어떤 `T`의 `&T`든 받아 guard의 참조를 deref하지 않는 trait의 코어 경로(`std::string::ToString::to_string`)도 값을 받는다. 코어 호출이 future나 호출이 다른 스레드로 옮기는 closure 안에서 돌면(Node: GN-6n의 `driving`과
+  GN-6m의 pool, WASM: GN-6n의 future), guard는 그 안으로 옮겨지고 참조는 그 안에서 묶인다. 호출의 지역 변수를 빌린 참조는 호출보다 오래 살지 못하기 때문이다. class의 parameter는 그 참조의
+  `CoreForm::core_form`을 코어에 준다(GN-6b): 코어 parameter의 타입이 `&T`면 참조를, `T`면 사본을
+  고른다(`OrderedMap::insert(&mut self, key: Value, value: Value)`). 그래서 계약이 형태를 적지 않는 value class의
+  parameter(CK-67)는 그 코어가 받는 형태를 받는다. 타입이 generated class이거나 그 `optional`인 parameter는 코어가 받는
+  빌림을 `core`에 적고(`&`, `&mut`, `value`), 적지 않은 parameter는 이름을 대어 거부한다(G-4). 기본값은 아무도 적지 않은 빌림을
+  주장하게 되고, 호출만으로는 틀린 빌림을 찾지 못하기 때문이다. `core`가 `value`인 parameter는 읽기 guard 아래 값의 복제
+  `(*<자리>).clone()`을 받으므로 그 class는 `Clone`이다. 모든 바인딩 crate는 빌림을 적은 parameter를 가진 member마다 단언
+  `const _: () = { let _: fn(<receiver>, <param>, ...) -> _ = <core path>; };`을 둔다. receiver는 그 class 코어 타입의
+  `&T`·`&mut T`·`T`이고, 빌림을 적은 parameter는 그 class 코어 타입의 `&T`·`&mut T`·`T`이며, 다른 parameter는 `_`다. 그래서
+  코어와 다른 빌림은 컴파일되지 않는다(I-2). 이유: binding은 Rust 소스를 읽지 않으므로 계약이 빌림을 적는다. 또 `&mut`는
+  `&`로 강제 변환되므로 호출만으로는 코어가 `&`를 받는데 계약이 `&mut`를 적은 것을 찾지 못한다. 타입이 class의 `optional`인
   parameter의 `core`는 이름을 대어 거부한다(G-4). 다른 타입 안의 class 값(list 원소,
   record field, callback의 반환)은 읽어서 복제하고 곧 놓으므로 그런 class는 `Clone`이다. 쓰기 쪽 자리가 있는 class의 잠금은
   `poisoned` 표지를 가진다: 쓰기 쪽 자리의 guard를 쥔 동안 난 panic은 guard를 놓기 전에 표지를 세우고, 그 뒤 그 객체를 어느
   자리로든 받는 모든 호출은 kind `internal`로 실패한다. tokio의 잠금에는 poisoning이 없고 panic이 값을 반쯤 바뀐 상태로 남겼을
   수 있기 때문이다(P-2). 잠금은 `polyspec-binding-core`의 feature `lock`에 있으며 Python·Node·PHP 바인딩 crate의 manifest가
   그것을 켠다.
-- **GN-6c** 다른 레포의 record(T-3)는 그 레포의 클래스다: Python은 그 패키지에서 import하고(`pyproject.toml`이 의존으로 적는다),
-  PHP는 이름으로 class table에서 찾고(그 확장이 로드되어 있다), Node와 WASM은 plain object를 주고받으며 선언은 field로 적는다. 바인딩
-  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다.
+- **GN-6c** 다른 레포의 unit(T-3)은 모든 target에서 그 레포 패키지의 unit이다: 이 계약의 패키지는 그 이름을 내보내지 않고,
+  호출자와 생성된 테스트는 그 unit을 그 레포의 패키지에서 가져오며, 이 계약의 패키지는 로드될 때 그 패키지를 필요로 한다.
+  record의 경우: Python은 그 패키지에서 클래스를 import하고(`pyproject.toml`이 의존으로 적는다), 생성된 테스트는 그 패키지의
+  모듈을 `foreign_<library>`로 import해 거기서 클래스를 부른다. PHP는 그 레포의 namespace에 있는 이름으로 class table에서
+  클래스를 찾고(그 확장이 먼저 로드되어 있다), 테스트는 그 클래스를 부른다. Go는 그 레포의 Go 모듈 패키지의 struct를
+  import한다(GN-15f). Node와 WASM은 plain object를 주고받으며 선언은 field로 적으므로 아무것도 import하지 않는다. 바인딩
+  crate는 코어의 의존 줄 그대로 그 레포의 crate에 의존하고, `binding scaffold`가 그 줄을 옮겨 적는다. 이유: 이 계약의
+  패키지에 그 record의 두 번째 클래스가 있으면 그것은 다른 타입이고, record를 가진 레포의 함수가 그것을 거부하므로, 한
+  값이 두 패키지를 함께 지날 수 없다.
 - **GN-6d** callback interface(U-3)는 언어 객체를 갖고 코어 trait를 구현하는 struct다. 그것을 받는 member는
   `Result<T, Failure<E>>`를 돌려주고(E-1c) 코어는 `&mut`(강제 변환으로 `&`도)로 받는다. 객체가 들어올 때 각 member가 호출
   가능해야 한다(kind `invalid_callback`). 호출은 인자를 내보내고(T-1대로 빌린 형태) 결과를 들인다. 언어 코드의 예외나 호출 중
-  바인딩의 실패(다른 타입의 결과, Node와 PHP에서 `thread: owner`에 다른 스레드가 한 호출인 kind `wrong_thread`)는 바인딩 표의 handle을 가진
-  `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
+  바인딩의 실패(다른 타입의 결과, Node와 PHP에서 `thread: owner`에 다른 스레드가 한 호출인 kind `wrong_thread`)는 바인딩 표의 그것을
+  가리키는 `Native`를 가진 `Raised`로 코어에 가고, 생성된 호출자가 같은 객체를 다시 던진다. 어느 호출자도 다시 던지지 않은
+  `Raised`의 마지막 drop은 GN-6u대로 그 항목을 지운다. 선언은 `<root>._types`의 Python `typing.Protocol`, Node
   interface, 확장이 등록하는 PHP interface다. 바인딩 crate는 feature `construct`를 켠 `polyspec-binding-core`에 의존한다.
+- **GN-6z** 함수 타입(T-2)은 코어가
+  `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`로, 값으로 받는다. 각 parameter는
+  callback member의 인자처럼 빌린 형태이고(T-1, GN-6d), `R`은 반환의 Rust 타입(`none`이면 `()`), `E`는 코어 오류다.
+  코어는 호출 뒤에도 함수를 가질 수 있으므로(template `engine.register`) 이 꼴은 `'static`이고 `Send`이며 `Sync`다. 값이
+  들어올 때 호출 가능해야 한다(kind `invalid_argument_type`). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
+  `collections.abc.Callable`로 선언한다. Node, PHP, WASM은 한 스레드와 한 환경에 속한 언어 값을 가지므로 함수가 그것을
+  `Native`(GN-6u)로 갖고 parameter를 함수 타입(TypeScript `(…) => R`, PHP `\Closure`)으로 선언한다. `Native`의 owner가 아닌
+  스레드에서의 호출은 kind `wrong_thread`이고, owner의 cleanup(Node의 env, PHP의 요청) 뒤의 호출은 kind `internal`이며, 둘 다
+  `Raised`로 코어에 간다. 그 `Raised`의 `Native`는 어느 스레드든 가질 수 있는 `BindingError`를 갖는다. 언어의 오류 객체는 owner 스레드에서만
+  만들어지고, 실패는 그곳에서 변환되기 때문이다. Go는 거부한다(G-4).
+- **GN-6aa** 다른 타입 안의 callback(record의 field, list의 항목, `optional`)은 `Box<dyn <core trait> + 'a>`로 받는다.
+  `'a`는 호출 동안이고, `Send`와 `Sync`는 trait가 요구하는 대로다. callback을 담은 list, `optional`, record는 코어에 값으로
+  넘긴다. 이것은 T-1의 예외다. 바인딩이 호출마다 그 값을 만들므로 가질 것이 없고, 빌린 list로는 코어가 receiver가
+  `&mut self`인 member를 부를 수 없기 때문이다. callback field를 가진 record의 코어 타입은 lifetime 매개변수 하나를 가진다
+  (`polyspec_x::Options<'a>`). 계약은 `core_type`에 그 경로를 적고, 생성기는 그 타입을 적는 곳에 lifetime을 적는다. callback이
+  호출의 환경에 사는 Node에서는 `'env`, 다른 target에서는 `'static`이다. 그런 record는 바인딩이 호출의 인자로 만드는 자리인
+  record parameter(T-4)로 생성하고, 다른 자리에서는 이름으로 거부한다. 코어가 호출
+  뒤에도 갖는 callback은 `Box<dyn <core trait> + Send + Sync>`(`'static`)이고, Node, PHP, WASM은 GN-6z대로 native 수명 위에서
+  그것을 준다.
 - **GN-6w** 이 계약의 callback interface를 `implements`하는 class unit(U-1, U-3)은, interface의 member 가운데 같은 이름으로
   선언하지 않은 것마다, 가진 값에 trait 메서드 `<core_type as <trait>>::<method>`를 부르고 그것이 돌려주는 `Failure<E>`를
   던지는 메서드를 갖는다(GN-6d). 선언은 interface를 이름한다: Node와 WASM은 `class <Class> implements <Interface>`, PHP는
-  stub과 class의 항목에서 확장이 등록하는 interface, Python은 `Protocol`이 이름하는 메서드를 갖는다. 그래서 class의 인스턴스는
+  stub과 class의 항목에서 확장이 등록하는 interface, Python은 `Protocol`이 이름하는 메서드를 갖는다. Go는 class의 포인터에
+  callback의 Go interface의 메서드를 가지므로 그 포인터가 interface를 만족하며, `var _ <Interface> = (*<Class>)(nil)`이 이를
+  단언한다. callback의 호출은 U-3의 dispatch로 그 메서드를 부르고, 메서드는 C ABI로 trait 메서드를 부른다. 그래서 class의 인스턴스는
   그 member를 가진 언어 객체처럼 callback을 받는 자리에 들어오고, callback의 호출은 그 메서드를 거쳐 가진 값에 닿는다. case에서
   callback의 자리에 인스턴스 값(GN-13f)이 올 수 있다. 아직 생성하지 않아 이름으로 거부한다: 다른 레포의 interface, class가
   `&self`가 아닌 receiver로 구현하는 member, abstract class(U-1).
@@ -324,7 +385,9 @@
 - **GN-6e** `core: {in, out}`을 가진 값 alias(U-7)는 바인딩이 한 단계씩 기술하는 `HostValue`(B-1)로 들어오고, 코어의
   `in` 함수가 `HostValues`를 통해 판정한다. 그 실패는 코어의 kind이거나, 코어가 값을 도는 동안 언어 코드(getter, iterator)가
   던진 예외이며 그대로 다시 던진다. 언어 값이 어떤 `HostValue`인지는 binding의 규칙이다. Python은 정확한 내장 타입을 받고
-  (`int`, `float`, `str`, `bytes`의 하위 클래스는 `Other`), Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
+  (`int`, `float`, `str`, `bytes`의 하위 클래스는 `Other`) `str`은 UTF-8 byte로, surrogate를 가진 `str`은 code point로
+  받는다. WASM은 `isWellFormed`인 string을 UTF-8 byte로, 그 밖의 string을 UTF-16 단위로 받으므로 흔한 text는 text
+  하나로 경계를 한 번 건넌다(B2.89). Node는 number를 `UntypedNumber`, bigint를 `Int`(`i64` 밖이면 십진
   토큰), string을 UTF-16 단위, Array, Map, plain object(prototype이 `Object.prototype`이나 `null`, 자기 열거 가능한 문자열
   키), Date, 함수로 받고 typed array와 symbol은 `Other`다. PHP는 참조인 원소를 identity를 가진 `PhpReference`로, 배열을
   `array_is_list`와 함께, stdClass와 Closure를 받는다. 코어 값은 코어의 `out` 함수가 주는 `OutValue`로 나가고 alias의 `out`
@@ -332,11 +395,41 @@
   kind의 내용(bool, int, int64, float, text, bytes)이고 실패하지 않는 것이며, 그 내용으로 그 코어 경로를 부르고 그 값은 그
   class의 instance로 나간다. 다른 member와 다른 레포 alias의 member는 이름을 대고 거부한다(G-4). 형식 `{"keyed_map": {"key": [...]}}`은 map으로 만들고,
   그것이 적은 종류의 각 key는 항목과 같이 행으로 만든다(T-2). Python과 Node에서는 같은 handle이 같은 객체이고, 배열이
-  값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. handle로 들어온 값(`native`, `Other`, callable)은
-  스레드 수명 동안 보관하며, 그 한계는 U-7 (d)가 정할 일로 남는다. PHP에서는 그 요청이 끝날 때까지 보관한다: 엔진은
-  요청이 끝날 때 그 요청의 값을 해제하므로, 확장은 엔진이 살아 있는 요청 종료(request shutdown)에서 보관한 값을 놓고,
-  끝난 요청의 handle은 값을 찾지 못한다(kind `internal`). 요청을 넘겨 보관한 값은 엔진이 사라진 뒤 스레드가 해제하게
-  되어 프로세스가 fault로 끝난다.
+  값인 PHP에서는 자기를 만드는 중에 다시 나온 handle이 kind `internal`이다. 코어가 보관할 수 있는 언어
+  객체(`Object`, `Callable`)는 `Native`로 들어온다(B-1). 코어는 그것을 다른 값처럼 복제하고 보관하고 drop하며, `native` 행은 같은
+  객체를 돌려준다. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. 바인딩은 `Date`와
+  `Other` 값에 그 호출 안의 순서로 번호를 매기며, 이후의 호출은 그 번호를 읽지 않는다. `Native`가 무엇을 갖고 마지막 drop이 무엇을 하는지는 target의 규칙이다(GN-6u).
+- **GN-6u** `Native`(B-1)가 갖는 것과 마지막 drop이 하는 일은 target마다 다음과 같다.
+  - Python은 `Py<PyAny>`를 갖고 drop에서 해제한다. PyO3는 GIL 없는 drop을 다음 GIL 획득으로 미루므로, crate는
+    `pyo3_disable_reference_pool`과 함께 컴파일되지 않는다. crate의 `build.rs`가 그 cfg를 선언한다
+    (`cargo::rustc-check-cfg`). rustc는 어느 crate도 선언하지 않은 cfg를 거부하고, crate의 manifest는 lint를
+    workspace에서 받기 때문이다.
+  - WASM은 그 한 스레드의 표에서 `JsValue`를 가진 key를 갖고, drop이 그것을 지운다.
+  - Node와 PHP는 owner, 그 generation, owner 표의 key를 갖는다. 그 표는 언어 참조를 그것을 가진 스레드에 둔다. 그 스레드의
+    참조는 다른 스레드에서 해제할 수 없기 때문이다. owner 스레드의 drop은 곧바로 해제하고, 다른 스레드의 drop은 key를 owner의
+    해제 대기열에 넣으며, 그 owner의 모든 생성 진입점은 동기 부분의 처음에 대기열을 비운다. Node에서 다른 스레드의 drop은
+    owner의 threadsafe function도 부른다. 그 함수는 한동안 진입점이 없을 때 owner 스레드에서 대기열을 비우므로, 해제가 다음
+    진입점을 기다리지 않는다. owner는 표를 만들 때 JavaScript 함수 없이 그 함수를 만들고 unref하므로, 그 함수는 event loop를
+    붙잡지 않는다. Node env cleanup hook과 PHP request shutdown은 표가 가진 것을 해제하고 generation을 올리며, Node hook은
+    owner들의 lock 안에서 threadsafe function을 abort로 해제한다. drop은 그 lock 안에서 generation을 비교한다. 이전
+    generation의 drop은 key를 버리고 환경이 사라진 언어의 어떤 것도, 참조도 threadsafe function도 건드리지 않으며, 그런
+    `Native`의 `out`은 kind `internal`이다.
+  - Go는 func의 `cgo.Handle`을 갖고, drop이 어느 스레드에서든 그것을 지운다.
+  - `Raised`(GN-6d)의 `Native`는 던져진 객체 표의 key를 갖고, 마지막 drop이 그 항목을 지운다. 그래서 코어가 돌려주지 않고
+    버린 예외가 남지 않는다. Python, Go, WASM은 drop에서 지운다. Node와 PHP는 그 표를 던진 스레드에 그 스레드의 번호와 함께
+    둔다. 그 스레드의 drop은 항목을 곧바로 지우고, 다른 스레드의 drop은 그 스레드가 살아 있는 동안 key를 그 스레드의
+    대기열에 넣는다. 그 스레드는 다음에 예외를 보관하거나 다시 던질 때 대기열의 key를 지우고, 끝날 때 대기열을 버린다. 다른
+    스레드에서 난 바인딩의 실패(GN-6z)의 `Native`는 `BindingError` 자체를 갖고, drop이 그것을 버린다.
+  - 값 alias가 그 target의 `native` 행을 갖고, 함수가 그 alias를 하나뿐인 parameter로 받아 그것을 돌려주면 왕복과 해제를
+    시험한다. 시험은 준비 호출 한 번 뒤 바인딩이 가진 것을 세고, 시험의 class의 새 인스턴스를 그 함수에 주어 결과가 같은
+    객체인지 확인하고, 그것을 버린 뒤, 해제 대기열을 비우는 호출을 한 번 더 하고(Node는 먼저 event loop를 한 번 돌린다), 다시
+    센다. 두 수는 같아야 한다. 세는 것은 Python에서는 대상의 살아 있는 참조 수(`sys.getrefcount`)이고, 대상을 지운 뒤 죽은
+    weak reference를 함께 본다. 다른 target에서는 `native-count-test`의 진입점이다. Node, PHP, WASM은 owner 표의 항목 수,
+    Go는 Native의 살아 있는 `cgo.Handle` 수이며, Go의 func는 비교할 수 없으므로 시험은 수만 확인한다. `out`의 바이트는 `Native`보다 오래 살므로,
+    `native` 행은 func의 새 `cgo.Handle`을 준다. Rust가 Go에 주는 모든 버퍼(결과, 실패, callback의 인자)는 그 버퍼가 주는
+    handle의 목록으로 시작하고, func의 node는 그 목록 안 handle의 위치다. Go는 다른 무엇을 디코딩하기 전에 그 목록을 읽어
+    handle마다 func를 꺼내고 handle을 곧바로 지운다. 그래서 디코딩이 이후에 무엇을 만나든(Go 형태가 없는 값, 잘못된 node),
+    호출자가 버퍼를 디코딩하든 않든, 어떤 handle도 그 버퍼보다 오래 살지 않는다.
 - **GN-6k** 다른 레포의 값 alias(T-3, U-7 (a'))는 자기 레포의 alias(GN-6e)와 같은 방식으로 주고받는다. 바인딩이 언어 값을
   `HostValue`로 기술해 소유 코어의 `in` 함수를 부르고, 소유 코어의 `out` 함수가 주는 `OutValue`를 alias의 `out` 행으로
   만든다. `out` 행은 소유 레포의 계약에서 읽는다. 소유 코어의 두 함수가 유일한 변환이다(P-1). 변환의 이름은
@@ -349,6 +442,35 @@
   대고 거부한다(G-4). WASM은 GN-18b대로, Go는 GN-15c대로 받는다. 다른 레포 alias의 `in_raises`는 이 레포에 생성할 것을 주지 않는다: 그 alias의 case, kind 단언,
   feature `codec-test`의 진입점(GN-5, GN-13)은 소유 레포의 바인딩에 속하고 거기서 한 번 실행된다. 이 레포의 crate는 자기
   alias가 있을 때만 그 feature를 갖는다.
+- **GN-6x** 다른 레포의 값 class(T-3, U-1)는 다른 레포의 값 alias(GN-6k)와 같은 방식으로 주고받는다.
+  이때 owner가 그 class에 `core: {in, out}`으로 적은 두 함수와 `core_type`에 적은 코어 타입을
+  쓴다(CK-8). 그것이 없는 다른 레포의 값 class는 이름으로 거절한다(G-4). 생성 코드가 그 인스턴스의 묘사를 직접 코어
+  값으로 바꾸면 owner 규칙의 두 번째 구현이 되기 때문이다(P-1). 들어올 때: parameter는 owner 패키지에서
+  import한 owner 언어 class의 인스턴스를 받는다(T-3). 그 밖의 값은 kind
+  `invalid_argument_type`이다. 생성 코드는 자기 언어의 `in` 행의 `by` member를 owner의 언어
+  API로 부르고, 그 결과를 `is`로 가진 case의 kind로 인스턴스를 열지 않고 `HostValue::Value`로 묘사한다.
+  그 handle의 `HostValues::read`는 그 case의 `read` member를 부르고 결과를 한 단계씩 묘사한다.
+  list는 list로, 각 항목은 다시 이 규칙으로 묘사한다. `iterate` member가 `{key, value}`를 내는
+  owner의 생성 class 인스턴스는 그 iteration의 entry로 이루어진 map으로 묘사하며, map을 묘사할 때
+  snapshot을 뜬다(GN-6f). 값 class의 인스턴스는 다시 `HostValue::Value`로, text나 bool은 그
+  kind의 `HostValue`로 묘사한다. `read` member가 `uint`의 list를 주는 kind `text16`의 case는 모든 언어에서
+  text의 UTF-16 code unit을 짝 없는 surrogate까지 `HostValue::Text(HostText::Utf16)`로 묘사한다. `units`를 가진 kind
+  `text`의 case는 `read` member를 한 번 부른다. text는 언어의 text로(PHP, Go, Node, WASM은 UTF-8 byte, Python은 code
+  point) 묘사하고, 없음이면 `units`를 불러 그 code unit을 `HostText::Utf16`으로 묘사한다. 그래서 text의 code unit은
+  짝 없는 surrogate를 가질 때만 경계를 건넌다(B2.89). 묘사는 owner의 `in` 함수가 판정한다. 그 실패와 언어 코드의 예외는
+  GN-6k대로 보고한다. 나갈 때: owner의 `out` 함수가 코어 값을 `OutValue`로 주고, 생성 코드는 자기 언어에
+  대한 class의 `out` 행으로 언어 값을 만든다. 각 `make`는 owner 패키지의 언어 API로 부르는 owner의 공개
+  `constructor`나 `static` member다. parameter 하나가 그 kind의 내용인 member는 그 내용으로
+  부른다(bool, text, kind `number`면 `OutValue::Number`의 literal, kind `text16`이면 `OutValue::Text16`의
+  code unit을 언어의 정수 list로). 그래서 짝 없는 surrogate가 있는 text는 언어의 문자열이 담지 못하는 곳에서도
+  owner가 가진 그대로 나간다. parameter 하나가
+  값 타입의 list인 kind `list`의 member는 각각 이 행으로 만든 항목으로 부른다. parameter 하나가
+  owner의 생성 class인 kind `map`의 member는 parameter 없는 공개 constructor로 만든 그
+  class의 인스턴스로 부른다. 생성 코드는 key와 값 타입의 value를 받는 그 class의 공개 method로 각 entry를
+  순서대로 넣고, key는 그 kind(`text`나 `text16`)의 행으로 만든다. 그 밖의 `make`는 이름으로 거절한다(G-4). Python,
+  Node, PHP는 이렇게 주고받는다. WASM은 owner의 WASM 패키지의 JavaScript class로 Node와 같이
+  주고받는다(GN-18b). Go는 owner class의 Go 타입으로 받으며, GN-15c의 host 질문에 대한 답이 그
+  `by`와 `read` member를 부른다. 줄 때는 GN-15c대로 `out` 행이 적은 owner Go 패키지의 export 함수로 만든다.
 - **GN-6f** class의 kind `iterate` member(N-4)는 `&self`로 코어를 불러, 빌린 항목이나 `yields: {key, value}`면 빌린 key와
   value의 iterator를 받는다. 바인딩은 순회가 시작될 때 모든 항목을 변환한다(class 값의 snapshot, 값 타입은 값으로, class는
   코어 값의 복사로). Python은 `__iter__`로 항목을 주거나, dict처럼 `__iter__`로 key를, `items()`로 쌍을 준다. Node는 class를
@@ -360,7 +482,8 @@
 - **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
   코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
   `toJSON`, PHP `jsonSerialize`(그 PHP class는 `\JsonSerializable`을 구현한다), Go `MarshalJSON`(GN-15a)이다. Python에는 JSON hook이 없으므로 그
-  member가 없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
+  member가 없다. 수를 돌려주는 primitive는 Node와 WASM의 `valueOf`이며, Python·PHP·Go에는 그런 hook이 없으므로 그 member가
+  없다. PHP 확장은 stringify가 있는 class에 `\Stringable`을 적지 않는다. PHP는 `__toString`이 있는 모든 class에 그
   인터페이스를 주고, 그것을 한 번 더 적은 class를 확장이 로드될 때 거부하기 때문이다. stub은 그 인터페이스를 선언한다. Node의
   hook은 진입 파일의 인자 검사(G-7) 없이 자기 이름을 가진 addon의 메서드다. 언어가 hook을 자기 규약의 인자로 부르기
   때문이며(`JSON.stringify`는 `toJSON`에 key를 넘긴다) 메서드는 그 인자를 읽지 않는다. class의 두 번째 stringify·to_json,
@@ -374,16 +497,29 @@
   bool은 값 그대로다. `{literal}`·`{const}` 기본값은 코어가 `None`에 쓰는 코어 상수를 `default_core`에 적는다. 생성된
   crate는 그 상수가 선언된 값과 같음을 컴파일할 때 단언하고(text는 바이트로, float는 비트로), 선언은 그 값을 보인다.
   `{computed}`·`{empty}` 기본값에는 상수가 없다. 선언은 Python에서 `...`, PHP에서 `null`이나 `[]`, TypeScript에서 선택
-  parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
+  parameter를 보이고, `{computed}` 기본값의 규칙 id를 주석에 적는다. `optional` 타입의 기본값은 `{literal: null}`이나
+  `{computed}`다. 그 코어 parameter나 field는 두 번째 `Option` 없이 optional 타입 자신의 `Option<T>`이고, 바인딩은
+  생략된 값에도 null처럼 `None`을 넘긴다. 둘 다 값이 주어지지 않았다는 뜻이기 때문이다. enum의 `{literal}` 기본값은
+  `default_core`에 코어 enum의 상수를 적고, crate는 그 상수가 선언된 값의 variant임을 컴파일할 때 `matches!`로
+  단언한다. 값 타입의 `{literal: null}` 기본값은 `None`을 넘기고 상수를 적지 않으므로 crate는 아무것도 단언하지
+  않는다. 값이 없다는 것이 무엇인지는 코어가 정한다. 언어마다 "생략"은 다음이다. Python: 호출이 주지
   않은 인자. 그래서 명시한 `None`은 값이며 값으로 판정한다. Node: 빠진 뒤쪽 인자, options record의 빠진 member, 또는
   `undefined`. 그래서 `null`은 값이며 값으로 판정한다. PHP: 호출이 주지 않은 인자 또는 `null`. 이름 있는 인자로 건너뛴
-  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값 `{empty: "object"}`가 있는 record
+  parameter에 엔진이 `null`을 주고 확장은 둘을 구별할 수 없기 때문이다. 기본값이 있고 뒤에 다른 parameter나 options
+  record가 오는 parameter는 호출의 가운데에서 생략되며, 언어마다 그 호출의 꼴은 하나다. 선언이 그 꼴을 받고 생성된
+  테스트가 그 꼴로 쓴다(GN-13d, GN-13e). Python은 그 뒤의 인자를 모두 keyword로 주고 선언 `name: T = <기본값>`이 그것을
+  받는다. PHP는 그 뒤의 인자를 모두 이름 있는 인자로 주고 stub `mixed $name = <기본값>`이 그것을 받는다. Node와 WASM은
+  그 parameter의 자리에 `undefined`를 준다. JavaScript의 인자에는 자리만 있기 때문이며 선언 `name?: T`가 그것을 받는다.
+  그래서 options record를 그 앞 parameter의 자리에서 읽는 일은 없다. Go는 GN-15e의 포인터인 nil을 준다. 기본값
+  `{empty: "object"}`가 있는 record
   parameter는 record의 모든 field에 기본값이 있을 때 통째로 생략할 수 있다. 그때 코어는 모든 field가 `None`인 record를
   받는다. Python과 PHP는 field를 keyword와 이름 있는 인자로 받으므로 그때 모두 생략된다. Node와 WASM은 options record를
   빠지거나 `undefined`일 수 있는 뒤쪽 인자로 받고, 선언은 그것을 선택 parameter로 적는다. 이름을 대고 거부하는 것(G-4):
-  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `optional` 타입의 기본값, 수·bool·text·latin1·bytes·source·list·map이 아닌 타입의
-  기본값, `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
-  결과 형태도 가진 record의 field 기본값.
+  기본값 없는 field가 있는 record의 `{empty: "object"}` parameter, record parameter의 다른 기본값, `{literal: null}`과 `{computed}`가 아닌 `optional` 타입의 기본값,
+  수·bool·text·latin1·bytes·source·list·map·enum·값 타입·`optional`이 아닌 타입의 기본값, `optional`이나 값 타입의
+  `{literal: null}`이 아니면서 `default_core` 없는 `{literal}`·`{const}` 기본값, 기본값이 있는 parameter 뒤의 필수 parameter, `rest` parameter,
+  결과 형태도 가진 record의 field 기본값. 다만 `optional` 타입의 기본값은 거부하지 않는다. 그런 field의 결과 형태는 그
+  optional 타입의 값이므로 코어의 `None`은 언어의 null이다.
 - **GN-6j** 타입 `source`의 parameter(T-1, `optional` 안의 것 포함)는 text 또는 바이트를 받아 코어에 `&[u8]`로 가며,
   판정은 코어가 한다. Python은 `str`을 그 UTF-8로, 또는 PyO3가 바이트로 읽는 값을 받는다. Node는 string을 그 UTF-8로,
   또는 `Uint8Array`를 받는다. PHP는 string을 받고 그 바이트를 그대로 넘긴다. PHP string은 그 바이트이기 때문이다. 짝 없는
@@ -391,11 +527,35 @@
   원소)의 `source`는 이름을 대고 거부한다(G-4). Node에서 타입 `bytes`는 양방향 모두 `Uint8Array`다(T-7). parameter는
   `Uint8Array`를 받고 string을 포함한 그 밖의 값을 kind `invalid_argument_type`으로 거부하며, 결과는 사본의 새
   `Uint8Array`다.
+- **GN-6y** 타입 `path`(T-1, B-3)는 OS 경로의 바이트이고 모든 자리에 쓴다: parameter, 결과, field, 원소, 그리고
+  `optional` 안. 코어는 parameter를 `&std::path::Path`로, `optional<path>`를 `Option<&Path>`로 받고, 결과와 field를
+  `std::path::PathBuf`로 준다. 언어마다 입력은 다음이다. Python은 `str`, `bytes`, `os.PathLike`를 `os.fsencode`한
+  바이트로 받는다. Node는 string을 그 UTF-8로, 또는 `Uint8Array`를 받는다. PHP는 string을 받고 그 바이트를 그대로
+  넘긴다. Go는 `string`을 받고 그 바이트를 그대로 넘긴다. 출력은 다음이다. Python은 `os.fsdecode`한 `str`이다.
+  Node는 바이트가 UTF-8이면 string이고 아니면 `Uint8Array`다. 어떤 바이트도 대체 문자로 바꾸지 않기 위해서다. PHP는
+  그 바이트의 string이고, Go는 그 바이트의 `string`이다. kind는 모든 언어에서 같다. 다른 타입의 값과, Python에서
+  `os.fsencode`가 `TypeError`로 거부하는 값은 kind `invalid_argument_type`이다. 짝 없는 surrogate가 든 Node string은
+  kind `invalid_text`다(B-3). NUL 바이트가 든 경로, `os.fsencode`가 인코딩하지 못하는 Python `str`, 그리고 OS 경로가
+  바이트가 아닌 곳(Windows)에서 UTF-8이 아닌 바이트는 kind `invalid_path`다. 바이트는
+  `binding_core::path_from_bytes`와 `binding_core::path_bytes`가 바꾸므로 모든 target이 한 함수로 판정한다. WASM에는
+  OS 경로가 없다. 계약은 `path`를 가진 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15). WASM target에 닿은 `path`는
+  이름으로 거부한다. 타입 `path`의 case 값(G-5)은 부분 사이를 `/`로 적은 상대 경로다. 생성된 시험은 그것을 시험마다
+  새로 만든 임시 디렉터리 안에서 풀고, 시험이 끝나면 그 디렉터리를 지운다. Python은 시험의
+  `tempfile.TemporaryDirectory`, Node는 `mkdtempSync`와 `afterEach`, PHP는 `sys_get_temp_dir()` 아래 디렉터리와
+  `tearDown`, Go는 `t.TempDir()`을 쓴다. 한 시험의 입력과 기대 결과는 같은 디렉터리에서 풀리므로, 경로를 내는 결과는 그
+  디렉터리 안의 경로로 비교한다. 빈 경로, 절대 경로, `..` 부분이 있는 경로는 시험의 디렉터리를 벗어나므로 이름으로
+  거부한다(G-4). 그 case의 시험은 모든 target에서 그 이유로 실패한다(GN-13e).
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
-  코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 생성 코드는 그런 경로를
+  코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 그런 경로의 오류는 `core.failure`가 참이면, 그리고
+  그것이 없으면 parameter가 callback이나 함수를 담을 때 kind 또는 언어 코드가 던진 것인 `binding_core::Failure<E>`다.
+  `core.failure: true`는 receiver가 보관한 언어 코드를 부르는 member(template `engine.render`)를 가리키며, 생성 코드는 그
+  오류를 callback을 받는 member의 오류처럼 변환한다(GN-6d, GN-6z). 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는
   `core.result`는 컴파일되지 않는다(I-2). `errors.kinds`가 코어 오류를 가리키지 않는 계약의 `core.result: true`는 이름을
-  대고 거부한다. 그 오류는 wildcard 없는 match로 kind의 category
+  대고 거부한다. kind를 가리키지 않으면서 다른 저장소의 value alias나 value class를 받는 계약은
+  `binding_core::Failure<()>`를 받는 함수 `failure_error`를 가진다. 소유자의 실패 함수가 언어 코드가 던진 것과 callback의
+  실패를 이 함수에 넘기고, 이 함수의 kind는 어떤 member도 주지 않는 unit이므로 그 갈래는 kind `internal`이며, 그런
+  crate에 없는 코어 오류 변환을 부르지 않는다(E-1c, GN-6x). 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `binding_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. binding은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
 - **GN-7a** 오류 unit(E-2)은 Python, Node, PHP의 클래스이며 `parent`의 클래스를, parent가 없으면 그 category의 라이브러리
@@ -414,8 +574,8 @@
   오류 unit이 아니다. 그래서 오류 하나를 만드는 일은 다른 오류를 많아야 하나 만든다. 다른 변형은 이름으로 거부한다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
   `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
   unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
-  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
-  행(E-1b (a)), 그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). 루트가
+  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property,
+  그 행의 category의 오류 unit을 가리키지 않는 `class`는 이름으로 거부한다(G-4). `library`가 있는 행(E-1b (a))은 GN-7c대로 생성한다. 루트가
   아닌 module의 오류 unit은 PHP에서는 그 module의 namespace에 있는 클래스이고(GN-10), Python에서는 `<root>.<module>`이
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
@@ -424,14 +584,22 @@
   `E`)에 대한 단언 `const _: fn(&<error>) -> bool = |error| matches!(<scrutinee>, <pattern>);`을 둔다. 그 타입의 variant가
   아닌 경로는 컴파일되지 않는다(E-5, I-2). 한 계약의 모든 member는 E-1의 코어 오류 하나를 돌려주므로, 여러 member가 내는
   variant는 한 번 단언한다. scrutinee는 `error`이고, `errors.code`가 투영 함수를 적으면 `<투영>(error)`이다. 경로의 pattern은
-  `<path> { .. }`이다. 중첩 경로 `<바깥>/<안쪽>`은 다른 enum의 값(의존 레포의 code enum, E-1b)을 담은 variant를 가리키며 그
-  pattern은 `<바깥>(<안쪽> { .. })`이고, 그 kind는 `<안쪽>`의 마지막 마디를 snake_case로 쓴 것이다. 모든 target의 `core_error`
+  `<path> { .. }`이다. 중첩 경로 `<바깥>/<안쪽>`은 코어가 그대로 전달하는 의존 레포의 variant(E-1b (a))를 가리키고, GN-7c가
+  그것과 그 pattern `<바깥>(<안쪽> { .. })`을 정하며, 그 kind는 `<안쪽>`의 마지막 마디를 snake_case로 쓴 것이다. 모든 target의 `core_error`
   match, 오류 unit의 property를 위한 두 번째 match(GN-7a), `in_raises`의 단언(U-7)은 같은 scrutinee와 같은 pattern을 쓴다.
   `errors.code`는 코어 오류가 code enum을 담은 구조체이고 `errors.kinds`가 그 code enum의 variant를 적을 때의 `{error, path}`다.
   `error`는 코어 경로가 돌려주는 타입이고, `path`는 생성 코드가 오류를 넘겨 부르는 투영 `fn(&E) -> &Code`(또는 `-> Code`)다.
   이때 kind의 오류 enum은 그 code의 enum(중첩이면 바깥 경로의 enum)이고, 하나를 생성한다. 이유: binding은 Rust 소스를 읽지
-  않으므로 계약이 오류의 타입과 그 code를 주는 함수를 적고, 다른 enum을 담은 variant는 그 pattern에 필요한 두 경로로 적는다.
-  `library`가 있는 행(E-1b (a))은 GN-7a대로 이름을 대어 거부한다.
+  않으므로 계약이 오류의 타입과 그 code를 주는 함수를 적는다.
+- **GN-7c** 코어가 그대로 전달하는 의존 레포의 kind(E-1b (a)): `errors.kinds`의 행은 라이브러리와 경로 `<바깥>/<안쪽>`을 적는다.
+  `<바깥>`은 그 라이브러리의 오류를 담은 이 레포 코어 오류의 variant이고, `<안쪽>`은 그 라이브러리 계약의 행이 적은 그 오류의
+  variant다. member는 `raises`에 같은 경로를 적는다. 코어 오류의 모든 match(클래스, property)와 GN-7b의 단언은 GN-7b의 scrutinee에 pattern
+  `<바깥>(<안쪽> { .. })`을 쓰므로, 바깥 variant가 그 안쪽 variant를 담지 않는 경로는 컴파일되지 않는다(I-2). category는 라이브러리
+  계약에서 `<안쪽>` 행의 category이고, 클래스는 이 레포 E-2 표의 그 category 클래스이거나 행이 `class`에 적은 오류 unit이며, kind,
+  status, errno는 자기 행처럼 코어 오류가 주는 것(`Kinds`)이다. 그런 kind를 내는 case의 생성 시험은 그 클래스로 쓴 GN-13의
+  시험이다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
+  (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
+  컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature
@@ -446,7 +614,13 @@
   WASM의 `Driven` 객체의 `advance`(GN-6ab)는 자기 코어 호출이 없는 진입점이다. 언어 코드가 다른 member의 호출 안에서
   그것을 부를 수 있으므로 그 작업은 `shielded(…)` 안에서 돌고, 아무것도 장전하지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.
-  `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
+  `_fault_left(id)`는 주입되지 않은 fault의 점 이름을 준다. 모든 계약의 PHP 확장에는 모든 시험 빌드가 켜는
+  feature `panic-test`(GN-5)에서 `Internal\errnoOf(symbol)`가 있다. 이것은 확장이 실행되는 기계에서 errno 기호가 갖는
+  값을 fault를 장전하는 표(`binding_core::errno::value`, feature가 필요 없다)에서 읽어 주고, 그 기계에 없는 기호에는
+  kind `internal`을 준다. PHP에는 그 기계의 errno 기호 표가 없으므로, Python과 Node가 그 값을 언어에서 읽듯이 PHP 시험은
+  fault 주입점이 없는 계약에서도 그 값을 바인딩에서 읽는다. end-to-end 검사는 PHP 확장을 feature 없이 빌드하고,
+  `llvm-nm`이 그 안에서 시험용 진입점(`panic_test`, `arm_faults`, `fault_left`, `errno_of`, `alias_in_`)을 찾으면 실패한다. 같은 검사가
+  feature 없는 빌드에 `errno_of`도 B-7의 진입점 `panic_test`도 없음을 보인다. 둘 다 feature `panic-test`의 것이기 때문이다. 대기하는 member는 아직 생성하지 않으므로(GN-1) 장전은
   동기 작업에만 설치된다.
 - **GN-8** 모든 진입점은 본문을 `catch_unwind`로 실행한다. panic은 프레임워크의 panic 오류가 아니라 internal category
   클래스의 kind `internal`로 호출자에게 도달한다(B-7).
@@ -459,12 +633,13 @@
   받는다(T-8). 엔진이 arginfo로 인자를 세고 이름을 확인한다(G-7). arginfo가 타입을 적지 않으므로 stub은 `mixed`를 적고 계약
   타입은 `@param`에 적는다. record field는 parameter 뒤의 이름 있는 parameter다. category 클래스는 module 시작 때
   `ClassBuilder`로 등록하고, 엔진의 class table에서 찾은 E-2 클래스를 상속하며, 클래스 자신의 객체 handler를 유지하므로 오류는
-  호출의 file, line, trace를 갖는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. 모든 category 클래스는 공개
-  생성자 `__construct(string $message, string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든 오류 unit이
-  이를 상속한다. 그래서 PHP 코드는 Python·Node·WASM 코드처럼 kind를 가진 오류를 만든다(GN-7a). 이 생성자가 없으면 kind는
-  그것을 선언한 클래스의 scope에서만 적을 수 있는데, 그것은 공개 API가 아니다. 확장이 일으키는 오류의 객체는 생성자 없이
-  만든다(B-4). enum은 backed enum이다(T-6). PHP는 키워드나 타입 이름을 enum case 이름으로 받지만 ext-php-rs의 매크로
-  `php_enum`은 `#[php(name)]`이 주는 이름까지 대소문자 없이 거부하므로, 그런 case는 뒤에 `_`를 붙인다
+  호출의 file, line, trace를 갖는다. startup은 무엇이든 등록하기 전에 라이브러리 클래스가 상속하거나 구현하는 PHP 클래스를 모두
+  찾고, 엔진에 없는 클래스가 있으면 module 시작이 실패한다(startup이 실패를 돌려준다). 등록이 실패한 라이브러리 클래스도
+  같다. 그래서 등록이나 호출이 읽는 클래스는 모두 있고, 확장은 없는 클래스 때문에 panic하지 않는다. `kind()`, `status()`, `errno()`는 private 속성을 읽는다. 모든 category 클래스는 공개 생성자 `__construct(string $message,
+  string $kind, ?int $status = null, ?int $errno = null)`를 가지며 모든 오류 unit이 이를 상속한다. 그래서 PHP 코드는
+  Python·Node·WASM 코드처럼 kind를 가진 오류를 만든다(GN-7a). 이 생성자가 없으면 kind는 그것을 선언한 클래스의 scope에서만
+  적을 수 있는데, 그것은 공개 API가 아니다. 확장이 일으키는 오류의 객체는 생성자 없이 만든다(B-4). enum은 backed enum이다(T-6). PHP는 키워드나 타입 이름을 enum case 이름으로
+  받지만 ext-php-rs의 매크로 `php_enum`은 `#[php(name)]`이 주는 이름까지 대소문자 없이 거부하므로, 그런 case는 뒤에 `_`를 붙인다
   (`Kind::Object_`, `Kind::List_`). backed 값은 계약의 값 그대로다.
   ext-php-rs의 `php_function`과 `php_module` 펼침이 `Option::map_or`와 `Result::unwrap_or`를 부르므로 함수와 module 진입은
   그 allow 하나를 가진 한 module에 있다. `keyed_map<T>{key}`는 순서대로의 array다(T-2). int key는 정수 key이고, 계약이 정수를
@@ -487,11 +662,14 @@
   확인하고(G-7, T-4), list parameter에서 문자열이 아닌 iterable을 배열로 바꾼다(T-7). 진입점은 로드될 때 라이브러리
   클래스를 addon에 넘기고 addon은 각각의 참조(napi `FunctionRef`)를 갖는다. 실패는 addon이 메시지, kind, status, errno로
   만든 그 클래스의 인스턴스이며 addon이 던진다(B-4). ESM 진입점은 CommonJS 진입점을 다시 내보내므로 둘은 클래스를 함께 쓴다.
-  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2):
-  진입점이 `Map`의 항목을 addon에 넘기고 addon이 key마다 판정하며(안전 정수가 아닌 number key는 kind `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), addon이
-  돌려준 항목으로 진입점이 `Map`을 만든다. 진입점이 하는 일이므로 그런 map은 parameter나 반환 전체(또는 그 optional)여야 하고,
-  다른 타입 안의 것과 `Map`이 정체성으로 비교하는 바이트 문자열 key는 이름으로 거부하므로(G-4) 조용히 빠지는 것이 없다. 계약이
-  그것을 요구하면 그때 생성기가 받는다.
+  `map<T>`는 key가 문자열인 `Map`이고, `keyed_map<T>{key}`는 key가 계약이 적은 종류의 안전 정수나 문자열인 `Map`이다(T-2).
+  타입의 모든 자리에서 그렇다: parameter, 반환, record의 field나 variant의 case의 field, 그리고 list, tuple, optional,
+  다른 map의 항목. addon은 값을 판정하는 자리에서 `Map`을 읽는다: `Map`이 아닌 값(쌍의 배열, 일반 객체)은 kind
+  `invalid_argument_type`이고, addon은 `Map`의 순서대로 항목을 받아 key마다 판정하며(안전 정수가 아닌 number key는 kind
+  `invalid_number`(GN-12a), 그 밖의 key나 값은 kind `invalid_argument_type`), 코어가 준 항목으로 그 순서의 새 `Map`을
+  만들어 돌려준다. 진입점은 그런 값을 그대로 넘긴다. 이유: 값은 타입을 아는 자리에서 변환되므로, 다른 타입 안의 map도
+  전체가 map인 값과 같은 규칙을 따른다. `Map`이 정체성으로 비교하는 바이트 문자열 key는 모든 자리에서 이름으로
+  거부한다(G-4).
 
 - **GN-12a** 모든 target(T-1, CK-64): 바인딩이 인자, list·tuple·map·optional의 항목, record의 field로 받는 `int` 값은
   안전 정수 −(2^53 − 1)~2^53 − 1이고 `uint` 값은 0~2^53 − 1이다. 그 범위 밖의 정수는 Node와 WASM처럼 PHP, Python, Go에서도
@@ -601,6 +779,61 @@
   호출은 pool에서 실행할 수 있다. 그것은 아직 생성하지 않는다. G-5는 그런 member에 대해 Python에서, 예외를 던지는
   callback(K-2)으로 `a<name>`을 `asyncio.run` 안에서 기다리고 callback의 예외를 요구하는 시험을 생성한다. 그래서 코어가
   `asyncio.to_thread`의 worker 스레드에서 부르는 callback이 그 스레드에서 실행됨을 본다.
+- **GN-6af** `only`가 있는 unit(Q-4)은 `only`가 있는 member와 같이 그것이 적은 target에만 생성하고, 다른 target의
+  바인딩·선언·시험에는 그 unit의 아무것도 없다. `core_type`이 없는 origin `value`의 class(U-1, T-5)는 받은 언어 값을
+  보관하는 언어의 class이고, 그 뒤에 코어 값은 없다. 그 constructor는 `core`에 인자를 판정하고
+  `Result<(), Failure<E>>`를 돌려주는 코어 함수를 적는다. 그 함수의 첫 parameter는 `&mut dyn HostValues`이고, 값 alias의
+  parameter, 또는 값 alias의 list나 keyed map인 parameter는 바인딩이 기술하는 `HostValue`(그것들의 `Vec`이나
+  `KeyedMap`)이며, 기본값이 있는 parameter는 그것의 `Option`이고 호출이 생략하면 `None`이다. 실패는 다른 member의
+  실패와 같이 던진다(E-2). instance는 각 인자를 언어가 준 그대로 보관하고, 생략된 인자는 그 기본값을 언어의 값으로
+  보관한다: `{literal: null}`은 언어의 null이고 `{empty: "map"}`은 새 빈 map(`Map`, `dict`)이다. 코어가 `None`을 받으므로
+  이 기본값에는 `default_core`가 필요 없다. `core`가 없는 property는 같은 이름의 constructor parameter가 보관한 값을
+  준다. 쓰기 가능한 property(U-1 `writable`)는 그 값을 바꾸기도 하며, 바꾼 값은 쓰이는 곳에서, 곧 member가 값 alias로
+  그것을 읽을 때 판정된다. constructor가 받는 keyed map은 type이 적은 kind의 각 key를 코어에 주며, Node와 WASM의 byte
+  string key는 `Uint8Array`다. instance는 `Map` 자체를 보관하므로, entry가 entry들로 `Map`을 만드는 곳에서 그런 key를
+  거부하는 GN-12는 여기에 적용되지 않는다. Python은 native module에 값마다 field를 둔 class를 정의하고, Node와 WASM은
+  JavaScript entry에 값마다 자기 열거 가능한 data property(property가 쓰기 가능하면 쓰기 가능)를 둔 class를 정의하며,
+  인자는 addon이 판정한다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind를 가진
+  `HostValue::Value`로 기술한다. 코어가 자기 각 위치에서 한 객체를 보도록, 코어의 한 walk 안에서 같은 instance의
+  handle은 같다. `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한
+  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
+  constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
+  `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
+  handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM이 이 class를 생성한다. Go는 이름으로 거부하고
+  (G-4), PHP는 자기 `stdClass`와 reference를 받는다(GN-6e). PHP는 형식 `php_object`를 entry들을 property로 가진 새
+  `stdClass`로 만들고, 각 이름은 그 key의 바이트이며 어떤 바이트든 담을 수 있다. 형식 `php_reference`는 만든 값을 값으로
+  가진 새 reference로 만든다. bytes인 배열 key는 그 바이트의 문자열 key다. 객체와 reference는 내용보다 먼저 만들어지고
+  그 handle의 모든 위치에서 같은 객체나 reference이므로, 그것들을 지나는 순환도 만들어진다. 값인 배열은 자기를 만드는
+  중에 다시 나오면 여전히 kind `internal`이다.
+- **GN-6ag** origin이 `host`인 unit(U-1: class, functions unit, record)은 레포가 손으로 쓰는 코드이고, 그 소스가 선언이다(I-1, L-3).
+  생성기는 어느 target에도 그것을 쓰지 않는다. 진입점, 변환, 선언, 다시 내보내기, 생성 시험이 없고, 계약 검사는 그 case를
+  요구하지 않는다(CK-22). host 패키지가 자기 진입점으로 그것을 내보낸다(L-2a). host unit은 생성 unit을 parameter로 받는다(설계의
+  U-2: 생성 unit에 대한 host 동작은 host functions unit의 함수다). 타입에 host unit을 적는 생성 unit은 이름을 대고 거부한다(G-4).
+  바인딩은 자기가 생성하는 타입만 변환하기 때문이다. 이유: host 코드가 바인딩을 부르고 바인딩은 host 코드를 부르지 않으므로,
+  host unit을 생성한 사본은 그 소스와 달라질 수 있는 두 번째 선언이 된다.
+- **GN-6r** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 시험으로 생성하고,
+  각 언어는 그것을 공개 API가 아니라고 표시한다.
+  - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
+  - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
+    module `m`의 이름은 internal 이름만 담은 module `<root>._m`에 있고, 생성 시험는 그 자리에서 부른다.
+  - Node와 WASM: 그 선언마다 JSDoc에 태그 `@internal`을 둔다. 선언을 `stripInternal`로 만드는 패키지는 그것을 뺀다.
+  - Go: 그 선언마다 doc comment가 문장 `It is internal to <library> (U-1) and is no public API.`로 끝난다. Go에는 한
+    module만 쓰는 export 이름을 나타내는 표시가 없기 때문이다.
+  internal unit의 member는 모두 그 unit과 함께 internal이다. public unit의 internal member는 이름을 대고 거부한다(G-4).
+  그 꼴이 언어마다 다르고 아직 그런 member를 가진 계약이 없기 때문이다. 계약 검사는 internal unit의 이름을 public unit의
+  이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
+  internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
+- **GN-6s** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
+  trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member를 확인하고(kind `invalid_callback`), `thread: owner`가 적용되며, 각
+  trait method는 그 언어의 API로 언어 객체의 method를 부르므로, 바인딩은 다른 바인딩의 native 객체를 꺼내지 않는다. trait
+  method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
+  언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
+  패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
+  타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
+  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  member의 `new`, GN-13f)이며 그 생성 시험는 그 이유로 실패한다(GN-13). PHP 확장은 소유 패키지의 확장에 대한 module
+  의존(`ZEND_MOD_REQUIRED`)을 선언하지 않으므로, PHP 설정이 그 확장을 먼저 불러온다. 생성기는 이것 때문에 거부하지 않는다. 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
+  method로만 그것에 닿을 수 있다(T-3).
 - **GN-6ab** 언어 코드에 닿는(GN-6q: parameter의 타입이나 receiver의 class가 언어 코드를 지닌다) `wait: async_driver`
   member는 `core`에 `"machine": true`를 적고(CK-68), 그 코어 경로는 future 대신 I/O 없는 state machine을 돌려준다(c6
   6.2). 그것은 인자를 소유하는 `binding_core::machine::Machine`의 값이므로 코어 경로는 각 인자를 값으로 받는다. callback은
@@ -627,7 +860,7 @@
     machine은 그것을 만든 호출보다 오래 살므로, machine이 소유하는 callback은 생성된 struct `Owned<Callback>`이다. 그것은
     객체에 대한 napi 참조(`napi_ref`)와 JavaScript 스레드의 환경을 지니고, 각 호출에서 그 둘로 빌린 callback struct를
     만들며, drop될 때 참조를 지운다. drop은 `Driven` 객체가 끝나는 JavaScript 스레드에서 일어난다.
-    machine이 소유하는 callback의 예외는 환경에서 꺼내어(`napi_get_and_clear_last_exception`) 그 `Raised`의 handle 아래에
+    machine이 소유하는 callback의 예외는 환경에서 꺼내어(`napi_get_and_clear_last_exception`) 그 `Raised`의 key 아래에
     `Owned`(GN-6ae)로 보관한다. machine은 그 호출 뒤에도 계속 진행하고, pending으로 남은 예외는 그 advance에서 뒤따르는
     Node-API 호출, 예를 들어 다음 Io future의 promise를 만드는 호출을 실패시키기 때문이다. `failure_error`가 보관한 값을
     다시 던지므로 호출자는 같은 객체를 받는다. callback이 error unit으로 인식하는 예외(U-3)는 그 kind의 core error이며
@@ -648,7 +881,10 @@
   단계를 어디서 돌릴지는 각 언어의 runtime이 정하고, 코어는 자기 I/O를 tokio에 둔다.
 - **GN-6ae** `machine`이 있는 member(GN-6ab)는 method일 수 있고, 함수 타입(T-2)의 parameter를 받고 `passthrough`를
   돌려줄 수 있다. transaction의 범위가 이것을 필요로 한다: member는 그 machine이 만든 class 인스턴스로 언어 코드를
-  부르고, 그 코드가 돌려준 것을 돌려준다. 결함 86.
+  부르고, 그 코드가 돌려준 것을 돌려준다. 결함 86. 반환이 `passthrough`인 함수 타입이 이 규칙의 함수이고 `machine`이 있는
+  member에 속한다. 그 밖의 함수 타입은 코어가 보관할 수 있는 GN-6z의 값이며, 그것을 받는 `machine` member는 이름을 대어
+  거부한다. machine은 자기 함수가 돌려준 것을 `Passthrough`로 settle하기 때문이다. case는 이 규칙의 함수를 함수 fixture로
+  주고 GN-6z의 값을 그 행으로 준다(CK-22).
   - Receiver: `machine`이 있는 method는 receiver `&self`를 적고, 생성 코드는 인스턴스가 쥔 값의 clone, 곧 인스턴스의
     lock이 주는 borrow(GN-6h)의 `Clone::clone(<receiver>)`을 인자보다 앞에 값으로 코어 경로에 주므로 코어 경로는 `self`를
     받는다. class의 코어 타입은 clone들이 한 상태를
@@ -666,19 +902,14 @@
     `Passthrough`는 그 값을 놓는다. `Passthrough`는 `Send`가 아니다. table은 언어 코드의 스레드에 묶여 있어서, 다른
     스레드에서 끝난 값은 거기서 아무것도 놓지 못하고 table에 남기 때문이다. table의 handle은 다시 주지 않는 수이므로, 놓은 값의 handle은 어떤 값도 가리키지 않고 다른 값을
     가리키는 일도 없다. handle이 값을 가리키지 않는 결과는 kind `internal`이다.
-  - `Raised`: `Raised`는 그것을 만든 호출이 해제한다. 코어는 `Raised`에 응답하고 그것을 drop할 수 있다. rollback한 뒤
-    다른 실패를 반환하는 scope가 그렇다. `Raised`에는 해제 함수가 없으므로, 던져진 것이 그 handle 아래 binding의 table에
-    남게 된다. 다섯 crate의 각 진입점은 자기 `guard`에서 자기 스레드의 scope를 연다. `Raised`를 만드는 함수는 그 handle을
-    가장 안쪽 scope에 기록하므로, 진입점 안에서 언어 코드가 하는 호출은 자기 것을 따로 기록한다. 진입점이 반환할 때,
-    `failure_error`가 가져가지 않은 각 handle 아래의 던져진 것을 table에서 제거하고, table을 놓은 뒤에 drop한다. Node와
-    WASM: machine은 여러 진입점이 advance하므로 자기 advance들의 handle을 보관하고, 결과를 주거나 실패하는 advance에서
-    해제하며, 끝까지 advance되지 않으면 그 `Driven` 객체가 끝나는 곳에서 해제한다. PHP, Python, Go: 멤버의 machine은 한
-    진입점 안에서 돌고(`machine::drive`), 그 진입점의 scope가 handle을 쥔다. PHP callback이 던진 것은 table을 놓은 뒤에
-    drop한다. PHP 객체의 destructor가 binding으로 다시 들어올 수 있기 때문이다. Python callback이 raise한 것은 GIL과
-    함께 끝나며, 진입점은 자기 `guard`가 반환하는 곳에서 GIL을 쥐고 있다. Go table의 항목은 package `binding`의 call이
-    보관하는 error를 가리키고, 그 error는 멤버와 함께 끝난다(GN-15b). 아직 적용하지 않음(G-4): 진입점의 스레드가 아닌
-    스레드에서 만들어진 `Raised`는 어느 scope에도 기록되지 않으므로, 코어가 그것을 drop하면 table에 남는다. 진입점이
-    기다리는 동안 코어가 자기 스레드에서 Python이나 Go의 callback을 부르는 경우가 그렇다.
+  - `Raised`: `Raised`는 그것의 마지막 drop이 해제한다. GN-6u가 `Raised`가 쥔 `Native`에 대해 정한 대로다. 코어는
+    `Raised`에 응답하고 그것을 drop할 수 있다. rollback한 뒤 다른 실패를 반환하는 scope가 그렇다. 던져진 것은 그 drop에서
+    binding의 table을 떠나며, 어느 스레드에서든 그렇다. table의 스레드에서 일어난 drop은 항목을 바로 제거한다. 진입점이
+    기다리는 동안 코어가 자기 스레드에서 Python이나 Go의 callback을 부르는 경우처럼 다른 스레드에서 일어난 drop은,
+    Python과 Go에서는 table의 mutex 뒤에서 항목을 제거하고, Node와 PHP에서는 그 key를 그것을 보관하는 스레드의 대기열에
+    넣는다. 그래서 어느 진입점도 자기 호출의 `Raised`를 기록하지 않고, 여러 진입점이 advance하는 Node와 WASM의 machine도
+    그 목록을 보관하지 않는다. machine의 함수는 callback이 쓰는 함수(`thrown`)로 `Raised`를 만들고, `failure_error`는
+    `Raised`의 key로 던져진 것을 table에서 꺼낸다.
   - PHP: parameter는 `callable`을 받고(`is_callable`. 다른 값은 kind `invalid_callback`이다), stub에는
     `@param callable(<parameters>): mixed`로 선언하며, 결과는 `mixed`다. closure는 callable의 참조를 쥐고
     `ZendCallable`로 부른다. 그 코드의 예외는 executor에서 꺼내 U-3의 `Raised`로 쥐므로 `failure_error`가 같은 객체를
@@ -718,7 +949,7 @@
     함수를 `Owned`(GN-6ab)로 소유하고, 그 napi 참조는 `Driven` 객체가 끝나는 JavaScript 스레드에서 지워지며, closure는
     `napi_call_function`으로 receiver `undefined`와 함께 함수를 부른다. table의 값과 예외의 `Owned`는
     그 값을 배열의 한 원소로 쥔다. Node-API 버전 8은 객체, 함수, symbol에만 참조를 만드는데 함수는 어떤 값이든
-    돌려주고 던지기 때문이다. 함수의 예외는 환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 handle
+    돌려주고 던지기 때문이다. 함수의 예외는 환경에서 꺼내(`napi_get_and_clear_last_exception`) 그 `Raised`의 key
     아래에 그런 `Owned`로 쥔다. machine은 call 뒤에도 계속되고, 예외가 걸려 있는 동안에는 Io future의 promise를 만들
     수 없기 때문이다. `failure_error`가 쥔 값을 다시 던지므로(`napi_throw`) 호출자는 같은 객체를 받는다. 값의 table은
     handle에서 `Owned`로 가는 thread-local map이다. release 함수는 그 항목을 지우고, 항목의 drop이 참조를 지운다.
@@ -733,7 +964,7 @@
   - WASM: parameter는 함수를 받고(다른 값은 kind `invalid_callback`이다), 선언은 Node의 것과 같다. machine은 그 함수를
     `js_sys::Function`으로 소유한다. 그것은 ES 진입이 `Driven` 객체를 해제할 때까지 사는 모듈의 값이다. closure는 모듈의
     스레드에서 `apply`로 receiver `undefined`와 함께 함수를 부른다. 함수의 예외는 그 호출이 모듈에 돌려주는 값이고(import가
-    그것을 잡는다, GN-18b), 그 `Raised`의 handle 아래에 두므로 호출자는 같은 값을 받는다. 값의 table은 handle에서
+    그것을 잡는다, GN-18b), 그 `Raised`의 key 아래에 두므로 호출자는 같은 값을 받는다. 값의 table은 handle에서
     `JsValue`로 가는 thread-local map이고, release 함수는 그 항목을 지운다. Await: Node처럼 advance의 `[1, value]`는
     `Step::Await`의 값이고 그 값은 table을 떠난다. ES 모듈의 함수 `drive`는 thenable이 아닌 값까지 그것을 기다리고
     `[true, <값>]`이나 `[false, <거부>]`를 다음 advance에 준다. 그 advance는 값을 다시 table에 넣거나 거부를 `Raised`로
@@ -823,19 +1054,37 @@
   member로 값을 만드는 행(GN-6e)은 class의 인스턴스를 준다. C ABI는 계약 안 class의 번호와 값의 handle을 적고, class의
   module 패키지가 그 번호로 인스턴스를 만든다. `internal/binding`은 그 패키지를 import하지 않기 때문이다. 그런 값을
   주는 다른 module의 member는 이름으로 거부한다. 그 class의 패키지만 인스턴스를 만들기 때문이다. `internal/binding`의 `AliasIn<Alias>`(feature `codec-test`)는 이 레포 alias의 `in` 함수만 실행한다.
+  다른 레포의 값 class(GN-6x)는 그 module 패키지에 있는 owner class의 Go 타입의 포인터이며, `internal/binding`이 그
+  패키지를 import한다. 패키지 binding은 인스턴스를 그 class의 Go `in` 행으로 묘사한다: `by` member를 부르고, 결과가
+  `is`인 case의 kind와 handle을 담은 node 11을 쓴다. 그 handle에 대한 질문 read(op 2)는 case의 `read` member를 불러
+  그 결과를 이 규칙대로 묘사한다. 다만 kind `text16`의 case는 그 결과인 부호 없는 정수 slice를 길이와 UTF-16 code
+  unit을 담은 node 13으로 쓰고, static library는 그것을 `HostText::Utf16`으로 읽는다. `units`를 가진 kind `text`의
+  case에서 `read`가 nil pointer를 주면 `units`가 주는 code unit의 node 13을 쓴다. `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
+  map이다. owner의 member가 돌려준 오류는 call과 그 index를 담은 node 12이므로, Go 함수는 callback의 오류처럼(U-3) 그
+  오류를 그대로 돌려준다. class의 코어 값은 값 class의 번호와 그 Go `out` 행의 번호를 담은 결과의 node 11로 나가고,
+  그 뒤에 행 kind의 내용이 온다: `null`은 없음, bool, 수의 literal, text, `uint64` list인 `text16`의 code unit, 항목들,
+  map의 entry들. 패키지 binding은 행이
+  이름하는 owner의 export 함수를 그 내용으로 부르며, map은 constructor로 만들고 insert method로 채운 map class의
+  인스턴스로 준다. 그 함수의 오류는 호출의 오류다. 다른 타입의 Go 값은 위 규칙대로 묘사하므로 owner의 `in` 함수가
+  판정한다.
 - **GN-15d** Go 오류 unit(E-2, E-7, I-3): 오류 unit은 parent(parent unit 또는 category 타입)의 포인터를 품은
   `internal/binding`의 struct `<Unit>`이므로 `errors.As`가 `Unwrap`을 따라 parent와 category를 찾는다. 패키지 `errors`는
   그것을 별칭으로 적고, property마다 C ABI가 코어 오류에서 읽은 값을 돌려주는 method가 있다. 행이 그 unit을 적은 kind는
   그 struct로 만든다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
-  간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다.
+  간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
+  `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이
+  아닌 포인터인 Go 타입은 `optional`일 때도, 기본값이 있는 parameter나 field일 때도 두 번째 포인터를 받지 않는다:
+  `map<T>`(`*Map[T]`), `keyed_map<T>`(`*KeyedMap[T]`), class의 인스턴스(`*<Class>`), 다른 레포의 value class(GN-6x)가
+  그렇다. 그 nil이 없는 값이고 C ABI는 그 nil에 값이 없다는 태그를 쓰므로 `optional<keyed_map<T>>`는 `*KeyedMap[T]`다.
+  `optional`의 `optional`은 두 번째 포인터를 그대로 둔다. 안쪽 포인터의 nil이 바깥 타입의 값이기 때문이다.
 - **GN-15f** 다른 레포의 Go record(T-3, GN-6c): 다른 레포의 record는 그 레포 Go module(그 계약 `packages.go`의 module) 안, 그 module 패키지의 struct
   `<Record>`이며 패키지는 그 패키지를 패키지 이름으로 import한다. C ABI는 이 레포의 record처럼 field마다
   `library_<library>::in_<record>`와 `library_<library>::out_<record>`로 쓰고 읽는다(GN-4c). unit 타입 field가 있는 다른 레포의 record와, 패키지
   이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. `binding scaffold`는 `binding generate`처럼 계약이
   이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
-  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record를 이름하는 라이브러리마다 `go.mod`에
-  `require <module> <version>` 줄을 적는다. 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
+  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record나 값 class(GN-6x)를 이름하는 라이브러리마다
+  `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. branch, commit, 버전 범위를 적은 의존 줄에는 Go 버전이 없으므로 이름으로
   거부한다. 그러면 Go 프로그램은 그 레포의 정적 라이브러리도 링크하며, end-to-end 실행은 그것을 이 레포의 것과 같은
@@ -903,7 +1152,7 @@
   코드(getter, proxy의 trap, iterator)를 실행할 수 있는 JavaScript 연산은 모두 `catch`로 부른다(`Reflect`와, `catch`로
   import한 `Array.isArray`, `Array.from`, `Object.keys`). 그래서 그 예외는 호출이 그대로 다시 던지는 값이며, 예외는
   WebAssembly 모듈의 frame을 거쳐 unwind하지 않는다. 그렇게 되면 모듈의 stack과 표가 망가진 상태로 남기 때문이다. 실패
-  (`Fail`)는 그 예외를 지니고, 코어는 그것을 U-3의 `Raised`로 지닌다. handle로 들어온 값은 인스턴스가 사는 동안 둔다(U-7 (d)).
+  (`Fail`)는 그 예외를 지니고, 코어는 그것을 U-3의 `Raised`로 지닌다. 코어가 보관할 수 있는 언어 객체는 `Native`다(GN-6u).
   `in_raises`가 있는 alias의 in 함수는 feature `codec-test`의 `__aliasIn<Alias>`로 따로 실행한다(GN-5). 생성 시험은
   `fault-test`의 시험이 `__armFaults`를 부르듯 wasm-bindgen이 쓰는 모듈에서 그것을 부르고, alias의 case마다 category의
   class와 kind를 기대한다(U-7).
@@ -934,7 +1183,12 @@
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
-  `{"hex": ...}`), `reference`는 `{"id": n, "value": ...}`를 담으며 같은 `id`는 같은 참조다. origin value class가 나타내는
+  `{"hex": ...}`), `reference`는 그 id의 첫 자리에서 `{"id": n, "value": ...}`를, 그 뒤의 모든 자리에서 같은 참조인 `{"id": n}`을
+  담는다. kind 옆에 `"id": n`을 가진 `object`는 그 뒤의 모든 자리에서 같은 객체인 `{"kind": "object", "id": n}`로 부른다.
+  자리의 순서는 값을 쓰는 순서(깊이 우선)이므로, 뒤의 자리가 첫 자리의 값 안에 있을 수 있고 그것이 순환을 만든다.
+  객체의 id와 참조의 id는 따로 센다. JSON reader가 받는 것보다 깊이 중첩된 객체는
+  `{"kind": "object", "repeat": <n>, "key": <key>, "value": <값>}`이다. 이것은 n개(1 이상)의 객체이고, 각 객체는 그것을
+  감싸는 객체의 유일한 property `key`이며 가장 안쪽 객체가 그 값을 담는다. origin value class가 나타내는
   값 타입(U-1)의 값은 그 kind의 `out` 행이 언어에 대해 적은 static member나 constructor의 호출이다. `value`가 없는 kind는
   parameter 없는 member로, 그 밖의 kind는 parameter 하나인 member로 만들며, 그 member는 case의 `value`를 그 parameter 타입의
   case 값으로 받는다. 그래서 `list`는 그 class의 값들을 담는다. 그 parameter 하나가 계약의 다른 class면 kind `map`의 `[key, value]` 쌍이
@@ -951,7 +1205,8 @@
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
   `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
-  case의 factory 인자를 쓴다. callback을 받는 member에는 K-2 시험이 있다:
+  case의 factory 인자를 쓴다. `core_type`이 없는 value class(GN-6af)도 Python, Node, WASM에서 그런 class다. 그 생성자와
+  property는 이 시험을 가지며, property는 생성자가 case의 parameter 키로 만든 인스턴스에서 읽는다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
   거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.
@@ -968,7 +1223,8 @@
   항목, `optional`)의 callback도 같은 fixture로 주고, 함수는 GN-6ae의 함수 fixture로 준다. 형식은 `binding check`가 판정한다(CK-22). callback을 받는 member의 B-4 시험은 실패하는 case를 그 fixture로 실행한다.
   stringify와 to_json은 언어가 hook을 실행하는 방식으로 실행한다(GN-6g). stringify는 실패하지 않는 case마다 시험이 있고, 그
   시험에서 인스턴스의 문자열 형태(`str`, `String`, `(string)` 변환)는 case의 `result`이며 PHP에서는 인스턴스가
-  `\Stringable`이다. to_json의 B-4 시험은 `JSON.stringify`, `json_encode`, Go에서는 내보내지 않은 `toJSON`을 부른다(Go의 stringify 시험이 `stringify`를 부르는 것과 같다). 둘 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
+  `\Stringable`이다. primitive는 실패하지 않는 case마다 시험이 있고, 그 시험에서 인스턴스의 수 형태(Node와 WASM의
+  `Number(instance)`)는 case의 `result`이며, case가 `result`를 주지 않으면 그 수 형태만 얻는다. to_json의 B-4 시험은 `JSON.stringify`, `json_encode`, Go에서는 내보내지 않은 `toJSON`을 부른다(Go의 stringify 시험이 `stringify`를 부르는 것과 같다). 셋 다 G-7 시험이 없다. B-5c(GN-6h): 쓰기 쪽 자리가 있는 class마다, 시험은 인스턴스를 만들고 그 인스턴스로 GN-5의
   poison 진입점(쓰기 guard를 쥔 채 panic한다)을 실행한 뒤, 그 호출, 그 인스턴스를 receiver로 받는 member, 그리고 그 class를
   parameter로 받는 member가 있으면 그 인스턴스를 인자로 준 그 member가 각각 kind `internal`인지 확인한다. 쓰기 쪽 receiver를
   가지며 자기 class를 parameter로 받는 member마다, 시험은 그 인스턴스를 그 인자로 넘기고 busy 클래스의 kind `busy`를 확인한 뒤
@@ -981,20 +1237,47 @@
   만들고, 그 member에 fault를 장전하고(`_arm_faults`), 곧바로 member를 부르고, 기대한 실패 뒤에 `_fault_left`가
   비었는지 확인한다. 호출이 닿지 않은 fault가 있으면 시험이 실패한다. case `raises`의 `errno`는 실패의 errno와
   비교한다. 수는 그대로, 기호는 그 언어가 그 기계에서 주는 값(Python `errno.<기호>`, Node
-  `os.constants.errno.<기호>`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. `in_raises`를 가진 값 alias에는
+  `os.constants.errno.<기호>`, Go `syscall.<기호>`, PHP는 GN-8a의 `Internal\errnoOf("<기호>")`)으로 비교하고, case가 적지 않으면 errno가 없어야 한다. Go 시험은 기호를
+  `Errno()`가 돌려주는 타입인 `int(syscall.<기호>)`로 비교한다. WASM의 target에는 errno가 없다
+  (`binding_core::errno::value`가 값을 주지 않고, 기호를 적은 장전은 거부된다, GN-8a). 그래서 WASM 시험은 case와
+  `then` 호출의 fault를 `errno` 없이 장전하고, case가 기호를 적은 자리에서는 errno가 없어야 한다고 요구한다. 수는
+  그대로 비교한다. `in_raises`를 가진 값 alias에는
   feature `codec-test`에서 그 `in` 함수만 실행하는 진입점이 있다. alias의 case마다(CK-22) 그 case의 `value`로 그것을
   불러 kind의 category 클래스와 kind를 확인한다. parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
-  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다.
+  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
+  Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
+  `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
+  `time.Unix(0, 0).UTC()`), `object`는 시험의 class의 인스턴스(Python `object()`, Node와 WASM `new (class Other {})()`,
+  PHP `new class {}`, Go `struct{}{}`)다. 다른 종류는 거부한다. PHP reference는 배열이나 property의
+  자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`나 id를 가진 객체를 가진 PHP case 값은 closure
+  안에서 만든다. closure는 id마다 변수 하나(객체면 새 `stdClass`)를 정하고, 각 객체를 채우고 각 참조를 정한 뒤, 그 자리가
+  참조 변수를 reference로 받고 객체 변수를 받는 값을 돌려준다. Python, Node, WASM은 id마다 참조나 객체의 class(GN-6af)의
+  인스턴스 하나를 내용 없이 만든 뒤 그 값을 정하거나 그 map을 채우며, 이것을 각 인스턴스에 이름을 붙이는 식(Python은
+  tuple의 대입식, Node와 WASM은 화살표 함수) 안에서 한다. 그래서 같은 id의 모든 자리가 같은 인스턴스를 가지고 순환도
+  만들어진다. 되풀이되는 객체는 바깥 객체부터 만들고 각 객체를 만든 뒤에 채우므로, 어떤 생성자도 그 안의 객체를 다시
+  판정하지 않는다. PHP는 `(object)` 변환으로 가장 안쪽부터 만든다. case-test 진입점(GN-5)은 id의 뒤 자리를 첫 자리의
+  동일성으로 기술하며, 코어는 그것을 다시 읽지 않는다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
+  언어의 어떤 호출로도 줄 수 없는 case는, `panic-test`, `fault-test`와 나란한 그 target의 feature `case-test`(GN-5)의
+  진입점으로 실행한다. 진입점은 인자를 바인딩 자신의 인코딩, 곧 바인딩이 기술하는 host 값(B-1)이나 Go C ABI의 값
+  stream(B-8)으로 만들어, 호출이 쓰는 것과 같은 변환(value alias의 `in` 함수, 인자의 decode)에 넘긴다. 그 시험은 case의
+  클래스와 kind를, 실패하지 않는 case면 실패가 없음을 요구한다. 진입점과 그 시험의 doc comment는 그 언어에 꼴이 없는
+  이유를 적는다. case를 빼지도, 실패하는 시험으로 생성하지도 않는다. 빼면 그 target에서 코어 규칙이 검증되지 않고,
+  실패로 두면 종단 검사가 영원히 통과하지 않기 때문이다. target에 그런 case가 있으면 crate는 `case-test = []`를 갖고,
+  그 feature 없이 빌드한 결과에는 진입점이 없다(종단 검사가 `llvm-nm`으로 심볼을 읽는다). 지금까지: PHP에서는 배열이나
+  property의 자리가 아닌 reference(값 자체, 또는 reference의 값)와, PHP에 꼴이 없는 64비트 밖의 정수를 Python과
+  JavaScript가 그것에 기술하는 10진 token(`HostValue::Number`)으로, 각각 host 값으로 만들어 그 alias의 `in` 함수에
+  준다. member case의 값에도 alias case의 값에도 그렇게 한다. Go(예:
+  `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
+  거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, 그리고 `cleanup`이 있는 class unit을 이름으로 거부하는 Go와 WASM의
   B-10(PHP, Python, Node는 그것을 생성한다, GN-6p), B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
-  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의
-  동일성, value unit 행의 왕복, 그리고 callback fixture에서 `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을
-  주면 이름을 대고
-  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점, PHP 시험의
-  errno 기호(PHP에는 그 기계의 errno 기호 표가 없다), 언어 종류로 적은 값(`{"host": ...}`, 그 종류의 닫힌 표가 없다),
+  같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
+  fixture에서 `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고
+  거부한다(G-4). 실패 주입과 alias kind에서 case가 주면 이름을 대고 거부하는 것: 다른 라이브러리의 점,
   GN-13의 kind가 아닌 값 타입의 값. 생성하지 않고 거부하지도 않는 것: 실패하지 않는 `faults` case의 시험(GN-13e의
   시험은 아직 실패를 장전하지 않는다), map·record field·callback 반환 안의 alias를 받는 member의 시험, 릴리스 빌드에 시험
   feature가 없다는 검사(`cargo tree`의 해석된 feature와 설치한 패키지의 export 목록). 이 검사 중 Go 부분은 e2e에
@@ -1003,7 +1286,8 @@
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
   member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. Python과 Node에서 그런
-  parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
+  parameter에 명시한 `None`·`null`은 거부되는 값으로 시험한다. 단, 기본값이 `{literal: null}`이면 그 null이 선언된 값이므로 제외하고,
+  `optional`과 값 타입도 그것을 값으로 받으므로 제외한다(GN-6i). T-1: `source` parameter는 text와 그 UTF-8 바이트에 같은 것을
   내고(Python, Node), 짝 없는 surrogate가 든 text는 kind `invalid_text`, 둘 다 아닌 값은 kind `invalid_argument_type`이다.
   T-7: `bytes` parameter는 바이트가 아닌 값을 거부하며 Node에서는 string도 거부한다. B-4: kind가 `class`를 적은 case는 그
   정확한 클래스를 기대하고 category의 클래스로 잡힌다. case는 기본값이 있는 parameter의 키를 뺄 수 있고, 그러면 호출에서도
@@ -1016,9 +1300,24 @@
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의
-  `nil`). 결과에 case 형식이 없는
-  case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의 내장 형태를 만드는 out 행이 없는 case, parameter나 receiver
-  factory의 인자를 주지 않는 case는 그 이유로 시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
+  `nil`). 계약의 값 alias인
+  결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
+  적은 텍스트로 비교한다. 양쪽 모두 반복문이 쓰므로, 재귀가 받지 못하는 깊이의 값도 비교한다. 생성기는 case 값의
+  텍스트를 alias의 out 행으로 쓴다. 각 자리에서 그 kind의 행 가운데 값이 가진 predicate(`utf8`, `safe_integer`,
+  `integral_float`, `sequence_keys`)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
+  `map`이나 `bytes`의 행을 쓴다), 그 행의 그 언어 형태를 쓴다. 시험은 결과의 텍스트를 각 자리의 타입으로 쓴다. 텍스트는
+  형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
+  bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
+  `text <hex>`와 `bytes <hex>`, PHP의 `string <hex>`, `list <n>`과 그 항목들, `map <n>`과 각 key와 그 값(key는 그 keyed
+  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
+  인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
+  `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
+  자리의 동일성과 각 순환을 비교한다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
+  거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에
+  준다. 이것은 결과를 alias의 `in` 함수로 받아 그 코어 값을 `out` 함수로 돌려주며, 시험은 같은 텍스트를 요구한다. 그래서
+  `out` 행이 만드는 각 형태가 같은 값으로 다시 들어간다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
+  시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
   PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고
   (`document-order`는 `document`, `order`), 낱말은 Python에서 `_`로 잇고 PHP와 Go에서 첫 글자를 대문자로 해 잇는다
   (`DocumentOrder`). Node와 WASM은 시험을 문자열로 이름 지으므로 id를 그대로 담는다. 한 member의 case들이나 한 값 alias의
@@ -1036,7 +1335,14 @@
   member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
   자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있고, case의 class가 구현하는 callback의 값도 그렇다(GN-6w). `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
-  그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
+  그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. `then`의 호출은
+  `"faults": [...]`를 가질 수 있다. 그것은 case의 faults 꼴(CK-22)로 적은 그 호출 자신의 fault 주입점이다. 시험은 그 호출
+  바로 앞에서 그 호출의 member에 그것을 장전하고, 바로 뒤에서 장전한 모든 fault가 발동했음을 요구한다. 그래서 앞선
+  호출의 실패가 뒤의 호출이 내도록 남기는 kind도 case를 가진다(feed가 저장에 실패한 body는 finish에서 그 실패를 다시
+  낸다). `"on": "receiver"`를 가진 `then`의 호출은 인스턴스 값의 `receiver`의 class의 메서드이며, `then`의 호출 가운데
+  자기 순서에서 pick 뒤에 그 receiver에 부른다. 그래서 인스턴스를 꺼낸 인스턴스의 호출 뒤에만 닿는 kind도 case를 가진다(body가
+  지워진 저장된 파일). 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 fault를 장전하는 receiver를 쓰지 않고, Go는 인스턴스
+  값이 fault를 장전하는 시험을 fault를 장전하는 case와 함께 둔다(GN-13b). 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
 
@@ -1053,16 +1359,26 @@
   `polyspec_<feature>`를 주어 `go test`를 실행한다. B-7은 build tag `polyspec_panic_test`가 붙은 `internal/binding/zz_generated_panic_test.go`이고, 이 파일이 C ABI의
   panic 진입점도 선언하므로 정적 라이브러리는 그 tag에서만 feature `panic-test`가 필요하다.
   `internal/binding/zz_generated_map_test.go`는 `Map`의 순서와 인코딩이 그 순서를 양쪽으로 지키는지 확인한다.
-  latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`와 `codec-test`는 시험
-  전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
+  latin1 parameter·field마다 U+0100과 바이트 FF가 kind `invalid_text`인지 시험한다. feature `panic-test`, `codec-test`,
+  `native-count-test`는 시험 전용이다: `binding scaffold`가 쓰는 manifest는 어느 것도 기본으로 켜지 않고 `binding check`가 다른 manifest를 거부하며(CK-19),
   끝에서 끝까지 확인은 feature 없이 정적 라이브러리를 빌드해 시험용 진입점(`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`)이 있으면 실패한다. build tag `polyspec_codec_test`와 C ABI
   crate의 feature `codec-test`에서는 시험용 진입점이 latin1 값(계약이 latin1을 받고 줄 때), `map<text>`, 모든 key 종류의
   `keyed_map<text>`(그런 map을 받고 줄 때)를 바인딩의 변환을 거쳐 그대로 돌려준다. `zz_generated_codec_test.go`는
   U+0000~U+00FF, map의 순서, keyed map의 key 순서와 종류가 그대로 돌아오고 U+0100이 거부되는지 확인한다. 이 레포 alias의
   case는 `AliasIn<Alias>`로 그 `in` 함수만 실행한다. 계약이 모든 key 종류를
   적지 않은 `keyed_map` parameter·field는 빠진 종류의 key로 kind `invalid_argument_type`을 시험한다. case의 latin1 값은 그 rune의 Go 문자열이다. case는 `map`을 순서대로의 항목을 가진 객체로,
   `keyed_map`을 GN-13처럼 준다.
+- **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
+  `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
+  계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_codec_test`는 진입점
+  `<prefix>__number_in` 위에 `internal/binding`의 함수 `<Type>In(value any, subject string) error`(`UintIn`, `IntIn`,
+  `Int64In`, `FloatIn`)를 준다. 함수는 Go 값을 host 값으로 encode한다: bool, int64 범위의 Go 정수, 그 위의 Go 정수, Go
+  float, Go 문자열, 또는 그 밖의 값이다. 진입점은 그 값을 바인딩의 그 수 타입 변환으로 판정한다: 그 수 타입의 Go
+  타입 값은 GN-12a의 범위를 거치고, 다른 타입의 값은 subject와 함께 B-2의 kind `invalid_number`다. 그래서 오류는 다른
+  target에서 그 인자로 부른 호출이 주는 오류와 같다. `zz_generated_codec_test.go`는 그런 타입마다 GN-13의 B-2 값을
+  확인하고, 그 타입의 값(7, float이면 1.5와 NaN)은 통과한다. 수 parameter에 다른 타입의 host 값을 가진 다른 레포의
+  시험(입력 타입이 있는 legacy case 등)은 Go 호출이 그 값을 받을 수 없으므로 이 함수로 그 값을 넘긴다.
 - **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs`는 Node의 GN-13 시험을, class member의 시험을
   포함하고 K-2 시험과 case의 callback fixture, alias의 U-7 시험(GN-18b)도 포함해, 설치한 패키지의 subpath `./wasm`에 대해
   `node --test`로 실행한다. B-7 시험은 마지막에 실행한다: panic 진입점을 `state.mjs`를 거쳐 불러 kind
@@ -1070,10 +1386,12 @@
 
 ## 끝에서 끝까지 확인
 
-- **GN-14** `make e2e REPO=<checkout> WORK=<directory> [BINDING=<commit>] [DEPS="<checkout>..."]`는
-  checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 실행하며(GN-14b)
-  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
-  생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어와 각 바인딩 crate를 host에서 lint하고, 각
+- **GN-14** `make e2e REPO=<checkout> [WORK=<directory>] [BINDING=<commit>] [DEPS="<checkout>..."]`는
+  checkout의 Node.js로 commit `BINDING`의 `scripts/e2e.mts`를 디렉터리 `WORK`에서 실행하며(GN-14b), `WORK`가 없으면
+  실행이 시스템 임시 디렉터리 아래에 디렉터리를 만들고, 실행이 끝날 때, 실패할 때, SIGINT와 SIGTERM을 받을 때 실행의
+  모든 프로세스가 끝난 뒤에 그것을 지운다. 그래서 `WORK` 없는 실행은 checkout에 기록 말고는 아무것도 쓰지 않는다
+  (`tests/e2e/sample`과 `tests/e2e/shapes`는 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이며, 앞의 것은 그 가운데 `then` 호출의 두 꼴을 갖고(GN-13f: 자기 fault를 장전하고 그 실패를 settle에 남기는 counter의 tally, 그리고 그것에서 만든 slip이 그 뒤에 놓치는 shelf의 clear), 뒤의 것은 Python·Node·PHP의 GN-6i, GN-6j, GN-7a 항목과, `source`와 기본값을 받는 receiver `&mut self`의 member(GN-6h)를 갖는다. `tests/e2e/classes`는 모든 종류의 member를 가진 class unit의 레포이며 WASM이 거부하는 unit이 없다(GN-18a). `tests/e2e/consumer`는 sample의 값 alias를 쓰고 property가 있는 오류 unit을 가진 레포이며(GN-6k, GN-7a) `--dep tests/e2e/sample`과 함께 실행한다. `tests/e2e/plot`은 `tests/e2e/points`의 record `point`를 받고 주는 레포이며(GN-6c, GN-15f) `--dep tests/e2e/points`와 함께 실행한다. 레포의 Go 프로그램이 그 Go module을 import하므로 실행은 그 Go 정적 라이브러리를 시험 feature와 함께 레포의 것 옆에 빌드한다(GN-15f); `DEPS`는 contract가 타입을 가리키는 레포마다 그 checkout을 적는다; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 실행의 binding을 받는 변경을 하며 하나씩 출력하고(GN-14d), `binding check`를 실행하고, 코어를
+  생성기 없이 시험하고, case 파일이 case 규약을 따르는지 확인하고(GN-14d), target마다 생성하고, 코어를 lint하고 각 바인딩 crate를 host에서 그 매니페스트의 시험 feature로, 그리고 feature 없이 lint하고(시험 feature의 진입점만 쓰는 import나 helper는 feature 없는 빌드에서만 쓰이지 않기 때문이다, GN-5), 각
   패키지를 빌드해(바인딩 crate는 그 매니페스트의 시험 feature로, GN-5) 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로
   실행하고, target go와 wasm은 `go test`(`gofmt -l`과 `go vet` 뒤)와 subpath `./wasm`을 통한 `node --test --expose-gc`로 실행한다.
   `tests/e2e`의 모든 계약은 다섯 target을 적고(BD-27), 생성기가 그 가운데 하나에 거부하는 target은 그 target의 이름 있는
@@ -1086,8 +1404,8 @@
   `make install`이 설치한 도구 가운데서 찾는다(AGENTS.md): python은 `mise.toml`의 Python 3.14와 maturin(maturin은 그
   Python의 venv의 Python에 맞춰 wheel을 빌드하고, wheel은 그 지역 디렉터리에서만 venv에 설치한다), node는 `mise.toml`의 npm과
   Node addon의 패키지, wasm은 crate와 같은 릴리스인 `mise.toml`의 wasm-bindgen CLI와 `rust-toolchain.toml`의 Rust target
-  `wasm32-unknown-unknown`, php는 `.php-version`의 PHP(기계의 PHP를 그대로 감싸므로 minor를 비교한다)와 `config/phpunit`의
-  PHPUnit, go는 `mise.toml`의 Go와 component `llvm-tools`의 `llvm-nm`(BD-10 (d))이다. 확인 자체는 `mise.toml`의 Node.js로
+  `wasm32-unknown-unknown`, php는 `.php-version`의 PHP(기계의 PHP를 그대로 감싸므로 minor를 비교한다), `config/phpunit`의
+  PHPUnit, component `llvm-tools`의 `llvm-nm`(GN-8a), go는 `mise.toml`의 Go와 그 `llvm-nm`(BD-10 (d))이다. 확인 자체는 `mise.toml`의 Node.js로
   돌고, 실행의 모든 명령은 checkout의 `rust-toolchain.toml`의 Rust toolchain을 쓴다(`RUSTUP_TOOLCHAIN`). 그렇지 않으면
   rustup은 명령의 디렉터리에서 toolchain 파일을 읽으므로, 사본 안에서 도는 명령은 사본의 toolchain이나 기계의 기본값으로
   빌드한다. 도구가 없으면 확인은 아무것도 복사하기 전에 실패하고 target, 도구, 그것을 고정하는 파일, `make install`을 적는다.
@@ -1159,7 +1477,11 @@
   생성 시험 옆에 복사하고(`cases_test.go`는 `packages/go/tests`로), 빌드한 addon에서 플랫폼의 npm 패키지를 묶어 라이브러리의
   패키지와 함께 그 tarball에서 다른 플랫폼의 선택 패키지 없이 설치하며(T-2), runner는 생성 시험이 필요로 하는 설정을 받는다:
   crate마다 시험 feature(GN-5, GN-13b), Go에는 정적 라이브러리 디렉터리를 가진 `CGO_LDFLAGS`, 그 feature의 tag를 가진 `GOFLAGS`,
-  `GOTOOLCHAIN=local`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `tests/e2e`의 레포는 모든 레포처럼 바인딩
+  `GOTOOLCHAIN=local`, WASM에는 `--expose-gc`(GN-18a), 그리고 case 파일을 적은 `CASES`. `tests/e2e/<library>`에 `bench.mjs`, `bench.py`, `bench.php`가 있으면
+  실행은 Node, Python, PHP의 case 뒤에 그것으로 측정하고, checkout의 파일 `var/report/bench/<library>-<language>.json`(무시됨)인
+  `BENCH_REPORT`를 준다. 측정은 각 측정을 고정된 횟수만큼 실행한 중앙값과 그때의 load average를 그 파일에 쓰고, 한계를 넘으면
+  `WARNING`을 출력할 뿐 실패하지 않는다. 그 빌드는 시험의 debug 빌드이므로, 측정이 보고하는 것은 같은 빌드의 두 경로의 비율이다(B2.87).
+  `tests/e2e`의 레포는 모든 레포처럼 바인딩
   crate를 workspace의 구성원으로 갖고, 바인딩 package는 추적하지 않으며 그것은 실행의 scaffold가 쓴다. 이유: 레포가 하지 않은
   사본의 변경은 어느 commit에도 없는 레포를 확인하고, 그러면 고쳐 준 결함은 실행에서 통과하고 레포에 남는다.
 

@@ -168,7 +168,7 @@
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$"
     },
     "variantPath": {
-      "description": "A variant of E-1: a Rust path, or `<outer>/<inner>` for a variant that holds a value of another enum, whose pattern is `Outer(Inner { .. })` (GN-7b).",
+      "description": "A variant of the core error (E-1), or <outer>/<inner>: the variant of the core error that holds the error of a dependency and the variant of that error, for a kind that the core passes on (E-1b (a), GN-7c). With errors.code, the variants are those of the code enum (GN-7b).",
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*(/[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*)?$"
     },
@@ -275,7 +275,7 @@
               "pattern": "^[A-Z][A-Za-z0-9]*(\\\\[A-Z][A-Za-z0-9]*)*$"
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }
@@ -297,7 +297,7 @@
               "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$"
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }
@@ -358,7 +358,7 @@
               }
             },
             "host": {
-              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module needs.",
+              "description": "L-2a: the language package is a hand-written host package; the binding is its native module at packages/<component>/<lang>/native/, and the host's manifest is checked only for what the native module and its release need.",
               "type": "boolean"
             }
           }
@@ -900,6 +900,7 @@
             "float",
             "number",
             "text",
+            "text16",
             "bytes",
             "list",
             "map",
@@ -1085,6 +1086,10 @@
                     "const": "builtin"
                   }
                 ]
+              },
+              "units": {
+                "description": "B2.89: a public member that gives the UTF-16 code units of a text as a list of uint, read when the read member of a case of the kind text gives none (GN-6x).",
+                "$ref": "#/$defs/id"
               }
             }
           }
@@ -1426,6 +1431,10 @@
                 },
                 "result": {
                   "description": "Whether the core path returns a Result (E-1c). Absent, it does when raises names a variant or a parameter is a callback or a function.",
+                  "type": "boolean"
+                },
+                "failure": {
+                  "description": "Whether the error of the core path is binding_core::Failure<E>, a kind or what language code raised (E-1c, GN-7). Absent, it is when a parameter holds a callback or a function; true names a member that calls language code its receiver keeps.",
                   "type": "boolean"
                 },
                 "machine": {
