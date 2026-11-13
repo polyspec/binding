@@ -1,11 +1,15 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8740957e15a8634aa79e53428e2fdc23509f346ca0e2d9ff96fc4e59bcfc68ae -->
+<!-- source-sha256: ee2b802ed6e85ec5a337be3e0d0b7344a4635e70d8d96cc29f7399d85dc1ee6e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 Node와 WASM의 B-10 시험은 `gc()` 뒤 프로세스의 첫 `ResourceWarning`을 받아 그 메시지를 비교했다. 그래서
+  `cleanup`이 있는 class가 둘인 계약은 수거가 앞선 시험의 객체를 먼저 finalize하면 실패했다. `tests/e2e/classes`의
+  end-to-end 검사가 Node에서 한 번, `Lease`의 시험에서 `Stall`의 경고로 실패했다. 이제 각 시험은 메시지가 자기 class의
+  경고인 warning을 기다린다(GN-6p). `make test-ts`로 검증했고, 그 시험이 두 target의 생성된 시험을 읽는다.
 - `wait: process_wait`인 member를 모든 target이 이름을 대고 거부했다. 이제 생성기가 그것을 받는다(GN-6m). 코어 호출은
   `Io` token의 자리에 `binding_core::ProcessWait::for_generated_call()`을 받는다. PHP, Python `<name>`, Go는
   `blocking_io`처럼 호출한 thread에서 기다린다. Python `a<name>`은 `<name>`을 자기 thread에서 돌리고 그 thread가 실행

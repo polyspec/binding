@@ -3790,6 +3790,10 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   assert.match(wasmTests, /test\('GN-6o: Lease\.release consumes its object'/);
   assert.match(wasmTests, /error\.kind === 'consumed'/);
   assert.match(wasmTests, /test\('B-10: Lease warns when it is destroyed without release\(\)', async \(\) => \{/);
+  // B-10: the objects of earlier tests warn too, so each test awaits the warning with the message of its class.
+  for (const [path, tests] of [['node', text(out, 'packages/ts/generated/tests/generated.test.mjs')], ['wasm', wasmTests]] as const) {
+    assert.match(tests, /const expected = 'Lease was destroyed without release\(\), so its destructor released it \(B-10\)';\n[\s\S]*?if \(warning\.name !== 'ResourceWarning' \|\| warning\.message !== expected\) return;/, path);
+  }
   // G-5: a call after the receiver self is kind consumed, and the destruction without cleanup warns.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /ResourceWarning/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);

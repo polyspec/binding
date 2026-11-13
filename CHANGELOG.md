@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The generated Node and WASM tests of B-10 took the first `ResourceWarning` of the process after `gc()` and
+  compared its message, so a contract with two classes with `cleanup` failed when the collection finalized an
+  object of an earlier test first: the end-to-end check of `tests/e2e/classes` failed once on Node with the warning
+  of `Stall` in the test of `Lease`. Each test now awaits the warning whose message is the warning of its class
+  (GN-6p). Verified by `make test-ts`, whose test reads the generated tests of both targets.
 - A member with `wait: process_wait` was refused by name on every target. The generator now takes it (GN-6m): the
   core call gets `binding_core::ProcessWait::for_generated_call()` in the place of the `Io` token; PHP, Python
   `<name>` and Go wait on the calling thread as for `blocking_io`; Python `a<name>` runs `<name>` on a thread of its

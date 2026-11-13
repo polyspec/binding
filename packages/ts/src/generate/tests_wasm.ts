@@ -406,9 +406,10 @@ test('GN-6o: ${langName('wasm', fn.unit.name, 'class')}.${langName('wasm', fn.me
     const label = langName('wasm', object.unit.name, 'class');
     out.push(`
 test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cleanup)}()', async () => {
+  const expected = ${jsString(cleanupWarning(label, memberName('wasm', cleanup)))};
   const warned = new Promise((resolve) => {
     const listener = (warning) => {
-      if (warning.name !== 'ResourceWarning') return;
+      if (warning.name !== 'ResourceWarning' || warning.message !== expected) return;
       process.off('warning', listener);
       resolve(warning);
     };
@@ -418,8 +419,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
     ${made(sample)};
   })();
   gc();
-  const warning = await warned;
-  assert.equal(warning.message, ${jsString(cleanupWarning(label, memberName('wasm', cleanup)))});
+  assert.equal((await warned).message, expected);
 });`);
   }
   // GN-6n: a test that calls a member that waits is an async function, as for Node.

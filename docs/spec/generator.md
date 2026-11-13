@@ -897,8 +897,8 @@ the design ids are those of the binding design.
   drops it without the cleanup call and requires the warning, and in PHP and Python a test that calls the cleanup
   member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
   under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
-  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process, and WASM does the same with
-  the `gc()` of its test run; Go sets the output of the standard logger to a writer that keeps each message and
+  `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process whose message is the warning of its class, because the
+  objects of earlier tests warn in the same collection, and WASM does the same with the `gc()` of its test run; Go sets the output of the standard logger to a writer that keeps each message and
   never blocks, because the logger holds its lock while it writes, takes a `weak.Pointer` of the object, calls
   `runtime.GC()` once and fails at once when the weak pointer still gives the object, because the cleanup of an
   object that the collection left never runs; then it reads the messages until the warning of its class, which the

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6bfa8afa1d8b1c0f7168855dd15571899753a4a2dbb4a73898733db0c5f0484c -->
+<!-- source-sha256: 6efe479b8835db14fedd5edf9bdf0df6320fc92e23aec8457789422c20632033 -->
 # 생성기
 
 [English](generator.md)
@@ -740,8 +740,8 @@
   G-5는 그런 unit마다, sample receiver로 객체를 만들고 정리 호출 없이 버린 뒤 경고를 요구하는 B-10 시험을 생성하고,
   PHP와 Python에서는 정리 member를 부르고 객체를 버린 뒤 경고가 없음을 요구하는 시험도 생성한다. PHP는 error handler
   아래에서 객체를 unset하고, Python은 `warnings.catch_warnings(record=True)` 아래에서 지우며, Node는 `gc()`를 켜고
-  (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event를
-  기다린다. WASM은 자기 시험 실행의 `gc()`로 같은 일을 한다. Go는 표준 logger의 출력을 각 메시지를 간직하고 결코 막히지
+  (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event 가운데 메시지가
+  자기 class의 경고인 것을 기다린다. 앞선 시험의 객체들이 같은 수거에서 경고하기 때문이다. WASM은 자기 시험 실행의 `gc()`로 같은 일을 한다. Go는 표준 logger의 출력을 각 메시지를 간직하고 결코 막히지
   않는 writer로 정한다. logger가 쓰는 동안 자기 lock을 쥐기 때문이다. 시험은 객체의 `weak.Pointer`를 얻고 `runtime.GC()`를
   한 번 부른 뒤, weak pointer가 여전히 객체를 주면 곧바로 실패한다. 수거가 남긴 객체의 cleanup은 돌지 않기 때문이다.
   그다음 자기 class의 경고가 나올 때까지 메시지를 읽는다. 그 경고는 수거된 객체의 cleanup이 쓰며, 앞선 시험의 객체들이
