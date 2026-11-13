@@ -9,8 +9,8 @@
   or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
   the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
   `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
-  `shapes.largest` over `&[u32]`, and a unit test compiles the helpers with such call sites with rustc for the host
-  and for wasm32. Verified by `npm test` in `packages/ts`.
+  `shapes.largest` over `&[u32]`, and a unit test compiles the generated WASM entry points of that fixture with its
+  core with rustc for the host and for wasm32. Verified by `npm test` in `packages/ts`.
 - PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
   only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
   An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose

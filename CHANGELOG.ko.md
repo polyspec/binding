@@ -8,8 +8,8 @@
 - list parameter를 표의 타입으로 된 `Vec`으로 코어에 줘서, `&[usize]`, `&[u32]`나 더 좁은 정수의 tuple slice를 빌리는 코어는
   컴파일되지 않았다. 이제 그런 list는 `IntoCore`를 거쳐 코어 항목 타입의 `Vec`으로 들어가고, 코어 호출은 `&values[..]`를
   받는다. 코어 타입 밖의 항목은 kind `invalid_number`다(GN-6ad). Go는 아직 바꾸지 않는다. `tests/e2e/shapes`는 `&[usize]`를
-  받는 `shapes.width_sum`과 `&[u32]`를 받는 `shapes.largest`를 갖고, 단위 시험은 그런 호출 자리와 helper를 rustc로 host와
-  wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로 확인했다.
+  받는 `shapes.width_sum`과 `&[u32]`를 받는 `shapes.largest`를 갖고, 단위 시험은 그 fixture의 생성된 WASM 진입점을 그
+  코어와 함께 rustc로 host와 wasm32에 대해 컴파일한다. `packages/ts`의 `npm test`로 확인했다.
 - PHP, Python, Node, WASM은 각 정수를 표의 타입(u64나 i64)으로 코어에 주고 결과는 u8, u16, u32에서만 넓혀서, `u32`,
   `usize`, `[usize; 2]`를 받거나 `usize`를 돌려주는 코어는 컴파일되지 않았다. 이제 인자, record나 case의 field, tuple의
   부분은 코어 호출이 대상을 정하는 `IntoCore`를 거쳐 코어에 들어간다: 정수는 `TryFrom`으로 좁히고 코어 타입 밖의 값은 kind

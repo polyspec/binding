@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
-import { carriers, coreArg, narrowed, tupleOut, type Model } from '../src/generate/model.ts';
+import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
@@ -1213,12 +1213,32 @@ test('a list parameter whose items narrow is a Vec of the core type, whose slice
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.largest\(\[1, 4294967296\]\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
 });
 
-test('the conversions into the core and out of it compile for the host and for wasm32, the core choosing each type (T-1, GN-6ac, GN-6ad)', () => {
-  // The helpers of the generated crates and call sites of the forms that the generator writes, against a core of
-  // narrower types; the stand-ins of binding_core are the two types that the helpers name.
-  const list = (type: unknown, variable: string): string => coreArg({} as Model, { list: type } as never, variable);
-  const failed = 'std::convert::identity';
-  const calls = `
+test('the generated calls of the core compile against the core of tests/e2e/shapes for the host and for wasm32 (T-1, GN-6ac, GN-6ad)', () => {
+  // The bodies of the WASM entry points of the members below, as the generator writes them, with the core functions of
+  // the fixture's own source. An input conversion `let x: T = in_...;` becomes the parameter x: T, so each body runs
+  // on the values of the table's types; the stand-ins of binding_core and of the language are the few items they name.
+  const members = ['span_length', 'spans_total', 'span_width', 'span_at', 'width_sum', 'largest'];
+  const wasm = text(shaped(), 'packages/ts/wasm/generated/lib.rs');
+  const entries = [...wasm.matchAll(/pub fn (\w+)\([^)]*\) -> Result<JsValue, JsValue> \{\n\s*guard\(\|\| \{\n([\s\S]*?)\n\s*\}\)\n\s*\.map_err\(throw\)/g)];
+  const calls = members.map((name) => {
+    const entry = entries.find((e) => e[1] === name);
+    assert.ok(entry !== undefined, `no WASM entry point ${name}`);
+    const params: string[] = [];
+    const body: string[] = [];
+    for (const line of (entry[2] ?? '').split('\n')) {
+      const input = /^\s*let (\w+): (.+?) = in_\w+\(.*\?;$/.exec(line);
+      if (input === null) body.push(line);
+      else params.push(`${input[1]}: ${input[2]}`);
+    }
+    return `pub fn ${name}(${params.join(', ')}) -> Result<Out, BindingError> {\n${body.join('\n')}\n}\n`;
+  }).join('\n');
+  const core = readFileSync(new URL('../../../tests/e2e/shapes/packages/rust/src/lib.rs', import.meta.url), 'utf8');
+  const coreFns = members.map((name) => {
+    const found = new RegExp(`(?:///[^\\n]*\\n)*#\\[must_use\\]\\npub (?:const )?fn ${name}\\([\\s\\S]*?\\n\\}\\n`).exec(core);
+    assert.ok(found !== null, `no core function ${name}`);
+    return found[0];
+  }).join('\n');
+  const stand = `
 pub enum NumberType {
     Uint,
     Int,
@@ -1228,76 +1248,24 @@ pub enum BindingError {
     InvalidNumber { subject: String, expected: NumberType },
 }
 
-pub mod core {
-    pub fn width_sum(widths: &[usize]) -> usize {
-        widths.iter().sum()
-    }
-    pub fn largest(values: &[u32]) -> u32 {
-        values.iter().copied().fold(0, u32::max)
-    }
-    pub fn widths(spans: &[[usize; 2]]) -> usize {
-        spans.iter().map(|span| span[1] - span[0]).sum()
-    }
-    pub fn plain(values: &[u64], offsets: &[i8]) -> u64 {
-        values.iter().sum::<u64>() + offsets.len() as u64
-    }
-    pub fn span_at(start: u32, length: u32) -> [usize; 2] {
-        [start as usize, (start + length) as usize]
-    }
-    pub fn mixed(pair: &(String, u16)) -> isize {
-        pair.1 as isize
-    }
-    pub struct Range {
-        pub ends: [usize; 2],
-        pub step: u32,
-    }
+pub type Out = u64;
+
+fn binding_error(error: BindingError) -> BindingError {
+    error
 }
 
-pub fn width_sum(widths: Vec<u64>) -> Result<u64, BindingError> {
-    ${narrowed('widths', '"widths"', failed)}
-    let result = core::width_sum(${list('uint', 'widths')});
-    Ok(WideUint::widen_uint(result))
+fn out_uint(value: impl WideUint) -> Result<Out, BindingError> {
+    Ok(value.widen_uint())
 }
 
-pub fn largest(values: Vec<u64>) -> Result<u64, BindingError> {
-    ${narrowed('values', '"values"', failed)}
-    let result = core::largest(${list('uint', 'values')});
-    Ok(WideUint::widen_uint(result))
+fn out_tuple(items: &[Out]) -> Result<Out, BindingError> {
+    Ok(items.iter().sum())
 }
 
-pub fn widths(spans: Vec<(u64, u64)>) -> Result<u64, BindingError> {
-    ${narrowed('spans', '"spans"', failed)}
-    let result = core::widths(${list({ tuple: ['uint', 'uint'] }, 'spans')});
-    Ok(WideUint::widen_uint(result))
-}
-
-pub fn plain(values: Vec<u64>, offsets: Vec<i64>) -> Result<u64, BindingError> {
-    ${narrowed('values', '"values"', failed)}
-    ${narrowed('offsets', '"offsets"', failed)}
-    let result = core::plain(${list('uint', 'values')}, ${list('int', 'offsets')});
-    Ok(WideUint::widen_uint(result))
-}
-
-pub fn span_at(start: u64, length: u64) -> Result<Vec<u64>, BindingError> {
-    ${narrowed('start', '"start"', failed)}
-    ${narrowed('length', '"length"', failed)}
-    let result = core::span_at(start, length);
-    ${tupleOut(['uint', 'uint'], 'result', (_type, name) => `Ok::<u64, BindingError>(WideUint::widen_uint(${name}))`, (converted) => `Ok(vec![${converted.join(', ')}])`)}
-}
-
-pub fn mixed(pair: (String, u64)) -> Result<i64, BindingError> {
-    ${narrowed('pair', '"pair"', failed)}
-    let result = core::mixed(&pair);
-    Ok(WideInt::widen_int(result))
-}
-
-pub fn range(ends: (u64, u64), step: u64) -> Result<core::Range, BindingError> {
-    ${narrowed('ends', '"ends"', failed)}
-    ${narrowed('step', '"step"', failed)}
-    Ok(core::Range { ends, step })
-}
+pub mod polyspec_shapes {
+${coreFns}}
 `;
-  const source = `${usedHelpers(`${WIDEN}\n${INTO_CORE}\n${PARTS}`, calls)}\n${calls}`;
+  const source = `${usedHelpers(`${WIDEN}\n${INTO_CORE}\n${PARTS}`, `${stand}${calls}`)}\n${stand}\n${calls}`;
   const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
   const where = mkdtempSync(join(tmpdir(), 'binding-narrow-'));
   try {

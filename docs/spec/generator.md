@@ -219,9 +219,9 @@ the design ids are those of the binding design.
   of the parameter as its subject. A list of other items is passed as `&values`, as GN-6 states. Go does not convert
   yet (not implemented).
   Why: the core borrows a list as a slice, and `&values[..]` is that slice by its own type, `&[T]`, whose item type
-  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the helpers of GN-6ac
-  with such call sites against a core of narrower types for the host and for wasm32, so the inference is checked by
-  the compiler and not assumed.
+  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the bodies of the WASM
+  entry points that the generator writes for `tests/e2e/shapes`, with the helpers of GN-6ac and the core functions of
+  that fixture, for the host and for wasm32, so the compiler checks the generated calls and the inference.
 - **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
   that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
   contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a
