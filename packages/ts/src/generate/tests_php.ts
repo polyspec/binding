@@ -2,7 +2,7 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, hookCall, langName, unitOf } from './model.ts';
+import { type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -31,6 +31,11 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   const ctx: Context = { lang: 'php', enumRef, recordNew, callbackNew };
   const cls = (category: string): string => `\\${layout.namespace}\\${model.classes.find((c) => c.category === category)?.name ?? ''}`;
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  const raised = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : `\\${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
+  };
   const methods: string[] = [];
   let usesFixture = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -145,8 +150,8 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         try {
             ${invoke(fn, callArgs(model, ctx, fn, caseArg), kase.receiver === undefined ? '' : made(kase.receiver))};
             self::fail('no error');
-        } catch (${cls(kase.raises.category)} $error) {
-            self::assertSame(${cls(kase.raises.category)}::class, $error::class);
+        } catch (${raised(kase.raises)} $error) {
+            self::assertSame(${raised(kase.raises)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
             self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());

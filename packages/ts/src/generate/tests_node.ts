@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, hookCall, langName, unitOf } from './model.ts';
+import { type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { addonBase } from './node.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
@@ -51,6 +51,11 @@ export function nodeTests(model: Model): string {
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  const raised = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : langName('node', unit.unit.name, 'class');
+  };
   const out: string[] = [];
   let usesFixture = false;
   const invoke = (fn: Fn, args: string, receiver: string): string => {
@@ -118,7 +123,7 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
       out.push(`
 test('B-4: ${name} ${kase.id}', () => {${before}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
-    error.constructor === pkg.${cls(kase.raises.category)} &&
+    error.constructor === pkg.${raised(kase.raises)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&

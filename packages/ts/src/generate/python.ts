@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
-import { type CallbackUnit, type Fn, type Model, aliasOf, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type ErrorUnit, type Fn, type Model, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -581,16 +581,47 @@ fn failure_error(py: Python<'_>, failure: binding_core::Failure<${model.coreErro
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.className)},`).join('\n');
-  return `
-/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
+  const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
+  if (model.errorUnits.length === 0) {
+    return `
+${doc}
 fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
     let class = match error {
 ${arms}
     };
     library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+`;
+  }
+  // E-2, I-3: the kind of an error unit is an instance of the class of the unit, whose properties the core error gives.
+  const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
+/// I-3: the properties of ${unitClass(u)}, read from the core error.
+fn ${rustField(u.unit.name)}_properties(py: Python<'_>, raised: &PyErr, error: &${model.coreError}) -> PyResult<()> {
+    let object = raised.value(py);
+${errorProperties(u).map(({ property }) => `    let value = ${property.corePath}(error);
+    object.setattr(${rustString(`_${langName('python', property.member.name, 'variable')}`)}, ${convertOut(model, property.returns, 'value')}?)?;`).join('\n')}
+    Ok(())
+}
+`).join('');
+  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(py, &raised, &error)`},`).join('\n');
+  return `${setters}
+${doc}
+fn core_error(py: Python<'_>, error: ${model.coreError}) -> PyErr {
+    let class = match error {
+${arms}
+    };
+    let raised = library_error(py, class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error));
+    let written = match error {
+${propertyArms}
+    };
+    match written {
+        Ok(()) => raised,
+        Err(error) => error,
+    }
 }
 `;
 }
@@ -731,12 +762,35 @@ class ${c.name}(builtins.${pythonBase(c.category)}):
         self.kind = kind
         self.status = status
         self.errno = errno`).join('');
+  // E-2, I-3: an error unit extends the class of its parent or of its category; a property is read-only.
+  const units = model.errorUnits.map((u) => {
+    const name = langName('python', u.unit.name, 'class');
+    const base = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('python', u.parent.unit.name, 'class');
+    const properties = u.properties.map(({ member, returns }) => {
+      const attribute = langName('python', member.name, 'variable');
+      // An instance that the core did not make has no value.
+      const given = pyType(model, returns, false);
+      const annotation = given.endsWith('| None') ? given : `${given} | None`;
+      return `
+
+    _${attribute}: ${annotation} = None
+
+    @property
+    def ${attribute}(self) -> ${annotation}:
+        return self._${attribute}`;
+    }).join('');
+    return `
+
+
+class ${name}(${base}):
+    """The errors of the unit ${u.unit.id} (E-2)."""${properties}`;
+  }).join('');
   return `${pyHeader()}
 """The error classes of ${model.contract.library} (E-2, B-4)."""
 
 import builtins
 
-__all__ = [${model.classes.map((c) => pyString(c.name)).join(', ')}]${classes}
+__all__ = [${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class'))].map(pyString).join(', ')}]${classes}${units}
 `;
 }
 
@@ -856,6 +910,7 @@ function initPy(model: Model): string {
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
+    ...model.errorUnits.map((u) => langName('python', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('python', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('python', o.unit.name, 'class')),
     ...model.enums.map((u) => langName('python', u.name, 'class')),

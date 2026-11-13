@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
-import { type CallbackUnit, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, errorProperties, type Fn, type Model, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
 
@@ -597,16 +597,58 @@ fn in_${rustField(object.unit.name)}<'env>(env: &'env Env, value: Unknown<'env>,
 
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
-  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
-  return `
-/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
+  const classIndex = (k: Model['kinds'][number]): number =>
+    k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
+  const arms = model.kinds.map((k) => `        ${k.variant} { .. } => ${classIndex(k)},`).join('\n');
+  const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
+#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
+  if (model.errorUnits.length === 0) {
+    return `
+${doc}
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
 ${arms}
     };
     library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+}
+`;
+  }
+  // E-2, I-3: the kind of an error unit is an instance of the class of the unit. The core error gives its properties
+  // here, and the instance takes them where the call returns, which has the env.
+  // The closure outlives the core error, so a text or bytes that the error lends is copied.
+  const owned = (type: Type, call: string): string => {
+    const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
+    if (from === undefined) return call;
+    return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;
+  };
+  const setters = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
+/// I-3: the properties of ${langName('node', u.unit.name, 'class')}, read from the core error.
+fn ${rustField(u.unit.name)}_properties(error: &${model.coreError}) -> Properties {
+${errorProperties(u).map(({ property }, i) => `    let value${i} = ${owned(property.returns, `${property.corePath}(error)`)};`).join('\n')}
+    Box::new(move |env, object| {
+${errorProperties(u).map(({ property }, i) => `        let value = value${i};
+        let property = match ${convertOut(model, property.returns, 'value')} {
+            Ok(property) => property,
+            Err(fail) => return Err(throw(env, fail)),
+        };
+        read_only(object, ${rustString(langName('node', property.member.name, 'variable'))}, property)?;`).join('\n')}
+        Ok(())
+    })
+}
+`).join('');
+  const propertyArms = model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'None' : `Some(Box::new(${rustField(k.unit.unit.name)}_properties(&error)))`},`).join('\n');
+  return `${setters}
+${doc}
+fn core_error(error: ${model.coreError}) -> Fail {
+    let class: usize = match error {
+${arms}
+    };
+    let properties = match error {
+${propertyArms}
+    };
+    Fail { properties, ..library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) }
 }
 `;
 }
@@ -625,12 +667,18 @@ function libRust(model: Model): string {
     ...model.aliases.map((a) => aliasNode(model, a)),
     model.aliases.length > 0 ? NODE_HOST : '',
   ].join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
+  // I-3: the conversions of the properties of the error units count as uses.
+  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ToNapiValue', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
   if (/\.(is_array|to_unknown|raw)\(/.test(`${used}${functions}`)) napiTypes.push('JsValue');
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
+  // I-3: the properties of an error unit are defined on its instance.
+  if (model.errorUnits.length > 0) {
+    for (const name of ['Object', 'JsObjectValue', 'JsValue', 'Property', 'PropertyAttributes']) if (!napiTypes.includes(name)) napiTypes.push(name);
+  }
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
@@ -654,9 +702,20 @@ struct Fail {
     status: Option<u16>,
     errno: Option<i32>,
     // U-3: the exception that a callback threw, which the call throws again unchanged.
-    thrown: Option<napi::Error>,
+    thrown: Option<napi::Error>,${model.errorUnits.length > 0 ? `
+    // I-3: the properties of an error unit, which the instance takes where the call returns.
+    // Boxed again, so that the failure stays small (a thin pointer).
+    properties: Option<Box<Properties>>,` : ''}
 }
+${model.errorUnits.length > 0 ? `
+/// I-3: writes the properties of an error unit on its instance.
+type Properties = Box<dyn for<'env> FnOnce(&'env Env, &mut Object<'env>) -> napi::Result<()>>;
 
+/// I-3: a property of an error is read-only, as kind, status and errno are (E-3).
+fn read_only(object: &mut Object<'_>, name: &str, value: Unknown<'_>) -> napi::Result<()> {
+    object.define_properties(&[Property::new().with_utf8_name(name)?.with_value(&value).with_property_attributes(PropertyAttributes::Enumerable)])
+}
+` : ''}
 /// The arguments of the constructor of a library class: message, kind, status, errno.
 type ClassArgs = FnArgs<(String, String, Option<u32>, Option<i32>)>;
 
@@ -666,8 +725,8 @@ static CLASSES: OnceLock<Vec<FunctionRef<ClassArgs, ()>>> = OnceLock::new();
 /// B-4: the module keeps a reference to each library class when it loads; a missing class fails the load.
 #[napi(js_name = "__register")]
 pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
-    if classes.len() != ${model.classes.length} {
-        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length} library classes, {} given", classes.len())));
+    if classes.len() != ${model.classes.length + model.errorUnits.length} {
+        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length + model.errorUnits.length} library classes, {} given", classes.len())));
     }
     let references = classes.iter().map(Function::create_ref).collect::<napi::Result<Vec<_>>>()?;
     CLASSES.set(references).map_err(|_registered| napi::Error::from_reason("B-4: the library classes are registered once"))
@@ -682,14 +741,23 @@ fn throw(env: &Env, fail: Fail) -> napi::Error {
         return napi::Error::from_reason(format!("B-4: the library classes are not registered: {}", fail.message));
     };
     let args: ClassArgs = FnArgs::from((fail.message, String::from(fail.kind), fail.status.map(u32::from), fail.errno));
-    match class.borrow_back(env).and_then(|class| class.new_instance(args)) {
+${model.errorUnits.length > 0 ? `    let properties = fail.properties;
+    let made = class.borrow_back(env).and_then(|class| class.new_instance(args)).and_then(|error| {
+        let Some(properties) = properties else {
+            return Ok(error);
+        };
+        let mut object = error.coerce_to_object()?;
+        (*properties)(env, &mut object)?;
+        Ok(object.to_unknown())
+    });
+    match made {` : `    match class.borrow_back(env).and_then(|class| class.new_instance(args)) {`}
         Ok(error) => napi::Error::from(error),
         Err(error) => error,
     }
 }
 
 fn library_error(class: usize, message: String, kind: &'static str, status: Option<u16>, errno: Option<i32>) -> Fail {
-    Fail { class, message, kind, status, errno, thrown: None }
+    Fail { class, message, kind, status, errno, thrown: None${model.errorUnits.length > 0 ? ', properties: None' : ''} }
 }
 
 /// E-1a: an error that the binding raises itself, in the class of its fixed category.
@@ -772,6 +840,18 @@ class ${c.name} extends globalThis.${nodeBase(c.category)} {
     });
   }
 }`).join('\n');
+  // E-2: an error unit extends the class of its parent or of its category. The addon defines its properties (I-3).
+  const units = model.errorUnits.map((u) => {
+    const name = langName('node', u.unit.name, 'class');
+    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class');
+    return `
+class ${name} extends ${parent} {
+  constructor(message, kind, status, errno) {
+    super(message, kind, status, errno);
+    Object.defineProperty(this, 'name', { value: ${jsString(name)}, configurable: true, writable: true });
+  }
+}`;
+  }).join('\n');
   // G-7: the count of the arguments, the members of an options record, and a list parameter's iterable (T-7).
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
     const count = fn.params.length;
@@ -837,6 +917,7 @@ ${wraps.join('\n')}`;
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
   const exports = [
     ...model.classes.map((c) => c.name),
+    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
@@ -856,11 +937,11 @@ function loadAddon() {
   return require(\`./${base}.\${platform}.node\`);
 }
 const addon = loadAddon();
-${classes}
+${classes}${units === '' ? '' : `\n${units}`}
 
 
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.
-addon.__register([${model.classes.map((c) => c.name).join(', ')}]);
+addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
 
 // T-7: a list parameter takes any iterable but a string; the addon judges anything else.
 function toList(value) {
@@ -907,6 +988,7 @@ const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'Ty
 function indexMjs(model: Model): string {
   const exports = [
     ...model.classes.map((c) => c.name),
+    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
     ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
     ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
     ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
@@ -925,6 +1007,10 @@ export declare class ${c.name} extends ${nodeBase(c.category)} {
   readonly kind: string;
   readonly status: number | null;
   readonly errno: number | null;
+}`).join('\n');
+  const errorUnits = model.errorUnits.map((u) => `
+/** The errors of the unit ${u.unit.id} (E-2). */
+export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
 }`).join('\n');
   const enums = model.enums.map((u) => `
 /** T-6. */
@@ -966,7 +1052,7 @@ export interface ${langName('node', cb.unit.name, 'class')} {
 ${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
 }`).join('\n');
   return `${header('//')}
-${classes}
+${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
 ${records}
 ${objects}

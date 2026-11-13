@@ -1,7 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { type CallbackUnit, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
+import { type CallbackUnit, type ErrorProperty, type ErrorUnit, errorProperties, type Fn, type Model, Unsupported, byValue, type ObjectClass, coreCallArgs, langName, libraryOf, memberName, aliasOf, objectUnit, recordFn, takesObject, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { type Files, header, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
@@ -706,19 +706,111 @@ fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
     ...model.aliases.map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? PHP_HOST : '',
   ].join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, functions);
+  // I-3: the conversions of the properties of the error units count as uses.
+  const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
+  // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
+  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
+  const unitPhpName = (unit: ErrorUnit): string => `${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
+  const parentIndex = (unit: ErrorUnit): number => (unit.parent === undefined ? model.classes.findIndex((c) => c.category === unit.category) : unitIndex(unit.parent));
+  const parentPhpName = (unit: ErrorUnit): string =>
+    unit.parent === undefined ? `${layout.namespace}\\${model.classes.find((c) => c.category === unit.category)?.name ?? ''}` : unitPhpName(unit.parent);
+  const propertyHandler = (unit: ErrorUnit, property: ErrorProperty): string => `${rustField(unit.unit.name)}_${rustField(property.member.name)}_method`;
+  const unitProperties = model.errorUnits.length === 0 ? '' : `${model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) => `
+/// I-3: the properties of ${unitPhpName(u)}, read from the core error. Each is written in the scope of the class that
+/// declares it.
+fn ${rustField(u.unit.name)}_properties(object: &mut ZendObject, error: &${model.coreError ?? '()'}) -> Result<(), Fail> {
+${errorProperties(u).map(({ owner, property }) => {
+    const name = langName('php', property.member.name, 'variable');
+    return `    let value = ${property.corePath}(error);
+    let property = ${convertOut(model, property.returns, 'value')}?;
+    if let Err(error) = in_scope(registered_class(${unitIndex(owner)}), || object.set_property(${rustString(name)}, property)) {
+        return Err(PhpException::from_message(format!("B-4: the property ${name} could not be written: {error}")));
+    }`;
+  }).join('\n')}
+    Ok(())
+}
+`).join('')}${model.errorUnits.flatMap((u) => u.properties.map((property) => `
+ext_php_rs::zend_fastcall! {
+    extern fn ${propertyHandler(u, property)}(ex: &mut ExecuteData, retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| read_unit_property(ex, retval, ${unitIndex(u)}, ${rustString(langName('php', property.member.name, 'variable'))})));
+    }
+}
+`)).join('')}
+/// I-3: a property of an error unit, read in the scope of the class that declares it.
+fn read_unit_property(ex: &mut ExecuteData, retval: &mut Zval, class: usize, name: &str) {
+    let Some(this) = ex.get_self() else { return };
+    if let Ok(value) = in_scope(registered_class(class), || this.get_property::<&Zval>(name)) {
+        *retval = value.shallow_clone();
+    }
+}
+
+/// A library class that is registered already: the parent of an error unit and the scope of its properties.
+fn registered_class(index: usize) -> &'static ClassEntry {
+    match CLASSES.get(index).and_then(OnceLock::get) {
+        Some(Class(class)) => class,
+        None => panic!("B-4: the library class {index} is not registered"),
+    }
+}
+${[...new Set(model.errorUnits.map(parentIndex))].map((i) => `
+fn registered_class_${i}() -> &'static ClassEntry {
+    registered_class(${i})
+}
+`).join('')}
+/// E-2: the class of a category that a library class is or extends, which declares kind, status and errno.
+fn category_scope(class: &ClassEntry) -> &ClassEntry {
+    let mut scope = class;
+    loop {
+        if CLASSES.iter().take(${model.classes.length}).filter_map(OnceLock::get).any(|category| std::ptr::eq(category.0, scope)) {
+            return scope;
+        }
+        match scope.parent() {
+            Some(parent) => scope = parent,
+            None => return class,
+        }
+    }
+}
+`;
+  const propertyType = (type: Type): string => {
+    const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
+    return ({ bool: 'Bool', int: 'Long', int64: 'Long', uint: 'Long', float: 'Double' } as Record<string, string>)[String(base)] ?? 'String';
+  };
+  const registerUnits = model.errorUnits.map((u) => `
+    let registered = ClassBuilder::new(${rustString(unitPhpName(u))})
+        .extends((registered_class_${parentIndex(u)}, ${rustString(`\\${parentPhpName(u)}`)}))${u.unit.final === true ? '\n        .flags(ClassFlags::Final)' : ''}${u.properties.map((p) => `
+        .property(private_property(${rustString(langName('php', p.member.name, 'variable'))}))
+        .method(FunctionBuilder::new(${rustString(langName('php', p.member.name, 'callable'))}, ${propertyHandler(u, p)}).returns(DataType::${propertyType(p.returns)}, false, true), MethodFlags::Public)`).join('')}
+        .registration(|class, tables| {
+            remember(${unitIndex(u)}, class);
+            std::mem::forget(tables);
+        })
+        .register();
+    if registered.is_err() {
+        return 1;
+    }`).join('');
+  const scopeOf = (entry: string): string => (model.errorUnits.length === 0 ? entry : `category_scope(${entry})`);
   const coreError = model.coreError === undefined ? '' : `
 /// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
 fn core_error(error: ${model.coreError}) -> Fail {
     let class: usize = match error {
-${model.kinds.map((k) => `        ${k.variant} { .. } => ${classOf(k.category)},`).join('\n')}
+${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined ? classOf(k.category) : unitIndex(k.unit)},`).join('\n')}
     };
-    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
+${model.errorUnits.length === 0 ? `    library_error(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))` : `    let mut object = match error_object(class, &error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error)) {
+        Ok(object) => object,
+        Err(fail) => return fail,
+    };
+    let written = match error {
+${model.kinds.map((k) => `        ${k.variant} { .. } => ${k.unit === undefined || errorProperties(k.unit).length === 0 ? 'Ok(())' : `${rustField(k.unit.unit.name)}_properties(&mut object, &error)`},`).join('\n')}
+    };
+    match written {
+        Ok(()) => error_exception(object, Kinds::kind(&error)),
+        Err(fail) => fail,
+    }`}
 }
-`;
+${unitProperties}`;
   const registerClasses = model.classes.map((c, i) => `
     let registered = ClassBuilder::new(${rustString(`${layout.namespace}\\${c.name}`)})
         .extends((${phpBaseFn(c.category)}, ${rustString(`\\${phpBase(c.category)}`)}))
@@ -794,6 +886,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
 ${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::flags::{${model.resultRecords.length > 0 || model.objects.length > 0 || model.callbacks.length > 0 ? 'ClassFlags, ' : ''}DataType, MethodFlags, PropertyFlags};
@@ -801,7 +894,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(used) ? 'use ext_php_rs::boxed::ZBox;\nuse std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
+${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -815,7 +908,7 @@ unsafe impl Send for Class {}
 unsafe impl Sync for Class {}
 
 /// The library classes of the categories (E-2), in the order of the contract.
-static CLASSES: [OnceLock<Class>; ${model.classes.length}] = [${model.classes.map(() => 'const { OnceLock::new() }').join(', ')}];
+static CLASSES: [OnceLock<Class>; ${model.classes.length + model.errorUnits.length}] = [${[...model.classes, ...model.errorUnits].map(() => 'const { OnceLock::new() }').join(', ')}];
 ${model.resultRecords.length > 0 ? `
 /// The classes of the result form of the records (T-4), in the order of the contract.
 static RECORDS: [OnceLock<Class>; ${model.resultRecords.length}] = [${model.resultRecords.map(() => 'const { OnceLock::new() }').join(', ')}];
@@ -890,7 +983,7 @@ fn in_scope<R>(class: &ClassEntry, body: impl FnOnce() -> R) -> R {
 
 fn read_property(ex: &mut ExecuteData, retval: &mut Zval, name: &str) {
     let Some(this) = ex.get_self() else { return };
-    let class = this.get_class_entry();
+    let class = ${scopeOf('this.get_class_entry()')};
     if name == "kind" {
         if let Ok(kind) = in_scope(class, || this.get_property::<String>(name)) {
             if retval.set_string(&kind, false).is_err() {
@@ -929,11 +1022,19 @@ type Fail = PhpException;
 /// B-4: an error of the library, an instance of its class with its message, kind, status and errno. The object is made
 /// by the class's own handler, so it has the file, the line and the trace of the call.
 fn library_error(class: usize, message: &str, kind: &str, status: Option<u16>, errno: Option<i32>) -> Fail {
+    match error_object(class, message, kind, status, errno) {
+        Ok(object) => error_exception(object, kind),
+        Err(fail) => fail,
+    }
+}
+
+/// The object of a library error with its message, kind, status and errno.
+fn error_object(class: usize, message: &str, kind: &str, status: Option<u16>, errno: Option<i32>) -> Result<ZBox<ZendObject>, Fail> {
     let Some(Class(entry)) = CLASSES.get(class).and_then(OnceLock::get).copied() else {
-        return PhpException::from_message(format!("B-4: the class of {kind} is not registered"));
+        return Err(PhpException::from_message(format!("B-4: the class of {kind} is not registered")));
     };
     let mut object = ZendObject::new(entry);
-    let written = in_scope(entry, || -> ext_php_rs::error::Result<()> {
+    let written = in_scope(${scopeOf('entry')}, || -> ext_php_rs::error::Result<()> {
         object.set_property("message", message)?;
         object.set_property("kind", kind)?;
         object.set_property("status", status.map(i64::from))?;
@@ -941,8 +1042,13 @@ fn library_error(class: usize, message: &str, kind: &str, status: Option<u16>, e
         Ok(())
     });
     if let Err(error) = written {
-        return PhpException::from_message(format!("B-4: the error {kind} could not be made: {error}"));
+        return Err(PhpException::from_message(format!("B-4: the error {kind} could not be made: {error}")));
     }
+    Ok(object)
+}
+
+/// The exception that throws the object of a library error.
+fn error_exception(object: ZBox<ZendObject>, kind: &str) -> Fail {
     match object.into_zval(false) {
         Ok(zval) => PhpException::from_message(String::new()).with_object(zval),
         Err(error) => PhpException::from_message(format!("B-4: the error {kind} could not be made: {error}")),
@@ -978,7 +1084,7 @@ fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
 }
 ${used}
 /// B-4: the library classes are registered when the module starts, after the classes of PHP that they extend.
-extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerRecords}${registerInterfaces}
+extern "C" fn startup(_kind: i32, _module: i32) -> i32 {${registerClasses}${registerUnits}${registerRecords}${registerInterfaces}
     0
 }
 
@@ -1040,6 +1146,19 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
         public function errno(): ?int {}
     }
 `).join('\n')}}`);
+  // E-2, I-3: an error unit extends the class of its parent or of its category; a property is a method.
+  for (const u of model.errorUnits) {
+    const parent = u.parent === undefined
+      ? `\\${layout.namespace}\\${model.classes.find((c) => c.category === u.category)?.name ?? ''}`
+      : `\\${phpNamespace(layout, u.parent.unit.module)}\\${langName('php', u.parent.unit.name, 'class')}`;
+    blocks.push(`namespace ${phpNamespace(layout, u.unit.module)} {
+    /** The errors of the unit ${u.unit.id} (E-2). */
+    ${u.unit.final === true ? 'final ' : ''}class ${langName('php', u.unit.name, 'class')} extends ${parent}
+    {${u.properties.map((p) => `
+        public function ${langName('php', p.member.name, 'callable')}(): ${phpType(typeof p.returns === 'object' && 'optional' in p.returns ? p.returns.optional : p.returns).replace(/^\?/, '')}|null {}`).join('\n')}
+    }
+}`);
+  }
   const modules = [...new Set([
     ...model.functions.map((f) => f.module), ...model.enums.map((u) => u.module), ...model.constants.map((c) => c.module),
     ...model.resultRecords.map((u) => u.module), ...model.objects.map((o) => o.unit.module), ...model.callbacks.map((c) => c.unit.module),

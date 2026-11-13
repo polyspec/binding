@@ -10,10 +10,10 @@
 ## 범위
 
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`인 메서드와 property, kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
-  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6h), enum, 상수, 오류 클래스에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
+  결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6h), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, error unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
-  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 의존 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record, 다른 레포의 값 alias를 거부한다(T-3, T-5, U-3, GN-6h). Go는 다른 타입 안의 서로
+  recognize가 있는 callback, 함수 타입, value unit, `none`이 아닌 wait, 기본값, `cleanup`, receiver
+  `&mut self`·`self`, class 타입 parameter, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, 타입 `source`)은 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4). Go와 WASM은 class unit, callback unit, 다른 레포의 record, 다른 레포의 값 alias, 오류 unit을 거부한다(T-3, T-5, U-3, GN-6h, GN-7a). Go는 다른 타입 안의 서로
   다른 타입의 tuple(Go 배열은 원소 타입이 하나다)과 tuple parameter도 거부한다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
@@ -140,6 +140,19 @@
 - **GN-7** `raises`가 있는 member는 `Result`를 돌려주는 코어를 부른다. 그 오류는 wildcard 없는 match로 kind의 category
   라이브러리 클래스가 되고, kind, status, errno는 `binding_core::Kinds`에서 읽는다(I-2 (3)). 패턴 `Variant { .. }`는
   데이터가 있든 없든 변형에 맞는다. binding은 Rust 소스를 읽지 않기 때문이며, 그에 대한 lint는 이유 I-2로 허용한다.
+- **GN-7a** 오류 unit(E-2)은 Python, Node, PHP의 클래스이며 `parent`의 클래스를, parent가 없으면 그 category의 라이브러리
+  클래스를 상속한다. parent는 그것을 상속하는 unit보다 먼저 선언하고 등록한다(P-4). `errors.kinds`의 행이 `class`로 그
+  unit을 가리키는 kind는 그 클래스의 인스턴스이고 kind, status, errno는 GN-7과 같다. `source`가 있는 행(E-1b (b))은 이
+  레포 코어 오류의 변형이므로 다른 행과 같이 생성한다. unit의 member는 읽기 전용 property다(I-3): `core.path`는
+  receiver가 `&self`인 코어 오류의 함수를 가리키고, 생성 코드는 코어가 돌려준 오류로 그 함수를 wildcard 없는 두 번째
+  match에서 부른다. property는 Python에서 private 속성 위의 `@property`, Node에서 `kind`·`status`·`errno`와 같은
+  인스턴스의 읽기 전용 own property, PHP에서 선언한 클래스의 private property 위의 메서드다. 언어 코드가 직접 만든
+  인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. property의 타입은 bool, int, int64, uint, float, text,
+  bytes이거나 그 optional이다. Node addon은 그 클래스를 category의 여섯 클래스 뒤에 보관하고, PHP 확장은 `kind`,
+  `status`, `errno`를 그 클래스가 상속한 category 클래스의 scope에서 읽고 쓴다. 실패하는 case의 생성 시험(B-4)은
+  unit의 클래스를 정확한 클래스로 적는다. 행은 case의 kind로 찾으며 kind는 변형의 마지막 마디의 snake_case다(CK-22).
+  다른 kind의 member, 다른 타입의 property, 이름이 `kind`·`status`·`errno`·`message`인 property, `library`가 있는
+  행(E-1b (a)), Go나 WASM의 오류 unit은 이름으로 거부한다(G-4).
 - **GN-8** 모든 진입점은 본문을 `catch_unwind`로 실행한다. panic은 프레임워크의 panic 오류가 아니라 internal category
   클래스의 kind `internal`로 호출자에게 도달한다(B-7).
 
@@ -284,7 +297,7 @@
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
   [--add-targets go,wasm]`는
-  (`tests/e2e/sample`은 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이고, `tests/e2e/consumer`는 sample의 값 alias를 쓰는 레포이며 `--dep tests/e2e/sample`과 함께 실행한다; contract가 타입을 가리키는 레포마다 `--dep <checkout>`; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
+  (`tests/e2e/sample`은 아직 어느 polyspec 레포도 혼자 생성하지 않는 항목의 레포이고, `tests/e2e/consumer`는 sample의 값 alias를 쓰고 오류 unit(GN-7a)을 가진 레포이며 `--dep tests/e2e/sample`과 함께 실행한다; contract가 타입을 가리키는 레포마다 `--dep <checkout>`; 그 패키지를 먼저 빌드해 설치한다) 레포의 커밋된 tree를 복사하고, 레포가 아직 하지 않은 변경(루트 workspace와 구성원, binding_core 의존과 `Kinds`,
   `binding scaffold`의 추적 package)을 하며 하나씩 출력하고, `binding check`를 실행하고, 코어를 생성기 없이 시험하고, GN-13을
   따르지 않는 case 파일(camelCase 키, field 값의 배열인 record)을 고쳐 쓰며 출력하고, 생성하고, workspace를 lint하고, 각
   패키지를 빌드해 설치한 뒤, 생성 시험과 `tests/e2e/<library>`에 있으면 contract case를 unittest, `node --test`, PHPUnit으로

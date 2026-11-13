@@ -541,7 +541,8 @@ test('a value alias of another repository is refused by name where it is not gen
       if (entry !== undefined) contract.packages.go = entry;
       for (const row of Object.values(contract.errors.classes) as any[]) row.wasm = row.node;
       // A callback is refused first for these targets; the functions alone name the alias.
-      contract.units = contract.units.filter((u: any) => u.id !== 'holder');
+      contract.units = contract.units.filter((u: any) => u.id !== 'holder' && u.id !== 'absent_error');
+      delete contract.errors.kinds[0].class;
       contract.units[0].members = contract.units[0].members.filter((m: any) => !['consumer.fetch', 'consumer.copy'].includes(m.id));
       contract.cases = contract.cases.filter((c: any) => !['consumer.fetch', 'consumer.copy'].includes(c.member));
     }), new RegExp(`sample\\.data: a value alias of another repository is not generated for ${name} yet`));
@@ -557,6 +558,86 @@ test('a value alias of another repository is refused by name where it is not gen
   assert.throws(generated(({ foreign }) => {
     foreign.get('sample').units.find((u: any) => u.id === 'data').out[0].make.python = 'tag.new';
   }), (error: Error) => error.constructor.name === 'Unsupported' && /data: a python make by a member \(tag\.new\) is not generated yet/.test(error.message));
+});
+
+test('an error unit is the class of the kinds that name it, with the properties of the core error (E-2, I-3, GN-7a)', () => {
+  const { contract, caseFiles, foreign } = consumerSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  // Python: a class of the category with read-only properties, which the extension writes from the core error.
+  const errors = text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py');
+  assert.match(errors, /\nclass AbsentError\(ConsumerValueError\):\n/);
+  assert.match(errors, /    @property\n    def key\(self\) -> str \| None:\n        return self\._key\n/);
+  assert.match(errors, /    def length\(self\) -> int \| None:\n/);
+  assert.match(errors, /__all__ = \[[^\]]*"AbsentError"\]/);
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.match(python, /polyspec_consumer::Error::Absent \{ \.\. \} => "AbsentError",/);
+  assert.match(python, /let value = polyspec_consumer::Error::key\(error\);\n    object\.setattr\("_key", out_text\(py, value\)\?\)\?;/);
+  assert.match(python, /polyspec_consumer::Error::Absent \{ \.\. \} => absent_error_properties\(py, &raised, &error\),/);
+  // Node: the class after the six of the categories, with properties that the addon defines read-only.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.match(node, /polyspec_consumer::Error::Absent \{ \.\. \} => 6,/);
+  assert.match(node, /let value0 = String::from\(polyspec_consumer::Error::key\(error\)\);/);
+  assert.match(node, /read_only\(object, "length", property\)\?;/);
+  assert.match(node, /B-4: 7 library classes/);
+  const cjs = text(out, 'packages/ts/generated/index.cjs');
+  assert.match(cjs, /\nclass AbsentError extends ConsumerValueError \{/);
+  assert.match(cjs, /addon\.__register\(\[[^\]]*ConsumerInternalError, AbsentError\]\);/);
+  assert.match(cjs, /module\.exports = \{[^}]*\bAbsentError\b/);
+  assert.match(text(out, 'packages/ts/generated/index.mjs'), /export const \{[^}]*\bAbsentError\b/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare class AbsentError extends ConsumerValueError \{\n  readonly key: string;\n  readonly length: number \| null;\n\}/);
+  // PHP: a final class that extends the class of the category; a property is a method that reads a private property.
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(php, /ClassBuilder::new\("Polyspec\\\\Consumer\\\\AbsentError"\)\n        \.extends\(\(registered_class_0, "\\\\Polyspec\\\\Consumer\\\\ConsumerValueError"\)\)\n        \.flags\(ClassFlags::Final\)/);
+  assert.match(php, /\.method\(FunctionBuilder::new\("key", absent_error_key_method\)\.returns\(DataType::String, false, true\), MethodFlags::Public\)/);
+  assert.match(php, /in_scope\(registered_class\(6\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(php, /let class = category_scope\(this\.get_class_entry\(\)\);/);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php'), /final class AbsentError extends \\Polyspec\\Consumer\\ConsumerValueError\n    \{\n        public function key\(\): string\|null \{\}\n\n        public function length\(\): int\|null \{\}/);
+  // B-4: the generated test of a raising case names the exact class.
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /self\.assertIs\(type\(error\), pkg\.AbsentError\)/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /error\.constructor === pkg\.AbsentError &&/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /self::assertSame\(\\Polyspec\\Consumer\\AbsentError::class, \$error::class\);/);
+});
+
+test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
+  const generated = (change: (contract: any) => void): Map<string, string | Buffer> => {
+    const { contract, caseFiles, foreign } = consumerSample();
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  };
+  const unit = (contract: any): any => contract.units.find((u: any) => u.id === 'absent_error');
+  // A parent that the contract lists after its child is registered first, and its properties are the child's too.
+  const out = generated((contract) => {
+    unit(contract).parent = 'missing_error';
+    const [key] = unit(contract).members.splice(0, 1);
+    contract.units.push({ id: 'missing_error', name: ['missing', 'error'], module: '', kind: 'error', visibility: 'public', origin: 'generated', category: 'value', members: [{ ...key, id: 'missing_error.key' }] });
+  });
+  const errors = text(out, 'packages/python/generated/python/polyspec/consumer/_errors.py');
+  assert.ok(errors.indexOf('class MissingError(ConsumerValueError):') < errors.indexOf('class AbsentError(MissingError):'));
+  assert.ok(errors.indexOf('class MissingError(') > 0);
+  const php = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.ok(php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\MissingError")') < php.indexOf('ClassBuilder::new("Polyspec\\\\Consumer\\\\AbsentError")'));
+  assert.match(php, /\.extends\(\(registered_class_6, "\\\\Polyspec\\\\Consumer\\\\MissingError"\)\)/);
+  assert.match(php, /in_scope\(registered_class\(6\), \|\| object\.set_property\("key", property\)\)[^]*in_scope\(registered_class\(7\), \|\| object\.set_property\("length", property\)\)/);
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /class MissingError extends ConsumerValueError \{[^]*class AbsentError extends MissingError \{/);
+  const refused = (change: (contract: any) => void, message: RegExp): void =>
+    assert.throws(() => generated(change), (error: Error) => error.constructor.name === 'Unsupported' && message.test(error.message), String(message));
+  refused((contract) => { unit(contract).members[0].kind = 'method'; }, /absent_error\.key: a method of an error unit is not generated yet/);
+  refused((contract) => { unit(contract).members[0].returns = { list: 'text' }; }, /absent_error\.key: a property of an error unit of type \{"list":"text"\} is not generated yet/);
+  refused((contract) => { unit(contract).members[0].core = 'polyspec_consumer::Error::key'; }, /absent_error\.key: a property of an error unit names a function of the core error with the receiver &self/);
+  refused((contract) => { unit(contract).members[1].name = ['kind']; }, /absent_error: the property kind is declared twice/);
+  refused((contract) => { unit(contract).category = 'io'; }, /polyspec_consumer::Error::Absent: the class absent_error is not an error unit of category value \(E-2\)/);
+  // E-1b (a): a row that forwards the kind of another library.
+  refused((contract) => { contract.errors.kinds.push({ variant: 'polyspec_consumer::Error::Sample', library: 'sample' }); }, /polyspec_consumer::Error::Sample: a kind of another library \(E-1b \(a\)\) is not generated yet/);
+  for (const [target, entry, name] of [['go', { module: 'github.com/polyspec/consumer/packages/go' }, 'Go'], ['wasm', undefined, 'WASM']] as const) {
+    refused((contract) => {
+      contract.targets.push(target);
+      if (entry !== undefined) contract.packages.go = entry;
+      for (const row of Object.values(contract.errors.classes) as any[]) row.wasm = row.node;
+      contract.units = contract.units.filter((u: any) => u.id !== 'holder');
+      contract.units[0].members = contract.units[0].members.filter((m: any) => !['consumer.fetch', 'consumer.copy'].includes(m.id));
+      contract.cases = contract.cases.filter((c: any) => !['consumer.fetch', 'consumer.copy'].includes(c.member));
+    }, new RegExp(`absent_error: an error unit is not generated for ${name} yet`));
+  }
 });
 
 test('a class that no parameter takes has no conversion in, which would copy its value (T-5)', () => {

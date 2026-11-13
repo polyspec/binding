@@ -14,13 +14,13 @@ the design ids are those of the binding design.
   functions units, class units (constructor, static members, methods and properties with the receiver `&self`, and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
-  repository, GN-6h), enums, constants and error classes.
+  repository, GN-6h), enums, constants, error classes and error units (GN-7a).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, an error unit, a wait other than `none`, a default, `cleanup`, a receiver
-  `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a dependency kind, the
+  recognizing callback, a function type, a value unit, a wait other than `none`, a default, `cleanup`, a receiver
+  `&mut self` or `self`, a parameter of a class, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source`) is refused by name
   before anything is written (G-4, P-4). Go and WASM refuse a class unit, a callback unit and a record of another
-  repository and a value alias of another repository (T-3, T-5, U-3, GN-6h); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  repository, a value alias of another repository and an error unit (T-3, T-5, U-3, GN-6h, GN-7a); Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
@@ -174,6 +174,21 @@ the design ids are those of the binding design.
   library class of its kind's category (I-2 (3)), with the kind, status and errno of `binding_core::Kinds`. The pattern
   `Variant { .. }` matches a variant with or without data, because binding reads no Rust source; the lint against it is
   allowed with the reason I-2.
+- **GN-7a** An error unit (E-2) is a class of Python, Node and PHP that extends the class of its `parent`, or the
+  library class of its category when it has none; a parent is declared and registered before the units that extend it
+  (P-4). A kind whose row of `errors.kinds` names the unit in `class` is an instance of that class, with the kind, status
+  and errno of GN-7; a row with `source` (E-1b (b)) is a variant of the core error of this repository and is generated as
+  any other row. A member of the unit is a read-only property (I-3): its `core.path` names a function of the core error
+  with the receiver `&self`, which the generated code calls with the error that the core returned, by a second match
+  without a wildcard. The property is a `@property` over a private attribute in Python, a read-only own property of the
+  instance in Node, as `kind`, `status` and `errno` are, and a method over a private property of the declaring class in
+  PHP. An instance that language code makes itself has no value: Python and PHP give `None` and `null`. The type of a
+  property is bool, int, int64, uint, float, text or bytes, or an optional of one. The Node addon keeps the class
+  after the six classes of the categories, and the PHP extension reads and writes `kind`, `status` and `errno` in the
+  scope of the category class that the class extends. The generated test of a raising case (B-4) names the class of
+  the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
+  of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
+  `errno` or `message`, a row with `library` (E-1b (a)), and an error unit for Go or WASM are refused by name (G-4).
 - **GN-8** Every entry point runs its body under `catch_unwind`; a panic reaches the caller as kind `internal` of the
   internal category class (B-7), not as the framework's own panic error.
 
@@ -350,7 +365,7 @@ the design ids are those of the binding design.
 
 - **GN-14** `node scripts/e2e.mts --repo <checkout> --work <directory> --phpunit <phpunit> [--python <python3.14>]
   [--add-targets go,wasm]` (`tests/e2e/sample` is a repository of the items that no polyspec repository generates alone yet, and
-  `tests/e2e/consumer` one that names the value alias of the sample, run with `--dep tests/e2e/sample`;
+  `tests/e2e/consumer` one that names the value alias of the sample and has an error unit (GN-7a), run with `--dep tests/e2e/sample`;
   `--dep <checkout>` for each repository whose types the contract names; its packages are built and installed first)
   copies the committed tree of a repository, makes the changes that the repository has not made yet and prints each
   (the root workspace and its members, the dependency on binding_core and `Kinds`, the tracked packages of `binding

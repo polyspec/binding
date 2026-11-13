@@ -106,7 +106,39 @@ export interface CoreKind {
   variant: string;
   category: Category;
   className: string;
+  // E-2: the error unit that the row names in `class`, whose class the kind has in place of the class of its category.
+  unit?: ErrorUnit;
 }
+
+// I-3: a property of an error unit, which the generated code reads from the core error by the core path of the member.
+export interface ErrorProperty {
+  member: Member;
+  corePath: string;
+  returns: Type;
+}
+
+// E-2: an error unit. Its class extends the class of its parent, or of its category when it has none.
+export interface ErrorUnit {
+  unit: Unit;
+  category: Category;
+  parent?: ErrorUnit;
+  // The properties that the unit declares itself; errorProperties adds those of its parents.
+  properties: ErrorProperty[];
+}
+
+// The properties of an error unit with those of its parents, each with the unit that declares it, parents first.
+export const errorProperties = (unit: ErrorUnit): { owner: ErrorUnit; property: ErrorProperty }[] => [
+  ...(unit.parent === undefined ? [] : errorProperties(unit.parent)),
+  ...unit.properties.map((property) => ({ owner: unit, property })),
+];
+
+// B-4: the kind text of a variant of the core error, the snake_case of its last segment (CK-22).
+export const kindText = (variant: string): string =>
+  variant.slice(variant.lastIndexOf('::') + 2).replace(/(?<=[a-z0-9])(?=[A-Z])/g, '_').toLowerCase();
+
+// E-2: the error unit of the kind of a contract case, when the row of the kind names one in `class`.
+export const errorUnitOfKind = (model: Model, kind: string): ErrorUnit | undefined =>
+  model.kinds.find((k) => k.unit !== undefined && kindText(k.variant) === kind)?.unit;
 
 export interface Model {
   contract: Contract;
@@ -128,6 +160,8 @@ export interface Model {
   callbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
+  // E-2: the error units, a parent before the units that extend it (P-4).
+  errorUnits: ErrorUnit[];
   coreError: string | undefined;
   kinds: CoreKind[];
   // The contract cases of each member, from the case files that `cases` names (K-1).
@@ -187,6 +221,7 @@ export function buildModel(
   const objects: ObjectClass[] = [];
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
+  const errorUnits: ErrorUnit[] = [];
   const toFn = (unit: Unit, member: Member, kind: Fn['kind']): Fn => {
     if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
     if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
@@ -314,6 +349,28 @@ export function buildModel(
       callbacks.push({ unit, members, owner: unit.thread === 'owner' });
       continue;
     }
+    if (unit.kind === 'error' && unit.origin === 'generated') {
+      // E-2, I-3: an error unit is a class of its category with read-only properties, which the core error gives.
+      if (unit.category === undefined) throw new Unsupported(`${unit.id}: an error unit without a category (U-1)`);
+      if (unit.abstract === true || unit.implements !== undefined || unit.cleanup !== undefined) throw new Unsupported(`${unit.id}: abstract, implements and cleanup of an error unit are not generated yet`);
+      const properties = (unit.members ?? []).map((member): ErrorProperty => {
+        if (member.kind !== 'property') throw new Unsupported(`${member.id}: a ${member.kind} of an error unit is not generated yet`);
+        if (member.native !== undefined) throw new Unsupported(`${member.id}: native is not generated yet`);
+        if (member.wait !== undefined && member.wait !== 'none') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+        if (member.writable === true) throw new Unsupported(`${member.id}: a writable property is not generated yet`);
+        if (typeof member.core !== 'object' || member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a property of an error unit names a function of the core error with the receiver &self`);
+        if ((member.parameters ?? []).length > 0) throw new Unsupported(`${member.id}: a property takes no parameter`);
+        if ((member.raises ?? []).length > 0) throw new Unsupported(`${member.id}: a property of an error unit that raises is not generated yet`);
+        const returns = member.returns ?? 'none';
+        const base = typeof returns === 'object' && 'optional' in returns ? returns.optional : returns;
+        if (typeof base !== 'string' || !['bool', 'int', 'int64', 'uint', 'float', 'text', 'bytes'].includes(base)) {
+          throw new Unsupported(`${member.id}: a property of an error unit of type ${JSON.stringify(returns)} is not generated yet`);
+        }
+        return { member, corePath: member.core.path, returns };
+      });
+      errorUnits.push({ unit, category: unit.category, properties });
+      continue;
+    }
     if (unit.kind !== 'functions' || unit.origin !== 'generated') {
       throw new Unsupported(`${unit.id}: a ${unit.origin} ${unit.kind} unit is not generated yet`);
     }
@@ -339,11 +396,34 @@ export function buildModel(
     return { category, name: simple(name), names };
   });
   const className = (category: Category): string => classes.find((c) => c.category === category)?.name ?? '';
+  // P-4: a parent comes before the units that extend it. The contract check refuses a cycle (CK-6).
+  for (const unit of errorUnits) {
+    if (unit.unit.parent === undefined) continue;
+    const parent = errorUnits.find((u) => u.unit.id === unit.unit.parent);
+    if (parent === undefined || parent.category !== unit.category) throw new Unsupported(`${unit.unit.id}: the parent ${unit.unit.parent} is not an error unit of category ${unit.category} (E-2)`);
+    unit.parent = parent;
+  }
+  const depth = (unit: ErrorUnit, seen = 0): number => {
+    if (seen > errorUnits.length) throw new Unsupported(`${unit.unit.id}: the parents form a cycle (P-4)`);
+    return unit.parent === undefined ? 0 : 1 + depth(unit.parent, seen + 1);
+  };
+  const depths = new Map(errorUnits.map((u) => [u, depth(u)]));
+  errorUnits.sort((a, b) => (depths.get(a) ?? 0) - (depths.get(b) ?? 0));
+  for (const unit of errorUnits) {
+    const names = errorProperties(unit).map((p) => p.property.member.name.join('_'));
+    const twice = names.find((n, i) => names.indexOf(n) !== i) ?? ['kind', 'status', 'errno', 'message'].find((n) => names.includes(n));
+    if (twice !== undefined) throw new Unsupported(`${unit.unit.id}: the property ${twice} is declared twice (E-3 names kind, status and errno)`);
+  }
   const kinds: CoreKind[] = contract.errors.kinds.map((row) => {
-    if (row.library !== undefined || row.class !== undefined || row.category === undefined) {
-      throw new Unsupported(`${row.variant}: a dependency kind or a class override is not generated yet`);
+    // E-1b (a): a row of another library, whose variant holds the error of that library, is not generated yet. A row
+    // with `source` is a variant of this crate (E-1b (b)) and is generated as any other.
+    if (row.library !== undefined || row.category === undefined) {
+      throw new Unsupported(`${row.variant}: a kind of another library (E-1b (a)) is not generated yet`);
     }
-    return { variant: row.variant, category: row.category, className: className(row.category) };
+    if (row.class === undefined) return { variant: row.variant, category: row.category, className: className(row.category) };
+    const unit = errorUnits.find((u) => u.unit.id === row.class);
+    if (unit === undefined || unit.category !== row.category) throw new Unsupported(`${row.variant}: the class ${row.class} is not an error unit of category ${row.category} (E-2)`);
+    return { variant: row.variant, category: row.category, className: className(row.category), unit };
   });
   if (contract.errors.binding.length > 0) throw new Unsupported('errors.binding overrides are not generated yet');
   const enumPaths = new Set(kinds.map((k) => k.variant.slice(0, k.variant.lastIndexOf('::'))));
@@ -409,7 +489,7 @@ export function buildModel(
   for (const callback of callbacks) for (const member of callback.members) for (const type of [...member.params.map((p) => p.type), member.returns]) eachType(type, foreignAlias);
   return {
     contract, version, coreCrate: contract.core.crate, coreLib, functions, constants, enums, records, resultRecords, foreignRecords, foreign,
-    objects, callbacks, aliases, classes, coreError, kinds, cases,
+    objects, callbacks, aliases, classes, errorUnits, coreError, kinds, cases,
   };
 }
 

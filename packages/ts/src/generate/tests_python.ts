@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { hookCall, langName, unitOf } from './model.ts';
+import { errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { type CallbackHow, type Context, type Receiver, callArgs, callbackArg, callables, fromJson, judgesCallbackResult, isNumber, placeholder, fixtureValues, fixturesOf, raisingCases, refusedKeyMap, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
@@ -53,6 +53,11 @@ export function pythonTests(model: Model, module: string): string {
       `pkg.${langName('python', unit.name, 'class')}(${(unit.fields ?? []).map((f, i) => `${langName('python', f.name, 'variable')}=${fields[i] ?? ''}`).join(', ')})`,
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
+  const raised = (raises: { kind: string; category: string }): string => {
+    const unit = errorUnitOfKind(model, raises.kind);
+    return unit === undefined ? cls(raises.category) : langName('python', unit.unit.name, 'class');
+  };
   const out: string[] = [];
   let usesFixture = false;
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
@@ -125,10 +130,10 @@ export function pythonTests(model: Model, module: string): string {
       };
       out.push(`
     def test_b4_${name}_${kase.id}(self) -> None:${before}
-        with self.assertRaises(pkg.${cls(kase.raises.category)}) as caught:
+        with self.assertRaises(pkg.${raised(kase.raises)}) as caught:
             ${invoke(fn, callArgs(model, ctx, fn, caseArg), receiver)}
         error = caught.exception
-        self.assertIs(type(error), pkg.${cls(kase.raises.category)})
+        self.assertIs(type(error), pkg.${raised(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
         self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})
