@@ -1390,6 +1390,19 @@ test('a class value that the core gives by reference leaves as a new instance of
   }
 });
 
+test('the core gets the value that the guard of a place holds, also where its path is a generic function (GN-6h)', () => {
+  const { contract, caseFiles } = tokenClasses();
+  const token = contract.units.find((u: any) => u.id === 'token');
+  // A path of a trait, such as ToString::to_string, takes `&T` of any T, so a borrow of the guard is no `&Token` there.
+  token.members.push({ id: 'token.to_string', name: ['to', 'string'], kind: 'stringify', visibility: 'public', parameters: [], returns: 'text', raises: [], wait: 'none', core: { path: 'std::string::ToString::to_string', receiver: '&self' } });
+  const out = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'wasm'] });
+  for (const file of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const lib = text(out, file);
+    assert.match(lib, /let receiver = &\*receiver;\n[^\n]*std::string::ToString::to_string\(receiver\)/, file);
+    assert.match(lib, /let receiver = &\*receiver;\n[^\n]*polyspec_classes::Token::kind\(receiver\)/, file);
+  }
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
