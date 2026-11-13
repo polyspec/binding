@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- The generated PHP extension registered under the name of its crate, `polyspec-<library>-php-ext`, because
+  `#[php_module]` of ext-php-rs 0.16.4 names a module after the crate, while its `composer.json` names
+  `php-ext.extension-name` `polyspec_<library>`; `extension_loaded('polyspec_<library>')` was false for a loaded
+  extension. The module now names itself `polyspec_<library>` with `ModuleBuilder::name` (GN-3g). The end-to-end check
+  did not find this, because PHP registers the classes and functions of an extension whatever its module is named and
+  no step asked PHP for the extension by name. Each PHP process of the end-to-end check that runs tests now first
+  asks `extension_loaded` for the `extension-name` of each `composer.json` of the run and fails with the name before
+  a test runs. A repository runs `binding generate` again. Verified by `make test-ts`: the new test failed before the
+  change (1 of 399), and 399 of 399 pass with it.
 - `binding scaffold` wrote the licence `MIT` as a fixed value into `package.json` and `composer.json`, whatever the
   licence of the core was, and wrote no licence into the Cargo manifests of the binding crates and into
   `pyproject.toml`. Every manifest with a licence field now carries the licence of the core crate (GN-3f):

@@ -1285,6 +1285,8 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
         return 1;
     }`;
   }).join('');
+  // GN-3g: the module header names the module layout.extension, the extension-name of composer.json, before these
+  // lines; #[php_module] of ext-php-rs names it after the crate.
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
@@ -1616,6 +1618,7 @@ ${poisonRust(model, layout)}${caseTests.entries}
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
+            .name(${rustString(layout.extension)})
     ${register.join('\n')};${!usesNative(model) ? '' : `
         // GN-6u: the Natives of a request are released at its end, while the engine is alive.
         let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `

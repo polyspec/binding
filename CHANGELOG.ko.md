@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 12515de75345a589f5e205a7f9f51451640e1ede88483de825a28d71a35c6b98 -->
+<!-- source-sha256: f85aeb9cd54bddb66fdfd9e06395d9b675eccc53af9b0912317233bee713e62c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 PHP 확장은 그 crate의 이름 `polyspec-<library>-php-ext`로 등록되었다. ext-php-rs 0.16.4의 `#[php_module]`이 module을
+  crate 이름으로 이름하기 때문이다. 한편 그 `composer.json`은 `php-ext.extension-name`으로 `polyspec_<library>`를 적는다.
+  그래서 로드된 확장에 대해 `extension_loaded('polyspec_<library>')`가 거짓이었다. 이제 module은 `ModuleBuilder::name`으로
+  자기를 `polyspec_<library>`로 이름한다(GN-3g). end-to-end 확인은 이것을 찾지 못했다. PHP는 module의 이름이 무엇이든 확장의
+  class와 function을 등록하고, 어느 단계도 PHP에 확장을 이름으로 묻지 않았기 때문이다. 이제 end-to-end 확인에서 시험을
+  실행하는 PHP 프로세스는 먼저 실행의 각 `composer.json`의 `extension-name`에 대해 `extension_loaded`를 묻고, 시험이 실행되기
+  전에 그 이름과 함께 실패한다. 레포는 `binding generate`를 다시 실행한다. `make test-ts`로 확인했다. 새 시험은 변경 전에
+  실패했고(399개 중 1개), 변경 뒤 399개 중 399개가 통과한다.
 - `binding scaffold`는 코어의 licence가 무엇이든 `package.json`과 `composer.json`에 licence `MIT`를 고정 값으로 썼고, 바인딩
   crate의 Cargo manifest와 `pyproject.toml`에는 licence를 쓰지 않았다. 이제 licence 항목이 있는 모든 manifest는 코어 crate의
   licence를 담는다(GN-3f). 그것은 코어의 `package.license`이며, 코어가 `license.workspace = true`를 적으면

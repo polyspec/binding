@@ -673,6 +673,13 @@ if (targets.includes('php')) {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${p.contract.core.crate}-php-ext`, '--features', testFeatures(p, 'php')]);
       extensions.push('-d', `extension=${join(target, `debug/lib${extensionOf(p.contract)}.${dylib}`)}`);
     }
+    // GN-3g: PHP registers the classes of an extension whatever its module is named, so the tests pass under any name.
+    // Each PHP process that runs tests therefore first asks PHP for each extension by the extension-name of its
+    // composer.json, as PIE and a release do, and fails with the name before a test runs.
+    const names = copiesOf('php').map((p) => (JSON.parse(readFileSync(at(p, 'packages/php-ext/composer.json'), 'utf8')) as { 'php-ext': { 'extension-name': string } })['php-ext']['extension-name']);
+    const loaded = join(work, 'extensions-loaded.php');
+    writeFileSync(loaded, `<?php\nforeach (${JSON.stringify(names)} as $name) {\n    if (!extension_loaded($name)) {\n        fwrite(STDERR, "e2e: PHP loads no extension named $name, the extension-name of its composer.json (GN-3g); loaded: " . implode(', ', get_loaded_extensions()) . "\\n");\n        exit(1);\n    }\n}\n`);
+    extensions.push('-d', `auto_prepend_file=${loaded}`);
   });
   // GN-8a: the test entry points are of the test features alone. The extension built with them holds errno_of, which
   // shows that llvm-nm reads the names of the entry points, and the extension built without features holds none.
