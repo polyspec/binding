@@ -7,6 +7,9 @@
 // binding generate [--root <repository> | --contract <interface.json>] [--out <directory>]
 //   Writes the generated sources into the directories that binding owns (L-1). --out writes the same files under another
 //   directory, for the comparison of I-5.
+// binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+//     --work <directory> [--remote <name>]
+//   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
 
 import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,7 +22,8 @@ import { ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
 import { caseTestTargets, generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
-import { bindingCoreFinding, casePointLibraries, componentBase, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
+import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, hostRequirements, releaseFindings, type Tracked, trackedResult } from './generate/packages.ts';
+import { Refused, releaseGoModule } from './release/go-module.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -112,7 +116,7 @@ function fail(message: string): never {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> [--release] | binding scaffold|generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>]\n`);
   process.exit(2);
 }
 
@@ -124,12 +128,67 @@ function sentences(error: unknown): string[] {
   throw error;
 }
 
+// GN-19f: the commit and the tag of the Go module of a release. The command reads from the contract only where the Go
+// module is and how its library is named; the checks of the contract are those of `binding check --release`, which the
+// recipe of a release runs before it (GN-19g).
+function releaseGoModuleCommand(argv: string[]): never {
+  const given = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i];
+    const value = argv[i + 1];
+    if (key === undefined || value === undefined || !['--root', '--contract', '--tag', '--libraries', '--work', '--remote'].includes(key)) usage(`unknown argument ${key ?? ''}`);
+    given.set(key, value);
+  }
+  const tag = given.get('--tag');
+  const libraries = given.get('--libraries');
+  const work = given.get('--work');
+  if (tag === undefined || libraries === undefined || work === undefined) usage('release-go-module takes --tag, --libraries and --work');
+  const contractOption = given.get('--contract');
+  if (contractOption !== undefined && given.has('--root')) usage('give --root or --contract, not both');
+  const path = contractOption !== undefined ? resolve(contractOption) : join(resolve(given.get('--root') ?? '.'), 'packages/rust/interface.json');
+  const contract = JSON.parse(readFileSync(path, 'utf8')) as Contract;
+  const module = (contract.packages?.['go'] as { module?: unknown } | undefined)?.module;
+  if (typeof module !== 'string') fail(`${path} names no Go module (packages.go), so the repository has no Go module to release`);
+  let released;
+  try {
+    released = releaseGoModule({
+      root: resolve(dirname(path), ...contract.core.path.split('/').map(() => '..')),
+      directory: goModuleDir(contract),
+      module,
+      tag,
+      library: `${contract.core.crate}-go`.replaceAll('-', '_'),
+      prefix: extensionName(contract),
+      libraries: resolve(libraries),
+      work: resolve(work),
+      remote: given.get('--remote') ?? 'origin',
+      env: process.env,
+      log: (line) => {
+        if (line !== '') process.stderr.write(`${line}\n`);
+      },
+    });
+  } catch (error) {
+    if (error instanceof Refused) {
+      for (const finding of error.findings) process.stderr.write(`binding: ${finding}\n`);
+      process.stderr.write('binding: no commit and no tag of the Go module was made (GN-19f)\n');
+      process.exit(1);
+    }
+    for (const sentence of sentences(error)) process.stderr.write(`binding: ${sentence}\n`);
+    process.exit(1);
+  }
+  const reference = `refs/tags/${goModuleDir(contract)}/${tag}`;
+  process.stderr.write(`binding: ${reference} names the commit ${released.commit}${released.reference === undefined ? ', and the remote holds it already' : '; the recipe pushes it'}\n`);
+  // The standard output is the reference that the recipe pushes, and nothing else.
+  if (released.reference !== undefined) process.stdout.write(`${released.reference}\n`);
+  process.exit(0);
+}
+
 const [command, ...rest] = process.argv.slice(2);
+if (command === 'release-go-module') releaseGoModuleCommand(rest);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
 if (command === 'check') {
-  // CK-70: --release, which the tool that builds a release passes, adds the check of a release.
+  // CK-70: --release, which the recipe of a release passes (GN-19g), adds the check of a release.
   const [path, ...extra] = rest.filter((argument) => argument !== '--release');
   if (path === undefined || path.startsWith('--') || extra.length > 0) usage('check takes the path of one interface.json and the option --release');
   if (rest.includes('--release')) options.set('--release', 'true');

@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c049b9b341b4bbf7f269c3e680299618f650d9a7d8998a9bcb04a2d49d0d5c7d -->
+<!-- source-sha256: 85bc1f73d9331ce407f86d269067d7793529557bf0e84193c96ceba6c2d0d8b5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]`이 정적 라이브러리를 가진 Go 모듈의 commit과 tag를 만든다(GN-19f, GN-15g). 실패한
+  검사를 모두 적고 아무것도 만들지 않는다: `HEAD`가 tag의 commit이 아니다, `go.mod`에 `replace`나 `v0.0.0` require가 있다,
+  `binding generate --target go`가 쓰는 플랫폼의 파일이 work tree에 없다, 라이브러리가 없거나 비었거나 그 플랫폼 object의
+  `ar` archive가 아니거나 시험 진입점이나 debug section을 담는다. 명령은 checkout을 바꾸지 않고 실행의 index로 commit을
+  만들고, 실행의 bare 저장소에서 `GOPROXY=direct`로 tag를 받는 소비자 모듈로 그것을 증명하고, annotated tag
+  `<directory>/vX.Y.Z`를 만들고, recipe가 push할 reference를 출력한다. 명령은 아무것도 push하지 않으며, 같은 commit을
+  가리키는 이전 실행의 tag는 그대로 두고 다른 commit을 가리키는 tag에는 실패한다. 끝에서 끝까지 확인은 tag, 소비자, debug
+  section, 시험 진입점을 같은 모듈(`packages/ts/src/release/go-module.ts`)에서 읽으며, 이 모듈이 `scripts/go-release.mts`를
+  대신한다. Git, Go, rustc, llvm 도구의 대역 프로그램으로 `make test-ts`에서 확인했다. 명령은 실제 도구로 실행하지 않았고,
+  끝에서 끝까지 확인은 import를 바꾼 뒤 실행하지 않았다(B2.142).
 - 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). 표준 도구가 하는 단계는 레포 recipe의 줄이며, asset
   종류마다의 명령(Go 모듈의 정적 라이브러리, wheel, PHP 확장, npm 플랫폼 패키지), 플랫폼마다의 runner, CI에서의 asset
   증명을 적는다. 어느 도구도 하지 않는 Go 모듈의 commit과 tag는 명령 `binding release-go-module`이며 그 검사, 소비자

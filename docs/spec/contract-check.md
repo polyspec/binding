@@ -22,7 +22,7 @@ contract that passes the schema and the package names (CK-1, CK-18). A check tha
 that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
 another binding behind a finding of the contract.
 
-`binding check <interface.json> --release` also runs the check of a release, CK-70. The tool that builds a release
+`binding check <interface.json> --release` also runs the check of a release, CK-70. The recipe of a release (generator GN-19g)
 passes the option; a check without it does not run CK-70, because a development checkout holds the development forms
 that a release may not hold.
 

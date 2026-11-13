@@ -5,6 +5,19 @@
 
 ## Unreleased
 
+- `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
+  --work <directory> [--remote <name>]` makes the commit and the tag of a Go module with its static libraries (GN-19f,
+  GN-15g). It names every failed check and then makes nothing: `HEAD` is not the commit of the tag, the `go.mod` holds
+  a `replace` or a requirement at `v0.0.0`, a file of a platform that `binding generate --target go` writes is not in
+  the work tree, a library is missing, empty, no `ar` archive of objects of its platform, or holds a test entry point
+  or a debug section. It makes the commit through an index of the run without a change of the checkout, proves it by
+  a consumer module that fetches the tag from a bare repository of the run with `GOPROXY=direct`, creates the
+  annotated tag `<directory>/vX.Y.Z` and prints the reference that the recipe pushes; it pushes nothing, leaves a tag
+  of an earlier run that names the same commit and fails for one that names another. The end-to-end check reads the
+  tag, the consumer, the debug sections and the test entry points from the same module
+  (`packages/ts/src/release/go-module.ts`), which replaces `scripts/go-release.mts`. Verified by `make test-ts` with
+  stand-in programs for Git, Go, rustc and the llvm tools; the command has not run with the real tools, and the
+  end-to-end check has not run since the change of its imports (B2.142).
 - The generator specification states the release of a repository that holds a binding (GN-19 to GN-19g): the steps
   that a standard tool performs are lines of the repository's recipes, with the command of each kind of asset (the
   static library of the Go module, the wheel, the PHP extension, the npm platform packages), the runner of each
