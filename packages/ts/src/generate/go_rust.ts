@@ -12,7 +12,7 @@ import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew,
   heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant,
-  takesObject, unitOf, cleanupAsserts, DRIVEN, drivenCall, waitsAsync,
+  takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
   errorMatched,
   recognizedFn,
@@ -616,7 +616,7 @@ pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) {
 #[no_mangle]
 pub extern "C" fn ${releaseSymbol(model, object.unit)}(handle: u64) -> i32 {
     let released = lock(&${tableName(object.unit)}).values.remove(&handle);
-    i32::from(released.is_some_and(|held| !held.taken()))
+    i32::from(released.is_some_and(|held| !held.${cleanupMade(object)}()))
 }`}
 `;
 }

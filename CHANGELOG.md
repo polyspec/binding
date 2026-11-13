@@ -5,6 +5,24 @@
 
 ## Unreleased
 
+- Three defects that the end-to-end check of `tests/e2e/classes` named once that contract had a callback unit. The Go
+  package of a contract with a callback unit and no value alias read a list of func handles before every buffer, which
+  the C ABI writes only for a contract with a value alias, so every call failed with "the encoded result does not
+  follow the encoding of the binding"; the Go package now reads that list only where the C ABI writes it (GN-6u). The
+  helper `thrown_thread` of the PHP and Node crates failed the lint `clippy::manual_unwrap_or_default` and now carries
+  an `allow` with its reason (R-1), and the helper `caught` of the WASM crate failed `clippy::manual_async_fn` and is
+  an `async fn` (GN-6n). Verified by `make test-ts`; the test of the Go reader failed before the change.
+- A class unit whose `cleanup` names a method with the core receiver `&mut self` was refused by every target as "no
+  method with the receiver self". The generator now takes both forms (GN-6p): a cleanup with `self` consumes its
+  object as before, and a cleanup with `&mut self` leaves the object, whose core decides what a later member gives.
+  The call of such a cleanup marks the lock of the object when it holds the write guard (`clean` of
+  `binding_core::Exclusive` and `Shared`, with `cleaned`), and the destructor of each of the five targets warns only
+  for an object that is neither consumed nor marked. No destructor calls the cleanup member, so a cleanup that waits
+  is never called where nothing can wait; the `Drop` of the core type releases the resource. The contract check
+  requires a case that calls such a cleanup a second time without a failure (CK-72). The class `stall` of
+  `tests/e2e/classes` has such a cleanup, a case of its second call and a case of a member that fails with kind
+  `shut` after it. Verified by `make test-ts`: the two tests of the finding of CK-72 failed before the check was
+  written, and 414 of 414 pass.
 - Go and WASM refused a method with the receiver `self` and a class unit with `cleanup` by name. Both now generate
   them as PHP, Python and Node do: the place of the receiver takes the value out of the lock that the table of the
   class keeps under the handle, a later place of that object is kind `consumed`, and the binding crate asserts

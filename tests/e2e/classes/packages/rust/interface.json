@@ -113,6 +113,10 @@
       {
         "variant": "polyspec_classes::Error::Closed",
         "category": "value"
+      },
+      {
+        "variant": "polyspec_classes::Error::Shut",
+        "category": "value"
       }
     ],
     "binding": [],
@@ -564,6 +568,24 @@
             "path": "polyspec_classes::Tag::gates",
             "receiver": "&self"
           }
+        },
+        {
+          "id": "tag.stall",
+          "name": [
+            "stall"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "stall"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::stall",
+            "receiver": "&self"
+          }
         }
       ]
     },
@@ -854,6 +876,56 @@
           }
         }
       ]
+    },
+    {
+      "id": "stall",
+      "name": [
+        "stall"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Stall",
+      "final": true,
+      "constructible": false,
+      "cleanup": "stall.shut",
+      "members": [
+        {
+          "id": "stall.keeper",
+          "name": [
+            "keeper"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_classes::Error::Shut"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Stall::keeper",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "stall.shut",
+          "name": [
+            "shut"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "none",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Stall::shut",
+            "receiver": "&mut self"
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -988,6 +1060,21 @@
       "member": "usher.seat",
       "file": "contracts/cases.json",
       "group": "usher_seat"
+    },
+    {
+      "member": "tag.stall",
+      "file": "contracts/cases.json",
+      "group": "tag_stall"
+    },
+    {
+      "member": "stall.keeper",
+      "file": "contracts/cases.json",
+      "group": "stall_keeper"
+    },
+    {
+      "member": "stall.shut",
+      "file": "contracts/cases.json",
+      "group": "stall_shut"
     }
   ]
 }

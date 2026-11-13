@@ -725,9 +725,9 @@ export function collectModel(
       if (constructible !== members.some((m) => m.kind === 'constructor')) {
         throw new Unsupported(`${unit.id}: a constructible class has one constructor and another none (U-1 constructible)`);
       }
-      // GN-6p: the cleanup call of a class is its method that consumes the value.
+      // GN-6p: the cleanup call of a class is its method that consumes the value, or one that writes it and leaves it.
       const cleanup = unit.cleanup === undefined ? undefined : members.find((m) => m.member.id === unit.cleanup);
-      if (unit.cleanup !== undefined && (cleanup?.kind !== 'method' || cleanup.receiver !== 'self')) throw new Unsupported(`${unit.id}: the cleanup ${unit.cleanup} is no method with the receiver self (GN-6p)`);
+      if (unit.cleanup !== undefined && (cleanup?.kind !== 'method' || (cleanup.receiver !== 'self' && cleanup.receiver !== '&mut self'))) throw new Unsupported(`${unit.id}: the cleanup ${unit.cleanup} is no method with the receiver self or &mut self (GN-6p)`);
       objects.push({ unit, members, constructible, ...(cleanup === undefined ? {} : { cleanup }) });
       return;
     }
@@ -1222,6 +1222,8 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     }
     if (place.write) {
       lines.push(`        let mut ${name} = ${cell}.write(${text}).map_err(${fail})?;`);
+      // GN-6p: a cleanup with the receiver &mut self marks its object once it holds the write guard, whatever the core gives.
+      if (place.param === undefined && place.object.cleanup?.member.id === fn.member.id) lines.push(`        ${cell}.clean();`);
       continue;
     }
     const beside = reads.get(place.object.unit) ?? [];
@@ -1447,6 +1449,10 @@ impl<T: ?Sized + binding_core::Cleanup> NotCleanup<u8> for T {}
 ` : ''}${lines.join('\n')}
 `;
 }
+
+// GN-6p: the question of the lock that tells the destructor of a class with cleanup that the cleanup call was made: the
+// value was taken (receiver self), or the object was marked (receiver &mut self).
+export const cleanupMade = (object: ObjectClass): string => (object.cleanup?.receiver === 'self' ? 'taken' : 'cleaned');
 
 // GN-6p: the message of the warning of an object destroyed without its cleanup call (B-10).
 export const cleanupWarning = (className: string, cleanupName: string): string =>

@@ -201,6 +201,7 @@ class Checker {
     this.waitingMembers();
     this.constructibleClasses();
     this.variantCores();
+    this.cleanupCases();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
@@ -1194,6 +1195,33 @@ class Checker {
     for (const { value: unit, path } of this.units.values()) {
       if (unit.kind === 'variant' && unit.origin === 'generated' && unit.core_type === undefined) {
         this.report('CK-71', path, `${unit.id}: a variant names its core enum in core_type (T-9)`);
+      }
+    }
+  }
+
+  // ---- CK-72: a cleanup that leaves its object (GN-6p) ----
+
+  cleanupCases(): void {
+    const files = this.caseFiles;
+    // The rule reads the cases, so a check without the case files does not judge it.
+    if (files === undefined) return;
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'class' || unit.cleanup === undefined) continue;
+      const cleanup = this.members.get(unit.cleanup)?.member;
+      if (cleanup === undefined || typeof cleanup.core !== 'object' || cleanup.core.receiver !== '&mut self') continue;
+      const again = this.contract.cases.filter((row) => row.member === cleanup.id).some((row) => {
+        const document = files.get(row.file);
+        const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
+        return (Array.isArray(group) ? group : []).some((kase: unknown) => {
+          const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
+          const receiver = typeof record['receiver'] === 'object' && record['receiver'] !== null ? (record['receiver'] as Record<string, unknown>) : {};
+          const then = Array.isArray(receiver['then']) ? (receiver['then'] as unknown[]) : [];
+          const calls = then.some((step) => typeof step === 'object' && step !== null && (step as Record<string, unknown>)['call'] === cleanup.id && (step as Record<string, unknown>)['raises'] === undefined);
+          return calls && record['raises'] === undefined;
+        });
+      });
+      if (!again) {
+        this.report('CK-72', `${path}/cleanup`, `${unit.id}: the cleanup ${cleanup.id} leaves its object (receiver &mut self), so a case of ${cleanup.id} calls it a second time in the then of its receiver and names no raises (GN-6p)`);
       }
     }
   }

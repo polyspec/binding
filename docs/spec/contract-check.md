@@ -185,6 +185,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
 - **CK-71** The core enum of a variant (T-9): a `variant` unit of the origin `generated` names its Rust enum in
   `core_type`, because each case is generated as a struct variant of that enum and binding reads no Rust source to
   find it.
+- **CK-72** A cleanup that leaves its object (generator GN-6p): when the `cleanup` of a class unit is a method whose
+  core receiver is `&mut self`, a case of that member has a receiver whose `then` calls the same member without
+  `raises`, and the case itself names no `raises`, so that the case calls the cleanup a second time and requires that
+  it does nothing. Why: the object stays after such a cleanup, so a caller, or a wrapper that closes what its caller
+  closed, calls it again, and a core that fails or releases twice there is found by its own case.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

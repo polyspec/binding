@@ -107,6 +107,7 @@ fn shared<G>(cell: &Arc<AtomicBool>, beside: &[Option<&Reading<G>>]) -> Option<R
 pub struct Exclusive<T> {
     lock: Arc<Mutex<Option<T>>>,
     poisoned: Arc<AtomicBool>,
+    cleaned: Arc<AtomicBool>,
 }
 
 impl<T> Clone for Exclusive<T> {
@@ -114,6 +115,7 @@ impl<T> Clone for Exclusive<T> {
         Self {
             lock: Arc::clone(&self.lock),
             poisoned: Arc::clone(&self.poisoned),
+            cleaned: Arc::clone(&self.cleaned),
         }
     }
 }
@@ -124,6 +126,7 @@ impl<T> Exclusive<T> {
         Self {
             lock: Arc::new(Mutex::new(Some(value))),
             poisoned: Arc::new(AtomicBool::new(false)),
+            cleaned: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -175,6 +178,16 @@ impl<T> Exclusive<T> {
         guard.take().ok_or_else(|| consumed(class))
     }
 
+    /// Marks that the cleanup member with the receiver `&mut self` was called on the object (GN-6p).
+    pub fn clean(&self) {
+        self.cleaned.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether `clean` marked the object (GN-6p).
+    pub fn cleaned(&self) -> bool {
+        self.cleaned.load(Ordering::SeqCst)
+    }
+
     /// Whether a receiver `self` took the value; a lock that is held is not taken (GN-6p).
     pub fn taken(&self) -> bool {
         match self.lock.try_lock() {
@@ -194,6 +207,7 @@ impl<T> Exclusive<T> {
 pub struct Shared<T> {
     lock: Arc<RwLock<Option<T>>>,
     poisoned: Arc<AtomicBool>,
+    cleaned: Arc<AtomicBool>,
 }
 
 impl<T> Clone for Shared<T> {
@@ -201,6 +215,7 @@ impl<T> Clone for Shared<T> {
         Self {
             lock: Arc::clone(&self.lock),
             poisoned: Arc::clone(&self.poisoned),
+            cleaned: Arc::clone(&self.cleaned),
         }
     }
 }
@@ -211,6 +226,7 @@ impl<T> Shared<T> {
         Self {
             lock: Arc::new(RwLock::new(Some(value))),
             poisoned: Arc::new(AtomicBool::new(false)),
+            cleaned: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -264,6 +280,16 @@ impl<T> Shared<T> {
         sound(&self.poisoned, class)?;
         let mut guard = Arc::clone(&self.lock).try_write_owned().map_err(|_held| busy(class))?;
         guard.take().ok_or_else(|| consumed(class))
+    }
+
+    /// Marks that the cleanup member with the receiver `&mut self` was called on the object (GN-6p).
+    pub fn clean(&self) {
+        self.cleaned.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether `clean` marked the object (GN-6p).
+    pub fn cleaned(&self) -> bool {
+        self.cleaned.load(Ordering::SeqCst)
     }
 
     /// Whether a receiver `self` took the value; a lock that is held is not taken (GN-6p).

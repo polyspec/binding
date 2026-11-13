@@ -841,11 +841,21 @@ the design ids are those of the binding design.
   and WASM the table of the class keeps the emptied lock under the handle of the object until the object is
   collected, so a later place of that handle is kind `consumed`. Why: a value that the core owns
   after the call cannot be reached through the object again, and the kind tells the caller why the object refuses.
-- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o); another
-  member is refused by name. The binding crate asserts at compile time that the core type of such a unit implements
+- **GN-6p** A class unit with `cleanup` (B-10) names a method of the unit whose core receiver is `self` (GN-6o) or
+  `&mut self`; another member is refused by name. A cleanup with `self` consumes the object, and every later use of it
+  is kind `consumed` (GN-6o). A cleanup with `&mut self` leaves the object: the core keeps that the cleanup was made
+  and decides what each later member gives, by a kind of its own, and a caller may call the cleanup again, so the
+  contract holds a case in which a second call of the cleanup does nothing (CK-72). The generated call of such a
+  cleanup marks the lock of the object (`clean` of `binding_core::Exclusive` or `Shared`) when it holds the write
+  guard of the receiver, before the core call and whatever the core then gives. The destructor of no target calls the
+  cleanup member: a cleanup may wait (`blocking_io`), and a destructor has no place to wait, because PHP frees an
+  object inside any statement, Python and Node finalize where the interpreter must not block, the Go runtime runs
+  every cleanup function on one goroutine, and the callback of a `FinalizationRegistry` is a task of the event loop.
+  The release at destruction is the `Drop` of the core type, which takes no token, and a cleanup that waits is called
+  as any member that waits (GN-6m). The binding crate asserts at compile time that the core type of such a unit implements
   `binding_core::Cleanup` and that the core type of every other class unit does not (an ambiguous trait implementation,
   which fails to compile when the type implements it), so that a resource that needs a cleanup call is not missing
-  from the contract. When an object whose value was not consumed is destroyed, its destructor drops the core value,
+  from the contract. When an object whose value was not consumed and whose lock is not marked is destroyed, its destructor drops the core value,
   whose `Drop` releases the resource, and warns that the cleanup call was not made, with the message
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)`:
   - PHP raises `E_WARNING` when the object is freed, and PHP puts the name of the running function before the message

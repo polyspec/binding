@@ -503,5 +503,80 @@
         "message": "no value for guest"
       }
     }
+  ],
+  "tag_stall": [
+    {
+      "id": "a_tag_has_a_stall",
+      "name": "a"
+    }
+  ],
+  "stall_keeper": [
+    {
+      "id": "a_stall_is_kept_by_its_tag",
+      "receiver": {
+        "new": "tag.stall",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      },
+      "result": "a"
+    },
+    {
+      "id": "a_shut_stall_has_no_keeper",
+      "receiver": {
+        "new": "tag.stall",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "stall.shut"
+          }
+        ]
+      },
+      "raises": {
+        "kind": "shut",
+        "status": null,
+        "category": "value",
+        "message": "the stall of a is shut"
+      }
+    }
+  ],
+  "stall_shut": [
+    {
+      "id": "a_stall_shuts",
+      "receiver": {
+        "new": "tag.stall",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_second_shut_does_nothing",
+      "receiver": {
+        "new": "tag.stall",
+        "receiver": {
+          "new": "tag.new",
+          "args": {
+            "name": "a"
+          }
+        },
+        "then": [
+          {
+            "call": "stall.shut"
+          }
+        ]
+      }
+    }
   ]
 }

@@ -1,11 +1,27 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: eff820ce0774e670ed1e0f7b9c7d291b5dd18a90ec682b0c7fc8ab4fe0f504f4 -->
+<!-- source-sha256: 0600979716d45c3a50eb3d344586ead855af9a0f2eced5ccc63a2e5b470be884 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/classes`의 계약이 callback unit을 갖게 되자 그 end-to-end 검사가 짚은 결함 셋. callback unit이 있고 값
+  alias가 없는 계약의 Go package는 모든 buffer 앞에서 func handle의 목록을 읽었는데, C ABI는 값 alias가 있는 계약에서만
+  그것을 쓴다. 그래서 모든 호출이 "the encoded result does not follow the encoding of the binding"으로 실패했다. 이제 Go
+  package는 C ABI가 그 목록을 쓰는 곳에서만 읽는다(GN-6u). PHP와 Node crate의 helper `thrown_thread`는 lint
+  `clippy::manual_unwrap_or_default`에 걸렸고 이제 이유를 적은 `allow`를 갖는다(R-1). WASM crate의 helper `caught`는
+  `clippy::manual_async_fn`에 걸렸고 이제 `async fn`이다(GN-6n). `make test-ts`로 검증했다. Go reader의 시험은 변경 전에
+  실패했다.
+- `cleanup`이 코어 receiver가 `&mut self`인 method를 가리키는 class unit을 모든 target이 "no method with the receiver
+  self"로 거부했다. 이제 생성기가 두 꼴을 다 받는다(GN-6p). `self`인 cleanup은 전처럼 객체를 소비하고, `&mut self`인
+  cleanup은 객체를 남기며 그 뒤 member가 무엇을 주는지는 코어가 정한다. 그런 cleanup의 호출은 쓰기 guard를 쥐었을 때
+  객체의 lock에 표시하고(`binding_core::Exclusive`와 `Shared`의 `clean`, 그리고 `cleaned`), 다섯 target 각각의 소멸자는
+  소비되지도 표시되지도 않은 객체에만 경고한다. 어느 소멸자도 cleanup member를 부르지 않으므로, 기다리는 cleanup이
+  기다릴 수 없는 곳에서 불리는 일이 없다. 자원은 코어 타입의 `Drop`이 놓는다. 계약 검사는 그런 cleanup을 실패 없이 두
+  번째로 부르는 case를 요구한다(CK-72). `tests/e2e/classes`의 class `stall`이 그런 cleanup과, 그 두 번째 호출의 case와,
+  그 뒤 kind `shut`으로 실패하는 member의 case를 갖는다. `make test-ts`로 검증했다. CK-72의 finding을 요구하는 시험 둘은
+  검사를 쓰기 전에 실패했고, 414개 중 414개가 통과한다.
 - Go와 WASM은 receiver가 `self`인 method와 `cleanup`이 있는 class unit을 이름을 대고 거부했다. 이제 둘 다 PHP, Python,
   Node처럼 생성한다. receiver의 자리가 class의 table이 handle 아래에 둔 lock에서 값을 꺼내고, 그 객체의 뒤 자리는 kind
   `consumed`이며, binding crate는 `binding_core::Cleanup`을 단언한다(GN-6o, GN-6p). 정리 호출 없이 수거된 객체는 B-10의

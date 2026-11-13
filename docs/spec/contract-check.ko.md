@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: ae73ae8677eaf05ffda60cdbad789c21ba8f2f35e30da9a2625304f7e0692021 -->
+<!-- source-sha256: e2b0c054841ae83eb40b5b474f4b69ba9475a5b31cedc5e1d0f2e7a1262e3a38 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -160,6 +160,11 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   class는 constructor를 갖지 않는다. 모든 언어가 class를 constructor와 함께 쓰거나 생성을 막아서 쓰기 때문이다.
 - **CK-71** variant의 코어 enum(T-9): origin `generated`인 `variant` unit은 `core_type`에 자기 Rust enum을 적는다. 각
   case는 그 enum의 struct variant로 생성되고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-72** 객체를 남기는 cleanup(생성기 GN-6p): class unit의 `cleanup`이 코어 receiver가 `&mut self`인 method이면, 그
+  member의 case 하나는 receiver의 `then`에서 같은 member를 `raises` 없이 부르고 case 자신도 `raises`를 적지 않는다. 그래서
+  그 case는 cleanup을 두 번째로 부르고 그것이 아무것도 하지 않기를 요구한다. 이유: 그런 cleanup 뒤에는 객체가 남으므로
+  호출자나, 호출자가 닫은 것을 다시 닫는 wrapper가 그것을 다시 부른다. 거기서 실패하거나 두 번 해제하는 코어는 자기
+  case로 드러난다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

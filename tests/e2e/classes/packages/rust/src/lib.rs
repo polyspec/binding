@@ -17,6 +17,11 @@ pub enum Error {
         /// What the value is.
         what: String,
     },
+    /// A stall that is shut has no keeper.
+    Shut {
+        /// The name of the tag of the stall.
+        tag: String,
+    },
     /// A gate that is closed lets nothing pass and does not close again.
     Closed {
         /// The name of the tag of the gate.
@@ -32,6 +37,7 @@ impl Error {
             Self::Missing { .. } => "missing",
             Self::Unsupported { .. } => "unsupported",
             Self::Closed { .. } => "closed",
+            Self::Shut { .. } => "shut",
         }
     }
 }
@@ -42,6 +48,7 @@ impl fmt::Display for Error {
             Self::Missing { key } => write!(f, "no value for {key}"),
             Self::Unsupported { what } => write!(f, "not data: {what}"),
             Self::Closed { tag } => write!(f, "the gate of {tag} is closed"),
+            Self::Shut { tag } => write!(f, "the stall of {tag} is shut"),
         }
     }
 }
@@ -164,6 +171,15 @@ impl Tag {
         }
     }
 
+    /// A stall of the tag, which a call shuts (GN-6p).
+    #[must_use]
+    pub fn stall(&self) -> Stall {
+        Stall {
+            tag: self.name.clone(),
+            shut: false,
+        }
+    }
+
     /// Open gates of the tag, the name of the n-th with n dots after it (G-5: a class inside a result).
     #[must_use]
     pub fn gates(&self, count: u64) -> Vec<Gate> {
@@ -200,6 +216,36 @@ impl Lease {
     #[must_use]
     pub fn release(self) -> String {
         format!("the lease of {} is released", self.tag)
+    }
+}
+
+/// A stall of a tag, whose cleanup shuts it and leaves the object (GN-6p: a cleanup with the receiver `&mut self`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stall {
+    tag: String,
+    shut: bool,
+}
+
+impl binding_core::Cleanup for Stall {}
+
+impl Stall {
+    /// The name of the tag that keeps the stall.
+    ///
+    /// # Errors
+    ///
+    /// Kind `shut` when the stall is shut.
+    pub fn keeper(&self) -> Result<String, Error> {
+        if self.shut {
+            return Err(Error::Shut {
+                tag: self.tag.clone(),
+            });
+        }
+        Ok(self.tag.clone())
+    }
+
+    /// Shuts the stall; a second call does nothing.
+    pub fn shut(&mut self) {
+        self.shut = true;
     }
 }
 

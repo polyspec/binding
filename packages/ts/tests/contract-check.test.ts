@@ -773,6 +773,34 @@ describe('CK-71 the core enum of a variant', () => {
   });
 });
 
+describe('CK-72 a cleanup that leaves its object (GN-6p)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const run = (change: (cases: any, contract: any) => void): Finding[] => {
+    const cases = read('contracts/cases.json');
+    const contract = read('packages/rust/interface.json');
+    change(cases, contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) });
+  };
+  const stall = read('packages/rust/interface.json').units.findIndex((u: any) => u.id === 'stall');
+  const finding = {
+    check: 'CK-72',
+    path: `/units/${stall}/cleanup`,
+    message: 'stall: the cleanup stall.shut leaves its object (receiver &mut self), so a case of stall.shut calls it a second time in the then of its receiver and names no raises (GN-6p)',
+  };
+  test('a case that calls the cleanup a second time is accepted', () => {
+    assert.deepEqual(run(() => undefined), []);
+  });
+  test('no case calls the cleanup a second time', () => {
+    assert.deepEqual(run((c) => { c.stall_shut = c.stall_shut.filter((k: any) => k.id !== 'a_second_shut_does_nothing'); }), [finding]);
+  });
+  test('the second call is of another member', () => {
+    assert.deepEqual(run((c) => { c.stall_shut[1].receiver.then = [{ call: 'stall.keeper' }]; }), [finding]);
+  });
+  test('a cleanup that consumes its object needs no such case', () => {
+    assert.deepEqual(run(() => undefined).filter((f) => f.path.includes('lease')), []);
+  });
+});
+
 describe('CK-21 the build of the core and exclusive members', () => {
   test('a core that returns a Result without raises is accepted (E-1c)', () => {
     assert.deepEqual(findings((c) => { const m = member(c, 'forms.parse'); m.raises = []; m.core.result = true; }), []);

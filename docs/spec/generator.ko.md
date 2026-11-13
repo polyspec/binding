@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: be94643ecd6eef4a130a5a6ac1a10421d05949c84edf33323a751fb64b6eab7e -->
+<!-- source-sha256: 71cbf8eef55db598bfb213356ddab566e6c259a77b00f482045b9b1c2cc6657a -->
 # 생성기
 
 [English](generator.md)
@@ -690,10 +690,19 @@
   객체가 수거될 때까지 class의 table이 비워진 lock을 그 객체의 handle 아래에 두므로, 그 handle의 뒤 자리는 kind
   `consumed`다. 이유: 호출 뒤 코어가 가진 값에는 그 객체로 다시 닿을 수 없고,
   kind가 호출자에게 객체가 왜 거부하는지 알려 준다.
-- **GN-6p** `cleanup`이 있는 class unit(B-10)은 코어 receiver가 `self`인 그 unit의 method를 가리킨다(GN-6o). 다른 member는
-  이름을 대고 거부한다. binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
+- **GN-6p** `cleanup`이 있는 class unit(B-10)은 코어 receiver가 `self`(GN-6o)이거나 `&mut self`인 그 unit의 method를
+  가리킨다. 다른 member는 이름을 대고 거부한다. `self`인 cleanup은 객체를 소비하고, 그 뒤 그 객체의 모든 사용은 kind
+  `consumed`다(GN-6o). `&mut self`인 cleanup은 객체를 남긴다. 코어가 cleanup이 있었다는 것을 간직하고 그 뒤 각 member가
+  무엇을 주는지를 자기 kind로 정하며, 호출자는 cleanup을 다시 부를 수 있다. 그래서 계약은 cleanup의 두 번째 호출이
+  아무것도 하지 않는 case를 갖는다(CK-72). 그런 cleanup의 생성된 호출은 receiver의 쓰기 guard를 쥐었을 때, 코어를 부르기
+  전에, 그 뒤 코어가 무엇을 주든 객체의 lock에 표시한다(`binding_core::Exclusive`나 `Shared`의 `clean`). 어느 target의
+  소멸자도 cleanup member를 부르지 않는다. cleanup은 기다릴 수 있고(`blocking_io`) 소멸자에는 기다릴 자리가 없기
+  때문이다. PHP는 어느 문장 안에서든 객체를 해제하고, Python과 Node는 interpreter가 막히면 안 되는 곳에서 finalize하며,
+  Go runtime은 모든 cleanup 함수를 goroutine 하나에서 돌리고, `FinalizationRegistry`의 callback은 event loop의 task다.
+  소멸 때의 해제는 token을 받지 않는 코어 타입의 `Drop`이고, 기다리는 cleanup은 기다리는 여느 member처럼
+  불린다(GN-6m). binding crate는 그런 unit의 코어 타입이 `binding_core::Cleanup`을 구현하고, 다른 모든 class
   unit의 코어 타입은 구현하지 않는다는 것을 컴파일 때 단언한다(모호한 trait 구현이며, 타입이 그것을 구현하면 컴파일이
-  실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않은 객체가 사라지면 그
+  실패한다). 정리 호출이 필요한 자원이 계약에서 빠지지 않게 하기 위해서다. 값이 소비되지 않았고 lock에 표시도 없는 객체가 사라지면 그
   소멸자가 코어 값을 drop하고, 그 `Drop`이 자원을 놓으며, 정리 호출이 없었다는 경고를
   `<Class> was destroyed without <cleanup>(), so its destructor released it (B-10)` 메시지로 낸다:
   - PHP는 객체가 해제될 때 `E_WARNING`을 낸다. PHP는 메시지 앞에 실행 중인 함수의 이름을 붙이므로(`php_error_docref`)

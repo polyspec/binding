@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
@@ -764,7 +764,7 @@ pub fn class_${name}_free(this: u32) {
 /// the ES module warns.
 #[wasm_bindgen(js_name = ${rustString(`__${jsClass}_free`)})]
 pub fn class_${name}_free(this: u32) -> bool {
-    ${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this)).is_some_and(|held| !held.taken())
+    ${tableName(object.unit)}.with(|table| table.borrow_mut().remove(this)).is_some_and(|held| !held.${cleanupMade(object)}())
 }`}
 `;
 }
@@ -1002,25 +1002,23 @@ where
 
 /// GN-6n, B-7: the output of a future, or kind internal for a panic of a poll where the module unwinds; a module built
 /// with panic=abort traps instead (GN-18).
-fn caught<F, O>(future: F) -> impl std::future::Future<Output = Result<O, Fail>>
+async fn caught<F, O>(future: F) -> Result<O, Fail>
 where
     F: std::future::Future<Output = Result<O, Fail>>,
 {
-    async move {
-        let mut future = std::pin::pin!(future);
-        std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
-            Ok(poll) => poll,
-            Err(payload) => {
-                let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
-                    (Some(text), _) => (*text).to_owned(),
-                    (None, Some(text)) => text.clone(),
-                    (None, None) => String::from("a panic without a message"),
-                };
-                std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
-            }
-        })
-        .await
-    }
+    let mut future = std::pin::pin!(future);
+    std::future::poll_fn(|context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+        Ok(poll) => poll,
+        Err(payload) => {
+            let detail = match (payload.downcast_ref::<&str>(), payload.downcast_ref::<String>()) {
+                (Some(text), _) => (*text).to_owned(),
+                (None, Some(text)) => text.clone(),
+                (None, None) => String::from("a panic without a message"),
+            };
+            std::task::Poll::Ready(Err(binding_error(BindingError::Internal { detail })))
+        }
+    })
+    .await
 }
 `;
 

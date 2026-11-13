@@ -3791,8 +3791,27 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /consumed/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /'warning'/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /consumed/);
-  // A cleanup that is not a method with the receiver self is refused.
-  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self \(GN-6p\)/);
+  // GN-6p: a cleanup with the receiver &mut self leaves its object: its call marks the lock when it holds the write
+  // guard, and the destructor of each target reads the mark where that of a consuming cleanup reads taken.
+  for (const [lang, path, cell] of [['php', 'packages/php-ext/generated/lib.rs', 'self\\.inner'], ['python', 'packages/python/generated/lib.rs', 'self\\.inner'], ['node', 'packages/ts/generated/lib.rs', 'self\\.inner'], ['go', 'packages/go/internal/ffi/generated/lib.rs', 'held'], ['wasm', 'packages/ts/wasm/generated/lib.rs', 'held']] as const) {
+    const lib = text(out, path);
+    assert.match(lib, new RegExp(`let mut receiver = ${cell}\\.write\\("Stall"\\)[^\\n]*\\?;\\n\\s+${cell}\\.clean\\(\\);\\n`), `${lang} marks the stall`);
+    assert.match(lib, /polyspec_classes::Stall::shut\(receiver\)/, lang);
+    assert.match(lib, /cleanup::<polyspec_classes::Stall>/, lang);
+    assert.equal([...lib.matchAll(/\.clean\(\);/g)].length, 1, `${lang} marks in the cleanup call alone`);
+    assert.equal([...lib.matchAll(/\.cleaned\(\)/g)].length, 1, `${lang} reads the mark in the destructor of Stall`);
+    assert.equal([...lib.matchAll(/\.taken\(\)/g)].length, 1, `${lang} reads taken in the destructor of Lease`);
+    assert.ok(lib.includes('Stall was destroyed without') || lang === 'go' || lang === 'wasm', `${lang} warns`);
+  }
+  assert.ok(goBinding.includes('log.Print("Stall was destroyed without Shut(), so its destructor released it (B-10)")'), 'Go warns for Stall');
+  assert.ok(wasmEntry.includes(`'Stall was destroyed without shut(), so its destructor released it (B-10)'`), 'WASM warns for Stall');
+  assert.ok(goTests.includes('func TestB10StallWarnsWithoutShut(t *testing.T) {'), 'Go tests the warning of Stall');
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /testB10StallDoesNotWarnAfterShut/);
+  // A cleanup that waits marks its object on the calling thread, before its work leaves it.
+  const waiting = text(classes((c) => { const shut = member(c, 'stall.shut'); shut.wait = 'blocking_io'; shut.only = { targets: ['node'], reason: 'the test of GN-6p' }; shut.core.path = 'polyspec_classes::Stall::shut'; }, ['node']), 'packages/ts/generated/lib.rs');
+  assert.match(waiting, /self\.inner\.clean\(\);\n\s+waiting\(env, move \|\| \{ let receiver = &mut \*receiver; [^\n]*polyspec_classes::Stall::shut\(receiver, binding_core::Io::for_generated_call\(\)\)/);
+  // A cleanup that is not a method with the receiver self or &mut self is refused.
+  assert.throws(() => classes((c) => { c.units.find((u: any) => u.id === 'lease').cleanup = 'lease.holder'; }, ['node']), /lease: the cleanup lease\.holder is no method with the receiver self or &mut self \(GN-6p\)/);
 });
 
 test('a member with wait async_driver runs its future on a tokio runtime in the form of each language (GN-6n)', () => {
@@ -3887,7 +3906,7 @@ test('the generated WASM future of a member with wait async_driver compiles agai
     else params.push(`${input[1]}: ${input[2]}`);
   }
   const helper = (name: string): string => {
-    const found = new RegExp(`(?:///[^\\n]*\\n)*fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
+    const found = new RegExp(`(?:///[^\\n]*\\n)*(?:async )?fn ${name}<[\\s\\S]*?\\n\\}\\n`).exec(wasm);
     assert.ok(found !== null, `no helper ${name}`);
     return found[0];
   };
@@ -4109,6 +4128,10 @@ test('a member with wait blocking_io passes the Io token and waits in the form o
     for (const unit of contract.units) for (const member of unit.members ?? []) if (member.wait === 'blocking_io') delete member.only;
     contract.targets = contract.targets.filter((t: string) => t !== 'wasm');
   };
+  // GN-6u: only a value alias gives a func, so the C ABI of a contract with a callback unit and no value alias writes
+  // no list of handles before a buffer, and the Go package reads none.
+  assert.doesNotMatch(text(classes(everywhere, ['go']), 'packages/go/internal/ffi/generated/lib.rs'), /given_first/);
+  assert.match(text(classes(everywhere, ['go']), 'packages/go/internal/binding/zz_generated_binding.go'), /\nfunc readerOf\(bytes \[\]byte\) \*Reader \{ return NewReader\(bytes\) \}\n/);
   // Go: the cgo call of the member calls the core on the thread of the calling goroutine and returns its result; the
   // member has the form of a member that does not wait.
   const go = classes(everywhere, ['go']);

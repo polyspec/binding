@@ -393,6 +393,7 @@ thread_local! {
 }
 
 /// U-3, GN-6u: the number of this thread; 0, which no thread has, when the thread is ending.
+#[allow(clippy::manual_unwrap_or_default, reason = "R-1: the number of an ending thread is written, not a default")]
 fn thrown_thread() -> u64 {
     match THROWN_THREAD.try_with(|thread| thread.0) {
         Ok(thread) => thread,
