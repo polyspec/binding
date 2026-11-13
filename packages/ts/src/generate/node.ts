@@ -782,7 +782,9 @@ function libRust(model: Model): string {
   if (/\.(get|set)_named_property/.test(`${used}${functions}`)) napiTypes.push('JsObjectValue');
   // I-3: the properties of an error unit are defined on its instance.
   if (model.errorUnits.length > 0) {
-    for (const name of ['Object', 'JsObjectValue', 'JsValue', 'Property', 'PropertyAttributes']) if (!napiTypes.includes(name)) napiTypes.push(name);
+    // A unit without a property defines none, so that the helper and its types are left out (dead code fails the build).
+    const defined = model.errorUnits.some((u) => errorProperties(u).length > 0) ? ['Property', 'PropertyAttributes'] : [];
+    for (const name of ['Object', 'JsObjectValue', 'JsValue', ...defined]) if (!napiTypes.includes(name)) napiTypes.push(name);
   }
   return `${header('//')}
 // The addon of ${model.contract.library}. Its functions take the raw values and judge them (T-8); the JavaScript entry
@@ -816,6 +818,7 @@ ${model.errorUnits.length > 0 ? `
 /// I-3: writes the properties of an error unit on its instance.
 type Properties = Box<dyn for<'env> FnOnce(&'env Env, &mut Object<'env>) -> napi::Result<()>>;
 
+` : ''}${model.errorUnits.some((u) => errorProperties(u).length > 0) ? `
 /// I-3: a property of an error is read-only, as kind, status and errno are (E-3).
 fn read_only(object: &mut Object<'_>, name: &str, value: Unknown<'_>) -> napi::Result<()> {
     object.define_properties(&[Property::new().with_utf8_name(name)?.with_value(&value).with_property_attributes(PropertyAttributes::Enumerable)])
