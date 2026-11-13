@@ -120,7 +120,9 @@
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`. WASM은 `__armFaults`, `__faultLeft` |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
-  인스턴스를 받아 쓰기 guard를 얻고 panic한다.
+  인스턴스를 받아 쓰기 guard를 얻고 panic한다. 진입점은 target이 생성자나 그 class를 돌려주는 static member로 만드는 class의
+  인스턴스를 받는다. target이 만들 수 없는 class의 시험에는 줄 인스턴스가 없고, Go 진입점이 그런 class의 인스턴스 표를
+  `panic-test`에서만 읽으면 그 feature가 없을 때 읽는 함수가 쓰이지 않기 때문이다.
   Python·Node·PHP·WASM crate는 계약의 alias에 `in_raises`가 있으면 `codec-test`를 갖고, Go crate는 왕복 진입점 때문에
   늘 갖는다. 모든 crate는 계약에 `faults`가 있으면 `fault-test = ["<코어 crate>/fault-test"]`를 갖는다. 코어의 그 feature는
   `fault-test = ["polyspec-binding-core/fault-test"]`이며 장전 자료를 컴파일한다. case는 다른 라이브러리의

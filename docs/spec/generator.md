@@ -148,7 +148,10 @@ the design ids are those of the binding design.
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
-  B-5c test, which takes an instance, takes its write guard and panics.
+  B-5c test, which takes an instance, takes its write guard and panics. It takes the instances of the classes that the
+  target makes, by a constructor or a static member that returns the class, because the test of a class that the target
+  cannot make has no instance to give it, and the Go entry point would read the instance table of such a class only
+  under `panic-test`, which leaves its reader unused without the feature.
   A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, the Go crate always
   (for its round-trip entry points), and every crate has
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
