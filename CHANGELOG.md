@@ -68,6 +68,10 @@
   `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
   conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
   reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
+- The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
+  class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
+  was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static
+  member, as the Go poison test does, and a package without such a class has no entry point (GN-6h).
 - `make e2e` read `go test -json` without its `build-output` events, so a Go package that failed to link was named
   only as "go test failed the packages …" without the linker output. The events are read in
   `scripts/go-test-events.mts`, which prints the output of each build and names it in the cause (GN-14a).

@@ -20,7 +20,7 @@ import {
   goPackage, goParam, goResultCount, goString, goTupleArray, goType,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, heldParam, kindText, langName,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
   objectUnit, places, pointName, unitOf,
 } from './model.ts';
 import {
@@ -205,10 +205,6 @@ function aliasValue(unit: Unit, json: unknown, where: string): string {
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated for Go yet (GN-13)`);
 }
-
-// T-5: the member that makes an instance of the class: a constructor or a static member that returns it.
-const factoryOf = (model: Model, object: ObjectClass): Fn | undefined =>
-  object.members.find((m) => m.kind === 'constructor' || (m.kind === 'static' && unitOf(model, m.returns) === object.unit));
 
 // A value of the type that the binding converts without failing; rich: a list has one item, so that a member that
 // calls a callback per item calls it (K-2).
@@ -628,7 +624,7 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
     object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
     object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
   for (const object of objects) {
-    if (object.lock?.writes !== true || factoryOf(model, object) === undefined) continue;
+    if (!poisoned(model, object)) continue;
     const name = goName(object.unit.name);
     const receiverFn = onReceiver(object);
     const paramFn = callables.find((fn) => {
