@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- A call of `then` in an instance value that fails stopped the test as a failure of its preparation, so a kind that
+  only an instance after a failed call reaches, such as a failure that a body gives again, had no case. A call of
+  `then` may name `"raises": {"kind": <kind>}`, a kind of its member's `raises`, which `binding check` judges and every
+  target requires before the next step (GN-13f, CK-22). `tests/e2e/classes` has such a case of `gate.enter`. Verified
+  by `npm test` in `packages/ts`.
 - A case gave any value at a place of the type `cancel` without a finding, so a kind that only a cancellation that
   fired before the call reaches had no case form. A case gives it as `{"cancel": "fired"}`, or `{"cancel": "open"}`
   for one that does not fire, and `binding check` reports any other value (CK-22). Verified by `npm test` in

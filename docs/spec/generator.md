@@ -637,7 +637,8 @@ the design ids are those of the binding design.
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
   `args` holds the parameters of the member by their snake_case keys; a parameter of a class type may be an instance
   value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
-  compared. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
+  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 

@@ -1433,7 +1433,7 @@ class Checker {
     if (then !== undefined && !Array.isArray(then)) report(`the then of ${what} is not a list of calls`);
     for (const [i, item] of (Array.isArray(then) ? then : []).entries()) {
       const call = typeof item === 'object' && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
-      for (const key of Object.keys(call)) if (key !== 'call' && key !== 'args') report(`then ${i} of ${what} has no key ${key}`);
+      for (const key of Object.keys(call)) if (key !== 'call' && key !== 'args' && key !== 'raises') report(`then ${i} of ${what} has no key ${key}`);
       const step = typeof call['call'] === 'string' ? this.members.get(call['call']) : undefined;
       const stepMethod = step !== undefined && typeof step.member.core === 'object' && step.member.core.receiver !== undefined;
       if (step === undefined || step.unit.id !== unitId || !stepMethod) {
@@ -1441,6 +1441,18 @@ class Checker {
         continue;
       }
       args(step.member, call['args'], `then ${i} of ${what}`);
+      // A call that fails with a kind of the member's raises; the instance stays for the next step.
+      if (call['raises'] !== undefined) {
+        const raises = call['raises'];
+        const kind = typeof raises === 'object' && raises !== null && !Array.isArray(raises) && Object.keys(raises).length === 1 ? (raises as Record<string, unknown>)['kind'] : undefined;
+        if (typeof kind !== 'string') {
+          report(`then ${i} of ${what} expects ${step.member.id} to fail by {"kind": <kind>}, not ${JSON.stringify(raises)}`);
+          continue;
+        }
+        const rows = new Map(this.contract.errors.kinds.map((row) => [row.variant, row]));
+        const kinds = (step.member.raises ?? []).flatMap((variant) => { const row = rows.get(variant); return row === undefined ? [] : kindsOf(row); });
+        if (!kinds.includes(kind)) report(`then ${i} of ${what} expects ${step.member.id} to fail with ${kind}, which is no kind of its raises`);
+      }
     }
   }
 
