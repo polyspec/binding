@@ -1,0 +1,1220 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "owner",
+  "core": {
+    "crate": "polyspec-owner",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/owner",
+      "namespace": "Polyspec\\Owner"
+    },
+    "python": {
+      "package": "polyspec-owner",
+      "module": "polyspec.owner"
+    },
+    "node": {
+      "package": "@polyspec/owner",
+      "entries": {
+        ".": {
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          },
+          "formats": [
+            "import"
+          ]
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/owner/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {
+    "json_value": {
+      "library": "owner",
+      "unit": "value"
+    }
+  },
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Owner\\OwnerValueError",
+        "python": "OwnerValueError",
+        "node": "OwnerValueError",
+        "wasm": "OwnerValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Owner\\OwnerTypeError",
+        "python": "OwnerTypeError",
+        "node": "OwnerTypeError",
+        "wasm": "OwnerTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Owner\\OwnerIoError",
+        "python": "OwnerIoError",
+        "node": "OwnerIoError",
+        "wasm": "OwnerIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Owner\\OwnerStoreError",
+        "python": "OwnerStoreError",
+        "node": "OwnerStoreError",
+        "wasm": "OwnerStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Owner\\OwnerBusyError",
+        "python": "OwnerBusyError",
+        "node": "OwnerBusyError",
+        "wasm": "OwnerBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Owner\\OwnerInternalError",
+        "python": "OwnerInternalError",
+        "node": "OwnerInternalError",
+        "wasm": "OwnerInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      },
+      {
+        "lang": "wasm",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_owner::Error::ExpectedValue",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::ExpectedDigit",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::ExpectedColon",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::ExpectedDelimiter",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::ExpectedObjectKey",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::InvalidEscape",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::InvalidUnicodeEscape",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::UnfinishedEscape",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::UnterminatedString",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::UnescapedControlCharacter",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::InvalidUtf8",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::MaximumDepthExceeded",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::TrailingInput",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::DuplicateObjectKey",
+        "category": "value",
+        "class": "parse_error"
+      },
+      {
+        "variant": "polyspec_owner::Error::NonStringKey",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_owner::Error::WrongKind",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_owner::Error::HostSerializationRefused",
+        "category": "type"
+      },
+      {
+        "variant": "polyspec_owner::Error::InvalidNumberLiteral",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_owner::Error::DepthLimitOutOfRange",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_owner::Error::InvalidCodeUnit",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_owner::Error::UnpairedSurrogate",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_owner::Error::NonFiniteNumber",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_owner::Error::Internal",
+        "category": "internal"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "faults": [],
+  "units": [
+    {
+      "id": "value",
+      "name": [
+        "value"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_owner::Value",
+      "constructible": false,
+      "final": true,
+      "members": [
+        {
+          "id": "value.kind",
+          "name": [
+            "kind"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "kind"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::kind",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.raw",
+          "name": [
+            "raw"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::raw",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.members",
+          "name": [
+            "members"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "ordered_map"
+          },
+          "raises": [
+            "polyspec_owner::Error::WrongKind"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::members",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.items",
+          "name": [
+            "items"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "list": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::WrongKind"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::items",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.string_value",
+          "name": [
+            "string",
+            "value"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_owner::Error::WrongKind",
+            "polyspec_owner::Error::UnpairedSurrogate",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::string_value",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.string_units",
+          "name": [
+            "string",
+            "units"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "list": "uint"
+          },
+          "raises": [
+            "polyspec_owner::Error::WrongKind",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::string_units",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.number_literal",
+          "name": [
+            "number",
+            "literal"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [
+            "polyspec_owner::Error::WrongKind"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::number_literal",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.boolean_value",
+          "name": [
+            "boolean",
+            "value"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "bool",
+          "raises": [
+            "polyspec_owner::Error::WrongKind"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::boolean_value",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::WrongKind",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::get",
+            "receiver": "&self"
+          },
+          "optional_reason": "RQ-032"
+        },
+        {
+          "id": "value.get_units",
+          "name": [
+            "get",
+            "units"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "units"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::WrongKind",
+            "polyspec_owner::Error::InvalidCodeUnit",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::get_units",
+            "receiver": "&self"
+          },
+          "optional_reason": "RQ-032"
+        },
+        {
+          "id": "value.string",
+          "name": [
+            "string"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::string"
+          }
+        },
+        {
+          "id": "value.from_units",
+          "name": [
+            "from",
+            "units"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "units"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [
+            "polyspec_owner::Error::InvalidCodeUnit"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::from_units"
+          }
+        },
+        {
+          "id": "value.number",
+          "name": [
+            "number"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "literal"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [
+            "polyspec_owner::Error::ExpectedValue",
+            "polyspec_owner::Error::ExpectedDigit",
+            "polyspec_owner::Error::ExpectedColon",
+            "polyspec_owner::Error::ExpectedDelimiter",
+            "polyspec_owner::Error::ExpectedObjectKey",
+            "polyspec_owner::Error::InvalidEscape",
+            "polyspec_owner::Error::InvalidUnicodeEscape",
+            "polyspec_owner::Error::UnfinishedEscape",
+            "polyspec_owner::Error::UnterminatedString",
+            "polyspec_owner::Error::UnescapedControlCharacter",
+            "polyspec_owner::Error::MaximumDepthExceeded",
+            "polyspec_owner::Error::TrailingInput",
+            "polyspec_owner::Error::InvalidNumberLiteral",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::number"
+          }
+        },
+        {
+          "id": "value.from_float",
+          "name": [
+            "from",
+            "float"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [
+            "polyspec_owner::Error::NonFiniteNumber"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::from_f64"
+          }
+        },
+        {
+          "id": "value.boolean",
+          "name": [
+            "boolean"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "bool",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::boolean"
+          }
+        },
+        {
+          "id": "value.null",
+          "name": [
+            "null"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::null"
+          }
+        },
+        {
+          "id": "value.array",
+          "name": [
+            "array"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "items"
+              ],
+              "type": {
+                "list": "json_value"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [
+            "polyspec_owner::Error::MaximumDepthExceeded",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::array"
+          }
+        },
+        {
+          "id": "value.object",
+          "name": [
+            "object"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "members"
+              ],
+              "type": {
+                "unit": "ordered_map"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "value"
+          },
+          "raises": [
+            "polyspec_owner::Error::MaximumDepthExceeded",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::object"
+          }
+        },
+        {
+          "id": "value.to_string",
+          "name": [
+            "to",
+            "string"
+          ],
+          "kind": "stringify",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "std::string::ToString::to_string",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "value.to_json",
+          "name": [
+            "to",
+            "json"
+          ],
+          "kind": "to_json",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "never",
+          "raises": [
+            "polyspec_owner::Error::HostSerializationRefused"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Value::host_json",
+            "receiver": "&self"
+          },
+          "only": {
+            "targets": [
+              "php",
+              "node",
+              "go",
+              "wasm"
+            ],
+            "reason": "RQ-034"
+          }
+        }
+      ],
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "value.null",
+            "python": "value.null",
+            "node": "value.null",
+            "go": "value.null",
+            "wasm": "value.null"
+          }
+        },
+        {
+          "kind": "bool",
+          "make": {
+            "php": "value.boolean",
+            "python": "value.boolean",
+            "node": "value.boolean",
+            "go": "value.boolean",
+            "wasm": "value.boolean"
+          }
+        },
+        {
+          "kind": "number",
+          "make": {
+            "php": "value.number",
+            "python": "value.number",
+            "node": "value.number",
+            "go": "value.number",
+            "wasm": "value.number"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "value.string",
+            "python": "value.string",
+            "node": "value.string",
+            "go": "value.string",
+            "wasm": "value.string"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "value.array",
+            "python": "value.array",
+            "node": "value.array",
+            "go": "value.array",
+            "wasm": "value.array"
+          }
+        },
+        {
+          "kind": "map",
+          "make": {
+            "php": "value.object",
+            "python": "value.object",
+            "node": "value.object",
+            "go": "value.object",
+            "wasm": "value.object"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "value",
+          "by": "value.kind",
+          "cases": [
+            {
+              "is": "object",
+              "kind": "map",
+              "read": "value.members"
+            },
+            {
+              "is": "array",
+              "kind": "list",
+              "read": "value.items"
+            },
+            {
+              "is": "string",
+              "kind": "text",
+              "read": "value.string_value"
+            },
+            {
+              "is": "number",
+              "kind": "number",
+              "read": "value.number_literal"
+            },
+            {
+              "is": "boolean",
+              "kind": "bool",
+              "read": "value.boolean_value"
+            },
+            {
+              "is": "null",
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "value",
+          "by": "value.kind",
+          "cases": [
+            {
+              "is": "object",
+              "kind": "map",
+              "read": "value.members"
+            },
+            {
+              "is": "array",
+              "kind": "list",
+              "read": "value.items"
+            },
+            {
+              "is": "string",
+              "kind": "text",
+              "read": "value.string_value"
+            },
+            {
+              "is": "number",
+              "kind": "number",
+              "read": "value.number_literal"
+            },
+            {
+              "is": "boolean",
+              "kind": "bool",
+              "read": "value.boolean_value"
+            },
+            {
+              "is": "null",
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "value",
+          "by": "value.kind",
+          "cases": [
+            {
+              "is": "object",
+              "kind": "map",
+              "read": "value.members"
+            },
+            {
+              "is": "array",
+              "kind": "list",
+              "read": "value.items"
+            },
+            {
+              "is": "string",
+              "kind": "text",
+              "read": "value.string_value"
+            },
+            {
+              "is": "number",
+              "kind": "number",
+              "read": "value.number_literal"
+            },
+            {
+              "is": "boolean",
+              "kind": "bool",
+              "read": "value.boolean_value"
+            },
+            {
+              "is": "null",
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "go": "value",
+          "by": "value.kind",
+          "cases": [
+            {
+              "is": "object",
+              "kind": "map",
+              "read": "value.members"
+            },
+            {
+              "is": "array",
+              "kind": "list",
+              "read": "value.items"
+            },
+            {
+              "is": "string",
+              "kind": "text",
+              "read": "value.string_value"
+            },
+            {
+              "is": "number",
+              "kind": "number",
+              "read": "value.number_literal"
+            },
+            {
+              "is": "boolean",
+              "kind": "bool",
+              "read": "value.boolean_value"
+            },
+            {
+              "is": "null",
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "wasm": "value",
+          "by": "value.kind",
+          "cases": [
+            {
+              "is": "object",
+              "kind": "map",
+              "read": "value.members"
+            },
+            {
+              "is": "array",
+              "kind": "list",
+              "read": "value.items"
+            },
+            {
+              "is": "string",
+              "kind": "text",
+              "read": "value.string_value"
+            },
+            {
+              "is": "number",
+              "kind": "number",
+              "read": "value.number_literal"
+            },
+            {
+              "is": "boolean",
+              "kind": "bool",
+              "read": "value.boolean_value"
+            },
+            {
+              "is": "null",
+              "kind": "null"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "in": "polyspec_owner::value_in",
+        "out": "polyspec_owner::value_out"
+      }
+    },
+    {
+      "id": "ordered_map",
+      "name": [
+        "ordered",
+        "map"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_owner::OrderedMap",
+      "final": true,
+      "members": [
+        {
+          "id": "ordered_map.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [],
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::new"
+          }
+        },
+        {
+          "id": "ordered_map.insert",
+          "name": [
+            "insert"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "json_value",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "json_value",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::NonStringKey",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::insert",
+            "receiver": "&mut self"
+          },
+          "optional_reason": "RQ-001"
+        },
+        {
+          "id": "ordered_map.get",
+          "name": [
+            "get"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::get",
+            "receiver": "&self"
+          },
+          "optional_reason": "RQ-019"
+        },
+        {
+          "id": "ordered_map.get_units",
+          "name": [
+            "get",
+            "units"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "units"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "json_value"
+          },
+          "raises": [
+            "polyspec_owner::Error::InvalidCodeUnit",
+            "polyspec_owner::Error::Internal"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::get_units",
+            "receiver": "&self"
+          },
+          "optional_reason": "RQ-019"
+        },
+        {
+          "id": "ordered_map.size",
+          "name": [
+            "size"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::len",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "ordered_map.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "iterate",
+          "visibility": "public",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::OrderedMap::iter",
+            "receiver": "&self"
+          },
+          "yields": {
+            "key": "json_value",
+            "value": "json_value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "kind",
+      "name": [
+        "kind"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_owner::Kind",
+      "variants": [
+        {
+          "name": [
+            "object"
+          ],
+          "value": "object"
+        },
+        {
+          "name": [
+            "array"
+          ],
+          "value": "array"
+        },
+        {
+          "name": [
+            "string"
+          ],
+          "value": "string"
+        },
+        {
+          "name": [
+            "number"
+          ],
+          "value": "number"
+        },
+        {
+          "name": [
+            "boolean"
+          ],
+          "value": "boolean"
+        },
+        {
+          "name": [
+            "null"
+          ],
+          "value": "null"
+        }
+      ]
+    },
+    {
+      "id": "parse_error",
+      "name": [
+        "parse",
+        "error"
+      ],
+      "module": "",
+      "kind": "error",
+      "visibility": "public",
+      "origin": "generated",
+      "category": "value",
+      "final": true,
+      "members": [
+        {
+          "id": "parse_error.offset",
+          "name": [
+            "offset"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": {
+            "optional": "uint"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_owner::Error::offset",
+            "receiver": "&self"
+          },
+          "optional_reason": "RQ-033"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": []
+}

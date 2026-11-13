@@ -876,6 +876,42 @@ test('a value alias of another repository is refused by name where it is not gen
   }), (error: Error) => error.constructor.name === 'Unsupported' && /data: a python make by a member \(tag\.new\) is not generated yet/.test(error.message));
 });
 
+// The consumer sample with the function relay, which takes and gives the value class of the owner fixture (GN-6x).
+const valueClassSample = (): ReturnType<typeof consumerSample> => {
+  const parts = consumerSample();
+  const owner = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+  parts.foreign.set('owner', owner);
+  const functions = parts.contract.units.find((u: any) => u.id === 'consumer');
+  functions.members.push({
+    id: 'consumer.relay', name: ['relay'], kind: 'function', visibility: 'public',
+    parameters: [{ name: ['value'], type: { library: 'owner', unit: 'value' }, required: true }],
+    returns: { library: 'owner', unit: 'value' }, raises: [], wait: 'none', core: 'polyspec_consumer::relay',
+  });
+  return parts;
+};
+
+test('a value class of another repository converts through the core of its owner in every target (T-3, U-1, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    const lib = text(out, path);
+    // The owner's two core functions are the conversion, under names that carry the library.
+    assert.match(lib, /\nfn in_owner_value[(<]/, path);
+    assert.match(lib, /polyspec_owner::value_in\(&mut host, described\)/, path);
+    assert.match(lib, /polyspec_owner::value_out\(/, path);
+    // An instance of the owner's class is described by its in row, without opening it, and read by its read members.
+    assert.match(lib, /HostValue::Value \{/, path);
+    assert.doesNotMatch(lib, /no value class is read/, path);
+  }
+});
+
+test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
+  const { contract, caseFiles, foreign } = valueClassSample();
+  delete foreign.get('owner').units.find((u: any) => u.id === 'value').core;
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign }),
+    /owner\.value: a value class of another repository without core: \{in, out\} and core_type is not generated \(GN-6x\)/);
+});
+
 test('an error unit is the class of the kinds that name it, with the properties of the core error (E-2, I-3, GN-7a)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign });

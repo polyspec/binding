@@ -157,6 +157,17 @@ describe('CK-6 cycles', () => {
 
 describe('CK-8 value units', () => {
   const inRows = (c: any): any[] => unit(c, 'value').in;
+  // GN-6x: the class that represents its value type names the functions through which another repository takes and
+  // gives its values; its core type is named with them.
+  const owned = (c: any): void => {
+    unit(c, 'value').core = { in: 'forms::value_in', out: 'forms::value_out' };
+    unit(c, 'value').core_type = 'forms::Value';
+  };
+  test('a value class that represents its value type names core: {in, out} with its core_type', () => {
+    assert.deepEqual(findings(owned), []);
+  });
+  test('a value class with core: {in, out} and no core_type', () =>
+    fails('CK-8', at('value'), (c) => { owned(c); delete unit(c, 'value').core_type; }));
   test('a by enum value without a case', () =>
     fails('CK-8', `${at('value')}/in/0/cases`, (c) => { inRows(c)[0].cases.pop(); }));
   test('a by enum value in two cases', () =>
