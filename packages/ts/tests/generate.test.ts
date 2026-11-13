@@ -1098,6 +1098,60 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+// The internal form of shapes: its functions unit, a record and the class, which moves to the module store.
+const internal = (contract: any): void => {
+  for (const id of ['shapes', 'frame_options', 'text_measure', 'buffer']) {
+    const unit = unitOf(contract, id);
+    unit.visibility = 'internal';
+    for (const m of unit.members ?? []) m.visibility = 'internal';
+  }
+  unitOf(contract, 'buffer').module = 'store';
+};
+
+test('an internal unit is generated in every target and marked as no public API (GN-6n, U-1)', () => {
+  const out = shaped(internal);
+  // PHP: the docblock of each declaration holds @internal.
+  const stub = text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php');
+  assert.match(stub, /\/\*\*\n {5}\* T-5\.\n {5}\*\n {5}\* @internal\n {5}\*\/\n {4}final class Buffer/);
+  assert.match(stub, / {5}\* @internal\n {5}\*\/\n {4}function repeat\(/);
+  assert.match(stub, / {5}\* @internal\n {5}\*\/\n {4}final class TextMeasure/);
+  // Python: the names are in no __all__; the root module keeps them in _root and the module store in _store.
+  const pkg = 'packages/python/generated/python/polyspec/shapes';
+  const root = text(out, `${pkg}/_root.py`);
+  assert.match(root, /from \._native import [^\n]*repeat as repeat/);
+  assert.match(root, /__all__ = \[\]\n/);
+  assert.match(text(out, `${pkg}/_store.py`), /from \._native import Buffer as Buffer\n[\s\S]*__all__ = \[\]\n/);
+  assert.equal(out.has(`${pkg}/store.py`), false);
+  const init = text(out, `${pkg}/__init__.py`);
+  assert.match(init, /__all__ = \["ShapesValueError", [^\n]*"Utf8Error"\]\n/);
+  assert.doesNotMatch(init, /from \._store import/);
+  const tests = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(tests, /^import polyspec\.shapes\._store$/m);
+  assert.match(tests, /pkg\._root\.repeat\(/);
+  assert.match(tests, /pkg\._store\.Buffer\(/);
+  assert.doesNotMatch(tests, /pkg\.(repeat|Buffer|TextMeasure)\b/);
+  // Node and WASM: the JSDoc of each declaration holds @internal.
+  for (const path of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) {
+    const dts = text(out, path);
+    assert.match(dts, /\/\*\* T-5\. @internal \*\/\nexport declare class Buffer/, path);
+    assert.match(dts, /\/\*\* T-4: the options record; a member whose value is undefined is absent\. @internal \*\/\nexport interface FrameOptions/, path);
+    assert.match(dts, / \* @internal\n \*\/\nexport declare function repeat\(/, path);
+    assert.match(dts, /\/\*\* @internal \*\/\nexport declare function length\(/, path);
+    assert.match(dts, /\/\*\* @internal \*\/\nexport declare const DEFAULT_TIMES/, path);
+  }
+  // Go: the doc comment of each declaration ends with the sentence of U-1.
+  const go = text(out, 'packages/go/zz_generated_shapes.go');
+  assert.match(go, /\/\/ Repeat calls polyspec_shapes::repeat \(contract member shapes\.repeat\)\. It is internal to shapes \(U-1\) and is\n\/\/ no public API\.\nfunc Repeat\(/);
+  assert.match(go, /\/\/ It is internal to shapes \(U-1\) and is no public API\.\ntype FrameOptions struct/);
+  assert.match(text(out, 'packages/go/store/zz_generated_store.go'), /\/\/ It is internal to shapes \(U-1\) and is no public API\.\ntype Buffer struct/);
+  // A public unit has no mark.
+  assert.doesNotMatch(text(shaped(), 'packages/ts/generated/index.d.ts'), /@internal/);
+});
+
+test('an internal member of a public unit is refused by its name (GN-6n, G-4)', () => {
+  assert.throws(() => shaped((c) => { member(c, 'shapes.length').visibility = 'internal'; }), /shapes\.length: an internal member of a public unit is not generated yet \(GN-6n\)/);
+});
+
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
   const out = shaped();
   // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
