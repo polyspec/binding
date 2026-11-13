@@ -1486,7 +1486,13 @@ the design ids are those of the binding design.
   `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
   `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
   repository, because the Go program of the repository imports its Go module (GN-15f);
-  `DEPS` names each repository whose types the contract names; its packages are built and installed first)
+  `DEPS` names each repository whose types the contract names; its packages are built and installed first, each in
+  the copy of the run and none in a checkout: for Python its wheel, for PHP its extension, for Go the static library
+  of a Go module that `go.mod` requires, and for Node and WASM its npm package, with its addon as the package of the
+  platform and its WASM module with the glue, for each repository of `DEPS` that a contract whose npm package the run
+  packs names, directly or through another such repository, because the generated entry of that contract imports the
+  npm package of the owner on Node and through the subpath `./wasm`; a repository of `DEPS` that lacks the target
+  `node` or `wasm` for which a contract names it is a named failure of the targets `node` and `wasm`)
   copies the committed tree of a repository, makes the changes that take the binding of the run and prints each
   (GN-14d), runs `binding check`, tests the core without the generator, checks that the case files follow the case
   convention (GN-14d), generates for each target, lints the core and, on the host, each binding crate with the test features of its manifest

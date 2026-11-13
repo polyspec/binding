@@ -15,6 +15,7 @@ export const READ_FROM_CHECKOUT: readonly Input[] = [
   { path: 'scripts/e2e.mts', why: 'the script of the checkout writes the tree of the commit and starts the script of that tree' },
   { path: 'scripts/e2e-inputs.mts', why: 'the script of the checkout reads this list' },
   { path: 'scripts/e2e-lint.mts', why: 'the script of the checkout imports it, which names the lints of a binding crate' },
+  { path: 'scripts/e2e-npm.mts', why: 'the script of the checkout imports it, which names the npm packages that a run packs' },
   { path: 'scripts/e2e-work.mts', why: 'the script of the checkout makes the work directory of the run with it and runs the commands of the run in it' },
   { path: 'scripts/go-test-events.mts', why: 'the script of the checkout imports it, which reads the events of go test -json' },
   { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },

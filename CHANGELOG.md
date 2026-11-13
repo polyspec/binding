@@ -5,6 +5,19 @@
 
 ## Unreleased
 
+- A run of the end-to-end check of a repository whose contract names a type of another repository installed no npm
+  package of that repository: the npm step packed the contracts of the repository alone and the WASM step built their
+  modules alone, so the generated entry of `tests/e2e/relay`, which imports `@polyspec/json` on Node and through
+  `./wasm`, failed every Node and WASM test with `ERR_MODULE_NOT_FOUND`, while Python, PHP and Go had the wheel, the
+  extension and the static library of the dependency. `npmPacked` of the new `scripts/e2e-npm.mts` plans the packages
+  of a run from the contracts: each contract of the repository with the target `node` or `wasm`, and before them each
+  contract of `DEPS` that one of them names, directly or through another dependency, with the Node addon and the WASM
+  module that the targets of the naming contracts need; a dependency without such a target is a named failure. The
+  run builds the addon and the module of each planned contract in its copy, packs the package of the platform and the
+  npm package, and installs them together (GN-14). `scripts/e2e-inputs.mts` lists the new file among the files that a
+  run reads from the checkout (GN-14b). Verified by `make test-ts`: the tests of `e2e-npm.test.ts` failed 5 of 7
+  against a plan of the contracts of the repository alone and pass with the change. No end-to-end run of this change
+  is made yet.
 - More texts of the generator that the relay of the end-to-end check shows with the contract of json, each dead
   code, which the lints deny. The enum `ReadAs` of the PHP, Python, Node and WASM hosts had every variant and
   the read every arm, while the in cases of json construct no `Units`; a host now has the variants that an in case of

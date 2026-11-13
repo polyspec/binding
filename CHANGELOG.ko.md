@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3bb9ad834510875a1e7a57a5286ab14215af8183ee39c9835b1aefcc465843a5 -->
+<!-- source-sha256: 06578821df4909be3040537bd1d8831638ed9fe2c1209d22df4b94d8df720750 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- contract가 다른 저장소의 타입을 가리키는 저장소의 end-to-end 검사 실행이 그 저장소의 npm 패키지를 설치하지 않았다.
+  npm 단계는 저장소의 contract만 pack했고 WASM 단계는 그 모듈만 빌드했다. 그래서 Node에서, 그리고 `./wasm`으로
+  `@polyspec/json`을 import하는 `tests/e2e/relay`의 생성된 entry는 Node와 WASM 시험이 모두 `ERR_MODULE_NOT_FOUND`로
+  실패했고, Python, PHP, Go는 의존 저장소의 wheel, 확장, 정적 라이브러리를 가졌다. 새 `scripts/e2e-npm.mts`의
+  `npmPacked`가 실행의 패키지를 contract에서 계획한다. 대상 `node`나 `wasm`을 가진 저장소의 contract마다, 그리고 그
+  앞에 그 가운데 하나가 직접 또는 다른 의존 저장소를 거쳐 가리키는 `DEPS`의 contract마다이며, 가리키는 contract의
+  대상이 필요로 하는 Node addon과 WASM 모듈을 정한다. 그 대상이 없는 의존 저장소는 이름 있는 실패다. 실행은 계획된
+  contract마다 addon과 모듈을 사본 안에서 빌드하고, 플랫폼 패키지와 npm 패키지를 pack해 함께 설치한다(GN-14).
+  `scripts/e2e-inputs.mts`는 새 파일을 실행이 checkout에서 읽는 파일에 적는다(GN-14b). `make test-ts`로 확인했다.
+  `e2e-npm.test.ts`의 시험은 저장소의 contract만 담은 계획에서 7개 가운데 5개가 실패했고 변경으로 통과한다. 이 변경의
+  end-to-end 실행은 아직 하지 않았다.
 - json의 계약으로 돌린 end-to-end 검사의 relay가 드러낸 생성기의 텍스트가 더 있고, 모두 lint가 deny하는 죽은 코드다.
   PHP, Python, Node, WASM host의 enum `ReadAs`는 모든 variant를, 읽기는 모든 갈래를 가졌는데, json의 in case는 `Units`를
   만들지 않는다. 이제 host는 그 계약의 in case가 만드는 variant와 그 갈래만 가진다(GN-6x). PHP는 유일한 alias가 다른
