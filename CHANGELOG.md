@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A contract with a function type and no callback unit made bindings that did not compile: the call of the function
+  gives what it threw to `thrown`, which Node, Python and WASM generated only for a contract with a callback unit, and
+  PHP left out the variant `Thrown::Php` that the call of a Closure makes. WASM also generated no `Thrown`, no
+  `failure_error` and no field `thrown` of its failure for such a contract. Each target now generates them for a
+  contract with a callback unit or a function type (U-3, GN-6z). The test file `tests/native.rs` of binding_core had
+  the crate-level `#![cfg(feature = "construct")]`, so a run without the feature passed a target that ran no test; it
+  is now a test target with `required-features = ["construct"]` (HR-84). The Rust cores of `tests/e2e/functions` and
+  `tests/e2e/sample` are in the form of rustfmt, which `make fmt-e2e` checks. Verified by `make test-ts`: 335 of 335
+  pass.
+
 - The rule of a unit with `only` and of a value class without `core_type` had the id GN-6m, which also names the rule
   of a member with `wait: blocking_io`. The rule of the unit with `only` is now GN-6af in the specification, the code
   and the tests. A value of the language that is no value of a value type (`{"host": <sort>}`) was refused in Go, which
@@ -109,6 +119,92 @@
   `Value::items` and `Value::get`, did not compile, because `out_<class>` took the value owned (E0308, E0631). The
   conversion now takes `impl CoreForm<T>`, which keeps an owned value and clones a borrowed one, also behind the
   reference that an optional or a list adds (GN-6b). Verified by `npm test` in `packages/ts`.
+- Go deleted the `cgo.Handle` of a func that a value gave only when its decoder reached the node of the func, so a
+  decoding that failed before it (a value without a Go form, a malformed node) or a result that the caller did not
+  decode kept the handle and its func. Every buffer that Rust gives Go now starts with the list of the handles that it
+  gives, the node of a func is the index of its handle in that list, and `invoke` and the arguments of a callback read
+  the list first, take each func and delete each handle before anything else is decoded (GN-6u).
+- In Node, a `Native` dropped on another thread was released only at the next entry point of its owner, so a
+  program that made no further call kept the reference until the env ended. The owner now makes an unref threadsafe
+  function with its table, which a drop on another thread calls under the lock of the owners, and which empties the
+  queue on the owner thread; the env cleanup hook aborts it under the same lock after it raises the generation, so a
+  drop of an older generation calls nothing (GN-6u).
+- A `Raised` held a bare handle, so the exception under it stayed in the table of the binding when the core dropped
+  the `Raised` instead of returning it, and a failure of the binding on another thread stayed in its own table. A
+  `Raised` now holds a `Native` (`Raised::from_generated(Native)`, `native()`), whose last drop removes the entry
+  (GN-6u): Python, Go and WASM at the drop; Node and PHP on the thread that threw, at once, or, after a drop on another
+  thread, when that thread next keeps or throws again an exception, and the end of the thread discards its queue. A
+  failure of the binding on another thread is held by its `Raised` as its `BindingError`. `Raised::from_generated`
+  takes a `Native` instead of a `Handle` and `handle()` is replaced by `native()`, so the generated code of every
+  repository that depends on binding_core is generated again with this version; code generated before it does not
+  compile against it.
+- No generated test gave a language object through a `native` row and back, so a binding that kept or lost the
+  object passed. For a value alias with a `native` out row and a function that takes it and gives it back, each target
+  now tests that the object comes back as the same object and that the binding keeps no reference to it (GN-6u):
+  Python by `sys.getrefcount` and a `weakref`, Node, PHP and WASM by the count of their owner table, which the entry
+  point of the new feature `native-count-test` gives (`__nativeCount`, `Internal\nativeCount`), and Go by the count of
+  its live handles (`binding.NativeCount`, build tag `polyspec_native_count_test`). A Go func that enters is now a
+  `Native` that the static library counts. The end-to-end check fails a static library without features that holds
+  `__native_count`.
+- `tests/e2e/functions` checked a function type in Python only. It now declares the targets PHP, Node and WASM as
+  well, so the end-to-end check runs the stored functions of every target that takes one (GN-6z).
+- WASM refused a member that takes a function type (GN-6z). It now holds the function as a `Native` of the table of
+  the one thread of the module (GN-6u) and declares the parameter as a TypeScript function type; a value that is not a
+  function is kind `invalid_argument_type`. The generated tests of WASM wrote the names of the members of a function
+  fixture as PHP strings; they write them as JavaScript strings.
+- PHP refused a member that takes a function type (GN-6z). It now holds the Closure as a `Native` of its owner table
+  (GN-6u), declared `\Closure`; a call on another thread is kind `wrong_thread`, which `Internal\threadTest` of the
+  feature `thread-test` shows, and a value that is not a Closure is kind `invalid_argument_type`. In Node and PHP a
+  failure of the binding in a call on another thread is kept as its `BindingError` in a table that every thread
+  reaches, because a language error object is made on the owner thread only, which makes it when the call fails.
+- Node refused a member that takes a function type (GN-6z). It now holds the JavaScript function as a `Native` of
+  its owner table (GN-6u) and declares the parameter as a TypeScript function type; a call runs on the owner thread in
+  the env of the table, and a call on another thread is kind `wrong_thread`, which the entry point `__threadTest` of
+  the new feature `thread-test` shows. A value that is not a function is kind `invalid_argument_type`. The generated
+  tests give a function value of a case as the call of a fixture.
+- The generated bindings kept every language object that entered as a handle in a table that only grew: Python and
+  WASM for the life of the process, Node for the life of the thread, PHP until the request ended. A `Date` and an
+  `Other` value were kept the same way, and Go walked a func only inside its call. A language object that a core may
+  keep now enters as a `Native` whose last drop releases it by the rule of its target (GN-6u): Python holds the
+  `Py<PyAny>` and refuses `pyo3_disable_reference_pool`; WASM holds the key of its table; Node and PHP hold the owner,
+  its generation and the key, queue a drop on another thread for the owner, empty that queue in `guard` at every entry
+  point, and release the table and raise the generation at the env cleanup hook and at the request shutdown; Go holds
+  the `cgo.Handle` of the func and gives a new one for each `out`. A `Date` and an `Other` value get a handle numbered
+  in the order of the call. The data alias of `tests/e2e/sample` keeps an object or a function as `Data::Native` and
+  gives it back by the `native` row in every target; `generate.test.ts` checks the form of each target.
+- binding_core gave a language object that a core may keep, a `HostValue::Object`, a `HostValue::Callable` or an
+  `OutValue::Native`, as a `Handle` into a table of the binding that kept every object until the end of the process
+  or the request, because nothing told the binding when the core dropped the handle. It now gives it as a `Native`,
+  an `Arc<dyn NativeObject>` that is equal by its object and releases what the binding keeps for the object when the
+  core drops the last one (B-1, U-7 (d)). `HostValue::Object` names the field `native`. `tests/native.rs` checks the
+  equality, a clone and the release on another thread. Verified by `make test-rust lint-rust`.
+- A member that calls language code that its receiver keeps, such as `registry.call` of `tests/e2e/functions`,
+  whose core returns `Result<T, Failure<E>>`, was generated as if its core error were `E`, so the binding crate did
+  not compile (E0308). The contract now names such a member with `core.failure: true`, whose error the generated code
+  converts as that of a member that takes a callback; `binding check` refuses `core.failure: true` on a member whose
+  receiver keeps no language code, `core.failure: false` on a member that takes a callback or a function, and
+  `core.failure: true` with `core.result: false` (E-1c, GN-7, CK-21). Verified by `npm test` in `packages/ts`.
+- A parameter that held a callback inside another type, an item of a list, an `optional` or a field of a record
+  parameter, was refused for every target ("the type {"unit": ...} is not generated yet"). Each target now gives the
+  core such a callback as `Box<dyn <core trait> + 'a>` and the list, the `optional` or the record by value, `'a` being
+  `'env` in Node and `'static` elsewhere; the core type of a record with a callback field has that lifetime, and such a
+  record is refused by name at a place other than a record parameter (GN-6aa). A generated test gives a callback value
+  inside another value as the object of a fixture, or an instance value of a class that implements the callback.
+  `tests/e2e/sample` has `sample.first` (a list), `sample.maybe` (an `optional`) and `sample.seek` (a record field).
+  Verified by `npm test` in `packages/ts`.
+- A case that gave a function value `{"function": [<row>]}` stopped the generator with "no case value of the type".
+  A Python test now gives it as a fixture of the call itself, whose record of calls the test reads after the call, or,
+  inside another value such as an argument of a `then` call, as the callable of such a fixture; and it checks that a
+  value that is not callable is kind `invalid_argument_type` (G-5, GN-6z). `tests/e2e/functions` is a Python
+  repository whose core calls a function during the call (`functions.apply`) and keeps one in a class
+  (`registry.register`, `registry.call`).
+- A member with a parameter of a function type was refused for every target ("the type {"function": ...} is not
+  generated yet"), so a contract with one, such as template `engine.register`, generated no target. Python now
+  generates it: the core takes `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>` by
+  value, the callable is checked as it enters (kind `invalid_argument_type`), and a call converts the arguments out
+  and the result in, with an exception of the Python code going to the core as a `Raised` (GN-6z). Node, PHP and WASM
+  refuse it by name until binding_core has the native lifetime, and Go refuses it. The callback members and the
+  function types share one rule of borrowed parameters (T-1). Verified by `npm test` in `packages/ts`.
 - The Go C ABI of `tests/e2e/classes` did not build without `panic-test`: its poison entry point had an arm for every
   class with a write place, also `lease`, which Go does not make, and the reader `held_lease` that only that arm used
   was unused when the feature was off. The entry point now takes the classes that Go makes by a constructor or a static

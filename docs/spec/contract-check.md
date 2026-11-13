@@ -131,7 +131,10 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   returns no `Result` has no variant to return and no place for the failure of a callback; without `core.result`, a
   core path returns a `Result` when `raises` names a variant of the contract's own core error or a parameter is a
   callback or a function. Whether `core.result` is true of the core is judged by the compiler on the generated crate
-  (I-2), not here. A function type (T-2) states `async_allowed` and
+  (I-2), not here. `core.failure: true` is on a member whose receiver unit holds language code (GN-6h), because no
+  other member reaches language code that can fail; `core.failure: false` is on no member with a parameter that holds
+  a callback or a function, and a member with `core.result: false` has no `core.failure: true`, because the failure of
+  language code is returned in a `Result` as `Failure<E>`. A function type (T-2) states `async_allowed` and
   its `recognize` names error units, as a callback member does (CK-17).
 - **CK-63** The WASM core (GN-4b): `core.features.wasm` names none of the features of platform I/O, `fs`,
   `blocking-io`, `process` and `net`.

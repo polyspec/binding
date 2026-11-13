@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, poisoned, unitOf, waitsIo, waitsAsync } from './model.ts';
+import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, poisoned, unitOf, waitsIo, waitsAsync } from './model.ts';
 import { type Echoes, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol } from './go_rust.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -440,13 +440,13 @@ function goCallable(scope: GoScope, fn: Fn): string {
   lines.push('\tenc := binding.NewWriter()');
   if (fn.receiver !== undefined) lines.push('\tenc.Uint(this.handle())');
   for (const parameter of fn.params) lines.push(...goEncode(scope, paramWire(fn, parameter), goParam(parameter.name, scope.model), 1, 0));
-  lines.push(`\tout, err := binding.${bindingFn(fn)}(enc.Done())`);
+  lines.push(`\tdec, err := binding.${bindingFn(fn)}(enc.Done())`);
   // T-5: an instance stays reachable until the call has taken its value, so the runtime does not release it during
   // the call.
   const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => goParam(p.name, scope.model))];
   for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
   if (alive.length > 0) scope.usesRuntime = true;
-  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}', '\tdec := binding.NewReader(out)');
+  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}');
   if (fn.kind === 'iterate') {
     // N-4 iterate: the items are converted when the call returns, and the iterator gives them in order.
     const yields = fn.yields ?? { value: 'none' };
@@ -837,7 +837,7 @@ function goBinding(model: Model): string {
   const fns = callablesOf(model);
   const calls = fns.map((fn) => `
 // ${bindingFn(fn)} calls ${cSymbol(model, fn)} with the encoded arguments (B-8).
-func ${bindingFn(fn)}(args []byte) ([]byte, error) {
+func ${bindingFn(fn)}(args []byte) (*Reader, error) {
 	return invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${cSymbol(model, fn)}(pointer, length, result)
 	}, args)
@@ -893,9 +893,27 @@ ${std.map((s) => `\t"${s}"`).join('\n')}
 // entry is a function of the C ABI: the encoded arguments in, the encoded result or failure out, 0 or 1 back.
 type entry func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t
 
+${back ? `// readerOf reads a buffer that Rust gave: first the cgo.Handle of each func that the buffer gives, whose func it takes
+// and whose handle it deletes at once, so no handle outlives the buffer whatever the decoding then finds (GN-6u).
+func readerOf(bytes []byte) *Reader {
+	r := &Reader{bytes: bytes}
+	count := r.Uint()
+	for index := uint64(0); index < count && !r.failed; index++ {
+		handle := cgo.Handle(uintptr(r.Uint()))
+		if r.failed {
+			break
+		}
+		r.funcs = append(r.funcs, handle.Value())
+		handle.Delete()
+	}
+	return r
+}
+` : `// readerOf reads a buffer that Rust gave, which gives no func (GN-6u).
+func readerOf(bytes []byte) *Reader { return NewReader(bytes) }
+`}
 // invoke runs an entry with the encoded arguments and copies its result out of the buffer that Rust allocated, which
-// it then frees. The call returns when the core returns (wait none).
-func invoke(fn entry, args []byte) ([]byte, error) {
+// it then frees, and reads it. The call returns when the core returns (wait none).
+func invoke(fn entry, args []byte) (*Reader, error) {
 	var pointer *C.uint8_t
 	if len(args) > 0 {
 		pointer = (*C.uint8_t)(unsafe.Pointer(&args[0]))
@@ -908,10 +926,11 @@ func invoke(fn entry, args []byte) ([]byte, error) {
 		copy(out, unsafe.Slice((*byte)(unsafe.Pointer(result.ptr)), int(result.len)))
 	}
 	C.${p}__free(result)
+	r := readerOf(out)
 	if status != 0 {
-		return nil, decodeFailure(out)
+		return nil, decodeFailure(r)
 	}
-	return out, nil
+	return r, nil
 }
 ${calls}${releases}${model.objects.length === 0 ? '' : `
 // Ref is the handle of the value of an instance of a class unit (T-5), which the release function frees when the Go
@@ -979,6 +998,8 @@ type Reader struct {
 	bytes   []byte
 	failed  bool
 	problem string
+	// funcs are the funcs of the cgo.Handle list of a buffer that Rust gave, by their indexes (GN-6u).
+	funcs []any
 }
 
 // NewReader reads an encoded result.
@@ -1240,8 +1261,7 @@ func finished(err error, properties *Reader) error {
 // decodeFailure reads an encoded failure: the category, the message, the kind, the status, the errno, the class of
 // the kind with the properties of its unit (E-2, I-3), and the error that a Go callback returned (U-3), which the call
 // returns unchanged.
-func decodeFailure(bytes []byte) error {
-	r := NewReader(bytes)
+func decodeFailure(r *Reader) error {
 	head := r.take(1)
 	f := failure{message: r.Text(), kind: r.Text()}
 	if r.Tag() {
@@ -1252,6 +1272,7 @@ func decodeFailure(bytes []byte) error {
 	}
 	class := r.take(1)
 	properties := NewReader(r.Bytes())
+	properties.funcs = r.funcs
 	var call, index uint64
 	present := r.Tag()
 	if present {
@@ -1330,7 +1351,8 @@ func (c *Call) Value(enc *Writer, value any) {
 
 // describe encodes one level of a Go value (B-1): 0 nil, 1 a bool, 2 an integer, 3 an integer beyond int64 as its
 // decimal text, 4 a float, 5 a string, 6 a []byte, 7 a slice or an array, 8 a map with its keys in the order of their
-// text, 9 a func, 10 any other value with its type name; a container with its handle and length.
+// text, 9 a func with the cgo.Handle that a Native deletes (GN-6u), 10 any other value with its type name; a container
+// with its handle and length.
 func (c *Call) describe(enc *Writer, value reflect.Value) {
 	for value.IsValid() && value.Kind() == reflect.Interface {
 		value = value.Elem()
@@ -1379,7 +1401,7 @@ func (c *Call) describe(enc *Writer, value reflect.Value) {
 		enc.Uint(uint64(len(keys)))
 	case reflect.Func:
 		enc.bytes = append(enc.bytes, 9)
-		enc.Uint(c.hold(held{value: value}))
+		enc.Uint(uint64(cgo.NewHandle(value.Interface())))
 	default:
 		enc.bytes = append(enc.bytes, 10)
 		enc.Text(value.Type().String())
@@ -1419,7 +1441,7 @@ func (c *Call) run(callback uint64, member uint32, args []byte) (int32, []byte) 
 		return c.raise(Malformed())
 	}
 	enc := NewWriter()
-	if err := c.callbacks[callback-1](c, member, NewReader(args), enc); err != nil {
+	if err := c.callbacks[callback-1](c, member, readerOf(args), enc); err != nil {
 		return c.raise(err)
 	}
 	return 0, enc.Done()
@@ -1473,6 +1495,20 @@ func ${p}__go_host(call C.uint64_t, op C.uint32_t, handle C.uint64_t, index C.ui
 	}
 	return 0
 }
+
+// ${p}__go_release deletes the cgo.Handle of a func that a Native of the static library held (GN-6u).
+//
+//export ${p}__go_release
+func ${p}__go_release(handle C.uint64_t) {
+	cgo.Handle(uintptr(handle)).Delete()
+}
+
+// ${p}__go_native gives a new cgo.Handle of the func of a Native, which the decoder of the value deletes (GN-6u).
+//
+//export ${p}__go_native
+func ${p}__go_native(handle C.uint64_t) C.uint64_t {
+	return C.uint64_t(cgo.NewHandle(cgo.Handle(uintptr(handle)).Value()))
+}
 `}`;
 }
 
@@ -1488,8 +1524,9 @@ type Token struct{}
 const GO_VALUE = `
 // Value decodes a value of a value alias (U-7), whose nodes are 0 nil, 1 a bool, 2 an int64, 3 a float64, 4 a string,
 // 5 a []byte, 6 a []any, 7 a map[string]any, 8 a container made before, by its index, 9 a *KeyedMap[any], 10 an
-// instance of a class by the number of the class and its handle, and 255 a value that the out rows give no Go form,
-// which fails Finish with kind internal.
+// instance of a class by the number of the class and its handle, 11 the func of a Native by the index of its
+// cgo.Handle in the list of the buffer, which readerOf deleted (GN-6u), and 255 a value that the out rows give no Go
+// form, which fails Finish with kind internal.
 func (r *Reader) Value() any {
 	return r.ValueWith(nil)
 }
@@ -1577,6 +1614,13 @@ func (r *Reader) value(made *[]any, instance func(class uint64, handle uint64) a
 			r.fail(fmt.Sprintf("U-7: an instance of the class %d that the package of the call does not make", class))
 		}
 		return made
+	case 11:
+		index := r.Uint()
+		if r.failed || index >= uint64(len(r.funcs)) {
+			r.failed = true
+			return nil
+		}
+		return r.funcs[index]
 	case 255:
 		r.fail(r.Text())
 		return nil
@@ -1631,6 +1675,39 @@ func PanicTestHeld(class, handle uint64) error {
 ` : ''}`;
 }
 
+// GN-6u: the Go side of the count of the live Natives, with the build tag polyspec_native_count_test.
+function goBindingNativeCount(model: Model): string {
+  const buffer = `C.${prefix(model)}_buffer`;
+  const p = prefix(model);
+  return `${goHeader()}
+
+//go:build polyspec_native_count_test
+
+package binding
+
+/*
+${cDeclarations(model, [`${p}__native_count`])}
+*/
+import "C"
+
+// NativeCount gives the count of the live Natives of the static library, each of which holds a cgo.Handle (GN-6u), or
+// the failure of the call.
+func NativeCount() (uint64, error) {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__native_count(pointer, length, result)
+	}, nil)
+	if err != nil {
+		return 0, err
+	}
+	count := dec.Uint()
+	if err := dec.Finish(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+`;
+}
+
 // G-5: the Go side of the arming of fault injection points, with the build tag polyspec_fault_test.
 function goBindingFault(model: Model): string {
   const buffer = `C.${prefix(model)}_buffer`;
@@ -1652,13 +1729,12 @@ func ArmFaults(member, faults string) (uint64, error) {
 	enc := NewWriter()
 	enc.Text(member)
 	enc.Text(faults)
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${p}__arm_faults(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return 0, err
 	}
-	dec := NewReader(out)
 	id := dec.Uint()
 	return id, dec.Finish()
 }
@@ -1667,13 +1743,12 @@ func ArmFaults(member, faults string) (uint64, error) {
 func FaultLeft(id uint64) ([]string, error) {
 	enc := NewWriter()
 	enc.Uint(id)
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${p}__fault_left(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return nil, err
 	}
-	dec := NewReader(out)
 	left := make([]string, dec.Len())
 	for at := range left {
 		left[at] = dec.Text()
@@ -1711,13 +1786,12 @@ func echo${goName(symbol.slice(`${p}__echo_`.length).split('_'))}(${params}) (${
 	var zero ${result}
 	enc := NewWriter()
 ${encode.map((l) => `	${l}`).join('\n')}
-	out, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+	dec, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
 		return C.${symbol}(pointer, length, result)
 	}, enc.Done())
 	if err != nil {
 		return zero, err
 	}
-	dec := NewReader(out)
 ${decode.map((l) => `	${l}`).join('\n')}
 	if err := dec.Finish(); err != nil {
 		return zero, err
@@ -1762,6 +1836,8 @@ export function refuseForGo(model: Model, refusals: Refusals): void {
   const held = new Set([...model.objects.map((o) => o.unit), ...model.callbacks.map((c) => c.unit), ...model.enums, ...model.records].map((u) => u.id));
   const refusedBefore = (type: Type): boolean => {
     if (typeof type === 'string') return false;
+    // GN-6z: generate() refuses a function type for Go by its own name.
+    if ('function' in type) return true;
     if ('unit' in type) return type.library === undefined && aliasOf(model, type) === undefined && !held.has(type.unit);
     return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some(refusedBefore);
   };
@@ -1827,6 +1903,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_panic_test.go`, goPanicTest(internalType(model)));
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
+  if (nativeRoundTrip(model.contract, 'go') !== undefined) files.set(`${BINDING}/zz_generated_native_count.go`, goBindingNativeCount(model));
   const echo = echoes(model);
   if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined)) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));

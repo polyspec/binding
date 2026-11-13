@@ -1,11 +1,11 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits } from './model.ts';
+import { type Model, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, type Arg, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost } from './packages.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, isPlain, madeLines, callbackArg, callables, bytesKind, caseValue, expectedText, isNumber, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 
@@ -158,6 +158,22 @@ export function nodeTests(model: Model): string {
     return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
   };
   ctx.instanceNew = made;
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
+  };
+  // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+  };
+  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
+  // of a fixture whose one member is the call; the test reads the record of each after the call.
+  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined }; use: string }[] => [
+    ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
+    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined }, use: `function${i}.object.call` })),
+  ];
   let usesOutcome = false;
   let usesOrdered = false;
   let usesTokens = false;
@@ -169,6 +185,14 @@ export function nodeTests(model: Model): string {
     const call = (override: Map<unknown, string>): string =>
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
+    // GN-6z: a value of a function type that is not a function is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      out.push(`
+test('GN-6z: ${name} refuses a ${langName('node', functionArg.name, 'variable')} that is not a function', () => {
+  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+});`);
+    }
     for (const arg of reachable ? fn.args : []) {
       const argName = langName('node', arg.name, 'variable');
       const number = isNumber(arg.type);
@@ -250,11 +274,11 @@ test('B-4: ${name} ${kase.id}', () => {
         continue;
       }
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
       const receiverMade = receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
@@ -299,7 +323,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
 });`);
         continue;
       }
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
@@ -307,7 +331,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
         .join('');
       const args = callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       });
       const receiverMade = receiverOfCase(kase.receiver);
       const call = invoke(fn, args, receiverMade.expr);
@@ -397,6 +421,32 @@ test('B-5c: ${langName('node', test.fn.unit.name, 'class')}.${langName('node', t
   assert.deepEqual(addon().__faultLeft(armed), []);`}
 });`);
   }
+  // U-3, GN-6z: a function of the language called on a thread other than its owner is kind wrong_thread, through the
+  // entry point of the feature thread-test.
+  if (takesFunction(model)) {
+    usesAddon = true;
+    out.push(`
+test('U-3: a function called on another thread is kind wrong_thread (GN-6z)', () => {
+  assert.equal(addon().__threadTest(() => null), 'wrong_thread');
+});`);
+  }
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
+  const roundTrip = nativeRoundTrip(model.contract, 'node');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    usesAddon = true;
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+test('GN-6u: ${langName('node', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  ${same('new Subject()')};
+  const before = addon().__nativeCount();
+  const subject = new Subject();
+  assert.equal(${same('subject')}, subject);
+  await new Promise(setImmediate);
+  ${same('new Subject()')};
+  assert.equal(addon().__nativeCount(), before);
+});`);
+  }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
   for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
     const sample = sampleReceiver(model, fn);
@@ -456,7 +506,7 @@ import test from 'node:test';${usesGc ? "\nimport { setFlagsFromString } from 'n
 ${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(esm)};
 
 const require = createRequire(import.meta.url);
-${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to finalize an object.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOutcome ? NODE_OUTCOME : ''}${usesSettled ? NODE_SETTLED : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}
 ${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}
 // T-2: the addon of the platform package, or the file beside the entry of a build in a checkout (GN-3c).
 function addon() {

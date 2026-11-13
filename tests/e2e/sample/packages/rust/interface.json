@@ -495,6 +495,129 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_sample::touch"
+        },
+        {
+          "id": "sample.first",
+          "name": [
+            "first"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookups"
+              ],
+              "type": {
+                "list": {
+                  "unit": "lookup"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::first"
+        },
+        {
+          "id": "sample.maybe",
+          "name": [
+            "maybe"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "lookup"
+              ],
+              "type": {
+                "optional": {
+                  "unit": "lookup"
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "key"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "optional": "text"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::maybe",
+          "optional_reason": "U-3"
+        },
+        {
+          "id": "sample.seek",
+          "name": [
+            "seek"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "search"
+              ],
+              "type": {
+                "unit": "search"
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_sample::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_sample::seek"
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "name": [
+        "search"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::Search",
+      "fields": [
+        {
+          "name": [
+            "lookup"
+          ],
+          "type": {
+            "unit": "lookup"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "key"
+          ],
+          "type": "text",
+          "required": true
         }
       ]
     },
@@ -707,6 +830,16 @@
             "go": "map",
             "wasm": "map"
           }
+        },
+        {
+          "kind": "native",
+          "make": {
+            "php": "native",
+            "python": "native",
+            "node": "native",
+            "go": "native",
+            "wasm": "native"
+          }
         }
       ],
       "in": [
@@ -820,6 +953,14 @@
           ]
         },
         {
+          "python": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "node": "null",
           "cases": [
             {
@@ -873,11 +1014,27 @@
           ]
         },
         {
+          "node": "object",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "php": "stdClass",
           "cases": [
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         },
@@ -935,6 +1092,14 @@
           ]
         },
         {
+          "go": "any",
+          "cases": [
+            {
+              "kind": "native"
+            }
+          ]
+        },
+        {
           "wasm": "null",
           "cases": [
             {
@@ -984,6 +1149,14 @@
             {
               "kind": "map",
               "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "object",
+          "cases": [
+            {
+              "kind": "native"
             }
           ]
         }
@@ -1512,6 +1685,21 @@
       "alias": "data",
       "file": "contracts/cases.json",
       "group": "data_in"
+    },
+    {
+      "member": "sample.first",
+      "file": "contracts/cases.json",
+      "group": "first"
+    },
+    {
+      "member": "sample.maybe",
+      "file": "contracts/cases.json",
+      "group": "maybe"
+    },
+    {
+      "member": "sample.seek",
+      "file": "contracts/cases.json",
+      "group": "seek"
     }
   ]
 }

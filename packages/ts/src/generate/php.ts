@@ -2,8 +2,9 @@
 
 import type { Name, Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
-import { PHP_HOST, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpMaking } from './alias_php.ts';
+import { DRIVEN, cleanupAsserts, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, nativeRoundTrip, traitParam, keepsThrown, boxed } from './model.ts';
+import { PHP_HOST, PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpMaking } from './alias_php.ts';
+import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
@@ -55,17 +56,46 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     if (name === undefined) throw new Unsupported(`no PHP input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
   if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'enum' || unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no PHP input conversion for ${JSON.stringify(type)}`);
+}
+
+// GN-6z, GN-6u: a function holds the PHP Closure as a Native; a call runs on the owner thread, converts the arguments
+// out and the result in, and an exception of the PHP code, or a failure of the binding in the call (kind wrong_thread
+// on another thread), goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
+  const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"').replace(/\?$/, '')}.map_err(Thrown::Binding)`;
+  return `in_function(${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                if let Err(error) = native_thread(&native, ${subject}) {
+                    return Err(thrown_elsewhere(error));
+                }
+                let call = || -> Result<${result}, Thrown> {
+                    let function = native_object(&native).map_err(Thrown::Binding)?;
+${outs.join('\n')}
+                    let returned = function.try_call(vec![${type.parameters.map((_p, i) => `&arg${i}`).join(', ')}]).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+                    if let Some(exception) = ExecutorGlobals::take_exception() {
+                        return Err(Thrown::Php(exception));
+                    }
+                    ${returned}
+                };
+                call().map_err(thrown)
+            })
+        })`;
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -132,6 +162,39 @@ pub fn panic_test() -> Result<Zval, PhpException> {
 #[php(name = ${rustString(`${layout.namespace}\\Internal\\errnoOf`)})]
 pub fn errno_of(symbol: String) -> Result<i64, PhpException> {
     guard(|| binding_core::errno::value(&symbol).map(i64::from).ok_or_else(|| binding_error(BindingError::Internal { detail: format!("the machine has no errno {symbol}") })))
+}
+`;
+
+// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+// gives on another thread, whose drop of the Native the owner releases at its next entry point.
+const THREAD_TEST = (layout: PhpLayout): string => `/// U-3, GN-6z: the entry point of the generated wrong_thread test.
+#[cfg(feature = "thread-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\threadTest`)})]
+pub fn thread_test(value: &Zval) -> Result<Zval, PhpException> {
+    guard(|| {
+        let native = in_function(value, "value")?;
+        let kind = std::thread::spawn(move || match native_thread(&native, "value") {
+            Ok(()) => String::from("none"),
+            Err(error) => error.kind().to_owned(),
+        })
+        .join();
+        match kind {
+            Ok(kind) => out_text(kind),
+            Err(_panic) => Err(binding_error(BindingError::Internal { detail: String::from("U-3: the thread of the test panicked") })),
+        }
+    })
+}
+`;
+
+// GN-6u: the entry point of the generated release test: the count of the Natives that the table of this thread holds.
+const NATIVE_COUNT = (layout: PhpLayout): string => `/// GN-6u: the entry point of the generated release test.
+#[cfg(feature = "native-count-test")]
+#[php_function]
+#[php(name = ${rustString(`${layout.namespace}\\Internal\\nativeCount`)})]
+pub fn native_count() -> i64 {
+    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
+    i64::try_from(count).unwrap_or(i64::MAX)
 }
 `;
 
@@ -600,15 +663,16 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   for (const [i, arg] of fn.args.entries()) {
     const variable = variables[i] ?? '';
     const held = arg.field ? undefined : heldParam(model, arg.type);
-    const converted = arg.default === undefined ? convertIn(model, arg.type, rustIdent(variable), rustString(variable)) : `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
+    const converted = arg.default === undefined ? (arg.field ? boxed(model, arg.type, convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : convertIn(model, arg.type, rustIdent(variable), rustString(variable))) : `in_default(${rustIdent(variable)}, ${closure(['value'], convertIn(model, arg.type, 'value', rustString(variable)))})`;
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
+    const recordLet = rustType(model, { unit: fn.record.unit.id });
     const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordType} = ${recordType} { ${fields} };`);
+    lines.push(`        let ${rustField(fn.record.param.name)}: ${recordLet} = ${recordType} { ${fields} };`);
   }
   lines.push(...locks(model, fn));
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
@@ -718,18 +782,6 @@ impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 `;
 }
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
-}
-
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -737,7 +789,7 @@ function failureRust(model: Model): string {
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   return `
 /// U-3: an exception of the PHP code, or a failure of the binding in a callback.
-enum Thrown {${model.callbacks.length === 0 ? '' : `
+enum Thrown {${!keepsThrown(model) ? '' : `
     Php(ZBox<ZendObject>),`}
     Binding(Fail),
 }
@@ -748,27 +800,26 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
+${THREAD_THROWN}
 fn thrown(error: Thrown) -> ${failure} {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+    binding_core::Failure::Raised(keep_thrown(error))
 }
 
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
-        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
-${model.callbacks.length === 0 ? '' : `            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
+        binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
+${!keepsThrown(model) ? '' : `            Some(Thrown::Php(exception)) => match exception.into_zval(false) {
                 Ok(object) => PhpException::from_message(String::new()).with_object(object),
                 Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
             },
 `}            Some(Thrown::Binding(fail)) => fail,
-            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-
+${takesFunction(model) ? elsewhereRust(model) : ''}
 /// U-3: whether the class of an object has a method of the name.
 fn has_method(object: &ZendObject, name: &str) -> bool {
     let class = object.get_class_entry();
@@ -884,6 +935,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     foreignFailurePhp(model),
     ...model.aliases.map((a) => aliasPhp(model, a)),
     model.aliases.length > 0 ? `${PHP_HOST}${phpMaking(model)}` : '',
+    usesNative(model) ? PHP_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -1075,7 +1127,7 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
 // and checks their names (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues${/\bPredicate::/.test(used) ? ', Predicate' : ''}};\n` : ''}${/\bArg::new\b/.test(used) || model.resultRecords.length > 0 || model.callbacks.length > 0 ? 'use ext_php_rs::args::Arg;\n' : ''}use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;${model.enums.length > 0 || /\bFromZval>::from_zval\b/.test(used) ? '\nuse ext_php_rs::convert::FromZval;' : ''}
 use ext_php_rs::exception::PhpException;
@@ -1084,7 +1136,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{${['ZendClassObject', 'ZendHashTable', 'ZendObject', 'ZendStr'].filter((t) => t === 'ZendObject' || new RegExp(`\\b${t}\\b`).test(used)).join(', ')}, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals};
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}${/\bBTreeSet\b/.test(used) ? 'use std::collections::BTreeSet;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::OnceLock;
+${/\bTHROWN\b/.test(used) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::sync::atomic::{AtomicU64, Ordering};\n' : ''}use std::sync::${usesNative(model) || /\bTHROWN\b/.test(used) ? '{Mutex, OnceLock}' : 'OnceLock'};
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1270,7 +1322,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreError}
 /// B-7: a panic of the call reaches the caller as kind internal, not as the \\\\Error that ext-php-rs throws.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -1305,7 +1357,7 @@ mod entry {
     #![allow(clippy::disallowed_methods, reason = "R-1: the expansion of the php_function and php_module macros of ext-php-rs")]
     use super::*;
 ${functions}
-${PANIC_TEST(layout)}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
+${PANIC_TEST(layout)}${takesFunction(model) ? THREAD_TEST(layout) : ''}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : NATIVE_COUNT(layout)}${model.faults.length === 0 ? '' : FAULT_TEST(layout)}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[php_function]
@@ -1333,9 +1385,13 @@ ${poisonRust(model, layout)}${caseTests.entries}
     #[php(startup = "startup")]
     pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         let module = module
-    ${register.join('\n')};${model.aliases.length === 0 ? '' : `
-        // GN-6e: a PHP value that entered as a handle does not outlive its request.
-        let module = module.request_shutdown_function(release_native);`}
+    ${register.join('\n')};${!usesNative(model) ? '' : `
+        // GN-6u: the Natives of a request are released at its end, while the engine is alive.
+        let module = module.request_shutdown_function(release_native);`}${!takesFunction(model) ? '' : `
+        #[cfg(feature = "thread-test")]
+        let module = module.function(wrap_function!(thread_test));`}${nativeRoundTrip(model.contract, 'php') === undefined ? '' : `
+        #[cfg(feature = "native-count-test")]
+        let module = module.function(wrap_function!(native_count));`}
         #[cfg(feature = "panic-test")]
         let module = module.function(wrap_function!(panic_test)).function(wrap_function!(errno_of));${model.objects.some((o) => o.lock?.writes === true) ? `
         #[cfg(feature = "panic-test")]
@@ -1363,6 +1419,7 @@ function stub(model: Model, layout: PhpLayout): string {
     }
     if ('list' in type || 'tuple' in type || 'map' in type || 'keyed_map' in type) return 'array';
     if ('optional' in type) return `?${phpType(type.optional)}`;
+    if ('function' in type) return '\\Closure';
     const unit = unitOf(model, type);
     const library = libraryOf(type);
     const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };

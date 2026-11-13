@@ -6,6 +6,8 @@
 //! language value is, and the core that receives it decides what it accepts (B-1). The predicates of an `OutValue`
 //! (U-1 `when`) are computed here, in Rust, so the generated code selects a row of the `out` table without judging.
 
+use crate::native::Native;
+
 /// An opaque reference to a language value or a core value that the side holding it resolves (B-1, T-3).
 ///
 /// The number means something only to the side that made it: a binding's table of language objects for a
@@ -357,8 +359,8 @@ pub enum OutValue {
     },
     /// Kind `safe_text`.
     SafeText(String),
-    /// Kind `native`: the language object that entered as this handle goes back unchanged.
-    Native(Handle),
+    /// Kind `native`: the language object that entered as this `Native` goes back unchanged.
+    Native(Native),
     /// Kind `nested:<value type>`: a value of another repository's value type, which that repository's binding makes
     /// from its own `out` table (U-1).
     Nested {
@@ -503,12 +505,12 @@ pub enum HostValue {
     },
     /// A JavaScript `Date`.
     Date(Handle),
-    /// A JavaScript function, a PHP `Closure`, a Python function or method.
-    Callable(Handle),
-    /// An instance of a class of the language or of the application.
+    /// A JavaScript function, a PHP `Closure`, a Python function or method, which a core may keep.
+    Callable(Native),
+    /// An instance of a class of the language or of the application, which a core may keep.
     Object {
-        /// The handle of the object.
-        handle: Handle,
+        /// The object.
+        native: Native,
         /// The class name as the language reports it.
         type_name: String,
         /// Whether a PHP object implements `JsonSerializable`; false in other languages.

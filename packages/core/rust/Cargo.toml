@@ -38,6 +38,10 @@ required-features = ["lock"]
 name = "driver"
 required-features = ["driver"]
 
+[[test]]
+name = "native"
+required-features = ["construct"]
+
 [dependencies]
 indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 tokio-util = { version = "=0.7.20", default-features = false }

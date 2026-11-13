@@ -3,7 +3,7 @@
 
 import type { Contract, Lang, Type } from '../contract.ts';
 import { go, refuseForGo } from './go.ts';
-import { type Model, collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync } from './model.ts';
+import { type Model, collectModel, forLanguage, membersFor, refuseConsumers, Refusals, waitsAsync, holdsFunction } from './model.ts';
 import { phpCaseTests } from './samples.ts';
 import { wasm } from './wasm.ts';
 import { node } from './node.ts';
@@ -103,6 +103,14 @@ export function generate(inputs: Inputs): Files {
     const isWhole = place.top && inner !== undefined && !hasKeyed(inner);
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
+  }
+  // GN-6z: Go does not generate a function type.
+  for (const target of targets.filter((t) => t === 'go')) {
+    for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
+      for (const arg of fn.args.filter((a) => holdsFunction(a.type))) {
+        refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a function type is not generated for ${target} (GN-6z)`);
+      }
+    }
   }
   if (targets.includes('go')) {
     refuseForGo(membersFor(model, 'go'), refusals);

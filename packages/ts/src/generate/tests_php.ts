@@ -2,10 +2,10 @@
 // extension loaded.
 
 import type { Unit } from '../contract.ts';
-import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
+import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip, takesFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -16,6 +16,31 @@ const BAD_NUMBERS: Record<string, string[]> = {
 };
 
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
+
+// G-5: the object of a callback fixture: a call that no row answers is recorded and throws, so a core that swallows the
+// exception still fails the test, which reads the record.
+function phpFixture(values: { members: string[]; rows: string[][] }): string {
+  return `new class([${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
+            public array $unexpected = [];
+            public array $calls = [];
+            public function __construct(private array $rows) {}
+${values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
+            private function answer(string $name, array $args): mixed
+            {
+                $this->calls[] = [$name, $args];
+                foreach ($this->rows as $at => $row) {
+                    if ($row[0] === $name && $row[1] === $args) {
+                        if ($row[3]) {
+                            unset($this->rows[$at]);
+                        }
+                        return $row[2];
+                    }
+                }
+                $this->unexpected[] = [$name, $args];
+                throw new UnexpectedCall($name);
+            }
+        }`;
+}
 
 export function phpTests(model: Model, layout: PhpLayout): string {
   checkCaseNames(model, casePascal, true);
@@ -83,6 +108,16 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     return `(function () { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return phpFixture(values);
+  };
+  // GN-6z: a function value inside another value is the call of a fixture as a Closure, whose unexpected call throws.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `${phpFixture({ members: [phpText('call')], rows })}->call(...)`;
+  };
   let usesOutcome = false;
   let usesSame = false;
   let usesTokens = false;
@@ -94,6 +129,20 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     const call = (override: Map<unknown, string>): string =>
       qualified(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     const reachable = fn.receiver === undefined || sample !== undefined;
+    // GN-6z: a value of a function type that is not a Closure is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      methods.push(`
+    public function testGn6z${name}Refuses${langName('php', functionArg.name, 'class')}ThatIsNotAClosure(): void
+    {
+        try {
+            ${call(new Map([[functionArg, '0']]))};
+            self::fail('no error');
+        } catch (${cls('type')} $error) {
+            self::assertSame('invalid_argument_type', $error->kind());
+        }
+    }`);
+    }
     for (const arg of reachable ? fn.args : []) {
       const argName = langName('php', arg.name, 'variable');
       const number = isNumber(arg.type);
@@ -195,31 +244,16 @@ export function phpTests(model: Model, layout: PhpLayout): string {
     // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call. A
     // call that no row answers is recorded and throws, so a core that swallows the exception still fails the test.
     const fixturesFor = (id: string, args: Map<Fn['args'][number], unknown>) => {
-      const fixtures = fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      // GN-6z: a function value of a case is the call of a fixture whose one member is the call, as a Closure.
+      const fixtures = [
+        ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `$fixture${i}`, values: fixtureValues(model, ctx, fixture) as { members: string[]; rows: string[][]; calls: string[][] | undefined }, use: `$fixture${i}` })),
+        ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `$function${i}`, values: { members: f.members, rows: f.rows, calls: undefined as string[][] | undefined }, use: `$function${i}->call(...)` })),
+      ];
       usesFixture ||= fixtures.length > 0;
       const before = fixtures
         .map(
           (f) => `
-        ${f.name} = new class([${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]) {
-            public array $unexpected = [];
-            public array $calls = [];
-            public function __construct(private array $rows) {}
-${f.values.members.map((member) => `            public function ${member.slice(1, -1)}(mixed ...$args): mixed { return $this->answer(${member}, $args); }`).join('\n')}
-            private function answer(string $name, array $args): mixed
-            {
-                $this->calls[] = [$name, $args];
-                foreach ($this->rows as $at => $row) {
-                    if ($row[0] === $name && $row[1] === $args) {
-                        if ($row[3]) {
-                            unset($this->rows[$at]);
-                        }
-                        return $row[2];
-                    }
-                }
-                $this->unexpected[] = [$name, $args];
-                throw new UnexpectedCall($name);
-            }
-        };`,
+        ${f.name} = ${phpFixture(f.values)};`,
         )
         .join('');
       const after = fixtures
@@ -269,7 +303,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const { fixtures, before, after } = fixturesFor(kase.id, kase.args);
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
@@ -335,7 +369,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       const receiverMade = receiverOfCase(kase.receiver);
       const call = invoke(fn, callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.name;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       }), receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesSame ||= expected !== undefined && 'text' in expected;
@@ -451,6 +485,32 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         $held = ${test.instance};${test.armed === undefined ? '' : `\n        $armed = \\${layout.namespace}\\Internal\\armFaults(${phpText(test.fn.member.id)}, ${phpText(test.armed.faults)});`}${refused('busy', 'busy', test.call)}${test.after === undefined ? '' : `\n        ${test.after};`}${test.armed === undefined ? '' : `
         // GN-8a: the refused call did not reach the core, so the next call takes the arming.${refused(test.armed.category, test.armed.kind, test.armed.again)}
         self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}
+    }`);
+  }
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native at
+  // the next entry point.
+  const roundTrip = nativeRoundTrip(model.contract, 'php');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    const same = (value: string): string => invoke(roundFn, value, '');
+    methods.push(`
+    public function testGn6u${langName('php', roundFn.member.name, 'class')}GivesBackTheSameObjectAndReleasesIt(): void
+    {
+        ${same('new class {}')};
+        $before = \\${layout.namespace}\\Internal\\nativeCount();
+        $subject = new class {};
+        self::assertSame($subject, ${same('$subject')});
+        ${same('new class {}')};
+        self::assertSame($before, \\${layout.namespace}\\Internal\\nativeCount());
+    }`);
+  }
+  // U-3, GN-6z: a function of the language called on a thread other than its owner is kind wrong_thread, through the
+  // entry point of the feature thread-test.
+  if (takesFunction(model)) {
+    methods.push(`
+    public function testU3AFunctionCalledOnAnotherThreadIsKindWrongThread(): void
+    {
+        self::assertSame('wrong_thread', \\${layout.namespace}\\Internal\\threadTest(static fn () => null));
     }`);
   }
   // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.

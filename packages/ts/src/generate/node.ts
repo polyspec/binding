@@ -2,9 +2,10 @@
 // classes, the argument count and name checks of G-7), the declarations and the generated tests (G-5).
 
 import type { Type, Unit } from '../contract.ts';
-import { aliasNode, foreignFailureNode, keptCheckNode, nodeHost } from './alias_node.ts';
+import { NODE_NATIVE, aliasNode, foreignFailureNode, keptCheckNode, nodeHost } from './alias_node.ts';
+import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
@@ -25,18 +26,47 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
     return `${name}(${value}, ${subject})`;
   }
-  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], convertIn(model, type.list, 'item', subject))})`;
+  if ('list' in type) return `in_list(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
   if ('map' in type) return `in_map(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `in_keyed_map(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
   }
-  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], convertIn(model, type.optional, 'value', subject))})`;
+  if ('optional' in type) return `in_optional(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
+  if ('function' in type) return functionIn(model, type.function, value, subject);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   if (unit !== undefined && (unit.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined)) return `in_${recordFn(unit, aliasOf(model, type)?.library)}(env, ${value}, ${subject})`;
   if (unit?.kind === 'record') return `in_${recordFn(unit, libraryOf(type))}(${value}, ${subject})`;
   throw new Unsupported(`no Node input conversion for ${JSON.stringify(type)}`);
+}
+
+// GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env of the
+// owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
+// binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
+function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, value: string, subject: string): string {
+  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
+  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
+  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
+  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+  const argsType = `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
+  const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
+  return `in_function(env, ${value}, ${subject}).map(|native| -> ${rustType(model, { function: { ...type, async_allowed: false } })} {
+            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
+                let env = match native_env(&native, ${subject}) {
+                    Ok(env) => env,
+                    Err(error) => return Err(thrown_elsewhere(error)),
+                };
+                let call = || -> Result<${result}, Thrown> {
+                    let env = &env;
+                    let function: Function<'_, ${argsType}, Unknown<'_>> = unsafe { native_object(env, &native).map_err(Thrown::Binding)?.cast() }.map_err(|error| Thrown::Binding(internal(error)))?;
+                    let args: ${argsType} = FnArgs::from((${outs.join(', ')}${outs.length === 1 ? ',' : ''}));
+                    let returned = function.call(args).map_err(Thrown::Js)?;
+                    ${returned}
+                };
+                call().map_err(thrown)
+            })
+        })`;
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
@@ -477,11 +507,12 @@ function entryRust(model: Model, fn: Fn): string {
         const name = langName('node', field.name, 'variable');
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
+        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${boxed(model, field.type, converted(arg, field.type, raw, rustString(name)))}?;`);
       }
       const recordType = fn.record.unit.core_type ?? '';
+      const recordLet = rustType(model, { unit: fn.record.unit.id });
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-      lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${fields} };`);
+      lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${fields} };`);
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       const held = heldParam(model, parameter.type);
@@ -707,18 +738,6 @@ impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 `;
 }
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-export function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
-  return `&${rustType(model, type)}`;
-}
-
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -737,24 +756,23 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-${model.callbacks.length === 0 ? '' : `fn thrown(error: Thrown) -> ${failure} {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+${THREAD_THROWN}
+${!keepsThrown(model) ? '' : `fn thrown(error: Thrown) -> ${failure} {
+    binding_core::Failure::Raised(keep_thrown(error))
 }
 `}
 fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         binding_core::Failure::Kind(error) => core_error(error),
-        binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
+        binding_core::Failure::Raised(raised) => match take_thrown(&raised) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
             Some(Thrown::Binding(fail)) => fail,
-            None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+            None => ${takesFunction(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
     }
 }
-`;
+${takesFunction(model) ? elsewhereRust(model) : ''}`;
 }
 
 // T-5: a class unit is a class of the addon that holds the core value; the JavaScript entry checks the arguments of its
@@ -929,6 +947,7 @@ function libRust(model: Model): string {
     // them.
     ...model.aliases.map((a) => aliasNode(model, a)),
     model.aliases.length > 0 ? nodeHost(model) : '',
+    usesNative(model) ? NODE_NATIVE : '',
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
@@ -951,11 +970,11 @@ function libRust(model: Model): string {
 // checks the count and the names of the arguments (G-7); a failure is an instance of its library class (B-4).
 
 use binding_core::{BindingError, Category, Kinds${/\bNumberType\b/.test(used) ? ', NumberType' : ''}${/\bTextCause\b/.test(used) ? ', TextCause' : ''}};
-${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
+${usesNative(model) && model.aliases.length === 0 ? 'use binding_core::{Native, NativeObject};\n' : ''}${model.aliases.length > 0 ? `use binding_core::{Handle, HostText, HostValue, HostValues, Native, NativeObject, OutValue, OutValues, Prototype${/\bPredicate::/.test(used) ? ', Predicate' : ''}${/\bValueKind::/.test(used) ? ', ValueKind' : ''}};\n` : ''}use napi::bindgen_prelude::{${[...napiTypes.filter((t) => PRELUDE.has(t)), 'FnArgs', 'Function', 'FunctionRef'].sort().join(', ')}};
 use napi::{Env, Unknown${napiTypes.filter((t) => !PRELUDE.has(t)).map((t) => `, ${t}`).join('')}};
 use napi_derive::napi;
 ${/Borrow</.test(used) ? 'use std::borrow::Borrow;\n' : ''}use std::panic::{catch_unwind, AssertUnwindSafe};
-${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::BTreeMap;\n' : ''}use std::sync::OnceLock;${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
+${/\bTHROWN\b/.test(functions) ? 'use std::cell::RefCell;\nuse std::collections::{BTreeMap, BTreeSet};\n' : ''}use std::sync::${usesNative(model) || /\bTHROWN\b/.test(functions) ? '{Mutex, OnceLock}' : 'OnceLock'};${/\bTHROWN\b/.test(functions) ? '\nuse std::sync::atomic::{AtomicU64, Ordering};' : ''}
 
 // U-5: the constants of the contract are the constants of the core.
 ${constants}
@@ -1043,7 +1062,7 @@ fn binding_error(error: BindingError) -> Fail {
 }
 ${coreErrorRust(model)}
 /// B-7: a panic of the call reaches the caller as kind internal.
-fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {
+fn guard<T>(body: impl FnOnce() -> Result<T, Fail>) -> Result<T, Fail> {${usesNative(model) ? '\n    release_queue();' : ''}
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => {
@@ -1064,7 +1083,30 @@ ${faultRust(model)}${waitingFaults(model)}${cleanupAsserts(model)}${aliasKindsRu
 pub fn panic_test(env: &Env) -> napi::Result<()> {
     guard(|| panic!("panic-test")).map_err(|fail| throw(env, fail))
 }
-${aliasesWithKinds(model).map((alias) => `
+${nativeRoundTrip(model.contract, 'node') === undefined ? '' : `
+/// GN-6u: the entry point of the generated release test: the count of the references that the table of this thread
+/// holds.
+#[cfg(feature = "native-count-test")]
+#[napi(js_name = "__nativeCount")]
+pub fn native_count() -> u32 {
+    let count = OWNED.with_borrow(|owned| owned.as_ref().map_or(0, |owned| owned.values.len()));
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+`}${takesFunction(model) ? `
+/// U-3, GN-6z: the entry point of the generated wrong_thread test: the kind of the failure that a call of the function
+/// gives on another thread, whose drop of the Native the owner releases at its next entry point.
+#[cfg(feature = "thread-test")]
+#[napi(js_name = "__threadTest")]
+pub fn thread_test<'env>(env: &'env Env, value: Unknown<'env>) -> napi::Result<String> {
+    let native = guard(|| in_function(env, value, "value")).map_err(|fail| throw(env, fail))?;
+    let kind = std::thread::spawn(move || match native_env(&native, "value") {
+        Ok(_env) => String::from("none"),
+        Err(error) => error.kind().to_owned(),
+    })
+    .join();
+    kind.map_err(|_panic| napi::Error::from_reason("U-3: the thread of the test panicked"))
+}
+` : ''}${aliasesWithKinds(model).map((alias) => `
 /// U-7: runs the in function of the alias ${alias.unit.id} alone, for the cases of the alias.
 #[cfg(feature = "codec-test")]
 #[napi(js_name = ${rustString(`__aliasIn${langName('node', alias.unit.name, 'class')}`)})]
@@ -1123,6 +1165,8 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
+  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
+  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
   const unit = unitOf(model, type);
   // T-3: a record of another repository is a plain object, declared here by its fields.
   if (unit?.kind === 'record' && libraryOf(type) !== undefined) {

@@ -22,9 +22,10 @@ import {
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, errorUnitOfKind, factoryOf, heldParam, kindText, langName, poisoned,
   objectUnit, places, pointName, unitOf,
+  nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, instanceOf, isInstanceValue, pairsReceiver, valueClassReceiver,
   raisingCases, resultCases, sampleReceiver, stringCases,
 } from './samples.ts';
 
@@ -33,6 +34,8 @@ interface Values {
   module: string;
   scope: GoScope;
   usesPtr: boolean;
+  // GN-6aa: the callback units whose fixture a case value inside another value makes.
+  fixtures: Set<CallbackUnit>;
 }
 
 // The statements of a test before its call: the instances that it makes (GN-13f), each checked.
@@ -150,6 +153,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     throw new Unsupported(`a case value of the class ${object.unit.id} is an instance value {"new" | "from": ...} or the [key, value] pairs that fill it, not ${JSON.stringify(json)} (GN-13f, GN-13)`);
   }
   const unit = unitOf(v.model, type);
+  // GN-6aa: a callback value inside another value is a fixture of the body, whose calls the test does not read.
+  const callback = v.model.callbacks.find((c) => c.unit === unit);
+  if (callback !== undefined && unit !== undefined && typeof json === 'object' && 'callback' in json) {
+    v.fixtures.add(callback);
+    return fixtureLines(v, b, fixtureOf(unit, json, 'a case value'), b.fresh('fixture'));
+  }
   if (unit?.kind === 'enum') {
     const variant = (unit.variants ?? []).find((x) => x.value === json);
     return variant === undefined ? `${typeName(v, type)}(${goString(String(json))})` : `${typeName(v, type)}${goName(variant.name)}`;
@@ -362,7 +371,7 @@ const indent = (lines: string[], depth: number): string => lines.map((l) => (l =
 const testName = casePascal;
 
 // G-5: the fixture of a callback, which answers the calls of the core by the rows of a case.
-function fixtureLines(v: Values, b: Body, fixture: Fixture, name: string): string {
+function fixtureLines(v: Values, b: Body, fixture: Omit<Fixture, 'arg'>, name: string): string {
   const members = fixture.unit.members ?? [];
   const memberName = (i: number): string => goString(langName('go', members[i]?.name ?? [], 'callable'));
   const argsOf = (member: number, args: unknown[]): string => `[]any{${(members[member]?.parameters ?? []).map((p, i) => typed(p.type, value(v, b, p.type, args[i] ?? null))).join(', ')}}`;
@@ -793,11 +802,42 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
 export function goTestFiles(model: Model, module: string): [string, string][] {
   checkCaseNames(model, casePascal, false);
   const scope: GoScope = { model, module, imports: new Set() };
-  const v: Values = { model, module, scope, usesPtr: false };
+  const v: Values = { model, module, scope, usesPtr: false, fixtures: new Set() };
   const out: Out = { main: [], fault: [], held: [], callbacks: new Set() };
   for (const fn of callablesOf(model).filter((f) => f.module === module && f.kind !== 'iterate')) memberTests(v, out, fn);
   heldTests(v, out, model.objects.filter((o) => o.unit.module === module));
-  if (out.main.length + out.fault.length + out.held.length === 0) return [];
+  // GN-6u: a func goes through the native row and back, and the binding releases its cgo.Handle; a func is not
+  // comparable, so the test checks the count of the live handles of the Natives.
+  const roundTrip = nativeRoundTrip(model.contract, 'go');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id && f.module === module);
+  const native = roundFn === undefined ? [] : [`
+func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
+	if _, err := ${invoke(v, roundFn, ['func() {}'], '')}; err != nil {
+		t.Fatalf("GN-6u: %v", err)
+	}
+	before, err := binding.NativeCount()
+	if err != nil {
+		t.Fatalf("GN-6u: %v", err)
+	}
+	got, err := ${invoke(v, roundFn, ['func() {}'], '')}
+	if err != nil {
+		t.Fatalf("GN-6u: %v", err)
+	}
+	if _, ok := got.(func()); !ok {
+		t.Fatalf("GN-6u: %#v is no func", got)
+	}
+	if _, err := ${invoke(v, roundFn, ['func() {}'], '')}; err != nil {
+		t.Fatalf("GN-6u: %v", err)
+	}
+	after, err := binding.NativeCount()
+	if err != nil {
+		t.Fatalf("GN-6u: %v", err)
+	}
+	if after != before {
+		t.Fatalf("GN-6u: %d Natives after the call, %d before", after, before)
+	}
+}`];
+  if (out.main.length + out.fault.length + out.held.length + native.length === 0) return [];
   const pkg = goPackage(model.contract, module);
   // The helpers are in the file without a build tag, which every run compiles.
   const all = [...out.main, ...out.fault, ...out.held].join('\n');
@@ -805,7 +845,7 @@ export function goTestFiles(model: Model, module: string): [string, string][] {
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
-    ...[...out.callbacks].map((cb) => callbackTypes(v, cb)),
+    ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');
   const file = (tag: string | undefined, tests: string[], extra = ''): string => {
     const body = `${extra}${tests.join('\n')}\n`;
@@ -819,6 +859,7 @@ ${testImports(model, module, body, scope)}${body}`;
   const files: [string, string][] = [['zz_generated_test.go', file(undefined, out.main, helpers)]];
   if (out.fault.length > 0) files.push(['zz_generated_fault_test.go', file('polyspec_fault_test', out.fault)]);
   if (out.held.length > 0) files.push(['zz_generated_held_test.go', file('polyspec_panic_test', out.held)]);
+  if (native.length > 0) files.push(['zz_generated_native_count_test.go', file('polyspec_native_count_test', native)]);
   return files;
 }
 

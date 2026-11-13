@@ -1,10 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: eff25ae380276f1cd124b6717179654efdc0f13fb8aeeeeac23ae9f3367985a7 -->
+<!-- source-sha256: 1647f9d7e38eae43cf18dbb131c74361fcc143dc996fdbfc89090fbf8030b6be -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- 함수 타입이 있고 callback unit이 없는 계약의 바인딩이 컴파일되지 않았다. 함수 호출은 던져진 것을 `thrown`에 넘기는데,
+  Node, Python, WASM은 callback unit이 있는 계약에만 `thrown`을 생성했고, PHP는 Closure 호출이 만드는 변형
+  `Thrown::Php`를 뺐다. WASM은 그런 계약에 `Thrown`, `failure_error`, 실패의 필드 `thrown`도 생성하지 않았다. 이제 각
+  target은 callback unit이나 함수 타입이 있는 계약에 이들을 생성한다(U-3, GN-6z). binding_core의 시험 파일
+  `tests/native.rs`에 crate 수준의 `#![cfg(feature = "construct")]`가 있어서, 그 feature 없이 돌리면 시험을 하나도
+  돌리지 않은 target이 통과했다. 이제 `required-features = ["construct"]`인 시험 target이다(HR-84).
+  `tests/e2e/functions`와 `tests/e2e/sample`의 Rust 코어는 `make fmt-e2e`가 확인하는 rustfmt 꼴이다. `make test-ts`로
+  검증: 335개 중 335개 통과.
 
 - `only`가 있는 unit과 `core_type`이 없는 값 class의 규칙이 `wait: blocking_io`인 member의 규칙과 같은 id GN-6m을 썼다.
   `only`가 있는 unit의 규칙은 이제 명세, 코드, 시험에서 GN-6af다. 값 타입의 값이 아닌 언어의 값(`{"host": <종류>}`)을
@@ -94,6 +103,81 @@
 - 코어가 참조로 주는 클래스 결과(`Value::members`의 `&OrderedMap`, `Value::items`와 `Value::get`의 `&Value` 항목)는 컴파일되지
   않았다. `out_<class>`가 값을 소유한 형태로 받았기 때문이다(E0308, E0631). 이제 변환은 `impl CoreForm<T>`를 받아 소유한 값은
   그대로 두고 빌린 값은 복제하며, optional이나 list가 더하는 참조 뒤의 값도 같다(GN-6b). `packages/ts`의 `npm test`로 검증했다.
+- Go는 값이 준 func의 `cgo.Handle`을 디코더가 그 func의 node에 닿을 때만 지웠다. 그래서 그 앞에서 실패한 디코딩(Go
+  형태가 없는 값, 잘못된 node)이나 호출자가 디코딩하지 않은 결과는 handle과 그 func를 남겼다. 이제 Rust가 Go에 주는 모든
+  버퍼는 그 버퍼가 주는 handle의 목록으로 시작하고, func의 node는 그 목록 안 handle의 위치다. `invoke`와 callback의 인자는
+  다른 무엇을 디코딩하기 전에 목록을 먼저 읽어 func를 꺼내고 handle을 모두 지운다(GN-6u).
+- Node에서 다른 스레드가 drop한 `Native`는 그 owner의 다음 진입점에서야 해제되어, 더 부르지 않는 프로그램은 env가 끝날
+  때까지 참조를 가졌다. 이제 owner는 표를 만들 때 unref한 threadsafe function을 만든다. 다른 스레드의 drop은 owner들의 lock
+  안에서 그것을 부르고, 그 함수는 owner 스레드에서 대기열을 비운다. env cleanup hook은 generation을 올린 뒤 같은 lock 안에서
+  그것을 abort하므로, 이전 generation의 drop은 아무것도 부르지 않는다(GN-6u).
+- `Raised`는 handle만 가져서, 코어가 `Raised`를 돌려주지 않고 버리면 그 아래의 예외가 바인딩의 표에 남았고, 다른 스레드에서
+  난 바인딩의 실패도 그 표에 남았다. 이제 `Raised`는 `Native`를 갖고(`Raised::from_generated(Native)`, `native()`), 그 마지막
+  drop이 항목을 지운다(GN-6u). Python, Go, WASM은 drop에서 지우고, Node와 PHP는 던진 스레드에서 곧바로 지우거나, 다른
+  스레드의 drop 뒤에는 그 스레드가 다음에 예외를 보관하거나 다시 던질 때 지우며, 스레드가 끝나면 그 대기열을 버린다. 다른
+  스레드에서 난 바인딩의 실패는 그 `Raised`가 `BindingError`로 갖는다. `Raised::from_generated`는 `Handle` 대신 `Native`를
+  받고 `handle()`은 `native()`로 바뀌었으므로, binding_core에 의존하는 모든 저장소의 생성 코드는 이 버전으로 다시 생성한다.
+  그 전에 생성한 코드는 이 버전에서 컴파일되지 않는다.
+- 언어 객체를 `native` 행으로 보냈다가 돌려받는 생성 시험이 없어서, 객체를 붙잡거나 잃는 바인딩도 통과했다. `native` out
+  행이 있는 값 alias와 그것을 받아 그대로 돌려주는 함수가 있으면, 이제 각 target이 객체가 같은 객체로 돌아오는지와 바인딩이
+  그 객체의 참조를 남기지 않는지 시험한다(GN-6u). Python은 `sys.getrefcount`와 `weakref`로, Node, PHP, WASM은 새 feature
+  `native-count-test`의 진입점(`__nativeCount`, `Internal\nativeCount`)이 주는 owner 표의 개수로, Go는 살아 있는 handle의
+  개수(`binding.NativeCount`, build tag `polyspec_native_count_test`)로 본다. 들어오는 Go func는 이제 정적 라이브러리가 세는
+  `Native`다. end-to-end 확인은 feature 없이 빌드한 정적 라이브러리에 `__native_count`가 있으면 실패한다.
+- `tests/e2e/functions`는 함수 타입을 Python에서만 확인했다. 이제 PHP, Node, WASM target도 선언하므로, end-to-end 확인이
+  함수 타입을 받는 모든 target의 저장된 함수를 실행한다(GN-6z).
+- WASM은 함수 타입을 받는 member를 거부했다(GN-6z). 이제 함수를 모듈의 한 스레드의 표에 있는 `Native`(GN-6u)로 갖고
+  parameter를 TypeScript 함수 타입으로 선언한다. 함수가 아닌 값은 kind `invalid_argument_type`이다. WASM의 생성된 테스트는
+  함수 fixture의 member 이름을 PHP 문자열로 썼는데, 이제 JavaScript 문자열로 쓴다.
+- PHP는 함수 타입을 받는 member를 거부했다(GN-6z). 이제 Closure를 owner 표의 `Native`(GN-6u)로 갖고 `\Closure`로
+  선언한다. 다른 스레드의 호출은 kind `wrong_thread`이며 feature `thread-test`의 `Internal\threadTest`가 그것을 보이고,
+  Closure가 아닌 값은 kind `invalid_argument_type`이다. Node와 PHP에서 다른 스레드의 호출 중 바인딩의 실패는 모든 스레드가
+  닿는 표에 `BindingError`로 남는다. 언어의 오류 객체는 owner 스레드에서만 만들어지므로, 호출이 실패할 때 owner가 그것을
+  만든다.
+- Node는 함수 타입을 받는 member를 거부했다(GN-6z). 이제 JavaScript 함수를 owner 표의 `Native`(GN-6u)로 갖고 parameter를
+  TypeScript 함수 타입으로 선언한다. 호출은 owner 스레드에서 표의 env 안에서 실행되고, 다른 스레드의 호출은 kind
+  `wrong_thread`이며, 새 feature `thread-test`의 진입점 `__threadTest`가 그것을 보인다. 함수가 아닌 값은 kind
+  `invalid_argument_type`이다. 생성된 테스트는 case의 함수 값을 fixture의 call로 준다.
+- 생성된 바인딩은 handle로 들어온 모든 언어 객체를 커지기만 하는 표에 두었다. Python과 WASM은 프로세스가 끝날 때까지,
+  Node는 스레드가 끝날 때까지, PHP는 요청이 끝날 때까지 두었다. `Date`와 `Other` 값도 같이 두었고, Go는 func를 그 호출
+  안에서만 다루었다. 이제 코어가 보관할 수 있는 언어 객체는 `Native`로 들어오고, 마지막 drop이 target의 규칙으로 그것을
+  해제한다(GN-6u). Python은 `Py<PyAny>`를 갖고 `pyo3_disable_reference_pool`을 거부한다. WASM은 표의 key를 갖는다. Node와
+  PHP는 owner, generation, key를 갖고, 다른 스레드의 drop을 owner의 대기열에 넣으며, 모든 진입점의 `guard`에서 대기열을
+  비우고, env cleanup hook과 request shutdown에서 표를 해제하고 generation을 올린다. Go는 func의 `cgo.Handle`을 갖고 `out`
+  마다 새 handle을 준다. `Date`와 `Other` 값은 호출 안의 순서로 번호가 매겨진 handle을 받는다. `tests/e2e/sample`의 data
+  alias는 객체나 함수를 `Data::Native`로 갖고 모든 target에서 `native` 행으로 돌려준다. `generate.test.ts`가 target마다
+  그 형태를 확인한다.
+- binding_core는 코어가 보관할 수 있는 언어 객체(`HostValue::Object`, `HostValue::Callable`, `OutValue::Native`)를
+  바인딩 표의 `Handle`로 주었고, 그 표는 모든 객체를 프로세스나 요청이 끝날 때까지 가졌다. 코어가 handle을 버린 때를
+  바인딩에 알리는 것이 없었기 때문이다. 이제 그것을 `Native`로 준다. `Native`는 객체로 같음을 판정하는
+  `Arc<dyn NativeObject>`이고, 코어가 마지막 것을 drop하면 바인딩이 그 객체 대신 가진 것을 해제한다(B-1, U-7 (d)).
+  `HostValue::Object`의 field 이름은 `native`다. `tests/native.rs`는 같음, 복제, 다른 스레드에서의 해제를 확인한다.
+  `make test-rust lint-rust`로 확인했다.
+- `tests/e2e/functions`의 `registry.call`처럼 receiver가 보관한 언어 코드를 부르는 member는 코어가
+  `Result<T, Failure<E>>`를 돌려주는데도, 코어 오류가 `E`인 것처럼 생성되어 바인딩 crate가 컴파일되지 않았다(E0308).
+  이제 계약은 그런 member를 `core.failure: true`로 적고, 생성 코드는 그 오류를 callback을 받는 member의 오류처럼 변환한다.
+  `binding check`는 receiver가 언어 코드를 보관하지 않는 member의 `core.failure: true`, callback이나 함수를 받는 member의
+  `core.failure: false`, `core.result: false`와 함께 쓴 `core.failure: true`를 거부한다(E-1c, GN-7, CK-21).
+  `packages/ts`의 `npm test`로 확인했다.
+- 다른 타입 안(list의 항목, `optional`, record parameter의 field)에 callback을 가진 parameter는 모든 target에서
+  거부되었다("the type {"unit": ...} is not generated yet"). 이제 각 target은 그런 callback을 `Box<dyn <core trait> + 'a>`로,
+  그것을 담은 list, `optional`, record를 값으로 코어에 준다. `'a`는 Node에서 `'env`, 다른 곳에서 `'static`이다. callback
+  field를 가진 record의 코어 타입은 그 lifetime을 가지며, 그런 record는 record parameter가 아닌 자리에서 이름으로
+  거부한다(GN-6aa). 생성된 시험은 다른 값 안의 callback 값을 fixture의 객체로, 또는 그 callback을 구현하는 class의 인스턴스
+  값으로 준다. `tests/e2e/sample`은 `sample.first`(list), `sample.maybe`(`optional`), `sample.seek`(record field)를
+  가진다. `packages/ts`의 `npm test`로 확인했다.
+- 함수 값 `{"function": [<행>]}`을 준 case는 생성기를 "no case value of the type"으로 멈추게 했다. 이제 Python 시험은
+  그것을 호출 자체의 fixture로 주고 호출 뒤에 그 호출 기록을 읽는다. `then` 호출의 인자처럼 다른 값 안에 있으면 그런
+  fixture의 호출 가능한 객체로 준다. 또 호출 가능하지 않은 값이 kind `invalid_argument_type`인지 확인한다(G-5, GN-6z).
+  `tests/e2e/functions`는 코어가 호출 중에 함수를 부르고(`functions.apply`) class 안에 함수를 보관하는(`registry.register`,
+  `registry.call`) Python 저장소다.
+- 함수 타입 parameter를 가진 member는 모든 target에서 거부되었다("the type {"function": ...} is not generated yet").
+  그래서 template `engine.register` 같은 member가 있는 계약은 어떤 target도 생성되지 않았다. 이제 Python은 그것을
+  생성한다. 코어는 `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`를 값으로 받고, 호출
+  가능한 객체는 들어올 때 판정되며(kind `invalid_argument_type`), 호출은 인자를 내보내고 결과를 들이며, Python 코드의
+  예외는 `Raised`로 코어에 간다(GN-6z). Node, PHP, WASM은 binding_core에 native 수명이 생길 때까지 이름으로 거부하고, Go는
+  거부한다. callback member와 함수 타입은 빌린 parameter의 규칙 하나를 함께 쓴다(T-1). `packages/ts`의 `npm test`로
+  확인했다.
 - `tests/e2e/classes`의 Go C ABI가 `panic-test` 없이 빌드되지 않았다. poison 진입점이 쓰기 쪽 자리가 있는 모든 class에 갈래를
   두었는데, Go가 만들지 않는 `lease`도 그랬고, 그 갈래만 쓰는 `held_lease`가 feature가 꺼지면 쓰이지 않았다. 이제 진입점은
   Go poison 시험처럼 Go가 생성자나 static member로 만드는 class만 받고, 그런 class가 없는 패키지에는 진입점이 없다(GN-6h).

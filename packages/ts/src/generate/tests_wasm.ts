@@ -1,8 +1,8 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf, type Arg, nativeRoundTrip } from './model.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -94,6 +94,22 @@ export function wasmTests(model: Model): string {
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `fixture([${values.members.join(', ')}], [${values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object`;
+  };
+  // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `fixture(['call'], [${rows.map((row) => `[${row.join(', ')}]`).join(', ')}]).object.call`;
+  };
+  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
+  // of a fixture whose one member is the call; the test reads the record of each after the call.
+  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined }; use: string }[] => [
+    ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
+    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined }, use: `function${i}.object.call` })),
+  ];
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -110,6 +126,14 @@ export function wasmTests(model: Model): string {
       target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? placeholder(model, ctx, arg.type)));
     // A method is tested on an instance, which a case of the class gives (GN-13).
     const reachable = fn.receiver === undefined || sample !== undefined;
+    // GN-6z: a value of a function type that is not a function is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      out.push(`
+test('GN-6z: ${name} refuses a ${langName('wasm', functionArg.name, 'variable')} that is not a function', () => {
+  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
+});`);
+    }
     for (const arg of reachable ? fn.args : []) {
       const argName = langName('wasm', arg.name, 'variable');
       const number = isNumber(arg.type);
@@ -191,11 +215,11 @@ test('B-4: ${name} ${kase.id}', () => {
         continue;
       }
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const caseArg = (arg: Fn['args'][number]): string | undefined => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       };
       const receiverMade = receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
@@ -239,7 +263,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
 });`);
         continue;
       }
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = fixturesAt(fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
       const after = fixtures
@@ -247,7 +271,7 @@ test('GN-13e: ${name} ${kase.id}', () => {
         .join('');
       const args = callArgs(model, ctx, fn, (arg) => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
       });
       const receiverMade = receiverOfCase(kase.receiver);
       const call = invoke(fn, args, receiverMade.expr);
@@ -321,6 +345,23 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
+  const roundTrip = nativeRoundTrip(model.contract, 'wasm');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    usesGlue = true;
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the same object and releases it', async () => {
+  ${same('new Subject()')};
+  const before = (await glueModule()).__nativeCount();
+  const subject = new Subject();
+  assert.equal(${same('subject')}, subject);
+  await new Promise(setImmediate);
+  ${same('new Subject()')};
+  assert.equal((await glueModule()).__nativeCount(), before);
+});`);
+  }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     usesGlue = true;
@@ -334,7 +375,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
 import assert from 'node:assert/strict';
 import test${usesStepGlue ? ', { before }' : ''} from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
-${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesTokens ? nodeTokens(tokenForms(model, 'node')) : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

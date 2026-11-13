@@ -19,7 +19,7 @@ the design ids are those of the binding design.
   fields (GN-6i), and for Python, Node and PHP a method with the receiver `self` (GN-6o), a class unit with
   `cleanup` (GN-6p) and a member with `blocking_io` that reaches language code (GN-6q).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
+  recognizing callback, a function type in Go (GN-6z), a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
@@ -150,6 +150,8 @@ the design ids are those of the binding design.
   | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7), and its `in` function and then its `out` function (GN-13e) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
   | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
+  | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
+  | `native-count-test` | the count of the language objects that the owner table holds (GN-6u) | — | `__nativeCount` | `<namespace>\Internal\nativeCount` | `<prefix>__native_count`; WASM `__nativeCount` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics. These entry points panic on purpose, so each
@@ -160,7 +162,9 @@ the design ids are those of the binding design.
   cannot make has no instance to give it, and the Go entry point would read the instance table of such a class only
   under `panic-test`, which leaves its reader unused without the feature.
   A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, the Go crate always
-  (for its round-trip entry points), and every crate has
+  (for its round-trip entry points); a Node or PHP crate has `thread-test` when a member takes a function type, because
+  those targets hold a function on its owner thread, and its entry point calls the function on another thread and
+  gives the kind of the failure; and every crate has
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
   `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
   library (`<library>.<id>`, G-5): then the feature of each binding crate also names `polyspec-<library>/fault-test`
@@ -258,9 +262,33 @@ the design ids are those of the binding design.
   When the object enters, each member must be callable (kind `invalid_callback`). A call converts the arguments out
   (borrowed per T-1) and the result in; an exception of the language code, or a failure of the binding in the call
   (a result of another type, a call from another thread with `thread: owner` on Node and PHP, kind `wrong_thread`), goes to the core
-  as a `Raised` whose handle names it in the binding's table, and the generated caller throws the same object again.
+  as a `Raised` whose `Native` names it in the binding's table, and the generated caller throws the same object again.
+  The last drop of a `Raised` that no caller threw again removes its entry, as GN-6u states.
   The interface is declared as a Python `typing.Protocol` in `<root>._types`, a Node interface and a PHP interface
   that the extension registers. The binding crates depend on `polyspec-binding-core` with the feature `construct`.
+- **GN-6z** A function type (T-2) is taken by the core as
+  `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`, by value: each parameter is
+  borrowed as an argument of a callback member is (T-1, GN-6d), `R` is the Rust type of the return (`()` for `none`)
+  and `E` is the core error. The core may keep the function after the call (template `engine.register`), so the form
+  is `'static`, `Send` and `Sync`. When the value enters it must be callable (kind `invalid_argument_type`). A call
+  converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
+  the call, goes to the core as a `Raised`, as GN-6d states. Python holds the callable in the function and declares
+  the parameter as `collections.abc.Callable`. Node, PHP and WASM hold a language value that belongs to one thread and
+  one environment, so the function holds it as a `Native` (GN-6u) and declares the parameter as a function type
+  (TypeScript `(…) => R`, PHP `\Closure`): a call on a thread other than the owner of the `Native` is kind
+  `wrong_thread`, and a call after the cleanup of the owner (the env of Node, the request of PHP) is kind `internal`;
+  either goes to the core as a `Raised` whose `Native` holds its `BindingError`, which any thread may hold, because the
+  error object of the language is made on the owner thread only, where the failure is converted. Go refuses it (G-4).
+- **GN-6aa** A callback inside another type (a field of a record, an item of a list, an `optional`) is taken as
+  `Box<dyn <core trait> + 'a>`, where `'a` lasts for the call; `Send` and `Sync` are what the trait requires. A list,
+  an `optional` or a record that holds a callback is passed to the core by value, an exception to T-1, because the
+  binding makes the value for each call, so it has nothing to keep, and a borrowed list would not let the core call a
+  member with the receiver `&mut self`. The core type of a record with a callback field has one lifetime parameter
+  (`polyspec_x::Options<'a>`); the contract names it by its path in `core_type`, and the generator writes the lifetime
+  where it names the type: `'env` in Node, whose callback lives in the environment of the call, and `'static` in the
+  other targets. Such a record is generated where the binding makes it from the arguments of the call, as a record
+  parameter (T-4), and refused by name at another place. A callback that the core keeps after the call is `Box<dyn <core trait> + Send + Sync>` (`'static`), which
+  Node, PHP and WASM give on the native lifetime as GN-6z states.
 - **GN-6e** A value alias with `core: {in, out}` (U-7) enters as the `HostValue` that the binding describes one level
   at a time (B-1) and the core's `in` function judges through `HostValues`; its failure is the core's kind or the
   exception that language code raised while the core walked the value (a getter, an iterator), thrown again unchanged.
@@ -275,12 +303,48 @@ the design ids are those of the binding design.
   content by its core path, and its value leaves as an instance of the class; any other member, and a member in an
   alias of another repository, is refused by name (G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
   map, each key of the kinds it lists made by the rows as its items are (T-2); in Python and Node the same handle is the same object,
-  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
-  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
-  it is kept until its request ends: the engine frees the values of a request when the request ends, so the extension
-  releases them at its request shutdown, while the engine is alive, and a handle of an ended request finds no value
-  (kind `internal`). A value kept beyond the request is released by the thread after the engine is gone, which ends
-  the process with a fault.
+  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A language object
+  that a core may keep, an `Object` or a `Callable`, enters as a `Native` (B-1), which the core copies, keeps and
+  drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
+  `Other` value is valid only inside the `in` or `out` call that gave it: the binding numbers a `Date` and an `Other`
+  value in the order of the call, which no later call reads. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6u).
+- **GN-6u** What a `Native` (B-1) holds, and what its last drop does, by target:
+  - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
+    so the crate does not compile with `pyo3_disable_reference_pool`.
+  - WASM holds the key of the table of its one thread, which holds the `JsValue`; the drop removes it.
+  - Node and PHP hold the owner, its generation and the key of the owner table, which holds the language reference on
+    the thread that owns it, because a reference of that thread cannot be released on another one. A drop on the
+    owner thread releases at once; a drop on another thread puts the key in the release queue of the owner, which every
+    generated entry point of that owner empties at the start of its synchronous part. In Node a drop on another
+    thread also calls the threadsafe function of the owner, which empties the queue on the owner thread when no entry
+    point runs for a while, so the release does not wait for the next entry point. The owner makes that function when
+    it makes its table, without a JavaScript function, and unrefs it, so that it does not keep the event loop alive.
+    The Node env cleanup hook and the PHP request shutdown release what the table holds and raise its generation, and
+    the Node hook releases the threadsafe function with abort under the lock of the owners. A drop compares the
+    generation under that lock; a drop of an older generation discards its key and touches nothing of the language,
+    whose environment is gone, neither a reference nor the threadsafe function, and the `out` of such a `Native` is
+    kind `internal`.
+  - Go holds the `cgo.Handle` of the func, which the drop deletes on any thread.
+  - The `Native` of a `Raised` (GN-6d) holds the key of the table of thrown objects; its last drop removes the entry,
+    so an exception that the core drops instead of returning is not kept. Python, Go and WASM remove it at the drop.
+    Node and PHP keep the table on the thread that threw, with the number of that thread: a drop on that thread
+    removes the entry at once, and a drop on another thread queues the key for that thread while it lives, which
+    removes the queued keys when it next keeps or throws again an exception and discards its queue when it ends. The
+    `Native` of a failure of the binding on another thread (GN-6z) holds the `BindingError` itself, which the drop
+    discards.
+  - The round trip and the release are tested where a value alias has a `native` row in the target and a function
+    takes that alias as its one parameter and returns it: after one warm-up call, the test counts what the binding
+    holds, gives that function a new instance of a class of the test, checks that the result is the same object,
+    drops it, makes one more call, which empties the release queue (Node first lets the event loop turn once), and
+    counts again, which must give the first count. The count is the number of live references of the subject
+    (`sys.getrefcount`) in Python, with a weak reference that is dead after the subject is deleted, and the entry point
+    of `native-count-test` in the other targets: the entries of the owner table in Node, PHP and WASM, the live
+    `cgo.Handle` of the Natives in Go, where a func is not comparable, so the test checks the count only. The bytes of an `out` outlive the
+    `Native`, so its `native` row gives a new `cgo.Handle` of the func. Every buffer that Rust gives Go (a result, a
+    failure, the arguments of a callback) starts with the list of the handles that it gives, and the node of a func
+    is the index of its handle in that list. Go reads the list before it decodes anything else: it takes the func of
+    each handle and deletes the handle at once, so no handle outlives its buffer, whatever the decoding then finds
+    (a value without a Go form, a malformed node) and whether the caller decodes the buffer at all.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
@@ -350,7 +414,11 @@ the design ids are those of the binding design.
   In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
   value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
-  does when `raises` names a variant of the contract's own core error or the member takes a callback. The generated
+  does when `raises` names a variant of the contract's own core error or the member takes a callback. The error of
+  such a path is `binding_core::Failure<E>`, a kind or what language code raised, when `core.failure` is true, and
+  without it when a parameter holds a callback or a function; `core.failure: true` names a member that calls language
+  code that its receiver keeps (template `engine.render`), whose error the generated code converts as that of a member
+  that takes a callback (GN-6d, GN-6z). The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
   `core.result` that is not true of the core does not compile (I-2). A `core.result: true` in a contract whose
   `errors.kinds` names no core error is refused by name. The error is matched without a wildcard into the
@@ -753,7 +821,7 @@ the design ids are those of the binding design.
   `Array.isArray`, `Array.from` and `Object.keys` imported with `catch`), so its exception is a value that the call
   throws again unchanged; an exception never unwinds through the frames of the WebAssembly module, which would leave
   its stack and its tables in a broken state. A failure (`Fail`) carries that exception, and the core keeps it as the
-  `Raised` of U-3. A value that enters as a handle is kept for the life of the instance (U-7 (d)). The in function of
+  `Raised` of U-3. A language object that a core may keep is a `Native` (GN-6u). The in function of
   an alias with `in_raises` runs alone through `__aliasIn<Alias>` of the feature `codec-test` (GN-5); the generated
   test calls it on the module that wasm-bindgen writes, as the tests of `fault-test` call `__armFaults`, and expects the
   class of the category and the kind of each case of the alias (U-7).
@@ -1010,10 +1078,10 @@ the design ids are those of the binding design.
   ABI's panic entry point, so the static library needs the feature `panic-test` only with that tag.
   `internal/binding/zz_generated_map_test.go` checks the order of `Map` and that the encoding keeps it both ways.
   Every latin1 parameter or field is tested with U+0100 and the bytes FF as kind `invalid_text`. The features
-  `panic-test` and `codec-test` are for tests only: the manifest that `binding scaffold` writes turns neither on by
-  default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
+  `panic-test`, `codec-test` and `native-count-test` are for tests only: the manifest that `binding scaffold` writes
+  turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`). With the build tag
+  `__fault_left`, `__alias_in_`, `__native_count`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to

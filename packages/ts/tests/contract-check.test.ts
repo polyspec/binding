@@ -557,6 +557,24 @@ describe('CK-21 the build of the core and exclusive members', () => {
       m.core.result = false;
       m.parameters.push({ name: ['store'], type: { unit: 'store' }, required: true });
     }));
+  test('core.failure on a member whose receiver keeps language code is accepted (E-1c, GN-6h)', () => {
+    // session.new takes the callback store, so a session keeps language code.
+    assert.deepEqual(findings((c) => { member(c, 'session.load').core.failure = true; }), []);
+  });
+  test('core.failure on a member whose receiver keeps no language code (E-1c)', () =>
+    fails('CK-21', `${at('forms')}/members/0/core/failure`, (c) => { member(c, 'forms.parse').core.failure = true; }));
+  test('core.failure false on a member that takes a callback (E-1c)', () =>
+    fails('CK-21', `${at('session')}/members/0/core/failure`, (c) => {
+      const m = member(c, 'session.new');
+      m.core = { path: typeof m.core === 'string' ? m.core : m.core.path, failure: false };
+    }));
+  test('core.failure without a Result (E-1c)', () =>
+    fails('CK-21', `${at('session')}/members/2/core/failure`, (c) => {
+      const m = member(c, 'session.load');
+      m.raises = [];
+      m.core.result = false;
+      m.core.failure = true;
+    }));
   test('features of the core for each target are accepted (I-1)', () => {
     assert.deepEqual(findings((c) => { c.core.features = { wasm: ['pure'], node: ['io', 'redis'] }; }), []);
   });

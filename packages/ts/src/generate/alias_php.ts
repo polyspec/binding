@@ -5,7 +5,7 @@
 // can hold, which the out rows give as the kind reference.
 
 import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported } from './model.ts';
-import { container, outArms } from './alias_shared.ts';
+import { container, outArms, ownedNatives } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
 
@@ -92,7 +92,7 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
             Ok(zval)
         }`;
     case 'native':
-      return 'native_object(handle)';
+      return 'native_object(&native)';
     default:
       throw new Unsupported(`${alias.unit.id}: the PHP form ${form} of the kind ${kind} is not generated yet`);
   }
@@ -127,7 +127,7 @@ export function aliasPhp(model: Model, alias: ValueAlias): string {
   return `
 /// U-7: a PHP value of ${label} enters as HostValue, which the core judges.
 fn in_${name}(value: &Zval, _subject: &str) -> Result<${core}, Fail> {
-    let mut host = PhpHost { held: Vec::new() };
+    let mut host = PhpHost { held: Vec::new(), marked: 0 };
     let described = host.describe(value)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
@@ -157,6 +157,7 @@ export const PHP_HOST = (`
 /// handles that describe gave, each key already described.
 struct PhpHost<'a> {
     held: Vec<Vec<(HostValue, &'a Zval)>>,
+    marked: u64,
 }
 
 impl<'a> PhpHost<'a> {
@@ -173,6 +174,12 @@ impl<'a> PhpHost<'a> {
         }
         self.held.push(entries);
         Handle::new(handle_count(self.held.len() - 1))
+    }
+
+    /// GN-6u: the handle of a value outside the closed set, its number in the order of the call.
+    fn mark(&mut self) -> Handle {
+        self.marked = self.marked.saturating_add(1);
+        Handle::new(self.marked)
     }
 
     /// B-1: an element that is a reference is the reference with its identity, so that elements that share one share
@@ -216,15 +223,15 @@ impl<'a> PhpHost<'a> {
                 return Ok(HostValue::StdClass { handle: self.hold(properties), len });
             }
             if type_name == "Closure" {
-                return Ok(HostValue::Callable(native_handle(value)));
+                return Ok(HostValue::Callable(php_native(value)?));
             }
             let json_serializable = match ClassEntry::try_find("JsonSerializable") {
                 Some(class) => object.instance_of(class),
                 None => false,
             };
-            return Ok(HostValue::Object { handle: native_handle(value), type_name, json_serializable });
+            return Ok(HostValue::Object { native: php_native(value)?, type_name, json_serializable });
         }
-        Ok(HostValue::Other { type_name: String::from("resource"), handle: native_handle(value) })
+        Ok(HostValue::Other { type_name: String::from("resource"), handle: self.mark() })
     }
 
     fn held_entry(&self, handle: Handle, index: u64) -> Result<(HostValue, &'a Zval), binding_core::Raised> {
@@ -250,10 +257,6 @@ impl HostValues for PhpHost<'_> {
     fn read(&mut self, _value: Handle) -> Result<HostValue, binding_core::Raised> {
         Err(raised(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("B-1: no value class is read") }))))
     }
-}
-
-fn php_failed(error: ext_php_rs::error::Error) -> Fail {
-    binding_error(BindingError::Internal { detail: error.to_string() })
 }
 
 /// U-7: a container that the make has entered; one inside its own making is a cycle, which a PHP array cannot hold.
@@ -374,40 +377,6 @@ fn php_utf8(bytes: &[u8]) -> Result<Zval, Fail> {
     }
 }
 
-thread_local! {
-    /// U-7 (VAL-18): the PHP values that entered as handles in this request, which a native value gives back as the
-    /// same value.
-    static NATIVE: RefCell<Vec<Zval>> = const { RefCell::new(Vec::new()) };
-    /// GN-6e: the count of the handles of the requests that ended. The handles of this request follow it, so a handle
-    /// of an ended request finds no value.
-    static RELEASED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
-
-fn native_handle(value: &Zval) -> Handle {
-    NATIVE.with_borrow_mut(|native| {
-        native.push(value.shallow_clone());
-        Handle::new(RELEASED.get().saturating_add(handle_count(native.len() - 1)))
-    })
-}
-
-fn native_object(handle: Handle) -> Result<Zval, Fail> {
-    let position = handle.raw().checked_sub(RELEASED.get()).map(handle_position);
-    NATIVE.with_borrow(|native| match position.and_then(|position| native.get(position)) {
-        Some(value) => Ok(value.shallow_clone()),
-        None => Err(binding_error(BindingError::Internal { detail: String::from("U-7: the native value is gone") })),
-    })
-}
-
-/// GN-6e: the values that entered as handles are released when the request ends, while the engine that owns them is
-/// alive. Kept longer, they are released by the thread after the engine is gone, which ends the process with a fault.
-extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
-    NATIVE.with_borrow_mut(|native| {
-        RELEASED.set(RELEASED.get().saturating_add(handle_count(native.len())));
-        native.clear();
-    });
-    0
-}
-
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
 #[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
 fn handle_count(value: usize) -> u64 {
@@ -428,9 +397,7 @@ fn handle_position(value: u64) -> usize {
 
 /// U-3: a failure of the binding while the core walks a value, as the Raised that the caller throws again.
 fn raised(error: Thrown) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    keep_thrown(error)
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 
@@ -632,3 +599,69 @@ const CASE_HOST = `
         }
     }
 `;
+
+// GN-6u, GN-6z: the Natives of PHP, which a value alias and a function type hold: the owner table, released at the
+// request shutdown, and the check of the thread of a call of a function.
+// usedHelpers splits helpers at blank lines, so a block keeps none inside it.
+export const PHP_NATIVE = (`${ownedNatives('Zval', 'drop(references);')}
+/// GN-6u: a PHP value that a core may keep, as a Native of the table of this thread.
+fn php_native(value: &Zval) -> Result<Native, Fail> {
+    if OWNED.with_borrow(Option::is_none) {
+        let Some((owner, generation)) = native_owner() else {
+            return Err(binding_error(BindingError::Internal { detail: String::from("GN-6u: the table of the owners is poisoned") }));
+        };
+        OWNED.with_borrow_mut(|owned| *owned = Some(Owned { owner, generation, next: 0, values: BTreeMap::new() }));
+    }
+    keep_native(value.shallow_clone()).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: this thread has no table") }))
+}
+
+/// GN-6u: the PHP value that entered as the Native; one of an ended request, or of another thread, is kind internal.
+fn native_object(native: &Native) -> Result<Zval, Fail> {
+    let found = native.downcast::<OwnedNative>().and_then(|native| {
+        OWNED.with_borrow(|owned| match owned {
+            Some(owned) if owned.owner == native.owner && owned.generation == native.generation => owned.values.get(&native.key).map(Zval::shallow_clone),
+            _ => None,
+        })
+    });
+    found.ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6u: the native value is gone") }))
+}
+
+/// GN-6u: the engine frees the values of a request when the request ends, so the request shutdown releases the table
+/// while the engine is alive.
+extern "C" fn release_native(_kind: i32, _module: i32) -> i32 {
+    clean_up_native();
+    0
+}
+
+fn php_failed(error: ext_php_rs::error::Error) -> Fail {
+    binding_error(BindingError::Internal { detail: error.to_string() })
+}
+
+/// GN-6z: a value of a function type is a Closure (kind invalid_argument_type), held as a Native.
+fn in_function(value: &Zval, subject: &str) -> Result<Native, Fail> {
+    let closure = match value.object() {
+        Some(object) => object.get_class_name().map_err(php_failed)? == "Closure",
+        None => false,
+    };
+    if !closure {
+        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a Closure") }));
+    }
+    php_native(value)
+}
+
+/// GN-6z: whether a call of the function of a Native may run here: a call on another thread is kind wrong_thread, and
+/// a call after the request of the function ended is kind internal. The failure is a BindingError, which any thread may
+/// keep, since a PHP error object is made on the owner thread only.
+fn native_thread(native: &Native, subject: &str) -> Result<(), BindingError> {
+    let Some(native) = native.downcast::<OwnedNative>() else {
+        return Err(BindingError::Internal { detail: String::from("GN-6u: a native value that no PHP value entered as") });
+    };
+    if OWNER.get() != Some(native.owner) {
+        return Err(BindingError::WrongThread { subject: subject.to_owned() });
+    }
+    if !OWNED.with_borrow(|owned| owned.as_ref().is_some_and(|owned| owned.generation == native.generation)) {
+        return Err(BindingError::Internal { detail: String::from("GN-6u: the request of the function has ended") });
+    }
+    Ok(())
+}
+`).replace(/\n\n(?=[ }])/g, '\n');

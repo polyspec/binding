@@ -1,7 +1,8 @@
 //! A sample library for the end-to-end check of binding: a callback interface that language code implements (U-3).
 
 use binding_core::{
-    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, OutValue, OutValues,
+    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, Native, OutValue,
+    OutValues,
 };
 use std::fmt;
 
@@ -151,6 +152,54 @@ pub fn count(lookup: &mut dyn Lookup, keys: &[String]) -> Result<u64, Failure<Er
     Ok(found)
 }
 
+/// The value of a key in the first lookup that holds it (GN-6aa: callbacks in a list, which the core takes by value).
+///
+/// # Errors
+///
+/// Kind `missing` when no lookup holds a value, and the failure of a lookup.
+pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Failure<Error>> {
+    for mut lookup in lookups {
+        if let Some(value) = lookup.find(key)? {
+            return Ok(value);
+        }
+    }
+    Err(Failure::Kind(Error::Missing {
+        key: key.to_owned(),
+    }))
+}
+
+/// The value of a key in the lookup, and `None` without a lookup (GN-6aa: an optional callback).
+///
+/// # Errors
+///
+/// The failure of the lookup.
+pub fn maybe(
+    lookup: Option<Box<dyn Lookup + '_>>,
+    key: &str,
+) -> Result<Option<String>, Failure<Error>> {
+    match lookup {
+        Some(mut lookup) => lookup.find(key),
+        None => Ok(None),
+    }
+}
+
+/// A search for the value of a key (GN-6aa: a record with a callback field, whose type has one lifetime).
+pub struct Search<'a> {
+    /// The lookup that holds the value.
+    pub lookup: Box<dyn Lookup + 'a>,
+    /// The key.
+    pub key: String,
+}
+
+/// The value of the key of the search, which its lookup must hold.
+///
+/// # Errors
+///
+/// Kind `missing` when the lookup holds no value, and the failure of the lookup.
+pub fn seek(mut search: Search<'_>) -> Result<String, Failure<Error>> {
+    resolve(&mut *search.lookup, &search.key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{count, resolve, Error, Lookup};
@@ -236,8 +285,8 @@ pub fn shout(tag: &Tag) -> Tag {
     }
 }
 
-/// A value of data: the null, a boolean, a number, a text, a list or a map with text keys (U-7: a value alias whose
-/// core judges the language values and gives its own).
+/// A value of data: the null, a boolean, a number, a text, a list, a map with text keys or an object of the language
+/// (U-7: a value alias whose core judges the language values and gives its own).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
     /// No value.
@@ -252,6 +301,8 @@ pub enum Data {
     List(Vec<Data>),
     /// A map with text keys, in order.
     Map(Vec<(String, Data)>),
+    /// An object or a function of the language, which data keeps and gives back as the same object (GN-6u).
+    Native(Native),
 }
 
 /// The deepest nesting of data that the sample takes.
@@ -346,6 +397,7 @@ fn data_at(
             }
             Ok(Data::Map(entries))
         }
+        HostValue::Callable(native) | HostValue::Object { native, .. } => Ok(Data::Native(native)),
         other => Err(Failure::Kind(Error::Unsupported {
             what: format!("{other:?}"),
         })),
@@ -383,6 +435,7 @@ impl<'a> DataOut<'a> {
                     sequence,
                 ))
             }
+            Data::Native(native) => OutValue::Native(native.clone()),
         }
     }
 }

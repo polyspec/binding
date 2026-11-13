@@ -1,5 +1,5 @@
 <!-- doc-id: core-api -->
-<!-- source-sha256: ed6d6140940eaf5144cef0bf25c1ba1d5bf69985e1a17d7cc0388e746539ca67 -->
+<!-- source-sha256: 737b2117bb66c892233ed942d1291eaa4c536ec2be428ade29e8e5d784b2aec1 -->
 # binding_core 공개 API
 
 [English](core-api.md)
@@ -17,13 +17,13 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
   crate가 켜고 코어 crate는 켜지 않는다(B-5c).
 - feature `driver`: `driver::block_on`, `driver::Caught`와 `rt-multi-thread`를 켠 의존 `tokio` 1.54.1을 더한다.
   `wait: async_driver`인 member가 있는 계약의 PHP·Python·Node 바인딩 crate가 켜고(GN-6n), 코어 crate는 켜지 않는다.
-- feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 handle을 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
+- feature `construct`: wait 토큰과 `Raised`를 만들 수 있게 하고 `Raised`의 `Native`를 읽을 수 있게 한다. 생성 바인딩 crate가 켜고, 코어 crate는 `[dev-dependencies]`에서만 켜므로
   코어 crate의 라이브러리는 혼자 빌드할 때 토큰을 만들 수 없다(I-2 (4)).
 - feature `fault-test`: 실패 주입점의 장전 자료(`fault::Armed`, `arm`, `take`, `left`)를 컴파일하며, 선택 의존
   `serde_json` 1.0.154(case의 faults 목록)를 쓴다. 주입점을 가진 코어는
   `fault-test = ["polyspec-binding-core/fault-test"]`만 선언한다. 바인딩은 case가 이름을 부르는 주입점을 가진 코어마다
   그 코어의 feature를 켠다. 릴리스 빌드에는 켜지 않는다(G-5).
-- 시험: feature가 필요한 crate의 시험 파일(`tests/lock.rs`, `tests/driver.rs`)은 그 feature를 `required-features`에
+- 시험: feature가 필요한 crate의 시험 파일(`tests/lock.rs`, `tests/driver.rs`, `tests/native.rs`)은 그 feature를 `required-features`에
   적은 `[[test]]` target이다. 그래서 feature 없는 `cargo test`는 그것을 빌드하지 않고, 그 target의 실행은 그 시험을 돌린다.
   시험을 하나도 돌리지 않은 target은 아무것도 확인하지 않고 통과하기 때문이다(HR-84).
 - 개발 중 다른 레포에서 쓰는 법: 이 폴더에 대한 경로 의존
@@ -46,7 +46,7 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Cleanup` | U-1 `cleanup`, B-10 | 메서드와 blanket 구현이 없는 표지 trait. `cleanup`이 있는 unit의 코어 타입이 구현한다. |
 | `OrderedMap<T>` | T-2 `map<T>` | text 키의 삽입 순서 보존 맵: `new`, `with_capacity`, `insert -> Option<T>`(제자리에서 바꾸고 옛 값을 돌려줌), `get`, `len`, `is_empty`, `iter`, `IntoIterator`, `Default`. 같음은 순서까지 본다. 반복 키를 버리게 되는 `FromIterator`는 없다. |
 | `KeyedMap<T>`, `Key` | T-2 `keyed_map<T>`, U-7 (c) | key가 `Key::Int(i64)`, `Key::Bytes(Vec<u8>)`, `Key::Text(String)`인 삽입 순서 보존 맵. API와 규칙은 `OrderedMap`과 같다. |
-| `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 handle로 담는다. `Raised::from_generated(Handle)`와 `handle()`은 `construct`에서만. `Display`, `std::error::Error`. kind 없음. |
+| `Raised` | U-3, E-7 | callback에서 언어 코드가 던진 예외. 코어가 열어 보지 않는 `Native`로 담고, 마지막 drop이 바인딩의 규칙대로 예외를 해제한다. `Raised::from_generated(Native)`와 `native()`는 `construct`에서만. `Clone`, 객체로 비교하는 `PartialEq`. `Display`, `std::error::Error`. kind 없음. |
 | `Failure<E>` | E-1c | `Kind(E)`, `Raised(Raised)`, `Callback(Box<dyn std::error::Error + Send + Sync>)`. callback을 부르는 코어 함수의 오류 타입. 마지막 변형은 Rust 역호출의 오류를 Rust 호출자에게 그대로 돌려주며 `construct` 없이 만들고 생성 코드에는 오지 않는다. `From<Raised>`, `Display`, `std::error::Error`(source는 Rust 역호출의 오류). derive하는 trait는 `Debug`뿐이다. |
 | `ValueType` | T-3 | `Json`, `Template`, `Php`. `ALL`, `as_str()`. |
 | `naming::{convert, Word, Lang, Role}` | N-2 | 이름 변환. binding 밖의 생성기를 위해 공개한다. `naming::Lang`은 `Php`, `Python`, `Js`, `Go`, `Rust`, `naming::Role`은 `Class`, `Callable`, `Variable`, `Constant`. 그 벡터를 binding의 TypeScript 변환과 함께 쓴다. |
@@ -55,12 +55,13 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
 | `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
-| `Handle` | B-1, T-3 | 만든 쪽만 해석하는 `u64`. `new(u64)`, `raw()`. |
+| `Handle` | B-1, T-3 | 만든 쪽만 해석하는 `u64`. `new(u64)`, `raw()`. 컨테이너, `Date`, `Other` 값의 handle은 그것을 준 `in`이나 `out` 호출 안에서만 유효하다. |
+| `Native`, `NativeObject` | B-1, U-7 (d) | `Native`는 코어가 보관할 수 있는 언어 객체의 소유 handle이다. `Arc<dyn NativeObject>`이고 `Clone + Send + Sync`이며, 두 `Native`는 같은 객체일 때(`Arc::ptr_eq`) 같고, 그것은 같은 언어 객체다(U-7 (d)). 그것을 가진 마지막 코어 값이 drop될 때 객체를 해제한다. `NativeObject: Any + Send + Sync + Debug`는 바인딩이 그 객체 대신 갖는 것(Python 참조, 소유 표의 key)이다. `Native::new(object)`와 `downcast::<T>() -> Option<&T>`는 `construct`에서만. |
 | `ValueKind` | U-1 `value`, T-3 | `null`, `bool`, `int`, `int64`, `float`, `number`, `text`, `bytes`, `list`, `map`, `object`, `reference`, `safe_text`, `native`, `nested:<value type>`. `ALL`, `as_str()`. `out`·`in` 행의 `kind`. |
 | `Predicate` | U-1 `when` | `utf8`(bytes), `sequence_keys`(map), `safe_integer`(int), `integral_float`(float). `ALL`, `as_str()`, `kind()`. |
-| `OutValue` | T-3 | 나가는 값의 한 단계: `Null`, `Bool`, `Int(IntOut)`, `Int64(i64)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `Reference { handle, value }`, `SafeText(String)`, `Native(Handle)`, `Nested { value_type, value }`. `kind()`, `predicate(Predicate) -> Option<bool>`(술어가 그 종류에 해당하지 않으면 `None`). |
+| `OutValue` | T-3 | 나가는 값의 한 단계: `Null`, `Bool`, `Int(IntOut)`, `Int64(i64)`, `Float(FloatOut)`, `Number(String)`, `Text(String)`, `Bytes(BytesOut)`, `List { handle, len }`, `Map(MapOut)`, `Object { handle, len }`, `Reference { handle, value }`, `SafeText(String)`, `Native(Native)`, `Nested { value_type, value }`. `kind()`, `predicate(Predicate) -> Option<bool>`(술어가 그 종류에 해당하지 않으면 `None`). |
 | `IntOut`, `FloatOut`, `BytesOut`, `MapOut` | U-1 `when` | 술어를 여기서 계산하는 래퍼(`MapOut::new`의 `sequence_keys`는 키를 보는 코어가 준다). 같은 handle은 같은 언어 객체이고, 컨테이너는 자식보다 먼저 만들므로 공유 값과 순환 값이 모양을 유지한다(U-7 (d)). |
-| `HostValue` | B-1, T-2 `host_value` | `Int`는 `i64`에 드는 JavaScript `bigint`도 포함한다. `Number`는 `i64` 밖의 Python `int`나 JavaScript `bigint`의 10진 토큰, `Bytes`는 Python `bytes`. `Float`는 PHP, Python, Go의 실수이며 실수로 남는다. JavaScript number는 모두 `UntypedNumber`이고 정수인지는 코어가 정한다(U-7 (f)). `PhpReference`는 참조 원소와 그 정체성을 알린다. 들어오는 값의 한 단계: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `UntypedNumber(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `PhpReference { identity, target }`, `StdClass`, `Date`, `Callable`, `Object { type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
+| `HostValue` | B-1, T-2 `host_value` | `Int`는 `i64`에 드는 JavaScript `bigint`도 포함한다. `Number`는 `i64` 밖의 Python `int`나 JavaScript `bigint`의 10진 토큰, `Bytes`는 Python `bytes`. `Float`는 PHP, Python, Go의 실수이며 실수로 남는다. JavaScript number는 모두 `UntypedNumber`이고 정수인지는 코어가 정한다(U-7 (f)). `PhpReference`는 참조 원소와 그 정체성을 알린다. 들어오는 값의 한 단계: `Null`, `Undefined`, `Bool`, `Int(i64)`, `Number(String)`, `Float(f64)`, `UntypedNumber(f64)`, `Text(HostText)`, `Bytes(Vec<u8>)`, `List`, `PhpArray { is_list }`, `Map`, `PlainObject { prototype }`, `PhpReference { identity, target }`, `StdClass`, `Date`, `Callable(Native)`, `Object { native, type_name, json_serializable }`, `Value { kind, handle }`, `Other { type_name, handle }`. |
 | `HostText` | B-1, B-3 | `Bytes(Vec<u8>)`(PHP, Go), `Utf16(Vec<u16>)`(JavaScript), `CodePoints(Vec<u32>)`(Python). |
 | `Prototype` | B-1 | `Object`, `Null`. |
 | `OutValues` | B-1, U-7 (d) | 생성 코드가 `OutValue` handle의 자식을 코어에 묻는 trait. value alias의 코어 `out` 함수가 루트와 함께 돌려준다. `item(&mut self, list, index) -> OutValue`, `entry(&mut self, map, index) -> (OutValue, OutValue)`(맵이나 객체, 순서대로). 같은 handle은 같은 언어 객체다. |

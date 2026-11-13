@@ -1,10 +1,10 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
+import { POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, nativeRoundTrip } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText } from './samples.ts';
-import type { Fn } from './model.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, caseRefusal, caseSnake, checkCaseNames, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, HOST_VALUES, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, pythonTokens, tokenForms, samePairs, sampleReceiver, refusesNull, stringCases, textKind, wrapText, functionFixturesOf } from './samples.ts';
+import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
@@ -94,6 +94,12 @@ export function pythonTests(model: Model, module: string): string {
   };
   const out: string[] = [];
   let usesFixture = false;
+  // GN-6z: a function value of a case is a fixture whose one member is the call itself (__call__).
+  type Made = { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined } };
+  const withFunctions = (fixtures: Made[], fn: Fn, id: string, args: Map<Arg, unknown>): Made[] => [
+    ...fixtures,
+    ...functionFixturesOf(model, ctx, fn, id, args, '__call__').map((f, i) => ({ fixture: { arg: f.arg }, name: `function_${String(i)}`, values: { members: f.members, rows: f.rows, calls: undefined } })),
+  ];
   let usesErrno = false;
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
@@ -146,6 +152,16 @@ export function pythonTests(model: Model, module: string): string {
     },
   };
   ctx.steps = steps;
+  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises.
+  ctx.fixtureNew = (values) => {
+    usesFixture = true;
+    return `_fixture((${values.members.map((m) => `${m},`).join(' ')}), [${values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
+  };
+  // GN-6z: a function value inside another value is the callable of a fixture, whose unexpected call raises.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `_fixture(("__call__",), [${rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
+  };
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
   const madeForm: MadeForm = {
     ctx,
@@ -281,7 +297,7 @@ export function pythonTests(model: Model, module: string): string {
       const receiverMade = receiverOfCase(kase.receiver);
       const receiver = receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
@@ -325,7 +341,7 @@ export function pythonTests(model: Model, module: string): string {
         self.fail(${pyString(refusal)})`);
         continue;
       }
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
@@ -387,6 +403,15 @@ export function pythonTests(model: Model, module: string): string {
             asyncio.run(${awaited})
         self.assertIs(caught.exception, raised)`);
       }
+    }
+    // GN-6z: a value of a function type that is not callable is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      out.push(`
+    def test_gn6z_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type, true))))}
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -482,14 +507,32 @@ export function pythonTests(model: Model, module: string): string {
   }
   // G-5: a value of the language of the sort date (HOST_VALUES) is a date of the module datetime.
   const usesDatetime = out.some((line) => line.includes(HOST_VALUES.date.python));
+  // GN-6u: an object goes through the native row and back as the same object, and the binding keeps no reference to it.
+  const roundTrip = nativeRoundTrip(model.contract, 'python');
+  const roundFn = roundTrip === undefined ? undefined : model.functions.find((f) => f.member.id === roundTrip.id);
+  if (roundFn !== undefined) {
+    const name = langName('python', roundFn.member.name, 'variable');
+    const same = (value: string): string => invoke(roundFn, value, '');
+    out.push(`
+    def test_gn6u_${name}_gives_back_the_same_object_and_releases_it(self) -> None:
+        ${same('_Subject()')}
+        subject = _Subject()
+        before = sys.getrefcount(subject)
+        self.assertIs(${same('subject')}, subject)
+        ${same('_Subject()')}
+        self.assertEqual(sys.getrefcount(subject), before)
+        alive = weakref.ref(subject)
+        del subject
+        self.assertIsNone(alive())`);
+  }
   return `${pyHeader()}
 """The generated tests of the binding (G-5)."""
 
-${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}import unittest
-${usesWarnings ? 'import warnings\n' : ''}
+${usesAsyncio ? 'import asyncio\n' : ''}${usesSame ? 'import dataclasses\n' : ''}${usesDatetime ? 'import datetime\n' : ''}${usesErrno ? 'import errno\n' : ''}${usesTokens ? 'import json\nimport struct\n' : ''}${roundFn === undefined ? '' : 'import sys\n'}import unittest
+${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesSame ? PYTHON_SAME : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(tokenForms(model, 'python')) : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):
     def test_b7_a_panic_is_kind_internal(self) -> None:
@@ -504,6 +547,14 @@ if __name__ == "__main__":
     unittest.main()
 `;
 }
+
+// GN-6u: the subject of the round-trip test, an instance of a class of the test, since a built-in value may be
+// interned or cached.
+const PYTHON_SUBJECT = `
+
+class _Subject:
+    """An object that only the test makes."""
+`;
 
 const pythonBaseOf = (category: string): string =>
   ({ value: 'ValueError', type: 'TypeError', io: 'OSError', store: 'RuntimeError', busy: 'RuntimeError', internal: 'RuntimeError' })[category] ?? 'Exception';

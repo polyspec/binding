@@ -74,9 +74,9 @@ function builtin(alias: ValueAlias, form: string, kind: string): string {
         }`;
     }
     case 'native':
-      return `match native_object(handle) {
-            Some(object) => Ok(object.into_bound(py)),
-            None => Err(binding_error(py, BindingError::Internal { detail: String::from("U-7: the native object is gone") })),
+      return `match native.downcast::<PyNative>() {
+            Some(object) => Ok(object.0.clone_ref(py).into_bound(py)),
+            None => Err(binding_error(py, BindingError::Internal { detail: String::from("GN-6u: a native value that no Python object entered as") })),
         }`;
     default:
       throw new Unsupported(`${alias.unit.id}: the Python form ${form} of the kind ${kind} is not generated yet`);
@@ -131,17 +131,24 @@ enum Held<'py> {
 
 struct PyHost<'py> {
     py: Python<'py>,
-    held: Vec<Held<'py>>,/*SEEN*/
+    held: Vec<Held<'py>>,
+    marked: u64,/*SEEN*/
 }
 
 impl<'py> PyHost<'py> {
     fn new(py: Python<'py>) -> Self {
-        Self { py, held: Vec::new()/*NEW*/ }
+        Self { py, held: Vec::new(), marked: 0/*NEW*/ }
     }
 
     fn hold(&mut self, held: Held<'py>) -> Handle {
         self.held.push(held);
         Handle::new(handle_count(self.held.len() - 1))
+    }
+
+    /// GN-6u: the handle of a value outside the closed set, its number in the order of the call.
+    fn mark(&mut self) -> Handle {
+        self.marked = self.marked.saturating_add(1);
+        Handle::new(self.marked)
     }
 
     /// B-1: a value of an exact built-in type is that kind (a bool is never an integer, a subclass is another value);
@@ -186,12 +193,12 @@ impl<'py> PyHost<'py> {
         let type_name = value.get_type().name()?.to_string();
         // B-1: a subclass of int, float, str or bytes is outside the closed set.
         if value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>() || value.is_instance_of::<PyString>() || value.is_instance_of::<PyBytes>() {
-            return Ok(HostValue::Other { type_name, handle: native_handle(value) });
+            return Ok(HostValue::Other { type_name, handle: self.mark() });
         }
         if value.is_callable() {
-            return Ok(HostValue::Callable(native_handle(value)));
+            return Ok(HostValue::Callable(Native::new(PyNative(value.clone().unbind()))));
         }
-        Ok(HostValue::Object { handle: native_handle(value), type_name, json_serializable: false })
+        Ok(HostValue::Object { native: Native::new(PyNative(value.clone().unbind())), type_name, json_serializable: false })
     }
 }
 
@@ -228,25 +235,14 @@ impl HostValues for PyHost<'_> {
     }
 }
 
-/// U-7 (VAL-18): the language objects that entered as handles, which a native value gives back as the same object.
-static NATIVE: Mutex<Vec<Py<PyAny>>> = Mutex::new(Vec::new());
+/// GN-6u: a Python object that a core may keep, released when the last Native that holds it is dropped.
+#[derive(Debug)]
+struct PyNative(Py<PyAny>);
 
-fn native_handle(value: &Bound<'_, PyAny>) -> Handle {
-    let mut native = match NATIVE.lock() {
-        Ok(native) => native,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    native.push(value.clone().unbind());
-    Handle::new(handle_count(native.len() - 1))
-}
+impl NativeObject for PyNative {}
 
-fn native_object(handle: Handle) -> Option<Py<PyAny>> {
-    let native = match NATIVE.lock() {
-        Ok(native) => native,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    Python::attach(|py| native.get(handle_position(handle.raw())).map(|object| object.clone_ref(py)))
-}
+#[cfg(pyo3_disable_reference_pool)]
+compile_error!("GN-6u: a Native of Python is dropped on any thread, which PyO3 defers to its next acquisition of the GIL through the reference pool that pyo3_disable_reference_pool removes");
 
 /// A count or an index of Rust as the u64 of a handle or a length (a usize fits a u64 on the targets of T-2).
 #[allow(clippy::manual_unwrap_or, reason = "R-1: the failure is matched; unwrap_or is disallowed")]
@@ -268,9 +264,7 @@ fn handle_position(value: u64) -> usize {
 
 /// U-3: an exception of Python code while the core walks a value, as the Raised that the caller throws again.
 fn raised(py: Python<'_>, error: PyErr) -> binding_core::Raised {
-    let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
-    thrown_map().insert(handle, error.into_value(py).into_any());
-    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+    keep_thrown(error.into_value(py).into_any())
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 
