@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 ///
 /// `BindingError::InvalidPath` with the subject, the parameter or field of the path.
 pub fn path_from_bytes(bytes: Vec<u8>, subject: &str) -> Result<PathBuf, BindingError> {
-    let invalid = || BindingError::InvalidPath { subject: subject.to_owned() };
+    let invalid = || BindingError::InvalidPath {
+        subject: subject.to_owned(),
+    };
     if bytes.contains(&0) {
         return Err(invalid());
     }
@@ -22,7 +24,9 @@ pub fn path_from_bytes(bytes: Vec<u8>, subject: &str) -> Result<PathBuf, Binding
     }
     #[cfg(not(unix))]
     {
-        String::from_utf8(bytes).map(PathBuf::from).map_err(|_not_utf8| invalid())
+        String::from_utf8(bytes)
+            .map(PathBuf::from)
+            .map_err(|_not_utf8| invalid())
     }
 }
 
@@ -41,14 +45,22 @@ mod tests {
 
     #[test]
     fn a_path_is_its_bytes() {
-        assert_eq!(path_from_bytes(b"a/b".to_vec(), "p"), Ok(Path::new("a/b").to_path_buf()));
+        assert_eq!(
+            path_from_bytes(b"a/b".to_vec(), "p"),
+            Ok(Path::new("a/b").to_path_buf())
+        );
         assert_eq!(path_bytes(Path::new("a/b")), b"a/b");
     }
 
     #[test]
     fn a_nul_byte_is_invalid_path() {
         let error = path_from_bytes(b"a\0b".to_vec(), "p");
-        assert_eq!(error, Err(BindingError::InvalidPath { subject: String::from("p") }));
+        assert_eq!(
+            error,
+            Err(BindingError::InvalidPath {
+                subject: String::from("p")
+            })
+        );
         assert_eq!(error.map_err(|error| error.kind()), Err("invalid_path"));
     }
 

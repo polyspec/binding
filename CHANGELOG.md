@@ -16,8 +16,9 @@
   bytes for every target. WASM refuses a path by name, because the contract leaves such a member out of WASM (CK-15).
   A case value of a path is a relative path, which each generated test resolves in its own temporary directory and
   removes; an empty or absolute path or a part `..` is refused by name (GN-6y). `tests/e2e/shapes` has the functions
-  `joined` and `parent_of`. Verified by `npm test` in `packages/ts` (290 tests); the unit tests of `binding_core::path`
-  are not run yet, because no build ran with the free disk of this change.
+  `joined` and `parent_of`. Verified by `npm test` in `packages/ts` (290 tests), `make test-rust-features` (64 tests,
+  the 3 of `binding_core::path` among them), `make test-rust-plain` (46 tests), `make clippy-rust`,
+  `make clippy-rust-features` and `make fmt-rust`.
 - The commit 9977442, which states in the spec the result form of a field of an optional type with a default, also
   holds part of the Green of the defaults of an optional type (`defaults.ts`, `model.ts`, `node.ts`, `php.ts`, `python.ts`, `wasm.ts`), which the staging of a patch put
   into it; 3a19444 holds the rest.

@@ -15,8 +15,9 @@
   `binding_core::path_bytes`가 모든 target의 바이트를 바꾼다. WASM은 path를 이름으로 거부한다. 계약이 그런 member를
   WASM에서 빼기 때문이다(CK-15). path의 case 값은 상대 경로이고, 생성된 시험마다 자기 임시 디렉터리에서 풀고 지운다.
   빈 경로, 절대 경로, `..` 부분은 이름으로 거부한다(GN-6y). `tests/e2e/shapes`에 함수 `joined`와 `parent_of`가 있다.
-  `packages/ts`의 `npm test`(시험 290개)로 확인했다. `binding_core::path`의 단위 시험은 이 변경의 디스크 여유에서
-  빌드를 돌리지 않아 아직 돌리지 않았다.
+  `packages/ts`의 `npm test`(시험 290개), `make test-rust-features`(시험 64개, 그 가운데
+  `binding_core::path`의 3개), `make test-rust-plain`(시험 46개), `make clippy-rust`, `make clippy-rust-features`,
+  `make fmt-rust`로 확인했다.
 - 기본값이 있는 optional 타입 field의 결과 형태를 spec에 적은 커밋 9977442에는 optional 타입 기본값의 Green 일부(`defaults.ts`, `model.ts`, `node.ts`,
   `php.ts`, `python.ts`, `wasm.ts`)도 들어 있다. patch를 stage한 것이 그 커밋에 함께 들어갔고, 나머지는 3a19444에 있다.
 - 생성기는 `optional` 타입의 기본값을 "a default of an optional type is not generated yet (U-2)"로, enum의
