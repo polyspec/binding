@@ -324,11 +324,6 @@ fn out_float(output: &mut Vec<u8>, value: impl Borrow<f64>) {
     output.extend_from_slice(&value.borrow().to_le_bytes());
 }
 
-/// N-4: the items of an iterate, which the core gives as an iterator or a collection.
-fn collected<T>(items: impl IntoIterator<Item = T>) -> Vec<T> {
-    items.into_iter().collect()
-}
-
 fn out_list<T>(output: &mut Vec<u8>, value: impl IntoIterator<Item = T>, item: impl Fn(&mut Vec<u8>, T)) {
     let items: Vec<T> = value.into_iter().collect();
     write_length(output, items.len());
@@ -531,6 +526,15 @@ impl<T> Table<T> {
     const fn new() -> Self {
         Self { values: BTreeMap::new(), next: 0 }
     }
+}
+`;
+
+// N-4: the items of an iterate, which the core gives as an iterator or a collection; with faults, faultRust declares
+// the same helper, which collects them inside with_faults.
+const ITERATED = `
+/// N-4: the items of an iterate, which the core gives as an iterator or a collection.
+fn collected<I: IntoIterator>(items: I) -> Vec<I::Item> {
+    items.into_iter().collect()
 }
 `;
 
@@ -1275,5 +1279,5 @@ pub unsafe extern "C" fn ${prefix(model)}__free(buffer: Buffer) {
         drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
     }
 }
-${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${callBackRust(model)}${foreignFailureRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
+${model.objects.length > 0 ? TABLE : ''}${model.objects.map((o) => objectStatics(model, o)).join('')}${faultRust(model)}${model.faults.length === 0 && model.objects.some((o) => o.members.some((m) => m.kind === 'iterate')) ? ITERATED : ''}${callBackRust(model)}${foreignFailureRust(model)}${used}${callbacks}${functions}${testEntries(model)}`;
 }
