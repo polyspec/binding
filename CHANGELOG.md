@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- The files of the CI and release workflows and `config/release.json` were in neither list of GN-14b, so the test of
+  the inputs of an end-to-end run failed after they were added. They are now listed as files that a run does not read,
+  each with its reason (GN-14b).
 - A case of a member that takes a class of origin value gave the value as `{"kind": "text", "value": ...}`, and the
   generator ended with the exception "no case value of the type {"unit":"value"}", which named no item, so json
   generated no target. The value is now the call of the member that the `out` row of its kind names (`Value.string`,
