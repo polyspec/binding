@@ -103,7 +103,18 @@ the design ids are those of the binding design.
   installs the one of the machine; release tooling builds and publishes the platform packages (K-3). The generated
   entry loads `<npm package>-<platform>` and, when it is not installed, the file `<name>.<platform>.node` beside the
   entry, which a build in a checkout puts there. The end-to-end check packs the platform package of its machine as a
-  release does and installs both tarballs.
+  release does and installs both tarballs. The `package.json` that `scaffold` writes for a library with the target
+  `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
+  which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
+  in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). Without them
+  the release refuses the package (kit K1189). Every manifest of an npm package that `scaffold` writes has `"type":
+  "module"`: the only `.js` files of the package are the glue of `wasm-bindgen --target web`, which is an ES module,
+  and the Node entries are `.cjs` and `.mjs`, whose extension decides their form. Without the field Node reads a
+  `.js` file that is an ES module with the warning `MODULE_TYPELESS_PACKAGE_JSON`. The `composer.json` of a PHP
+  extension (type `php-ext`, also `<host package>-native` of GN-3b) names `php-ext.extension-name` and
+  `php-ext.download-url-method` `["pre-packaged-binary"]`, so that PIE installs the binary of the release for the PHP
+  and the platform of the machine (kit K1189). `binding check` compares these fields as it compares the whole file
+  (CK-19).
 - **GN-3d** The PHP binding crate links on macOS by its `build.rs` alone (BD-9): the script emits
   `cargo:rustc-cdylib-link-arg=-undefined` and `cargo:rustc-cdylib-link-arg=dynamic_lookup` when `CARGO_CFG_TARGET_OS`
   is `macos`, emits nothing for another target, and fails when that variable cannot be read (P-3). The crate's `[lib]`

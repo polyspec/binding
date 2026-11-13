@@ -81,6 +81,15 @@
   버전으로 `optionalDependencies`에 적어 npm이 그 기계의 것을 설치하게 한다. 플랫폼 패키지는 배포 도구가 빌드해 낸다(K-3).
   생성된 진입점은 `<npm 패키지>-<platform>`을 로드하고, 설치되어 있지 않으면 checkout의 빌드가 진입점 옆에 둔 파일
   `<name>.<platform>.node`를 로드한다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack해 두 tarball을 설치한다.
+  target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
+  `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
+  플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. 이것이 없으면
+  배포가 그 패키지를 거부한다(kit K1189). `scaffold`가 쓰는 npm 패키지의 manifest는 모두 `"type": "module"`을 갖는다.
+  패키지의 `.js` 파일은 `wasm-bindgen --target web`의 글루뿐이고 그것은 ES 모듈이며, Node 진입점은 확장자가 꼴을 정하는
+  `.cjs`와 `.mjs`이기 때문이다. 이 필드가 없으면 Node는 ES 모듈인 `.js` 파일을 `MODULE_TYPELESS_PACKAGE_JSON` 경고와 함께
+  읽는다. PHP 확장(type `php-ext`, GN-3b의 `<host package>-native`도)의 `composer.json`은 `php-ext.extension-name`과
+  `php-ext.download-url-method` `["pre-packaged-binary"]`를 적는다. 그래서 PIE가 그 기계의 PHP와 플랫폼에 맞는 배포의
+  binary를 설치한다(kit K1189). `binding check`는 파일 전체를 비교하듯 이 필드도 비교한다(CK-19).
 - **GN-3d** PHP 바인딩 crate는 macOS에서 그 `build.rs`만으로 링크된다(BD-9): 그 스크립트는 `CARGO_CFG_TARGET_OS`가
   `macos`일 때 `cargo:rustc-cdylib-link-arg=-undefined`와 `cargo:rustc-cdylib-link-arg=dynamic_lookup`을 내고, 다른 target에서는
   아무것도 내지 않으며, 그 변수를 읽을 수 없으면 실패한다(P-3). 그 crate의 `[lib]`은 `test = false`와 `doctest = false`를
