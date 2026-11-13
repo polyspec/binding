@@ -174,6 +174,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `pyproject.toml` without a version). It is a check of its own and no
   part of CK-19: the tracked files of a development checkout are what `scaffold` writes, so CK-19 passes them, and the
   question of CK-70 is what a release may hold.
+- **CK-71** The licence of the core (generator GN-3f): the manifest of the core names `package.license`, by itself or
+  from `workspace.package.license` of the root manifest; a core without it is a finding that names the core manifest,
+  because every manifest of its binding packages carries that licence.
 - **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is on every
   parameter of a member, other than a member of a callback interface, whose type is a class unit of this contract with the
   origin `generated` or an `optional` of one, and on no other parameter, because only an instance of a class is a place whose borrow the

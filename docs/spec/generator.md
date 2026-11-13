@@ -154,6 +154,14 @@ the design ids are those of the binding design.
   compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a
   question of one manifest of one target, so it does not stop the other targets, and what a release may not hold is a
   finding that names the line, which a thrown error did not.
+- **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
+  `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
+  names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
+  `project.license`, and `package.json` and `composer.json` as `license`; `go.mod` has no such field. A core that
+  names no licence is a finding of `binding check` (CK-71), and `scaffold` then writes the manifests without the
+  field. The manifest of a host package (GN-3b) is hand-written and is not compared. Why: a binding package is the
+  core in another language, so it has the licence of the core, and a licence that binding wrote by itself would state
+  terms that the repository did not choose.
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3

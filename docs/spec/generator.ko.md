@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bd5f3d98c82de707b466d1fb83b12571cd47a6f24001d69c53e2d9251175412b -->
+<!-- source-sha256: 2859b0b87aae431089448ceb026c75d2fb55c68d3bdbfb87da27727d98cf127b -->
 # 생성기
 
 [English](generator.md)
@@ -120,6 +120,13 @@
   보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
   manifest의 문제이므로 다른 target을 멈추지 않으며, release가 담으면 안 되는 것은 그 줄을 이름하는 finding이고, 던진 오류는
   그 줄을 이름하지 않았다.
+- **GN-3f** `scaffold`가 쓰는 manifest 가운데 licence 항목이 있는 것은 모두 코어 crate의 licence를 담는다. 그것은 코어
+  manifest의 `package.license`이며, 코어가 `license.workspace = true`를 적으면 root manifest의 `workspace.package.license`다.
+  바인딩 crate의 Cargo manifest는 그것을 `license`로, `pyproject.toml`은 `project.license`로, `package.json`과
+  `composer.json`은 `license`로 갖는다. `go.mod`에는 그런 항목이 없다. licence를 적지 않은 코어는 `binding check`의
+  finding이며(CK-71), 그때 `scaffold`는 그 항목 없이 manifest를 쓴다. host 패키지(GN-3b)의 manifest는 손으로 쓰므로 비교하지
+  않는다. 이유: 바인딩 package는 다른 언어로 된 코어이므로 코어의 licence를 갖고, binding이 스스로 적은 licence는 레포가
+  고르지 않은 조건을 말하게 된다.
 - **GN-4** 바인딩 crate는 레포 workspace의 구성원이고(L-2) 레포의 모든 패키지처럼 `lints.workspace = true`로 lint를
   받는다. 그래서 한 표가 코어와 바인딩의 R-1 lint를 정한다. 그 표는 `unsafe_code`를 forbid가 아니라 deny한다.
   ext-php-rs, napi-rs, PyO3, wasm-bindgen의 macro가 unsafe 코드로 펼쳐지고, 생성 코드의 unsafe 블록마다 이유를 단 allow가

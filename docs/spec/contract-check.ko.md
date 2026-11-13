@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 8687df193e065e8531724a1b5f93c6831dda36628d9500f4341979264cf4b31d -->
+<!-- source-sha256: 3c828188f4a48f9edcd661efc1caea74726a25aab17531a9bdda1a3106f474b1 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -149,6 +149,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   꼴(path, branch, commit, 버전 범위)은 코어 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
   manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
+- **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의
+  `workspace.package.license`에서 받아 적는다. 그것이 없는 코어는 코어 manifest를 이름하는 finding이다. 그 바인딩 package의
+  모든 manifest가 그 licence를 담기 때문이다.
 - **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 origin `generated`인 class unit이거나
   그 `optional`인 모든 parameter는 `core`(`&`, `&mut`, `value`)를 갖고, 다른 parameter는 갖지 않는다. 코어가 빌림을 받는
   자리는 class의 인스턴스뿐이고, binding은 그것을 찾으려고 Rust 소스를 읽지 않기 때문이다.
