@@ -7,7 +7,7 @@ import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -456,6 +456,10 @@ const locks = (model: Model, fn: Fn): string[] => lockLines(model, fn, (p) => ru
 
 const functionRust = (model: Model, fn: Fn): string => withFaults(model, fn, entryRust(model, fn));
 
+// GN-6m, GN-6q: a member with wait blocking_io runs its core call on the libuv pool, unless it reaches language code,
+// which only the JavaScript thread may call; then the call runs on that thread and the entry still returns a promise.
+const pooled = (fn: Fn): boolean => waitsIo(fn) && fn.reaches !== true;
+
 function entryRust(model: Model, fn: Fn): string {
   if (fn.kind === 'iterate') return iterateRust(model, fn);
   const jsName = memberName('node', fn);
@@ -494,7 +498,7 @@ function entryRust(model: Model, fn: Fn): string {
     const body = fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        driving(env, ${futureOf(model, fn, body)}, ${closure(['env', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
-  } else if (waitsIo(fn)) {
+  } else if (pooled(fn)) {
     // GN-6m: the arguments are converted and the locks and the arming taken on the JavaScript thread; the core call
     // runs on the libuv pool, and its result is converted on the JavaScript thread.
     const faults = model.faults.length > 0;
@@ -514,7 +518,7 @@ function entryRust(model: Model, fn: Fn): string {
   // static __new instead, which makes the instance as any static member does, and the JavaScript entry wraps the class
   // in a Proxy whose construct calls it.
   const jsMember = fn.kind === 'constructor' ? 'new' : jsName;
-  if (!awaits(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
+  if (!waitsAsync(fn) && !pooled(fn)) lines.push(`        ${convertOut(model, fn.returns, 'result')}`);
   if (fn.kind === 'function') {
     return `
 #[napi(js_name = ${rustString(jsName)})]
@@ -612,7 +616,7 @@ where
 
 // G-5, GN-6m: the arming of a member that waits is taken on the JavaScript thread and installed where the work runs.
 function waitingFaults(model: Model): string {
-  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(waitsIo)) return '';
+  if (model.faults.length === 0 || ![...model.functions, ...model.objects.flatMap((o) => o.members)].some(pooled)) return '';
   return `
 /// G-5, GN-6m: the arming that a test armed for a member that waits, which its work installs on the libuv pool.
 #[cfg(feature = "fault-test")]
@@ -791,8 +795,8 @@ const _: () = {
     sync::<${core}>();
 };
 
-` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: ${core}) -> Result<Unknown<'_>, Fail> {
-    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value')} }, env).map_err(internal)
+` : ''}fn out_${rustField(object.unit.name)}(env: &Env, value: impl CoreForm<${core}>) -> Result<Unknown<'_>, Fail> {
+    ToNapiValue::into_unknown(class_${rustField(object.unit.name)}::${struct} { inner: ${heldNew(object, 'value.core_form()')} }, env).map_err(internal)
 }
 
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${jsClass} inside another type is an instance of it, whose value is read, cloned and
@@ -922,7 +926,7 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));
@@ -1182,9 +1186,9 @@ ${checked(fn, `${name}()`, (passed) => `addon.${name}(${passed})`)}
       return `{
   const original = ${target}.__${name};
   Object.defineProperty(${target}, ${jsString(name)}, {
-    value: ${awaits(fn) ? 'async ' : ''}function ${name}(...args) {
+    value: { ${awaits(fn) ? 'async ' : ''}[${jsString(name)}](...args) {
 ${checked(fn, `${cls}.${name}()`, (passed) => `Reflect.apply(original, this, [${passed}])`).split('\n').map((l) => `    ${l}`).join('\n')}
-    },
+    } }[${jsString(name)}],
     writable: true,
     configurable: true,
   });

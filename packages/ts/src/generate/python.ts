@@ -3,7 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupWarning, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
@@ -600,13 +600,17 @@ const _: () = {
 impl ${struct} {${members}}
 ${object.cleanup === undefined ? '' : `
 /// GN-6p, B-10: an object finalized without its cleanup call warns with ResourceWarning, and dropping the value releases
-/// its resource.
+/// its resource; an exception that is being raised is kept across the warning.
 impl Drop for ${struct} {
     fn drop(&mut self) {
         if !self.inner.taken() {
             Python::attach(|py| {
+                let raising = PyErr::take(py);
                 if let Err(error) = PyErr::warn(py, &py.get_type::<pyo3::exceptions::PyResourceWarning>(), c${JSON.stringify(cleanupWarning(pyClass, memberName('python', object.cleanup)))}, 1) {
                     error.write_unraisable(py, None);
+                }
+                if let Some(raising) = raising {
+                    raising.restore(py);
                 }
             });
         }
@@ -614,8 +618,8 @@ impl Drop for ${struct} {
 }
 `}
 ${givesOut ? `
-fn out_${rustField(object.unit.name)}(py: Python<'_>, value: ${core}) -> PyResult<Bound<'_, PyAny>> {
-    Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value')} })?.into_any())
+fn out_${rustField(object.unit.name)}(py: Python<'_>, value: impl CoreForm<${core}>) -> PyResult<Bound<'_, PyAny>> {
+    Ok(Bound::new(py, ${struct} { inner: ${heldNew(object, 'value.core_form()')} })?.into_any())
 }
 ` : ''}
 ${takesNested(model, object) ? `/// T-5, GN-6h: a value of the class ${pyClass} inside another type is an instance of it, whose value is read, cloned and
@@ -642,7 +646,8 @@ fn held_${rustField(object.unit.name)}(py: Python<'_>, value: &Bound<'_, PyAny>,
 
 // U-3: a callback is a struct that holds the language object and implements the core trait; its calls convert the
 // arguments out and the return in, and an exception of the language code, or a failure of the binding in the callback,
-// goes to the core as a Raised that the generated caller throws again unchanged.
+// goes to the core as a Raised that the generated caller throws again unchanged. GN-6q: each call takes the GIL on the
+// thread on which the core calls it, so a callback with thread owner has no check of the thread.
 function callbackRust(model: Model, cb: CallbackUnit): string {
   const name = rustField(cb.unit.name);
   const struct = rustType(model, { unit: cb.unit.id });
@@ -655,10 +660,7 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
     const returned = m.returns === 'none' ? 'Ok(())' : `${convertIn(model, m.returns, '&returned', rustString(`${pyName}.${method}() returns`))}`;
     return `
     fn ${rustField(m.member.name)}(${m.receiver}${params.map((p) => `, ${p}`).join('')}) -> Result<${m.returns === 'none' ? '()' : rustType(model, m.returns)}, ${failure}> {
-        Python::attach(|py| {${cb.owner ? `
-            if std::thread::current().id() != self.owner {
-                return Err(thrown(py, binding_error(py, BindingError::WrongThread { subject: String::from(${rustString(`${pyName}.${method}()`)}) })));
-            }` : ''}
+        Python::attach(|py| {
             let call = || -> PyResult<${m.returns === 'none' ? '()' : rustType(model, m.returns)}> {
                 let returned = self.object.bind(py).call_method1(${rustString(method)}, (${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                 ${m.returns === 'none' ? 'let _returned: Bound<\'_, PyAny> = returned;\n                ' : ''}${returned}
@@ -676,13 +678,13 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   return `
 /// U-3: ${pyName}, a callback that Python code implements; the core calls it through ${cb.unit.core ?? ''}.
 pub struct ${struct} {
-    object: Py<PyAny>,${cb.owner ? '\n    owner: std::thread::ThreadId,' : ''}
+    object: Py<PyAny>,
 }
 
 /// U-3: a callback object is checked when it enters: each member is a callable attribute (kind invalid_callback).
 fn in_${name}(py: Python<'_>, value: &Bound<'_, PyAny>, subject: &str) -> PyResult<${struct}> {
 ${checks}
-    Ok(${struct} { object: value.clone().unbind()${cb.owner ? ', owner: std::thread::current().id()' : ''} })
+    Ok(${struct} { object: value.clone().unbind() })
 }
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
@@ -840,7 +842,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),

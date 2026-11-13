@@ -110,6 +110,17 @@ clippy-rust:
 fmt-rust:
 	cargo fmt $(CORE_MANIFEST) --check
 
+# ---- Documents (config/documents.json, config/checklist.json) ---------------------------------------------------------
+# docs-check reads each document of config/documents.json on its own with the utility of kit: links, anchors, fences, the
+# changelogs, private paths and the checklists of docs/plans/<plan>/; documents-stamp writes the source-sha256 of each
+# English document into its Korean twin after the translation is reviewed, for PATHS or for every twin whose source moved.
+.PHONY: docs-check documents-stamp
+docs-check: ## Check the documents, the changelogs and the checklists; offline
+	$(NODE) $(KIT)/check-documents.mjs --checklist-place --private-path /Users/ --private-path /home/ --kit-rows
+
+documents-stamp: ## Write the source-sha256 of each English document into the Korean twins of PATHS, or of every twin whose source moved; offline
+	$(NODE) $(KIT)/documents-stamp.mjs $(PATHS)
+
 # ---- CI (.github/workflows/ci.yml) -------------------------------------------------------------------------------------
 # ci-targets runs TARGETS past failures with the utility of kit and writes CI_REPORT: the log of each target, record.json
 # and summary.md; ci-summary writes summary.md again, also for a run that stopped; ci-passed, the last job of the

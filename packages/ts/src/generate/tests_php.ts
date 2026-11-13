@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, casePascal, checkCaseNames, caseRefusal, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -18,6 +18,7 @@ const BAD_NUMBERS: Record<string, string[]> = {
 const phpBase = (category: string): string => ({ value: 'InvalidArgumentException', type: 'TypeError' })[category] ?? 'RuntimeException';
 
 export function phpTests(model: Model, layout: PhpLayout): string {
+  checkCaseNames(model, casePascal, true);
   const enumRef = (name: string, value: string): string => {
     const unit = model.enums.find((u) => langName('python', u.name, 'class') === name);
     const ns = unit === undefined ? layout.namespace : phpNamespace(layout, unit.module);
@@ -223,7 +224,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
       return { fixtures, before, after };
     };
     for (const kase of raisingCases(model, fn)) {
-      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const id = casePascal(kase.id);
       const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
       if (refusal !== undefined) {
         methods.push(`
@@ -265,7 +266,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
-      const id = kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+      const id = casePascal(kase.id);
       if (kase.refused !== undefined) {
         methods.push(`
     public function testGn13e${name}${id}(): void
@@ -340,7 +341,7 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
     for (const kase of stringCases(model, fn)) {
       // GN-6g: PHP gives Stringable to a class that has __toString.
       methods.push(`
-    public function testN4${name}${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    public function testN4${name}${casePascal(kase.id)}(): void
     {${receiverOfCase(kase.receiver).lines}
         self::assertInstanceOf(\\Stringable::class, ${receiverOfCase(kase.receiver).expr});
         self::assertSame(${phpText(kase.result)}, ${invoke(fn, '', receiverOfCase(kase.receiver).expr)});
@@ -432,10 +433,13 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         } finally {
             restore_error_handler();
         }
-        self::assertSame(${expected}, $warnings);`;
+        ${expected}`;
+    // GN-6p: PHP puts the name of the running function before the message of a warning, which ends with the B-10 text.
     methods.push(`
     public function testB10${label}WarnsWithout${langName('php', cleanup.member.name, 'class')}(): void
-    {${warned('', `[[E_WARNING, ${phpText(cleanupWarning(label, memberName('php', cleanup)))}]]`)}
+    {${warned('', `self::assertCount(1, $warnings);
+        self::assertSame(E_WARNING, $warnings[0][0]);
+        self::assertStringEndsWith(${phpText(cleanupWarning(label, memberName('php', cleanup)))}, $warnings[0][1]);`)}
     }
 
     public function testB10${label}DoesNotWarnAfter${langName('php', cleanup.member.name, 'class')}(): void
@@ -444,14 +448,14 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
                 ${invoke(cleanup, callArgs(model, ctx, cleanup, (arg) => placeholder(model, ctx, arg.type)), '$held')};
             } catch (\\Throwable) {
                 // B-10: the cleanup call consumed the value whatever it gave.
-            }`, '[]')}
+            }`, 'self::assertSame([], $warnings);')}
     }`);
   }
   // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
   for (const kase of aliasCases(model)) {
     const alias = langName('php', kase.alias.unit.name, 'class');
     methods.push(`
-    public function testU7${alias}In${kase.id.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}(): void
+    public function testU7${alias}In${casePascal(kase.id)}(): void
     {
         try {
             \\${layout.namespace}\\Internal\\aliasIn${alias}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)});

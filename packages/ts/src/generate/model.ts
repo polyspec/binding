@@ -104,6 +104,8 @@ export interface Fn {
   // E-1c: a member that takes a callback returns Result<T, Failure<E>>.
   failure: boolean;
   corePath: string;
+  // GN-6q: a member with wait blocking_io whose parameter type or receiver class carries language code.
+  reaches?: true;
 }
 
 // U-1 kind class, origin generated: a language class that holds a core value (T-5).
@@ -323,11 +325,13 @@ export function collectModel(
     // GN-6m, GN-6n: a member with wait blocking_io or async_driver is generated in the form of each language; another
     // wait is not yet.
     if (member.wait !== undefined && member.wait !== 'none' && member.wait !== 'blocking_io' && member.wait !== 'async_driver') throw new Unsupported(`${member.id}: wait ${member.wait} is not generated yet`);
+    let reachesCode = false;
     if (member.wait === 'blocking_io' || member.wait === 'async_driver') {
       const rule = WAIT_RULE[member.wait];
       if (kind === 'constructor' || kind === 'property' || kind === 'iterate') throw new Unsupported(`${member.id}: a ${kind} with wait ${member.wait} is not generated (${rule})`);
-      const reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
-      if (reachesCode) throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
+      reachesCode = (member.parameters ?? []).some((p) => carrying.carries(p.type)) || (kind === 'method' && carrying.classes.has(unit.id));
+      // GN-6n: a future that a runtime polls on its own threads would call the language code there.
+      if (reachesCode && member.wait === 'async_driver') throw new Unsupported(`${member.id}: a member with wait ${member.wait} that reaches language code is not generated (${rule})`);
     }
     const core = member.core;
     if (core === undefined) throw new Unsupported(`${member.id}: a member without a core path is not generated`);
@@ -400,6 +404,7 @@ export function collectModel(
       failure: takesCallback,
       corePath,
       ...(record === undefined ? {} : { record }),
+      ...(reachesCode && member.wait === 'blocking_io' ? { reaches: true as const } : {}),
     };
   };
   for (const unit of contract.units) {
@@ -853,6 +858,14 @@ export function lockLines(model: Model, fn: Fn, variable: (parameter: Parameter)
     lines.push(`        let ${name} = ${cell}.read(${text}, &[${beside.map((b) => `Some(&${b})`).join(', ')}]).map_err(${fail})?;`);
     reads.set(place.object.unit, [...beside, name]);
   }
+  // The core gets the value that each guard holds, which a path of a trait (ToString::to_string) does not find
+  // through a borrow of the guard. The guards stay alive under the names that the borrows shadow.
+  // GN-6o: the receiver self is the value itself, which the core consumes.
+  for (const place of places(model, fn)) {
+    if (place.param === undefined && fn.receiver === 'self') continue;
+    const name = place.param === undefined ? RECEIVER_GUARD : variable(place.param);
+    lines.push(`        let ${name} = ${place.write ? '&mut ' : '&'}*${name};`);
+  }
   return lines;
 }
 
@@ -957,17 +970,17 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
   const held = places(model, fn);
   const args = fn.params.map((p) => {
     if (fn.record !== undefined && p === fn.record.param) return `&${rustField(p.name)}`;
-    // GN-6h: a place gives the core the borrow of its guard, which derefs to the value where the core takes it.
-    const place = held.find((h) => h.param === p);
-    if (place !== undefined) return `${place.write ? '&mut ' : '&'}${variable(p)}`;
+    // GN-6h: a place gives the core the value that its guard holds, which lockLines borrows under the name of the place,
+    // in the form that the core path takes: the borrow, or a copy where the core takes the value (CoreForm).
+    if (held.some((h) => h.param === p)) return `CoreForm::core_form(${variable(p)})`;
     return p.default === undefined ? coreArg(model, p.type, variable(p)) : defaultArg(model, p.type, variable(p));
   });
   // GN-6m, I-2 (4): the core function of a member with wait blocking_io takes the token first after its receiver.
   if (waitsIo(fn)) args.unshift(IO_TOKEN);
   if (fn.receiver === undefined) return args;
   const mut = fn.receiver === '&mut self';
-  // GN-6o: the receiver self is the value that its place took.
-  if (held.some((h) => h.param === undefined)) return [fn.receiver === 'self' ? RECEIVER_GUARD : `${mut ? '&mut ' : '&'}${RECEIVER_GUARD}`, ...args];
+  // GN-6o: the receiver self is the value that its place took; any other receiver is the borrow that lockLines bound.
+  if (held.some((h) => h.param === undefined)) return [RECEIVER_GUARD, ...args];
   return [`${mut ? '&mut ' : '&'}${receiver}`, ...args];
 }
 

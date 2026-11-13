@@ -4,13 +4,13 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, RECEIVER_GUARD, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -431,7 +431,7 @@ pub fn ${rustExport(fn)}(this: u32) -> Result<JsValue, JsValue> {
     guard(|| {
 ${[...receiverLines(model, fn), ...lockLines(model, fn, (p) => rustField(p.name), 'held', 'binding_error', classLabel)].join('\n')}
         let items = Array::new();
-        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? '&receiver' : 'this'})`)} {
+        for item in ${armedCall(model, fn, `${fn.corePath}(${locked(model, fn) ? RECEIVER_GUARD : 'this'})`)} {
 ${body}
         }
         Ok(items.into())
@@ -533,8 +533,8 @@ fn held_param_${plain}(value: &JsValue, subject: &str) -> Result<Rc<${heldType(o
 ` : ''}
 
 /// T-5: a value of ${jsClass} leaves as a new instance, which the ES module makes around the handle of the value.
-fn out_${name}(value: ${core}) -> Result<JsValue, Fail> {
-    let handle = insert_${plain}(value)?;
+fn out_${name}(value: impl CoreForm<${core}>) -> Result<JsValue, Fail> {
+    let handle = insert_${plain}(value.core_form())?;
     make_instance(${index}, handle).inspect_err(|_fail| ${table}.with(|table| table.borrow_mut().remove(handle)))
 }
 ${takesObject(model, object) ? `
@@ -817,7 +817,7 @@ function libRust(model: Model): string {
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));

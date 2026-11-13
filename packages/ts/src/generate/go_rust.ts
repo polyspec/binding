@@ -15,7 +15,7 @@ import {
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { container, outArms } from './alias_shared.ts';
-import { header, closure, optionRef, rustString, usedHelpers, WIDEN } from './text.ts';
+import { header, closure, optionRef, rustString, usedHelpers, CORE_FORM, WIDEN } from './text.ts';
 
 // The C symbol prefix of the static library: the PHP extension name of P-1, polyspec_<repository>.
 export const prefix = (model: Model): string => extensionName(model.contract);
@@ -514,8 +514,8 @@ fn held_${plain}(handle: u64, subject: &str) -> Result<Arc<${heldType(object)}>,
 }
 
 /// T-5: a value of ${goClass} leaves as the handle of a new instance, which Go makes around it.
-fn out_${plain}(output: &mut Vec<u8>, value: ${core}) {
-    out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value')}));
+fn out_${plain}(output: &mut Vec<u8>, value: impl CoreForm<${core}>) {
+    out_uint(output, insert(&${tableName(object.unit)}, ${heldNew(object, 'value.core_form()')}));
 }
 
 /// U-7, GN-15c: a value of ${goClass} that an out row of a value alias makes leaves as the number of the class and
@@ -1168,7 +1168,7 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
 }
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
@@ -1201,7 +1201,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 
 // The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
 const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+  `${model.objects.some((o) => o.lock?.writes === true) ? 'in_uint' : ''} ${model.objects.filter((o) => o.lock?.writes === true).map((o) => `held_${plainName(o.unit)}`).join(' ')} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
