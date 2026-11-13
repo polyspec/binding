@@ -600,6 +600,19 @@ test('every scaffolded manifest carries the licence of the core, and a core with
   }
 });
 
+test('the PHP extension registers under the extension-name of its composer.json (GN-3g)', () => {
+  // The fixture, and the points of the end-to-end check, whose library has another name.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const points = { contract: read('points/packages/rust/interface.json'), caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]) };
+  for (const [sample, want] of [[load(), 'polyspec_sample'], [points, 'polyspec_points']] as const) {
+    const name = JSON.parse(String(trackedPackages(sample.contract, '0.0.0').get('packages/php-ext/composer.json')))['php-ext']['extension-name'];
+    assert.equal(name, want);
+    const lib = text(generateTargets({ contract: sample.contract, version: '0.0.0', coreLib: name, caseFiles: sample.caseFiles, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+    // The first call on the builder names the module, before anything is registered.
+    assert.ok(lib.includes(`\n    #[php_module]\n    #[php(startup = "startup")]\n    pub fn module(module: ModuleBuilder) -> ModuleBuilder {\n        let module = module\n            .name("${name}")\n`), name);
+  }
+});
+
 test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
   contract.targets.push('wasm');
