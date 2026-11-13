@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: f0d8c0028288034acb22f422ff4b22cc9bb63870100c4ea32c1101ca3777a115 -->
+<!-- source-sha256: 34571f8aba06ef1c0784357d1b3f1696e8782b95b655f684081c1004e04b9319 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -67,7 +67,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
     binding의 닫힌 표가 만든 값의 술어를 정한다(행의 `when`, `else` 행은 형제 행들이 한 값으로 고른 술어의 다른 값,
     `text`는 UTF-8, `int`는 정수인 안전 정수, `list`는 키 0~n-1). `when`이 맞는 첫 case가 그 case이며, 표가 정하지 않는
     술어는 finding이다. `by`가 있는 class는 `is`를 실행 때만 알 수 있으므로 행의 kind가 case 하나를 정확히
-    가리켜야 한다. case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
+    가리켜야 하며, kind `text`의 행은 kind `text16`의 case로 돌아와도 된다. Unicode text는 그 UTF-16 code unit과 같은
+    값이기 때문이다(GN-6x). case 중 하나라도 맞으면 통과로 보는 검사는 잘못된 분류를 통과시키므로 쓰지 않는다. G-5의 생성 왕복
     시험은 남는다.
   - `writable`은 `value` unit의 property만 갖는다(U-2).
   - `in_raises`는 `core: {in, out}`를 가진 값 alias에만 두고 이 계약 `errors.kinds`의 variant를 가리킨다. 그 `in` 함수가 낼

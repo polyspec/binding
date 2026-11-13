@@ -757,6 +757,16 @@
           }
         },
         {
+          "kind": "text",
+          "make": {
+            "php": "value.string",
+            "python": "value.string",
+            "node": "value.string",
+            "go": "value.string",
+            "wasm": "value.string"
+          }
+        },
+        {
           "kind": "text16",
           "make": {
             "php": "value.from_units",

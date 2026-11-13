@@ -191,6 +191,17 @@ describe('CK-8 value units', () => {
     fails('CK-8', `${at('value')}/out/1/make/node`, (c) => { unit(c, 'value').out[1].make.node = 'value.items'; }));
   // GN-6x: a text with an unpaired surrogate is the kind text16, which a member of a class makes from code units; the
   // string of PHP and Go cannot hold it, so no built-in form makes it.
+  // GN-6x, P-3: a value class makes a text by a text row and a text with an unpaired surrogate by a text16 row, and reads
+  // every string by one case of the kind text16; a Unicode text is the same value as its UTF-16 code units.
+  test('a text row that comes back by the case of the kind text16', () => {
+    const owner = JSON.parse(readFileSync(new URL('./fixtures/value-class/owner.json', import.meta.url), 'utf8'));
+    assert.deepEqual(checkContract(owner), []);
+  });
+  test('a text16 row that comes back by the case of the kind text', () =>
+    fails('CK-8', `${at('value')}/out/0/make`, (c) => {
+      unit(c, 'value').out[0].kind = 'text16';
+      unit(c, 'value').out[0].make = Object.fromEntries(Object.keys(unit(c, 'value').out[0].make).map((lang) => [lang, 'value.new']));
+    }));
   test('a text16 row made by a built-in form', () =>
     fails('CK-8', `${at('value')}/out/0/make/php`, (c) => { unit(c, 'value').out[0].kind = 'text16'; }));
   test('a value that comes back as another kind', () =>

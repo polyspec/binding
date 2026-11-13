@@ -73,7 +73,9 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
     made value (the row's own `when`; for an `else` row, the other value of a predicate that its sibling rows select
     with one value; `text` is UTF-8; `int` is an integral safe integer; `list` has the keys 0 to n-1), the first case
     whose `when` holds is the case, and a predicate that the table does not give is a finding. For a class with `by`,
-    whose `is` is known only at run time, the row's kind names exactly one case. A check that passes when any case
+    whose `is` is known only at run time, the row's kind names exactly one case, and a row of the kind `text` may
+    come back by the case of the kind `text16`, because a Unicode text is the same value as its UTF-16 code units
+    (GN-6x). A check that passes when any case
     matches is not used, because it passes a wrong classification; the generated round-trip test of G-5 remains;
   - only a property of a `value` unit is `writable` (U-2);
   - `in_raises` is on a value alias with `core: {in, out}` only and names variants of `errors.kinds` of the contract:
