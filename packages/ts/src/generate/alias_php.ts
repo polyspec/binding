@@ -230,10 +230,15 @@ function valueClassesPhpHostAll(model: Model): string {
       return `            ${rustString(kase.is)} => (ValueKind::${kase.kind}, ${read}),`;
     }).join('\n');
     return [`    if php_instance(value, ${rustString(own)}) {
-        // I-3: a property of the owner is a method in PHP; a backed enum case gives its value.
+        // I-3: a property of the owner is a method in PHP; a backed enum case gives its value. The value is read from
+        // the table of the properties of the case: get_property of ext-php-rs fetches a property for writing, which
+        // PHP refuses for the readonly value of an enum case.
         let by = php_method(value, ${rustString(langName('php', row.by.name, 'callable'))}, vec![]).map_err(php_thrown)?;
         let by: String = match by.object() {
-            Some(case) => case.get_property::<String>("value").map_err(php_failed)?,
+            Some(case) => match case.get_properties().map_err(php_failed)?.get("value").map(Zval::dereference).and_then(Zval::string) {
+                Some(text) => text,
+                None => return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6x: the kind of ${own} is an enum case without a text value`)}) })),
+            },
             None => match by.string() {
                 Some(text) => text,
                 None => return Err(binding_error(BindingError::Internal { detail: String::from(${rustString(`GN-6x: the kind of ${own} is no enum case`)}) })),

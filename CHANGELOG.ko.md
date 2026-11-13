@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: eb0ec3bd2d7353ba3f4d38bf45afbe4172a749c94c913382540894ebce8c6ceb -->
+<!-- source-sha256: e0b01e6f93447a1e4bf1a0395a309b6c558717ab6f10598be95eff8e5ce6821d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- kind가 backed enum인 다른 레포의 값 class를 받는 PHP member가 "Cannot indirectly modify readonly property"로 실패했다.
+  생성된 crate가 enum case의 값을 ext-php-rs의 `get_property`로 읽었는데, 이것은 property를 쓰기용으로 가져오고 PHP는
+  enum case의 readonly `value`에 그것을 거부한다. 그래서 `carry`에 값을 주는 `tests/e2e/relay`의 생성된 PHP 시험 12개가
+  실패했다. 이제 crate는 case의 property 표에서 값을 읽는다(GN-6x). `make test-ts`로 검증했다: 새 시험이 변경 전에는
+  실패했다.
 - 계약의 깊이 한계에 있는 값이 Node에서 process를 끝내고 WASM에서 trap을 냈다. core의 값에서 언어의 값을 만드는 함수
   `make_<name>`이 level마다 자기 자신을 한 번 불러서, 256단계로 중첩된 `tests/e2e/relay`의 값이 host가 주는 것보다 많은
   native stack을 썼다. 이제 Node와 WASM의 함수는 heap의 작업 stack을 가진 loop로 값을 걷는다. 자식이 다 만들어지지 않은

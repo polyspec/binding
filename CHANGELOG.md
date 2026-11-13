@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A PHP member that takes a value class of another repository whose kind is a backed enum failed with "Cannot
+  indirectly modify readonly property": the generated crate read the value of the enum case with `get_property` of
+  ext-php-rs, which fetches a property for writing, and PHP refuses that for the readonly `value` of an enum case, so
+  the 12 generated PHP tests of `tests/e2e/relay` that give `carry` a value failed. The crate now reads the value
+  from the table of the properties of the case (GN-6x). Verified by `make test-ts`: the new test failed before the
+  change.
 - A value at the depth limit of a contract ended the process in Node and trapped in WASM: the function that makes
   the value of the language from the value of the core, `make_<name>`, called itself once for each level, so a
   value of `tests/e2e/relay` nested 256 deep used more native stack than the host gives. The Node and the WASM
