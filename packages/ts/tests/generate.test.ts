@@ -1655,6 +1655,14 @@ test('a float case value is a float literal in Python and PHP, also where JSON w
   assert.match(node, /ordered\(pkg\.scale\(-0\)\), ordered\(-0\)/);
 });
 
+test('the Python G-7 test of a constructor without parameters expects the words of PyO3 (G-7)', () => {
+  const out = generate({ ...tokenMapClasses(), version: '0.0.0', coreLib: 'polyspec_classes', targets: ['python'] });
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(py, /def test_g7_token_map_new_counts_and_names_its_arguments\(self\) -> None:\n\s+with self\.assertRaisesRegex\(TypeError, "takes 0 positional arguments"\):\n\s+pkg\.TokenMap\(None\)\n\s+with self\.assertRaisesRegex\(TypeError, "unexpected keyword argument"\):\n\s+pkg\.TokenMap\(not_a_parameter=1\)/);
+  // A static member without parameters is a function of no arguments.
+  assert.match(py, /def test_g7_token_none_counts_and_names_its_arguments\(self\) -> None:\n\s+with self\.assertRaisesRegex\(TypeError, "takes no arguments"\):/);
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {
