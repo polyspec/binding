@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 12d00fbb6b5e2e3d775aca0422ae6d20265789808d5759e2eff4692d8228eccd -->
+<!-- source-sha256: 6bfa8afa1d8b1c0f7168855dd15571899753a4a2dbb4a73898733db0c5f0484c -->
 # 생성기
 
 [English](generator.md)
@@ -652,7 +652,21 @@
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   언어 코드에 닿는 `blocking_io` member는 GN-6q대로 생성한다. 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도 기다리지 않는 자기 protocol로 부르기
-  때문이다. `process_wait`도 이름을 대고 거부한다(G-4).
+  때문이다.
+  `wait: process_wait`인 member(B-5 (b))는 다른 프로세스가 움직일 때까지 기다리므로, 그 기다림은 그 프로세스만큼 길 수
+  있다. 그 member는 `Io` token의 자리에 `binding_core::ProcessWait::for_generated_call()`을 넘기고, 언어 코드에 닿는
+  경우(GN-6q)를 포함해 `blocking_io`인 member의 형태를 갖는다. 다만 그 형태가 다른 호출과 함께 쓰는 pool의 thread에서
+  기다리는 곳은 다르다:
+  - Python: `a<name>`은 `<name>`을 자기 thread(`threading.Thread`)에서 돌리고, 그 thread는 결과나 예외를
+    `loop.call_soon_threadsafe`로 실행 중인 loop의 future에 준다. `asyncio.to_thread`를 쓰지 않는다. 프로그램의 모든
+    `to_thread`가 기본 executor의 thread를 함께 쓰며, 프로세스만큼 긴 기다림은 그 하나를 붙잡기 때문이다. 취소된 future는
+    결과를 받지 않는다.
+  - Node: 코어 호출은 자기 thread(`std::thread`)에서 돌고, 그 결과나 오류는 JavaScript thread에서 promise를
+    정한다(`Env::create_deferred`). libuv pool을 쓰지 않는다. 그 thread는 프로그램의 파일 시스템 호출과 DNS 호출이 함께
+    쓰기 때문이다. 호출의 panic은 kind `internal`로 promise를 reject한다(B-7).
+  - PHP, Python `<name>`, Go는 `blocking_io`처럼 호출한 thread에서 기다린다.
+  - WASM에는 그런 member가 없다. 이것은 생성기의 빈틈이 아니라 그 target의 규칙이다. WebAssembly module에는 프로세스가
+    없고 하나뿐인 thread를 막을 수 없으므로, 계약은 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
 - **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
   tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. tokio runtime이 없는
   WASM은 그것을 JavaScript의 event loop에서 돌린다. 진입점은 GN-6m처럼 호출

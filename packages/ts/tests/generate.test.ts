@@ -135,9 +135,9 @@ test('a generation leaves no file of an earlier one', () => {
 
 test('an item that is not generated yet is refused by its name (G-4)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
-  contract.units[0].members[0].wait = 'process_wait';
+  contract.units[0].members[0].native = { node: { signature: 'split(text: string): string[]' }, reason: 'G-4' };
   const caseFiles = new Map([['contracts/cases.json', JSON.parse(readFileSync(join(fixture, 'contracts/cases.json'), 'utf8'))]]);
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: wait process_wait is not generated yet/);
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /split: native is not generated yet/);
 });
 
 test('a contract that fails the check is not generated', () => {
@@ -4092,6 +4092,42 @@ test('a Go helper that only the entry points of a test feature use is compiled u
   assert.match(lib, /\n#\[cfg\(feature = "fault-test"\)\]\nfn out_list</);
   // A helper of the members is compiled in every form.
   assert.match(lib, /\nfn in_text\(/);
+});
+
+test('a member with wait process_wait passes the ProcessWait token and waits on no shared pool (GN-6m, B-5 (b))', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const classes = (targets: string[], change: (contract: any) => void = () => undefined): Map<string, string | Buffer> => {
+    const contract = read('packages/rust/interface.json');
+    for (const id of ['classes.read', 'gate.enter_slowly']) contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).wait = 'process_wait';
+    change(contract);
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: targets as Inputs['targets'] & string[] });
+  };
+  const token = 'binding_core::ProcessWait::for_generated_call()';
+  const out = classes(['php', 'python', 'node', 'go']);
+  // PHP and Go wait on the calling thread.
+  for (const path of ['packages/php-ext/generated/lib.rs', 'packages/go/internal/ffi/generated/lib.rs']) {
+    assert.ok(text(out, path).includes(`polyspec_classes::read(${token}, `), path);
+    assert.ok(text(out, path).includes(`polyspec_classes::Gate::enter_slowly(receiver, ${token})`), path);
+  }
+  // Python: <name> waits without the GIL, and a<name> runs it on a thread of its own, not in asyncio.to_thread.
+  const python = text(out, 'packages/python/generated/lib.rs');
+  assert.ok(python.includes(`polyspec_classes::read(${token}, `));
+  assert.match(python, /fn aread<'py>\([^\n]+\n {4}awaited_apart\(py, wrap_pyfunction!\(read, py\)\?\.into_any\(\), args, kwargs\)/);
+  assert.match(python, /fn member_aenter_slowly<'py>\([^\n]+\n {8}awaited_apart\(slf\.py\(\), /);
+  assert.match(python, /\nfn awaited_apart<'py>\([\s\S]*?threading\.Thread\(target=run\)\.start\(\)\n {4}return await future\n"#;/);
+  assert.match(python, /loop\.call_soon_threadsafe\(settle, result, None\)/);
+  // Node: the work runs on a thread of its own, and the JavaScript thread settles the promise.
+  const node = text(out, 'packages/ts/generated/lib.rs');
+  assert.ok(node.includes(`waiting_apart(env, move || `) && node.includes(`polyspec_classes::read(${token}, `));
+  assert.match(node, /\nfn waiting_apart<'env, W, O>\([\s\S]*?env\.create_deferred::<Settled, _>\(\)[\s\S]*?std::thread::Builder::new\(\)\.spawn\(move \|\| \{\n {8}let output = guard\(work\);\n {8}deferred\.resolve\(/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function read\(name: string\): Promise<string>;/);
+  // A crate holds the helper of the wait that its members use, and no other.
+  assert.doesNotMatch(node, /\nfn waiting</);
+  const io = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'node'] });
+  assert.doesNotMatch(text(io, 'packages/ts/generated/lib.rs'), /waiting_apart|Settled/);
+  assert.doesNotMatch(text(io, 'packages/python/generated/lib.rs'), /awaited_apart/);
+  // A constructor does not wait for a process either.
+  assert.throws(() => classes(['php'], (c) => { const made = c.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.kind === 'constructor'); made.wait = 'process_wait'; }), /a constructor with wait process_wait is not generated \(GN-6m\)/);
 });
 
 test('a member with wait blocking_io passes the Io token and waits in the form of each language (GN-6m, B-5 (a))', () => {

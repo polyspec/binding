@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 3b69bd2595a0576427b8b4f0de1708a8173bd90a38f09bec52983fa4db413a37 -->
+<!-- source-sha256: 889181b6372fdba201b11cb36814e9ff57433704c6643b3ffa6fb4c1648bdd9c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `wait: process_wait`인 member를 모든 target이 이름을 대고 거부했다. 이제 생성기가 그것을 받는다(GN-6m). 코어 호출은
+  `Io` token의 자리에 `binding_core::ProcessWait::for_generated_call()`을 받는다. PHP, Python `<name>`, Go는
+  `blocking_io`처럼 호출한 thread에서 기다린다. Python `a<name>`은 `<name>`을 자기 thread에서 돌리고 그 thread가 실행
+  중인 loop의 future를 정한다. 모든 `to_thread`가 executor를 함께 쓰는 `asyncio.to_thread`는 쓰지 않는다. Node는 코어
+  호출을 자기 thread에서 돌리고 JavaScript thread에서 promise를 정하며(`Env::create_deferred`), libuv pool은 쓰지 않는다.
+  WASM에는 그런 member가 없고, 명세는 그것을 그 target의 규칙으로 적으며, CK-15가 `wasm`이 없는 `only`를 요구한다.
+  `process_wait`인 constructor, property, iterate, hook은 `blocking_io`인 것처럼 거부한다. `make test-ts`로 검증했다.
+  `process_wait`의 거부를 요구하던 시험은 변경 전에 성립했고, 새 시험은 각 언어의 token과 형태를 읽는다. 436개 중
+  436개가 통과한다. Node와 Python의 형태는 end-to-end 검사만 컴파일한다.
 - 생성된 Go의 B-10 시험은 `runtime.GC()` 뒤에 표준 logger의 메시지 하나를 channel에서 받았다. 수거가 남긴 객체는 그
   시험을 끝없이 기다리게 했고, 앞선 시험의 객체가 낸 경고는 그 시험을 실패시켰으며, 두 번째 메시지는 쓰는 동안 자기 lock을
   쥐는 logger를 막았다. 이제 시험은 자기 객체의 `weak.Pointer`를 얻어 수거가 객체를 남기면 곧바로 실패하고, writer는

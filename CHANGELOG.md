@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- A member with `wait: process_wait` was refused by name on every target. The generator now takes it (GN-6m): the
+  core call gets `binding_core::ProcessWait::for_generated_call()` in the place of the `Io` token; PHP, Python
+  `<name>` and Go wait on the calling thread as for `blocking_io`; Python `a<name>` runs `<name>` on a thread of its
+  own, which settles a future of the running loop, and not in `asyncio.to_thread`, whose executor every `to_thread`
+  shares; Node runs the core call on a thread of its own and settles the promise on the JavaScript thread
+  (`Env::create_deferred`), and not on the libuv pool. WASM has no such member, which the specification states as
+  the rule of that target, and CK-15 requires `only` without `wasm`. A constructor, a property, an iterate or a hook
+  with `process_wait` is refused as one with `blocking_io` is. Verified by `make test-ts`: the test that required
+  the refusal of `process_wait` held before the change, and the new test reads the token and the form of each
+  language; 436 of 436 pass. The Node and Python forms are compiled only by the end-to-end check.
 - The generated Go test of B-10 received one message of the standard logger from a channel after `runtime.GC()`: an
   object that the collection left made it wait without an end, a warning of an object of an earlier test failed
   it, and a second message blocked the logger, which holds its lock while it writes. The test now takes a

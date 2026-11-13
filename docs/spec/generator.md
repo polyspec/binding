@@ -799,7 +799,22 @@ the design ids are those of the binding design.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member with `blocking_io` that reaches language code is generated as GN-6q states. A constructor, a property, an
   iterate or a hook (N-4) that waits is refused by name, because the language has no awaited form of them, or calls a
-  hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
+  hook in its own protocol, which awaits nothing.
+  A member with `wait: process_wait` (B-5 (b)) waits until another process acts, so its wait may last as long as that
+  process. It passes `binding_core::ProcessWait::for_generated_call()` in the place of the `Io` token and has the
+  forms of a member with `blocking_io`, also where it reaches language code (GN-6q), except where that form waits on a
+  thread of a pool that other calls share:
+  - Python: `a<name>` runs `<name>` on a thread of its own (`threading.Thread`), which gives its result or its
+    exception to a future of the running loop through `loop.call_soon_threadsafe`, and not in `asyncio.to_thread`,
+    because every `to_thread` of the program shares the threads of the default executor, and a wait that lasts as long
+    as a process would hold one of them. A future that was cancelled takes no result.
+  - Node: the core call runs on a thread of its own (`std::thread`), and its result or error settles the promise on
+    the JavaScript thread (`Env::create_deferred`), and not on the libuv pool, whose threads the file system and DNS
+    calls of the program share. A panic of the call rejects the promise with kind `internal` (B-7).
+  - PHP, Python `<name>` and Go wait on the calling thread, as for `blocking_io`.
+  - WASM has no such member, and this is the rule of that target and no gap of the generator: a WebAssembly module
+    has no processes and cannot block its one thread, so the contract gives the member `only` without `wasm` (Q-4,
+    CK-15).
 - **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
   generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs;
   WASM, which has no tokio runtime, runs it on the event loop of JavaScript.
