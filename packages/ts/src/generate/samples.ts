@@ -29,6 +29,8 @@ export interface Context {
   objectNew?: (factory: Fn, args: string) => string;
   // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
   instanceNew?: (receiver: Receiver) => string;
+  // GN-6m: the expression of a function value of a case from its rows, where the test reads no record of its calls.
+  functionNew?: (rows: string[][]) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -175,6 +177,8 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
     );
   }
   // GN-13f: the value of a class is an instance value, at any place of the case.
+  // GN-6m: a function value at any other place of a case is a fixture of the call, whose unexpected call raises.
+  if (typeof type === 'object' && 'function' in type && ctx.functionNew !== undefined) return ctx.functionNew(functionRows(model, ctx, type.function, value, 'a case value', '__call__'));
   if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
     return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
@@ -784,6 +788,38 @@ export function fixtureValues(model: Model, ctx: Context, fixture: Fixture): { m
     }),
     calls: fixture.calls?.map((call) => [text(name(call.member)), list(argsOf(call.member, call.args))]),
   };
+}
+
+// GN-6m: the function value of a case, {"function": [<row>]}: a row is {"args": {"0": ..., "1": ...}} by position,
+// with "result" (absent for a return of none) and "once". The contract check has judged the form (CK-22). The rows are
+// given as those of a fixture of one member, the call itself, whose name `call` each language gives.
+export function functionRows(model: Model, ctx: Context, type: { parameters: Type[]; returns: Type }, value: unknown, what: string, call: string): string[][] {
+  const none = ctx.lang === 'python' ? 'None' : 'null';
+  const flag = (on: boolean): string => (ctx.lang === 'python' ? (on ? 'True' : 'False') : String(on));
+  const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
+  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'node' ? jsString(name) : phpText(name));
+  const rows = (value as { function?: unknown } | null)?.function;
+  if (!Array.isArray(rows)) throw new Error(`${what} gives no {"function": [...]} (G-5)`);
+  return (rows as Record<string, unknown>[]).map((row) => {
+    const given = (row['args'] ?? {}) as Record<string, unknown>;
+    const values = type.parameters.map((p, i) => {
+      if (!(String(i) in given)) throw new Error(`${what} gives no argument ${String(i)} in a row (G-5)`);
+      return fromJson(model, ctx, p, given[String(i)]);
+    });
+    const result = row['result'] === undefined || row['result'] === null || type.returns === 'none' ? none : fromJson(model, ctx, type.returns, row['result']);
+    return [text(call), list(values), result, flag(row['once'] === true)];
+  });
+}
+
+// GN-6m: the function value of a case for each parameter of a function type, as a fixture whose record the test reads.
+export function functionFixturesOf(model: Model, ctx: Context, fn: Fn, id: string, args: Map<Arg, unknown>, call: string): { arg: Arg; members: string[]; rows: string[][] }[] {
+  const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'node' ? jsString(name) : phpText(name));
+  return fn.args.flatMap((arg) => {
+    const type = arg.type;
+    if (typeof type !== 'object' || !('function' in type)) return [];
+    const what = `the case ${id} of ${fn.member.id} for ${langName('python', arg.name, 'variable')}`;
+    return [{ arg, members: [text(call)], rows: functionRows(model, ctx, type.function, args.get(arg), what, call) }];
+  });
 }
 
 export function callbackArg(model: Model, fn: Fn): Arg | undefined {

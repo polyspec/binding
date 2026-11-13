@@ -1,0 +1,26 @@
+# A sample repository for the end-to-end check of binding: functions of the language (T-2, GN-6m).
+[workspace]
+resolver = "2"
+# The binding crates are members as in any repository (GN-4); binding scaffold of the run writes them (GN-14d), because
+# their files are of the commit of binding that the run checks.
+members = ["packages/rust", "packages/python"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.99.0"
+
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes_without_reason = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+map_err_ignore = "deny"
+as_conversions = "deny"

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case that gave a function value `{"function": [<row>]}` stopped the generator with "no case value of the type".
+  A Python test now gives it as a fixture of the call itself, whose record of calls the test reads after the call, or,
+  inside another value such as an argument of a `then` call, as the callable of such a fixture; and it checks that a
+  value that is not callable is kind `invalid_argument_type` (G-5, GN-6m). `tests/e2e/functions` is a Python
+  repository whose core calls a function during the call (`functions.apply`) and keeps one in a class
+  (`registry.register`, `registry.call`).
 - A member with a parameter of a function type was refused for every target ("the type {"function": ...} is not
   generated yet"), so a contract with one, such as template `engine.register`, generated no target. Python now
   generates it: the core takes `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>` by

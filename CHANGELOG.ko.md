@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- 함수 값 `{"function": [<행>]}`을 준 case는 생성기를 "no case value of the type"으로 멈추게 했다. 이제 Python 시험은
+  그것을 호출 자체의 fixture로 주고 호출 뒤에 그 호출 기록을 읽는다. `then` 호출의 인자처럼 다른 값 안에 있으면 그런
+  fixture의 호출 가능한 객체로 준다. 또 호출 가능하지 않은 값이 kind `invalid_argument_type`인지 확인한다(G-5, GN-6m).
+  `tests/e2e/functions`는 코어가 호출 중에 함수를 부르고(`functions.apply`) class 안에 함수를 보관하는(`registry.register`,
+  `registry.call`) Python 저장소다.
 - 함수 타입 parameter를 가진 member는 모든 target에서 거부되었다("the type {"function": ...} is not generated yet").
   그래서 template `engine.register` 같은 member가 있는 계약은 어떤 target도 생성되지 않았다. 이제 Python은 그것을
   생성한다. 코어는 `Box<dyn Fn(<parameter>…) -> Result<R, binding_core::Failure<E>> + Send + Sync>`를 값으로 받고, 호출

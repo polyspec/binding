@@ -1,0 +1,242 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "functions",
+  "core": {
+    "crate": "polyspec-functions",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "python"
+  ],
+  "packages": {
+    "python": {
+      "package": "polyspec-functions",
+      "module": "polyspec.functions"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "python": "FunctionsValueError"
+      },
+      "type": {
+        "python": "FunctionsTypeError"
+      },
+      "io": {
+        "python": "FunctionsIoError"
+      },
+      "store": {
+        "python": "FunctionsStoreError"
+      },
+      "busy": {
+        "python": "FunctionsBusyError"
+      },
+      "internal": {
+        "python": "FunctionsInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "python",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_functions::Error::Empty",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_functions::Error::Missing",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "changes": [],
+  "cases": [
+    {
+      "member": "functions.apply",
+      "file": "contracts/cases.json",
+      "group": "apply"
+    },
+    {
+      "member": "registry.new",
+      "file": "contracts/cases.json",
+      "group": "registry_new"
+    },
+    {
+      "member": "registry.register",
+      "file": "contracts/cases.json",
+      "group": "registry_register"
+    },
+    {
+      "member": "registry.call",
+      "file": "contracts/cases.json",
+      "group": "registry_call"
+    }
+  ],
+  "units": [
+    {
+      "id": "functions",
+      "name": [
+        "functions"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "functions.apply",
+          "name": [
+            "apply"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "convert"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    "text",
+                    {
+                      "list": "int"
+                    }
+                  ],
+                  "returns": "text",
+                  "async_allowed": false
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_functions::Error::Empty"
+          ],
+          "wait": "none",
+          "core": "polyspec_functions::apply"
+        }
+      ]
+    },
+    {
+      "id": "registry",
+      "name": [
+        "registry"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_functions::Registry",
+      "final": true,
+      "members": [
+        {
+          "id": "registry.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_functions::Registry::new"
+        },
+        {
+          "id": "registry.register",
+          "name": [
+            "register"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "convert"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    "text",
+                    {
+                      "list": "int"
+                    }
+                  ],
+                  "returns": "text",
+                  "async_allowed": false
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "none",
+          "raises": [
+            "polyspec_functions::Error::Empty"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_functions::Registry::register",
+            "receiver": "&mut self"
+          }
+        },
+        {
+          "id": "registry.call",
+          "name": [
+            "call"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "value"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [
+            "polyspec_functions::Error::Missing"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_functions::Registry::call",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ]
+}

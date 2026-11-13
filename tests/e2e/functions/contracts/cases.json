@@ -1,0 +1,106 @@
+{
+  "apply": [
+    {
+      "id": "the_function_converts_the_value",
+      "convert": {
+        "function": [
+          {
+            "args": {
+              "0": "ab c",
+              "1": [
+                2,
+                1
+              ]
+            },
+            "result": "AB C"
+          }
+        ]
+      },
+      "value": "ab c",
+      "result": "AB C"
+    },
+    {
+      "id": "a_value_without_a_character_is_empty",
+      "convert": {
+        "function": []
+      },
+      "value": "",
+      "raises": {
+        "kind": "empty",
+        "status": null,
+        "category": "value",
+        "message": "no character"
+      }
+    }
+  ],
+  "registry_new": [
+    {
+      "id": "a_registry_starts_without_a_function"
+    }
+  ],
+  "registry_register": [
+    {
+      "id": "a_name_without_a_character_is_empty",
+      "receiver": {
+        "new": "registry.new"
+      },
+      "name": "",
+      "convert": {
+        "function": []
+      },
+      "raises": {
+        "kind": "empty",
+        "status": null,
+        "category": "value",
+        "message": "no character"
+      }
+    }
+  ],
+  "registry_call": [
+    {
+      "id": "the_kept_function_converts_the_value",
+      "receiver": {
+        "new": "registry.new",
+        "then": [
+          {
+            "call": "registry.register",
+            "args": {
+              "name": "up",
+              "convert": {
+                "function": [
+                  {
+                    "args": {
+                      "0": "ab c",
+                      "1": [
+                        2,
+                        1
+                      ]
+                    },
+                    "result": "AB C"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "name": "up",
+      "value": "ab c",
+      "result": "AB C"
+    },
+    {
+      "id": "a_name_without_a_function_is_missing",
+      "receiver": {
+        "new": "registry.new"
+      },
+      "name": "up",
+      "value": "ab c",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no function up"
+      }
+    }
+  ]
+}

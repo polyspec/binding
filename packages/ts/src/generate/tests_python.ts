@@ -3,8 +3,8 @@
 import type { Model } from './model.ts';
 import { POISON_ENTRY, Unsupported, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
-import type { Fn } from './model.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, callArgs, callbackArg, functionFixturesOf, isPlain, madeLines, callables, bytesKind, caseValue, fromJson, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, judgesCallbackResult, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import type { Arg, Fn } from './model.ts';
 import { pyHeader, pyString } from './text.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
@@ -93,6 +93,12 @@ export function pythonTests(model: Model, module: string): string {
   };
   const out: string[] = [];
   let usesFixture = false;
+  // GN-6m: a function value of a case is a fixture whose one member is the call itself (__call__).
+  type Made = { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined } };
+  const withFunctions = (fixtures: Made[], fn: Fn, id: string, args: Map<Arg, unknown>): Made[] => [
+    ...fixtures,
+    ...functionFixturesOf(model, ctx, fn, id, args, '__call__').map((f, i) => ({ fixture: { arg: f.arg }, name: `function_${String(i)}`, values: { members: f.members, rows: f.rows, calls: undefined } })),
+  ];
   let usesErrno = false;
   // The expression that calls a member: a function, a static member or the constructor of a class, or a method or
   // property of an instance that a factory makes (T-5).
@@ -108,6 +114,11 @@ export function pythonTests(model: Model, module: string): string {
     return `${helper}()`;
   };
   ctx.instanceNew = (receiver) => made(receiver, (arg) => caseValue(model, ctx, arg, receiver.args));
+  // GN-6m: a function value inside another value is the callable of a fixture, whose unexpected call raises.
+  ctx.functionNew = (rows) => {
+    usesFixture = true;
+    return `_fixture(("__call__",), [${rows.map((row) => `(${row.join(', ')})`).join(', ')}])[0]`;
+  };
   // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
   const madeForm: MadeForm = {
     ctx,
@@ -224,7 +235,7 @@ export function pythonTests(model: Model, module: string): string {
       const receiverMade = receiverOfCase(kase.receiver);
       const receiver = receiverMade.expr;
       // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
@@ -261,7 +272,7 @@ export function pythonTests(model: Model, module: string): string {
         self.fail(${pyString(kase.refused)})`);
         continue;
       }
-      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) }));
+      const fixtures = withFunctions(fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture_${i}`, values: fixtureValues(model, ctx, fixture) })), fn, kase.id, kase.args);
       usesFixture ||= fixtures.length > 0;
       const tuple = (items: string[]): string => `(${items.map((item) => `${item},`).join(' ')})`;
       const before = fixtures.map((f) => `\n        ${f.name}, ${f.name}_unexpected, ${f.name}_calls = _fixture(${tuple(f.values.members)}, [${f.values.rows.map((row) => `(${row.join(', ')})`).join(', ')}])`).join('');
@@ -302,6 +313,15 @@ export function pythonTests(model: Model, module: string): string {
         with self.assertRaises((${model.classes.map((c) => `pkg.${c.name}`).join(', ')})) as caught:
             ${with_({ returns: 'wrong' })}
         self.assertIn(caught.exception.kind, ("invalid_argument_type", "invalid_number", "invalid_text"))` : ''}`);
+    }
+    // GN-6m: a value of a function type that is not callable is refused as it enters.
+    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type);
+    if (functionArg !== undefined && reachable) {
+      out.push(`
+    def test_gn6m_${name}_refuses_a_${langName('python', functionArg.name, 'variable')}_that_is_not_callable(self) -> None:
+        with self.assertRaises(pkg.${cls('type')}) as caught:
+            ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : placeholder(model, ctx, arg.type, true))))}
+        self.assertEqual(caught.exception.kind, "invalid_argument_type")`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
