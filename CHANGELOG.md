@@ -14,10 +14,12 @@
   `value.string_units`) as `HostText::Utf16`, in Python, Node, PHP and WASM. A value class keeps its `text` row, so
   that a case value of the kind `text` is still made, and CK-8 lets that row come back by the case of the kind
   `text16`, because a Unicode text is the same value as its UTF-16 code units; no other pair of kinds is accepted. No built-in form makes the kind, because
-  the string of PHP and Go cannot hold an unpaired surrogate (CK-8). Go does not take a value class yet (B2.80). Red:
+  the string of PHP and Go cannot hold an unpaired surrogate (CK-8). Red:
   `make test-ts` failed 2 of 301 (CK-1 for the kind, and the refusal of the make `value.from_units` and of the case of
   the kind `text16`), and `make test-rust` failed to compile the test of `OutValue::Text16`; Green: both pass
-  (B2.81).
+  (B2.81). Go reads the string of a value class as node 13 of its code units and makes one from them by the function
+  of the `text16` row, now that Go takes a value class (B2.80). Red: `make test-ts` failed the Go assertions of the
+  kind `text16` in the generate test; Green: it passes 314 of 314.
 - The generator refused the Go binding of a contract that takes or gives a value class of another repository, with
   "a value class of another repository is not generated for Go yet: the call of GN-15c has no description, read and
   making of an instance (GN-6x)", so a function that takes and gives the value class of the owner had no Go binding.

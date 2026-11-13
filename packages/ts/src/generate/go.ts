@@ -1315,6 +1315,7 @@ type held struct {
 	value   reflect.Value
 	keys    []reflect.Value
 	read    func() (any, error)
+	units   bool
 	entries [][2]reflect.Value
 }`}
 
@@ -1440,6 +1441,15 @@ func (c *Call) host(op uint32, handle, index uint64) ([]byte, bool) {
 		content, err := held.read()
 		if err != nil {
 			c.raiseIn(enc, err)
+		} else if held.units {
+			// B2.81: node 13, the UTF-16 code units of a text of the kind text16, which the read member gives as a
+			// slice of unsigned integers.
+			units := reflect.ValueOf(content)
+			enc.bytes = append(enc.bytes, 13)
+			enc.Uint(uint64(units.Len()))
+			for at := 0; at < units.Len(); at++ {
+				enc.Uint(units.Index(at).Uint())
+			}
 		} else {
 			c.describe(enc, reflect.ValueOf(content))
 		}`}
@@ -1611,7 +1621,7 @@ ${cases.join('\n')}
 // case and the handle under which the question read calls the read member of the case (GN-6x).
 func (c *Call) describeValue(enc *Writer, kind byte, read func() (any, error)) {
 	enc.bytes = append(enc.bytes, 11, kind)
-	enc.Uint(c.hold(held{read: read}))
+	enc.Uint(c.hold(held{read: read, units: kind == ${GO_VALUE_KINDS.indexOf('Text16')}}))
 }
 
 // raiseIn writes node 12: the error that a member of the owner of a value class returned, which the call keeps under
@@ -1637,6 +1647,15 @@ function goValueClassReader(model: Model): string {
     return classMakes(alias, 'go').map((make, row) => {
       const when = `	case class == ${number} && row == ${row}:`;
       if (make.form === 'content') {
+        if (make.kind === 'text16') {
+          // B2.81: the UTF-16 code units of the text, which the owner's function of the row takes as a list of uint.
+          return `${when}
+		units := make([]uint64, r.Len())
+		for at := range units {
+			units[at] = r.Uint()
+		}
+		value, err = ${ownerCall(owner, alias.unit, make.member, 'units')}`;
+        }
         const content = make.kind === 'null' ? '' : make.kind === 'bool' ? 'r.Bool()' : 'r.Text()';
         return `${when}
 		value, err = ${ownerCall(owner, alias.unit, make.member, content)}`;

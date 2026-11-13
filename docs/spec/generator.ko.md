@@ -582,10 +582,12 @@
   다른 레포의 값 class(GN-6x)는 그 module 패키지에 있는 owner class의 Go 타입의 포인터이며, `internal/binding`이 그
   패키지를 import한다. 패키지 binding은 인스턴스를 그 class의 Go `in` 행으로 묘사한다: `by` member를 부르고, 결과가
   `is`인 case의 kind와 handle을 담은 node 11을 쓴다. 그 handle에 대한 질문 read(op 2)는 case의 `read` member를 불러
-  그 결과를 이 규칙대로 묘사하고, `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
+  그 결과를 이 규칙대로 묘사한다. 다만 kind `text16`의 case는 그 결과인 부호 없는 정수 slice를 길이와 UTF-16 code
+  unit을 담은 node 13으로 쓰고, static library는 그것을 `HostText::Utf16`으로 읽는다. `iterate` member가 `{key, value}`를 내는 owner class의 인스턴스는 그 순회의 entry들의
   map이다. owner의 member가 돌려준 오류는 call과 그 index를 담은 node 12이므로, Go 함수는 callback의 오류처럼(U-3) 그
   오류를 그대로 돌려준다. class의 코어 값은 값 class의 번호와 그 Go `out` 행의 번호를 담은 결과의 node 11로 나가고,
-  그 뒤에 행 kind의 내용이 온다: `null`은 없음, bool, 수의 literal, text, 항목들, map의 entry들. 패키지 binding은 행이
+  그 뒤에 행 kind의 내용이 온다: `null`은 없음, bool, 수의 literal, text, `uint64` list인 `text16`의 code unit, 항목들,
+  map의 entry들. 패키지 binding은 행이
   이름하는 owner의 export 함수를 그 내용으로 부르며, map은 constructor로 만들고 insert method로 채운 map class의
   인스턴스로 준다. 그 함수의 오류는 호출의 오류다. 다른 타입의 Go 값은 위 규칙대로 묘사하므로 owner의 `in` 함수가
   판정한다.

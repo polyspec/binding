@@ -1026,6 +1026,10 @@ function valueClassRust(model: Model, alias: ValueAlias, name: string, core: str
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => {\n${head(row)}\n        }`;
       if (make.kind === 'bool') return `        OutValue::Bool(value) => {\n${head(row)}\n            out_bool(output, value);\n        }`;
+      if (make.kind === 'text16') {
+        // B2.81: the UTF-16 code units of the text, unpaired surrogates included, as a list of integers.
+        return `        OutValue::Text16(value) => {\n${head(row)}\n            out_list(output, value, |output, unit| out_uint(output, u64::from(unit)));\n        }`;
+      }
       return `        OutValue::${make.kind === 'number' ? 'Number' : 'Text'}(value) => {\n${head(row)}\n            out_text(output, value);\n        }`;
     }
     if (make.form === 'list') {
@@ -1251,7 +1255,7 @@ function rustUsed(model: Model): string {
 export const valueClasses = (model: Model): ValueAlias[] => model.aliases.filter((a) => a.owner !== undefined);
 
 // GN-6x, GN-15c: the binding_core::ValueKind of each number of node 11 of a description.
-export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object'];
+export const GO_VALUE_KINDS = ['Null', 'Bool', 'Int', 'Int64', 'Float', 'Number', 'Text', 'Bytes', 'List', 'Map', 'Object', 'Text16'];
 
 // GN-6x, GN-15c: node 11, an instance of a value class of another repository with the kind of its in case and its
 // handle, and node 12, the error that a member of the owner returned, kept by Go in the call under its index.
@@ -1261,6 +1265,15 @@ ${GO_VALUE_KINDS.map((k, i) => `                [${i}] => ValueKind::${k},`).joi
                 _ => return Err(malformed()),
             };
             HostValue::Value { kind, handle: Handle::new(in_uint(input)?) }
+        }
+        [13] => {
+            // B2.81: the UTF-16 code units of a text of the kind text16, which the read member of its case gives.
+            let len = in_uint(input)?;
+            let mut units = Vec::new();
+            for _ in 0..len {
+                units.push(u16::try_from(in_uint(input)?).map_err(|_overflow| malformed())?);
+            }
+            HostValue::Text(HostText::Utf16(units))
         }
         [12] => {
             let call = in_uint(input)?;

@@ -700,12 +700,13 @@ the design ids are those of the binding design.
   in the package of its module, which `internal/binding` imports. Package binding describes an instance by the `in` row
   of the class for Go: it calls the `by` member and writes node 11 with the kind of the case whose `is` the result is
   and a handle; the question read (op 2) of that handle calls the `read` member of the case and describes its result
-  by these rules, and an instance of a class of the owner whose `iterate` member yields `{key, value}` is a map of the
-  entries of that iteration. An error that a member of the owner returns is node 12 with the call and its index, so
+  by these rules, except for a case of the kind `text16`, whose result, a slice of unsigned integers, is node 13 with
+  its length and its UTF-16 code units, which the static library reads as `HostText::Utf16`; an instance of a class of
+  the owner whose `iterate` member yields `{key, value}` is a map of the entries of that iteration. An error that a member of the owner returns is node 12 with the call and its index, so
   the Go function returns that error unchanged, as it returns the error of a callback (U-3). A core value of the class
   leaves as node 11 of the result with the number of the value class and the number of its Go `out` row, followed by
-  the content of the kind of the row: nothing for `null`, a bool, the literal of a number, a text, the items, or the
-  entries of a map; package binding calls the exported function of the owner that the row names on that content, a map
+  the content of the kind of the row: nothing for `null`, a bool, the literal of a number, a text, the code units of
+  `text16` as a list of `uint64`, the items, or the entries of a map; package binding calls the exported function of the owner that the row names on that content, a map
   as an instance of the map class that its constructor makes and its insert method fills, and an error of that
   function is the error of the call. A Go value of another type is described by the rules above, so the owner's `in`
   function judges it.

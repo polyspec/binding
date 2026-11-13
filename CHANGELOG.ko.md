@@ -14,10 +14,10 @@
   `value.string_units`)로 그것을 `HostText::Utf16`으로 읽는다. Python, Node, PHP, WASM이 그렇게 한다. 값 class는
   kind `text`의 case 값을 계속 만들 수 있도록 `text` 행을 그대로 두고, CK-8은 그 행이 kind `text16`의 case로 돌아오는
   것을 받아들인다. Unicode text는 그 UTF-16 code unit과 같은 값이기 때문이며, 다른 kind의 짝은 받아들이지 않는다. PHP와 Go의
-  문자열은 짝 없는 surrogate를 담지 못하므로 어떤 내장 형태도 그 kind를 만들지 않는다(CK-8). Go는 아직 값 class를
-  받지 않는다(B2.80). Red: `make test-ts`가 301개 중 2개 실패했고(kind의 CK-1, make `value.from_units`와 kind
+  문자열은 짝 없는 surrogate를 담지 못하므로 어떤 내장 형태도 그 kind를 만들지 않는다(CK-8). Red: `make test-ts`가 301개 중 2개 실패했고(kind의 CK-1, make `value.from_units`와 kind
   `text16`의 case의 거절), `make test-rust`가 `OutValue::Text16`의 test를 compile하지 못했다. Green: 둘 다 통과한다
-  (B2.81).
+  (B2.81). 이제 Go가 값 class를 받으므로(B2.80), Go는 값 class의 문자열을 code unit의 node 13으로 읽고 `text16` 행의
+  함수로 그것을 만든다. Red: `make test-ts`가 생성 시험의 kind `text16` Go 단언에서 실패했다. Green: 314개 모두 통과한다.
 - 생성기는 다른 레포의 값 class를 받거나 주는 계약의 Go 바인딩을 "a value class of another repository is not
   generated for Go yet: the call of GN-15c has no description, read and making of an instance (GN-6x)"로 거부해서,
   owner의 값 class를 받고 주는 함수에는 Go 바인딩이 없었다. 이제 Go는 패키지 binding이 import하는 owner Go 타입의
