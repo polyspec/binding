@@ -763,8 +763,17 @@ the design ids are those of the binding design.
   property of the class. Not generated yet, refused by name (G-4): the WASM and Go forms, because the WASM module has
   no instance check and constructor call for a class of a row yet and the Go call of GN-15c has no node that makes an
   instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
-  that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
-  language is the only form in which a user of both packages can pass an instance from one to the other.
+  that names one is refused by name too. The generated tests of Python and Node write a case value of the kind of
+  such a row as an instance of the class of the owner, and read a result by the classes of the owner, both through
+  the package of the owner, which the test imports (GN-13, GN-13e). The fixture of the end-to-end check is
+  `tests/e2e/sample` with `tests/e2e/consumer`: the alias `data` of the sample makes a map whose keys are the indexes
+  of its entries as the class `box` and a reference as the class `cell`, and reads an instance of the class `ratio`
+  as its float in Node and WASM; the cases of `consumer.pair` pass a reference and such a map both ways. No row makes
+  an instance of `ratio`, because the row of the kind float would then change every float of the fixture, so the
+  constructor that takes a float runs in no end-to-end check. Go and WASM refuse the rows, so the targets go and
+  wasm of the consumer are named failures of its run (BD-27, GN-14c). Why: the owner's core gives and takes the
+  value, and its class of the language is the only form in which a user of both packages can pass an instance from
+  one to the other.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a
@@ -2104,7 +2113,7 @@ the design ids are those of the binding design.
   leaves its failure for settle, and the clear of a shelf that a slip made from it then misses), the second those of GN-6i, GN-6j and GN-7a for Python, Node and PHP with a member of the receiver `&mut self` that
   takes a `source` and a default (GN-6h); `tests/e2e/classes` is one of a class unit with every kind of member and
   no unit that WASM refuses (GN-18a); and `tests/e2e/consumer` is one that names the
-  value alias of the sample and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
+  value alias of the sample, whose rows name classes of the sample (GN-6ar), and has an error unit with properties (GN-6k, GN-7a), run with `--dep tests/e2e/sample`;
   `tests/e2e/plot` is one that takes and gives the record `point` of `tests/e2e/points` (GN-6c, GN-15f), run with
   `--dep tests/e2e/points`, whose Go static library the run builds with its test features beside the one of the
   repository, because the Go program of the repository imports its Go module (GN-15f);
