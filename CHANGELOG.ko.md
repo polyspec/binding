@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Python, Node, WASM의 case 값은 reference의 자리마다 reference class(GN-6m)의 새 인스턴스를 만들었다. 그래서 같은 id의
+  두 자리가 reference 둘을 가졌고, case가 공유된 reference 하나를 적는 곳에서 `serialize`는 값 둘을 썼다(G-5: 같은 id는
+  같은 reference다). 이제 값은 id마다 인스턴스 하나를, 그것을 담는 값보다 먼저, 각 인스턴스에 이름을 붙이는 식 안에서
+  만든다. Python은 `(r0 := pkg.Reference(...), [r0, r0])[-1]`, Node와 WASM은
+  `(() => { const r0 = new pkg.Reference(...); return [r0, r0]; })()`이다. `make test-ts`(시험 273개)로 확인했다.
 - Python, Node, WASM의 생성 시험에는 `core_type`이 없는 value class(GN-6m)의 시험이 없었다. 그 생성자와 property가
   시험이 부르는 member에 들어 있지 않아, 그 case는 어느 target에서도 실행되지 않았다. 이제 이것들은 class의 member의
   시험을 가진다(GN-13). 실패하는 case마다 B-4, 그 밖의 case마다 GN-13e이며, property는 생성자가 case의 키로 만든

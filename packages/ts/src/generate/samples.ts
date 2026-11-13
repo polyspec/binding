@@ -209,17 +209,21 @@ export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown)
 // bytes, list and map. The other kinds are refused by name until a case needs them (G-4).
 // GN-13: a PHP reference is a place of an array or of a property, so a case value with references is made in a closure
 // that sets a variable for each reference id and returns the value whose places take the variables by reference.
+// GN-13: Python, Node and WASM make one instance of the class of a reference per id, before the value that holds it, in
+// an expression that names each instance, so every place of an id holds the same instance.
 function valueFromJson(model: Model, ctx: Context, value: unknown, where: string): string {
-  if (ctx.lang !== 'php') return valueOf(model, ctx, value, where, new Map(), false);
   const refs = new Map<number, string>();
   const made = valueOf(model, ctx, value, where, refs, false);
   if (refs.size === 0) return made;
+  if (ctx.lang === 'python') return `(${[...refs].map(([id, instance]) => `r${id} := ${instance}`).join(', ')}, ${made})[-1]`;
+  if (ctx.lang === 'node') return `(() => { ${[...refs].map(([id, instance]) => `const r${id} = ${instance};`).join(' ')} return ${made}; })()`;
   const sets = [...refs].map(([id, inner]) => `$r${id} = ${inner};`).join(' ');
   return `(static function () { ${sets} return ${made}; })()`;
 }
 
-// GN-13: a value of valueFromJson; refs holds the PHP value of each reference id, and slot says whether the value is
-// the value of a place of an array or of a property, the one place where PHP holds a reference.
+// GN-13: a value of valueFromJson; refs holds the PHP value of each reference id, or the instance that Python, Node and
+// WASM make for it, and slot says whether the value is the value of a place of an array or of a property, the one place
+// where PHP holds a reference.
 function valueOf(model: Model, ctx: Context, value: unknown, where: string, refs: Map<number, string>, slot: boolean): string {
   const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = record?.['kind'];
@@ -276,16 +280,19 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, refs
   }
   if (kind === 'reference' && typeof held === 'object' && held !== null && !Array.isArray(held)) {
     const ref = held as Record<string, unknown>;
+    const id = ref['id'];
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) throw new Error(`a reference of ${where} is {"id": <n>, "value": <value>}, not ${shown(held)}`);
     if (lang === 'php') {
-      const id = ref['id'];
-      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) throw new Error(`a reference of ${where} is {"id": <n>, "value": <value>}, not ${shown(held)}`);
       if (!slot) throw new CaseRefused(`a case value of ${where} holds a reference that is no place of an array or of a property, which PHP has no form of: a PHP reference is such a place (GN-13)`);
       if (!refs.has(id)) refs.set(id, valueOf(model, ctx, ref['value'], where, refs, false));
       return `&$r${id}`;
     }
-    const cls = keptOf(model, 'value', where);
-    const inner = valueOf(model, ctx, ref['value'], where, refs, false);
-    return lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}(${inner})` : `new pkg.${langName('node', cls.unit.name, 'class')}(${inner})`;
+    if (!refs.has(id)) {
+      const cls = keptOf(model, 'value', where);
+      const inner = valueOf(model, ctx, ref['value'], where, refs, false);
+      refs.set(id, lang === 'python' ? `pkg.${langName('python', cls.unit.name, 'class')}(${inner})` : `new pkg.${langName('node', cls.unit.name, 'class')}(${inner})`);
+    }
+    return `r${id}`;
   }
   throw new Unsupported(`a case value of the kind ${kind} of ${where} is not generated yet (GN-13)`);
 }

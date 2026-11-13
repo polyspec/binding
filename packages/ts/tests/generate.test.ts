@@ -1844,7 +1844,7 @@ test('a case value of Python, Node and WASM makes one instance per reference id 
   const inner = { kind: 'reference', value: { id: 1, value: { kind: 'text', value: 'x' } } };
   const outer = { kind: 'reference', value: { id: 0, value: { kind: 'list', value: [inner] } } };
   file['echo']?.push({ id: 'shared_references', value: { kind: 'list', value: [outer, inner, outer] } });
-  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', ...targets] });
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: cases, targets: ['php', 'python', 'node', 'wasm'] });
   // Each id is one instance, made before the value that holds it, so both places hold the same instance.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\(r1 := pkg\.Boxed\("x"\), r0 := pkg\.Boxed\(\[r1\]\), \[r0, r1, r0\]\)\[-1\]/);
   for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {

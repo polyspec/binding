@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case value of Python, Node and WASM made a new instance of the class of a reference (GN-6m) at each place of a
+  reference, so two places of the same id held two references, and `serialize` wrote two values where the case names
+  one shared reference (G-5: the same id is the same reference). The value now makes one instance per id, before the
+  value that holds it, in an expression that names each instance: `(r0 := pkg.Reference(...), [r0, r0])[-1]` in
+  Python and `(() => { const r0 = new pkg.Reference(...); return [r0, r0]; })()` in Node and WASM. Verified by
+  `make test-ts` (273 tests).
 - The generated tests of Python, Node and WASM held no test of a value class without `core_type` (GN-6m): its
   constructor and its properties were absent from the members that the tests call, so their cases ran in no target.
   They now have the tests of the members of a class (GN-13): B-4 for each case that raises, GN-13e for each other
