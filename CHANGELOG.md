@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- `make e2e` read `go test -json` without its `build-output` events, so a Go package that failed to link was named
+  only as "go test failed the packages …" without the linker output. The events are read in
+  `scripts/go-test-events.mts`, which prints the output of each build and names it in the cause (GN-14a).
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
   (`Shift(1 << 53, Point{X: 0, Y: 0})`). The test now writes the number `9007199254740992`, which gofmt keeps at any
