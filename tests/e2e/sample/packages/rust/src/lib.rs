@@ -529,3 +529,188 @@ pub fn checked(text: &str) -> Result<u64, Error> {
 
 /// Takes a text and gives nothing (E-1c: a core that returns no `Result` and no value).
 pub fn touch(_text: &str) {}
+
+/// The entries of a store or of a scope, shared by the clones of its handle.
+type Entries = std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>;
+
+/// The entries of `entries`, also after a panic of another holder, whose writes are whole entries.
+fn entries_of(entries: &Entries) -> std::sync::MutexGuard<'_, std::collections::BTreeMap<String, String>> {
+    match entries.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// A store of committed entries, a handle whose clones share one state (GN-6ae): a transaction gives language code a
+/// scope of pending entries, which it commits when the code returns and drops when the code raises.
+#[derive(Debug, Clone, Default)]
+pub struct Store {
+    entries: Entries,
+}
+
+impl Store {
+    /// An empty store.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The committed value of a key.
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<String> {
+        entries_of(&self.entries).get(key).cloned()
+    }
+
+    /// Runs `function` with a new scope over the store, as a state machine (GN-6ab): the scope is begun by an I/O
+    /// future, the function is language code that the driver calls on its thread, and its value, which may be an
+    /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
+    /// and dropped when it raises, whose exception the machine returns.
+    pub fn transaction<F>(&self, function: F) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        Scoped::new(self.entries.clone(), function)
+    }
+}
+
+/// The pending entries of a transaction over the entries of its parent, a handle whose clones share one state.
+#[derive(Debug, Clone)]
+pub struct Scope {
+    parent: Entries,
+    pending: Entries,
+}
+
+impl Scope {
+    /// Writes a pending entry.
+    pub fn put(&self, key: &str, value: &str) {
+        entries_of(&self.pending).insert(key.to_owned(), value.to_owned());
+    }
+
+    /// The pending value of a key, or the value of the parent.
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<String> {
+        if let Some(value) = entries_of(&self.pending).get(key) {
+            return Some(value.clone());
+        }
+        entries_of(&self.parent).get(key).cloned()
+    }
+
+    /// Runs `function` with an inner scope over the pending entries of this scope, as [`Store::transaction`] does: the
+    /// entries of the inner scope become pending entries of this scope when the function returns.
+    pub fn nested<F>(&self, function: F) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        Scoped::new(self.pending.clone(), function)
+    }
+}
+
+/// The steps of [`Scoped`].
+enum Stage {
+    /// The scope is not begun.
+    Begin,
+    /// The scope is begun; the function is not called.
+    Call,
+    /// The function was called; its result is in `called`.
+    Called,
+    /// The driver settles the value of the function.
+    Settle,
+    /// The entries are committed; the machine ends with `outcome`.
+    Commit,
+    /// The machine ended.
+    Ended,
+}
+
+/// The state machine of a transaction and of a nested scope (GN-6ab, GN-6ae), which owns its function.
+pub struct Scoped<F> {
+    scope: Scope,
+    function: F,
+    stage: Stage,
+    called: Option<Result<binding_core::Passthrough, Failure<Error>>>,
+    outcome: Option<Result<binding_core::Passthrough, Failure<Error>>>,
+}
+
+impl<F> Scoped<F> {
+    fn new(parent: Entries, function: F) -> Self {
+        Self {
+            scope: Scope { parent, pending: Entries::default() },
+            function,
+            stage: Stage::Begin,
+            called: None,
+            outcome: None,
+        }
+    }
+
+    /// Ends with the failure of an invariant of the machine.
+    fn broken(&mut self, detail: &str) -> binding_core::machine::Step<(), Result<binding_core::Passthrough, Failure<Error>>> {
+        self.stage = Stage::Ended;
+        binding_core::machine::Step::Done(Err(Failure::Kind(Error::Internal { detail: detail.to_owned() })))
+    }
+}
+
+impl<F> binding_core::machine::Machine for Scoped<F>
+where
+    F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+{
+    type Io = ();
+    type Done = Result<binding_core::Passthrough, Failure<Error>>;
+
+    fn resume(&mut self, _io: Option<()>) -> binding_core::machine::Step<(), Self::Done> {
+        use binding_core::machine::Step;
+        match self.stage {
+            Stage::Begin => {
+                self.stage = Stage::Call;
+                Step::Io(Box::pin(async {}))
+            }
+            Stage::Call => {
+                self.stage = Stage::Called;
+                Step::Call
+            }
+            Stage::Called => match self.called.take() {
+                Some(Ok(value)) => {
+                    self.stage = Stage::Settle;
+                    Step::Await(value)
+                }
+                // The function raised: its pending entries are dropped and its failure ends the scope.
+                Some(Err(failure)) => {
+                    self.stage = Stage::Ended;
+                    Step::Done(Err(failure))
+                }
+                None => self.broken("the function of the scope was not called"),
+            },
+            Stage::Settle => match self.outcome.take() {
+                Some(Ok(value)) => {
+                    let pending = std::mem::take(&mut *entries_of(&self.scope.pending));
+                    let parent = self.scope.parent.clone();
+                    self.outcome = Some(Ok(value));
+                    self.stage = Stage::Commit;
+                    Step::Io(Box::pin(async move {
+                        entries_of(&parent).extend(pending);
+                    }))
+                }
+                // The awaitable raised: the pending entries are dropped and its exception ends the scope.
+                Some(Err(failure)) => {
+                    self.stage = Stage::Ended;
+                    Step::Done(Err(failure))
+                }
+                None => self.broken("the value of the function of the scope was not settled"),
+            },
+            Stage::Commit => match self.outcome.take() {
+                Some(done) => {
+                    self.stage = Stage::Ended;
+                    Step::Done(done)
+                }
+                None => self.broken("the committed scope has no value"),
+            },
+            Stage::Ended => self.broken("the scope ended"),
+        }
+    }
+
+    fn call(&mut self) {
+        self.called = Some((self.function)(self.scope.clone()));
+    }
+
+    fn settle(&mut self, outcome: Result<binding_core::Passthrough, binding_core::Raised>) {
+        self.outcome = Some(outcome.map_err(Failure::Raised));
+    }
+}

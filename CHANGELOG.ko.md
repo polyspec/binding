@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- end-to-end sample에는 transaction의 코어가 없어서 어떤 case도 GN-6ae가 생성하는 것을 보일 수 없었다. 이제 sample
+  코어에는 clone들이 한 상태를 나누는 handle `Store`와 `Scope`가 있고, `Store::transaction`과 `Scope::nested`의 state
+  machine `Scoped`는 I/O future로 scope를 시작하고, driver의 스레드에서 함수를 부르고, `Step::Await`로 함수의 값을
+  기다리고, 값이 settle되면 I/O future로 보류 entry를 commit하며, 함수나 그 awaitable이 예외를 던지면 그것을 버린다.
+  아직 어느 target도 함수 parameter를 생성하지 않으므로 계약 member `store.transaction`, `scope.put/get/nested`와 그
+  case는 아직 더하지 않았다(결함 86). 이 branch의 binding_core에 대한 sample 코어의 `cargo clippy --all-targets`로
+  확인했다.
 - 두 결함이 더 `tests/e2e/sample`의 `make e2e`가 Node, WASM, Go의 테스트를 돌리지 못하게 했다. Node `Driven` 객체는
   `Self`를 돌려주지 않는 함수 `new`로 만들어졌고(clippy `new_ret_no_self`), Go binding crate는 feature `fault-test`의
   진입점 `_fault_left`만 쓰는 helper `out_list`를 dead code를 거부하는 feature 없는 build에도 지녔다. 이제 Node 함수는

@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The end-to-end sample had no core for a transaction, so no case could show what GN-6ae generates. The sample core
+  now has `Store` and `Scope`, handles whose clones share one state, with `Store::transaction` and `Scope::nested`,
+  whose state machine `Scoped` begins the scope by an I/O future, calls its function on the thread of the driver,
+  awaits the value of the function through `Step::Await`, commits the pending entries by an I/O future when the
+  value settles, and drops them when the function or its awaitable raises. The contract members `store.transaction`
+  and `scope.put/get/nested` and their cases are not added yet, because no target generates a function parameter yet
+  (defect 86). Verified by `cargo clippy --all-targets` of the sample core against the binding_core of this branch.
 - Two more defects kept `make e2e` of `tests/e2e/sample` from running the tests of Node, WASM and Go: the Node
   `Driven` object was made by a function `new` that returns no `Self` (clippy `new_ret_no_self`), and the Go binding
   crate held the helper `out_list`, which only the entry point `_fault_left` of the feature `fault-test` uses, in the
