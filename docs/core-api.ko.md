@@ -48,6 +48,8 @@ crate `binding_core`는 생성 바인딩 crate와 코어 crate가 함께 쓰는 
 | `Kinds` | F-2, E-3, I-2 (3) | `kind(&self) -> &'static str`, `status(&self) -> Option<u16>`, `errno(&self) -> Option<i32>`, 모두 필수. 모든 코어 오류 enum과 `BindingError`가 구현한다. |
 | `Category` | E-1, F-3 | `Value`, `Type`, `Io`, `Store`, `Busy`, `Internal`. `ALL`, `as_str()`. |
 | `BindingError` | E-1a | `InvalidNumber { subject, expected: NumberType }`, `InvalidText { subject, cause: TextCause }`, `InvalidPath { subject }`, `DirectConstruction { class }`, `InvalidCallback { subject, member }`, `Consumed { class }`, `InvalidArgumentType { subject, expected }`, `Busy { class }`, `WrongThread { subject }`, `Internal { detail }`. `category()`, `KINDS`(kind와 category 표), `Kinds`, `Display`(메시지 전체, E-4), `std::error::Error`. |
+| `path_from_bytes(bytes: Vec<u8>, subject: &str) -> Result<PathBuf, BindingError>` | T-1 `path`, B-3 | OS 바이트의 경로. NUL 바이트와, OS 경로가 바이트가 아닌 곳(Windows)에서 UTF-8이 아닌 바이트는 `InvalidPath`다. |
+| `path_bytes(path: &Path) -> &[u8]` | T-1 `path`, B-3 | 언어로 나가는 경로의 바이트. OS 바이트이고, OS 경로가 바이트가 아닌 곳에서는 `OsStr`의 encoded 바이트다. |
 | `NumberType` | B-2 | `Int`, `Int64`, `Uint`, `Float`. |
 | `TextCause` | B-3 | `UnpairedSurrogate`, `NotUtf8`, `AboveLatin1`. |
 | `Handle` | B-1, T-3 | 만든 쪽만 해석하는 `u64`. `new(u64)`, `raw()`. |

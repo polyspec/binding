@@ -273,6 +273,20 @@
   원소)의 `source`는 이름을 대고 거부한다(G-4). Node에서 타입 `bytes`는 양방향 모두 `Uint8Array`다(T-7). parameter는
   `Uint8Array`를 받고 string을 포함한 그 밖의 값을 kind `invalid_argument_type`으로 거부하며, 결과는 사본의 새
   `Uint8Array`다.
+- **GN-6y** 타입 `path`(T-1, B-3)는 OS 경로의 바이트이고 모든 자리에 쓴다: parameter, 결과, field, 원소, 그리고
+  `optional` 안. 코어는 parameter를 `&std::path::Path`로, `optional<path>`를 `Option<&Path>`로 받고, 결과와 field를
+  `std::path::PathBuf`로 준다. 언어마다 입력은 다음이다. Python은 `str`, `bytes`, `os.PathLike`를 `os.fsencode`한
+  바이트로 받는다. Node는 string을 그 UTF-8로, 또는 `Uint8Array`를 받는다. PHP는 string을 받고 그 바이트를 그대로
+  넘긴다. Go는 `string`을 받고 그 바이트를 그대로 넘긴다. 출력은 다음이다. Python은 `os.fsdecode`한 `str`이다.
+  Node는 바이트가 UTF-8이면 string이고 아니면 `Uint8Array`다. 어떤 바이트도 대체 문자로 바꾸지 않기 위해서다. PHP는
+  그 바이트의 string이고, Go는 그 바이트의 `string`이다. kind는 모든 언어에서 같다. 다른 타입의 값과, Python에서
+  `os.fsencode`가 `TypeError`로 거부하는 값은 kind `invalid_argument_type`이다. 짝 없는 surrogate가 든 Node string은
+  kind `invalid_text`다(B-3). NUL 바이트가 든 경로, `os.fsencode`가 인코딩하지 못하는 Python `str`, 그리고 OS 경로가
+  바이트가 아닌 곳(Windows)에서 UTF-8이 아닌 바이트는 kind `invalid_path`다. 바이트는
+  `binding_core::path_from_bytes`와 `binding_core::path_bytes`가 바꾸므로 모든 target이 한 함수로 판정한다. WASM에는
+  OS 경로가 없다. 계약은 `path`를 가진 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15). WASM target에 닿은 `path`는
+  이름으로 거부한다. 타입 `path`의 case 값은 이름으로 거부한다(G-4). 상대 경로를 시험마다의 임시 디렉터리에서 푸는
+  일을 아직 생성하지 않기 때문이다.
 - **GN-7** member의 코어 경로가 `Result`를 돌려주는지는 `core.result`가 정한다(E-1c). 없으면 `raises`가 이 계약 자신의
   코어 오류 variant를 가리키거나 member가 callback을 받을 때 돌려준다. 생성 코드는 그런 경로를
   `match … { Ok(value) => …, Err(error) => … }`로 부르고 그 밖의 경로는 그것 없이 부르므로, 코어와 맞지 않는

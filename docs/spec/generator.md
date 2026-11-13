@@ -336,6 +336,21 @@ the design ids are those of the binding design.
   `invalid_argument_type`. A `source` in any other place (a result, a field, an element) is refused by name (G-4).
   In Node the type `bytes` is a `Uint8Array` both ways (T-7): a parameter takes a `Uint8Array` and refuses any other
   value, a string too, as kind `invalid_argument_type`, and a result is a new `Uint8Array` of a copy.
+- **GN-6y** The type `path` (T-1, B-3) is the bytes of an OS path, in every place: a parameter, a result, a field
+  and an element, also inside `optional`. The core takes a parameter as `&std::path::Path`, an `optional<path>` as
+  `Option<&Path>`, and gives a result or a field as `std::path::PathBuf`. In each language the input is: Python a
+  `str`, `bytes` or `os.PathLike`, as the bytes of `os.fsencode`; Node a string as its UTF-8, or a `Uint8Array`; PHP a
+  string, whose bytes are passed as they are; Go a `string`, whose bytes are passed as they are. The output is: Python
+  the `str` of `os.fsdecode`; Node a string when the bytes are UTF-8, and a `Uint8Array` when they are not, so that no
+  byte is replaced; PHP a string of the bytes; Go a `string` of the bytes. The kinds are the same in every language: a
+  value of another type, and a Python value that `os.fsencode` refuses with `TypeError`, is kind
+  `invalid_argument_type`; a Node string with an unpaired surrogate is kind `invalid_text` (B-3); a path with a NUL
+  byte, a Python `str` that `os.fsencode` cannot encode, and, where the OS path is no bytes (Windows), bytes that are
+  not UTF-8, are kind `invalid_path`. `binding_core::path_from_bytes` and `binding_core::path_bytes` convert the bytes,
+  so every target judges them by one function. WASM has no OS path: the contract gives a member with `path` an `only`
+  without `wasm` (Q-4, CK-15), and a `path` that reaches the WASM target is refused by name. A case value of type
+  `path` is refused by name (G-4), because the resolution of a relative path in a temporary directory of each test is
+  not generated yet.
 - **GN-7** Whether the core path of a member returns a `Result` is its `core.result` (E-1c); without it, the path
   does when `raises` names a variant of the contract's own core error or the member takes a callback. The generated
   code calls such a path with `match … { Ok(value) => …, Err(error) => … }` and any other path without it, so a
