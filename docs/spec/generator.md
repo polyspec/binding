@@ -689,6 +689,10 @@ the design ids are those of the binding design.
     of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
     future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
     on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
+    The machine outlives the call that made it, so a callback that it owns is the generated struct
+    `Owned<Callback>`, which holds a reference of napi (`napi_ref`) to the object and the environment of the
+    JavaScript thread, makes the borrowed callback struct from them at each call, and deletes the reference when it
+    is dropped, which happens on the JavaScript thread, where the `Driven` object ends.
   - Go drives the machine in the call of the C ABI with `binding_core::machine::drive`, as PHP does: the calling
     goroutine holds its thread for the call, as every call of the C ABI does, each Io future waits in
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6

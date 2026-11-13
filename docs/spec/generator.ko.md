@@ -568,6 +568,9 @@
     JavaScript 스레드에서 machine의 call을 하며, Io future에 대해서는 `[false, promise]`를 돌려준다. 그 future는 napi의
     tokio runtime에서 돌고 진입이 그 promise를 기다린다. 끝에서는 JavaScript 스레드에서 변환한 `[true, result]`를
     돌려준다. member의 실패는 `advance()`에서 던져지고 진입의 promise를 reject한다.
+    machine은 그것을 만든 호출보다 오래 살므로, machine이 소유하는 callback은 생성된 struct `Owned<Callback>`이다. 그것은
+    객체에 대한 napi 참조(`napi_ref`)와 JavaScript 스레드의 환경을 지니고, 각 호출에서 그 둘로 빌린 callback struct를
+    만들며, drop될 때 참조를 지운다. drop은 `Driven` 객체가 끝나는 JavaScript 스레드에서 일어난다.
   - Go는 PHP처럼 C ABI 호출 안에서 `binding_core::machine::drive`로 machine을 돌린다. 호출한 goroutine은 C ABI의 모든
     호출처럼 그 호출 동안 자기 스레드를 쥐고, 각 Io future는 `binding_core::driver::block_on`에서 기다리며, Go callback의
     각 호출은 어느 스레드에서나 할 수 있는 cgo를 거친다(c6 6.4). 언어 코드에 닿지 않는 `async_driver` member는 Go에서
