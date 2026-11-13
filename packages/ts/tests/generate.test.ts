@@ -1387,6 +1387,13 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
     // A helper that no member uses is not generated.
     assert.doesNotMatch(rust, /fn parts1</, path);
   }
+  // The Go crate gives a record of narrower fields through IntoCore field by field, which the struct literal types, and
+  // an isize result of u8 parameters widens as an int (shapes.stride_count, shapes.offset).
+  const go = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(go, /let ends: \(u64, u64\) = in_tuple2\([^\n]*\n\s*let ends = IntoCore::into_core\(ends, "Ends"\)\.map_err\(binding_error\)\?;\n\s*let step: u64 = [^\n]*\n\s*let step = IntoCore::into_core\(step, "Step"\)\.map_err\(binding_error\)\?;\n\s*Ok\(polyspec_shapes::Stride \{ ends, step \}\)/);
+  assert.match(go, /let result = polyspec_shapes::stride_count\(&stride\);\n(?:\s*let [^\n]*\n)*\s*out_uint\(output, result\);/);
+  assert.match(go, /let end = IntoCore::into_core\(end, "end"\)\.map_err\(binding_error\)\?;\n\s*finish_input\(input\)\?;\n\s*let result = polyspec_shapes::offset\(start, end\);\n(?:\s*let [^\n]*\n)*\s*out_int\(output, result\);/);
+  assert.match(go, /const _: \(\) = assert!\(isize::BITS <= 64\);\n#\[allow\(clippy::as_conversions, reason = "GN-6ac"\)\]\nimpl WideInt for isize \{/);
   // B-2: the case of a start beyond 32 bits, the width of usize on wasm32, is kind invalid_number in each language.
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.spanAt\(4294967296, 1\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_at\(4294967296, 1\)/);

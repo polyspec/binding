@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+- GN-6ac의 단위 시험은 Go C ABI에 대해 `shapes.stride_count`와 `shapes.offset`에 아무것도 요구하지 않았다.
+  `shapes.stride_count`는 코어가 `[usize; 2]`와 u32 field로 가진 record `stride`를 받고, `shapes.offset`은 u8 parameter를
+  받아 isize를 준다. 이제 시험은 Go crate가 struct literal 앞에서 각 field를 `IntoCore`로 주고, 두 u8 parameter를 좁히고,
+  isize 결과를 너비의 assertion 뒤에 int로 넓히기를 요구한다. 생성기는 이미 이 꼴을 썼다(record field는 GN-6ac의 Go 변경
+  뒤로). field를 좁히지 않으면 시험은 실패한다. `packages/ts`의 `npm test`로 확인했다.
 - Go C ABI crate는 list parameter를 표의 타입(u64나 u64의 tuple)으로 된 `Vec`으로 코어에 주면서 코어 호출은
   `&values[..]`를 받았다. 그래서 코어가 `width_sum`에서 `&[usize]`를, `largest`에서 `&[u32]`를 빌리는 `tests/e2e/shapes`의
   Go binding이 컴파일되지 않았다. 이제 crate는 다른 crate처럼 그런 list를 `IntoCore`로 코어 항목 타입의 `Vec`으로

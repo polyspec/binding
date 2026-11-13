@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- The unit test of GN-6ac required nothing of the Go C ABI for `shapes.stride_count`, whose record `stride` the core
+  holds with a `[usize; 2]` and a u32 field, and for `shapes.offset`, which takes u8 parameters and gives an isize. It
+  now requires that the Go crate gives each field through `IntoCore` before the struct literal, narrows both u8
+  parameters, and widens the isize result as an int after the assertion of its width. The generator already wrote
+  these forms (the record fields since the Go change of GN-6ac); without the narrowing of the fields the test fails.
+  Verified by `npm test` in `packages/ts`.
 - The crate of the Go C ABI gave a list parameter to the core as a `Vec` of the table's type, u64 or a tuple of u64,
   while the core call took `&values[..]`, so the Go binding of `tests/e2e/shapes`, whose core borrows `&[usize]` in
   `width_sum` and `&[u32]` in `largest`, did not compile. The crate now turns such a list through `IntoCore` into a
