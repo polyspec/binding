@@ -1097,7 +1097,13 @@ the design ids are those of the binding design.
   `in_<library>_<record>` and `out_<library>_<record>`; a record of another repository with a field of a unit type, and
   one whose package has the name of a package of this repository, are refused by name. `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
-  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`. For
+  of that path, which needs no Cargo, and the contract of any other dependency is found through `cargo metadata`.
+  `cargo metadata` resolves the workspace, so it fails where Cargo cannot resolve it: without network for a Git
+  dependency that the machine has not fetched, or for a manifest that names a crate that no longer exists. `scaffold`
+  then names the Go module as not written (GN-3e), with the status of Cargo and the instruction to run the install
+  target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
+  again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
+  them for every target, so they fail with the same instruction. For
   each library whose records or value classes (GN-6x) the contract names it writes a line `require <module> <version>`
   in `go.mod`, because the Go binding imports the package of each (B2.87): the version
   is `vX.Y.Z` when the dependency line of the core on `polyspec-<library>` names the version `=X.Y.Z` or the tag

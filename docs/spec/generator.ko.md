@@ -901,7 +901,11 @@
   `in_<library>_<record>`와 `out_<library>_<record>`로 쓰고 읽는다. unit 타입 field가 있는 다른 레포의 record와, 패키지
   이름이 이 레포 패키지의 이름과 같은 record는 이름으로 거부한다. `binding scaffold`는 `binding generate`처럼 계약이
   이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
-  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. 계약이 record나 값 class(GN-6x)를 이름하는 라이브러리마다
+  없고, 다른 의존의 계약은 `cargo metadata`로 찾는다. `cargo metadata`는 workspace를 해석하므로 Cargo가 그것을 해석할 수 없는
+  곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
+  때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
+  fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record나 값 class(GN-6x)를 이름하는 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
   `replace <module> => <path>` 줄을 준다. 그 밖의 의존 줄(branch, commit, 버전 범위)도 개발 꼴이며(GN-3e) `replace` 줄 없이

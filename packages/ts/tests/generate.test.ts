@@ -1197,6 +1197,33 @@ test('a branch dependency of the core generates every target, and only the check
   }
 });
 
+test('a scaffold whose cargo metadata fails names the Go module alone and writes the other packages (GN-15f, GN-3e)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
+    // A cargo that fails as it does without network for a Git dependency that was never fetched.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: failed to get polyspec-points as a dependency of package polyspec-plot" >&2\nexit 101\n', { mode: 0o755 });
+    const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
+    const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--root', join(root, 'plot')], { encoding: 'utf8', env });
+    assert.equal(scaffold.status, 1);
+    assert.match(scaffold.stderr, new RegExp(`\\nbinding: packages/go: not written: points: the contract of the library is not found, so binding scaffold cannot tell whether go\\.mod requires its Go module \\(GN-15f\\): ${advice}\\n$`));
+    assert.doesNotMatch(scaffold.stderr, /\n {4}at /);
+    assert.equal(existsSync(join(root, 'plot/packages/go/go.mod')), false);
+    for (const written of ['python/Cargo.toml', 'python/pyproject.toml', 'ts/Cargo.toml', 'ts/package.json', 'ts/wasm/Cargo.toml', 'php-ext/Cargo.toml', 'php-ext/composer.json']) {
+      assert.equal(existsSync(join(root, 'plot/packages', written)), true, written);
+    }
+    // check and generate read the contracts for every target, so they fail with the same instruction.
+    for (const args of [['check', join(root, 'plot/packages/rust/interface.json')], ['generate', '--root', join(root, 'plot'), '--out', join(root, 'out')]]) {
+      const run = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
+      assert.equal(run.status, 1, args[0]);
+      assert.match(run.stderr, new RegExp(`\\nbinding: ${advice}\\n$`), args[0]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the line of a binding crate on polyspec-binding-core follows the line of the core (GN-3e)', () => {
   const contract = load().contract;
   const line = (spec: unknown, path = 'packages/python/Cargo.toml', of = contract): string => /\npolyspec-binding-core = [^\n]*\n/.exec(String(trackedPackages(of, '0.0.0', spec === undefined ? new Map() : new Map([['polyspec-binding-core', spec]])).get(path)))?.[0] ?? '';
