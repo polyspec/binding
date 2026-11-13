@@ -1792,3 +1792,29 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
+
+test('a callback inside a list, an optional or a record parameter enters as a box of the core trait, passed by value (U-3, GN-6n)', () => {
+  const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
+  for (const [path, life] of [
+    ['packages/php-ext/generated/lib.rs', "'static"],
+    ['packages/python/generated/lib.rs', "'static"],
+    ['packages/ts/generated/lib.rs', "'env"],
+    ['packages/ts/wasm/generated/lib.rs', "'static"],
+  ] as const) {
+    const lib = text(out, path);
+    const boxed = `Box<dyn polyspec_sample::Lookup + ${life}>`;
+    // The core takes the list, the optional and the record that hold a callback by value, each callback boxed.
+    assert.ok(lib.includes(`let lookups: Vec<${boxed}> = `), `${path}: the list`);
+    assert.match(lib, /polyspec_sample::first\(lookups, &key\)/, path);
+    assert.ok(lib.includes(`let lookup: Option<${boxed}> = `), `${path}: the optional`);
+    assert.match(lib, /polyspec_sample::maybe\(lookup, &key\)/, path);
+    assert.ok(lib.includes(`polyspec_sample::Search<${life}> = polyspec_sample::Search { lookup, key };`), `${path}: the record`);
+    assert.match(lib, /polyspec_sample::seek\(search\)/, path);
+  }
+  // A test gives a callback value inside another value as the object of a fixture.
+  const py = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(py.includes(`pkg.first([_fixture(("find",), [("find", ("a",), None, False)])[0], _fixture(("find",), [("find", ("a",), "b", False)])[0]], "a")`), 'python list');
+  const node = text(out, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`fixture(['find'], [['find', ['a'], null, false]]).object`), 'node');
+});

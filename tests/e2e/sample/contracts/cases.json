@@ -193,5 +193,132 @@
         "category": "value"
       }
     }
+  ],
+  "first": [
+    {
+      "id": "the_first_lookup_that_holds_the_key_gives_its_value",
+      "lookups": [
+        {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        },
+        {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "a",
+      "result": "b"
+    },
+    {
+      "id": "no_lookup_that_holds_the_key_is_missing",
+      "lookups": [
+        {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "a",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for a"
+      }
+    }
+  ],
+  "maybe": [
+    {
+      "id": "a_lookup_gives_its_value",
+      "lookup": {
+        "callback": {
+          "lookup.find": [
+            {
+              "args": {
+                "key": "a"
+              },
+              "result": "b"
+            }
+          ]
+        }
+      },
+      "key": "a",
+      "result": "b"
+    },
+    {
+      "id": "no_lookup_gives_none",
+      "lookup": null,
+      "key": "a",
+      "result": null
+    }
+  ],
+  "seek": [
+    {
+      "id": "the_lookup_of_the_search_gives_the_value",
+      "search": {
+        "lookup": {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": "b"
+              }
+            ]
+          }
+        },
+        "key": "a"
+      },
+      "result": "b"
+    },
+    {
+      "id": "a_key_that_the_lookup_does_not_hold_is_missing",
+      "search": {
+        "lookup": {
+          "callback": {
+            "lookup.find": [
+              {
+                "args": {
+                  "key": "a"
+                },
+                "result": null
+              }
+            ]
+          }
+        },
+        "key": "a"
+      },
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for a"
+      }
+    }
   ]
 }

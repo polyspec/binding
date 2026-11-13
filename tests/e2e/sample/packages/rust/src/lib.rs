@@ -127,6 +127,49 @@ pub fn count(lookup: &mut dyn Lookup, keys: &[String]) -> Result<u64, Failure<Er
     Ok(found)
 }
 
+/// The value of a key in the first lookup that holds it (GN-6n: callbacks in a list, which the core takes by value).
+///
+/// # Errors
+///
+/// Kind `missing` when no lookup holds a value, and the failure of a lookup.
+pub fn first(lookups: Vec<Box<dyn Lookup + '_>>, key: &str) -> Result<String, Failure<Error>> {
+    for mut lookup in lookups {
+        if let Some(value) = lookup.find(key)? {
+            return Ok(value);
+        }
+    }
+    Err(Failure::Kind(Error::Missing { key: key.to_owned() }))
+}
+
+/// The value of a key in the lookup, and `None` without a lookup (GN-6n: an optional callback).
+///
+/// # Errors
+///
+/// The failure of the lookup.
+pub fn maybe(lookup: Option<Box<dyn Lookup + '_>>, key: &str) -> Result<Option<String>, Failure<Error>> {
+    match lookup {
+        Some(mut lookup) => lookup.find(key),
+        None => Ok(None),
+    }
+}
+
+/// A search for the value of a key (GN-6n: a record with a callback field, whose type has one lifetime).
+pub struct Search<'a> {
+    /// The lookup that holds the value.
+    pub lookup: Box<dyn Lookup + 'a>,
+    /// The key.
+    pub key: String,
+}
+
+/// The value of the key of the search, which its lookup must hold.
+///
+/// # Errors
+///
+/// Kind `missing` when the lookup holds no value, and the failure of the lookup.
+pub fn seek(mut search: Search<'_>) -> Result<String, Failure<Error>> {
+    resolve(&mut *search.lookup, &search.key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{count, resolve, Error, Lookup};
