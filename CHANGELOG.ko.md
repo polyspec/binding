@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 857f35b33410a2bb791853bf88de94d81a90dd71b01c23e105d26ad155da3a0d -->
+<!-- source-sha256: 0376d82197547faf866cd9c9963179747d7a6ffcc0f6be0637e4f2612b18843d -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -17,8 +17,9 @@
   전용 모듈 cache에서 `CGO_LDFLAGS`와 `replace` 없이 돌린다. 확인: `make test-ts`(시험 309개 통과), 그리고 darwin/arm64에서
   `tests/e2e/points`와 함께 돌린 `tests/e2e/plot`의 `make e2e`. 그 기록은 증거이고, target go가 생성 시험 8개와 release
   형태의 시험 18개로 통과했으며, release 형태에서는 한 프로그램이 plot과 points의 정적 라이브러리를 함께 링크한다. 그
-  실행의 target php, python, wasm은 이 변경이 건드리지 않는 단계에서 실패했다. 실행하지 않은 것: Linux의 release 형태,
-  `tests/e2e/sample`의 `make e2e`.
+  실행의 target php, python, wasm은 이 변경이 건드리지 않는 단계에서 실패했다. darwin/arm64에서 돌린 `tests/e2e/sample`의
+  `make e2e`도 기록이 증거이고 모든 target이 통과했다(PHP 생성 시험 67개, Python 66개, Node 67개, WASM 54개, Go 41개와
+  release 형태의 시험 35개). 실행하지 않은 것: Linux의 release 형태.
 - `tests/e2e/classes`의 Node 바인딩이 컴파일되지 않았다(E0515, E0597): 호출이 receiver guard의 참조를
   (`let receiver = &*receiver;`) 묶은 뒤 guard를 `Gate.enter_later`(async_driver)의 future와 `Gate.enter_slowly`
   (blocking_io)의 pool closure로 옮겼으므로, future와 closure가 호출의 지역 변수를 빌린 참조를 쥐었다. 이제 future와 pool

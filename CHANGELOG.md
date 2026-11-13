@@ -19,7 +19,9 @@
   and by `make e2e` of `tests/e2e/plot` with `tests/e2e/points` on darwin/arm64, whose record is evidence: the target
   go passed with 8 generated tests and 18 tests of the released form, in which one program links the static
   libraries of plot and of points; the targets php, python and wasm of that run failed in steps that this change
-  does not touch. Not run: the released form on Linux, and `make e2e` of `tests/e2e/sample`.
+  does not touch, and by `make e2e` of `tests/e2e/sample` on darwin/arm64, whose record is evidence and passed in
+  every target (PHP 67 generated tests, Python 66, Node 67, WASM 54, Go 41 and 35 tests of the released form). Not
+  run: the released form on Linux.
 - The Node binding of `tests/e2e/classes` did not compile (E0515, E0597): the call bound the borrow of the guard of its
   receiver (`let receiver = &*receiver;`) before it moved the guard into the future of `Gate.enter_later` (async_driver)
   and into the closure of the pool of `Gate.enter_slowly` (blocking_io), so the future and the closure held a borrow of
