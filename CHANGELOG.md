@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- The WASM binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member as Node does (GN-6ae): the machine owns the function as a `js_sys::Function` and calls it on
+  the thread of the module with a new instance of the class of each class argument; the value that the function
+  returned is held in a thread-local table of `JsValue` under a handle that is never given again; the value that the
+  function threw is kept under the handle of its `Raised` and thrown again, so the caller gets the same object.
+  `advance(settled)` of the `Driven` object and `drive` of the ES module take the steps of Node, `[0, promise]`,
+  `[1, value]` and `[2, result]`, each advance through `state.mjs`, and the machine is freed at its end, also after
+  a rejected wait. The declarations and the generated test are those of Node. Verified by `npm test` in
+  `packages/ts`: the three tests of the WASM closure, of `drive` run against a played machine and of the WASM test
+  pass, and the test of the WASM value alias, which generates the sample for WASM, passes again; the 20 tests that
+  generate the sample for Python or Go still fail with the refusal of those targets.
 - The Node binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
   generates the member (GN-6ae): the machine owns the function as a reference of napi and calls it on the JavaScript
   thread with a new instance of the class of each class argument; the value that the function returned is held in a

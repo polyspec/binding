@@ -1,11 +1,20 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 0a062171404e82808afdad8145dc1fce15af4cb0f4f3b235c9f23a6ff6026fc0 -->
+<!-- source-sha256: 863692ee0eb023eb37bbd0ca65bf0a25058d22b659b03e241b689f30ca35ef25 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- WASM binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 Node처럼 그
+  member를 생성한다(GN-6ae). machine은 함수를 `js_sys::Function`으로 소유하고, 모듈의 스레드에서 각 class 인자의
+  class의 새 인스턴스와 함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 `JsValue`의 thread-local
+  table에 쥔다. 함수가 던진 값은 그 `Raised`의 handle 아래에 두었다가 다시 던지므로 호출자는 같은 객체를 받는다.
+  `Driven` 객체의 `advance(settled)`와 ES 모듈의 `drive`는 Node의 step `[0, promise]`, `[1, value]`, `[2, result]`를
+  쓰고, 각 advance는 `state.mjs`를 거치며, machine은 거부된 기다림 뒤에도 끝에서 해제된다. 선언과 생성된 시험은 Node의
+  것과 같다. `packages/ts`의 `npm test`로 검증했다. WASM closure의 시험, 시험이 연기하는 machine에 대고 돌린 `drive`의
+  시험, WASM 시험의 시험 세 개가 통과하고, WASM에 대해 sample을 생성하는 WASM value alias의 시험이 다시 통과한다.
+  Python이나 Go에 대해 sample을 생성하는 20개 시험은 그 target의 거부로 여전히 실패한다.
 - Node binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그 member를
   생성한다(GN-6ae). machine은 함수를 napi 참조로 소유하고, JavaScript 스레드에서 각 class 인자의 class의 새 인스턴스와
   함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐었다가 결과로 그대로

@@ -99,8 +99,8 @@ export function generate(inputs: Inputs): Files {
     refuseConsumers(forWasm, 'WASM', refusals);
   }
   // GN-6ae: the targets that do not generate a parameter of a function type and a result passthrough yet.
-  const names = { python: 'Python', go: 'Go', wasm: 'WASM' } as const;
-  for (const target of targets) if (target !== 'php' && target !== 'node') refusePassing(membersFor(model, target), names[target], refusals);
+  const names = { python: 'Python', go: 'Go' } as const;
+  for (const target of targets) if (target === 'python' || target === 'go') refusePassing(membersFor(model, target), names[target], refusals);
   refusals.fail();
   const files: Files = new Map();
   if (targets.includes('python')) refusals.attempt(() => python(forLanguage(model, 'python'), files));

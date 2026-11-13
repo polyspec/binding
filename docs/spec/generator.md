@@ -716,9 +716,10 @@ the design ids are those of the binding design.
     `binding_core::driver::block_on`, and each call of a Go callback goes through cgo, which any thread may make (c6
     6.4). A member with `async_driver` that does not reach language code is still refused for Go (GN-6n).
   - WASM: as for Node, the entry makes the machine on the thread of the module and returns a `Driven` object of the
-    module, and the ES entry, an async function, calls its `advance()` until the machine ends and then frees it. Each
-    `advance()` gives the output of the last wait to the machine, makes its calls on the thread of the module and
-    returns `[false, promise]` for an Io future, the promise of GN-6n, or `[true, result]` at the end. A browser and
+    module, and the ES entry, an async function, calls its `advance(settled)` until the machine ends and then frees it.
+    Each advance gives the output of the last wait to the machine, makes its calls on the thread of the module and
+    returns `[0, promise]` for an Io future, the promise of GN-6n, `[1, value]` for a value that the machine awaits
+    (GN-6ae), or `[2, result]` at the end. A browser and
     Node run the same steps, because the event loop of JavaScript polls each Io future on the thread of the module in
     both and no tokio runtime is used.
   A method with `machine` takes a clone of its receiver, a parameter of a function type and a result `passthrough`
@@ -780,10 +781,24 @@ the design ids are those of the binding design.
     failure of the binding (a panic of a poll, kind `internal`), which `drive` does not catch, so it rejects the
     promise of the entry and the machine is not advanced again; a rejection of the value of step `1` is the outcome
     of the function, which goes to the machine, and the core decides what it means.
+  - WASM: the parameter takes a function (any other value is kind `invalid_callback`), and the declarations are those
+    of Node. The machine owns the function as a `js_sys::Function`, a value of the module that lives until the ES
+    entry frees the `Driven` object, and the closure calls it with `apply` and the receiver `undefined`, on the thread
+    of the module. An exception of the function is the value that the call gives back to the module (the import
+    catches it, GN-18b), kept under the handle of its `Raised`, so the caller gets the same value. The table of the
+    values is a thread-local map from a handle to a `JsValue`; the release function removes the entry. Await: as for
+    Node, `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table; the function `drive` of
+    the ES module awaits it, a value that is no thenable included, and gives `[true, <value>]` or `[false,
+    <rejection>]` to the next advance, which stores the value in the table again, or keeps the rejection as a
+    `Raised`, and calls `Driving::settle` before the machine resumes; an advance that gets an outcome while its machine
+    awaits no value, or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from
+    an awaited value by the step of the advance, as for Node: a rejection of the promise of step `0` rejects the
+    promise of the entry and the machine is freed without another advance. Each advance runs through `state.mjs`
+    (GN-18), also the advance in which the function calls a member of the module again.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
-    the next `resume`. Node awaits the value in its JavaScript entry, as its item below states, and WASM is not
-    generated yet. Python: `a<name>`
+    the next `resume`. Node and WASM await the value in their JavaScript entry, as their items below state. Python:
+    `a<name>`
     awaits a coroutine or another awaitable on the event loop of the caller with `asyncio.run_coroutine_threadsafe`
     from its worker thread, and `<name>` gives an awaitable result kind `invalid_callback` with the message that names
     `a<name>`, because no event loop of the caller runs. PHP and Go have no awaitable: the driver settles the value at
@@ -795,12 +810,13 @@ the design ids are those of the binding design.
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope.
-  Not generated yet (G-4): Python, Go and WASM refuse a member with a parameter of a function type or a result
+  Not generated yet (G-4): Python and Go refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP and Node generate the member. The PHP test and the Node test write the function fixture, the test of a
-  case with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a
-  value that is no callable, in Node no function, is kind `invalid_callback`; the test of another target does not
-  yet. The function of a Node fixture is an arrow function, an async one when a step of it calls a member that waits,
+  yet"; PHP, Node and WASM generate the member. The PHP test, the Node test and the WASM test write the function
+  fixture, the test of a case with `raises: "callback"`, which requires the same exception object, the calls of
+  `after`, and a test that a value that is no callable, in Node and WASM no function, is kind `invalid_callback`; the
+  test of another target does not yet. The function of a Node or WASM fixture is an arrow function, an async one when
+  a step of it calls a member that waits,
   so the nested case of the sample runs the awaited step with a promise and its other cases with a value that is no
   thenable. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed

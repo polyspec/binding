@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
-import { refuseScopedCases, type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type After, FIXTURE_RAISED, callbackCases, type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
@@ -17,7 +17,6 @@ const BAD_NUMBERS: Record<string, string[]> = {
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
 export function wasmTests(model: Model): string {
-  refuseScopedCases(model, 'WASM');
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
@@ -86,6 +85,25 @@ export function wasmTests(model: Model): string {
     return `(() => { ${built.lines.join(' ')} return ${built.expr}; })()`;
   };
   ctx.instanceNew = made;
+  // GN-6ae: the function of a function fixture, as for Node: each step calls a method on one of its arguments; it then
+  // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
+  // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
+  ctx.functionNew = (fixture) => {
+    const steps = fixture.steps.map((step) => `${invoke(step.fn, step.args, `args[${step.on}]`)}; `).join('');
+    const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
+    return `${/\bawait /.test(steps) ? 'async ' : ''}(...args) => { ${steps}${end} }`;
+  };
+  // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
+  const afterChecks = (after: After[] | undefined, receiver: string): string =>
+    (after ?? []).map((call) => {
+      const expected = expectedText(model, ctx, call.fn, call.result);
+      if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
+      usesOrdered = true;
+      return `\n  assert.deepStrictEqual(ordered(${invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), receiver)}), ordered(${expected.text}));`;
+    }).join('');
+  // GN-6ae: a case with after holds its receiver, which the calls of after observe.
+  const heldReceiver = (receiverMade: { lines: string; expr: string }, after: After[] | undefined): { lines: string; expr: string } =>
+    after === undefined || receiverMade.expr === '' ? receiverMade : { lines: `${receiverMade.lines}\n  const receiver = ${receiverMade.expr};`, expr: 'receiver' };
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
@@ -165,6 +183,13 @@ test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'a
 });`);
       }
     }
+    // GN-6ae: a parameter of a function type takes a function, and any other value is kind invalid_callback.
+    for (const arg of reachable ? fn.args.filter((a) => typeof a.type === 'object' && 'function' in a.type) : []) {
+      out.push(`
+test('GN-6ae: ${name} refuses a ${langName('wasm', arg.name, 'variable')} that is no function', () => {
+  assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
+});`);
+    }
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       usesOutcome = true;
       const argName = langName('wasm', pair.arg.name, 'variable');
@@ -189,7 +214,7 @@ test('B-4: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       };
-      const receiverMade = receiverOfCase(kase.receiver);
+      const receiverMade = kase.faults === undefined ? heldReceiver(receiverOfCase(kase.receiver), kase.after) : receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
@@ -212,7 +237,25 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}
+    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}
+});`);
+    }
+    // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
+    for (const kase of callbackCases(model, fn)) {
+      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
+      if (refusal !== undefined) {
+        out.push(`
+test('GN-6ae: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(refusal)});
+});`);
+        continue;
+      }
+      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
+      const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
+      out.push(`
+test('GN-6ae: ${name} ${kase.id}', () => {${receiverMade.lines}
+  const raised = new Error(${jsString(FIXTURE_RAISED)});
+  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
@@ -242,13 +285,13 @@ test('GN-13e: ${name} ${kase.id}', () => {
         const found = fixtures.find((f) => f.fixture.arg === arg);
         return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
       });
-      const receiverMade = receiverOfCase(kase.receiver);
+      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after);
       const call = invoke(fn, args, receiverMade.expr);
       const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
       usesOrdered ||= expected !== undefined && 'text' in expected;
       const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
       out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}
 });`);
     }
     // K-2: a member that takes a callback, as for Node.

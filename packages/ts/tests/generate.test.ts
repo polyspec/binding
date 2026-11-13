@@ -2954,16 +2954,16 @@ test('a member with wait async_driver that reaches language code drives the stat
   // wait is a promise of the event loop of JavaScript.
   const wasmOut = sample((c) => { delete member(c, 'sample.resolve_driven').only; }, ['wasm']);
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|\| \{/);
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
   assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
-  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(true, out_text\(result\)\?\)\)/);
+  assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(2, out_text\(result\)\?\)\)/);
   assert.match(wasm, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
   assert.match(wasm, /#\[wasm_bindgen\]\n\s*pub struct Driven \{/);
   // GN-6n: the catch of a panic of a poll is an async function (clippy manual_async_fn).
   assert.match(wasm, /\nasync fn caught<F, O>\(future: F\) -> Result<O, Fail>\nwhere\n/);
-  assert.match(wasm, /pub fn advance\(&mut self\) -> Result<JsValue, JsValue> \{/);
+  assert.match(wasm, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{/);
   const mjs = text(wasmOut, 'packages/ts/wasm/generated/index.mjs');
-  assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}for \(;;\) \{\n {6}const \[ended, value\] = enter\(Internal, \(\) => driven\.advance\(\)\);\n {6}if \(ended\) return value;\n {6}await value;\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
+  assert.match(mjs, /async function drive\(Internal, driven\) \{\n {2}try \{\n {4}let settled;\n {4}for \(;;\) \{\n {6}const \[step, value\] = enter\(Internal, \(\) => driven\.advance\(settled\)\);\n {6}settled = undefined;\n {6}if \(step === 2\) return value;\n {6}if \(step === 0\) \{\n {8}await value;\n {8}continue;\n {6}\}\n {6}try \{\n {8}settled = \[true, await value\];\n {6}\} catch \(reason\) \{\n {8}settled = \[false, reason\];\n {6}\}\n {4}\}\n {2}\} finally \{\n {4}driven\.free\(\);\n {2}\}\n\}/);
   assert.match(mjs, /export async function resolveDriven\(\.\.\.args\) \{[\s\S]*?return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.resolveDriven\(args\[0\], args\[1\]\)\)\);/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
   assert.match(text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /test\('K-2: resolveDriven lets the exception of a callback through', async \(\) => \{/);
@@ -3001,8 +3001,8 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  for (const [target, name] of [['python', 'Python'], ['go', 'Go'], ['wasm', 'WASM']]) {
-    assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
+  for (const [target, name] of [['python', 'Python'], ['go', 'Go']]) {
+    assert.throws(() => sample(scoped, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
   const plain = (c: any): void => { member(c, 'ledger.known').parameters = [{ name: ['scope'], type: fn, required: true }]; };
@@ -3268,5 +3268,97 @@ test('the Node test writes a function fixture, the exception of raises callback 
   // A value that is no function is kind invalid_callback.
   assert.match(tests, /test\('GN-6ae: Store\.transaction refuses a work that is no function', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(1\)\), \(error\) => error\.constructor === pkg\.SampleTypeError && error\.kind === 'invalid_callback'\);\n\}\);/);
   // No test of a block that awaits is left a plain function.
+  for (const found of tests.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
+});
+
+test('WASM makes a closure of a function that the machine owns, holds its value in the passthrough table and returns it unchanged (GN-6ae)', () => {
+  const out = scopedSample(['wasm']);
+  const lib = text(out, 'packages/ts/wasm/generated/lib.rs');
+  // The function is checked when it enters (kind invalid_callback), and the machine owns it as a value of the module.
+  assert.match(lib, /let work = in_function\(&work, "work"\)\?;/);
+  assert.match(lib, /fn in_function\(value: &JsValue, subject: &str\) -> Result<Function, Fail> \{\n {4}value\n {8}\.dyn_ref::<Function>\(\)\n {8}\.cloned\(\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\)\n\}/);
+  // The closure makes a new instance of the class of each class argument, calls the function with the receiver
+  // undefined and stores what it returned in the table; the value that the function threw is a Raised.
+  assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let args: Array = \[out_scope\(arg0\)\.map_err\(Thrown::Binding\)\?\]\.iter\(\)\.collect\(\);\n\s+let returned = work\.apply\(&JsValue::UNDEFINED, &args\)\.map_err\(Thrown::Js\)\?;\n\s+Ok\(pass\(returned\)\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
+  assert.match(lib, /Some\(Thrown::Js\(error\)\) => Fail \{ thrown: Some\(error\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \},/);
+  // The machine takes a clone of the value of the instance and the closure.
+  assert.match(lib, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::Store::transaction\(Clone::clone\([^\n]*\), work\)\);/);
+  // B-3: the table of the values, its release function, and the result that leaves the table unchanged.
+  assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, JsValue>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
+  assert.match(lib, /fn pass\(value: JsValue\) -> binding_core::Passthrough \{\n {4}let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);\n {4}PASSED\.with_borrow_mut\(\|map\| map\.insert\(handle, value\)\);\n {4}binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\n\}/);
+  assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{\n {4}let gone = PASSED\.try_with\(\|map\| map\.borrow_mut\(\)\.remove\(&handle\.raw\(\)\)\);\n {4}drop\(gone\);\n\}/);
+  // A result whose handle names no value is kind internal.
+  assert.match(lib, /fn out_passed\(value: binding_core::Passthrough\) -> Result<JsValue, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\n\}/);
+  // Await: an advance takes the outcome of the value that the machine awaited, only after that value, gives it to the
+  // machine before it resumes, and returns the step of what it stops at: a wait (0), an awaited value (1), the end (2).
+  assert.match(lib, /let mut awaiting = false;\n\s+Ok\(JsValue::from\(Driven::new\(move \|settled\| \{\n\s+match \(awaiting, outcome_of\(&settled\)\?\) \{\n\s+\(true, Some\(outcome\)\) => machine\.settle\(outcome\),\n\s+\(false, None\) => \{\}\n\s+\(true, None\) \| \(false, Some\(_\)\) => \{\n\s+return Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: store\.transaction takes the outcome of an awaited value after that value, and at no other advance"\) \}\)\);\n\s+\}\n\s+\}\n\s+awaiting = false;/);
+  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, out_passed\(value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, out_passed\(result\)\?\)\)/);
+  // A fulfilled value enters the table again, and a rejection is kept as the exception of the function.
+  assert.match(lib, /fn outcome_of\(settled: &JsValue\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.is_undefined\(\) \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = in_tuple\(settled, "settled"\)\?;\n {4}if in_bool\(&fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(value\)\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Js\(value\)\)\)\)\)\n\}/);
+  assert.match(lib, /pub fn advance\(&mut self, settled: JsValue\) -> Result<JsValue, JsValue> \{\n\s+guard\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(settled\)\?;\n\s+out_tuple\(&\[JsValue::from\(step\), value\]\)/);
+  // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
+  const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.__Store_transaction\(this\.#handle, args\[0\]\)\)\);/);
+  const dts = text(out, 'packages/ts/wasm/generated/index.d.ts');
+  assert.match(dts, /\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
+  assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
+  // A contract without a function parameter has no table.
+  const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.doesNotMatch(plain, /PASSED|outcome_of|fn in_function/);
+});
+
+test('the WASM entry awaits what the function returned, tells a rejected wait from a rejected awaited value and frees the machine (GN-6ae)', async () => {
+  const mjs = text(scopedSample(['wasm']), 'packages/ts/wasm/generated/index.mjs');
+  const source = /async function drive\(Internal, driven\) \{\n[\s\S]*?\n\}\n/.exec(mjs)?.[0];
+  assert.notEqual(source, undefined, 'the entry has the function drive');
+  // enter of state.mjs runs the call of the module; the test counts the advances that ran through it.
+  let entered = 0;
+  const enter = (_internal: unknown, call: () => unknown): unknown => { entered += 1; return call(); };
+  const drive = new Function('enter', `${source}\nreturn drive;`)(enter) as (internal: unknown, driven: unknown) => Promise<unknown>;
+  const machine = (steps: [number, unknown][]): ReturnType<typeof played> & { freed: number; free: () => void } => {
+    const made = { ...played(steps), freed: 0, free(): void { made.freed += 1; } };
+    return made;
+  };
+  const kept = { kept: true };
+  const thenable = { then(resolve: (value: unknown) => void): void { resolve('then'); } };
+  const values = machine([[0, Promise.resolve('output')], [1, kept], [1, Promise.resolve(7)], [1, thenable], [0, Promise.resolve()], [2, 'done']]);
+  assert.equal(await drive(Error, values), 'done');
+  assert.deepEqual(values.got, [undefined, undefined, [true, kept], [true, 7], [true, 'then'], undefined]);
+  assert.equal((values.got[2] as unknown[])[1], kept);
+  assert.equal(entered, 6);
+  assert.equal(values.freed, 1);
+  // A rejection of an awaited value is the outcome of the function, with the same object.
+  const reason = new Error('rejected by the function');
+  const rejected = machine([[1, Promise.reject(reason)], [0, Promise.resolve()], [2, 'rolled back']]);
+  assert.equal(await drive(Error, rejected), 'rolled back');
+  assert.deepEqual(rejected.got[1], [false, reason]);
+  assert.equal((rejected.got[1] as unknown[])[1], reason);
+  assert.equal(rejected.freed, 1);
+  // A rejection of the promise of a wait rejects the call; the machine is not advanced again and is freed.
+  const failure = new Error('the wait failed');
+  const failed = machine([[0, Promise.reject(failure)], [2, 'never']]);
+  await assert.rejects(() => drive(Error, failed), (error) => error === failure);
+  assert.deepEqual(failed.got, [undefined]);
+  assert.equal(failed.freed, 1);
+  // The same rejected promise at step 1 is an outcome: the step decides, not the value.
+  const awaited = machine([[1, Promise.reject(failure)], [2, 'answered']]);
+  assert.equal(await drive(Error, awaited), 'answered');
+  assert.deepEqual(awaited.got, [undefined, [false, failure]]);
+  // A failure that an advance throws rejects the call with the same object, and the machine is freed.
+  const thrown = new Error('thrown by the advance');
+  const throwing = { freed: 0, advance(): never { throw thrown; }, free(): void { throwing.freed += 1; } };
+  await assert.rejects(() => drive(Error, throwing), (error) => error === thrown);
+  assert.equal(throwing.freed, 1);
+});
+
+test('the WASM test writes a function fixture, the exception of raises callback and the calls of after (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}assert\.deepStrictEqual\(ordered\(\(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); args\[0\]\.get\('a'\); return 'done'; \}\)\)\), ordered\('done'\)\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\('1'\)\);\n\}\);/);
+  // A function whose step calls a member that waits is async, so the member awaits the promise that it returns.
+  assert.match(tests, /receiver\.transaction\(async \(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); \(await args\[0\]\.nested\(\(\.\.\.args\) => \{ args\[0\]\.put\('b', '2'\); return null; \}\)\); return 2; \}\)/);
+  // raises "callback": the caller gets the same object, and after observes the receiver after the failed call.
+  assert.match(tests, /test\('GN-6ae: Store\.transaction the_entries_of_a_function_that_raises_are_dropped', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}const raised = new Error\('raised by the function of the case'\);\n {2}await assert\.rejects\(async \(\) => \(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); throw raised; \}\)\), \(error\) => error === raised\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n\}\);/);
+  // A value that is no function is kind invalid_callback.
+  assert.match(tests, /test\('GN-6ae: Store\.transaction refuses a work that is no function', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(1\)\), \(error\) => error\.constructor === pkg\.SampleTypeError && error\.kind === 'invalid_callback'\);\n\}\);/);
   for (const found of tests.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
 });

@@ -1541,7 +1541,7 @@ pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
 // ---- JavaScript and declarations ----
 
 // GN-6ae: the type parameters of a member, one per name of a passthrough of its parameters and of its result.
-const typeParameters = (fn: Fn): string => {
+export const typeParameters = (fn: Fn): string => {
   const names = [...new Set([...JSON.stringify([fn.params.map((p) => p.type), fn.returns]).matchAll(/\{"passthrough":"([^"]+)"\}/g)].map((found) => found[1] ?? ''))];
   return names.length === 0 ? '' : `<${names.join(', ')}>`;
 };
