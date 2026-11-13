@@ -475,7 +475,6 @@ export function collectModel(
     if (unit.kind === 'error' && unit.origin === 'generated') {
       // E-2, I-3: an error unit is a class of its category with read-only properties, which the core error gives.
       if (unit.category === undefined) throw new Unsupported(`${unit.id}: an error unit without a category (U-1)`);
-      if (unit.module !== '') throw new Unsupported(`${unit.id}: an error unit in the module ${unit.module} is not generated yet`);
       if (unit.abstract === true || unit.implements !== undefined || unit.cleanup !== undefined) throw new Unsupported(`${unit.id}: abstract, implements and cleanup of an error unit are not generated yet`);
       const properties: ErrorProperty[] = [];
       let refused = false;

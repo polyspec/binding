@@ -996,8 +996,12 @@ function modulePy(model: Model, module: string): string {
   ];
   const enums = [...model.enums, ...model.resultRecords, ...model.callbacks.map((c) => c.unit)].filter((u) => u.module === module).map((u) => langName('python', u.name, 'class'));
   const constants = model.constants.filter((c) => c.module === module);
-  const names = [...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
+  // GN-11: an error unit is a class of <root>._errors, which the module of its unit imports; the root module needs no
+  // import, because <root> imports every name of <root>._errors.
+  const errors = module === '' ? [] : model.errorUnits.filter((u) => u.unit.module === module).map((u) => langName('python', u.unit.name, 'class'));
+  const names = [...errors, ...fns, ...enums, ...constants.map((c) => langName('python', c.member.name, 'constant'))];
   const imports = [
+    errors.length > 0 ? `from ._errors import ${errors.map((e) => `${e} as ${e}`).join(', ')}` : '',
     fns.length > 0 ? `from ._native import ${fns.map((f) => `${f} as ${f}`).join(', ')}` : '',
     enums.length > 0 ? `from ._types import ${enums.map((e) => `${e} as ${e}`).join(', ')}` : '',
     constants.length > 0 ? 'from typing import Final' : '',
@@ -1059,7 +1063,7 @@ ${classes.join('')}`;
 }
 
 function initPy(model: Model): string {
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module)])].sort();
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])].sort();
   const imports = modules.map((m) => (m === '' ? 'from ._root import *  # noqa: F403' : `from .${m.replaceAll('/', '.')} import *  # noqa: F403`));
   const names = [
     ...model.classes.map((c) => c.name),
@@ -1090,7 +1094,7 @@ export function python(model: Model, files: Files): void {
   files.set(`${pkg}/_types.py`, typesPy(model));
   files.set(`${pkg}/_native.pyi`, nativePyi(model));
   files.set(`${pkg}/py.typed`, '');
-  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module)])];
+  const modules = [...new Set([...model.functions.map((f) => f.module), ...model.objects.map((o) => o.unit.module), ...model.enums.map((u) => u.module), ...model.resultRecords.map((u) => u.module), ...model.callbacks.map((c) => c.unit.module), ...model.constants.map((c) => c.module), ...model.errorUnits.map((u) => u.unit.module)])];
   for (const module of modules) {
     files.set(module === '' ? `${pkg}/_root.py` : `${pkg}/${module}.py`, modulePy(model, module));
   }

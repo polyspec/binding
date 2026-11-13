@@ -441,7 +441,7 @@
         "utf8",
         "error"
       ],
-      "module": "",
+      "module": "errors",
       "kind": "error",
       "visibility": "public",
       "origin": "generated",

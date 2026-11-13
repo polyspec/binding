@@ -338,7 +338,9 @@ the design ids are those of the binding design.
   the unit as the exact class; it finds the row by the kind of the case, which is the snake_case of the last segment
   of the variant (CK-22). A member of another kind, a property of another type, a property named `kind`, `status`,
   `errno` or `message`, a row with `library` (E-1b (a)), a `class` that names no error unit of the category of its row,
-  an error unit in a module other than the root, and an error unit for Go are refused by name (G-4). WASM generates an
+  and an error unit for Go are refused by name (G-4). An error unit of a module other than the root is a class of the
+  namespace of its module in PHP (GN-10), a class of `<root>._errors` that `<root>.<module>` imports in Python (GN-11),
+  and an export of the entry by its name in Node and WASM, as every other name of a module is. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
 - **GN-7b** Every binding crate holds, for each variant that a member names in `raises`, the assertion
@@ -389,8 +391,8 @@ the design ids are those of the binding design.
   text, and a decimal text key leaves as an int key.
 - **GN-11** Python: the native module `<root>._native` takes the raw values (T-8) with the record fields keyword-only;
   the runtime counts and names the arguments (G-7). The category classes are in `<root>._errors` and the enums in
-  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`
-  and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
+  `<root>._types`, which the native module imports when it loads (B-4); a module of the contract is `<root>.<module>`,
+  which imports the error units of the module from `<root>._errors`, and `<root>` re-exports every public name (P-3). An enum is an `enum.StrEnum` (T-6); the package needs Python 3.14
   (abi3-py314). A list parameter takes a list or a tuple. `keyed_map<T>{key}` is a `dict` in its order whose keys are
   `int` (not a `bool`), `bytes` or `str` of the listed kinds; any other key is kind `invalid_argument_type`, and the
   map leaves as such a `dict` (T-2). `map<T>` is a `dict` in its order whose keys are `str`; any other key is kind

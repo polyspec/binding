@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- The generator refused an error unit of a module other than the root for every target. It now generates it: PHP
+  registers the class in the namespace of its module, Python gives it from `<root>.<module>` and `<root>`, and Node and
+  WASM export it by its name (GN-7a, GN-11). The error unit `utf8_error` of tests/e2e/shapes is in the module
+  `errors`, so the end-to-end check raises it through each target.
 - The Makefile had no target for the unit tests, so the tests of packages/ts and of binding_core ran only as commands
   of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
   with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`

@@ -1167,10 +1167,9 @@ test('an error unit is a class under its parent, and a kind names the class it i
   assert.doesNotMatch(php, /fn read_unit_property\(|let mut object = match error_object/);
   // B-4: the exact class of a case is the class of its kind.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /self\.assertIs\(type\(error\), pkg\.Utf8Error\)/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Utf8Error::class, \$error::class\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /assertSame\(\\Polyspec\\Shapes\\Errors\\Utf8Error::class, \$error::class\)/);
   // G-4: what E-2 and E-3 hold beyond that is refused by name.
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').members = [{ id: 'parse_error.offset', name: ['offset'], kind: 'property', visibility: 'public', type: 'uint', core: 'polyspec_shapes::Error::offset' }]; }), /parse_error\.offset: a property of an error unit names a function of the core error with the receiver &self/);
-  assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').module = 'errors'; }), /parse_error: an error unit in the module errors is not generated yet/);
   assert.throws(() => shaped((c) => { c.errors.kinds[2].class = 'frame_options'; }), /TooMany: the class frame_options is not an error unit of category value \(E-2\)/);
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').parent = 'utf8_error'; }), /the parents form a cycle \(P-4\)/);
   assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; c.units = c.units.filter((u: any) => u.id !== 'buffer'); c.cases = c.cases.filter((row: any) => !String(row.member).startsWith('buffer.')); member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
