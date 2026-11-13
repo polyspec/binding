@@ -907,7 +907,9 @@ the design ids are those of the binding design.
   -l`, `gofmt -l`, `go vet`, `llvm-nm` and `tsc` read the code and run nothing, so they verify no target; a run of PHPUnit
   counts as a test only when its JUnit log names a test, a run of `go test` runs with `-json` and counts the tests
   that passed, failed and were skipped from its events, and a target for which no test ran fails the run; a skipped Go
-  test is named and fails the run, because it verifies nothing. On macOS the PHP extension links by the `build.rs` of its
+  test is named and fails the run, because it verifies nothing. A package that does not build ends the events of its
+  build with `build-output` and `build-fail`; the run writes that output and names it as the cause of the failure of
+  the package, because a link error is seen only there. On macOS the PHP extension links by the `build.rs` of its
   crate (GN-3d), so a run gives no link setting by hand.
 - **GN-14b** A run checks one commit of binding: `BINDING`, `HEAD` by default. The check writes the tree of that commit
   into `<work>/binding` with `git archive`, installs the packages of the generator from the lock of that tree and runs

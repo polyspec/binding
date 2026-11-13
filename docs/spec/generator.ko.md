@@ -737,7 +737,8 @@
   lint와 시험으로 갈라 적고 끝난다. host에서의 crate lint, `php -l`, `gofmt -l`, `go vet`, `llvm-nm`, `tsc`는 코드를 읽을
   뿐 실행하지 않으므로 어느 target도 검증하지 않는다. PHPUnit 실행은 그 JUnit 기록이 시험을 하나 이상 적을 때만 시험으로 세고, `go test`는 `-json`으로 실행해 그 사건에서
   통과·실패·건너뜀 시험을 세며, 시험이 하나도 돌지 않은 target이 있으면 실행은 실패한다. 건너뛴 Go 시험은 이름을 적고 실행을
-  실패시킨다. 아무것도 검증하지 않기 때문이다. macOS에서 PHP
+  실패시킨다. 아무것도 검증하지 않기 때문이다. 빌드되지 않는 패키지는 그 빌드의 사건을 `build-output`과 `build-fail`로
+  끝낸다. 실행은 그 출력을 적고 그것을 패키지 실패의 원인으로 이름한다. link 오류는 거기에서만 보이기 때문이다. macOS에서 PHP
   확장은 그 crate의 `build.rs`로 링크되므로(GN-3d) 실행은 링크 설정을 손으로 주지 않는다.
 - **GN-14b** 실행은 binding의 commit 하나를 확인한다: `BINDING`, 기본은 `HEAD`. 확인은 그 commit의 tree를 `git archive`로
   `<work>/binding`에 쓰고, 그 tree의 lock으로 생성기의 패키지를 설치하고, 그 tree의 스크립트를 실행한다. 그래서 생성기,
