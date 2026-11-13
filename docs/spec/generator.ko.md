@@ -585,7 +585,14 @@
   member가 메서드일 때 주며 그 자체가 인스턴스 값이다. `args`는 member의 parameter를 snake_case 키로 담고, case의 어느
   자리(parameter, list의 항목, record의 field, `optional`)에 있는 class의 값도 인스턴스 값일 수 있다. `then`의 호출은 그 class의 메서드이며 인스턴스에 차례로 부르고 결과는 비교하지
   않는다. `"raises": {"kind": <kind>}`를 가진 호출은 그 member raises의 그 kind로 실패해야 하며, 시험은 다음 단계 전에
-  그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
+  그것을 요구한다. 그래서 실패한 호출 뒤의 인스턴스만 닿는 kind도 case를 가진다. `then`의 호출은
+  `"faults": [...]`를 가질 수 있다. 그것은 case의 faults 꼴(CK-22)로 적은 그 호출 자신의 fault 주입점이다. 시험은 그 호출
+  바로 앞에서 그 호출의 member에 그것을 장전하고, 바로 뒤에서 장전한 모든 fault가 발동했음을 요구한다. 그래서 앞선
+  호출의 실패가 뒤의 호출이 내도록 남기는 kind도 case를 가진다(feed가 저장에 실패한 body는 finish에서 그 실패를 다시
+  낸다). `"on": "receiver"`를 가진 `then`의 호출은 인스턴스 값의 `receiver`의 class의 메서드이며, `then`의 호출 가운데
+  자기 순서에서 pick 뒤에 그 receiver에 부른다. 그래서 인스턴스를 꺼낸 인스턴스의 호출 뒤에만 닿는 kind도 case를 가진다(body가
+  지워진 저장된 파일). 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 fault를 장전하는 receiver를 쓰지 않고, Go는 인스턴스
+  값이 fault를 장전하는 시험을 fault를 장전하는 case와 함께 둔다(GN-13b). 시험은 그 값이 만드는 모든 인스턴스를, receiver와 pick이 읽는 결과까지 시험의 지역 변수로 만들어 시험이
   끝나기 전에 회수되지 않게 한다. 아무 receiver나 필요한 시험(B-2, B-3, G-7)은 시험 파일의 함수를 불러 그것을 만든다.
   `binding check`는 이를 어기는 값을 지적한다(CK-22).
 

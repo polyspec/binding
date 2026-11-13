@@ -1796,6 +1796,40 @@ test('a case gives its receiver as an instance value, made by earlier calls in e
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /\ndef _made_\d+\(\):  # noqa: ANN202\n    made0 = pkg\.Tag\("a"\)\n    made1 = made0\.gate\(\)\n    return made1\n/);
 });
 
+test('a call of then arms the faults of its own call, or calls the receiver of the value, in every target (GN-13f)', () => {
+  const read = (repo: string, path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${repo}/${path}`, import.meta.url), 'utf8'));
+  // A counter whose draw fails with the faults of that call only, then the total of the counter.
+  const sample = read('sample', 'contracts/cases.json');
+  const faults = [{ point: 'sample.draw', kind: 'broken' }];
+  sample.counter_total.push({ id: 'the_total_after_a_broken_draw', receiver: { new: 'counter.new', args: { start: 2 }, then: [{ call: 'counter.draw', args: { other: { new: 'counter.new', args: { start: 1 } } }, faults, raises: { kind: 'internal' } }] }, result: 2 });
+  const armed = generate({ contract: read('sample', 'packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', sample]]) });
+  const shown = JSON.stringify(faults);
+  const node = text(armed, 'packages/ts/generated/tests/generated.test.mjs');
+  assert.ok(node.includes(`  const made1 = addon().__armFaults('counter.draw', '${shown}');\n  assert.equal(outcome(() => made0.draw(`), node);
+  assert.match(node, /\n  assert\.deepEqual\(addon\(\)\.__faultLeft\(made1\), \[\], 'G-5: the faults of then 0 fire'\);\n/);
+  const python = text(armed, 'packages/python/generated/tests/test_generated.py');
+  assert.ok(python.includes(`        made1 = _native._arm_faults("counter.draw", ${JSON.stringify(shown)})\n        assert _outcome(lambda: made0.draw(`), python);
+  assert.ok(python.includes('        assert _native._fault_left(made1) == [], "G-5: the faults of then 0 fire"\n'), python);
+  const php = text(armed, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.ok(php.includes(`        $made1 = \\Polyspec\\Sample\\Internal\\armFaults("counter.draw", ${JSON.stringify(shown)});\n`), php);
+  assert.ok(php.includes('        self::assertSame([], \\Polyspec\\Sample\\Internal\\faultLeft($made1), "G-5: the faults of then 0 fire");\n'), php);
+  const wasm = text(armed, 'packages/ts/wasm/generated/tests/generated.test.mjs');
+  assert.match(wasm, /\nlet glue;\nbefore\(async \(\) => \{\n  glue = await glueModule\(\);\n\}\);\n/);
+  assert.ok(wasm.includes(`  const made1 = glue.__armFaults('counter.draw', '${shown}');\n`), wasm);
+  // Go puts the test whose receiver arms faults with the cases that arm faults, its goroutine locked to its thread.
+  const goFault = text(armed, 'packages/go/zz_generated_fault_test.go');
+  assert.match(goFault, /func TestGN13eCounterTotalTheTotalAfterABrokenDraw\(t \*testing\.T\) \{\n\truntime\.LockOSThread\(\)\n\tdefer runtime\.UnlockOSThread\(\)\n[^]*binding\.ArmFaults\("counter\.draw"/);
+  assert.doesNotMatch(text(armed, 'packages/go/zz_generated_test.go'), /TheTotalAfterABrokenDraw/);
+  // A call of then on the receiver of the value runs after the pick, on the instance that the value was picked from.
+  const classes = read('classes', 'contracts/cases.json');
+  classes.gate_enter[1].receiver.then = [{ call: 'tag.name', on: 'receiver' }];
+  const on = generate({ contract: read('classes', 'packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', classes]]), targets: ['php', 'python', 'node', 'wasm'] });
+  assert.match(text(on, 'packages/ts/generated/tests/generated.test.mjs'), /const made1 = made0\.gates\(2\);\n  const made2 = made1\[1\];\n  made0\.name;\n/);
+  assert.match(text(on, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const made2 = made1\[1\];\n  made0\.name;\n/);
+  assert.match(text(on, 'packages/python/generated/tests/test_generated.py'), /made2 = made1\[1\]\n        made0\.name\n/);
+  assert.match(text(on, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$made2 = \$made1\[1\];\n        \$made0->name\(\);\n/);
+});
+
 test('an error unit in a module is the class of the namespace or the module of its unit, and every entry exports it (GN-7a, GN-10, GN-11)', () => {
   const out = shaped((c) => { unitOf(c, 'utf8_error').module = 'errors'; });
   // PHP: the class is in the namespace of its module, and the extension registers it by that name.

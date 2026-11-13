@@ -711,7 +711,15 @@ the design ids are those of the binding design.
   `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
   parameter, an item of a list, a field of a record, an `optional`) may be an instance value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
-  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
+  requires before the next step, so a kind that only an instance after a failed call reaches has a case. A call of
+  `then` may hold `"faults": [...]`, the fault injection points of its own call in the form of the faults of a case
+  (CK-22): the test arms them for the member of that call just before it and requires every armed fault to have
+  fired just after it, so a kind that a failure of an earlier call leaves for a later call to give has a case (a body
+  whose feed failed to store gives that failure again from its finish). A call of `then` with `"on": "receiver"` is a
+  method of the class of the `receiver` of the instance value, called on that receiver in its order among the calls
+  of `then`, after the pick; so a kind that the instance reaches only after a call of the instance it was picked from
+  has a case (a stored file whose body was removed). A test that needs any receiver (B-2, B-3, G-7) takes none that
+  arms faults, and Go puts a test whose instance values arm faults with the cases that arm faults (GN-13b). A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,
   G-7) call a function of the test file that makes it. `binding check` reports a value that breaks this (CK-22).
 
