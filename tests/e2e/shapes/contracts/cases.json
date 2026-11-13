@@ -307,5 +307,45 @@
         "message": "start is not a value of the type uint"
       }
     }
+  ],
+  "width_sum": [
+    {
+      "id": "three_widths",
+      "widths": [
+        2,
+        3,
+        4
+      ],
+      "result": 9
+    },
+    {
+      "id": "no_width",
+      "widths": [],
+      "result": 0
+    }
+  ],
+  "largest": [
+    {
+      "id": "the_largest_of_three",
+      "values": [
+        3,
+        9,
+        4
+      ],
+      "result": 9
+    },
+    {
+      "id": "an_item_beyond_32_bits",
+      "values": [
+        1,
+        4294967296
+      ],
+      "raises": {
+        "kind": "invalid_number",
+        "status": null,
+        "category": "value",
+        "message": "values is not a value of the type uint"
+      }
+    }
   ]
 }

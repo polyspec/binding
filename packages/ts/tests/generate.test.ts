@@ -10,9 +10,9 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Lang } from '../src/contract.ts';
 import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
-import { carriers } from '../src/generate/model.ts';
+import { carriers, coreArg, narrowed, tupleOut, type Model } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
-import { closure } from '../src/generate/text.ts';
+import { closure, INTO_CORE, PARTS, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { trackedPackages } from '../src/generate/packages.ts';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -1186,8 +1186,6 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
     // The core call chooses the type: a tuple parameter that the core holds as [usize; 2], and parameters of u32.
     assert.match(rust, /let span = IntoCore::into_core\(span, "span"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::span_width\(&span\);/, path);
     assert.match(rust, /let start = IntoCore::into_core\(start, "start"\)\.map_err\([^\n]*\)\?;\n\s*let length: u64 = /, path);
-    // A list parameter keeps the element type of the table, because the core borrows it as a slice (defect 78).
-    assert.doesNotMatch(rust, /let spans = IntoCore::into_core/, path);
     // A tuple result is read by partsN, from a Rust tuple or an array; a usize widens after the assertion of its width.
     assert.match(rust, /let result = polyspec_shapes::span_at\(start, length\);\n\s*\{ let \(part_0, part_1\) = parts2\(&result\); /, path);
     assert.match(rust, /impl<T> Parts2<T, T> for \[T; 2\]/, path);
@@ -1198,6 +1196,118 @@ test('a value enters the core in its own integer and tuple type and leaves it fr
   // B-2: the case of a start beyond 32 bits, the width of usize on wasm32, is kind invalid_number in each language.
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.spanAt\(4294967296, 1\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.span_at\(4294967296, 1\)/);
+});
+
+test('a list parameter whose items narrow is a Vec of the core type, whose slice the core borrows (T-1, GN-6ad)', () => {
+  const out = shaped();
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    const rust = text(out, path);
+    assert.match(rust, /let widths = IntoCore::into_core\(widths, "widths"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::width_sum\(&widths\[\.\.\]\);/, path);
+    assert.match(rust, /let values = IntoCore::into_core\(values, "values"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::largest\(&values\[\.\.\]\);/, path);
+    // A list of tuples narrows its parts the same way.
+    assert.match(rust, /let spans = IntoCore::into_core\(spans, "spans"\)\.map_err\([^\n]*\)\?;\n\s*let result = polyspec_shapes::spans_total\(&spans\[\.\.\]\);/, path);
+    // A list of items that do not narrow is passed as it is (GN-6).
+    assert.doesNotMatch(rust, /&[a-z_]+\[\.\.\]\)[^\n]*\n[^\n]*polyspec_shapes::(?!width_sum|largest|spans_total)/, path);
+  }
+  // B-2: an item beyond 32 bits is kind invalid_number in each language.
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.largest\(\[1, 4294967296\]\), \(error\) =>\n[^\n]*\n[^\n]*\n[^\n]*\n {4}error\.kind === 'invalid_number'/);
+});
+
+test('the conversions into the core and out of it compile for the host and for wasm32, the core choosing each type (T-1, GN-6ac, GN-6ad)', () => {
+  // The helpers of the generated crates and call sites of the forms that the generator writes, against a core of
+  // narrower types; the stand-ins of binding_core are the two types that the helpers name.
+  const list = (type: unknown, variable: string): string => coreArg({} as Model, { list: type } as never, variable);
+  const failed = 'std::convert::identity';
+  const calls = `
+pub enum NumberType {
+    Uint,
+    Int,
+}
+
+pub enum BindingError {
+    InvalidNumber { subject: String, expected: NumberType },
+}
+
+pub mod core {
+    pub fn width_sum(widths: &[usize]) -> usize {
+        widths.iter().sum()
+    }
+    pub fn largest(values: &[u32]) -> u32 {
+        values.iter().copied().fold(0, u32::max)
+    }
+    pub fn widths(spans: &[[usize; 2]]) -> usize {
+        spans.iter().map(|span| span[1] - span[0]).sum()
+    }
+    pub fn plain(values: &[u64], offsets: &[i8]) -> u64 {
+        values.iter().sum::<u64>() + offsets.len() as u64
+    }
+    pub fn span_at(start: u32, length: u32) -> [usize; 2] {
+        [start as usize, (start + length) as usize]
+    }
+    pub fn mixed(pair: &(String, u16)) -> isize {
+        pair.1 as isize
+    }
+    pub struct Range {
+        pub ends: [usize; 2],
+        pub step: u32,
+    }
+}
+
+pub fn width_sum(widths: Vec<u64>) -> Result<u64, BindingError> {
+    ${narrowed('widths', '"widths"', failed)}
+    let result = core::width_sum(${list('uint', 'widths')});
+    Ok(WideUint::widen_uint(result))
+}
+
+pub fn largest(values: Vec<u64>) -> Result<u64, BindingError> {
+    ${narrowed('values', '"values"', failed)}
+    let result = core::largest(${list('uint', 'values')});
+    Ok(WideUint::widen_uint(result))
+}
+
+pub fn widths(spans: Vec<(u64, u64)>) -> Result<u64, BindingError> {
+    ${narrowed('spans', '"spans"', failed)}
+    let result = core::widths(${list({ tuple: ['uint', 'uint'] }, 'spans')});
+    Ok(WideUint::widen_uint(result))
+}
+
+pub fn plain(values: Vec<u64>, offsets: Vec<i64>) -> Result<u64, BindingError> {
+    ${narrowed('values', '"values"', failed)}
+    ${narrowed('offsets', '"offsets"', failed)}
+    let result = core::plain(${list('uint', 'values')}, ${list('int', 'offsets')});
+    Ok(WideUint::widen_uint(result))
+}
+
+pub fn span_at(start: u64, length: u64) -> Result<Vec<u64>, BindingError> {
+    ${narrowed('start', '"start"', failed)}
+    ${narrowed('length', '"length"', failed)}
+    let result = core::span_at(start, length);
+    ${tupleOut(['uint', 'uint'], 'result', (_type, name) => `Ok::<u64, BindingError>(WideUint::widen_uint(${name}))`, (converted) => `Ok(vec![${converted.join(', ')}])`)}
+}
+
+pub fn mixed(pair: (String, u64)) -> Result<i64, BindingError> {
+    ${narrowed('pair', '"pair"', failed)}
+    let result = core::mixed(&pair);
+    Ok(WideInt::widen_int(result))
+}
+
+pub fn range(ends: (u64, u64), step: u64) -> Result<core::Range, BindingError> {
+    ${narrowed('ends', '"ends"', failed)}
+    ${narrowed('step', '"step"', failed)}
+    Ok(core::Range { ends, step })
+}
+`;
+  const source = `${usedHelpers(`${WIDEN}\n${INTO_CORE}\n${PARTS}`, calls)}\n${calls}`;
+  const channel = /channel = "([^"]+)"/.exec(readFileSync(new URL('../../../rust-toolchain.toml', import.meta.url), 'utf8'))?.[1] ?? '';
+  const where = mkdtempSync(join(tmpdir(), 'binding-narrow-'));
+  try {
+    for (const target of [[], ['--target', 'wasm32-unknown-unknown']]) {
+      const run = spawnSync('rustc', ['--edition', '2021', '--crate-type', 'lib', '--crate-name', 'narrowing', '--emit', 'metadata', '-D', 'warnings', '--out-dir', where, ...target, '-'], { input: source, encoding: 'utf8', cwd: where, env: { ...process.env, RUSTUP_TOOLCHAIN: channel } });
+      assert.equal(run.status, 0, `rustc ${target.join(' ')}: ${run.stderr}`);
+    }
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
 });
 
 // The repository of the end-to-end check that holds a variant and a class that implements a callback interface
