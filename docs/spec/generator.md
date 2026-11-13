@@ -22,8 +22,8 @@ the design ids are those of the binding design.
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
-  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5); Go and WASM refuse a callback unit and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses a
-  record of another repository, the type `source`, a default and an error unit (GN-7a); WASM refuses a value alias (U-7) and generates a class unit as GN-18a states; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
+  before anything of that target is written (G-4, P-4, GN-1c). Go refuses a class unit (T-5), a callback unit and a value alias of another repository (T-3, U-3, GN-6k), and Go refuses a
+  record of another repository, the type `source`, a default and an error unit (GN-7a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state; Go also refuses a tuple of different types inside another type (a Go array has one element type) and a tuple
   parameter.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
@@ -141,21 +141,21 @@ the design ids are those of the binding design.
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`; WASM `__aliasIn<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | none yet; WASM `__armFaults`, `__faultLeft` |
 
   For a contract with a class that has a write place (GN-6h), `panic-test` also adds the poison entry point of the
   B-5c test, which takes an instance, takes its write guard and panics.
-  A Python, Node or PHP crate has `codec-test` when an alias of the contract has `in_raises`, and
+  A Python, Node, PHP or WASM crate has `codec-test` when an alias of the contract has `in_raises`, and
   `fault-test = ["<core crate>/fault-test"]` when the contract has `faults`: the feature of the core, which is
   `fault-test = ["polyspec-binding-core/fault-test"]`, compiles the arming. A case may arm a point of another
   library (`<library>.<id>`, G-5): then the feature of each binding crate also names `polyspec-<library>/fault-test`
   of each such library, and the crate depends on that core as the core does (T-3), because a Cargo feature turns on a
   feature of a direct dependency only; the core of the contract need not name it. `binding scaffold` reads the
   libraries from the points of the case files, a point of a library that the core does not depend on stops it with
-  its name, and `binding check` compares the manifests with them (CK-19). A WASM crate has `fault-test` when the contract has `faults`, and its tests reach the two entry
-  points through the module that wasm-bindgen writes; it has no `codec-test` yet, and Go has neither of the two yet: a
-  contract with `in_raises` and Go or WASM, or with `faults` and Go, is refused by name (G-4).
+  its name, and `binding check` compares the manifests with them (CK-19). The tests of a WASM crate reach the entry points of `fault-test` and of `codec-test`
+  (`__aliasIn<Alias>`, which the table names for Node) through the module that wasm-bindgen writes. Go has neither of
+  the two yet: a contract with `in_raises` or with `faults` and Go is refused by name (G-4).
 
 ## The core boundary (T-1, I-2 (1))
 
@@ -258,7 +258,7 @@ the design ids are those of the binding design.
   (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again unchanged.
   The binding crate depends on the owner's crate, and the Python package on the owner's package (GN-6c). An alias
   whose owner forwards the kinds of a third library (E-1b (a)) or names two error enums is refused by name, as is an
-  `out` row by a member (GN-6e) and the targets Go and WASM (G-4). The `in_raises` of an alias of another repository
+  `out` row by a member (GN-6e) and the target Go (G-4); WASM takes it as GN-18b states. The `in_raises` of an alias of another repository
   give this repository nothing to generate: the cases of the alias, the assertions of its kinds and the entry point
   of the feature `codec-test` (GN-5, GN-13) belong to the binding of the owner, which runs them once, and the crate of
   this repository has that feature only for an alias of its own.
@@ -485,6 +485,28 @@ the design ids are those of the binding design.
   and a second place of the same value is kind `busy` (B-5c). A panic traps (GW-7), so no WASM test poisons a lock. A
   class unit with
   `cleanup` (B-10) is refused by name, as for every target (GN-1).
+- **GN-18b** WASM, a value alias with `core: {in, out}` (U-7), also of another repository (GN-6k): the value is taken
+  and given as in Node (GN-6e). The module describes a JavaScript value one level at a time as the `HostValue` of the
+  rule of Node: a number is `UntypedNumber`, a bigint `Int` (its decimal token outside `i64`), a string its UTF-16
+  units, an Array, a Map (its entries by `Array.from`), a plain object (prototype `Object.prototype` or `null`, the keys
+  of `Object.keys`), a Date, a function, a symbol, a typed array and any other object (with the name of its
+  constructor). A Date and a Map are found by `instanceof` of the global class. A core value leaves by the alias's
+  `out` rows of built-in forms, and the same handle is the same object. Every JavaScript operation of the description
+  that may run code of the value (a getter, a trap of a proxy, an iterator) is called with `catch` (`Reflect`, and
+  `Array.isArray`, `Array.from` and `Object.keys` imported with `catch`), so its exception is a value that the call
+  throws again unchanged; an exception never unwinds through the frames of the WebAssembly module, which would leave
+  its stack and its tables in a broken state. A failure (`Fail`) carries that exception, and the core keeps it as the
+  `Raised` of U-3. A value that enters as a handle is kept for the life of the instance (U-7 (d)). The in function of
+  an alias with `in_raises` runs alone through `__aliasIn<Alias>` of the feature `codec-test` (GN-5); the generated
+  test calls it on the module that wasm-bindgen writes, as the tests of `fault-test` call `__armFaults`, and expects the
+  class of the category and the kind of each case of the alias (U-7).
+- **GN-18c** WASM, a callback unit (U-3): as GN-6d states, a struct that holds the JavaScript object, checked when it
+  enters (an object whose members are functions, else kind `invalid_callback`), that implements the core trait. A call
+  takes the member by `Reflect::get`, converts the arguments out, calls it with `Function::apply` and converts its
+  result in; the exception of the JavaScript code, which `apply` returns, or a failure of the module goes to the core as
+  a `Raised`, and the member that took the callback, whose core returns `Failure<E>`, throws the same object again. A
+  WebAssembly instance runs on the thread that loaded it, so a callback with `thread: owner` is always called on its
+  thread and has no check of kind `wrong_thread`. The declarations write the interface as for Node.
 
 ## Generated tests (G-5)
 
@@ -620,8 +642,8 @@ the design ids are those of the binding design.
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
 - **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
-  members of a class among them, with `node --test` against the subpath `./wasm` of the installed package; it has no
-  test of K-2, because WASM generates no callback unit. The B-7 test runs last: it runs the panic entry
+  members of a class among them, the tests of K-2 and the callback fixtures of a case among them, and the U-7 tests of
+  an alias (GN-18b), with `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
   point through `state.mjs` and expects kind `internal`, then a later call that is kind `internal` when the instance
   trapped and that works when the module unwinds (GW-7).
 

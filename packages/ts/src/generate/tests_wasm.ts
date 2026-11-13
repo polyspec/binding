@@ -1,12 +1,12 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, Unsupported, errorUnitOfKind, hookCall, langName } from './model.ts';
-import { type Context, type MadeForm, type Receiver, bytesKind, isPlain, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type Fn, type Model, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, expectedErrno, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, callables, caseValue, expectedText, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { NODE_ORDERED } from './tests_node.ts';
+import { NODE_FIXTURE, NODE_ORDERED } from './tests_node.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NaN', 'Infinity', '-Infinity', '1.5', 'true', "'7'", '-1', '2 ** 53'],
@@ -22,9 +22,11 @@ export function wasmTests(model: Model): string {
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
   const ctx: Context = { lang: 'node', enumRef: (_name, value) => jsString(value),
     recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
-    // GN-18: WASM generates no callback unit (refused by name), so no test makes one.
-    callbackNew: (unit) => {
-      throw new Error(`${unit.id}: no callback for WASM`);
+    // U-3: a callback object, as for Node.
+    callbackNew: (unit, how) => {
+      if ('missing' in how) return '{}';
+      const body = 'raise' in how ? `() => { throw ${how.raise}; }` : how.returns === 'wrong' ? '() => Symbol()' : '() => null';
+      return `{ ${(unit.members ?? []).map((m) => `${langName('wasm', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
   };
   const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
@@ -37,6 +39,8 @@ export function wasmTests(model: Model): string {
   let usesOutcome = false;
   let usesGlue = false;
   let usesOrdered = false;
+  let usesFixture = false;
+  let usesErrno = false;
   // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
   const invoke = (fn: Fn, args: string, receiver: string): string => {
     const hook = hookCall('node', fn, receiver);
@@ -126,6 +130,14 @@ test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
   assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
 });`);
       }
+      // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
+      const refusedValue = aliasRepresentative(model, ctx, arg.type);
+      if (refusedValue !== undefined) {
+        out.push(`
+test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
+  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${cls(refusedValue.kase.category)} && error.kind === ${jsString(refusedValue.kase.kind)});
+});`);
+      }
       const text = textKind(arg.type);
       if (text !== undefined) {
         const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
@@ -144,37 +156,86 @@ test('${pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with 
 });`);
     }
     for (const kase of raisingCases(model, fn)) {
+      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const caseArg = (arg: Fn['args'][number]): string | undefined => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+      };
       const receiverMade = receiverOfCase(kase.receiver);
       const made_ = receiverMade.expr;
       // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
       // between the arming and that call, and requires every armed fault to have fired.
-      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseValue(model, ctx, arg, kase.args); return value === undefined ? [] : [[`arg${i}`, value]]; })];
+      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg${i}`, value]]; })];
       const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(kase.faults)});`;
-      const args = callArgs(model, ctx, fn, kase.faults === undefined ? (arg) => caseValue(model, ctx, arg, kase.args) : (arg) => (caseValue(model, ctx, arg, kase.args) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
+      const args = callArgs(model, ctx, fn, kase.faults === undefined ? caseArg : (arg) => (caseArg(arg) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
       const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
+      const errno = expectedErrno(kase);
+      usesErrno ||= errno !== null && 'symbol' in errno;
       usesGlue ||= kase.faults !== undefined;
+      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
+      const after = fixtures
+        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((c) => `[${c.join(', ')}]`).join(', ')}]);`}`)
+        .join('');
       out.push(`
-test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${receiverMade.lines}${arming}
+test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${receiverMade.lines}${before}${arming}
   assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
     error.constructor === pkg.${exactClass(kase.raises)} &&
     error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
     error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&
-    error.errno === null);${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}
+    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}
 });`);
     }
     // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
     for (const kase of resultCases(model, fn)) {
-      const expected = kase.refused !== undefined ? { refused: kase.refused } : kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
-      const receiverMade = kase.refused !== undefined ? { lines: '', expr: '' } : receiverOfCase(kase.receiver);
-      const call = kase.refused !== undefined ? '' : invoke(fn, callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args)), receiverMade.expr);
-      usesOrdered ||= expected !== undefined && 'text' in expected;
-      const check = expected === undefined ? `${call};` : 'refused' in expected ? `assert.fail(${jsString(expected.refused)});` : `assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
-      out.push(`
-test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}
-  ${check}
+      if (kase.refused !== undefined) {
+        out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {
+  assert.fail(${jsString(kase.refused)});
 });`);
+        continue;
+      }
+      const fixtures = fixturesOf(model, fn, kase.id, kase.args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture) }));
+      usesFixture ||= fixtures.length > 0;
+      const before = fixtures.map((f) => `\n  const ${f.name} = fixture([${f.values.members.join(', ')}], [${f.values.rows.map((row) => `[${row.join(', ')}]`).join(', ')}]);`).join('');
+      const after = fixtures
+        .map((f) => `\n  assert.deepEqual(${f.name}.unexpected, []);${f.values.calls === undefined ? '' : `\n  assert.deepEqual(${f.name}.calls, [${f.values.calls.map((c) => `[${c.join(', ')}]`).join(', ')}]);`}`)
+        .join('');
+      const args = callArgs(model, ctx, fn, (arg) => {
+        const found = fixtures.find((f) => f.fixture.arg === arg);
+        return found === undefined ? caseValue(model, ctx, arg, kase.args) : `${found.name}.object`;
+      });
+      const receiverMade = receiverOfCase(kase.receiver);
+      const call = invoke(fn, args, receiverMade.expr);
+      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
+      usesOrdered ||= expected !== undefined && 'text' in expected;
+      const check = expected === undefined ? `\n  ${call};` : 'refused' in expected ? `\n  assert.fail(${jsString(expected.refused)});` : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
+      out.push(`
+test('GN-13e: ${name} ${kase.id}', () => {${receiverMade.lines}${before}${check}${after}
+});`);
+    }
+    // K-2: a member that takes a callback, as for Node.
+    const callback = callbackArg(model, fn);
+    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
+    if (callback !== undefined && cbUnit !== undefined && reachable) {
+      const with_ = (how: CallbackHow): string =>
+        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : placeholder(model, ctx, arg.type, true))));
+      out.push(`
+test('K-2: ${name} refuses a callback without its members', () => {
+  assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
+});
+
+test('K-2: ${name} lets the exception of a callback through', () => {
+  const raised = new Error('raised by the callback');
+  assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
+});${judgesCallbackResult(model, cbUnit) ? `
+
+test('K-2: ${name} refuses a callback result of another type', () => {
+  assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
+});` : ''}`);
     }
     for (const kase of stringCases(model, fn)) {
       out.push(`
@@ -200,11 +261,20 @@ test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p)
   assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
+  // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
+  for (const kase of aliasCases(model)) {
+    usesGlue = true;
+    out.push(`
+test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
+  const glue = await glueModule();
+  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${cls(kase.category)} && error.kind === ${jsString(kase.kind)});
+});`);
+  }
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import * as pkg from ${jsString(entry)};
-${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
+import test from 'node:test';${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+${usesErrno ? "import { constants } from 'node:os';\n" : ''}import * as pkg from ${jsString(entry)};
+${usesErrno ? '// G-5: the value that the symbol of an errno has on this machine.\nconst errnoOf = constants.errno;\n' : ''}${usesFixture ? NODE_FIXTURE : ''}${usesOrdered ? NODE_ORDERED : ''}${usesOutcome ? `
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 function outcome(call) {
   try {

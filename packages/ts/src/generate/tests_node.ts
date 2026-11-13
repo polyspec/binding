@@ -17,7 +17,7 @@ const BAD_NUMBERS: Record<string, string[]> = {
 
 // G-5: the callback fixture. A call that no row answers is recorded and throws, so a core that swallows the exception
 // still fails the test, which reads the record.
-const NODE_FIXTURE = `
+export const NODE_FIXTURE = `
 class UnexpectedCall extends Error {}
 
 function fixture(members, rows) {
