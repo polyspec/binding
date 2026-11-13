@@ -97,6 +97,15 @@
   attribute(`#![allow(<lint>, reason = "...")]`)다. lint가 죽은 코드를 금하므로 생성 코드는 쓰는 도우미 함수만 갖는다.
 - **GN-4a** `core.features`(I-1)에 행이 있는 target은 코어를 그 feature로만 빌드한다. 그 바인딩 manifest는
   `default-features = false`와 그 행의 feature로 코어에 의존한다.
+- **GN-4b** 코어는 플랫폼 I/O의 연산마다 Cargo feature를 둔다: `fs`(파일 시스템의 경로), `blocking-io`(호출 스레드를 막는
+  I/O), `process`(다른 프로세스를 기다림), `net`(네트워크 소켓). 그 연산만 쓰는 의존은 그 feature의 `optional` 의존이고,
+  그 연산의 모듈과 그것을 쓰는 항목은 `#[cfg(feature = "<feature>")]`다. `default` feature는 넷을 모두 켠다.
+  `core.features.wasm`은 그 가운데 어느 것도 적지 않는다. 브라우저의 WebAssembly에는 이 연산이 없기 때문이며, `binding
+  check`가 적힌 것을 지적한다(CK-63). 코어는 target에 따라 의존을 가르지 않는다(`[target.'cfg(...)'.dependencies]`).
+  `core.features`가 target이 무엇을 빌드하는지 적는 한 자리이기 때문이다. `compile_error!` 같은 OS 제약의 검사는 그
+  feature의 모듈 안에 둔다. 그래서 feature가 꺼진 WASM 빌드는 그것을 컴파일하지 않고, feature가 켜진 지원하지 않는 OS는
+  거기서 멈춘다. WASM이 끄는 feature의 항목을 쓰는 member나 unit은 다른 target의 `only`다. 계약 검사는 Rust 소스를 읽지
+  않으므로 그것은 계약 검사가 아니라 WASM 빌드가 판정한다.
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias

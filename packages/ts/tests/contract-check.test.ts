@@ -561,6 +561,11 @@ describe('CK-21 the build of the core and exclusive members', () => {
     d.core.features = { go: ['io'] };
     assert.deepEqual(checkContract(d, {}).map((f) => [f.check, f.path]), [['CK-21', '/core/features/go']]);
   });
+  test('a feature of platform I/O for WASM (GN-4b)', () => {
+    for (const feature of ['fs', 'blocking-io', 'process', 'net']) {
+      assert.deepEqual(findings((c) => { c.core.features = { wasm: ['pure', feature] }; }).map((f) => [f.check, f.path]), [['CK-63', '/core/features/wasm/1']]);
+    }
+  });
   test('an exclusive member of a &self class is accepted (U-6)', () => {
     assert.deepEqual(findings((c) => { const m = member(c, 'session.load'); m.core.receiver = '&self'; m.exclusive = 'HY-104'; }), []);
   });

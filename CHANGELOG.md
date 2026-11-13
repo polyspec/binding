@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A contract whose `core.features.wasm` named a feature of platform I/O (`fs`, `blocking-io`, `process`, `net`) passed
+  the contract check, and its WASM build failed later or built I/O that a browser does not have. `binding check` now
+  reports it (CK-63), and the form of those features in a core is a row of the specification (GN-4b). Verified by
+  `npm test` in `packages/ts`.
 - The Python test of the argument count (G-7) of a member without parameters expected the words of a function with
   parameters, which CPython does not give for a function of no arguments, and WASM bound the unit result of a fallible
   member that returns nothing, which the lints deny. The test expects "takes no arguments" and "takes no keyword

@@ -109,6 +109,8 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   callback이나 함수일 때 코어 경로가 `Result`를 돌려준다. `core.result`가 코어와 맞는지는 생성 crate를 컴파일러가
   판정하며(I-2) 이 검사는 판정하지 않는다. 함수 타입(T-2)은 callback member처럼 `async_allowed`를 적고 `recognize`는 오류 unit을
   가리킨다(CK-17).
+- **CK-63** WASM 코어(GN-4b): `core.features.wasm`은 플랫폼 I/O의 feature `fs`, `blocking-io`, `process`, `net`을
+  적지 않는다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의

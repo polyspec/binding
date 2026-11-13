@@ -130,6 +130,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   callback or a function. Whether `core.result` is true of the core is judged by the compiler on the generated crate
   (I-2), not here. A function type (T-2) states `async_allowed` and
   its `recognize` names error units, as a callback member does (CK-17).
+- **CK-63** The WASM core (GN-4b): `core.features.wasm` names none of the features of platform I/O, `fs`,
+  `blocking-io`, `process` and `net`.
 - **CK-22** Every member names its cases (K-1): each public member, other than a constant, of a public unit that is
   not an error unit, a callback interface (U-3) or a host unit (L-2a) is the `member` of at least one entry of
   `cases`; G-5 then fails the e2e when the file or group of that entry leaves the member out. `binding check` also

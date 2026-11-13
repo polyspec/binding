@@ -147,6 +147,10 @@ interface Located<T> {
   path: string;
 }
 
+// GN-4b: the Cargo features of a core that gate the operations of platform I/O: paths of a file system, I/O that blocks
+// the calling thread, waiting for another process and network sockets.
+export const PLATFORM_FEATURES = ['fs', 'blocking-io', 'process', 'net'];
+
 class Checker {
   readonly contract: Contract;
   readonly dependencies: ReadonlyMap<string, unknown>;
@@ -1573,6 +1577,10 @@ class Checker {
     }
     for (const lang of Object.keys(this.contract.core.features ?? {}) as Lang[]) {
       if (!this.contract.targets.includes(lang)) this.report('CK-21', `/core/features/${lang}`, `${lang} is not a target (I-1)`);
+    }
+    // GN-4b: the WASM core builds without the features of platform I/O, which a browser does not have.
+    for (const [i, feature] of (this.contract.core.features?.wasm ?? []).entries()) {
+      if (PLATFORM_FEATURES.includes(feature)) this.report('CK-63', `/core/features/wasm/${i}`, `wasm builds the core with ${feature}, a feature of platform I/O, which WebAssembly in a browser does not have (GN-4b)`);
     }
     for (const { member, unit, path } of this.members.values()) {
       if (member.exclusive === undefined) continue;

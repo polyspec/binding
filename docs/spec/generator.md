@@ -122,6 +122,17 @@ the design ids are those of the binding design.
   code holds only the helper functions it uses, because the lints deny dead code.
 - **GN-4a** A target with a row in `core.features` (I-1) builds the core with those features only: its binding
   manifest depends on the core with `default-features = false` and the row's features.
+- **GN-4b** A core gives each operation of platform I/O a Cargo feature: `fs` (paths of a file system),
+  `blocking-io` (I/O that blocks the calling thread), `process` (waiting for another process) and `net` (network
+  sockets). A dependency that only that operation uses is an `optional` dependency of the feature, and the module of
+  the operation and the items that use it are `#[cfg(feature = "<feature>")]`. The `default` feature turns all four
+  on. `core.features.wasm` names none of them, because WebAssembly in a browser has none of these operations; `binding
+  check` reports one (CK-63). A core does not divide its dependencies by target (`[target.'cfg(...)'.dependencies]`),
+  because `core.features` is the one place that states what a target builds; a check of an OS constraint, such as a
+  `compile_error!`, is inside the module of its feature, so a WASM build without the feature does not compile it and
+  an unsupported OS with the feature stops there. A member or unit that uses an item of a feature that WASM turns off
+  is `only` of the other targets; the WASM build, not the contract check, judges that, because the check reads no Rust
+  source.
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has
