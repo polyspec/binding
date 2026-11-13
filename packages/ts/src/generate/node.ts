@@ -4,10 +4,10 @@
 import type { Type, Unit } from '../contract.ts';
 import { NODE_HOST, aliasNode, foreignFailureNode } from './alias_node.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, Unsupported, argType, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, futureOf, waitsAsync, waitsIo, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowsArg, narrowed, tupleOut } from './model.ts';
 import { nodeTests } from './tests_node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -56,8 +56,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('keyed_map' in type) return `out_keyed_map(env, ${value}, |env, item| ${convertOut(model, type.keyed_map, 'item')})`;
   if ('optional' in type) return `out_optional(env, ${optionRef(value)}, ${closure(['env', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
-    return `out_tuple(env, vec![${parts.join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(env, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env, ${value})`;
@@ -409,7 +408,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const member = langName('node', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(member), 'binding_error')}` : ''}`;
   });
   const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
   return `
@@ -441,7 +440,7 @@ function variantRust(model: Model, variant: Variant): string {
       const memberName = langName('node', f.field.name, 'variable');
       // GN-6v: a field that may be left out is null when its member is missing or undefined.
       const read = leftOut(f.field) ? `in_default(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
-      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};`;
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(memberName), 'binding_error')}` : ''}`;
     });
     const built = `Ok(${caseStruct(variant, kase, fields)})`;
     return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
@@ -525,6 +524,7 @@ function entryRust(model: Model, fn: Fn): string {
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
+        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
       const recordType = fn.record.unit.core_type ?? '';
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
@@ -536,6 +536,7 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(held === undefined
         ? `        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, variable, subject)}?;`
         : `        let ${variable} = held_${rustField(held.unit.name)}(env, ${variable}, ${subject})?;`);
+      if (held === undefined && arg?.default === undefined && narrowsArg(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
   lines.push(...locks(model, fn));
@@ -963,7 +964,7 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`);
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.
     .filter((t) => new RegExp(`(?<!::|")\\b${t}\\b(?![."])`).test(`${used}${functions}`));

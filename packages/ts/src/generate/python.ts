@@ -3,9 +3,9 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, leftOut } from './model.ts';
+import { type Arg, type CallbackUnit, type ErrorUnit, type Fn, type Model, Unsupported, argType, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, waitsAsync, waitsIo, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowsArg, narrowed, tupleOut } from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { PYTHON_HOST, aliasPython, foreignFailurePython } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -333,8 +333,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('map' in type) return `out_map(py, ${value}, |py, item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(py, ${optionRef(value)}, ${closure(['py', 'value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => convertOut(model, t, `&${value}.${i}`));
-    return `out_tuple(py, vec![${parts.map((p) => `${p}?`).join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_tuple(py, vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py, ${value})`;
@@ -382,7 +381,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const attr = langName('python', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&value.getattr(${rustString(attr)})?`, 'subject')}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(attr), '|error| binding_error(py, error)')}` : ''}`;
   });
   const writes = fields.map((f) => `    fields.set_item(${rustString(langName('python', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   return `
@@ -413,7 +412,7 @@ function variantRust(model: Model, variant: Variant): string {
   const pyName = langName('python', variant.unit.name, 'class');
   const ins = variant.cases.map((kase) => {
     const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => `        let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `&value.getattr(${rustString(langName('python', f.field.name, 'variable'))})?`, 'subject')}?`)};`);
+    const reads = fields.map((f) => `        let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${convertIn(model, f.field.type, `&value.getattr(${rustString(langName('python', f.field.name, 'variable'))})?`, 'subject')}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n        ${narrowed(f.variable, rustString(langName('python', f.field.name, 'variable')), '|error| binding_error(py, error)')}` : ''}`);
     return `    if value.is_instance(&types.getattr(${rustString(langName('python', kase.unit.name, 'class'))})?)? {
 ${reads.map((r) => `${r}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
     }`;
@@ -504,6 +503,7 @@ function entryRust(model: Model, fn: Fn): string {
     lines.push(held === undefined
       ? `        let ${variable}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${variable} = held_${rustField(held.unit.name)}(py, ${variable}, ${subject})?;`);
+    if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrowsArg(arg.type))) lines.push(`        ${narrowed(variable, subject, '|error| binding_error(py, error)')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
@@ -853,7 +853,7 @@ fn foreign_types<'py>(py: Python<'py>, module: &str) -> PyResult<Bound<'py, PyMo
   // The conversion of the core error is generated where an entry point or the failure of a callback calls it: a
   // contract whose only raising member is a to_json, which Python does not generate (GN-6g), has no caller.
   const coreError = failureRust(model) !== '' || /\bcore_error\(/.test(`${functions}${objects}`) ? coreErrorRust(model) : '';
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${AWAITED}\n${DRIVEN}\n${typesFn}\n${enums}`, `${functions}${objects}${coreError}`);
   const pyTypes = ['PyBool', 'PyBytes', 'PyDict', 'PyFloat', 'PyInt', 'PyList', 'PyModule', 'PyString', 'PyTuple'].filter((t) => new RegExp(`\\b${t}\\b`).test(`${used}${functions}${objects}`) || t === 'PyModule');
   const register = [
     ...model.functions.map((fn) => `    module.add_function(wrap_pyfunction!(${langName('python', fn.member.name, 'callable')}, module)?)?;`),

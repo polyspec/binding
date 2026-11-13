@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
+  only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
+  An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
+  target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
+  `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
+  array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6u). A list parameter keeps the element type of the table,
+  so a core that takes `&[usize]` does not compile yet (defect 78), and Go does not convert yet. `tests/e2e/shapes` has
+  `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
+  by `npm test` in `packages/ts`.
 - A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not
   generated yet"), so a variant whose cases leave such fields out, as the template AST does, generated no target. Such
   a field may now be left out and is then null: a Python dataclass field with the default `None`, a Node and WASM

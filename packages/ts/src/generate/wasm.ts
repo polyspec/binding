@@ -4,13 +4,13 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
-import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut } from './model.ts';
+import { type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasKindsRust, aliasOf, aliasesWithKinds, argType, borrowedItem, coreCallArgs, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, leftOut, narrows, narrowsArg, narrowed, tupleOut } from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { WASM_HOST, aliasWasm, foreignFailureWasm } from './alias_wasm.ts';
 import { traitParam } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, jsString, rustString, closure, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -69,7 +69,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   // An optional is matched where it is, so its item is the value or the reference that the place holds, whose type no
   // generic conversion needs to infer.
   if ('optional' in type) return `match ${value} {\n        Some(value) => ${convertOut(model, type.optional, 'value')},\n        None => Ok(JsValue::NULL),\n    }`;
-  if ('tuple' in type) return `out_tuple(&[${type.tuple.map((t, i) => `${convertOut(model, t, `${copied(t) ? '' : '&'}${value}.${i}`)}?`).join(', ')}])`;
+  if ('tuple' in type) return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, copied(t) ? `*${name}` : name), (parts) => `out_tuple(&[${parts.join(', ')}])`);
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
   if (unit?.kind === 'record' || unit?.kind === 'variant') return `out_${recordFn(unit, libraryOf(type))}(${value})`;
@@ -373,7 +373,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const js = langName('wasm', f.name, 'variable');
-    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js))}?;`;
+    return `    let ${rustField(f.name)}: ${rustType(model, f.type)} = ${convertIn(model, f.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js))}?;${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(js), 'binding_error')}` : ''}`;
   });
   const writes = fields.map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
   return `
@@ -406,7 +406,7 @@ function variantRust(model: Model, variant: Variant): string {
       const js = langName('wasm', f.field.name, 'variable');
       // GN-6v: a field that may be left out is null when its member is missing or undefined.
       const read = leftOut(f.field) ? `in_default(&member(value, ${rustString(js)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(js))}).map(Option::flatten)` : convertIn(model, f.field.type, `&member(value, ${rustString(js)}, subject)?`, rustString(js));
-      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};`;
+      return `            let ${f.variable}: ${caseType(model, f)} = ${caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(js), 'binding_error')}` : ''}`;
     });
     const built = `Ok(${caseStruct(variant, kase, fields)})`;
     return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
@@ -514,6 +514,7 @@ function functionRust(model: Model, fn: Fn): string {
         const arg = fn.args.find((a) => a.field && a.name === field.name);
         const raw = `&${parameter.default === undefined ? 'member' : 'member_or_undefined'}(&${variable}, ${rustString(name)}, ${rustString(langName('wasm', parameter.name, 'variable'))})?`;
         lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(model, field.type) : argType(model, arg)} = ${converted(arg, field.type, raw, rustString(name))}?;`);
+        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
       }
       const recordType = fn.record.unit.core_type ?? '';
       lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${(fn.record.unit.fields ?? []).map((f) => rustField(f.name)).join(', ')} };`);
@@ -524,6 +525,7 @@ function functionRust(model: Model, fn: Fn): string {
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       lines.push(`        let ${variable}: ${arg === undefined ? rustType(model, parameter.type) : argType(model, arg)} = ${converted(arg, parameter.type, `&${variable}`, rustString(langName('wasm', parameter.name, 'variable')))}?;`);
+      if (arg?.default === undefined && narrowsArg(parameter.type)) lines.push(`        ${narrowed(variable, rustString(langName('wasm', parameter.name, 'variable')), 'binding_error')}`);
     }
   }
   // GN-6h: the guards of the places of the call, the receiver's first.
@@ -872,7 +874,7 @@ function libRust(model: Model): string {
   const units = [...model.enums.map(enumRust), ...model.resultRecords.map((u) => recordRust(model, u)), ...model.foreignRecords.map((r) => recordRust(model, r.unit, r.library)), ...model.variants.map((v) => variantRust(model, v)), ...objectUnits, ...aliasUnits].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${units}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
   const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));

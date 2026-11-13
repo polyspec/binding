@@ -2,11 +2,11 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { DRIVEN, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn } from './model.ts';
+import { DRIVEN, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, Unsupported, argType, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustIdent, rustType, rustVariant, unitOf, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowsArg, narrowed, tupleOut } from './model.ts';
 import { PHP_HOST, aliasPhp, foreignFailurePhp } from './alias_php.ts';
 import { phpTests } from './tests_php.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN } from './text.ts';
+import { type Files, header, phpText, rustString, closure, optionRef, usedHelpers, WIDEN, INTO_CORE, PARTS } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -64,8 +64,7 @@ function convertOut(model: Model, type: Type, value: string): string {
   if ('map' in type) return `out_map(${value}, |item| ${convertOut(model, type.map, 'item')})`;
   if ('optional' in type) return `out_optional(${optionRef(value)}, ${closure(['value'], convertOut(model, type.optional, 'value'))})`;
   if ('tuple' in type) {
-    const parts = type.tuple.map((t, i) => `${convertOut(model, t, `&${value}.${i}`)}?`);
-    return `out_array(vec![${parts.join(', ')}])`;
+    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `out_array(vec![${parts.join(', ')}])`);
   }
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(${value})`;
@@ -406,7 +405,7 @@ function recordRust(model: Model, layout: PhpLayout, unit: Unit, index: number, 
   const reads = fields.map((f, i) => `    let ${rustField(f.name)}: ${rustType(model, f.type)} = {
         let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(props[i] ?? '')})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
         ${convertIn(model, f.type, 'field', 'subject')}?
-    };`);
+    };${narrows(f.type) ? `\n    ${narrowed(rustField(f.name), rustString(props[i] ?? ''), 'binding_error')}` : ''}`);
   const writes = fields.map((f, i) => `        object.set_property(${rustString(props[i] ?? '')}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?)?;`);
   const args = fields.map((_f, i) => `            let mut arg${i} = Arg::new(${rustString(props[i] ?? '')}, DataType::Mixed);`);
   const constructor = recordConstructor(name, fields, props, args);
@@ -491,7 +490,7 @@ function variantRust(model: Model, layout: PhpLayout, variant: Variant): string 
     const reads = fields.map((f) => `            let ${f.variable}: ${caseType(model, f)} = {
                 let field = in_scope(entry, || object.get_property::<&Zval>(${rustString(langName('php', f.field.name, 'variable'))})).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
                 ${caseRead(f, `${convertIn(model, f.field.type, 'field', 'subject')}?`)}
-            };`);
+            };${f.boxed === undefined && narrows(f.field.type) ? `\n            ${narrowed(f.variable, rustString(langName('php', f.field.name, 'variable')), 'binding_error')}` : ''}`);
     return `    if ${fields.length === 0 ? `case_entry(${index(kase)}, object).is_some()` : `let Some(entry) = case_entry(${index(kase)}, object)`} {
 ${reads.map((r) => `${r.replace(/^    /gm, '')}\n`).join('')}        return Ok(${caseStruct(variant, kase, fields)});
     }`;
@@ -660,6 +659,7 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
     lines.push(held === undefined
       ? `        let ${rustField(arg.name)}: ${argType(model, arg)} = ${converted}?;`
       : `        let ${rustField(arg.name)} = held_${rustField(held.unit.name)}(${rustIdent(variable)}, ${rustString(variable)})?;`);
+    if (held === undefined && (arg.field ? narrows(arg.type) : arg.default === undefined && narrowsArg(arg.type))) lines.push(`        ${narrowed(rustField(arg.name), rustString(variable), 'binding_error')}`);
   }
   if (fn.record !== undefined) {
     const recordType = fn.record.unit.core_type ?? '';
@@ -940,7 +940,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${DRIVEN}\n${enums}`, `${functions}${propertyUses}`);
   const classOf = (category: string): string => `${model.classes.findIndex((c) => c.category === category)}`;
   // E-2, I-3: an error unit is a class after the classes of the categories, in the order of model.errorUnits.
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
