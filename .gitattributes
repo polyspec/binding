@@ -1,0 +1,2 @@
+# git archive writes the commit into archive-commit, so a tree that it wrote knows its commit (CK-20, GN-14b).
+packages/ts/archive-commit export-subst

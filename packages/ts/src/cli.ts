@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'smol-toml';
 import { checkContract } from './check.ts';
+import { ownCommit } from './commit.ts';
 import type { Contract } from './contract.ts';
 import { generate, generatedDirs, goModuleDir, isGoGenerated } from './generate/index.ts';
 import { Unsupported } from './generate/model.ts';
@@ -81,25 +82,6 @@ const [command, ...rest] = process.argv.slice(2);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;
-// CK-20: the commit that this binding was checked out at: the HEAD of its git checkout, or the commit that the npm
-// lock of the project that installed it from git resolved.
-function ownCommit(): string | undefined {
-  const here = dirname(new URL(import.meta.url).pathname);
-  // The checkout of binding itself (packages/ts/src is three levels below its root), not a project that holds it in
-  // node_modules.
-  const top = spawnSync('git', ['-C', here, 'rev-parse', '--show-toplevel', 'HEAD'], { encoding: 'utf8' });
-  const [toplevel, head] = top.status === 0 ? top.stdout.trim().split('\n') : [];
-  if (toplevel !== undefined && resolve(toplevel) === resolve(here, '..', '..', '..')) return head;
-  for (let dir = here; dir !== dirname(dir); dir = dirname(dir)) {
-    const npmLock = join(dir, 'package-lock.json');
-    if (!existsSync(npmLock)) continue;
-    const packages = (JSON.parse(readFileSync(npmLock, 'utf8')) as { packages?: Record<string, { resolved?: string }> }).packages ?? {};
-    const resolved = packages['node_modules/@polyspec/binding']?.resolved;
-    if (resolved?.startsWith('git+') === true) return resolved.slice(resolved.lastIndexOf('#') + 1);
-  }
-  return undefined;
-}
-
 if (command === 'check') {
   const [path, ...extra] = rest;
   if (path === undefined || extra.length > 0) usage('check takes the path of one interface.json');
@@ -188,7 +170,7 @@ if (command === 'check') {
     process.stderr.write(`${lockPath}: CK-20 ${found}, not ${own}, the version of this binding (L-2)\n`);
   } else if (pins[0]?.source?.startsWith('git+') === true) {
     const commit = pins[0].source.slice(pins[0].source.lastIndexOf('#') + 1);
-    const mine = ownCommit();
+    const mine = ownCommit(resolve(dirname(new URL(import.meta.url).pathname), '..'));
     if (mine === undefined || mine !== commit) {
       differs = true;
       process.stderr.write(`${lockPath}: CK-20 Cargo.lock pins polyspec-binding-core at the commit ${commit}, not ${mine ?? 'the commit of this binding, which is unknown'} (L-2)\n`);
