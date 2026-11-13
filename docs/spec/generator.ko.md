@@ -176,7 +176,9 @@
   코어 값의 복사로). Python은 `__iter__`로 항목을 주거나, dict처럼 `__iter__`로 key를, `items()`로 쌍을 준다. Node는 class를
   항목이나 `[key, value]`에 대한 `Symbol.iterator`로 순회 가능하게 한다. PHP는 class를 `IteratorAggregate`로 만들고
   `getIterator`가 항목을 위치 아래에, 또는 값을 key 아래에 확장의 iterator `<namespace>\Internal\Pairs`로 준다. key가
-  객체일 수 있기 때문이다. raises가 있는 iterate와 class의 두 번째 iterate는 이름을 대고 거부한다(G-4).
+  객체일 수 있기 때문이다. `getIterator`는 그 class를 반환 타입으로 선언하고 확장은 그 class를 먼저 등록한다: PHP는
+  반환 타입이 `IteratorAggregate::getIterator`의 반환 타입 `Traversable`이 아닌 `getIterator`를 deprecated로 알린다.
+  raises가 있는 iterate와 class의 두 번째 iterate는 이름을 대고 거부한다(G-4).
 - **GN-6g** class의 kind `stringify`·`to_json` member(N-4)는 그 언어 hook의 이름을 가진 parameter 없는 메서드이며 `&self`로
   코어를 부른다. text를 돌려주는 stringify는 Python `__str__`, Node `toString`, PHP `__toString`이다. to_json은 Node
   `toJSON`, PHP `jsonSerialize`이고 그 PHP class는 `\JsonSerializable`을 구현한다. Python에는 JSON hook이 없으므로 그

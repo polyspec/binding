@@ -1030,6 +1030,15 @@ test('Python: a crate whose only raising member is a to_json holds no core_error
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn core_error\(/);
 });
 
+test('PHP: getIterator returns the iterator class of the extension, which is registered first (GN-6f)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const out = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  // A return type of mixed, which a Zval declares, is deprecated for IteratorAggregate::getIterator.
+  assert.match(lib, /#\[php\(name = "getIterator"\)\]\n {4}pub fn get_iterator\(&self\) -> Result<ZBox<ZendClassObject<PhpPairs>>, PhpException> \{/);
+  assert.ok(lib.indexOf('.class::<PhpPairs>()') > 0 && lib.indexOf('.class::<PhpPairs>()') < lib.indexOf('.class::<PhpTag>()'));
+});
+
 test('the classes repository of the end-to-end check is generated for WASM too (GN-14, GN-18a)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');

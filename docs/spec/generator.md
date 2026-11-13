@@ -213,7 +213,9 @@ the design ids are those of the binding design.
   Python gives the items by `__iter__`, or the keys by `__iter__` and the pairs by `items()`, as a dict does; Node makes
   the class iterable by `Symbol.iterator` over the items or `[key, value]`; PHP makes it an `IteratorAggregate` whose
   `getIterator` gives the items under their positions, or the values under their keys, through the extension's
-  iterator `<namespace>\Internal\Pairs`, because a key may be an object. An iterate that raises, or a second
+  iterator `<namespace>\Internal\Pairs`, because a key may be an object. `getIterator` declares that class as its
+  return type, and the extension registers the class first: PHP deprecates a `getIterator` whose return type is not
+  a `Traversable`, the return type of `IteratorAggregate::getIterator`. An iterate that raises, or a second
   iterate of a class, is refused by name (G-4).
 - **GN-6g** A member of kind `stringify` or `to_json` (N-4) of a class is a method without parameters under the name
   of the language's hook, and calls its core with `&self`. A stringify, which returns text, is `__str__` in Python,

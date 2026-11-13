@@ -468,13 +468,13 @@ function iterateRust(model: Model, fn: Fn): string {
                 pairs.push((${item(yields.key, 'key')}, ${item(yields.value, 'value')}));`;
   return `
     #[php(name = "getIterator")]
-    pub fn get_iterator(&self) -> Result<Zval, PhpException> {
+    pub fn get_iterator(&self) -> Result<ZBox<ZendClassObject<PhpPairs>>, PhpException> {
         guard(|| {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let mut pairs = Vec::new();
             for ${yields.key === undefined ? '(position, item)' : 'item'} in ${armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`)}${yields.key === undefined ? `${model.faults.length === 0 ? '' : '.into_iter()'}.enumerate()` : ''} {
 ${body}
             }
-            pairs_iterator(pairs)
+            Ok(ZendClassObject::new(PhpPairs { pairs, position: 0 }))
         })
     }
 `;
@@ -827,14 +827,6 @@ function libRust(model: Model, layout: PhpLayout): string {
     ...model.resultRecords.map((u, i) => recordRust(model, layout, u, i)),
     ...model.foreignRecords.map((r) => recordRust(model, layout, r.unit, -1, r.library)),
     ...model.objects.map((object) => objectOut(model, object)),
-    iterates ? `
-/// N-4: the iterator over the converted pairs of a getIterator.
-fn pairs_iterator(pairs: Vec<(Zval, Zval)>) -> Result<Zval, Fail> {
-    ZendClassObject::new(entry::PhpPairs { pairs, position: 0 })
-        .into_zval(false)
-        .map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))
-}
-` : '',
     ...model.callbacks.map((c) => callbackRust(model, c)),
     failureRust(model),
     foreignFailurePhp(model),
@@ -1009,8 +1001,9 @@ ${fields.map((f) => `        .property(record_property(${rustString(langName('ph
   const register = [
     ...model.enums.map((u) => `        .enumeration::<${phpEnumType(u)}>()`),
     ...model.functions.map((fn) => `        .function(wrap_function!(${rustField(fn.member.name)}))`),
-    ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
+    // N-4: the iterator is registered before the classes whose getIterator names it as its return type.
     ...(iterates ? ['        .class::<PhpPairs>()'] : []),
+    ...model.objects.map((o) => `        .class::<Php${langName('php', o.unit.name, 'class')}>()`),
     ...model.constants.map((c) => `        .constant((${rustString(`${phpNamespace(layout, c.module)}\\${langName('php', c.member.name, 'constant')}`)}, ${String(c.member.value)}_i64, &[]))`),
   ];
   const bases = [...new Set(model.classes.map((c) => c.category))].map((category) => phpBaseFn(category));
