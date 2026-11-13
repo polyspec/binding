@@ -26,8 +26,7 @@ const TAKEN: Record<string, string[]> = {
   fixture: ['php', 'python', 'node', 'go', 'wasm'],
   sample: ['php', 'python', 'node', 'go'],
   shapes: ['php', 'python', 'node', 'go', 'wasm'],
-  // Go refuses the variant figure (GN-6v) and the class ribbon that implements tail (GN-6w).
-  variants: ['php', 'python', 'node', 'wasm'],
+  variants: ['php', 'python', 'node', 'go', 'wasm'],
   consumer: ['php', 'python', 'node', 'go'],
   classes: ['php', 'python', 'node', 'go', 'wasm'],
 };
@@ -429,6 +428,34 @@ test('Go: latin1 is a string of runes up to U+00FF both ways, with a round-trip 
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestB8Latin1RoundTrips/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextAboveU00FF\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\u0100"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /func TestB8SplitWordsRefusesTextThatIsNotUTF8\(t \*testing\.T\) \{\n\t_, err := SplitWords\("\\xff"/);
+});
+
+test('Go: a Go value of another type at a number parameter reaches the conversion of its type through codec-test (GN-13g)', () => {
+  const { contract } = load();
+  contract.targets = ['go'];
+  contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
+  for (const category of Object.keys(contract.errors.classes)) contract.errors.classes[category] = {};
+  const member = contract.units[0].members[0];
+  member.parameters = [{ name: ['code'], type: 'int' }, { name: ['scale'], type: 'float' }];
+  member.returns = 'text';
+  contract.cases = [];
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map() });
+  const rust = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(rust, /#\[cfg\(feature = "codec-test"\)\]\n#\[no_mangle\]\npub unsafe extern "C" fn polyspec_sample__number_in\(/);
+  // The value of the Go type passes the range of GN-12a, any other is kind invalid_number of its type.
+  assert.match(rust, /\(1, 1, Some\(word\)\) => in_safe_int\(&mut &word\[\.\.\], &subject\)\.map\(drop\),/);
+  assert.match(rust, /\(3, 3, Some\(_word\)\) => Ok\(\(\)\),/);
+  assert.match(rust, /\(1, _, _\) => Err\(invalid\(binding_core::NumberType::Int\)\),/);
+  assert.doesNotMatch(rust, /\(0, 1, Some/);
+  const codec = text(out, 'packages/go/internal/binding/zz_generated_codec.go');
+  assert.match(codec, /^func IntIn\(value any, subject string\) error \{ return numberIn\(1, value, subject\) \}$/m);
+  assert.match(codec, /^func FloatIn\(value any, subject string\) error \{ return numberIn\(3, value, subject\) \}$/m);
+  assert.doesNotMatch(codec, /func UintIn/);
+  const tests = text(out, 'packages/go/internal/binding/zz_generated_codec_test.go');
+  assert.match(tests, /func TestB2IntInRefusesAValueOfAnotherType\(t \*testing\.T\) \{/);
+  assert.match(tests, /for _, value := range \[\]any\{true, "7", 1\.5, math\.NaN\(\), math\.Inf\(1\), math\.Inf\(-1\), int64\(9007199254740992\), int64\(-9007199254740992\)\}/);
+  assert.match(tests, /func TestB2FloatInRefusesAValueOfAnotherType/);
+  assert.match(tests, /for _, value := range \[\]any\{1\.5, math\.NaN\(\), math\.Inf\(1\)\}/);
 });
 
 test('Go: a tuple parameter is read part by part, a Tuple<N> of different part types or an array of one (T-2, GN-16)', () => {
@@ -2187,13 +2214,45 @@ test('a variant is the core enum, converted by a match of its cases, and a union
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.grown\(pkg\.FigureGroup\(items=\[pkg\.FigureCircle\(radius=1\.25\), pkg\.FigureLabel\(text="ab", at=2\)\], frame=pkg\.FigureDot\(\), back=None\)\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.grown\(\{ type: 'group', items: \[\{ type: 'circle', radius: 1\.25 \}, \{ type: 'label', text: 'ab', at: 2 \}\], frame: \{ type: 'dot' \}, back: null \}\)/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /new \\Polyspec\\Variants\\FigureGroup\(/);
-  // GN-1: Go refuses the variant by name.
-  assert.throws(() => variants(undefined, ['go']), /figure: a variant unit is not generated for Go yet \(GN-6v\)/);
   // GN-6v: what is not generated yet is refused by name.
   assert.throws(() => variants((c) => { delete unitOf(c, 'figure').core_type; }), /figure: a variant names its core enum in core_type \(T-9\)/);
   assert.throws(() => variants((c) => { Object.assign(unitOf(c, 'figure').cases[1].fields[0], { default: { literal: 1.5 }, default_core: 'polyspec_variants::RADIUS' }); }), /figure\.circle\.radius: a field default of a case other than \{literal: null\} of an optional field is not generated yet \(T-4, T-9\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].type = { unit: 'ribbon' }; }), /figure\.circle\.radius: a class in a case of a variant is not generated yet \(GN-6v\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'figure').cases[1].fields[0].name = ['type']; }), /figure\.circle\.type: a field has the name of the tag \(GN-6v\)/);
+});
+
+test('a variant is an interface of Go and a struct of each case, which the C ABI converts by the number of the case (T-9, GN-6v)', () => {
+  const out = variants(undefined, ['go']);
+  const pkg = text(out, 'packages/go/zz_generated_variants.go');
+  assert.match(pkg, /type Figure interface \{\n\tisFigure\(\)\n\}/);
+  assert.match(pkg, /type FigureDot struct\{\}\n\nfunc \(FigureDot\) isFigure\(\) \{\}/);
+  // A field of the variant is the interface, a field that may be left out a pointer.
+  assert.match(pkg, /type FigureGroup struct \{\n\tItems \[\]Figure\n\tFrame Figure\n\tBack  \*Figure\n\}/);
+  assert.match(pkg, /type FigureLabel struct \{\n\tText string\n\tAt   \*uint64\n\}/);
+  assert.match(pkg, /^func Grown\(figure Figure\) \(Figure, error\)/m);
+  // The number of the case and its fields; a value that is no case struct is 2^64 - 1.
+  assert.match(pkg, /case FigureCircle:\n\t\tenc\.Uint\(1\)\n\t\tenc\.Float\(case0\.Radius\)/);
+  assert.match(pkg, /default:\n\t\tenc\.Uint\(\^uint64\(0\)\)/);
+  assert.match(pkg, /switch dec\.Case\(4\) \{\n\tcase 0:\n\t\tvalue = FigureDot\{\}/);
+  // A variant may hold itself, so the functions of its package encode and decode it.
+  assert.match(pkg, /^func encodeFigure\(enc \*binding\.Writer, value Figure\) \{\n\tswitch case0 := value\.\(type\) \{/m);
+  assert.match(pkg, /^\tencodeFigure\(enc, figure\)$/m);
+  assert.match(pkg, /^\tvalue0 = decodeFigure\(dec\)$/m);
+  const lib = text(out, 'packages/go/internal/ffi/generated/lib.rs');
+  assert.match(lib, /fn in_figure\(input: &mut &\[u8\], subject: &str\) -> Result<polyspec_variants::Figure, Fail> \{\n\s*match in_uint\(input\)\? \{/);
+  assert.match(lib, /polyspec_variants::Figure::Dot \{\}/);
+  assert.match(lib, /let field_frame: Box<polyspec_variants::Figure> = Box::new\(in_figure\(input, "Frame"\)\?\);/);
+  assert.match(lib, /let field_back: Option<Box<polyspec_variants::Figure>> = in_optional\([^\n]*\.map\(Box::new\);/);
+  assert.match(lib, /let field_items: Vec<polyspec_variants::Figure> = /);
+  assert.match(lib, /_ => Err\(binding_error\(BindingError::InvalidArgumentType \{ subject: subject\.to_owned\(\), expected: String::from\("Figure"\) \}\)\),/);
+  assert.match(lib, /fn out_figure\(output: &mut Vec<u8>, value: impl Borrow<polyspec_variants::Figure>\) \{\n\s*match value\.borrow\(\) \{/);
+  assert.match(lib, /polyspec_variants::Figure::Circle \{ radius: field_radius \} => \{\n\s*out_uint\(output, 1_u64\);\n\s*out_float\(output, \*field_radius\);/);
+  assert.doesNotMatch(lib, /polyspec_variants::Figure::[A-Za-z]+ \{[^}]*\}\s*=>[^\n]*\n\s*_ =>/);
+  // G-5: a case value is the struct of its case; a field left out is nil.
+  const tests = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(tests, /Grown\(FigureGroup\{Items: \[\]Figure\{FigureCircle\{Radius: 1\.25\}, FigureLabel\{Text: "ab", At: ptr\(uint64\(2\)\)\}\}, Frame: FigureDot\{\}, Back: nil\}\)/);
+  assert.match(tests, /Grown\(FigureLabel\{Text: "ok", At: nil\}\)/);
+  assert.match(tests, /Back: ptr\[Figure\]\(FigureGroup\{/);
 });
 
 test('an optional field of a case whose default is {literal: null} may be left out, and is null (T-4, T-9, GN-6v)', () => {
@@ -2232,7 +2291,12 @@ test('a class that implements a callback interface has its members and stands fo
   // GN-13f: an instance value stands at the place of the callback that its class implements.
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.tail_of\(pkg\.Ribbon\("abc"\), 2\)/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.tailOf\(new pkg\.Ribbon\('abc'\), 2\)/);
-  assert.throws(() => variants(undefined, ['go']), /ribbon: a class that implements an interface is not generated for Go yet \(GN-6w\)/);
+  // Go: the pointer to the class has the method of the Go interface, which the dispatch of U-3 calls.
+  const go = text(variants(undefined, ['go']), 'packages/go/zz_generated_variants.go');
+  assert.match(go, /^func \(this \*Ribbon\) Last\(count uint64\) \(\[\]byte, error\) \{/m);
+  assert.match(go, /^var _ Tail = \(\*Ribbon\)\(nil\)$/m);
+  assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /<polyspec_variants::Ribbon as polyspec_variants::Tail>::last\(this, count\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /made0, failure1 := NewRibbon\(\[\]byte\("abc"\)\)\n[\s\S]*?TailOf\(made0, 2\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'tail').members[0].core.receiver = '&mut self'; }), /ribbon: the member tail\.last that it implements takes the receiver &mut self, which an implemented member is not generated for yet \(GN-6w\)/);
   assert.throws(() => variants((c) => { unitOf(c, 'ribbon').abstract = true; }), /ribbon: an abstract class is not generated yet/);
 });

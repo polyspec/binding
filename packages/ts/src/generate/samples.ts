@@ -273,17 +273,7 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
   }
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   if (unit?.origin === 'callback' && libraryOf(type) === undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
-    const where = `a case value of ${unit.id}`;
-    const implementer = model.objects.find((o) => (o.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === unit.id) && (() => {
-      try {
-        instanceOf(model, o.unit.id, value, where);
-        return true;
-      } catch {
-        return false;
-      }
-    })());
-    if (implementer === undefined) throw new Error(`${where} is an instance value of no class that implements it (GN-13f, GN-6w)`);
-    return ctx.instanceNew(instanceOf(model, implementer.unit.id, value, where));
+    return ctx.instanceNew(implementerInstance(model, unit, value));
   }
   // GN-13f: the value of a class is an instance value, at any place of the case.
   // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call raises; an instance
@@ -1020,6 +1010,22 @@ export function pickedType(model: Model, type: Type, pick: readonly unknown[]): 
 // new names a member that returns the class; from a member whose result holds it, which pick reaches. receiver is
 // the instance that the member is called on, when it is a method. Each call of then is a member of the class, called
 // on the instance in order. The binding check reports every value that breaks this (CK-22); here it is an error.
+// GN-13f, GN-6w: the instance of an instance value at the place of a callback, of the class that implements the
+// callback interface and that the factory of the value makes.
+export function implementerInstance(model: Model, callback: Unit, value: unknown): Receiver {
+  const where = `a case value of ${callback.id}`;
+  const implementer = model.objects.find((o) => (o.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === callback.id) && (() => {
+    try {
+      instanceOf(model, o.unit.id, value, where);
+      return true;
+    } catch {
+      return false;
+    }
+  })());
+  if (implementer === undefined) throw new Error(`${where} is an instance value of no class that implements it (GN-13f, GN-6w)`);
+  return instanceOf(model, implementer.unit.id, value, where);
+}
+
 export function instanceOf(model: Model, unitId: string, value: unknown, where: string): Receiver {
   const fail = (message: string): never => {
     throw new Unsupported(`${where}: ${message} (G-5, GN-13f)`);

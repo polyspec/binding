@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d969d00e117f720ba70ced91dcebc3fddd070f53391b460df7f41950833bbf62 -->
+<!-- source-sha256: b0f1f4d4effb64b5630f8dbaa36eb30b812c46278924a383d64bf9755c47b18c -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -37,6 +37,26 @@
   closure가 guard를 소유하고 그 안에서 참조를 묶는다(GN-6h). `tests/e2e/classes`의 `make e2e`로 검증했고, 그 기록은 증거이며
   모든 target에서 통과했다(PHP 생성 시험 60개와 contract case 4개, Python 58개와 4개, Node 63개, Go 27개, WASM 42개).
   `tests/e2e/sample`, `tests/e2e/shapes`, `tests/e2e/consumer`의 `make e2e`도 증거인 기록에서 모든 target이 통과했다.
+- 수 타입의 Go parameter는 그 Go 타입의 값만 담아서, Go 바인딩은 `int` parameter 자리의 true, "7", 1.5처럼 다른 타입의
+  host 값을 바인딩의 변환에 줄 방법이 없었고, 다른 target이 kind `invalid_number`로 거부하는 그런 값의 시험은 Go 형태가
+  없었다. 이제 feature `codec-test`와 build tag `polyspec_codec_test`는 parameter의 수 타입마다 진입점
+  `<prefix>__number_in` 위에 `internal/binding`의 `<Type>In(value any, subject string) error`를 주고, 진입점은 Go 값을 그
+  수 타입의 변환으로 판정한다: 그 Go 타입의 값은 GN-12a의 범위를 거치고, 그 밖의 값은 kind `invalid_number`다.
+  `zz_generated_codec_test.go`는 그런 타입마다 GN-13의 B-2 값을 확인하고, 끝에서 끝까지 확인은 `__number_in`을 가진 release
+  라이브러리를 거부한다(GN-13g). `packages/ts`의 `npm test`로 확인했다.
+- 생성기는 callback interface를 구현하는 class가 있는 계약의 Go 바인딩을 "a class that implements an interface is not
+  generated for Go yet (GN-6w)"로 거부해서, `tail`을 구현하는 `tests/e2e/variants`의 class `ribbon`에는 Go 바인딩이 없었다.
+  이제 Go는 class가 선언하지 않은 interface member마다 C ABI로 trait 메서드를 부르는 메서드를 class의 포인터에 주고,
+  `var _ Tail = (*Ribbon)(nil)`로 단언하며, callback 자리에 있는 case의 인스턴스 값을 그 factory가 만드는 인스턴스로
+  적는다(GN-6w, GN-13f). 그런 인스턴스 값의 class를 찾는 일은 이제 case 샘플의 함수 하나 `implementerInstance`이며, Go 시험과
+  다른 target이 함께 쓴다. `packages/ts`의 `npm test`와 `tests/e2e/variants`의 생성된 Go module의 `gofmt`로 확인했다.
+- 생성기는 variant unit이 있는 계약의 Go 바인딩을 "a variant unit is not generated for Go yet (GN-6v)"로 거부해서
+  `tests/e2e/variants`에는 Go 바인딩이 없었다. 이제 Go는 variant를 module 패키지의 interface로 선언하고 그 유일한 method는
+  unexported이며, 각 case를 그 interface를 구현하는 field들의 struct로 선언한다. 패키지의 함수 `encode<Variant>`와
+  `decode<Variant>`는 case 번호와 field들을 쓰고 읽으며, case struct가 아닌 값은 수 2^64 - 1이고 C ABI가 kind
+  `invalid_argument_type`으로 판정한다. C ABI는 wildcard 없는 case match로 variant를 바꾸고 field는 코어가 가진 대로 상자에
+  담으며, Go 시험은 case 값을 그 case의 struct로 적는다(GN-6v). `packages/ts`의 `npm test`, 그리고 `tail`을 구현하는 class를
+  뺀 `tests/e2e/variants`의 생성된 Go module의 `gofmt`로 확인했다.
 - feature 없는 binding_core의 `cargo test`가 `tests/lock.rs`와 `tests/driver.rs`를 시험 없이 돌리고 통과했다. 각 파일이
   crate 수준의 `#![cfg(feature = ...)]`로 막혀 있었기 때문이다. 이제 두 파일은 `required-features`를 가진 `[[test]]`
   target이고, feature 없는 실행은 그것을 빌드하지 않는다(HR-84). `make check`로 확인했다: test-ts는 시험 290개를 돌려 모두

@@ -40,6 +40,31 @@
   (GN-6h). Verified by `make e2e` of `tests/e2e/classes`, whose record is evidence and passed in every target (PHP 60
   generated tests and 4 contract cases, Python 58 and 4, Node 63, Go 27 and WASM 42), and of `tests/e2e/sample`,
   `tests/e2e/shapes` and `tests/e2e/consumer`, whose records are evidence and passed in every target.
+- A Go parameter of a number type holds only values of its Go type, so the Go binding had no way to give a host value
+  of another type, such as true, "7" or 1.5 at an `int` parameter, to the conversion of the binding, and a test of
+  such a value, which the other targets refuse as kind `invalid_number`, had no Go form. The feature `codec-test` and
+  the build tag `polyspec_codec_test` now give, for each number type of a parameter, `<Type>In(value any, subject
+  string) error` of `internal/binding` over the entry point `<prefix>__number_in`, which judges the Go value by the
+  conversion of that number type: a value of its Go type passes the range of GN-12a, and any other value is kind
+  `invalid_number`. `zz_generated_codec_test.go` checks the B-2 values of GN-13 for each such type, and the end-to-end
+  check refuses a release library that holds `__number_in` (GN-13g). Verified by `npm test` in `packages/ts`.
+- The generator refused the Go binding of a contract with a class that implements a callback interface, with "a class
+  that implements an interface is not generated for Go yet (GN-6w)", so the class `ribbon` of `tests/e2e/variants`,
+  which implements `tail`, had no Go binding. Go now gives the pointer to the class the method of each member of the
+  interface that the class does not declare, which calls the trait method through the C ABI, asserts
+  `var _ Tail = (*Ribbon)(nil)`, and writes the instance value of a case at the place of the callback as the instance
+  that its factory makes (GN-6w, GN-13f). The search for the class of such an instance value is now one function of
+  the case samples, `implementerInstance`, which the Go tests and the other targets share. Verified by `npm test` in
+  `packages/ts` and `gofmt` of the generated Go module of `tests/e2e/variants`.
+- The generator refused the Go binding of a contract with a variant unit, with "a variant unit is not generated for Go
+  yet (GN-6v)", so `tests/e2e/variants` had no Go binding. Go now declares the variant as an interface of the package
+  of its module, whose one method is unexported, and each case as a struct of its fields that implements it; the
+  functions `encode<Variant>` and `decode<Variant>` of the package write and read the number of the case and its
+  fields, and a value that is no case struct is the number 2^64 - 1, which the C ABI judges kind
+  `invalid_argument_type`. The C ABI converts the variant with a match of its cases without a wildcard, its fields
+  boxed as the core holds them, and the Go tests write a case value as the struct of its case (GN-6v). Verified by
+  `npm test` in `packages/ts` and `gofmt` of the generated Go module of `tests/e2e/variants` without the class that
+  implements `tail`.
 - `cargo test` of binding_core without features ran `tests/lock.rs` and `tests/driver.rs` with no test, because each
   file was gated by a crate-level `#![cfg(feature = ...)]`, and passed while it checked nothing. The two files are
   now `[[test]]` targets with `required-features`, which a run without the feature does not build (HR-84). Verified by

@@ -26,7 +26,7 @@ the design ids are those of the binding design.
   type `source` outside a parameter, an internal member of a public unit) is refused by name
   before anything of that target is written (G-4, P-4, GN-1c). Go generates a class unit, a callback unit, a value alias, also of another repository, the type `source`, a default, an error unit and a record of another repository as GN-15a to GN-15f state, and Go
   refuses modules whose packages would import each other (GN-15a); WASM generates a class unit as GN-18a states, and a value alias, also of another repository, and a callback unit as GN-18b and GN-18c state.
-  Go refuses a variant unit and a class that implements an interface (GN-6v, GN-6w).
+  Go generates a variant unit and a class that implements an interface as GN-6v and GN-6w state.
 - **GN-1a** The generator reads the whole contract before it fails: it names every refused item, one line each, and
   then fails without writing anything of the refused target (G-4, GN-1c). An item (a unit, a member, a field, a row of the kinds) is named with the
   first reason that its checks find, because a later check of the same item reads what an earlier one refused; a unit
@@ -171,7 +171,7 @@ the design ids are those of the binding design.
   | Feature | Use | Python | Node | PHP | Go C symbol |
   |---|---|---|---|---|---|
   | `panic-test` | B-7; the poison of B-5c (GN-6h); the errno of a symbol in a PHP test (GN-8a) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld`, `errnoOf` | `<prefix>__panic_test`, `<prefix>__panic_test_held` |
-  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7), and its `in` function and then its `out` function (GN-13e) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`; WASM `__aliasIn<Alias>`, `__aliasRound<Alias>` |
+  | `codec-test` | the round trip of Go's conversions (GN-13b); the `in` function of a value alias alone (U-7), and its `in` function and then its `out` function (GN-13e); a Go value of another type at a number parameter (GN-13g) | `_alias_in_<alias>`, `_alias_round_<alias>` | `__aliasIn<Alias>`, `__aliasRound<Alias>` | `<namespace>\Internal\aliasIn<Alias>`, `<namespace>\Internal\aliasRound<Alias>` | `<prefix>__echo_<type>`, `<prefix>__alias_in_<alias>`, `<prefix>__number_in`; WASM `__aliasIn<Alias>`, `__aliasRound<Alias>` |
   | `fault-test` | fault injection (GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | `<prefix>__arm_faults`, `<prefix>__fault_left`; WASM `__armFaults`, `__faultLeft` |
   | `case-test` | a case whose argument has no form in the language (GN-13) | none yet | none yet | `<namespace>\Internal\caseTest<n>` | none yet; WASM none yet |
   | `thread-test` | the kind `wrong_thread` of a function called on another thread (GN-6z) | — | `__threadTest` | `<namespace>\Internal\threadTest` | — |
@@ -270,13 +270,18 @@ the design ids are those of the binding design.
   of its fields, named `<Variant><Case>`: Python a frozen keyword-only `dataclass` in `<root>._types` and the alias
   `type <Variant> = <Variant><Case> | ...`; Node and WASM a plain object whose tag member (the `tag` of the unit, by its
   language name) holds the case value, and the declarations the union of the case interfaces; PHP a final class of
-  each case that implements the interface `<Variant>`. A value that is no case (an object without the tag, a tag that
-  names no case, an instance of another class) is kind `invalid_argument_type`. In a case file a variant value is an
+  each case that implements the interface `<Variant>`; Go an interface `<Variant>` of the package of its module, whose
+  one method is the unexported `is<Variant>()`, and a struct `<Variant><Case>` of the fields of each case, of the Go
+  types of their contract types, which implements it with a value receiver, so a field that holds the variant is the
+  interface. The C ABI of Go reads and writes a variant as the number of its case in the contract followed by its
+  fields in order, and Go encodes a value that is no case struct, nil or a pointer to a case struct, as the number
+  2^64 - 1. A value that is no case (an object without the tag, a tag that names no case, an instance of another
+  class, a Go value that is no case struct) is kind `invalid_argument_type`. In a case file a variant value is an
   object whose tag key holds the case value and whose other keys are the fields by their snake_case names (G-5).
   An `optional` field whose default is `{literal: null}` (T-4) may be left out, and a field left out is null, which the
   core gets as `None`: Python gives the dataclass field the default `None`, Node and WASM read a missing or `undefined`
-  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), and a case
-  value may leave out its key. Such a field always leaves with its value or null.
+  member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), Go leaves
+  the pointer of the field nil, and a case value may leave out its key. Such a field always leaves with its value or null.
   Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
   not generated yet, any other field default of a case and a field that holds a class, a callback, a value alias or a
   unit of another repository.
@@ -390,7 +395,10 @@ the design ids are those of the binding design.
   the interface that it does not declare under the same name, a method that calls the trait method on the held
   value, `<core_type as <trait>>::<method>`, and raises the `Failure<E>` that it returns (GN-6d). The declarations
   name the interface: Node and WASM `class <Class> implements <Interface>`, and PHP the interface that the extension
-  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names. An instance
+  registers, in the stub and in the entry of the class; Python has the method that the `Protocol` names; Go has the
+  method of the Go interface of the callback on the pointer to the class, so the pointer satisfies that interface,
+  which `var _ <Interface> = (*<Class>)(nil)` asserts, and the call of the callback runs the method through the
+  dispatch of U-3, which calls the trait method through the C ABI. An instance
   of the class therefore enters where the callback is taken as any language object with those members does, and the
   call of the callback reaches the held value through the method. In a case an instance value (GN-13f) may stand at
   a place of the callback. Refused by name, not generated yet: an interface of another repository, a member that the
@@ -1404,7 +1412,7 @@ the design ids are those of the binding design.
   `panic-test`, `codec-test` and `native-count-test` are for tests only: the manifest that `binding scaffold` writes
   turns none on by default and `binding check` refuses any other manifest (CK-19), and the end-to-end check builds the static library
   without features and fails if it holds a test entry point (`__panic_test`, `__echo_`, `__arm_faults`,
-  `__fault_left`, `__alias_in_`, `__native_count`). With the build tag
+  `__fault_left`, `__alias_in_`, `__number_in`, `__native_count`). With the build tag
   `polyspec_codec_test` and the feature `codec-test` of the C ABI crate, test entry points give back a latin1 value
   (when the contract takes and gives latin1), a `map<text>` and a `keyed_map<text>` with every key kind (when it takes
   and gives such a map) through the conversions of the binding; `zz_generated_codec_test.go` checks that U+0000 to
@@ -1412,6 +1420,19 @@ the design ids are those of the binding design.
   refused; the cases of an alias of this repository run its `in` function alone through `AliasIn<Alias>`. A `keyed_map` parameter or field whose contract does not list every key kind is tested with a key of a
   missing kind as kind `invalid_argument_type`. A case's latin1 value is a Go string of its runes; a case gives a `map` as
   an object of its entries in order and a `keyed_map` as GN-13 does.
+- **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
+  Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
+  integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the
+  feature `codec-test` and the build tag `polyspec_codec_test` give the function `<Type>In(value any, subject string)
+  error` of `internal/binding` (`UintIn`, `IntIn`, `Int64In`, `FloatIn`) over the entry point `<prefix>__number_in`.
+  The function encodes the Go value as a host value: a bool, a Go integer in the range of int64, a Go integer above
+  it, a Go float, a Go string, or any other value. The entry point judges it by the conversion of that number type
+  of the binding: a value of the Go type of the number type passes the range of GN-12a, and a value of another type
+  is kind `invalid_number` of B-2 with the subject. So the error is the one that a call with that argument gives in
+  the other targets. `zz_generated_codec_test.go` checks the B-2 values of GN-13 for each such type, and a value of
+  the type (7, or 1.5 and NaN for a float) passes. A test of another repository that has a host value of another type
+  for a number parameter, such as a legacy case with an input type, passes it through this function, because the Go
+  call cannot take it.
 - **GN-13c** WASM: `packages/ts/wasm/generated/tests/generated.test.mjs` runs the tests of GN-13 for Node, those of the
   members of a class among them, the tests of K-2 and the callback fixtures of a case among them, and the U-7 tests of
   an alias (GN-18b), with `node --test` against the subpath `./wasm` of the installed package. The B-7 test runs last: it runs the panic entry
