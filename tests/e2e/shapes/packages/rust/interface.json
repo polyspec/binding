@@ -273,6 +273,49 @@
           "core": "polyspec_shapes::wrap"
         },
         {
+          "id": "shapes.pad",
+          "name": [
+            "pad"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": [
+                "fill"
+              ],
+              "type": {
+                "optional": "text"
+              },
+              "default": {
+                "literal": null
+              }
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "pad_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::pad"
+        },
+        {
           "id": "shapes.checksum",
           "name": [
             "checksum"
@@ -462,6 +505,79 @@
       ]
     },
     {
+      "id": "side",
+      "name": [
+        "side"
+      ],
+      "module": "",
+      "kind": "enum",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Side",
+      "variants": [
+        {
+          "name": [
+            "left"
+          ],
+          "value": "left"
+        },
+        {
+          "name": [
+            "right"
+          ],
+          "value": "right"
+        }
+      ]
+    },
+    {
+      "id": "pad_options",
+      "name": [
+        "pad",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::PadOptions",
+      "fields": [
+        {
+          "name": [
+            "side"
+          ],
+          "type": {
+            "unit": "side"
+          },
+          "default": {
+            "literal": "left"
+          },
+          "default_core": "polyspec_shapes::DEFAULT_SIDE"
+        },
+        {
+          "name": [
+            "width"
+          ],
+          "type": {
+            "optional": "uint"
+          },
+          "default": {
+            "computed": "SH-2"
+          }
+        },
+        {
+          "name": [
+            "end"
+          ],
+          "type": {
+            "optional": "text"
+          },
+          "default": {
+            "literal": null
+          }
+        }
+      ]
+    },
+    {
       "id": "text_measure",
       "name": [
         "text",
@@ -646,6 +762,11 @@
       "member": "shapes.wrap",
       "file": "contracts/cases.json",
       "group": "wrap"
+    },
+    {
+      "member": "shapes.pad",
+      "file": "contracts/cases.json",
+      "group": "pad"
     },
     {
       "member": "shapes.checksum",

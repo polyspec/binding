@@ -416,6 +416,31 @@
           "core": "polyspec_sample::size"
         },
         {
+          "id": "sample.describe",
+          "name": [
+            "describe"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data"
+              },
+              "default": {
+                "literal": null
+              }
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::describe"
+        },
+        {
           "id": "sample.measure",
           "name": [
             "measure"
@@ -1253,6 +1278,11 @@
       "member": "sample.size",
       "file": "contracts/cases.json",
       "group": "size"
+    },
+    {
+      "member": "sample.describe",
+      "file": "contracts/cases.json",
+      "group": "describe"
     },
     {
       "member": "tag.entries",

@@ -1312,7 +1312,7 @@ test('a parameter or field with a default is None for the core when it is left o
   // G-4: each default that is not generated is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   const field = (c: any, name: string): any => unitOf(c, 'frame_options').fields.find((f: any) => f.name.join('_') === name);
-  assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /a default of an optional type is not generated yet \(U-2\)/);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.repeat', 'times').type = { optional: 'uint' }; }), /shapes\.repeat\.times: a default of an optional type is \{literal: null\} or \{computed\} \(U-2\)/);
   assert.throws(() => shaped((c) => { delete parameter(c, 'shapes.repeat', 'separator').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { delete field(c, 'upper').default_core; }), /a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
   assert.throws(() => shaped((c) => { member(c, 'shapes.repeat').parameters.push({ name: ['last'], type: 'uint', required: true }); }), /shapes\.repeat: the required last follows a parameter with a default, which is not generated yet \(U-2\)/);
@@ -1355,6 +1355,71 @@ test('a record parameter whose every field has a default may be left out as a wh
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
   assert.throws(() => shaped((c) => { const p = parameter(c, 'shapes.frame', 'options'); delete p.required; p.default = { empty: 'object' }; }), /shapes\.frame\.options: the default \{empty: "object"\} leaves out the record, but its field prefix has no default \(U-2\)/);
   assert.throws(() => shaped((c) => { parameter(c, 'shapes.wrap', 'options').default = { empty: 'list' }; }), /shapes\.wrap\.options: the default \{empty: "list"\} of a record parameter is not generated \(U-2\)/);
+});
+
+test('a default of an optional type is one Option, None when it is left out or null (U-2, GN-6i, GN-15e)', () => {
+  // shapes.pad takes fill: optional<text> = {literal: null} and the record pad_options, whose width is optional<uint> =
+  // {computed} and whose end is optional<text> = {literal: null}.
+  const out = shaped();
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  const libs = [[out, 'packages/python/generated/lib.rs'], [out, 'packages/ts/generated/lib.rs'], [out, 'packages/php-ext/generated/lib.rs'], [wasmOut, 'packages/ts/wasm/generated/lib.rs']] as const;
+  for (const [files, path] of libs) {
+    const lib = text(files, path);
+    assert.match(lib, /let fill: Option<String> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: left out and null are both None`);
+    assert.match(lib, /let width: Option<u64> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: a {computed} default of an optional type`);
+    assert.match(lib, /let end: Option<String> = in_default\([^\n]*\)\.map\(Option::flatten\)\?;/, `${path}: a field`);
+    assert.match(lib, /polyspec_shapes::pad\(&text, fill\.as_deref\(\), &options\)/, `${path}: the core takes the optional type itself`);
+    assert.doesNotMatch(lib, /Option<Option</, `${path}: no second Option`);
+  }
+  // The declarations show null as the declared value.
+  assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_native.pyi'), /def pad\(text: str, fill: str \| None = None, \*, side: [^\n]*, width: int \| None = \.\.\., end: str \| None = None\) -> str: \.\.\./);
+  assert.match(text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php'), /function pad\(mixed \$text, mixed \$fill = null, mixed \$side = "left", mixed \$width = null, mixed \$end = null\): string \{\}/);
+  assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function pad\(text: string, fill\?: string \| null, options\?: PadOptions\): string;/);
+  // GN-13d: the call without fill is the call with null, and null is a value of an optional type, so it is not
+  // tested as a refused value.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_u2_pad_fill_left_out_is_its_default/);
+  assert.doesNotMatch(python, /def test_u2_pad_fill_takes_none_as_a_value/);
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('U-2: pad without fill is the call with its default'/);
+  assert.doesNotMatch(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /U-2: pad takes null for fill as a value/);
+  // GN-15e: in Go the optional type keeps its one pointer.
+  const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
+  assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);
+  assert.match(goShapes, /\tEnd \*string\n/);
+  assert.doesNotMatch(goShapes, /\*\*/);
+  assert.doesNotMatch(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /Option<Option</);
+  // G-4: another default of an optional type is refused by name.
+  const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
+  assert.throws(() => shaped((c) => { parameter(c, 'shapes.pad', 'fill').default = { literal: '.' }; }), /shapes\.pad\.fill: a default of an optional type is \{literal: null\} or \{computed\} \(U-2\)/);
+});
+
+test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
+  const out = shaped();
+  const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  for (const [files, path] of [[out, 'packages/python/generated/lib.rs'], [out, 'packages/ts/generated/lib.rs'], [out, 'packages/php-ext/generated/lib.rs'], [wasmOut, 'packages/ts/wasm/generated/lib.rs']] as const) {
+    const lib = text(files, path);
+    assert.match(lib, /const _: \(\) = assert!\(matches!\(polyspec_shapes::DEFAULT_SIDE, polyspec_shapes::Side::Left\)\);/, path);
+    assert.match(lib, /let side: Option<polyspec_shapes::Side> = in_default\(/, path);
+  }
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_u2_pad_side_left_out_is_its_default/);
+  // G-4: an enum default without its constant, or of a value that is no variant, is refused by name.
+  const field = (c: any, name: string): any => unitOf(c, 'pad_options').fields.find((f: any) => f.name.join('_') === name);
+  assert.throws(() => shaped((c) => { delete field(c, 'side').default_core; }), /pad_options\.side: a \{literal\} or \{const\} default names the constant of the core in default_core \(U-2\)/);
+  assert.throws(() => shaped((c) => { field(c, 'side').default = { literal: 'up' }; }), /pad_options\.side: the default \{literal: "up"\} of the type \{"unit":"side"\} is not generated \(U-2\)/);
+});
+
+test('a {literal: null} default of a value type is None without a constant, and null is a value (U-2, GN-6i)', () => {
+  // sample.describe takes value: data = {literal: null}.
+  const out = generate({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs']) {
+    const lib = text(out, path);
+    assert.match(lib, /let value: Option<polyspec_sample::Data> = in_default\(/, path);
+    assert.match(lib, /polyspec_sample::describe\(value\.as_ref\(\)\)/, path);
+    assert.doesNotMatch(lib, /DEFAULT_VALUE|assert!\([^\n]*describe/, `${path}: no constant and no assertion`);
+  }
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /def test_u2_describe_value_left_out_is_its_default/);
+  assert.doesNotMatch(python, /def test_u2_describe_value_takes_none_as_a_value/);
 });
 
 test('an error unit is a class under its parent, and a kind names the class it is thrown as (E-2, GN-7a)', () => {

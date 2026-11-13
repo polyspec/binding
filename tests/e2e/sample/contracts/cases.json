@@ -141,6 +141,25 @@
       "result": 2
     }
   ],
+  "describe": [
+    {
+      "id": "left_out_is_null",
+      "result": "null"
+    },
+    {
+      "id": "a_list",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "bool",
+            "value": true
+          }
+        ]
+      },
+      "result": "list"
+    }
+  ],
   "tag_entries": [],
   "tag_to_string": [
     {

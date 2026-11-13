@@ -1,5 +1,5 @@
 //! A sample library for the end-to-end check of binding: the shapes of values. A source (T-1), bytes (T-7), a
-//! parameter and a record field that the caller may leave out (U-2, T-4), and kinds that are thrown as the classes of
+//! parameter and a record field that the caller may leave out (U-2, T-4), also of an optional type and of an enum, and kinds that are thrown as the classes of
 //! error units (E-2).
 
 use binding_core::Kinds;
@@ -25,6 +25,9 @@ pub const DEFAULT_LEFT: &str = "[";
 
 /// What `wrap` puts after the text when the caller does not say.
 pub const DEFAULT_RIGHT: &str = "]";
+
+/// The side of the text that `pad` fills when the caller does not say (U-2: a `{literal}` default of an enum).
+pub const DEFAULT_SIDE: Side = Side::Left;
 
 /// The most texts that `repeat` joins.
 const MOST_TIMES: u64 = 1000;
@@ -175,6 +178,57 @@ pub fn wrap(text: &str, options: &WrapOptions) -> String {
     format!("{left}{text}{right}")
 }
 
+/// The side of a text that `pad` fills.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// Before the text.
+    Left,
+    /// After the text.
+    Right,
+}
+
+/// The options of `pad` (U-2: fields of an enum and of optional types that the caller may leave out).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PadOptions {
+    /// The side that is filled; `None` is `DEFAULT_SIDE`.
+    pub side: Option<Side>,
+    /// The least width of the text; `None` is the width of the text (SH-2: a computed default).
+    pub width: Option<u64>,
+    /// What comes after the filled text; `None` is nothing (a `{literal: null}` default).
+    pub end: Option<String>,
+}
+
+/// The text filled to the width of the options on their side, with the fill or a space, and the end after it.
+#[must_use]
+pub fn pad(text: &str, fill: Option<&str>, options: &PadOptions) -> String {
+    let fill = match fill {
+        Some(fill) => fill,
+        None => " ",
+    };
+    let side = match options.side {
+        Some(side) => side,
+        None => DEFAULT_SIDE,
+    };
+    let mut count = widen(text.chars().count());
+    let width = match options.width {
+        Some(width) => width,
+        None => count,
+    };
+    let mut filling = String::new();
+    while count < width {
+        filling.push_str(fill);
+        count += 1;
+    }
+    let end = match &options.end {
+        Some(end) => end.as_str(),
+        None => "",
+    };
+    match side {
+        Side::Left => format!("{filling}{text}{end}"),
+        Side::Right => format!("{text}{filling}{end}"),
+    }
+}
+
 /// The length and the emptiness of a text (T-4: a record with a bool field as a return).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Measure {
@@ -267,7 +321,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, frame, length, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, WrapOptions};
+    use super::{checksum, frame, length, pad, repeat, reversed, total, wrap, Buffer, Error, FrameOptions, PadOptions, Side, WrapOptions};
 
     #[test]
     fn none_is_the_default() {
@@ -281,6 +335,9 @@ mod tests {
         assert_eq!(total(None), total(Some(&[])));
         assert_eq!(wrap("a", &WrapOptions::default()), "[a]");
         assert_eq!(wrap("a", &WrapOptions { left: Some(String::from("<")), right: None }), "<a]");
+        assert_eq!(pad("ab", None, &PadOptions::default()), "ab");
+        assert_eq!(pad("ab", None, &PadOptions { width: Some(4), ..PadOptions::default() }), "  ab");
+        assert_eq!(pad("ab", Some("."), &PadOptions { side: Some(Side::Right), width: Some(4), end: Some(String::from("!")) }), "ab..!");
     }
 
     #[test]

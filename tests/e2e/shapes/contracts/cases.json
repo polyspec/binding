@@ -88,6 +88,40 @@
       "result": "<a]"
     }
   ],
+  "pad": [
+    {
+      "id": "everything_left_out",
+      "text": "ab",
+      "result": "ab"
+    },
+    {
+      "id": "fill_null_is_left_out",
+      "text": "ab",
+      "fill": null,
+      "options": {
+        "width": 4
+      },
+      "result": "  ab"
+    },
+    {
+      "id": "a_fill_on_the_right",
+      "text": "ab",
+      "fill": ".",
+      "options": {
+        "side": "right",
+        "width": 4
+      },
+      "result": "ab.."
+    },
+    {
+      "id": "an_end",
+      "text": "ab",
+      "options": {
+        "end": "!"
+      },
+      "result": "ab!"
+    }
+  ],
   "checksum": [
     {
       "id": "the_sum_of_two_bytes",
