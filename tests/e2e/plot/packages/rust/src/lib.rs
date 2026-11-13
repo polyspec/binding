@@ -44,7 +44,10 @@ impl Kinds for Error {
 /// The point with its places exchanged.
 #[must_use]
 pub fn mirror(point: &Point) -> Point {
-    Point { x: point.y, y: point.x }
+    Point {
+        x: point.y,
+        y: point.x,
+    }
 }
 
 /// The point raised by the amount.

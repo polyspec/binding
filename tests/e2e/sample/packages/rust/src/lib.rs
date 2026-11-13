@@ -128,7 +128,11 @@ pub fn resolve(lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Err
 /// # Errors
 ///
 /// Kind `missing` when the lookup holds no value, and the failure of the lookup.
-pub fn resolve_slowly(_io: binding_core::Io, lookup: &mut dyn Lookup, key: &str) -> Result<String, Failure<Error>> {
+pub fn resolve_slowly(
+    _io: binding_core::Io,
+    lookup: &mut dyn Lookup,
+    key: &str,
+) -> Result<String, Failure<Error>> {
     resolve(lookup, key)
 }
 
