@@ -109,7 +109,10 @@
   `SystemError`; the destructor now takes that exception and sets it again after the warning. PHP: the warning reads
   `<function>(): Lease was destroyed …`, because PHP puts the running function before the message, so the B-10 test
   requires a message that ends with the text. Go: the poison entry point of B-5c called `held_lease`, which the helper
-  block had dropped because only that test entry uses it; the helper is now kept.
+  block had dropped because only that test entry uses it; the helper is now kept. Verified for Python and PHP by
+  `make e2e` of `tests/e2e/classes`, whose record is evidence: PHP passed 60 generated tests and 4 contract cases, and
+  Python 58 and 4; Go failed in that run because `held_lease` was unused without `panic-test`, which the entry above
+  fixes.
 - A member with `wait: blocking_io` whose parameter or receiver carries language code was refused by every target
   ("a member with wait blocking_io that reaches language code is not generated (GN-6m)"), so `engine.load`, `prepare`
   and `prepare_bound` of a template engine with a host loader had no binding. PHP and Python now generate it as GN-6m
@@ -334,7 +337,9 @@
 - The cores of `tests/e2e/shapes` and `tests/e2e/sample` converted lengths and indexes with `as`, which the lints of
   R-1 that their workspaces now hold deny, so the lint of the core failed every target. A length widens through one
   function with the reason of its conversion, an index converts with `usize::try_from`, and the integer of a data
-  value is the nearest float with the reason of U-7.
+  value is the nearest float with the reason of U-7. Verified by `make e2e`
+  of `tests/e2e/shapes`, whose record is evidence and passed in every target (PHP 74, Python 86, Node 87, Go 50 and
+  WASM 85 tests), and of `tests/e2e/sample`, whose record is evidence and passed the lint of the core in every target.
 - A case that armed a fault injection point of another library (`<library>.<id>`) ran against a binding crate whose
   `fault-test` turned on the feature of its own core alone, so the point of the other core was not compiled and the
   case could not arm it, and `binding check` did not report the manifest. `binding scaffold` now reads the libraries
