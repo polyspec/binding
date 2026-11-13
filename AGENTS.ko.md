@@ -46,7 +46,9 @@
   Enforced by: none, 계약이 적는 target은 검토에서 읽는다. 끝에서 끝까지 확인이 거부된 target을 하나씩 이름한다.
 - Own: 생성기, `binding_core`, 끝에서 끝까지 확인을 바꾸는 commit은 push나 merge 전에 그 commit의 끝에서 끝까지
   확인(`make e2e BINDING=<commit>`, GN-14와 GN-14b)을 통과하고, 실패는 새 commit으로 고치며 그 commit도 같은 방법으로
-  확인한다. 기록(`var/report/e2e/`)이 그 commit의 증거라고 적은 실행만 센다. 이유: 작업 tree의 실행은 어느 commit에도 없는
+  확인한다. 기록(`var/report/e2e/`)이 그 commit의 증거라고 적은 실행만 센다: `scripts/e2e-inputs.mts`의 닫힌 목록
+  `READ_FROM_CHECKOUT`의 어느 파일도 그 commit과 다르지 않아야 하며, 실행이 읽는 추적 파일은 그것을 더하는 변경에서 그 목록에
+  더한다. 이유: 작업 tree의 실행은 어느 commit에도 없는
   생성기를 다른 commit의 `binding_core`와 함께 확인하므로 둘이 갈릴 수 있고, 그 결과는 push나 merge가 나르는 어느 commit의
   것도 아니다.
   Enforced by: none, 그 확인은 모든 target과 그 runner가 필요하며 어느 단위 시험도 소유하지 않는다. 기록이 실행마다 그

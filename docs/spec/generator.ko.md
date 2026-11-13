@@ -497,12 +497,36 @@
   `binding_core`(각 사본의 lock이 그 commit을 고정한다), `tests/e2e`의 case runner와 스크립트가 한 commit의 것이다. checkout
   안의 레포(`tests/e2e/<library>`)도 그 tree에서 읽는다. 실행은 Git이 무시하는 checkout의 `var/report/e2e/<library>.json`에
   기록을 쓴다: commit, 실행이 증거인지 진단인지와 그 이유, 레포들의 커밋, target마다 돈 것. 실행이 checkout에서 읽는
-  파일(`Makefile`, `scripts/e2e.mts`, AGENTS.md의 도구 고정 파일, `package.json`, `package-lock.json`, `.npmrc`)이 그 commit에
-  대해 커밋된 것이든 커밋되지 않은 것이든 추적되지 않은 것이든 변경이 없고, 빌드나 runner를 바꾸는 변수(`RUSTFLAGS`,
+  파일이 그 commit에 대해 커밋된 것이든 커밋되지 않은 것이든 추적되지 않은 것이든 변경이 없고, 빌드나 runner를 바꾸는 변수(`RUSTFLAGS`,
   `CARGO_TARGET_*`, `CARGO_BUILD_*`, `CARGO_PROFILE_*` 변수, `CGO_*`, `GOFLAGS`, `NODE_OPTIONS`, `PYTHONPATH`, `PHPRC` 등)를 손으로
   주지 않았을 때만 실행은 그 commit의 증거다. 그렇지 않으면 기록은 실행을 진단으로 적고(그 파일의 변경이면 `diagnosis (not a
   commit)`) 이유를 적는다. 이유: 작업 tree의 실행은 어느 commit에도 없는 생성기를 다른 commit의 `binding_core`와 함께
   확인하므로, 그 결과는 push나 merge가 나르는 어느 commit의 것도 아니다.
+  실행이 checkout에서 읽는 파일은 닫힌 목록 하나, `scripts/e2e-inputs.mts`의 `READ_FROM_CHECKOUT`이며 파일마다 이유가 있다.
+
+  | 파일 | 실행이 읽는 이유 |
+  | --- | --- |
+  | `Makefile` | `make e2e`가 그 recipe를 실행하며, recipe가 mise의 환경과 `var/tools`의 `PATH`를 정한다 |
+  | `scripts/e2e.mts` | checkout의 스크립트가 commit의 tree를 쓰고 그 tree의 스크립트를 시작한다 |
+  | `scripts/e2e-inputs.mts` | checkout의 스크립트가 이 목록을 읽는다 |
+  | `mise.toml` | mise가 거기 선언된 `var/tools`의 도구를 실행하고, 실행은 그것을 mise의 전역 설정으로 읽는다 |
+  | `mise.lock` | `var/tools`가 가진 `mise.toml` 도구의 digest를 고정한다 |
+  | `.mise/locks/npm-npm/12.2.0/package.json`, `.mise/locks/npm-npm/12.2.0/aube-lock.yaml` | mise가 그것으로 `mise.toml`의 npm을 설치하며, 둘째 파일이 그 integrity를 고정한다 |
+  | `rust-toolchain.toml` | 그 channel이 모든 명령의 Rust toolchain(`RUSTUP_TOOLCHAIN`)이고, `make install`이 설치하는 component와 target을 적는다 |
+  | `.php-version` | 실행이 `var/tools/bin/php`의 minor를 그것과 비교한다 |
+  | `config/toolchain.json` | `var/tools`의 mise와 PHPUnit의 릴리스를 고정한다 |
+  | `config/phpunit/composer.json`, `config/phpunit/composer.lock` | `var/tools/phpunit`의 PHPUnit을 선언하고 고정한다 |
+  | `package.json`, `package-lock.json` | `devEngines`가 npm을 적고, `var/tools`의 도구를 설치하는 `@polyspec/kit`을 선언하고 고정한다 |
+  | `.npmrc` | checkout의 패키지를 설치하는 npm을 설정한다 |
+  | `.gitignore` | 실행이 이 목록의 추적되지 않은 파일을 `git ls-files --exclude-standard`로 찾으며, 그것이 이 파일을 읽는다 |
+
+  같은 파일의 `NOT_READ`는 실행이 읽지 않는 추적 파일을 이유와 함께 적는다(`.gitattributes`: `git archive`는 commit tree의
+  속성을 읽고, `git diff --name-only`는 속성과 관계없이 파일을 적는다). `packages/ts`의 그 목록 시험은 `packages/`, `tests/`,
+  `docs/` 밖의 문서가 아닌 추적 파일이 어느 목록에도 없으면 실패하고, 목록의 파일이 추적되지 않아도 실패한다. checkout의
+  스크립트는 생성기의 소스를 import하지 않는다: commit tree의 스크립트가 시작 뒤에 그것을 읽는다. 이유: 새 파일이 보이지 않게
+  지나갈 수 있는 목록은 어느 실행이 증거인지 말하지 못하고, 목록의 디렉터리는 어느 실행도 읽지 않는 파일까지 비교한다.
+  `var/tools`가 가진 도구는 추적 파일이 아니다. 실행은 각 도구를 이 목록의 고정으로 찾으며(GN-14a), 고정은 그대로인데 도구가
+  고정과 다르면 이 검사는 그것을 보지 못한다.
 - **GN-14c** target마다 자기 파일을 생성하고(`binding generate --target`, GN-1b) 빌드하고 시험을 따로 끝까지 실행한다.
   실패한 단계는 그 target의 원인이 되고, 그 단계가 주는 것을 읽는 그 target의 뒤 단계는 돌지 않으며, 다른 target은 계속한다.
   코어의 lint와 모든 target이 필요로 하는 레포의 단계(사본과 그 변경, 코어 시험, `binding check`, case)는 모든 target을

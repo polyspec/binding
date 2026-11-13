@@ -607,13 +607,39 @@ the design ids are those of the binding design.
   `tests/e2e` and the script are of one commit; a repository inside the checkout (`tests/e2e/<library>`) is read from
   that tree too. The run writes its record into `var/report/e2e/<library>.json` of the checkout, which Git ignores: the
   commit, whether the run is evidence or a diagnosis and why, the commits of the repositories and what ran for each
-  target. The run is evidence of the commit only when the files that it reads from the checkout (the `Makefile`,
-  `scripts/e2e.mts`, the tool pins of AGENTS.md, `package.json`, `package-lock.json` and `.npmrc`) have no change against
+  target. The run is evidence of the commit only when the files that it reads from the checkout have no change against
   the commit, committed, uncommitted or untracked, and no variable that changes a build or a runner (`RUSTFLAGS`, the
   `CARGO_TARGET_*`, `CARGO_BUILD_*` and `CARGO_PROFILE_*` variables, `CGO_*`, `GOFLAGS`, `NODE_OPTIONS`, `PYTHONPATH`, `PHPRC`
   and the like) is given by hand; otherwise the record names the run a diagnosis (`diagnosis (not a commit)` for a
   change of those files) and states why. Why: a run of the working tree checks a generator that no commit holds,
   against a `binding_core` of another commit, so the result belongs to no commit that a push or a merge carries.
+  The files that a run reads from the checkout are one closed list, `READ_FROM_CHECKOUT` of `scripts/e2e-inputs.mts`,
+  each with its reason:
+
+  | File | Why the run reads it |
+  | --- | --- |
+  | `Makefile` | `make e2e` runs its recipe, which sets the environment of mise and the `PATH` of `var/tools` |
+  | `scripts/e2e.mts` | the script of the checkout writes the tree of the commit and starts the script of that tree |
+  | `scripts/e2e-inputs.mts` | the script of the checkout reads this list |
+  | `mise.toml` | mise runs the tools of `var/tools` that it declares, and the run reads it as the global configuration of mise |
+  | `mise.lock` | it pins the digests of the tools of `mise.toml` that `var/tools` holds |
+  | `.mise/locks/npm-npm/12.2.0/package.json`, `.mise/locks/npm-npm/12.2.0/aube-lock.yaml` | mise installs the npm of `mise.toml` from them, at the integrity that the second pins |
+  | `rust-toolchain.toml` | its channel is the Rust toolchain of every command (`RUSTUP_TOOLCHAIN`), with the components and targets that `make install` installs |
+  | `.php-version` | the run compares the minor of `var/tools/bin/php` with it |
+  | `config/toolchain.json` | it pins the mise of `var/tools` and the release of PHPUnit |
+  | `config/phpunit/composer.json`, `config/phpunit/composer.lock` | they declare and pin the PHPUnit of `var/tools/phpunit` |
+  | `package.json`, `package-lock.json` | `devEngines` names the npm, and they declare and pin `@polyspec/kit`, which installs the tools of `var/tools` |
+  | `.npmrc` | it sets the npm that installs the packages of the checkout |
+  | `.gitignore` | the run finds an untracked file of this list with `git ls-files --exclude-standard`, which reads it |
+
+  `NOT_READ` of the same file names the tracked files that a run does not read, with the reason (`.gitattributes`: `git
+  archive` reads the attributes of the tree of the commit, and `git diff --name-only` names a file whatever its
+  attributes). The test of the list in `packages/ts` fails a tracked file outside `packages/`, `tests/` and `docs/` that
+  is not a document and is in neither list, and a listed file that is not tracked. The script of the checkout imports
+  no source of the generator: the script of the tree of the commit loads them after the start. Why: a list that a
+  new file can pass unseen does not say which runs are evidence, and a directory in the list would compare files that
+  no run reads. The tools that `var/tools` holds are not a tracked file; the run finds each by the pin of this list
+  (GN-14a), and a tool that differs from its pin while the pin does not change is not seen by this check.
 - **GN-14c** Each target generates its files (`binding generate --target`, GN-1b), builds and runs its tests on its
   own, to its end: a step that fails is a cause of its target, the later steps of that target, which read what the
   failed step gives, do not run, and the other targets go on. The lint of the core and the steps of a repository that

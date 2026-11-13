@@ -1,0 +1,34 @@
+// GN-14b: the files that a run of the end-to-end check reads from the checkout that starts it, and not from the tree
+// of the commit that it checks. A run is evidence of the commit only when each of these files of the working tree is
+// the file of the commit, without a committed, uncommitted or untracked change; otherwise the run is a diagnosis. The
+// list is closed: every tracked file of binding outside packages/, tests/ and docs/ that is not a document is either
+// read (READ_FROM_CHECKOUT) or not (NOT_READ), each with its reason, and a test of packages/ts fails a tracked file
+// that is in neither, so a new file of the checkout cannot reach a run unseen.
+
+export interface Input {
+  path: string;
+  why: string;
+}
+
+export const READ_FROM_CHECKOUT: readonly Input[] = [
+  { path: 'Makefile', why: 'make e2e runs its recipe, which sets the environment of mise and the PATH of var/tools' },
+  { path: 'scripts/e2e.mts', why: 'the script of the checkout writes the tree of the commit and starts the script of that tree' },
+  { path: 'scripts/e2e-inputs.mts', why: 'the script of the checkout reads this list' },
+  { path: 'mise.toml', why: 'mise runs the tools of var/tools that it declares, and the run reads it as the global configuration of mise' },
+  { path: 'mise.lock', why: 'it pins the digests of the tools of mise.toml that var/tools holds' },
+  { path: '.mise/locks/npm-npm/12.2.0/package.json', why: 'mise installs the npm of mise.toml from it' },
+  { path: '.mise/locks/npm-npm/12.2.0/aube-lock.yaml', why: 'it pins the integrity of the npm of mise.toml' },
+  { path: 'rust-toolchain.toml', why: 'its channel is the Rust toolchain of every command (RUSTUP_TOOLCHAIN), with the components and targets that make install installs' },
+  { path: '.php-version', why: 'the run compares the minor of var/tools/bin/php with it' },
+  { path: 'config/toolchain.json', why: 'it pins the mise of var/tools and the release of PHPUnit' },
+  { path: 'config/phpunit/composer.json', why: 'it declares the PHPUnit of var/tools/phpunit that runs the PHP tests' },
+  { path: 'config/phpunit/composer.lock', why: 'it pins the PHPUnit of var/tools/phpunit' },
+  { path: 'package.json', why: 'its devEngines name the npm, and it declares @polyspec/kit, which installs the tools of var/tools' },
+  { path: 'package-lock.json', why: 'it pins @polyspec/kit, which installs the tools of var/tools' },
+  { path: '.npmrc', why: 'it sets the npm that installs the packages of the checkout' },
+  { path: '.gitignore', why: 'the run finds an untracked file of this list with git ls-files --exclude-standard, which reads it' },
+];
+
+export const NOT_READ: readonly Input[] = [
+  { path: '.gitattributes', why: 'git archive reads the attributes of the tree of the commit, and git diff --name-only names a file whatever its attributes' },
+];

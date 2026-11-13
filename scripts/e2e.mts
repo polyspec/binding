@@ -31,9 +31,8 @@
 import { execFileSync, spawnSync, type ExecFileSyncOptions } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { libraryParts } from '../packages/ts/src/check.ts';
-import { CATEGORIES, type Contract, type Lang, type Type, type Unit } from '../packages/ts/src/contract.ts';
-import { convert, libraryName } from '../packages/ts/src/names.ts';
+import type { Contract, Lang, Type, Unit } from '../packages/ts/src/contract.ts';
+import { READ_FROM_CHECKOUT } from './e2e-inputs.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -89,6 +88,12 @@ if (args.get('--checkout') === undefined) {
   process.exit(child.status ?? 1);
 }
 
+// The script of the checkout reads no source of the generator (READ_FROM_CHECKOUT, GN-14b): the script of the tree of
+// the commit loads them here.
+const { libraryParts } = await import('../packages/ts/src/check.ts');
+const { CATEGORIES } = await import('../packages/ts/src/contract.ts');
+const { convert, libraryName } = await import('../packages/ts/src/names.ts');
+
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
 const commit = args.get('--binding') ?? '';
@@ -98,16 +103,16 @@ const cli = join(binding, 'packages/ts/src/cli.ts');
 const target = join(work, 'target');
 
 // GN-14b: a run is evidence of the commit only when nothing outside the commit could change it. The run reads from the
-// checkout the Makefile, the script that started it and the tools that var/tools installed from the tool pins, so these
-// files of the working tree must be those of the commit, without an uncommitted or untracked change; and no variable of
-// the environment that changes a build or a runner may be given by hand. Otherwise the run is a diagnosis, and its
-// record says why. Other files of the working tree do not reach the run, which reads the tree of the commit.
-const READ_FROM_CHECKOUT = ['Makefile', 'scripts/e2e.mts', 'mise.toml', 'mise.lock', 'rust-toolchain.toml', '.php-version', 'config', 'package.json', 'package-lock.json', '.npmrc'];
+// checkout the files of READ_FROM_CHECKOUT (scripts/e2e-inputs.mts, a closed list), so these files of the working tree
+// must be those of the commit, without a committed, uncommitted or untracked change; and no variable of the environment
+// that changes a build or a runner may be given by hand. Otherwise the run is a diagnosis, and its record says why.
+// Other files of the working tree do not reach the run, which reads the tree of the commit.
+const readFromCheckout = READ_FROM_CHECKOUT.map((input) => input.path);
 const BY_HAND = /^(RUSTFLAGS|RUSTDOCFLAGS|RUSTC|RUSTC_WRAPPER|RUSTUP_TOOLCHAIN|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_.*|CARGO_TARGET_.*|CARGO_PROFILE_.*|CGO_.*|GOFLAGS|PYTHONPATH|PYTHONHOME|NODE_OPTIONS|NODE_PATH|PHPRC|PHP_INI_SCAN_DIR)$/;
 const diagnosis: string[] = [];
 const changed = [
-  ...git(checkout, ['diff', '--name-only', commit, '--', ...READ_FROM_CHECKOUT]).split('\n'),
-  ...git(checkout, ['ls-files', '--others', '--exclude-standard', '--', ...READ_FROM_CHECKOUT]).split('\n'),
+  ...git(checkout, ['diff', '--name-only', commit, '--', ...readFromCheckout]).split('\n'),
+  ...git(checkout, ['ls-files', '--others', '--exclude-standard', '--', ...readFromCheckout]).split('\n'),
 ].filter((line) => line !== '');
 if (changed.length > 0) diagnosis.push(`diagnosis (not a commit): the checkout holds ${changed.join(', ')} other than the commit has them`);
 for (const [name, value] of Object.entries(process.env)) {
