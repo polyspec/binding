@@ -688,6 +688,13 @@ if (targets.includes('go')) {
     })) lintOf('go', `llvm-nm: the static library${of} without features holds no test entry point`);
     stepOf(['go'], `build the static library${of} with the test features`, () => {
       run('cargo', ['build', '--manifest-path', join(p.copy, 'Cargo.toml'), '-p', `${crate}-go`, '--features', testFeatures(p, 'go')]);
+      // GN-15f: the Go module of a dependency that go.mod requires is built in the same program, so its static library
+      // is built into the same directory, with its own test features, whose build tags the run gives every package.
+      const goMod = readFileSync(join(goModule, 'go.mod'), 'utf8');
+      for (const d of dependencies.filter((d) => d.contract.targets.includes('go'))) {
+        const module = (d.contract.packages['go'] as { module: string }).module;
+        if (new RegExp(`^require ${module.replaceAll('.', '\\.')} |^\\t${module.replaceAll('.', '\\.')} `, 'm').test(goMod)) run('cargo', ['build', '--manifest-path', join(d.copy, 'Cargo.toml'), '-p', `${d.contract.core.crate}-go`, '--features', testFeatures(d, 'go')]);
+      }
       if (goCases && i === 0) {
         mkdirSync(join(goModule, 'tests'), { recursive: true });
         copyFileSync(join(e2e, 'cases_test.go'), join(goModule, 'tests/cases_test.go'));

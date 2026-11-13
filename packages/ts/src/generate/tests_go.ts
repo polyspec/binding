@@ -720,6 +720,8 @@ function testImports(model: Model, module: string, text: string, scope: GoScope)
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
     ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
+    // GN-15f: the packages of other repositories whose records the tests name.
+    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path]) => `"${path}"`),
   ];
   return goImportBlock(std, own);
 }

@@ -664,6 +664,9 @@ test('scaffold rewrites its packages after the core crate was renamed, without a
   try {
     const manifest = join(root, 'packages/rust/Cargo.toml');
     writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = "../../dep" }\n`);
+    // GN-15f: scaffold reads the contract of a path dependency from that path, without Cargo, for go.mod.
+    execFileSync('mkdir', ['-p', join(root, 'dep')]);
+    writeFileSync(join(root, 'dep/interface.json'), JSON.stringify({ library: 'forms-dep', units: [{ id: 'dep_part', kind: 'enum' }] }));
     execFileSync('mkdir', ['-p', join(root, 'bin')]);
     // A cargo that fails as it does when a binding manifest names a crate that no longer exists.
     writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
