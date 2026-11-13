@@ -119,6 +119,7 @@
   | `panic-test` | B-7, B-5c의 poison(GN-6h) | `_panic_test`, `_panic_test_held` | `__panicTest`, `__panicTestHeld` | `<namespace>\Internal\panicTest`, `panicTestHeld` | `<prefix>__panic_test` |
   | `codec-test` | Go 값 변환의 왕복(GN-13b), 값 alias의 `in` 함수만 실행(U-7) | `_alias_in_<alias>` | `__aliasIn<Alias>` | `<namespace>\Internal\aliasIn<Alias>` | `<prefix>__echo_<type>`. WASM은 `__aliasIn<Alias>` |
   | `fault-test` | 실패 주입(GN-8a) | `_arm_faults`, `_fault_left` | `__armFaults`, `__faultLeft` | `<namespace>\Internal\armFaults`, `faultLeft` | 아직 없음. WASM은 `__armFaults`, `__faultLeft` |
+  | `case-test` | 인자가 그 언어에서 꼴을 갖지 않는 case(GN-13) | 아직 없음 | 아직 없음 | `<namespace>\Internal\caseTest<n>` | 아직 없음. WASM도 아직 없음 |
 
   쓰기 쪽 자리가 있는 class(GN-6h)를 가진 계약에서는 `panic-test`가 B-5c 시험의 poison 진입점도 더한다. 그 진입점은
   인스턴스를 받아 쓰기 guard를 얻고 panic한다. 이 진입점들은 일부러 panic하므로, 각각 B-7을 이유로 적은
@@ -532,8 +533,17 @@
   주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
   `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP reference는 배열이나 property의
   자리이므로, 자리에 `{"kind": "reference", "value": {"id", "value"}}`를 가진 PHP case 값은 id마다 변수 하나를 정하고
-  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. 그런 자리가 아닌 reference, 곧 값 자체나
-  reference의 값인 reference는 PHP 형태가 없으며, 그 case의 시험은 그 이유로 실패한다(G-4).
+  그 자리가 변수를 reference로 받는 값을 돌려주는 closure 안에서 만든다. 인자가 어떤 target의 언어에서 꼴을 갖지 않아 그
+  언어의 어떤 호출로도 줄 수 없는 case는, `panic-test`, `fault-test`와 나란한 그 target의 feature `case-test`(GN-5)의
+  진입점으로 실행한다. 진입점은 인자를 바인딩 자신의 인코딩, 곧 바인딩이 기술하는 host 값(B-1)이나 Go C ABI의 값
+  stream(B-8)으로 만들어, 호출이 쓰는 것과 같은 변환(value alias의 `in` 함수, 인자의 decode)에 넘긴다. 그 시험은 case의
+  클래스와 kind를, 실패하지 않는 case면 실패가 없음을 요구한다. 진입점과 그 시험의 doc comment는 그 언어에 꼴이 없는
+  이유를 적는다. case를 빼지도, 실패하는 시험으로 생성하지도 않는다. 빼면 그 target에서 코어 규칙이 검증되지 않고,
+  실패로 두면 종단 검사가 영원히 통과하지 않기 때문이다. target에 그런 case가 있으면 crate는 `case-test = []`를 갖고,
+  그 feature 없이 빌드한 결과에는 진입점이 없다(종단 검사가 `llvm-nm`으로 심볼을 읽는다). 지금까지: PHP에서는 배열이나
+  property의 자리가 아닌 reference(값 자체, 또는 reference의 값)를 host 값으로 만들어 그 alias의 `in` 함수에 준다. Go(예:
+  `int64` parameter에 text처럼, parameter의 Go 타입이 담지 않는 kind의 인자)는 Go 생성기가 생성하며, 그때까지 이름을 대고
+  거부한다. Python, Node, WASM에는 아직 그런 case가 없다.
 - **GN-13a** 아직 생성하지 않는 G-5 항목: B-5b, B-6, B-10, B-5c 가운데 기다리는 호출과 겹친 호출의 시험과 callback 안에서
   같은 객체로 다시 들어온 호출의 시험, 생성자나 static member가 만들지 않는 class의 B-5c 시험, GN-13d가 빼는 member의 기본값의 동일성, value unit 행의 왕복, 그리고 callback
   fixture에서 실패를 던지는 행(`raise`), `async` 행, 함수 값, 다른 타입 안의 callback. case가 이것을 주면 이름을 대고

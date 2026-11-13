@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import type { Lang } from '../src/contract.ts';
-import { generate as generateTargets, type Inputs } from '../src/generate/index.ts';
+import { caseTestTargets, generate as generateTargets, type Inputs } from '../src/generate/index.ts';
 import { carriers } from '../src/generate/model.ts';
 import { fromJson } from '../src/generate/samples.ts';
 import { closure } from '../src/generate/text.ts';
@@ -1779,6 +1779,15 @@ test('PHP makes a stdClass and a reference with their identity, and a case value
   const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
   // A shared reference is one variable, which both places take by reference.
   assert.match(tests, /\(static function \(\) \{ \$r0 = "x"; return \[&\$r0, &\$r0\]; \}\)\(\)/);
-  // A reference that is the value itself has no PHP form: its test fails with the reason.
-  assert.match(tests, /public function testGn13esameATopReference\(\): void\n {4}\{\n {8}self::fail\("[^"]*no place of an array or of a property[^"]*"\);/);
+  // A reference that is the value itself has no PHP form: the entry point of case-test gives it as host values to the
+  // in function of the alias, and the test runs it.
+  assert.match(tests, /because the value has no PHP form: a reference that is no place of an array or of a property[^\n]*\n {5}\*\/\n {4}public function testGn13esameATopReference\(\): void\n {4}\{\n {8}\\Polyspec\\Sample\\Internal\\caseTest0\(\);\n {8}self::addToAssertionCount\(1\);/);
+  assert.doesNotMatch(tests, /self::fail\("[^"]*no place of an array/);
+  assert.match(lib, /#\[cfg\(feature = "case-test"\)\]\n {4}#\[php_function\]\n {4}#\[php\(name = "Polyspec\\\\Sample\\\\Internal\\\\caseTest0"\)\]\n {4}pub fn case_test_0\(\) -> Result<\(\), PhpException> \{/);
+  assert.match(lib, /let value = HostValue::PhpReference \{ identity: Handle::new\(0\), target: Box::new\(HostValue::Text\(HostText::Bytes\(vec!\[120_u8\]\)\)\) \};\n\s*let _value: polyspec_sample::Data = polyspec_sample::data_from_host\(&mut host, value\)/);
+  assert.match(lib, /#\[cfg\(feature = "case-test"\)\]\n {8}let module = module\.function\(wrap_function!\(case_test_0\)\);/);
+  // The PHP crate has the feature case-test, because PHP has such a case.
+  assert.deepEqual(caseTestTargets({ contract: sample, caseFiles: cases }), ['php']);
+  assert.match(String(trackedPackages(sample, '0.0.0', new Map(), [], ['php']).get('packages/php-ext/Cargo.toml')), /\npanic-test = \[\]\ncase-test = \[\]\n/);
+  assert.doesNotMatch(String(trackedPackages(sample, '0.0.0').get('packages/php-ext/Cargo.toml')), /case-test/);
 });
