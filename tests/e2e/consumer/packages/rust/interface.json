@@ -320,6 +320,56 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_consumer::copy"
+        },
+        {
+          "id": "consumer.turned",
+          "name": [
+            "turned"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "note"
+              ],
+              "type": {
+                "unit": "note"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "note"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::turned"
+        },
+        {
+          "id": "consumer.weight",
+          "name": [
+            "weight"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "notes"
+              ],
+              "type": {
+                "list": {
+                  "unit": "note"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_consumer::weight"
         }
       ]
     },
@@ -370,6 +420,65 @@
           }
         }
       ]
+    },
+    {
+      "id": "note",
+      "name": [
+        "note"
+      ],
+      "module": "",
+      "kind": "variant",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_consumer::Note",
+      "tag": [
+        "kind"
+      ],
+      "cases": [
+        {
+          "value": "blank",
+          "fields": []
+        },
+        {
+          "value": "single",
+          "fields": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "data",
+                "library": "sample"
+              },
+              "required": true
+            }
+          ]
+        },
+        {
+          "value": "page",
+          "fields": [
+            {
+              "name": [
+                "status"
+              ],
+              "type": "uint",
+              "required": true
+            },
+            {
+              "name": [
+                "data"
+              ],
+              "type": {
+                "map": {
+                  "unit": "data",
+                  "library": "sample"
+                }
+              },
+              "required": true
+            }
+          ]
+        }
+      ]
     }
   ],
   "changes": [],
@@ -393,6 +502,16 @@
       "member": "consumer.copy",
       "file": "contracts/cases.json",
       "group": "copy"
+    },
+    {
+      "member": "consumer.turned",
+      "file": "contracts/cases.json",
+      "group": "turned"
+    },
+    {
+      "member": "consumer.weight",
+      "file": "contracts/cases.json",
+      "group": "weight"
     }
   ]
 }

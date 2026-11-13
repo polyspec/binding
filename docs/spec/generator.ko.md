@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4be3e397e75dc7678abe6b01e67b1b0fbf6c3342ca62212b734b99e5529a41fc -->
+<!-- source-sha256: 029bce4b413a5719e4cff108e93f2a9baba021570ee962ecc3ef9d4de23b2a09 -->
 # 생성기
 
 [English](generator.md)
@@ -231,7 +231,13 @@
   선택적으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고(GN-6i), Go는 field의 포인터를 nil로 두며, case 값은 그 키를
   뺄 수 있다. 그런 field는 늘 그 값이나
   null로 나간다. 이름으로 거부한다: `core_type`이 없는 variant, Rust 이름이 같은 두 case, tag의 이름을 가진 field, 그리고 아직
-  생성하지 않는 그 밖의 case field 기본값과 class·callback·값 alias·다른 레포의 unit을 담는 field.
+  생성하지 않는 그 밖의 case field 기본값과 이 계약의 class·callback·값 alias를 담는 field.
+  case의 field는 record의 field처럼 다른 레포의 unit(T-3, GN-6c)을 담는다: 내장 타입 field만 가진 record, 그 레포의 값
+  alias, 그 레포의 value class이며, `list`·`optional`·`map`·`keyed_map`·tuple 안에 있어도 된다. variant의 변환은 그
+  unit의 변환(`in_<library>_<unit>`, `out_<library>_<unit>`)을 부르고 그 변환에 필요한 것을 받는다: Node에서는 모든
+  record와 variant의 `in` 변환이 env를 첫 인자로 받는다. 값 alias와 class가 env를 읽기 때문이다. Go에서는 case에 값
+  alias나 callback이 있는 variant의 함수 `encode<Variant>`가 member의 call을 첫 인자로 받는다. 그 call이 값을 훑기
+  때문이다. case의 결과 형태는 GN-6c가 target마다 적은 대로 그 unit을 이름한다.
   이유: case의 언어 값이 어느 case인지 말하므로 바인딩은 짐작 없이 바꾸고, wildcard 없는 match는 한쪽에 없는 case를 실행 중
   잃는 값 대신 컴파일 오류로 만든다.
 - **GN-6b** class unit(T-5)은 코어 값을 가진 final 언어 클래스다: Python은 native module의 frozen `pyclass`, Node는 JavaScript

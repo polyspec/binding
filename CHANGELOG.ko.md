@@ -1,11 +1,22 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 379c1f21f8a7aedebc78e78bc0f870c69ffaba2df1cbe4a8f55c7652830974a5 -->
+<!-- source-sha256: 448d379f2639c2347c14aa5db511f0278a53aa6eebbc2af3fc80e4a8abebe8e4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 다른 레포의 unit을 담는 variant case의 field는 이름을 대고 거부되었다(`a unit of another repository in a case of a
+  variant is not generated yet`). 이제 그런 field를 다섯 target에서 생성한다. 다른 레포의 record, 값 alias, value class가
+  대상이며 list·optional·map·keyed map·tuple 안에 있어도 된다. variant의 변환이 그 unit의 변환을 부른다. 두 변환은 그
+  변환에 필요한 것을 받지 않았다. Node에서 record와 variant의 `in` 변환에는 env가 없었는데 값 alias나 class의 변환이
+  env를 읽으므로, 이제 그런 변환은 모두 env를 첫 parameter로 받는다. Go에서 함수 `encode<Variant>`에는 call이 없었는데
+  call이 값 alias의 값을 훑으므로, case에 값 alias나 callback이 있는 variant의 함수는 이제 member의 call을 먼저 받는다.
+  `tests/e2e/consumer`에 variant `note`가 생겼다. 그 case는 `tests/e2e/sample`의 값 alias `data`를 field와 map의 값으로
+  담고, member `turned`와 `weight`, 그 case가 함께 있다. `tests/e2e/plot`에 variant `mark`가 생겼다. 그 case는
+  `tests/e2e/points`의 record `point`를 field, list, optional로 담고, member `flipped`와 그 case가 함께 있다. 계약 자신의
+  class·callback·값 alias를 담는 case는 여전히 이름을 대고 거부한다(T-9, T-3, GN-6v, GN-6c). `make test-ts`로 확인했다:
+  414개 중 414개가 통과한다.
 - 생성된 Node와 WASM 테스트는 호출의 가운데에서 기본값이 있는 parameter를 생략할 때 그 인자를 빼 버렸고, 그래서 options
   record가 그 자리에 섰다: `pkg.pad('ab', { end: '!' })`는 record를 `fill`로 주었고, `tests/e2e/shapes`의 `pad` 테스트 셋이
   두 target 각각에서 kind `invalid_argument_type`으로 실패했다. 이 작업 이전 커밋의 테스트도 같은 호출을 썼다. 이제

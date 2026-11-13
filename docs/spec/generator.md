@@ -287,8 +287,15 @@ the design ids are those of the binding design.
   member as null and declare the member optional, PHP takes null at its place in the constructor (GN-6i), Go leaves
   the pointer of the field nil, and a case value may leave out its key. Such a field always leaves with its value or null.
   Refused by name: a variant without `core_type`, two cases with one Rust name, a field with the name of the tag, and,
-  not generated yet, any other field default of a case and a field that holds a class, a callback, a value alias or a
-  unit of another repository.
+  not generated yet, any other field default of a case and a field that holds a class, a callback or a value alias
+  of this contract.
+  A field of a case holds a unit of another repository (T-3, GN-6c) as a field of a record does: a record with
+  fields of built-in types, a value alias or a value class of that repository, also inside a `list`, an `optional`,
+  a `map`, a `keyed_map` or a tuple. The conversions of the variant call the conversions of that unit
+  (`in_<library>_<unit>`, `out_<library>_<unit>`) and take what those need: in Node the `in` conversion of every
+  record and variant takes the env first, which a value alias and a class read, and in Go the function `encode<Variant>`
+  of a variant with a value alias or a callback in a case takes the call of the member first, which walks the value.
+  The result form of the case names the unit as GN-6c states for each target.
   Why: the language value of a case says which case it is, so the binding converts it without a guess, and a match
   without a wildcard makes a case that one side lacks a compile error instead of a value lost at run time.
 - **GN-6b** A class unit (T-5) is a final language class that holds the core value: Python a frozen `pyclass` of the

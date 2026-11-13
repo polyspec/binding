@@ -5,6 +5,19 @@
 
 ## Unreleased
 
+- A field of a case of a variant that holds a unit of another repository was refused by name (`a unit of another
+  repository in a case of a variant is not generated yet`). Such a field is now generated in the five targets for a
+  record, a value alias and a value class of another repository, also inside a list, an optional, a map, a keyed map
+  or a tuple: the conversions of the variant call the conversions of that unit. Two conversions took less than those
+  need. In Node the `in` conversion of a record and of a variant had no env, which the conversion of a value alias or
+  a class reads, so every such conversion now takes the env as its first parameter. In Go the function
+  `encode<Variant>` had no call, which walks the value of a value alias, so the function of a variant with a value
+  alias or a callback in a case now takes the call of the member first. `tests/e2e/consumer` has the variant `note`,
+  whose cases hold the value alias `data` of `tests/e2e/sample` as a field and as the values of a map, with the
+  members `turned` and `weight` and their cases; `tests/e2e/plot` has the variant `mark`, whose cases hold the record
+  `point` of `tests/e2e/points` as a field, in a list and in an optional, with the member `flipped` and its cases. A
+  class, a callback and a value alias of the contract itself in a case stay refused by name (T-9, T-3, GN-6v,
+  GN-6c). Verified by `make test-ts`: 414 of 414 pass.
 - The generated Node and WASM tests left a parameter with a default out of the middle of a call by dropping it, so
   the options record stood in its place: `pkg.pad('ab', { end: '!' })` gave the record as `fill`, and three tests of
   `pad` of `tests/e2e/shapes` failed in each of the two targets with kind `invalid_argument_type`; the tests of the

@@ -1855,7 +1855,8 @@ function heldInCase(type: Type, units: Map<string, Unit>, seen: Set<string> = ne
   if ('optional' in type) return heldInCase(type.optional, units, seen);
   if ('tuple' in type) return type.tuple.map((part) => heldInCase(part, units, seen)).find((found) => found !== undefined);
   if (!('unit' in type)) return undefined;
-  if (type.library !== undefined) return 'unit of another repository';
+  // GN-6v, GN-6c: a unit of another repository (a record, a value alias, a value class) is held as at any other place.
+  if (type.library !== undefined) return undefined;
   const unit = units.get(type.unit);
   if (unit === undefined || seen.has(unit.id)) return undefined;
   seen.add(unit.id);

@@ -39,5 +39,74 @@
         "message": "a point below zero at -1"
       }
     }
+  ],
+  "flipped": [
+    {
+      "id": "a_dot_is_mirrored",
+      "mark": {
+        "shape": "dot",
+        "at": {
+          "x": 1,
+          "y": 2
+        }
+      },
+      "result": {
+        "shape": "dot",
+        "at": {
+          "x": 2,
+          "y": 1
+        }
+      }
+    },
+    {
+      "id": "a_line_is_mirrored_point_by_point",
+      "mark": {
+        "shape": "line",
+        "points": [
+          {
+            "x": 1,
+            "y": 2
+          },
+          {
+            "x": 3,
+            "y": 4
+          }
+        ],
+        "end": {
+          "x": 5,
+          "y": 6
+        }
+      },
+      "result": {
+        "shape": "line",
+        "points": [
+          {
+            "x": 2,
+            "y": 1
+          },
+          {
+            "x": 4,
+            "y": 3
+          }
+        ],
+        "end": {
+          "x": 6,
+          "y": 5
+        }
+      }
+    },
+    {
+      "id": "a_line_without_an_end",
+      "mark": {
+        "shape": "line",
+        "points": [],
+        "end": null
+      },
+      "result": {
+        "shape": "line",
+        "points": [],
+        "end": null
+      }
+    }
   ]
 }
