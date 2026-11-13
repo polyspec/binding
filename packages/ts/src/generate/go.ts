@@ -13,7 +13,7 @@ import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
 import { type CallbackUnit, type Constant, type ErrorUnit, type Fn, type Model, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, objectUnit, unitOf, variantOf, waitsIo, waitsAsync, poisoned } from './model.ts';
-import { type Echoes, GO_VALUE_KINDS, aliasInstances, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
+import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses } from './go_rust.ts';
 import { classIn, classMakes } from './value_class.ts';
 import { goCodecTest, goMapTest, goPanicTest, goTestFiles } from './tests_go.ts';
 import { extensionName } from './packages.ts';
@@ -2056,6 +2056,46 @@ func AliasIn${goName(alias.unit.name)}(value any) error {
 	return err
 }
 `).join('');
+  // GN-13g: a Go value of any type at a number parameter, judged by the conversion of its number type.
+  const numbers = numberTypes(model);
+  const numberIn = numbers.length === 0 ? '' : `${numbers.map((type) => `
+// ${goName([type])}In passes a Go value of any type to the conversion of the contract type ${type}, as a call with that
+// value at a parameter of the type would (GN-13g), for the tests of a value that the Go type of the parameter cannot hold.
+func ${goName([type])}In(value any, subject string) error { return numberIn(${NUMBER_TYPES.indexOf(type)}, value, subject) }
+`).join('')}
+// numberIn writes the number type, the subject and the Go value as a host value for ${p}__number_in (GN-13g).
+func numberIn(expected uint64, value any, subject string) error {
+	enc := NewWriter()
+	enc.Uint(expected)
+	enc.Text(subject)
+	switch v := reflect.ValueOf(value); v.Kind() {
+	case reflect.Bool:
+		enc.Uint(0)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		enc.Uint(1)
+		enc.Int(v.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if v.Uint() > math.MaxInt64 {
+			enc.Uint(2)
+		} else {
+			enc.Uint(1)
+		}
+		enc.Uint(v.Uint())
+	case reflect.Float32, reflect.Float64:
+		enc.Uint(3)
+		enc.Float(v.Float())
+	case reflect.String:
+		enc.Uint(4)
+		enc.Text(v.String())
+	default:
+		enc.Uint(5)
+	}
+	_, err := invoke(func(pointer *C.uint8_t, length C.size_t, result *${buffer}) C.int32_t {
+		return C.${p}__number_in(pointer, length, result)
+	}, enc.Done())
+	return err
+}
+`;
   return `${goHeader()}
 
 //go:build polyspec_codec_test
@@ -2063,10 +2103,15 @@ func AliasIn${goName(alias.unit.name)}(value any) error {
 package binding
 
 /*
-${cDeclarations(model, [...symbols, ...aliases.map((a) => `${p}__alias_in_${plainName(a.unit)}`)])}
+${cDeclarations(model, [...symbols, ...aliases.map((a) => `${p}__alias_in_${plainName(a.unit)}`), ...(numbers.length === 0 ? [] : [`${p}__number_in`])])}
 */
 import "C"
-${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${p}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${p}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}${aliasIn}`;
+${numbers.length === 0 ? '' : `
+import (
+	"math"
+	"reflect"
+)
+`}${echo.latin1 ? wrap(`${p}__echo_latin1`, 'text string', ['enc.Text(text)'], 'string', ['value := dec.Text()']) : ''}${echo.map ? wrap(`${p}__echo_map`, 'm *Map[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Text(key)', '	enc.Text(entry)', '}'], '*Map[string]', ['value := &Map[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Text()', '	value.Set(key, dec.Text())', '}']) : ''}${echo.keyed ? wrap(`${p}__echo_keyed_map`, 'm *KeyedMap[string]', ['enc.Len(m.Len())', 'for _, key := range m.Keys() {', '	entry, _ := m.Get(key)', '	enc.Key(key)', '	enc.Text(entry)', '}'], '*KeyedMap[string]', ['value := &KeyedMap[string]{}', 'for i, n := 0, dec.Len(); i < n; i++ {', '	key := dec.Key()', '	value.Set(key, dec.Text())', '}']) : ''}${aliasIn}${numberIn}`;
 }
 
 // G-4: what the Go binding does not generate, each refused by name with its reason, through the Go type of each type
@@ -2146,7 +2191,7 @@ export function go(model: Model, files: Files): void {
   files.set(`${BINDING}/zz_generated_map_test.go`, goMapTest());
   if (model.faults.length > 0) files.set(`${BINDING}/zz_generated_fault.go`, goBindingFault(model));
   const echo = echoes(model);
-  if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined)) {
+  if (echo.latin1 || echo.map || echo.keyed || aliasesWithKinds(model).some((a) => a.library === undefined) || numberTypes(model).length > 0) {
     files.set(`${BINDING}/zz_generated_codec.go`, goBindingCodec(model, echo));
     files.set(`${BINDING}/zz_generated_codec_test.go`, goCodecTest(model, echo));
   }

@@ -1204,6 +1204,53 @@ export function echoes(model: Model): Echoes {
   };
 }
 
+// GN-13g: the number types of the parameters of the contract, each with its number in the encoding of
+// <prefix>__number_in, in that order.
+export const NUMBER_TYPES = ['uint', 'int', 'int64', 'float'] as const;
+export const numberTypes = (model: Model): (typeof NUMBER_TYPES)[number][] => {
+  const used = new Set([...model.functions, ...model.objects.flatMap((o) => o.members)].flatMap((fn) => fn.params.map((p) => p.type)));
+  return NUMBER_TYPES.filter((type) => used.has(type));
+};
+
+// GN-13g: the conversion of each number type of the parameters, for a Go value of any type. The value of the Go type of
+// a number type passes the conversion that a parameter of that type uses; a value of another type is kind
+// invalid_number. Every path is written in full, so that no import is used only under the feature codec-test.
+function numberInRust(model: Model): string {
+  const types = numberTypes(model);
+  if (types.length === 0) return '';
+  const arms = types.map((type) => {
+    const code = NUMBER_TYPES.indexOf(type);
+    const own = { uint: '(0, 1, Some(word)) => in_safe_uint(&mut &word[..], &subject).map(drop),', int: '(1, 1, Some(word)) => in_safe_int(&mut &word[..], &subject).map(drop),', int64: '(2, 1, Some(_word)) => Ok(()),', float: '(3, 3, Some(_word)) => Ok(()),' }[type];
+    const expected = { uint: 'Uint', int: 'Int', int64: 'Int', float: 'Float' }[type];
+    return `        ${own}\n        (${code}, _, _) => Err(invalid(binding_core::NumberType::${expected})),`;
+  }).join('\n');
+  return `
+/// GN-13g: a Go value of any type judged by the conversion of a number type of the contract (B-2). The encoding is the
+/// number type (0 uint, 1 int, 2 int64, 3 float), the subject and the host value: 0 a bool, 1 a Go integer in the range
+/// of i64, 2 a Go integer above it and 3 a Go float, each of these three with a word, 4 a Go string with its bytes, and
+/// 5 any other value.
+fn number_in(input: &mut &[u8]) -> Result<(), Fail> {
+    let expected = in_uint(input)?;
+    let subject = String::from_utf8(read_bytes(input)?.to_vec()).map_err(|_not_utf8| malformed())?;
+    let kind = in_uint(input)?;
+    let word = match kind {
+        0 | 5 => None,
+        1..=3 => Some(read_word(input)?),
+        4 => {
+            read_bytes(input)?;
+            None
+        }
+        _ => return Err(malformed()),
+    };
+    let invalid = |expected| binding_error(BindingError::InvalidNumber { subject: subject.clone(), expected });
+    match (expected, kind, word) {
+${arms}
+        _ => Err(malformed()),
+    }
+}
+`;
+}
+
 function testEntries(model: Model): string {
   const p = prefix(model);
   const echo = echoes(model);
@@ -1223,6 +1270,14 @@ function testEntries(model: Model): string {
   for (const alias of aliasesWithKinds(model).filter((a) => a.library === undefined)) {
     out.push(entry(model, `${p}__alias_in_${aliasFn(alias)}`, `U-7: runs the in function of the alias ${alias.unit.id} alone, for the tests of its kinds.`, [
       `        let _value: ${alias.unit.core_type ?? ''} = in_${aliasFn(alias)}(&mut input)?;`,
+      '        finish_input(input)?;',
+      '        Ok(Vec::new())',
+    ], 'codec-test'));
+  }
+  // GN-13g: a Go value of another type at a number parameter.
+  if (numberTypes(model).length > 0) {
+    out.push(entry(model, `${p}__number_in`, 'GN-13g: judges a Go value of any type by the conversion of a number type of the contract, for the tests of a value that the Go type of a parameter cannot hold.', [
+      '        number_in(&mut input)?;',
       '        finish_input(input)?;',
       '        Ok(Vec::new())',
     ], 'codec-test'));
@@ -1286,7 +1341,7 @@ function rustUsed(model: Model): string {
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
   const helpers = valueClasses(model).length === 0 ? RUST_HELPERS : RUST_HELPERS.replace('        _ => return Err(malformed()),\n    })\n}', `${VALUE_CLASS_NODES}        _ => return Err(malformed()),\n    })\n}`);
-  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
+  return usedHelpers(`${helpers}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}\n${tupleReaders(model)}\n${numberInRust(model)}`, code, testEntryUses(model));
 }
 
 // GN-6x: the value classes of other repositories of the model, in the order of their numbers in node 11 of a result.
@@ -1344,7 +1399,7 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
 const testEntryUses = (model: Model): Record<string, string> => ({
   'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : '',
   'fault-test': model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : '',
-  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
+  'codec-test': [...aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`), ...(numberTypes(model).length > 0 ? ['number_in'] : [])].join(' '),
 });
 
 export function libRust(model: Model): string {

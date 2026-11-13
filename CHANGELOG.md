@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- A Go parameter of a number type holds only values of its Go type, so the Go binding had no way to give a host value
+  of another type, such as true, "7" or 1.5 at an `int` parameter, to the conversion of the binding, and a test of
+  such a value, which the other targets refuse as kind `invalid_number`, had no Go form. The feature `codec-test` and
+  the build tag `polyspec_codec_test` now give, for each number type of a parameter, `<Type>In(value any, subject
+  string) error` of `internal/binding` over the entry point `<prefix>__number_in`, which judges the Go value by the
+  conversion of that number type: a value of its Go type passes the range of GN-12a, and any other value is kind
+  `invalid_number`. `zz_generated_codec_test.go` checks the B-2 values of GN-13 for each such type, and the end-to-end
+  check refuses a release library that holds `__number_in` (GN-13g). Verified by `npm test` in `packages/ts`.
 - The generator refused the Go binding of a contract with a class that implements a callback interface, with "a class
   that implements an interface is not generated for Go yet (GN-6w)", so the class `ribbon` of `tests/e2e/variants`,
   which implements `tail`, had no Go binding. Go now gives the pointer to the class the method of each member of the

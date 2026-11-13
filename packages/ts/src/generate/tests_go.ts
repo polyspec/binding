@@ -7,14 +7,16 @@
 // callback), N-4 (the text of a stringify) and B-5c (a poisoned instance, an instance at two places). The cases that
 // arm faults (G-5) have the build tag polyspec_fault_test and the poison tests polyspec_panic_test.
 //
-// What the Go types decide is no test: B-2 and T-7 (a uint64 holds no -1, NaN or fraction, a []byte no other type),
-// except the range of an int and a uint (GN-12a), which B-2 tests with 2^53 and -2^53,
+// What the Go types decide is no test of a call: B-2 and T-7 (a uint64 holds no -1, NaN or fraction, a []byte no other
+// type), except the range of an int and a uint (GN-12a), which B-2 tests with 2^53 and -2^53; the B-2 values of another
+// Go type reach the conversion of each number type through the functions of codec-test (GN-13g),
 // G-7 (a call with a missing, extra or unknown argument does not compile), U-2 null as a value (nil is the absent
 // value), T-1 (a source is one []byte, so a text and its bytes are the same argument), and the K-2 result of another
 // type (a method of the interface returns its declared type).
 
 import type { Type, Unit } from '../contract.ts';
 import { defaultCaseValue } from './defaults.ts';
+import { numberTypes } from './go_rust.ts';
 import {
   type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
   goPackage, goParam, goResultCount, goString, goTupleArray, goType,
@@ -974,7 +976,36 @@ func TestU7${goName(kase.alias.unit.name)}In${testName(kase.id)}(t *testing.T) {
 	}
 }
 `).join('');
-  const body = `${latin1}${map}${keyed}${aliases}`;
+  // GN-13g: the B-2 values of GN-13 of another Go type, and values of the type, through the conversion of each number type.
+  const sets: Record<string, [string[], string[]]> = {
+    uint: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', '-1', 'uint64(9007199254740992)'], ['7', 'uint64(9007199254740991)']],
+    int: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'int64(9007199254740992)', 'int64(-9007199254740992)'], ['7', '-7', 'int64(9007199254740991)']],
+    int64: [['true', '"7"', '1.5', 'math.NaN()', 'math.Inf(1)', 'math.Inf(-1)', 'uint64(math.MaxUint64)'], ['7', 'int64(math.MinInt64)', 'int64(math.MaxInt64)']],
+    float: [['true', '"7"', '7'], ['1.5', 'math.NaN()', 'math.Inf(1)']],
+  };
+  const numbers = numberTypes(model).map((type) => {
+    const name = `${goName([type])}In`;
+    const [refused, taken] = sets[type] ?? [[], []];
+    return `
+func TestB2${name}RefusesAValueOfAnotherType(t *testing.T) {
+	for _, value := range []any{${refused.join(', ')}} {
+		err := ${name}(value, "value")
+		if failure, ok := err.(*${valueType}); !ok || failure.Kind() != "invalid_number" {
+			t.Fatalf("B-2: %#v: %#v", value, err)
+		}
+	}
+}
+
+func TestB2${name}TakesAValueOfItsType(t *testing.T) {
+	for _, value := range []any{${taken.join(', ')}} {
+		if err := ${name}(value, "value"); err != nil {
+			t.Fatalf("B-2: %#v: %v", value, err)
+		}
+	}
+}
+`;
+  }).join('');
+  const body = `${latin1}${map}${keyed}${aliases}${numbers}`;
   const std = ['math', 'reflect'].filter((p) => body.includes(`${p}.`)).map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 

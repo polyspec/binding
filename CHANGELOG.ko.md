@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- 수 타입의 Go parameter는 그 Go 타입의 값만 담아서, Go 바인딩은 `int` parameter 자리의 true, "7", 1.5처럼 다른 타입의
+  host 값을 바인딩의 변환에 줄 방법이 없었고, 다른 target이 kind `invalid_number`로 거부하는 그런 값의 시험은 Go 형태가
+  없었다. 이제 feature `codec-test`와 build tag `polyspec_codec_test`는 parameter의 수 타입마다 진입점
+  `<prefix>__number_in` 위에 `internal/binding`의 `<Type>In(value any, subject string) error`를 주고, 진입점은 Go 값을 그
+  수 타입의 변환으로 판정한다: 그 Go 타입의 값은 GN-12a의 범위를 거치고, 그 밖의 값은 kind `invalid_number`다.
+  `zz_generated_codec_test.go`는 그런 타입마다 GN-13의 B-2 값을 확인하고, 끝에서 끝까지 확인은 `__number_in`을 가진 release
+  라이브러리를 거부한다(GN-13g). `packages/ts`의 `npm test`로 확인했다.
 - 생성기는 callback interface를 구현하는 class가 있는 계약의 Go 바인딩을 "a class that implements an interface is not
   generated for Go yet (GN-6w)"로 거부해서, `tail`을 구현하는 `tests/e2e/variants`의 class `ribbon`에는 Go 바인딩이 없었다.
   이제 Go는 class가 선언하지 않은 interface member마다 C ABI로 trait 메서드를 부르는 메서드를 class의 포인터에 주고,
