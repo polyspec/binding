@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 386d782461e697fea87623fbb90eda6b068023961ae32e0e9204e96bcdbbed75 -->
+<!-- source-sha256: a4ef2890aa6d9c0d4507ba6f8c3a8e421379e2c5528681283a6302243878a21d -->
 # 생성기
 
 [English](generator.md)
@@ -626,6 +626,18 @@
   GN-15c의 Go 호출에는 다른 module의 class의 인스턴스를 constructor로 만드는 node가 없기 때문이다. PHP에는 그런
   class가 없으므로(GN-6af, CK-78) 그것을 이름하는 PHP 행도 이름을 대고 거부한다. 이유: owner의 코어가 값을 주고
   받으며, 두 package를 함께 쓰는 사용자가 한쪽의 인스턴스를 다른 쪽에 넘길 수 있는 꼴은 owner의 언어 class뿐이다.
+- **GN-6as** 값 alias(U-7), 다른 레포의 값 alias(GN-6k), 다른 레포의 값 class(GN-6x)의 변환은 값의 깊이에 비례하는
+  native stack을 쓰지 않는다. core의 `OutValue`에서 언어의 값을 만드는 함수 `make_<name>`은 heap의 작업 stack을 가진
+  loop로 값을 걷고, 자기 자신이나 그 alias의 변환을 부르지 않는다. stack은 자식이 다 만들어지지 않은 container마다
+  level 하나를 담는다: container의 handle, 길이와 다음 자식의 index, 만든 자식을 받는 언어의 container, 그리고 map의
+  entry에서는 값이 만들어질 때까지 만든 key. 뒤의 자리가 다시 이름할 수 있는 container(U-7 (d))는 자식보다 먼저
+  만들어 handle 아래에 두므로, cycle은 전과 같이 만들어진다. owner의 member가 만든 자식으로 만드는 인스턴스(GN-6x)는
+  마지막 자식이 만들어졌을 때 만든다. 자식은 값의 순서대로, entry마다 한 번, key를 값보다 먼저 만들도록 요청한다.
+  binding은 언어의 값을 한 level씩 기술하므로(B-1), 들어오는 값을 걷는 것은 core의 `in` 함수의 loop이고, binding은
+  거기에 자기 level을 더하지 않는다. 이유: 계약이 말하는 깊이 한계 안의 값은 다섯 대상에서 같은 결과를 가진다. binding은
+  Node의 main thread나 WASM module의 stack 같은 host의 stack을 키울 수 없다. 더 큰 stack은 process가 끝나는 깊이를
+  옮길 뿐이다. Node에 생성된다. 아직 생성되지 않는 것: Python, PHP, WASM, Go의 make 함수. 이들은 아직 level마다 자기
+  자신을 한 번 부른다.
 - **GN-6x** 다른 레포의 값 class(T-3, U-1)는 다른 레포의 값 alias(GN-6k)와 같은 방식으로 주고받는다.
   이때 owner가 그 class에 `core: {in, out}`으로 적은 두 함수와 `core_type`에 적은 코어 타입을
   쓴다(CK-8). 그것이 없는 다른 레포의 값 class는 이름으로 거절한다(G-4). 생성 코드가 그 인스턴스의 묘사를 직접 코어

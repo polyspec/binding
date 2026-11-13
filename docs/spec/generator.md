@@ -768,6 +768,21 @@ the design ids are those of the binding design.
   instance of a class of another module by its constructor; PHP has no such class (GN-6af, CK-78), so a PHP row
   that names one is refused by name too. Why: the owner's core gives and takes the value, and its class of the
   language is the only form in which a user of both packages can pass an instance from one to the other.
+- **GN-6as** A conversion of a value alias (U-7), of a value alias of another repository (GN-6k) and of a value class
+  of another repository (GN-6x) uses no native stack in proportion to the depth of the value. The function
+  `make_<name>`, which makes the value of the language from the `OutValue` of the core, walks the value in a loop
+  with a work stack on the heap and never calls itself or a conversion of the alias. The stack holds one level for
+  each container whose children are not all made: the handle of the container, its length and the index of its next
+  child, the container of the language that takes the made children, and, for an entry of a map, the made key until
+  its value is made. A container that a later position may name again (U-7 (d)) is made and kept under its handle
+  before its children, so a cycle is made as before; an instance that a member of the owner makes from its made
+  children (GN-6x) is made when its last child is made. The children are asked for in the order of the value, each
+  entry once, its key made before its value. The binding describes a value of the language one level at a time
+  (B-1), so the walk of an incoming value is the loop of the `in` function of the core, and the binding adds no level
+  of its own to it. Why: a value within the depth limit that a contract states has the same result on the five
+  targets; the binding cannot enlarge the stack of a host, such as the main thread of Node or the stack of a WASM
+  module; and a larger stack only moves the depth at which the process ends. Generated for Node. Not generated yet:
+  the make functions of Python, PHP, WASM and Go, which still call themselves once for each level.
 - **GN-6x** A value class of another repository (T-3, U-1) is taken and given as a value alias of another repository
   (GN-6k), through the two functions that the owner names in the class as `core: {in, out}`, with the core type that
   it names in `core_type` (CK-8); a value class of another repository without them is refused by name (G-4), because a

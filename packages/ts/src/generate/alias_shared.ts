@@ -51,7 +51,7 @@ const CONTENT: Record<string, { type: string; arg: string }> = {
 // U-7, T-5: an out row that names a member makes an instance of a class of this contract: the content of the kind is the
 // one argument of the core path of the class's constructor or static factory, which cannot fail, and the value it gives
 // leaves as the class's instance (out_<class>, whose first arguments are `env`).
-function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter): string {
+function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kind: string, env: string, instance: string, keptMake?: KeptMake, foreignMake?: ForeignMakeWriter, leaf: (made: string) => string = (made) => made): string {
   if (alias.library !== undefined) {
     // GN-6ar: the class is of the owner of the alias, whose constructor the language of the target calls.
     if (foreignMake === undefined) throw new Unsupported(`${alias.unit.id}: a ${lang} make by a member (${make}) is not generated yet`);
@@ -81,13 +81,14 @@ function byMember(model: Model, alias: ValueAlias, lang: Lang, make: string, kin
     throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} takes ${factory.params.map((p) => (typeof p.type === 'string' ? p.type : JSON.stringify(p.type))).join(', ') || 'no parameter'}, not the content of the kind (U-7)`);
   }
   if (factory.fallible || factory.failure) throw new Unsupported(`${alias.unit.id}: the ${lang} make ${make} of the kind ${kind} can fail, which a make by a member is not generated for yet (U-7)`);
-  return `${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${content.arg}))`;
+  return leaf(`${instance}${rustField(object.unit.name)}(${env}${factory.corePath}(${content.arg}))`);
 }
 
 // The match arms of the make function of one language: a row per kind, or a row per `when` of the kind. `env` is the
 // first arguments of the out function of a class in the language, for a row that makes an instance by a member, and
-// `instance` the prefix of the name of that function.
-export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter): string[] {
+// `instance` the prefix of the name of that function. `leaf` writes what an arm gives for the instance of a class that
+// a member of this contract made, where the arms of a language give another type than the made value (GN-6as).
+export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (form: string, kind: string) => string, noRow: string, env: string, keptMake?: KeptMake, instance = 'out_', foreignMake?: ForeignMakeWriter, leaf?: (made: string) => string): string[] {
   const rows = (alias.unit.out ?? []).filter((row) => row.make[lang] !== undefined);
   const kinds = [...new Set(rows.map((row) => row.kind))];
   return kinds.map((kind) => {
@@ -99,7 +100,7 @@ export function outArms(model: Model, alias: ValueAlias, lang: Lang, builtin: (f
       // T-2: a keyed map is made as a map, its keys of the kinds it lists through the rows of the alias, as its items.
       if (typeof make === 'object' && make !== null && 'keyed_map' in make && Object.keys(make).length === 1) return builtin('keyed_map', kind);
       if (typeof make !== 'string') throw new Unsupported(`${alias.unit.id}: a ${lang} make of the form ${JSON.stringify(make)} is not generated yet`);
-      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake);
+      if (make.includes('.')) return byMember(model, alias, lang, make, kind, env, instance, keptMake, foreignMake, leaf);
       return builtin(make, kind);
     };
     const sameForm = new Set(ofKind.map((row) => JSON.stringify(row.make[lang]))).size === 1;

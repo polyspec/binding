@@ -925,7 +925,7 @@ test('an out row of a value alias makes a keyed map of the keys it lists in ever
   const out = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['php', 'python', 'node', 'wasm'] });
   // The entries are made as those of a map: each key and each item through the rows of the alias.
   for (const path of ['packages/php-ext/generated/lib.rs', 'packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
-    assert.match(text(out, path), /OutValue::Map\(value\) => if out\.predicate\(Predicate::SequenceKeys\) == Some\(false\) \{ \{\n {12}let handle = value\.handle\(\);/, path);
+    assert.match(text(out, path), /OutValue::Map\(value\) => if out\.predicate\(Predicate::SequenceKeys\) == Some\(false\) \{ \{\n +let handle = value\.handle\(\);/, path);
   }
 });
 
@@ -938,10 +938,11 @@ test('an out row of a value alias makes an instance by a factory of a class of t
   for (const [path, made] of [
     ['packages/php-ext/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
     ['packages/python/generated/lib.rs', 'out_tag(py, polyspec_sample::Tag::new(&value))'],
-    ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value))'],
+    // GN-6as: the instance is a value without children, which the walk of Node puts next.
+    ['packages/ts/generated/lib.rs', 'out_tag(env, polyspec_sample::Tag::new(&value)).map(OutStep::Put)'],
     ['packages/ts/wasm/generated/lib.rs', 'out_tag(polyspec_sample::Tag::new(&value))'],
   ] as const) {
-    assert.ok(text(out, path).includes(`        OutValue::Text(value) => ${made},`), path);
+    assert.ok(text(out, path).includes(`    OutValue::Text(value) => ${made},\n`), path);
     assert.match(text(out, path), /\nfn out_tag\(/, path);
   }
   // GN-15c: Go gives the number of the class and the handle, and the package of the class makes the instance.
@@ -1624,9 +1625,11 @@ test('a value alias of another repository whose rows name a class of its owner m
   const lib = text(node, 'packages/ts/generated/lib.rs');
   // The JavaScript entry hands the classes of the owner to the addon, which calls their constructors.
   assert.match(text(node, 'packages/ts/generated/index.cjs'), /const foreign_sample = require\('@polyspec\/sample'\);\naddon\.__register_foreign\(\[foreign_sample\.Box, foreign_sample\.Cell, foreign_sample\.Ratio\]\);/);
-  assert.match(lib, /OutValue::Float\(value\) => \{\n +let class = foreign_class\(env, 2\)\.map_err\(internal\)\?;\n +let constructor: Function<'env, FnArgs<\(f64,\)>, Unknown<'env>> = unsafe \{ class\.to_unknown\(\)\.cast\(\) \}\.map_err\(internal\)\?;\n +let instance = constructor\.new_instance\(FnArgs::from\(\(value\.value\(\),\)\)\)\.map_err\(js_fail\)\?;\n +Ok\(instance\)/);
+  assert.match(lib, /OutValue::Float\(value\) => \{\n +let class = foreign_class\(env, 2\)\.map_err\(internal\)\?;\n +let constructor: Function<'env, FnArgs<\(f64,\)>, Unknown<'env>> = unsafe \{ class\.to_unknown\(\)\.cast\(\) \}\.map_err\(internal\)\?;\n +let instance = constructor\.new_instance\(FnArgs::from\(\(value\.value\(\),\)\)\)\.map_err\(js_fail\)\?;\n +Ok\(OutStep::Put\(instance\)\)/);
   assert.match(lib, /let map = js_new_map\(env\)\.map_err\(internal\)\?;\n +let class = foreign_class\(env, 0\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(map\.to_unknown\(\),\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);/);
-  assert.match(lib, /let class = foreign_class\(env, 1\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(null_out\(env\)\?,\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);\n +let content = make\(env, \*value, source, made\)\?;\n[^\n]*\n +object\.set_named_property\("value", content\)\.map_err\(js_fail\)\?;/);
+  assert.match(lib, /let class = foreign_class\(env, 1\)\.map_err\(internal\)\?;\n[^\n]*\n +let instance = constructor\.new_instance\(FnArgs::from\(\(null_out\(env\)\?,\)\)\)\.map_err\(js_fail\)\?;\n +made\.insert\(handle\.raw\(\), instance\);\n +let object: Object<'env> = unsafe \{ instance\.cast\(\) \}\.map_err\(internal\)\?;\n +Ok\(OutStep::Enter\(OutLevel \{ handle, len: 0, index: 0, waiting: Some\(\*value\), fill: OutFill::Property\(object, "value"\), made: instance \}\)\)/);
+  // GN-6as: the made value of the reference goes into the writable property of the level that waits for it.
+  assert.match(lib, /OutFill::Property\(object, name\) => \{\n +object\.set_named_property\(\*name, value\)\.map_err\(js_fail\)\?;/);
   assert.match(lib, /\n {4}if classes\.len\(\) != 3 \{\n/);
   // GN-3e: package.json names the npm package of the owner, whose classes the entry hands over.
   assert.match(String(trackedPackages(contract, '0.0.0', new Map([['polyspec-sample', { path: '../../../sample/packages/rust' }]]), [], foreign).get('packages/ts/package.json')), /"@polyspec\/sample": "\*"/);
@@ -1904,6 +1907,45 @@ const RELAY_TESTS = {
   php: 'packages/php-ext/generated/tests/GeneratedTest.php',
   go: 'packages/go/zz_generated_test.go',
 } as const;
+
+// GN-6as: the make functions of a generated crate, each from its header to the brace that ends it.
+const makeFns = (lib: string): { name: string; body: string }[] =>
+  [...lib.matchAll(/^( *)(?:pub\(super\) )?fn make_(\w+)[(<][^\n]*\n/gm)].map((found) => {
+    const from = (found.index ?? 0) + found[0].length;
+    return { name: found[2] ?? '', body: lib.slice(from, lib.indexOf(`\n${found[1] ?? ''}}\n`, from)) };
+  });
+
+test('the make function of a value alias walks the value with a work stack and calls no conversion of the alias (GN-6as, B2.144)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const own = (name: string): Inputs => ({ contract: read(`${name}/packages/rust/interface.json`), caseFiles: new Map([['contracts/cases.json', read(`${name}/contracts/cases.json`)]]), version: '0.0.0', coreLib: `polyspec_${name}` });
+  // A value class of another repository, a value alias, a value alias of another repository whose rows name classes of
+  // its owner, and a value alias whose rows name value classes without core_type.
+  const samples: Record<string, Inputs> = {
+    relay: { ...relaySample(), version: '0.0.0', coreLib: 'polyspec_relay' },
+    sample: own('sample'),
+    consumer: { ...consumerSample(), version: '0.0.0', coreLib: 'polyspec_consumer' },
+    kept: own('kept'),
+  };
+  // The targets whose make function is the walk; the other targets are not generated in this form yet (GN-6as).
+  const libs = ['packages/ts/generated/lib.rs'];
+  for (const [sample, inputs] of Object.entries(samples)) {
+    const out = generate(inputs);
+    const found = libs.filter((path) => out.has(path));
+    assert.deepEqual(found, libs, sample);
+    for (const path of found) {
+      const fns = makeFns(text(out, path));
+      assert.ok(fns.length > 0, `${sample} ${path}: a make function`);
+      for (const { name, body } of fns) {
+        // The function names no make function, by its name or as a local, so no call of it runs inside another, and
+        // it calls no conversion of the alias, which would call it.
+        assert.doesNotMatch(body, /\bmake(_\w+)?\b/, `${sample} ${path}: make_${name} names a make function`);
+        assert.doesNotMatch(body, new RegExp(`\\b(in|out)_${name}\\(`), `${sample} ${path}: make_${name} calls a conversion of its alias`);
+        // A value with a container is walked by a loop over the levels whose children are not all made.
+        assert.match(body, /\n\s+let mut levels(: Vec<OutLevel(<'\w+>)?>)? = Vec::new\(\);\n(.*\n)*?\s+loop \{\n/, `${sample} ${path}: make_${name} walks by a work stack`);
+      }
+    }
+  }
+});
 
 test('a case value of a value class of another repository is the call of the make member of its owner in the five targets (GN-6x, GN-13, GN-13b)', () => {
   const { contract, caseFiles, foreign } = relaySample();
