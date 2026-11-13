@@ -1,0 +1,19 @@
+# A repository for the end-to-end check of binding: a class unit with every kind of member, which the WASM generator
+# takes too (GN-18a).
+[workspace]
+resolver = "2"
+members = ["packages/rust"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.99.0"
+
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

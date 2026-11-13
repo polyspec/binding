@@ -1030,6 +1030,24 @@ test('Python: a crate whose only raising member is a to_json holds no core_error
   assert.match(text(out, 'packages/php-ext/generated/lib.rs'), /fn core_error\(/);
 });
 
+test('the classes repository of the end-to-end check is generated for WASM too (GN-14, GN-18a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  assert.deepEqual(contract.targets, ['php', 'python', 'node', 'wasm']);
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]) });
+  // A static member that raises, a method that takes the class and one that gives a list of it, in the four crates.
+  const mjs = text(out, 'packages/ts/wasm/generated/index.mjs');
+  assert.match(mjs, /\n {2}static parse\(/);
+  assert.match(mjs, /\n {2}withSuffix\(/);
+  assert.match(mjs, /\n {2}same\(/);
+  assert.match(mjs, /\n {2}repeat\(/);
+  for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+    assert.match(text(out, path), /polyspec_classes::Tag::parse\(/, path);
+    assert.match(text(out, path), /polyspec_classes::Tag::same\(/, path);
+    assert.match(text(out, path), /matches!\(error, polyspec_classes::Error::Missing \{ \.\. \}\)/, path);
+  }
+});
+
 // The sample of the end-to-end check with the targets added and without the callback unit and the value alias, which
 // Go and WASM refuse by name.
 function classSample(targets: string[]): any {

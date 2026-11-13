@@ -1,0 +1,457 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "classes",
+  "core": {
+    "crate": "polyspec-classes",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/classes",
+      "namespace": "Polyspec\\Classes"
+    },
+    "python": {
+      "package": "polyspec-classes",
+      "module": "polyspec.classes"
+    },
+    "node": {
+      "package": "@polyspec/classes",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Classes\\ClassesValueError",
+        "python": "ClassesValueError",
+        "node": "ClassesValueError",
+        "wasm": "ClassesValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Classes\\ClassesTypeError",
+        "python": "ClassesTypeError",
+        "node": "ClassesTypeError",
+        "wasm": "ClassesTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Classes\\ClassesIoError",
+        "python": "ClassesIoError",
+        "node": "ClassesIoError",
+        "wasm": "ClassesIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Classes\\ClassesStoreError",
+        "python": "ClassesStoreError",
+        "node": "ClassesStoreError",
+        "wasm": "ClassesStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Classes\\ClassesBusyError",
+        "python": "ClassesBusyError",
+        "node": "ClassesBusyError",
+        "wasm": "ClassesBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Classes\\ClassesInternalError",
+        "python": "ClassesInternalError",
+        "node": "ClassesInternalError",
+        "wasm": "ClassesInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_classes::Error::Missing",
+        "category": "value"
+      },
+      {
+        "variant": "polyspec_classes::Error::Unsupported",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "classes",
+      "name": [
+        "classes"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "classes.join",
+          "name": [
+            "join"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tags"
+              ],
+              "type": {
+                "list": {
+                  "unit": "tag"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::join"
+        },
+        {
+          "id": "classes.shout",
+          "name": [
+            "shout"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tag"
+              ],
+              "type": {
+                "unit": "tag"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tag"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::shout"
+        }
+      ]
+    },
+    {
+      "id": "tag",
+      "name": [
+        "tag"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_classes::Tag",
+      "final": true,
+      "members": [
+        {
+          "id": "tag.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "name"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_classes::Tag::new"
+        },
+        {
+          "id": "tag.name",
+          "name": [
+            "name"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::name",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.entries",
+          "name": [
+            "entries"
+          ],
+          "kind": "iterate",
+          "visibility": "public",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::entries",
+            "receiver": "&self"
+          },
+          "yields": {
+            "key": "text",
+            "value": {
+              "unit": "tag"
+            }
+          }
+        },
+        {
+          "id": "tag.to_string",
+          "name": [
+            "to",
+            "string"
+          ],
+          "kind": "stringify",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "text",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::label",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.to_json",
+          "name": [
+            "to",
+            "json"
+          ],
+          "kind": "to_json",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "never",
+          "raises": [
+            "polyspec_classes::Error::Unsupported"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::host_json",
+            "receiver": "&self"
+          },
+          "only": {
+            "targets": [
+              "php",
+              "node",
+              "wasm"
+            ],
+            "reason": "N-4"
+          }
+        },
+        {
+          "id": "tag.parse",
+          "name": [
+            "parse"
+          ],
+          "kind": "static",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "text"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tag"
+          },
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "none",
+          "core": "polyspec_classes::Tag::parse"
+        },
+        {
+          "id": "tag.with_suffix",
+          "name": [
+            "with",
+            "suffix"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "suffix"
+              ],
+              "type": "text",
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tag"
+          },
+          "raises": [
+            "polyspec_classes::Error::Missing"
+          ],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::with_suffix",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.same",
+          "name": [
+            "same"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "other"
+              ],
+              "type": {
+                "unit": "tag"
+              },
+              "required": true
+            }
+          ],
+          "returns": "bool",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::same",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "tag.repeat",
+          "name": [
+            "repeat"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "count"
+              ],
+              "type": "uint",
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "unit": "tag"
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_classes::Tag::repeat",
+            "receiver": "&self"
+          }
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "classes.join",
+      "file": "contracts/cases.json",
+      "group": "join"
+    },
+    {
+      "member": "classes.shout",
+      "file": "contracts/cases.json",
+      "group": "shout"
+    },
+    {
+      "member": "tag.new",
+      "file": "contracts/cases.json",
+      "group": "tag_new"
+    },
+    {
+      "member": "tag.name",
+      "file": "contracts/cases.json",
+      "group": "tag_name"
+    },
+    {
+      "member": "tag.entries",
+      "file": "contracts/cases.json",
+      "group": "tag_entries"
+    },
+    {
+      "member": "tag.to_string",
+      "file": "contracts/cases.json",
+      "group": "tag_to_string"
+    },
+    {
+      "member": "tag.to_json",
+      "file": "contracts/cases.json",
+      "group": "tag_to_json"
+    },
+    {
+      "member": "tag.parse",
+      "file": "contracts/cases.json",
+      "group": "tag_parse"
+    },
+    {
+      "member": "tag.with_suffix",
+      "file": "contracts/cases.json",
+      "group": "tag_with_suffix"
+    },
+    {
+      "member": "tag.same",
+      "file": "contracts/cases.json",
+      "group": "tag_same"
+    },
+    {
+      "member": "tag.repeat",
+      "file": "contracts/cases.json",
+      "group": "tag_repeat"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "join": [
+    {
+      "id": "no_tag_is_the_empty_text",
+      "tags": [],
+      "text": ""
+    }
+  ],
+  "shout": [],
+  "tag_new": [
+    {
+      "id": "a_tag_holds_its_name",
+      "name": "a"
+    }
+  ],
+  "tag_name": [
+    {
+      "id": "the_name_of_a_tag",
+      "name": "a",
+      "result": "a"
+    }
+  ],
+  "tag_entries": [],
+  "tag_to_string": [
+    {
+      "id": "a_tag_is_its_name_after_a_hash",
+      "name": "a",
+      "result": "#a"
+    }
+  ],
+  "tag_to_json": [
+    {
+      "id": "a_tag_has_no_json_form",
+      "name": "a",
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value",
+        "message": "not data: the JSON form of the tag a"
+      }
+    }
+  ],
+  "tag_parse": [
+    {
+      "id": "the_empty_text_is_no_tag",
+      "text": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for text"
+      }
+    },
+    {
+      "id": "a_text_is_a_tag",
+      "text": "a"
+    }
+  ],
+  "tag_with_suffix": [
+    {
+      "id": "the_empty_suffix_is_refused",
+      "name": "a",
+      "suffix": "",
+      "raises": {
+        "kind": "missing",
+        "status": null,
+        "category": "value",
+        "message": "no value for suffix"
+      }
+    }
+  ],
+  "tag_same": [],
+  "tag_repeat": [
+    {
+      "id": "a_tag_twice",
+      "name": "a",
+      "count": 2
+    }
+  ]
+}
