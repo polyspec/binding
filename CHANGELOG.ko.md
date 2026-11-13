@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: bb2377a287841155a639b92b02397426abebc79534c70a2a0ab32da4f8a490b1 -->
+<!-- source-sha256: 6c45e1885cb8c3b5c1ef57265fa0e6f20c0b3384482c145731ab5e6208ab9f1a -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `tests/e2e/shapes`의 첫 map case가 결함 둘을 드러냈다. Node addon은 전역 `Array`를 object로 읽었는데 napi는 함수를 그렇게
+  읽는 것을 거부하므로, map이 있는 모든 호출이 kind `internal`로 실패했다. 이제 그 검사 없이 읽는다. Go 테스트는 map 값을
+  한 줄의 함수 리터럴로 썼는데 gofmt는 본문이 한 줄보다 긴 함수 리터럴을 여러 줄로 나누므로, `gofmt -l`이
+  `zz_generated_test.go`를 지목했다. 이제 map 값은 항목마다 helper `mapWith`나 `keyedWith`를 부르는 호출이다(T-2, GN-12,
+  GN-13f). `make test-ts`로 확인: 397개 중 397개 통과.
 - member가 `map<T>`나 `keyed_map<T>`의 값으로만 돌려주는 record는 result form을 얻지 못했다. result form이 있는 record를
   모으는 순회가 map 안으로 들어가지 않았으므로, Python·Node·PHP·WASM crate는 갖고 있지 않은 변환 `out_<record>`를 불렀다.
   이제 그 순회는 map과 keyed map 안으로 들어간다(T-2, T-4, GN-6a). `make test-ts`로 확인: 새 테스트는 Python crate에

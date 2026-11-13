@@ -339,7 +339,8 @@ fn map_entries<'env>(value: Unknown<'env>, subject: &str, expected: &str) -> Res
     if !value.instanceof(class).map_err(internal)? {
         return Err(type_error(subject, expected));
     }
-    let array: Object<'env> = global.get_named_property("Array").map_err(internal)?;
+    // Array is a function, which holds from as a property.
+    let array: Object<'env> = global.get_named_property_unchecked("Array").map_err(internal)?;
     let from: Function<'env, FnArgs<(Unknown<'env>,)>, Unknown<'env>> = array.get_named_property("from").map_err(internal)?;
     let entries = from.apply(array, FnArgs::from((value,))).map_err(internal)?;
     in_list(entries, subject, |entry| {

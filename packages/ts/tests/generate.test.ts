@@ -497,6 +497,11 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^func TextKey\(value string\) Key \{ return binding\.TextKey\(value\) \}$/m);
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /in_keyed_map\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
+  // A map value of a test is a call of a helper for each entry, which gofmt keeps on its line; it breaks a function
+  // literal whose body is longer than a line.
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /keyedWith\(&binding\.KeyedMap\[string\]\{\}, binding\.BytesKey\(/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\nfunc keyedWith\[T any\]\(m \*binding\.KeyedMap\[T\], key binding\.Key, value T\) \*binding\.KeyedMap\[T\] \{\n\tm\.Set\(key, value\)\n\treturn m\n\}\n/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /m := &binding\.KeyedMap/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
 });
 

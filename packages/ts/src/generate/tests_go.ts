@@ -140,12 +140,12 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   }
   if ('keyed_map' in type) {
     // G-5: a case gives a keyed map as its entries in order, [key, value]: a key is a text, {"int": n} or {"hex": ...}.
-    const sets = (json as [unknown, unknown][]).map(([key, item]) => `m.Set(${goKey(key)}, ${value(v, b, type.keyed_map, item)}); `).join('');
-    return `func() ${typeName(v, type)} { m := &binding.KeyedMap[${typeName(v, type.keyed_map)}]{}; ${sets}return m }()`;
+    // A call of a helper for each entry: gofmt breaks a function literal whose body is longer than a line, and keeps a
+    // call as it is written.
+    return (json as [unknown, unknown][]).reduce<string>((made, [key, item]) => `keyedWith(${made}, ${goKey(key)}, ${value(v, b, type.keyed_map, item)})`, `&binding.KeyedMap[${typeName(v, type.keyed_map)}]{}`);
   }
   if ('map' in type) {
-    const sets = Object.entries(json as Record<string, unknown>).map(([key, item]) => `m.Set(${goString(key)}, ${value(v, b, type.map, item)}); `).join('');
-    return `func() ${typeName(v, type)} { m := &binding.Map[${typeName(v, type.map)}]{}; ${sets}return m }()`;
+    return Object.entries(json as Record<string, unknown>).reduce<string>((made, [key, item]) => `mapWith(${made}, ${goString(key)}, ${value(v, b, type.map, item)})`, `&binding.Map[${typeName(v, type.map)}]{}`);
   }
   const alias = aliasOf(v.model, type);
   if (alias !== undefined) return aliasValue(alias.unit, json, `the alias ${alias.unit.id}`);
@@ -508,11 +508,11 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
       if (keyedType.key.includes('int')) {
         // GN-12a: an int key outside the safe integers is kind invalid_number.
-        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(`keyedWith(&binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}, binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)})`), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
       }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
-        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`func() ${typeName(v, keyedType)} { m := &binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}; m.Set(${key}, ${placeholder(v, b, keyedType.keyed_map)}); return m }()`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
+        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(`keyedWith(&binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]{}, ${key}, ${placeholder(v, b, keyedType.keyed_map)})`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
       }
     }
     const unit = unitOf(model, base);
@@ -841,6 +841,22 @@ func casePath(t *testing.T, relative string) string {
 }
 `;
 
+const MAP_WITH = `
+// mapWith is a map after one more entry, for a value of a case.
+func mapWith[T any](m *binding.Map[T], key string, value T) *binding.Map[T] {
+	m.Set(key, value)
+	return m
+}
+`;
+
+const KEYED_WITH = `
+// keyedWith is a keyed map after one more entry, for a value of a case.
+func keyedWith[T any](m *binding.KeyedMap[T], key binding.Key, value T) *binding.KeyedMap[T] {
+	m.Set(key, value)
+	return m
+}
+`;
+
 const PTR = `
 // ptr is a pointer to a value, for an argument with a default or an optional argument.
 func ptr[T any](value T) *T { return &value }
@@ -906,6 +922,8 @@ func TestGN6o${goMemberName(roundFn)}ReleasesTheHandleOfAFunc(t *testing.T) {
     ...(v.usesPtr ? [PTR] : []),
     ...(/\bcasePath\(t, /.test(all) ? [CASE_PATH] : []),
     ...(/\bsameFailure\(/.test(all) ? [SAME_FAILURE] : []),
+    ...(/\bmapWith\(/.test(all) ? [MAP_WITH] : []),
+    ...(/\bkeyedWith\(/.test(all) ? [KEYED_WITH] : []),
     ...(/\bfixture[A-Z]/.test(all) ? [FIXTURE] : []),
     ...[...new Set([...out.callbacks, ...v.fixtures])].map((cb) => callbackTypes(v, cb)),
   ].join('');

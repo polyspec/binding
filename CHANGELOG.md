@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- The first cases with a map of `tests/e2e/shapes` showed two defects. The Node addon read the global `Array` as an
+  object, which napi refuses for a function, so every call with a map failed with kind `internal`; it now reads it
+  without that check. The Go tests wrote a map value as a function literal on one line, which gofmt breaks when its
+  body is longer than a line, so `gofmt -l` named `zz_generated_test.go`; a map value is now a call of the helper
+  `mapWith` or `keyedWith` for each entry (T-2, GN-12, GN-13f). Verified by `make test-ts`: 397 of 397 pass.
 - A record that a member gives only as the value of a `map<T>` or a `keyed_map<T>` got no result form: the walk
   that collects the records with a result form did not enter a map, so the Python, Node, PHP and WASM crates called a
   conversion `out_<record>` that they did not hold. The walk now enters a map and a keyed map (T-2, T-4, GN-6a).
