@@ -10,7 +10,7 @@ import { goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust,
   aliasOf, aliasesWithKinds, argType, armedCall, borrowedItem, coreCallArgs, errorProperties, faultRust, foreignAliasLibraries, heldNew,
-  heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, narrowsArg, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant,
+  heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, objectUnit, recordFn, resultLet, rustField, rustType, rustVariant,
   takesObject, unitOf,
 } from './model.ts';
 import { extensionName } from './packages.ts';
@@ -99,7 +99,7 @@ export function convertOut(model: Model, type: Type, value: string): string {
   if ('keyed_map' in type) return `out_keyed_map(output, ${value}, |output, item| ${convertOut(model, type.keyed_map, 'item')})`;
   // GN-16: an Option of a reference to the value of the core, so a generic item, such as out_int, takes one type.
   if ('optional' in type) return `out_optional(output, ${optionRef(value)}, ${closure(['output', 'value'], convertOut(model, type.optional, 'value'))})`;
-  // GN-6u: the core holds a tuple as a Rust tuple or, when its parts have one type, as an array; partsN reads either.
+  // GN-6ac: the core holds a tuple as a Rust tuple or, when its parts have one type, as an array; partsN reads either.
   if ('tuple' in type) {
     const names = type.tuple.map((_, i) => `part_${i}`);
     return `{ let (${names.join(', ')}${names.length === 1 ? ',' : ''}) = parts${type.tuple.length}(&${value}); ${type.tuple.map((t, i) => `${convertOut(model, t, names[i] ?? '')};`).join(' ')} }`;
@@ -625,8 +625,9 @@ function argumentLines(model: Model, fn: Fn): string[] {
       lines.push(`        let ${variable}: ${argType(model, arg)} = ${convertIn(model, { optional: parameter.type }, '&mut input', subject)}?;`);
     } else {
       lines.push(`        let ${variable}: ${rustType(model, parameter.type)} = ${convertIn(model, parameter.type, '&mut input', subject)}?;`);
-      // GN-6u: the core call chooses the core's own type, which IntoCore narrows to.
-      if (narrowsArg(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
+      // GN-6ac: the core call chooses the core's own type, which IntoCore narrows to; a list parameter keeps the type
+      // of the table in Go until GN-6ad (defect 78).
+      if (narrows(parameter.type) && !JSON.stringify(parameter.type).includes('"list"')) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
   }
   lines.push('        finish_input(input)?;');

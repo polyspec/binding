@@ -208,17 +208,30 @@ pub fn labelled(pair: &(String, u64)) -> String {
     format!("{}×{}", pair.0, pair.1)
 }
 
-/// The width of a span of a start and an end, none when the end is before the start (GN-6u: a tuple parameter that
+/// The width of a span of a start and an end, none when the end is before the start (GN-6ac: a tuple parameter that
 /// the core holds as an array of usize).
 #[must_use]
 pub const fn span_width(span: &[usize; 2]) -> usize {
     span[1].saturating_sub(span[0])
 }
 
-/// The span of a start and a length (GN-6u: parameters of u32 and a tuple result that the core holds as an array).
+/// The span of a start and a length (GN-6ac: parameters of u32 and a tuple result that the core holds as an array).
 #[must_use]
 pub const fn span_at(start: u32, length: u32) -> [u32; 2] {
     [start, start.saturating_add(length)]
+}
+
+/// The sum of the widths, the largest width when it does not fit (GN-6ad: a list parameter that the core borrows as a
+/// slice of usize).
+#[must_use]
+pub fn width_sum(widths: &[usize]) -> usize {
+    widths.iter().fold(0, |sum, width| sum.saturating_add(*width))
+}
+
+/// The largest of the values, 0 for none (GN-6ad: a list parameter that the core borrows as a slice of u32).
+#[must_use]
+pub fn largest(values: &[u32]) -> u32 {
+    values.iter().copied().fold(0, u32::max)
 }
 
 /// The negation of an int64, the whole range of which crosses the boundary (T-1); the negation of the least value is

@@ -9,7 +9,7 @@
   tuple result by its fields `.0` and `.1`, so the Go binding of `tests/e2e/shapes`, whose core takes `[usize; 2]` in
   `span_width` and u32 in `span_at` and gives `[u32; 2]`, did not compile. The crate now gives each integer parameter
   and each integer field of a record to the core through `IntoCore`, reads a tuple result through `partsN`, and
-  widens a usize result after the assertion of its width, as the other crates do (GN-6u); a start of 2^32 is kind
+  widens a usize result after the assertion of its width, as the other crates do (GN-6ac); a start of 2^32 is kind
   `invalid_number`. Verified by `npm test` in `packages/ts`.
 - The Go test of B-2 wrote an integer above the safe integers as `1 << 53`, which gofmt rewrites as `1<<53` where it
   is one of several arguments, so `gofmt -l` of the Go module of `tests/e2e/points` named `zz_generated_test.go`
@@ -80,14 +80,20 @@
   `keyed_map` keep the range of i64 (`in_int64`). The generated tests of B-2 give 2^53 and -2^53 in PHP, Python and Go
   (GN-13, GN-13b). Verified by `npm test` in `packages/ts`: 268 pass; the 7 failures are the tests of GN-6m (wait
   `blocking_io`), which this change does not touch.
+- A list parameter was given to the core as a `Vec` of the table's type, so a core that borrows `&[usize]`, `&[u32]`
+  or a slice of tuples of narrower integers did not compile. Such a list now enters through `IntoCore` as a `Vec` of
+  the core's item type, and the core call takes `&values[..]`; an item outside the core's type is kind
+  `invalid_number` (GN-6ad). Go does not convert yet. `tests/e2e/shapes` has `shapes.width_sum` over `&[usize]` and
+  `shapes.largest` over `&[u32]`, and a unit test compiles the helpers with such call sites with rustc for the host
+  and for wasm32. Verified by `npm test` in `packages/ts`.
 - PHP, Python, Node and WASM gave each integer to the core in the type of the table (u64 or i64), and widened a result
   only from u8, u16 and u32, so a core that takes `u32`, `usize` or `[usize; 2]`, or returns `usize`, did not compile.
   An argument, a field of a record or of a case, and a part of a tuple now enter the core through `IntoCore`, whose
   target the core call chooses: an integer narrows with `TryFrom`, and a value outside the core's type is kind
   `invalid_number`, so 2^32 is refused for a core `u32` and for `usize` on wasm32; a tuple enters as a Rust tuple or an
   array. A tuple result is read by `partsN` from a Rust tuple or an array, and `usize` and `isize` widen with `as`
-  after `const _: () = assert!(usize::BITS <= 64);` (GN-6u). A list parameter keeps the element type of the table,
-  so a core that takes `&[usize]` does not compile yet (defect 78), and Go does not convert yet. `tests/e2e/shapes` has
+  after `const _: () = assert!(usize::BITS <= 64);` (GN-6ac). A list parameter is passed as GN-6ad states, and Go does
+  not convert yet. `tests/e2e/shapes` has
   `shapes.span_width` over `[usize; 2]` and `shapes.span_at` of `u32` parameters with a `[u32; 2]` result. Verified
   by `npm test` in `packages/ts`.
 - A case field of an `optional` type with the default `{literal: null}` was refused ("a field default of a case is not

@@ -179,8 +179,8 @@ the design ids are those of the binding design.
   it binds as the unit (`let (): () = …`): a core that returns anything else there, a `Result` too, does not compile, so
   its `Err` is not dropped (E-1c), and the unit pattern leaves no variable unused, which the lints deny. An integer return (uint, int,
   int64) may be a narrower Rust integer, which the generated code widens with `From` (traits `WideUint` and `WideInt`
-  for the integer and a reference to it; `usize` and `isize` widen as GN-6u states); a parameter is converted into
-  the type of the table and then into the core's own type (GN-6u). A contract name that is a Rust keyword
+  for the integer and a reference to it; `usize` and `isize` widen as GN-6ac states); a parameter is converted into
+  the type of the table and then into the core's own type (GN-6ac). A contract name that is a Rust keyword
   is a raw identifier (`r#type`).
 - **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
@@ -193,7 +193,7 @@ the design ids are those of the binding design.
   record parameter and inside an `optional`; the core takes a tuple parameter by reference (T-1). Go takes a tuple as
   GN-16 states.
   Why: a tuple leaves each language as that sequence, so a value that one call returns enters another call as it is.
-- **GN-6u** A value enters the core in the core's own Rust type and leaves it from that type, which the contract does
+- **GN-6ac** A value enters the core in the core's own Rust type and leaves it from that type, which the contract does
   not name (T-1). An integer of a parameter, of a field, of an item or of a part of a tuple is first converted into the
   type of the table (u64 for `uint`, i64 for `int` and `int64`) and then given to the core through the trait
   `IntoCore<T>` of the generated crate, and the place that takes the value, the core call or the field of a struct
@@ -206,13 +206,22 @@ the design ids are those of the binding design.
   of a reference to either. An integer result of `usize` or `isize` widens with `as`, after the assertion
   `const _: () = assert!(usize::BITS <= 64);` (and the same for `isize`), which fails the build for a target where it
   is wider, because the standard library implements `From` for neither; the widened value then leaves by the rules of a
-  result of its contract type in each language, as a u64 or i64 does. A list parameter keeps the element type of the
-  table, because the core borrows it as a slice and the borrow does not infer a narrower element: a core that takes
-  `&[usize]` does not compile, and this is defect 78 (not implemented). Go does not convert yet (not implemented): a Go
+  result of its contract type in each language, as a u64 or i64 does. A list parameter is passed as GN-6ad states.
+  Go does not convert yet (not implemented): a Go
   binding passes the type of the table, so a core of a narrower type does not compile there.
   Why: the core keeps the integer type that its own code needs, such as `usize` for an index or a length, and the
   contract states only the range of the value. A trait whose target the core's signature chooses converts without a
   core type in the contract, so the contract stays the same for every core that holds the value.
+- **GN-6ad** A list parameter whose items narrow (GN-6ac), a list of integers or of tuples that hold them, is converted
+  into a local `Vec` of the table's types, which `IntoCore` turns into a `Vec` of the core's item type, and the core
+  call takes `&values[..]`, so a core that borrows a slice of a narrower item, such as `&[usize]`, `&[u32]` or
+  `&[[usize; 2]]`, gets one. An item outside the range of the core's type is kind `invalid_number` (B-2) with the name
+  of the parameter as its subject. A list of other items is passed as `&values`, as GN-6 states. Go does not convert
+  yet (not implemented).
+  Why: the core borrows a list as a slice, and `&values[..]` is that slice by its own type, `&[T]`, whose item type
+  the parameter of the core fixes, without a deref coercion at the call. A unit test compiles the helpers of GN-6ac
+  with such call sites against a core of narrower types for the host and for wasm32, so the inference is checked by
+  the compiler and not assumed.
 - **GN-6v** A variant unit (T-9) is the Rust enum that its `core_type` names, and each case is a struct variant of
   that enum: the Rust name of a case is its value in UpperCamelCase, and each field is matched and built by its
   contract name, so a case without fields is `Case {}`. A field whose type, or the type inside its `optional`, is a

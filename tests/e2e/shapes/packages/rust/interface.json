@@ -527,6 +527,53 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::span_at"
+        },
+        {
+          "id": "shapes.width_sum",
+          "name": [
+            "width",
+            "sum"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "widths"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::width_sum"
+        },
+        {
+          "id": "shapes.largest",
+          "name": [
+            "largest"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "values"
+              ],
+              "type": {
+                "list": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::largest"
         }
       ]
     },
@@ -859,6 +906,16 @@
       "member": "shapes.span_at",
       "file": "contracts/cases.json",
       "group": "span_at"
+    },
+    {
+      "member": "shapes.width_sum",
+      "file": "contracts/cases.json",
+      "group": "width_sum"
+    },
+    {
+      "member": "shapes.largest",
+      "file": "contracts/cases.json",
+      "group": "largest"
     }
   ]
 }
