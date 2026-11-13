@@ -858,6 +858,25 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
 
+test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {
+  const out = shaped();
+  // The arguments are converted, the default left as None, before the write lock of the receiver is taken.
+  const lines: Record<string, RegExp> = {
+    'packages/python/generated/lib.rs': /let source: Vec<u8> = in_source\(py, source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(&times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
+    'packages/ts/generated/lib.rs': /let source: Vec<u8> = in_source\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
+    'packages/php-ext/generated/lib.rs': /let source: Vec<u8> = in_latin1\(source, "source"\)\?;\n\s+let times: Option<u64> = in_default\(times, [^\n]*\n\s+let mut receiver = self\.inner\.write\("Buffer"\)[^\n]*\n\s+let result = polyspec_shapes::Buffer::append\(&mut receiver, &source, times\);/,
+  };
+  for (const [path, line] of Object.entries(lines)) {
+    assert.match(text(out, path), line, path);
+    assert.match(text(out, path), /inner: binding_core::Exclusive<polyspec_shapes::Buffer>,/, path);
+  }
+  // The generated tests call the member with the default left out and given, and with a text and its bytes.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c"\)\),\n\s+_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("c", 1\)\),/);
+  assert.match(python, /_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\("a\\xe9"\)\),\n\s+_outcome\(lambda: pkg\.Buffer\("ab"\)\.append\(bytes\.fromhex\("61c3a9"\)\)\),/);
+  assert.match(python, /def test_b5c_buffer_refuses_a_poisoned_object\(self\) -> None:/);
+});
+
 test('a source parameter takes a text or bytes, and Node bytes are a Uint8Array (T-1, T-7, GN-6j)', () => {
   const out = shaped();
   const python = text(out, 'packages/python/generated/lib.rs');
@@ -958,7 +977,7 @@ test('an error unit is a class under its parent, and a kind names the class it i
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').module = 'errors'; }), /parse_error: an error unit in the module errors is not generated yet/);
   assert.throws(() => shaped((c) => { c.errors.kinds[2].class = 'frame_options'; }), /TooMany: the class frame_options is not an error unit of category value \(E-2\)/);
   assert.throws(() => shaped((c) => { unitOf(c, 'parse_error').parent = 'utf8_error'; }), /the parents form a cycle \(P-4\)/);
-  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
+  assert.throws(() => shaped((c) => { c.targets = [...c.targets, 'go']; c.units = c.units.filter((u: any) => u.id !== 'buffer'); c.cases = c.cases.filter((row: any) => !String(row.member).startsWith('buffer.')); member(c, 'shapes.length').parameters[0].type = 'text'; for (const u of c.units) for (const m of u.members ?? []) for (const p of m.parameters ?? []) if (p.default !== undefined) { delete p.default; delete p.default_core; p.required = true; } for (const f of unitOf(c, 'frame_options').fields) if (f.default !== undefined) { delete f.default; delete f.default_core; f.required = true; } }), /parse_error: an error unit is not generated for go yet \(E-2, E-7\)/);
 });
 
 test('each variant that a member raises is asserted against the core error in every crate (E-5, I-2, GN-7b)', () => {

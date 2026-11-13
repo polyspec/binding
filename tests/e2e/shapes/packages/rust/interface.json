@@ -361,6 +361,90 @@
       "category": "value",
       "parent": "parse_error",
       "final": true
+    },
+    {
+      "id": "buffer",
+      "name": [
+        "buffer"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Buffer",
+      "final": true,
+      "members": [
+        {
+          "id": "buffer.new",
+          "name": [
+            "new"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "start"
+              ],
+              "type": "source",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::Buffer::new"
+        },
+        {
+          "id": "buffer.size",
+          "name": [
+            "size"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "parameters": [],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_shapes::Buffer::size",
+            "receiver": "&self"
+          }
+        },
+        {
+          "id": "buffer.append",
+          "name": [
+            "append"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "source"
+              ],
+              "type": "source",
+              "required": true
+            },
+            {
+              "name": [
+                "times"
+              ],
+              "type": "uint",
+              "default": {
+                "const": "shapes.default_times"
+              },
+              "default_core": "polyspec_shapes::DEFAULT_TIMES"
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_shapes::Buffer::append",
+            "receiver": "&mut self"
+          }
+        }
+      ]
     }
   ],
   "changes": [],
@@ -394,6 +478,21 @@
       "member": "shapes.total",
       "file": "contracts/cases.json",
       "group": "total"
+    },
+    {
+      "member": "buffer.new",
+      "file": "contracts/cases.json",
+      "group": "buffer_new"
+    },
+    {
+      "member": "buffer.size",
+      "file": "contracts/cases.json",
+      "group": "buffer_size"
+    },
+    {
+      "member": "buffer.append",
+      "file": "contracts/cases.json",
+      "group": "buffer_append"
     }
   ]
 }

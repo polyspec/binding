@@ -166,6 +166,39 @@ pub fn total(numbers: Option<&[u64]>) -> u64 {
     }
 }
 
+/// The bytes that were appended, which a member changes (U-2: a receiver `&mut self` together with a `source` and a
+/// parameter that the caller may leave out).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Buffer {
+    bytes: Vec<u8>,
+}
+
+impl Buffer {
+    /// A buffer that starts with the bytes of a source.
+    #[must_use]
+    pub fn new(start: &[u8]) -> Self {
+        Self { bytes: start.to_vec() }
+    }
+
+    /// The number of the bytes.
+    #[must_use]
+    pub fn size(&self) -> u64 {
+        self.bytes.len() as u64
+    }
+
+    /// Appends the bytes of a source `times` times and gives the new size (U-2: `None` is the default of the core).
+    pub fn append(&mut self, source: &[u8], times: Option<u64>) -> u64 {
+        let times = match times {
+            Some(times) => times,
+            None => DEFAULT_TIMES,
+        };
+        for _index in 0..times {
+            self.bytes.extend_from_slice(source);
+        }
+        self.size()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{checksum, frame, length, repeat, reversed, total, Error, FrameOptions};
@@ -190,5 +223,13 @@ mod tests {
         assert_eq!(checksum(&[1, 2]), Ok(3));
         assert_eq!(checksum(&[]), Err(Error::Empty));
         assert_eq!(reversed(&[1, 2]), vec![2, 1]);
+    }
+
+    #[test]
+    fn a_buffer_appends() {
+        let mut buffer = Buffer::new(b"ab");
+        assert_eq!(buffer.append(b"c", None), 3);
+        assert_eq!(buffer.append(b"c\xff", Some(2)), 7);
+        assert_eq!(buffer.size(), 7);
     }
 }

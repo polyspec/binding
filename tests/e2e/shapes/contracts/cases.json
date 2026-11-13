@@ -118,5 +118,42 @@
       "id": "no_number_by_default",
       "result": 0
     }
+  ],
+  "buffer_new": [
+    {
+      "id": "a_buffer_starts_with_a_source",
+      "start": "ab"
+    }
+  ],
+  "buffer_size": [
+    {
+      "id": "the_size_of_a_text_source",
+      "start": "ab",
+      "result": 2
+    },
+    {
+      "id": "the_size_of_a_bytes_source",
+      "start": {
+        "hex": "61ff62"
+      },
+      "result": 3
+    }
+  ],
+  "buffer_append": [
+    {
+      "id": "once_by_default",
+      "start": "ab",
+      "source": "c",
+      "result": 3
+    },
+    {
+      "id": "bytes_twice",
+      "start": "ab",
+      "source": {
+        "hex": "63ff"
+      },
+      "times": 2,
+      "result": 6
+    }
   ]
 }
