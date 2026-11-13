@@ -56,7 +56,7 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
         stdio: ['ignore', fd, 'inherit'],
       });
       if (run.error !== undefined) throw run.error;
-      if (run.status !== 0) usage(`cargo metadata failed with status ${String(run.status)}`);
+      if (run.status !== 0) fail(`cargo metadata failed with status ${String(run.status)}`);
     } finally {
       closeSync(fd);
     }
@@ -70,6 +70,13 @@ function dependencies(contract: unknown, crateDir: string): Map<string, unknown>
     found.set(library, JSON.parse(readFileSync(join(dirname(crate.manifest_path), 'interface.json'), 'utf8')));
   }
   return found;
+}
+
+// GN-1c: a failure that is no error of the command line, such as a refused target or a manifest that is not the crate
+// of the contract, has status 1 and no usage line; only an error of the command line prints the usage, with status 2.
+function fail(message: string): never {
+  process.stderr.write(`binding: ${message}\n`);
+  process.exit(1);
 }
 
 function usage(message: string): never {
@@ -154,7 +161,7 @@ if (typeof version === 'object' && version.workspace === true) {
   const workspace = parse(readFileSync(join(root, 'Cargo.toml'), 'utf8')) as { workspace?: { package?: { version?: string } } };
   version = workspace.workspace?.package?.version;
 }
-if (core?.name !== checked.core.crate || typeof version !== 'string') usage(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
+if (core?.name !== checked.core.crate || typeof version !== 'string') fail(`${checked.core.path}/Cargo.toml is not the crate ${checked.core.crate} with a version`);
 // G-5: the binding crates turn on fault-test of each core whose fault injection points a case arms.
 const tracked = trackedPackages(checked, version, new Map(Object.entries(manifest.dependencies ?? {})), casePointLibraries(checked, caseFiles));
 
@@ -240,7 +247,7 @@ const owned = generatedDirs(checked);
 const goDir = goModuleDir(checked);
 const ownedFile = (path: string): boolean => path.startsWith(`${goDir}/`) && isGoGenerated(path);
 for (const path of files.keys()) {
-  if (!owned.some((dir) => path.startsWith(`${dir}/`)) && !ownedFile(path)) usage(`internal: ${path} is outside the generated directories`);
+  if (!owned.some((dir) => path.startsWith(`${dir}/`)) && !ownedFile(path)) fail(`internal: ${path} is outside the generated directories`);
 }
 // Each owned directory of a target is written whole into a staging directory and then renamed into place, so a reader
 // never sees a part of it and no file of an earlier generation stays.
@@ -280,5 +287,5 @@ if (targets.includes('go') && !refused.some((r) => r.target === 'go')) {
 if (refused.length > 0) {
   const lines = refused.map(({ target, refusals }) => `${target}: not generated (G-4), ${refusals.length} item${refusals.length === 1 ? '' : 's'}:\n${refusals.map((line) => `  ${line}\n`).join('')}`);
   const written = targets.filter((target) => !refused.some((r) => r.target === target));
-  usage(`${lines.join('')}${written.length === 0 ? 'no target was generated' : `generated: ${written.join(', ')}`}`);
+  fail(`${lines.join('')}${written.length === 0 ? 'no target was generated' : `generated: ${written.join(', ')}`}`);
 }

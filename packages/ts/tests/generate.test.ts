@@ -77,7 +77,7 @@ test('two generations in two directories give the same bytes and name neither di
   }
 });
 
-test('the fixture names the five targets, and the generator refuses its go target by name and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
+test('the fixture names the five targets, and the generator refuses its go target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
   const goRefused = /go: not generated \(G-4\), 1 item:\n  a tuple of \["text","uint"\] inside another type is not generated for Go yet/;
@@ -85,13 +85,16 @@ test('the fixture names the five targets, and the generator refuses its go targe
   try {
     // The target Go alone writes nothing.
     const alone = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out, '--target', 'go'], { encoding: 'utf8' });
-    assert.equal(alone.status, 2, alone.stderr);
+    // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
+    assert.equal(alone.status, 1, alone.stderr);
+    assert.doesNotMatch(alone.stderr, /usage:/);
     assert.match(alone.stderr, goRefused);
     assert.match(alone.stderr, /no target was generated/);
     assert.equal(files(out).size, 0, 'a refused generation wrote files');
     // Every target: the refused Go is named, and every other target is written as it is alone.
     const whole = spawnSync(process.execPath, [cli, 'generate', '--root', fixture, '--out', out], { encoding: 'utf8' });
-    assert.equal(whole.status, 2, whole.stderr);
+    assert.equal(whole.status, 1, whole.stderr);
+    assert.doesNotMatch(whole.stderr, /usage:/);
     assert.match(whole.stderr, goRefused);
     assert.match(whole.stderr, new RegExp(`generated: ${FIXTURE_TAKEN.replaceAll(',', ', ')}`));
     const written = files(out);

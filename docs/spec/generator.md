@@ -39,9 +39,12 @@ the design ids are those of the binding design.
   another (GN-14c).
 - **GN-1c** `binding generate` generates each target that it is given, or each target of the contract, by itself
   (GN-1b). It writes the files of every target that refuses nothing, names each refused target with its refused
-  items, keeps the files of a refused target as they are, and then fails with status 2 when a target was refused.
-  Why: a contract that one target cannot take yet still gives the bindings of the other targets, and every target
-  that fails is named.
+  items and the targets that it generated, keeps the files of a refused target as they are, and then fails with
+  status 1 when a target was refused. A refusal, like any failure that is no error of the command line, prints no
+  usage line; only an error of the command line prints it, with status 2. A repository that builds and tests one
+  target generates it alone with `--target`, so a refusal of another target does not stop it. Why: a contract that
+  one target cannot take yet still gives the bindings of the other targets, every target that fails is named, and a
+  usage line would say that the command was written wrong when it was not.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice

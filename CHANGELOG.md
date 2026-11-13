@@ -9,6 +9,10 @@
   of their packages. `make test-ts` type-checks packages/ts and runs its tests, `make test-rust` tests binding_core
   with all features and with none, `make lint-rust` runs clippy in both forms and checks the format, and `make check`
   runs the three to their end and names each failed one.
+- `binding generate` ended a refused target, after it had written the other targets, with the usage line and status 2,
+  as if the command line were wrong, so a repository could not tell the refusal from a usage error. A refusal, a core
+  manifest that is not the crate of the contract and a failed `cargo metadata` now end with status 1 and no usage
+  line; only an error of the command line prints the usage with status 2 (GN-1c).
 - A fault injection point was judged by the feature `fault-test` of binding_core, which Cargo unifies across a build,
   so one core with `fault-test` turned on the points of every core: a binding crate that left
   `polyspec-<library>/fault-test` out of its feature passed the cases that arm the points of that library. A point
