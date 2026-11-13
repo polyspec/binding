@@ -506,6 +506,21 @@ the design ids are those of the binding design.
   names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
   generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
   host unit would be a second declaration that could differ from its source.
+- **GN-6q** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
+  an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
+  members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
+  calls the method of the language object through the API of its language, so the binding never takes the native
+  object of another binding out. A trait method returns the failure of the core error of the owning repository
+  (`binding_core::Failure<<owner error>>`, the one error enum of the owner's `errors.kinds`), and an exception of the
+  language code is `Failure::Raised`, which the core of this repository passes on. The binding declares no type of
+  the unit: the declarations name the type of the owning package (PHP the interface of its namespace, Python the
+  Protocol of `<owner root>._types`, Node the type that the owning npm package exports), and a user implements that
+  type. The name of such a unit differs from the name of every unit of this contract, which the generator refuses by
+  name otherwise (G-4). Not generated yet, each refused by name (G-4): the Go and WASM forms; a case value that a member
+  of the owning repository makes (`new` of its member, GN-13f), whose generated test fails with that reason (GN-13);
+  and the module dependency of the PHP extension on the extension of the owning package (`ZEND_MOD_REQUIRED`). Why: a
+  native object of another binding lives in another module, so the binding of this repository can reach it only
+  through the methods that the language gives every object (T-3).
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

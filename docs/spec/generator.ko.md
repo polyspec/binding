@@ -420,6 +420,17 @@
   U-2: 생성 unit에 대한 host 동작은 host functions unit의 함수다). 타입에 host unit을 적는 생성 unit은 이름을 대고 거부한다(G-4).
   바인딩은 자기가 생성하는 타입만 변환하기 때문이다. 이유: host 코드가 바인딩을 부르고 바인딩은 host 코드를 부르지 않으므로,
   host unit을 생성한 사본은 그 소스와 달라질 수 있는 두 번째 선언이 된다.
+- **GN-6q** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
+  trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member를 확인하고(kind `invalid_callback`), `thread: owner`가 적용되며, 각
+  trait method는 그 언어의 API로 언어 객체의 method를 부르므로, 바인딩은 다른 바인딩의 native 객체를 꺼내지 않는다. trait
+  method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,
+  언어 코드의 예외는 `Failure::Raised`이며 이 레포의 코어가 그것을 넘긴다. 바인딩은 그 unit의 타입을 선언하지 않는다. 선언은 소유
+  패키지의 타입을 적고(PHP는 그 namespace의 interface, Python은 `<소유 root>._types`의 Protocol, Node는 소유 npm 패키지가 내보내는
+  타입), 사용자는 그 타입을 구현한다. 그런 unit의 이름은 이 계약의 어느 unit 이름과도 다르며, 같으면 생성기가 이름을 대고
+  거부한다(G-4). 아직 생성하지 않으며 각각 이름을 대고 거부하는 것(G-4): Go와 WASM의 꼴, 소유 레포의 member가 만드는 case 값(그
+  member의 `new`, GN-13f)이며 그 생성 테스트는 그 이유로 실패한다(GN-13), 그리고 소유 패키지의 확장에 대한 PHP 확장의 module 의존
+  (`ZEND_MOD_REQUIRED`). 이유: 다른 바인딩의 native 객체는 다른 module 안에 있으므로, 이 레포의 바인딩은 언어가 모든 객체에 주는
+  method로만 그것에 닿을 수 있다(T-3).
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
