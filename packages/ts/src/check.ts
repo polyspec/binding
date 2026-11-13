@@ -1226,6 +1226,7 @@ class Checker {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         this.caseInstances(row.member, record, `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
+        this.caseCancel(row.member, record, `/cases/${i}`);
         const raises = record['raises'];
         const expected = typeof raises === 'object' && raises !== null ? (raises as Record<string, unknown>) : {};
         const kind = expected['kind'];
@@ -1339,6 +1340,27 @@ class Checker {
     }
     const returns = found.member.returns;
     if (returns !== undefined && returns !== 'self' && Object.hasOwn(record, resultKey)) walk(returns, record[resultKey], `the result ${resultKey}`);
+  }
+
+  // G-5 (GN-13): a value of the type cancel is {"cancel": "fired"}, a cancellation that fired before the call, or
+  // {"cancel": "open"}, one that does not fire; an optional of it may be null.
+  caseCancel(memberId: string, record: Record<string, unknown>, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const where = `the case ${String(record['id'])} of ${memberId}`;
+    for (const parameter of found.member.parameters ?? []) {
+      const optional = typeof parameter.type === 'object' && 'optional' in parameter.type;
+      const type = typeof parameter.type === 'object' && 'optional' in parameter.type ? parameter.type.optional : parameter.type;
+      const key = convert(parameter.name, 'python', 'variable');
+      if (type !== 'cancel' || !Object.hasOwn(record, key)) continue;
+      const value = record[key];
+      if (optional && value === null) continue;
+      const form = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+      const state = form?.['cancel'];
+      if (form === undefined || Object.keys(form).length !== 1 || (state !== 'fired' && state !== 'open')) {
+        this.report('CK-22', path, `${where}: the argument ${key} is {"cancel": "fired" | "open"}${optional ? ' or null' : ''}, not ${JSON.stringify(value)} (G-5)`);
+      }
+    }
   }
 
   // The arguments of a member in an instance value or a case whose class type is given as an instance value.

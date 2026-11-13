@@ -544,6 +544,9 @@ the design ids are those of the binding design.
   in a loop;
   `map` and `object` hold an array of `[key, value]` pairs in order, a key being a text, or `{"int": n}` or
   `{"hex": ...}` for a keyed map; `reference` holds `{"id": n, "value": ...}`, and the same `id` is the same reference.
+  A value of the type `cancel` is `{"cancel": "fired"}`, a cancellation that fired before the call, or
+  `{"cancel": "open"}`, one that does not fire (CK-22); the type is not generated yet, so a member that takes it is
+  refused by name (G-4).
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
   every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
   that array of `[key, value]`. The members of a

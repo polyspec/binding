@@ -144,7 +144,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   that holds the result of the member (GN-13e); a row without it reads the key `result`, and the row of an alias has
   none (CK-1). The `receiver` of a case and an argument of a class type may be an instance value of GN-13f: its member exists and
   gives the class, through its `pick`; a method has its `receiver`; `args` are the parameters of the member; each call
-  of `then` is a method of the class. A case may arm fault injection points (G-5) in
+  of `then` is a method of the class. An argument of the type `cancel` is `{"cancel": "fired"}`, a cancellation that
+  fired before the call, or `{"cancel": "open"}`, one that does not fire; an `optional<cancel>` may be `null`. A case may arm fault injection points (G-5) in
   `"faults": [{"point": "<library>.<id>", "kind": "io" | "short" | "broken", "errno": "<symbol>", "bytes": <n>,
   "nth": <n>}]`: `<library>` is the library name in snake_case, of this contract or of a library that the check was
   given, and `<id>` a point of that contract's `faults`; `kind` is one of the point's `inject`; `bytes` is given with

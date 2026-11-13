@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case gave any value at a place of the type `cancel` without a finding, so a kind that only a cancellation that
+  fired before the call reaches had no case form. A case gives it as `{"cancel": "fired"}`, or `{"cancel": "open"}`
+  for one that does not fire, and `binding check` reports any other value (CK-22). Verified by `npm test` in
+  `packages/ts`.
 - An `out` row of a value alias whose `make` names a member was refused, so a value whose language form is an
   instance of a class of the contract had no binding. A row by a constructor or static member of a generated class
   whose one parameter is the content of the kind and which cannot fail now calls its core path on that content, and
