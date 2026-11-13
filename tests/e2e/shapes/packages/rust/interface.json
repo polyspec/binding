@@ -740,6 +740,181 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_shapes::offset"
+        },
+        {
+          "id": "shapes.tally_of",
+          "name": [
+            "tally",
+            "of"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "words"
+              ],
+              "type": {
+                "list": "text"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "tally"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::tally_of"
+        },
+        {
+          "id": "shapes.tally_total",
+          "name": [
+            "tally",
+            "total"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "tally"
+              ],
+              "type": {
+                "unit": "tally"
+              },
+              "required": true
+            }
+          ],
+          "returns": "uint",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::tally_total"
+        },
+        {
+          "id": "shapes.merged",
+          "name": [
+            "merged"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "maps"
+              ],
+              "type": {
+                "list": {
+                  "map": "uint"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "map": "uint"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::merged"
+        },
+        {
+          "id": "shapes.split_counts",
+          "name": [
+            "split",
+            "counts"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "counts"
+              ],
+              "type": {
+                "map": "uint"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "map": "uint"
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::split_counts"
+        },
+        {
+          "id": "shapes.doubled",
+          "name": [
+            "doubled"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "groups"
+              ],
+              "type": {
+                "map": {
+                  "map": "uint"
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "map": {
+              "map": "uint"
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::doubled"
+        },
+        {
+          "id": "shapes.present",
+          "name": [
+            "present"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "maps"
+              ],
+              "type": {
+                "list": {
+                  "optional": {
+                    "keyed_map": "text",
+                    "key": [
+                      "int",
+                      "text"
+                    ]
+                  }
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "optional": {
+                "keyed_map": "text",
+                "key": [
+                  "int",
+                  "text"
+                ]
+              }
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_shapes::present"
         }
       ]
     },
@@ -1086,6 +1261,41 @@
           }
         }
       ]
+    },
+    {
+      "id": "tally",
+      "name": [
+        "tally"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_shapes::Tally",
+      "fields": [
+        {
+          "name": [
+            "counts"
+          ],
+          "type": {
+            "map": "uint"
+          },
+          "required": true
+        },
+        {
+          "name": [
+            "labels"
+          ],
+          "type": {
+            "keyed_map": "text",
+            "key": [
+              "int",
+              "text"
+            ]
+          },
+          "required": true
+        }
+      ]
     }
   ],
   "changes": [],
@@ -1214,6 +1424,36 @@
       "member": "shapes.offset",
       "file": "contracts/cases.json",
       "group": "offset"
+    },
+    {
+      "member": "shapes.tally_of",
+      "file": "contracts/cases.json",
+      "group": "tally_of"
+    },
+    {
+      "member": "shapes.tally_total",
+      "file": "contracts/cases.json",
+      "group": "tally_total"
+    },
+    {
+      "member": "shapes.merged",
+      "file": "contracts/cases.json",
+      "group": "merged"
+    },
+    {
+      "member": "shapes.split_counts",
+      "file": "contracts/cases.json",
+      "group": "split_counts"
+    },
+    {
+      "member": "shapes.doubled",
+      "file": "contracts/cases.json",
+      "group": "doubled"
+    },
+    {
+      "member": "shapes.present",
+      "file": "contracts/cases.json",
+      "group": "present"
     }
   ]
 }

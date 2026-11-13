@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d603af92b09f8d9c230179e20aa2f690a4f7019cd5e3ec15b0a8194a29c802b0 -->
+<!-- source-sha256: 3bb9ad834510875a1e7a57a5286ab14215af8183ee39c9835b1aefcc465843a5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -45,6 +45,44 @@
   row의 번호를 접미사 없는 literal로 썼고, 그것은 `out_uint(…, impl WideUint)`에서 `i32`다. 이제 `u64` literal이다
   (GN-15c). json의 계약으로 돌린 relay의 end-to-end 실행이 찾았다. `make test-ts`로 검증했다: 새 테스트 셋이 각각 자기
   텍스트 때문에 실패했고, 변경 후 412개 중 412개가 통과한다.
+- 생성된 Node와 WASM 테스트는 호출의 가운데에서 기본값이 있는 parameter를 생략할 때 그 인자를 빼 버렸고, 그래서 options
+  record가 그 자리에 섰다: `pkg.pad('ab', { end: '!' })`는 record를 `fill`로 주었고, `tests/e2e/shapes`의 `pad` 테스트 셋이
+  두 target 각각에서 kind `invalid_argument_type`으로 실패했다. 이 작업 이전 커밋의 테스트도 같은 호출을 썼다. 이제
+  GN-6i가 언어마다 그런 호출의 한 가지 꼴을 적는다: Python은 keyword, PHP는 이름 있는 인자, Node와 WASM은 그 자리의
+  `undefined`, Go는 nil이며, 각 언어의 선언이 그 꼴을 받는다. Node와 WASM 테스트는 `pkg.pad('ab', undefined, { end: '!' })`로
+  쓰고 호출 끝의 `undefined` 인자만 뺀다(U-2, GN-6i, GN-13d, GN-13e). `make test-ts`로 확인했다: 테스트가 호출
+  `pkg.pad('ab', { side: 'left' })` 때문에 실패했고, 397개 중 397개가 통과한다.
+- Go는 이미 포인터인 타입의 `optional`을 두 번째 포인터로 썼다: `optional<keyed_map<T>>`는 `**KeyedMap[T]`,
+  `optional<map<T>>`는 `**Map[T]`, class의 `optional`은 `**<Class>`였고, 그런 타입의 기본값이 있는 parameter나 field도
+  두 번째 포인터를 받았다. 이제 nil이 그 타입의 값이 아닌 포인터는 두 번째 포인터를 받지 않는다. 그 nil이 없는 값이고
+  C ABI는 그 nil에 값이 없다는 태그를 쓴다. `map<T>`, `keyed_map<T>`, class의 인스턴스, 다른 레포의 value class가
+  그렇고, `optional`의 `optional`은 두 번째 포인터를 그대로 둔다(GN-15e). `make test-ts`로 확인했다:
+  `tests/e2e/shapes`의 Go 바인딩 테스트가 `Present`의 `[]**KeyedMap[string]` 때문에 실패했고 이제 바인딩과 그 테스트에
+  `**`가 없을 것을 요구하며, 397개 중 397개가 통과한다.
+- `tests/e2e/shapes`의 첫 map case가 결함 둘을 드러냈다. Node addon은 전역 `Array`를 object로 읽었는데 napi는 함수를 그렇게
+  읽는 것을 거부하므로, map이 있는 모든 호출이 kind `internal`로 실패했다. 이제 그 검사 없이 읽는다. Go 테스트는 map 값을
+  한 줄의 함수 리터럴로 썼는데 gofmt는 본문이 한 줄보다 긴 함수 리터럴을 여러 줄로 나누므로, `gofmt -l`이
+  `zz_generated_test.go`를 지목했다. 이제 map 값은 항목마다 helper `mapWith`나 `keyedWith`를 부르는 호출이다(T-2, GN-12,
+  GN-13f). `make test-ts`로 확인: 397개 중 397개 통과.
+- member가 `map<T>`나 `keyed_map<T>`의 값으로만 돌려주는 record는 result form을 얻지 못했다. result form이 있는 record를
+  모으는 순회가 map 안으로 들어가지 않았으므로, Python·Node·PHP·WASM crate는 갖고 있지 않은 변환 `out_<record>`를 불렀다.
+  이제 그 순회는 map과 keyed map 안으로 들어간다(T-2, T-4, GN-6a). `make test-ts`로 확인: 새 테스트는 Python crate에
+  `out_text_measure`가 없어서 실패했고, 397개 중 397개가 통과한다.
+- 다른 레포의 record를 부르는 계약에서, 생성된 Python·PHP 테스트는 그 record를 계약 자신의 패키지 안의 이름으로
+  불렀다(`pkg.Point`, `\Polyspec\Plot\Point`). 그런 클래스는 없으므로 `tests/e2e/plot`의 Python 테스트는
+  `module 'polyspec.plot' has no attribute 'Point'`로 실패했다. 이제 GN-6c의 규칙은 모든 target에 대해, 다른 레포의 unit은
+  그 레포 패키지의 unit이라고 적는다: Python 테스트는 그 패키지의 모듈을 `foreign_<library>`로 import하고 PHP 테스트는 그
+  레포 namespace의 클래스를 부른다. Go 테스트가 그 레포 Go 모듈의 struct를 부르고 Node·WASM 테스트가 plain object를 주는
+  것과 같다(T-3, GN-6c). list, tuple, map이 없는 계약(`tests/e2e/points`, `tests/e2e/plot`)의 WASM crate는 실패의 생성자
+  인자에 `Array::of4`를 쓰면서 `js_sys::Array`를 import하지 않았다. 이제 crate는 그것을 항상 import한다(GN-18).
+  `make test-ts`로 확인: 새 테스트 둘이 이 이유로 실패했고, 396개 중 396개가 통과한다.
+- 다른 타입 안의 `map<T>`나 `keyed_map<T>`(record의 field, list·optional·다른 map의 항목)는 Node와 WASM에서 이름으로
+  거부되었다. JavaScript 진입점이 `Map`을 항목으로 바꾸었으므로 parameter나 반환 전체가 map일 때만 받았기 때문이다. 이제
+  addon과 WASM 모듈이 값을 판정하는 자리에서 `Map`을 읽고 돌려줄 `Map`을 만들므로, 두 target은 타입의 모든 자리에서 map을
+  받고 진입점은 그 값을 그대로 넘긴다(T-2, GN-12, GN-18). `Map`이 아닌 값은 그대로 kind `invalid_argument_type`이고, 바이트
+  문자열 key는 이제 모든 자리에서 이름으로 거부된다. `tests/e2e/shapes`에 record `tally`와 member `tally_of`,
+  `tally_total`, `merged`, `split_counts`, `doubled`, `present`를 case와 함께 추가했다: record, list, optional, map 안의
+  map을 양방향으로 다룬다. `make test-ts`로 확인: 394개 중 394개 통과.
 - 생성 crate의 helper가 `async fn`이면 모든 crate에 남았다. `usedHelpers`는 항목의 처음에서 `fn`이나 `trait` 뒤의
   이름만 읽었고, 그래서 WASM crate의 `async fn caught`는 이름이 없어 쓰인 것으로 세어졌다. `wait: async_driver`
   member가 없는 WASM crate(variants, sample)에 죽은 코드가 있었고 lint가 이를 deny한다. 이제 `usedHelpers`는

@@ -284,43 +284,48 @@ fn out_list<T>(value: impl IntoIterator<Item = T>, item: impl Fn(T) -> Result<Js
     Ok(array.into())
 }
 
-/// T-2: the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a map is a whole
-/// parameter, GN-18): each key a string; any other key is kind invalid_argument_type.
+/// T-2, GN-18: the entries of a Map in its order, each (key, value); a value that is no Map (an array of pairs, a plain
+/// object) is kind invalid_argument_type. The Map is read here, where the value is judged, so a map is taken at every
+/// place of a type: as a parameter, in a list, an optional, a record, a variant and another map.
+fn map_entries(value: &JsValue, subject: &str, expected: &str) -> Result<Vec<(JsValue, JsValue)>, Fail> {
+    let map = value.dyn_ref::<js_sys::Map>().ok_or_else(|| type_error(subject, expected))?;
+    let mut entries = Vec::new();
+    for entry in Array::from(map).iter() {
+        let pair = entry.dyn_ref::<Array>().filter(|pair| pair.length() == 2).ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("a Map gave an entry that is no pair") }))?;
+        entries.push((pair.get(0), pair.get(1)));
+    }
+    Ok(entries)
+}
+
+/// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
 fn in_map<T>(value: &JsValue, subject: &str, item: impl Fn(&JsValue) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let expected = "a Map whose keys are strings";
-    let entries = value.dyn_ref::<Array>().ok_or_else(|| type_error(subject, expected))?;
     let mut map = binding_core::OrderedMap::new();
-    for entry in entries.iter() {
-        let pair = entry.dyn_ref::<Array>().filter(|pair| pair.length() == 2).ok_or_else(|| type_error(subject, expected))?;
-        let key = pair.get(0);
+    for (key, value) in map_entries(value, subject, expected)? {
         if !key.is_string() {
             return Err(type_error(subject, expected));
         }
-        if map.insert(in_text(&key, subject)?, item(&pair.get(1))?).is_some() {
+        if map.insert(in_text(&key, subject)?, item(&value)?).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
     Ok(map)
 }
 
-/// T-2: a map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map.
+/// T-2: a map, owned or borrowed, as a Map of its entries in their order.
 fn out_map<T>(value: impl Borrow<binding_core::OrderedMap<T>>, item: impl Fn(&T) -> Result<JsValue, Fail>) -> Result<JsValue, Fail> {
-    let entries = Array::new();
+    let entries = js_sys::Map::new();
     for (key, value) in value.borrow().iter() {
-        entries.push(&out_tuple(&[out_text(key)?, item(value)?])?);
+        entries.set(&out_text(key)?, &item(value)?);
     }
     Ok(entries.into())
 }
 
-/// T-2, U-7 (c): the entries of a Map, which the JavaScript entry turns into an array of [key, value] (a keyed map is a
-/// whole parameter, GN-18): a key that is a safe integer or a string of a kind that the contract lists; any other key is
+/// T-2, U-7 (c): a Map whose keys are safe integers or strings of the kinds that the contract lists; any other key is
 /// kind invalid_argument_type.
 fn in_keyed_map<T>(value: &JsValue, subject: &str, kinds: &[u8], expected: &str, item: impl Fn(&JsValue) -> Result<T, Fail>) -> Result<binding_core::KeyedMap<T>, Fail> {
-    let entries = value.dyn_ref::<Array>().ok_or_else(|| type_error(subject, expected))?;
     let mut map = binding_core::KeyedMap::new();
-    for entry in entries.iter() {
-        let pair = entry.dyn_ref::<Array>().filter(|pair| pair.length() == 2).ok_or_else(|| type_error(subject, expected))?;
-        let key = pair.get(0);
+    for (key, value) in map_entries(value, subject, expected)? {
         // GN-12a: a number key of a listed int is a safe integer, else kind invalid_number.
         let (tag, key) = if key.as_f64().is_some() && kinds.contains(&0) {
             (0, binding_core::Key::Int(safe_integer(&key, subject, NumberType::Int)?))
@@ -335,24 +340,24 @@ fn in_keyed_map<T>(value: &JsValue, subject: &str, kinds: &[u8], expected: &str,
         if !kinds.contains(&tag) {
             return Err(type_error(subject, expected));
         }
-        if map.insert(key, item(&pair.get(1))?).is_some() {
+        if map.insert(key, item(&value)?).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
     Ok(map)
 }
 
-/// T-2: a keyed map, owned or borrowed, as an array of [key, value], which the JavaScript entry makes a Map; a byte
-/// string key, which no WASM contract lists, is kind internal.
+/// T-2: a keyed map, owned or borrowed, as a Map of its entries in their order; a byte string key, which no WASM
+/// contract lists, is kind internal.
 fn out_keyed_map<T>(value: impl Borrow<binding_core::KeyedMap<T>>, item: impl Fn(&T) -> Result<JsValue, Fail>) -> Result<JsValue, Fail> {
-    let entries = Array::new();
+    let entries = js_sys::Map::new();
     for (key, value) in value.borrow().iter() {
         let key = match key {
             binding_core::Key::Int(integer) => out_int(integer)?,
             binding_core::Key::Text(text) => out_text(text)?,
             binding_core::Key::Bytes(_bytes) => return Err(binding_error(BindingError::Internal { detail: String::from("a byte string key of a keyed map") })),
         };
-        entries.push(&out_tuple(&[key, item(value)?])?);
+        entries.set(&key, &item(value)?);
     }
     Ok(entries.into())
 }
@@ -1063,7 +1068,8 @@ function libRust(model: Model): string {
   const used = usedHelpers(`${HELPERS}\n${AWAITED}\n${WIDEN}\n${INTO_CORE}\n${PARTS}\n${CORE_FORM}\n${units}`, `${functions}${propertyUses}`);
   const state = objectState(model, `${used}${functions}`);
   // A name after :: (OutValue::Object) is not a use of the type.
-  const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
+  // Array: the arguments of the constructor of a failure (throw), which every contract has.
+  const jsTypes = ['Array', 'JsString', 'Object', 'Uint8Array'].filter((t) => t === 'Array' || new RegExp(`(?<!::)\\b${t}\\b`).test(`${used}${functions}`) || (t === 'Object' && hasProperties(model)));
   const cast = /\.(dyn_ref|dyn_into|unchecked_into)::|\.(dyn_into|unchecked_ref)\(\)/.test(`${used}${functions}`) || hasProperties(model);
   const registered = model.objects.length === 0 ? '' : `
         MAKERS.with(|registered| registered.replace(makers));
@@ -1247,12 +1253,6 @@ ${aliasesWithKinds(model).map((alias) => `    /// U-7: runs the in function of t
 
 // ---- JavaScript and declarations ----
 
-// T-2: a keyed map, whole or optional, which the JavaScript entry passes as the entries of a Map (GN-18).
-const keyedType = (type: Type): boolean => {
-  const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
-  return typeof base === 'object' && ('keyed_map' in base || 'map' in base);
-};
-
 const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
 
 function tsType(model: Model, type: Type, input: boolean): string {
@@ -1319,13 +1319,12 @@ export class ${name} extends ${parent} {
         lines.push(`  checkRecord(${jsString(label)}, ${jsString(langName('wasm', p.name, 'variable'))}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
-      if (keyedType(p.type)) return `toEntries(args[${i}])`;
       return typeof p.type === 'object' && 'list' in p.type ? `toList(args[${i}])` : `args[${i}]`;
     });
     const entered = `enter(${internal}, () => glue.${exported}(${[...(fn.receiver === undefined ? [] : ['this.#handle']), ...passed].join(', ')}))`;
     // GN-6ab: the entry of a member with machine advances the machine of its call until it ends.
     const call = fn.machine === true ? `drive(${internal}, ${entered})` : entered;
-    lines.push(`  ${wrap(keyedType(fn.returns) ? `fromEntries(${call})` : call)};`);
+    lines.push(`  ${wrap(call)};`);
     return lines.join('\n');
   };
   const indent = (text: string, by: string): string => text.split('\n').map((line) => `${by}${line}`).join('\n');
@@ -1448,18 +1447,6 @@ function toList(value) {
   return value;
 }
 
-// T-2: a keyed map crosses as its entries, [key, value], which only a Map gives: null stays the absence, and any other
-// value reaches the module as undefined, which it refuses as kind invalid_argument_type (an array of pairs is not a Map).
-function toEntries(value) {
-  if (value instanceof Map) return Array.from(value);
-  return value === null ? null : undefined;
-}
-
-// T-2: the entries of a keyed map, as a Map; null is the absence.
-function fromEntries(value) {
-  return value === null ? null : new Map(value);
-}
-
 // G-7, T-4: an options record has only the names of its fields, and a field whose value is undefined is absent, which
 // only a field with a default may be (U-2); a value that is not an object is judged by the module.
 function checkRecord(fn, name, record, fields, required) {
@@ -1485,8 +1472,7 @@ function keptClassWasm(kept: KeptClass, internal: string): string {
   const least = kept.fields.filter((f) => f.default === undefined).length;
   const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
   const crossed = kept.fields.map((f, i) => {
-    const keyed = typeof f.type === 'object' && 'keyed_map' in f.type;
-    return keyed ? `args[${i}] === undefined ? undefined : toEntries(args[${i}]) ?? null` : typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
+    return typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
   });
   const empty = { null: 'null', map: 'new Map()', list: '[]' };
   const defined = kept.fields.map((f, i) => {

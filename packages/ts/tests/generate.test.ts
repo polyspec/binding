@@ -81,16 +81,16 @@ test('two generations in two directories give the same bytes and name neither di
 test('the fixture names the five targets, and the generator refuses a target by name, without the usage line, and writes the others (BD-27, G-4, GN-1b, GN-1c)', () => {
   const declared = (JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8')) as { targets: string[] }).targets;
   assert.deepEqual(declared, FIVE);
-  // GN-12: a keyed map inside a list is refused for Node and WASM, whose entry turns a Map into its entries.
+  // GN-12: a keyed map with byte string keys is refused for Node and WASM, whose Map compares such a key by identity.
   const root = mkdtempSync(join(tmpdir(), 'binding-v-'));
   const out = mkdtempSync(join(tmpdir(), 'binding-v-'));
   try {
     execFileSync('cp', ['-r', `${fixture}.`, root]);
     const path = join(root, 'packages/rust/interface.json');
     const contract = JSON.parse(readFileSync(path, 'utf8'));
-    contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
+    contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['bytes', 'text'] } };
     writeFileSync(path, JSON.stringify(contract));
-    const refused = /node: not generated \(G-4\), 1 item:\n  split: a map<T> or keyed_map<T> inside another type is not generated for node[^\n]* yet \(GN-12\)/;
+    const refused = /node: not generated \(G-4\), 1 item:\n  split: a keyed_map<T> with byte string keys is not generated for node[^\n]* \(a Map compares a Uint8Array key by identity, GN-12\)/;
     // The target Node alone writes nothing.
     const alone = spawnSync(process.execPath, [cli, 'generate', '--root', root, '--out', out, '--target', 'node'], { encoding: 'utf8' });
     // A refusal is no error of the command line: status 1, and no usage line (GN-1c).
@@ -477,14 +477,15 @@ test('Go: a tuple parameter is read part by part, a Tuple<N> of different part t
 
 test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, GW-8)', () => {
   const { contract, caseFiles } = load();
-  contract.units[0].members[0].returns = { list: { keyed_map: 'text', key: ['int', 'text'] } };
-  // GN-12: the JavaScript entry turns a Map into its entries, so Node takes a keyed map only as a whole.
-  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles }), /a map<T> or keyed_map<T> inside another type is not generated for node, wasm yet/);
   contract.units[0].members[0].returns = { keyed_map: 'text', key: ['int', 'text'] };
   const all = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(all, 'packages/php-ext/generated/lib.rs'), /fn out_keyed_map<T>/);
   assert.match(text(all, 'packages/python/generated/lib.rs'), /fn out_keyed_map<'py, T>/);
-  assert.match(text(all, 'packages/ts/generated/index.cjs'), /return fromEntries\(addon\./);
+  // GN-12: the addon and the WASM module read and build the Map, so the entries hand the value on as it is.
+  assert.doesNotMatch(text(all, 'packages/ts/generated/index.cjs'), /fromEntries|toEntries/);
+  assert.doesNotMatch(text(all, 'packages/ts/wasm/generated/index.mjs'), /fromEntries|toEntries/);
+  assert.match(text(all, 'packages/ts/generated/lib.rs'), /fn out_entries<'env>\(env: &'env Env, entries: Vec<Unknown<'env>>\)/);
+  assert.match(text(all, 'packages/ts/wasm/generated/lib.rs'), /let entries = js_sys::Map::new\(\);/);
   assert.match(text(all, 'packages/ts/generated/index.d.ts'), /ReadonlyMap<number \| string, string>/);
   contract.targets = ['go'];
   contract.packages.go = { module: 'github.com/polyspec/sample/packages/go' };
@@ -496,7 +497,42 @@ test('keyed_map<T> is an ordered map of mixed key kinds in every language (T-2, 
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /^func TextKey\(value string\) Key \{ return binding\.TextKey\(value\) \}$/m);
   assert.match(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /in_keyed_map\(&mut input, "text", &\[0, 2\], "a key of int or text"/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /WithABytesKey\(t \*testing\.T\)/);
+  // A map value of a test is a call of a helper for each entry, which gofmt keeps on its line; it breaks a function
+  // literal whose body is longer than a line.
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /keyedWith\(&binding\.KeyedMap\[string\]\{\}, binding\.BytesKey\(/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /\nfunc keyedWith\[T any\]\(m \*binding\.KeyedMap\[T\], key binding\.Key, value T\) \*binding\.KeyedMap\[T\] \{\n\tm\.Set\(key, value\)\n\treturn m\n\}\n/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /m := &binding\.KeyedMap/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_codec_test.go'), /func TestT2AKeyedMapRoundTripsInItsOrder/);
+});
+
+test('a map<T> and a keyed_map<T> inside another type are a Map in Node and WASM (T-2, GN-12, GN-18)', () => {
+  const { contract, caseFiles } = load();
+  const member = contract.units[0].members[0];
+  const keyed = { keyed_map: 'text', key: ['int', 'text'] };
+  const places: [unknown, RegExp, RegExp, string][] = [
+    // In a list, an optional and a map, both ways.
+    [{ list: keyed }, /in_list\(\w+, "text", \|item\| in_keyed_map\(item, "text", &\[0, 2\]/, /out_list\(env, \w+, \|env, item\| out_keyed_map\(env, item,/, 'readonly (ReadonlyMap<number | string, string>)[]'],
+    [{ list: { optional: { map: 'int' } } }, /in_list\(\w+, "text", \|item\| in_optional\(item, \|value\| in_map\(value, "text",/, /out_list\(env, \w+, \|env, item\| out_optional\(env, item\.as_ref\(\), \|env, \w+\| out_map\(env,/, 'readonly (ReadonlyMap<string, number> | null)[]'],
+    [{ map: { map: 'text' } }, /in_map\(\w+, "text", \|item\| in_map\(item, "text",/, /out_map\(env, \w+, \|env, item\| out_map\(env, item,/, 'ReadonlyMap<string, ReadonlyMap<string, string>>'],
+    [{ map: { optional: keyed } }, /in_map\(\w+, "text", \|item\| in_optional\(item, \|value\| in_keyed_map\(value,/, /out_map\(env, \w+, \|env, item\| out_optional\(env, item\.as_ref\(\), \|env, \w+\| out_keyed_map\(env,/, 'ReadonlyMap<string, ReadonlyMap<number | string, string> | null>'],
+  ];
+  for (const [type, rustIn, rustOut, declared] of places) {
+    member.parameters[0].type = type;
+    member.returns = type;
+    contract.cases = [];
+    const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map(), targets: ['node', 'wasm'] });
+    const rust = text(out, 'packages/ts/generated/lib.rs');
+    assert.match(rust, rustIn, JSON.stringify(type));
+    assert.match(rust, rustOut, JSON.stringify(type));
+    // The Map is read where it is judged: a value that is no Map is refused there, at every depth.
+    assert.match(rust, /fn map_entries<'env>\(value: Unknown<'env>, subject: &str, expected: &str\)/);
+    assert.match(rust, /if !value\.instanceof\(class\)\.map_err\(internal\)\? \{\n        return Err\(type_error\(subject, expected\)\);/);
+    const wasm = text(out, 'packages/ts/wasm/generated/lib.rs');
+    assert.match(wasm, /let map = value\.dyn_ref::<js_sys::Map>\(\)\.ok_or_else\(\|\| type_error\(subject, expected\)\)\?;/);
+    for (const file of ['packages/ts/generated/index.d.ts', 'packages/ts/wasm/generated/index.d.ts']) assert.ok(text(out, file).includes(declared), `${file}: ${declared}`);
+    for (const file of ['packages/ts/generated/index.cjs', 'packages/ts/wasm/generated/index.mjs']) assert.doesNotMatch(text(out, file), /fromEntries|toEntries/);
+  }
+  void caseFiles;
 });
 
 // A temporary copy of the fixture repository whose contract `change` edits.
@@ -1045,6 +1081,34 @@ test('Go: a record of another repository is the struct of its Go module, which g
   // A library whose records the contract does not name is not required: the consumer names only a value alias.
   const consumer = consumerSample();
   assert.doesNotMatch(goMod({ path: '../../../points/packages/rust' }, consumer.contract, consumer.foreign), /require/);
+});
+
+test('a record of another repository is named in the package of its repository in the tests of every target (T-3, GN-6c)', () => {
+  const { contract, caseFiles, foreign } = plotSample();
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign });
+  // Python: the class is of the module of its repository, which the test imports; the package of plot exports no Point.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /^import polyspec\.points as foreign_points$/m);
+  assert.match(python, /result = pkg\.mirror\(foreign_points\.Point\(x=1, y=2\)\)\n {8}expected = foreign_points\.Point\(x=2, y=1\)/);
+  assert.doesNotMatch(python, /pkg\.Point\b/);
+  assert.doesNotMatch(text(out, 'packages/python/generated/python/polyspec/plot/__init__.py'), /Point/);
+  // PHP: the class is of the namespace of its repository.
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\\Polyspec\\Plot\\mirror\(new \\Polyspec\\Points\\Point\(x: 1, y: 2\)\)/);
+  assert.doesNotMatch(php, /\\Polyspec\\Plot\\Point\b/);
+  // Node and WASM: a plain object.
+  for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) assert.match(text(out, path), /pkg\.mirror\(\{ x: 1, y: 2 \}\)/, path);
+});
+
+test('WASM: the crate imports Array, which the failure of every contract uses (GN-18, GN-5)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  // The contract of points uses no list, so nothing but the arguments of the constructor of a failure names Array.
+  const points = text(generate({ contract: read('points/packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_points', caseFiles: new Map([['contracts/cases.json', read('points/contracts/cases.json')]]), targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(points, /let args = Array::of4\(/);
+  assert.match(points, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
+  const { contract, caseFiles, foreign } = plotSample();
+  const plot = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_plot', caseFiles, foreign, targets: ['wasm'] }), 'packages/ts/wasm/generated/lib.rs');
+  assert.match(plot, /^use js_sys::\{Array, Function, Object, Reflect\};$/m);
 });
 
 test('Go: an integer above the safe integers is a literal, which gofmt keeps at any place of a call (B-2, GN-12a)', () => {
@@ -1713,7 +1777,7 @@ test('a case gives a callback parameter as a fixture, which the B-4 test runs an
   assert.throws(withRow('a'), /the case a_key_without_a_value_is_missing of sample\.resolve gives no \{"callback": \.\.\.\} for lookup/);
 });
 
-test('WASM: map<T> is a Map of string keys, through the entries of the ES module (T-2, GN-18)', () => {
+test('WASM: map<T> is a Map of string keys, which the module builds (T-2, GN-18)', () => {
   const { contract, caseFiles } = load();
   contract.targets = ['node', 'wasm'];
   contract.packages.node.entries['.'].conditions = { node: 'napi', browser: 'wasm' };
@@ -1726,7 +1790,8 @@ test('WASM: map<T> is a Map of string keys, through the entries of the ES module
   contract.units[0].members[0].returns = { map: 'text' };
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles });
   assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /fn out_map<T>\(value: impl Borrow<binding_core::OrderedMap<T>>/);
-  assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /return fromEntries\(enter\(/);
+  assert.match(text(out, 'packages/ts/wasm/generated/lib.rs'), /let entries = js_sys::Map::new\(\);\n    for \(key, value\) in value\.borrow\(\)\.iter\(\) \{\n        entries\.set\(&out_text\(key\)\?, &item\(value\)\?\);/);
+  assert.doesNotMatch(text(out, 'packages/ts/wasm/generated/index.mjs'), /fromEntries/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.d.ts'), /ReadonlyMap<string, string>/);
 });
 
@@ -1829,6 +1894,20 @@ const shaped = (change: (contract: any) => void = () => undefined): Map<string, 
 };
 const member = (contract: any, id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
 const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+
+test('a record that a member gives only inside a map has its result form in every target (T-2, T-4, GN-6a)', () => {
+  // shapes.measure gives the record text_measure; here it gives it only as the value of a map and of a keyed map.
+  for (const returns of [{ map: { unit: 'text_measure' } }, { list: { keyed_map: { unit: 'text_measure' }, key: ['int', 'text'] } }]) {
+    const out = shaped((c) => {
+      member(c, 'shapes.measure').returns = returns;
+      c.cases = c.cases.filter((k: { member: string }) => k.member !== 'shapes.measure');
+    });
+    for (const path of ['packages/python/generated/lib.rs', 'packages/ts/generated/lib.rs', 'packages/php-ext/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs']) {
+      assert.match(text(out, path), /\nfn out_text_measure[<(]/, `${path}: ${JSON.stringify(returns)}`);
+    }
+    assert.match(text(out, 'packages/python/generated/python/polyspec/shapes/_types.py'), /\nclass TextMeasure:/);
+  }
+});
 
 // GN-6z: a member of shapes that takes a function type, which the core keeps or calls during the call.
 const withFunction = (contract: any): void => {
@@ -1949,7 +2028,7 @@ test('WASM holds a function as a Native of the table of its one thread (T-2, GN-
 
 // The internal form of shapes: its functions unit, its records, its enum and the class, which moves to the module store.
 const internal = (contract: any): void => {
-  for (const id of ['shapes', 'frame_options', 'pad_options', 'side', 'text_measure', 'buffer']) {
+  for (const id of ['shapes', 'frame_options', 'pad_options', 'side', 'text_measure', 'tally', 'buffer']) {
     const unit = unitOf(contract, id);
     unit.visibility = 'internal';
     for (const m of unit.members ?? []) m.visibility = 'internal';
@@ -2531,11 +2610,29 @@ test('a default of an optional type is one Option, None when it is left out or n
   assert.doesNotMatch(python, /def test_u2_pad_fill_takes_none_as_a_value/);
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('U-2: pad without fill is the call with its default'/);
   assert.doesNotMatch(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /U-2: pad takes null for fill as a value/);
+  // GN-6i: a parameter with a default that the options record follows is left out by undefined in its place in Node
+  // and WASM, by keywords in Python, by named arguments in PHP and by nil in Go.
+  for (const file of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+    const js = text(out, file);
+    assert.match(js, /test\('U-2: pad without side is the call with its default', \(\) => \{\n\s+assert\.deepStrictEqual\(outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', undefined, \{ side: 'left' \}\)\)\);/);
+    assert.match(js, /pkg\.pad\('ab', undefined, \{ end: null \}\)/);
+    assert.match(js, /test\('GN-13e: pad an_end', \(\) => \{\n\s+assert\.deepStrictEqual\(ordered\(pkg\.pad\('ab', undefined, \{ end: '!' \}\)\), ordered\('ab!'\)\);/);
+    assert.doesNotMatch(js, /pkg\.pad\('[^']*', \{/);
+    // A trailing parameter that is left out is still a missing argument.
+    assert.match(js, /outcome\(\(\) => pkg\.pad\('ab'\)\), outcome\(\(\) => pkg\.pad\('ab', null\)\)/);
+  }
+  assert.match(python, /result = pkg\.pad\("ab", end="!"\)/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\\Polyspec\\Shapes\\pad\("ab", end: "!"\)/);
+  assert.match(text(out, 'packages/go/zz_generated_test.go'), /Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: ptr\("!"\)\}\)/);
   // GN-15e: in Go the optional type keeps its one pointer.
   const goShapes = text(out, 'packages/go/zz_generated_shapes.go');
   assert.match(goShapes, /^func Pad\(text_ string, fill \*string, /m);
   assert.match(goShapes, /\tEnd +\*string\n/);
+  // GN-15e: an optional of a keyed map, which is itself the pointer *KeyedMap[T], takes no second pointer: its nil
+  // is the missing value.
+  assert.match(goShapes, /^func Present\(maps \[\]\*KeyedMap\[string\]\) \(\[\]\*KeyedMap\[string\], error\)/m);
   assert.doesNotMatch(goShapes, /\*\*/);
+  assert.doesNotMatch(text(out, 'packages/go/zz_generated_test.go'), /\*\*|ptr\((?:mapWith|keyedWith|NewMap|NewKeyedMap)/);
   assert.doesNotMatch(text(out, 'packages/go/internal/ffi/generated/lib.rs'), /Option<Option</);
   // G-4: another default of an optional type is refused by name.
   const parameter = (c: any, id: string, name: string): any => member(c, id).parameters.find((p: any) => p.name.join('_') === name);
@@ -3056,11 +3153,11 @@ test('the result null of an optional of a class is compared with the null of eac
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /assert\.deepStrictEqual\(ordered\(pkg\.find\('a'\)\), ordered\(null\)\);/);
   assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /def test_gn13e_find_absent\(self\) -> None:\n\s+result = pkg\.find\("a"\)\n\s+expected = None\n/);
   assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /public function testGn13efindAbsent\(\): void\n\s+\{\n\s+self::assertSame\(self::same\(null\), self::same\([^\n]*find\("a"\)\)\);/);
-  // Go compares with the nil of the type of the result, as its other results. Go writes no case value of a class of
+  // Go compares with the nil of the type of the result, which is the one pointer of the class (GN-15e). Go writes no case value of a class of
   // origin value yet, so its contract has the cases of find alone.
   const goContract = { ...contract, cases: contract.cases.filter((row: any) => row.member === 'classes.find') };
   const go = generate({ contract: goContract, caseFiles, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['go'] });
-  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
+  assert.match(text(go, 'packages/go/zz_generated_test.go'), /func TestGN13eFindAbsent\(t \*testing\.T\) \{\n\tvalue0, err := Find\("a"\)\n[^]*?if want := \(\*Token\)\(nil\); !reflect\.DeepEqual\(value0, want\) \{/);
   // A result that is a class still has no case form, so its test fails with the reason.
   assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /test\('GN-13e: find present', \(\) => \{\n\s+assert\.fail\('the case present of classes\.find gives result, but a class has no case value form \(GN-13e\)'\);/);
 });
