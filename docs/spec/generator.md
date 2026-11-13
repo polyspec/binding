@@ -18,7 +18,7 @@ the design ids are those of the binding design.
   and for Python, Node, PHP and WASM the type `source` of a parameter (GN-6j) and the defaults of parameters and record
   fields (GN-6i).
   callback interfaces (U-3, synchronous members with the receiver in `core.receiver`), Any other item (an async or
-  recognizing callback, a function type, a value unit, a wait other than `none` and `blocking_io` (GN-6m), a default
+  recognizing callback, a function type, a value unit, a wait other than `none`, `blocking_io` (GN-6m) and `async_driver` (GN-6n), a default
   that GN-6i does not list, `cleanup`, a receiver
   `self`, `only` of a unit, `native`, a naming exception, a kind of another library, the
   type `source` outside a parameter) is refused by name
@@ -460,7 +460,25 @@ the design ids are those of the binding design.
   - WASM has no such member: the contract gives it `only` without `wasm` (Q-4, CK-15).
   A member that waits and takes a callback or a value of language code, and a constructor, a property, an iterate or
   a hook (N-4) that waits, are refused by name, because the core would reach language code off the thread of the call
-  or the language has no awaited form of them, or calls a hook in its own protocol, which awaits nothing; `process_wait` and `async_driver` are refused by name (G-4).
+  or the language has no awaited form of them, or calls a hook in its own protocol, which awaits nothing; `process_wait` is refused by name (G-4).
+- **GN-6n** A member with `wait: async_driver` (I-2 (4)) calls an `async fn` of the core, which takes no token, and its
+  generated code runs the future on a tokio runtime, so that a core of tokio (redis-rs) finds the runtime that it needs.
+  The entry point converts the arguments and takes the locks and the arming of its faults on the calling thread, as
+  GN-6m states, and the future owns them: it is `async move` over the converted values and the owned guards, so it is
+  `Send + 'static`. Its faults are installed around each poll (`fault::Armed::around`), and a panic of a poll is a
+  failure of kind `internal` (`driver::Caught`, B-7). Each language waits in the form of GN-6m:
+  - PHP runs the future in `binding_core::driver::block_on`, on the runtime of binding_core, and the calling thread
+    blocks until it ends.
+  - Python: `<name>` runs `binding_core::driver::block_on` in `py.detach`, and `a<name>` runs `<name>` in
+    `asyncio.to_thread`, as GN-6m states.
+  - Node returns a `Promise`: the future runs on the tokio runtime of napi (`Env::spawn_future_with_callback`, the
+    napi feature `tokio_rt`, which the binding crate turns on when its contract has such a member), and its result or
+    error is converted on the JavaScript thread. The JavaScript entry is an async function, as GN-6m states.
+  - Go refuses such a member by name until the completion channel of GN-6m is generated (G-4).
+  - WASM refuses such a member by name until its Promise form (`wasm-bindgen-futures`) is generated (G-4).
+  A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
+  Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
+  thread of a runtime, while the caller of each language waits in the form that its language has.
 - **GN-15** Go (E-7, B-8, L-1): `packages/go` is the Go module (`go.mod` with the module of `packages.go` and
   `go 1.27.3`). A contract module is the package `packages/go/<module>`, named by its last segment in lower case without
   separators; the empty module is the module root, whose package name is the repository name without `-` (P-1,

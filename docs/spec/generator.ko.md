@@ -13,7 +13,7 @@
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
   Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
-  recognize가 있는 callback, 함수 타입, value unit, `none`과 `blocking_io`(GN-6m)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
+  recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 다른 라이브러리의 kind, parameter가 아닌 자리의 타입 `source`)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
   쓰지 않고 실패한다(G-4, GN-1c). 항목(unit, member, field, kinds의 행)은 그 검사들이 찾은 첫 이유로 이름한다. 같은 항목의 뒤 검사는 앞
@@ -381,8 +381,25 @@
   - WASM에는 그런 member가 없다. 계약이 그 member에 `wasm`이 없는 `only`를 준다(Q-4, CK-15).
   기다리면서 callback이나 언어 코드의 값을 받는 member, 그리고 기다리는 constructor·property·iterate·hook(N-4)은 이름을
   대고 거부한다. 코어가 호출 스레드 밖에서 언어 코드에 닿거나, 언어에 그것을 기다리는 꼴이 없거나, 언어가 hook을 아무것도
-  기다리지 않는 자기 protocol로 부르기 때문이다. `process_wait`와
-  `async_driver`도 이름을 대고 거부한다(G-4).
+  기다리지 않는 자기 protocol로 부르기 때문이다. `process_wait`도
+  이름을 대고 거부한다(G-4).
+- **GN-6n** `wait: async_driver`인 member(I-2 (4))는 토큰을 받지 않는 코어의 `async fn`을 부르고, 생성 코드가 그 future를
+  tokio runtime에서 돌린다. 그래야 tokio 위의 코어(redis-rs)가 자기에게 필요한 runtime을 찾는다. 진입점은 GN-6m처럼 호출
+  스레드에서 인자를 바꾸고 잠금과 fault 장전을 가져오며, future가 그것을 가진다. future는 바꾼 값과 소유한 guard 위의
+  `async move`이므로 `Send + 'static`이다. fault는 poll마다 설치되고(`fault::Armed::around`), poll의 panic은 kind
+  `internal`의 실패다(`driver::Caught`, B-7). 언어마다 GN-6m의 꼴로 기다린다:
+  - PHP는 future를 binding_core의 runtime에서 `binding_core::driver::block_on`으로 돌리고, 끝날 때까지 호출 스레드가
+    막힌다.
+  - Python: `<name>`은 `py.detach` 안에서 `binding_core::driver::block_on`을 돌리고, `a<name>`은 GN-6m처럼 `<name>`을
+    `asyncio.to_thread`에서 돌린다.
+  - Node는 `Promise`를 돌려준다. future는 napi의 tokio runtime에서 돌고(`Env::spawn_future_with_callback`, napi feature
+    `tokio_rt`이며 계약에 그런 member가 있으면 binding crate가 켠다), 결과나 오류는 JavaScript 스레드에서 바꾼다.
+    JavaScript 진입은 GN-6m처럼 async 함수다.
+  - Go는 GN-6m의 완료 channel을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  - WASM은 Promise 꼴(`wasm-bindgen-futures`)을 생성할 때까지 그런 member를 이름을 대고 거부한다(G-4).
+  GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다.
+  이유: 네트워크 protocol을 쓰는 코어는 async이고, 호출자의 것을 빌리지 않는 future는 runtime의 어느 스레드에서도 돌 수
+  있다. 그동안 각 언어의 호출자는 자기 언어의 꼴로 기다린다.
 - **GN-15** Go(E-7, B-8, L-1): `packages/go`가 Go 모듈이다(`packages.go`의 module과 `go 1.27.3`을 적은 `go.mod`). 계약
   module은 패키지 `packages/go/<module>`이고 이름은 마지막 마디를 소문자로 구분자 없이 쓴 것이다. 빈 module은 모듈 루트이며
   패키지 이름은 레포 이름에서 `-`를 뺀 것이다(P-1, `httpcookie`). import 경로의 마지막 마디 `go`는 식별자가 될 수 없으므로
