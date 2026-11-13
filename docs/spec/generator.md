@@ -275,12 +275,23 @@ the design ids are those of the binding design.
   content by its core path, and its value leaves as an instance of the class; any other member, and a member in an
   alias of another repository, is refused by name (G-4); the form `{"keyed_map": {"key": [...]}}` is made as a
   map, each key of the kinds it lists made by the rows as its items are (T-2); in Python and Node the same handle is the same object,
-  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A value that enters as a
-  handle (`native`, `Other`, a callable) is kept for the life of the thread, which U-7 (d) has yet to bound. In PHP
-  it is kept until its request ends: the engine frees the values of a request when the request ends, so the extension
-  releases them at its request shutdown, while the engine is alive, and a handle of an ended request finds no value
-  (kind `internal`). A value kept beyond the request is released by the thread after the engine is gone, which ends
-  the process with a fault.
+  and in PHP, whose arrays are values, a handle inside its own making is kind `internal`. A language object
+  that a core may keep, an `Object` or a `Callable`, enters as a `Native` (B-1), which the core copies, keeps and
+  drops as any value, and the `native` row gives back the same object; the handle of a container, a `Date` or an
+  `Other` value is valid only inside the `in` or `out` call that gave it, so the binding holds that value for the call
+  alone. What a `Native` holds, and what its last drop does, is the rule of the target (GN-6o).
+- **GN-6o** What a `Native` (B-1) holds, and what its last drop does, by target:
+  - Python holds the `Py<PyAny>`, released at the drop; PyO3 defers a drop without the GIL to its next acquisition,
+    so the crate does not compile with `pyo3_disable_reference_pool`.
+  - WASM holds the key of the table of its one thread, which holds the `JsValue`; the drop removes it.
+  - Node and PHP hold the owner, its generation and the key of the owner table, which holds the language reference on
+    the thread that owns it, because a reference of that thread cannot be released on another one. A drop on the
+    owner thread releases at once; a drop on another thread puts the key in the release queue of the owner, which every
+    generated entry point of that owner empties at the start of its synchronous part. The Node env cleanup hook and
+    the PHP request shutdown release what the table holds and raise its generation; a drop of an older generation
+    discards its key and touches nothing of the language, whose environment is gone, and the `out` of such a `Native`
+    is kind `internal`.
+  - Go holds the `cgo.Handle`, which the drop deletes on any thread.
 - **GN-6k** A value alias of another repository (T-3, U-7 (a')) is taken and given as the repository's own alias is
   (GN-6e): the binding describes the language value as a `HostValue` and calls the `in` function of the owner's core,
   and it makes the `OutValue` of the owner's `out` function by the `out` rows of the alias, which it reads from the
@@ -579,7 +590,7 @@ the design ids are those of the binding design.
   `Array.isArray`, `Array.from` and `Object.keys` imported with `catch`), so its exception is a value that the call
   throws again unchanged; an exception never unwinds through the frames of the WebAssembly module, which would leave
   its stack and its tables in a broken state. A failure (`Fail`) carries that exception, and the core keeps it as the
-  `Raised` of U-3. A value that enters as a handle is kept for the life of the instance (U-7 (d)). The in function of
+  `Raised` of U-3. A language object that a core may keep is a `Native` (GN-6o). The in function of
   an alias with `in_raises` runs alone through `__aliasIn<Alias>` of the feature `codec-test` (GN-5); the generated
   test calls it on the module that wasm-bindgen writes, as the tests of `fault-test` call `__armFaults`, and expects the
   class of the category and the kind of each case of the alias (U-7).
