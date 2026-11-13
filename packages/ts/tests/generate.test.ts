@@ -1015,6 +1015,15 @@ test('Go describes, reads and makes a value class of another repository through 
   assert.match(binding, /entries, failed := owner\.NewOrderedMap\(\)/);
   assert.match(binding, /entries\.Insert\(key, item\)/);
   assert.match(binding, /value, err = owner\.ValueObject\(entries\)/);
+  // B2.81: the in case of a string is the kind text16, whose read gives code units as node 13, and the out row of the
+  // kind text16 makes the instance from code units.
+  assert.match(binding, /case "string":\n\t\t\tc\.describeValue\(enc, 11, func\(\) \(any, error\) \{ return found\.StringUnits\(\) \}\)/);
+  assert.match(binding, /\} else if held\.units \{\n(?:\t\t\t\/\/[^\n]*\n)*\t\t\tunits := reflect\.ValueOf\(content\)\n\t\t\tenc\.bytes = append\(enc\.bytes, 13\)/);
+  assert.match(binding, /units\[at\] = r\.Uint\(\)\n\t\t\}\n\t\tvalue, err = owner\.ValueFromUnits\(units\)/);
+  assert.match(lib, /\[11\] => ValueKind::Text16,/);
+  assert.match(lib, /\[13\] => \{\n(?:\s*\/\/[^\n]*\n)*\s*let len = in_uint\(input\)\?;/);
+  assert.match(lib, /HostValue::Text\(HostText::Utf16\(units\)\)/);
+  assert.match(lib, /OutValue::Text16\(value\) => \{\n\s*output\.push\(11\);\n\s*out_uint\(output, 0\);\n\s*out_uint\(output, 4\);\n\s*out_list\(output, value, \|output, unit\| out_uint\(output, u64::from\(unit\)\)\);/);
 });
 
 test('a value class of another repository without core: {in, out} is refused by name (G-4, GN-6x)', () => {
