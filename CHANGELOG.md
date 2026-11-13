@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- A PHP member whose core drops the `Raised` of a function and answers by a value, as `store.attempt` of
+  `tests/e2e/sample` does, returned its value and PHP threw the exception of the function all the same: ext-php-rs
+  reports a call whose code threw as an error and leaves the exception pending in the engine, and the generated crate
+  returned at that error before it took the exception. The crate now takes the exception after every call of PHP
+  code (a function, a callback member, a member of the owner of a value class) before it reads the result of the
+  call (U-3, GN-6ae). The Node crate defined the helper `raised` for every contract with a value alias, also when no
+  kept helper named it, which the lints deny as dead code; it is now a helper that the crate keeps when its code
+  names it (GN-4). Verified by `make test-ts`: the two new tests failed before the changes. Not run: PHPUnit and
+  clippy, by `make e2e` of `tests/e2e/sample` and `tests/e2e/classes`.
 - Three defects that the end-to-end runs of `tests/e2e/functions` and `tests/e2e/kept` showed. A crate wrote the
   boxed type of a function type (GN-6z) at each `let` and as the result of each closure, which the lint
   `clippy::type_complexity` denies; a crate now names the type by an alias, `Function` and eight hexadecimal digits

@@ -278,20 +278,26 @@ fn php_method(object: &Zval, name: &str, args: Vec<&dyn ext_php_rs::convert::Int
     let Some(target) = object.object() else {
         return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6x: no object") })));
     };
-    let returned = target.try_call_method(name, args).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
+    // taken before the result is read.
+    let returned = target.try_call_method(name, args);
     if let Some(exception) = ExecutorGlobals::take_exception() {
         return Err(Thrown::Php(exception));
     }
+    let returned = returned.map_err(|error| Thrown::Binding(php_failed(error)))?;
     Ok(returned)
 }
 
 /// GN-6x: a static member of a class of another repository, named Class::member.
 fn php_static(name: &str, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
     let callable = ext_php_rs::types::ZendCallable::try_from_name(name).map_err(|error| Thrown::Binding(php_failed(error)))?;
-    let returned = callable.try_call(args).map_err(|error| Thrown::Binding(php_failed(error)))?;
+    // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
+    // taken before the result is read.
+    let returned = callable.try_call(args);
     if let Some(exception) = ExecutorGlobals::take_exception() {
         return Err(Thrown::Php(exception));
     }
+    let returned = returned.map_err(|error| Thrown::Binding(php_failed(error)))?;
     Ok(returned)
 }
 

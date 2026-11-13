@@ -3021,6 +3021,38 @@ test('PHP describes a stdClass under one handle at every place, so the core know
   assert.ok((php.match(/PhpHost \{ /g) ?? []).length > 0);
 });
 
+test('the Node crate defines the helper raised only when its code names it (U-3, GN-4)', () => {
+  // The helper is named by the reads of a value alias and by the function of a machine; a crate whose kept helpers
+  // name it nowhere had it as dead code, which the lints deny.
+  let withIt = 0;
+  let withoutIt = 0;
+  for (const name of ['classes', 'sample', 'functions', 'shapes', 'variants', 'kept']) {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+    const node = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
+    const defined = /\nfn raised\(error: Thrown\) -> binding_core::Raised \{/.test(node);
+    const named = /\braised\(Thrown::/.test(node);
+    assert.equal(defined, named, `${name}: the Node crate ${defined ? 'defines raised and names it nowhere' : 'names raised and does not define it'}`);
+    if (defined) withIt += 1; else withoutIt += 1;
+  }
+  assert.ok(withIt > 0 && withoutIt > 0, `${withIt} crates with the helper and ${withoutIt} without it: the test needs both`);
+});
+
+test('PHP takes the exception of a call of PHP code out of the engine before it reads the result of the call (U-3, GN-6ae)', () => {
+  // ext-php-rs reports a call whose code threw as an error and leaves the exception pending. A crate that returned at
+  // that error left it pending, so a core that drops the Raised of a function and answers by a value, as store.attempt
+  // of the sample does, returned its value and PHP threw the exception all the same.
+  let calls = 0;
+  for (const name of ['sample', 'functions', 'kept', 'classes']) {
+    const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${name}/${path}`, import.meta.url), 'utf8'));
+    const php = text(generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: `polyspec_${name}`, caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+    const all = (php.match(/\.try_call(?:_method)?\(/g) ?? []).length;
+    const taken = (php.match(/let returned = [^;]*?\.try_call(?:_method)?\([^;]*\);\n\s*if let Some\(exception\) = ExecutorGlobals::take_exception\(\) \{\n\s*return Err\(Thrown::Php\(exception\)\);\n\s*\}\n\s*let returned = returned\.map_err\(/g) ?? []).length;
+    assert.equal(taken, all, `${name}: ${String(all - taken)} of ${String(all)} calls of PHP code read their result before the exception is taken`);
+    calls += all;
+  }
+  assert.ok(calls > 0, 'no crate calls PHP code, so this test checked nothing');
+});
+
 // The conversions of a generated crate, `in_<unit>` and `out_<unit>`, whose parameter `env` or `py` only their own call
 // uses: the lints deny such a parameter (clippy only_used_in_recursion).
 function onlyInRecursion(rust: string): string[] {

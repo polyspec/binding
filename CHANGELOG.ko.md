@@ -1,11 +1,19 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: e67a6df56f1187b656eba5ce6374de7181c7bf026c1335ce4ef1c94b054f8b34 -->
+<!-- source-sha256: c33e3f30bbb3207027cba7ea5438c4a2d7a7713b3b9c0cfb32777342bce89fa4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 코어가 함수의 `Raised`를 버리고 값으로 답하는 PHP member(`tests/e2e/sample`의 `store.attempt`)가 값을 돌려주었는데도
+  PHP가 그 함수의 예외를 던졌다. ext-php-rs는 코드가 예외를 던진 호출을 오류로 보고하고 예외를 엔진에 pending으로 남겨
+  두는데, 생성된 crate는 그 오류에서 예외를 꺼내기 전에 돌아갔다. 이제 crate는 PHP 코드를 부르는 모든 호출(함수,
+  callback member, 값 class owner의 member) 뒤에 호출의 결과를 읽기 전에 예외를 꺼낸다(U-3, GN-6ae). Node crate는 값
+  alias가 있는 모든 계약에 helper `raised`를 정의했고, 남은 helper 어느 것도 그것을 이름하지 않을 때에도 그랬다. lint가
+  그것을 dead code로 거부한다. 이제 그 helper는 crate의 코드가 이름할 때 남는 helper다(GN-4). `make test-ts`로 검증했다:
+  새 시험 둘이 변경 전에는 실패했다. 실행하지 않은 것: `tests/e2e/sample`과 `tests/e2e/classes`의 `make e2e`로 도는
+  PHPUnit과 clippy.
 - `tests/e2e/functions`와 `tests/e2e/kept`의 end-to-end 실행이 보인 결함 셋이다. crate가 함수 타입(GN-6z)의 boxed 타입을
   `let`마다, closure의 결과마다 썼고 lint `clippy::type_complexity`가 그것을 거부한다. 이제 crate는 그 타입을 alias로
   이름하고(`Function`과 그 타입의 SHA-256의 16진 여덟 자리) 타입은 alias 정의에 한 번만 쓴다. `core_type` 없는 값

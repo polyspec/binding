@@ -1273,6 +1273,15 @@ fn recognized_kind(env: &Env, exception: napi::sys::napi_value, classes: &[usize
 
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised on the JavaScript thread until the generated
 // caller throws it again; and the failure of a core that calls back, as the error of its kind or that exception.
+// U-3: the helper that makes the Raised of what was thrown. It is a helper of the crate, kept when the code or a kept
+// helper names it (GN-4): the reads of a value alias name it, which a crate keeps only when a member uses them.
+const RAISED = `
+/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
+fn raised(error: Thrown) -> binding_core::Raised {
+    keep_thrown(error)
+}
+`;
+
 function failureRust(model: Model): string {
   if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
@@ -1307,12 +1316,7 @@ pub fn thrown_count() -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
-`}${model.aliases.length > 0 || passing ? `/// U-3: what was thrown, or a failure of the binding, as the Raised that the caller throws again.
-fn raised(error: Thrown) -> binding_core::Raised {
-    keep_thrown(error)
-}
-
-` : ''}${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
+`}${!keepsThrown(model) ? '' : `fn thrown<E>(error: Thrown) -> binding_core::Failure<E> {
     binding_core::Failure::Raised(keep_thrown(error))
 }
 `}
@@ -1574,7 +1578,7 @@ function libRust(model: Model): string {
   ].join('\n');
   // I-3: the conversions of the properties of the error units count as uses.
   const propertyUses = model.errorUnits.flatMap((u) => u.properties.map((p) => convertOut(model, p.returns, 'value'))).join('\n');
-  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${enums}`, `${functions}${propertyUses}`, {},
+  const used = usedHelpers(`${HELPERS}\n${WIDEN}\n${CORE_FORM}\n${INTO_CORE}\n${PARTS}\n${WAITING}\n${DRIVING}\n${RAISED}\n${enums}`, `${functions}${propertyUses}`, {},
     libraryBlocks(model, (unit, library) => recordRust(model, unit, library), (a) => aliasNode(model, a)));
   const napiTypes = ['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'JsString', 'Null', 'Object', 'ObjectFinalize', 'ScopedTask', 'ToNapiValue', 'Uint8Array', 'ValueType']
     // A name inside a string or before a dot ("Array", Array.from in a comment) is not a use of the type.

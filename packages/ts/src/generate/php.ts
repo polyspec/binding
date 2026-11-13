@@ -92,10 +92,13 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type }, v
                 let call = || -> Result<${result}, Thrown> {
                     let function = native_object(&native).map_err(Thrown::Binding)?;
 ${outs.join('\n')}
-                    let returned = function.try_call(vec![${type.parameters.map((_p, i) => `&arg${i}`).join(', ')}]).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+                    // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
+                    // taken before the result is read.
+                    let returned = function.try_call(vec![${type.parameters.map((_p, i) => `&arg${i}`).join(', ')}]);
                     if let Some(exception) = ExecutorGlobals::take_exception() {
                         return Err(Thrown::Php(exception));
                     }
+                    let returned = returned.map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
                     ${returned}
                 };
                 call().map_err(thrown)
@@ -895,12 +898,13 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
                 return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("U-3: the callback is no object") })));
             };
 ${outs.join('\n')}
-            let returned = object
-                .try_call_method(${rustString(method)}, vec![${m.params.map((_p, i) => `&arg${i}`).join(', ')}])
-                .map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+            // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
+            // taken before the result is read.
+            let returned = object.try_call_method(${rustString(method)}, vec![${m.params.map((_p, i) => `&arg${i}`).join(', ')}]);
             if let Some(exception) = ExecutorGlobals::take_exception() {
                 return Err(Thrown::Php(exception));
             }
+            let returned = returned.map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
             ${m.returns === 'none' ? 'let _returned: Zval = returned;\n            Ok(())' : returned}
         };
         call().map_err(${m.recognized === undefined ? 'thrown' : recognizedFn(cb, m)})
@@ -1031,10 +1035,13 @@ fn callable_in(value: &Zval, subject: &str) -> Result<Zval, Fail> {
 /// GN-6ae: calls a PHP callable; an exception of its code is the Thrown of the call.
 fn called(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> Result<Zval, Thrown> {
     let callable = ext_php_rs::types::ZendCallable::new(function).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
-    let returned = callable.try_call(args).map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
+    // ext-php-rs reports a call whose code threw as an error and leaves the exception pending, so the exception is
+    // taken before the result is read.
+    let returned = callable.try_call(args);
     if let Some(exception) = ExecutorGlobals::take_exception() {
         return Err(Thrown::Php(exception));
     }
+    let returned = returned.map_err(|error| Thrown::Binding(binding_error(BindingError::Internal { detail: error.to_string() })))?;
     Ok(returned)
 }
 `;
