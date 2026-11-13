@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 8b7b4768c0c2dc359dde291676c8868679f3bbc55c57ed53460b3d6154a3d90c -->
+<!-- source-sha256: 8687df193e065e8531724a1b5f93c6831dda36628d9500f4341979264cf4b31d -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -147,7 +147,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 - **CK-70** release의 의존(generator GN-3e), `binding check --release`만 실행한다: 계약이 타입을 이름하거나 case가 실패 주입점을
   장전하는 `polyspec-<library>`마다 코어의 의존 줄은 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않는다. 개발
   꼴(path, branch, commit, 버전 범위)은 코어 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
-  manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
+  manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
 - **CK-67** class parameter의 빌림(GN-6h): callback interface의 member가 아닌 member에서 타입이 이 계약의 origin `generated`인 class unit이거나
   그 `optional`인 모든 parameter는 `core`(`&`, `&mut`, `value`)를 갖고, 다른 parameter는 갖지 않는다. 코어가 빌림을 받는

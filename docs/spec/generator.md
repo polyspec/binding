@@ -142,10 +142,12 @@ the design ids are those of the binding design.
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
   the core on `polyspec-<library>`. A line that names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit
-  is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f). Every other line (a path, a
+  is the release form, and the manifest names that version (`go.mod` `vX.Y.Z`, GN-15f; `pyproject.toml` the
+  dependency `polyspec-<library>==X.Y.Z`). Every other line (a path, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
-  the manifest names the library without the version of a release (`go.mod` `v0.0.0`), and the development checkout
-  resolves it through its development links. No form of the line stops `scaffold`, `generate` or `check`;
+  the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
+  `polyspec-<library>` alone), and the development checkout
+  resolves it through its development links and its development install. No form of the line stops `scaffold`, `generate` or `check`;
   `binding check --release` reports each development form (CK-70). A tracked package that `scaffold` cannot write,
   such as the Go module of a contract that names a record of a library without a Go module, is named with its reason:
   `scaffold` writes the other packages and then fails with status 1, `check` reports it as a finding of CK-19 and

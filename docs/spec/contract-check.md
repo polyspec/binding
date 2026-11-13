@@ -170,7 +170,8 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   line of the core on each `polyspec-<library>` whose types the contract names or whose fault injection points a case
   arms names the version `=X.Y.Z` or the tag `vX.Y.Z` and no branch or commit. A development form (a path, a branch, a
   commit, a version range) is a finding that names the core manifest, the crate and the form, because the manifests
-  that `scaffold` writes from it name no version of a release (`go.mod` `v0.0.0`). It is a check of its own and no
+  that `scaffold` writes from it name no version of a release (`go.mod` `v0.0.0`, a dependency of
+  `pyproject.toml` without a version). It is a check of its own and no
   part of CK-19: the tracked files of a development checkout are what `scaffold` writes, so CK-19 passes them, and the
   question of CK-70 is what a release may hold.
 - **CK-67** The borrow of a class parameter (GN-6h): `core` of a parameter (`&`, `&mut` or `value`) is on every

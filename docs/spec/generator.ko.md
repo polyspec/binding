@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: c9950ea4c44ec149f14a86d70b84a2b1c7c67ce1f513095291eb201345301432 -->
+<!-- source-sha256: bd5f3d98c82de707b466d1fb83b12571cd47a6f24001d69c53e2d9251175412b -->
 # 생성기
 
 [English](generator.md)
@@ -112,9 +112,9 @@
   PHP에서 돈다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
   버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않은 줄은 release 꼴이며, manifest는 그 버전을 적는다(`go.mod`
-  `vX.Y.Z`, GN-15f). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
-  레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`), 개발 checkout은 그것을 개발 링크로
-  해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
+  `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
+  레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만), 개발
+  checkout은 그것을 개발 링크와 개발 설치로 해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
   보고한다(CK-70). Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
   package는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓴 뒤 상태 1로 실패하고, `check`는 그것을 CK-19의 finding으로
   보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
