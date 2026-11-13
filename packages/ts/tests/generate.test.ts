@@ -2927,16 +2927,19 @@ test('a member with wait async_driver that reaches language code drives the stat
   assert.match(node, /let lookup = owned_lookup\(env, lookup, "lookup"\)\?;/);
   assert.match(node, /pub struct OwnedCbLookup \{\n {4}object: Owned,\n/);
   assert.match(node, /impl Drop for Owned \{\n {4}fn drop\(&mut self\) \{\n[^\n]*\n {8}unsafe \{ napi::sys::napi_delete_reference\(self\.env, self\.reference\) \};/);
-  assert.match(node, /Driven::start\(env, advancing\(move \|env\| \{/);
+  assert.match(node, /Driven::start\(env, advancing\(move \|env, _settled\| \{/);
   // A function new that returns no Self fails clippy new_ret_no_self.
   assert.doesNotMatch(node, /fn new<'env>\(env: &'env Env, advance/);
   assert.match(node, /binding_core::machine::Next::Wait\(io\) => \{/);
   // GN-6ae: a machine of a member without a function parameter holds no value of language code, so it awaits none.
   assert.match(node, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
   assert.match(node, /pub struct Driven \{/);
-  assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env\) -> napi::Result<Unknown<'env>> \{/);
+  assert.match(node, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{/);
+  // An advance gives the step of what it stops at: a wait (0) or the end (2).
+  assert.match(node, /Ok\(\(0, promise\)\)/);
+  assert.match(node, /Ok\(\(2, out_text\(env, result\)\?\)\)/);
   const cjs = text(out, 'packages/ts/generated/index.cjs');
-  assert.match(cjs, /async function drive\(driven\) \{\n  for \(;;\) \{\n    const \[ended, value\] = driven\.advance\(\);\n    if \(ended\) return value;\n    await value;\n  \}\n\}/);
+  assert.match(cjs, /async function drive\(driven\) \{\n  let settled;\n  for \(;;\) \{\n    const \[step, value\] = driven\.advance\(settled\);\n    settled = undefined;\n    if \(step === 2\) return value;\n    if \(step === 0\) \{\n      await value;\n      continue;\n    \}\n    try \{\n      settled = \[true, await value\];\n    \} catch \(reason\) \{\n      settled = \[false, reason\];\n    \}\n  \}\n\}/);
   assert.match(cjs, /return drive\(addon\.resolveDriven\(args\[0\], args\[1\]\)\);/);
   assert.match(text(out, 'packages/ts/generated/index.d.ts'), /export declare function resolveDriven\(lookup: Lookup, key: string\): Promise<string>;/);
   // Go: the call of the C ABI drives the machine, and each call of the Go callback goes through cgo.
@@ -2998,7 +3001,7 @@ test('a member with machine takes a function parameter and returns passthrough, 
     m.parameters = [{ name: ['scope'], type: fn, required: true }];
     m.returns = { passthrough: 'T' };
   };
-  for (const [target, name] of [['python', 'Python'], ['node', 'Node'], ['go', 'Go'], ['wasm', 'WASM']]) {
+  for (const [target, name] of [['python', 'Python'], ['go', 'Go'], ['wasm', 'WASM']]) {
     assert.throws(() => sample((c) => { scoped(c); if (target === 'wasm') delete member(c, 'sample.resolve_driven').only; }, [target as string]), new RegExp(String.raw`ledger\.known: a parameter of a function type and a result passthrough are not generated for ${name} yet \(GN-6ae\)`), target);
   }
   // A function parameter and a result passthrough belong to a member with machine.
@@ -3144,3 +3147,126 @@ test('a test generator that does not write after and raises callback refuses the
   assert.throws(() => refuseScopedCases(model([{ id: 'b', raises: 'callback' }]), 'Go'), /the case b of store\.transaction: after and raises "callback" are not written in the test of Go yet \(GN-6ae\)/);
 });
 
+
+test('Node makes a closure of a function that the machine owns, holds its value in the passthrough table and returns it unchanged (GN-6ae)', () => {
+  const out = scopedSample(['node']);
+  const lib = text(out, 'packages/ts/generated/lib.rs');
+  // The function is checked when it enters (kind invalid_callback), and the machine owns a reference of napi to it.
+  assert.match(lib, /let work = in_function\(env, work, "work"\)\?;/);
+  assert.match(lib, /fn in_function\(env: &Env, value: Unknown<'_>, subject: &str\) -> Result<Owned, Fail> \{\n {4}if value\.get_type\(\)\.map_err\(internal\)\? != ValueType::Function \{\n {8}return Err\(binding_error\(BindingError::InvalidCallback \{ subject: subject\.to_owned\(\), member: String::new\(\) \}\)\);\n {4}\}\n {4}Owned::new\(env, value\)\n\}/);
+  // The closure makes a new instance of the class of each class argument, calls the function on the JavaScript thread
+  // of its reference and stores what it returned in the table; an exception of the function is a Raised.
+  assert.match(lib, /let work = move \|arg0: polyspec_sample::Scope\| -> Result<binding_core::Passthrough, binding_core::Failure<polyspec_sample::Error>> \{\n\s+let env = &Env::from_raw\(work\.env\);\n\s+let call = \|\| -> Result<binding_core::Passthrough, Thrown> \{\n\s+let arg0 = out_scope\(env, arg0\)\.map_err\(Thrown::Binding\)\?;\n\s+let returned = called\(env, &work, &\[arg0\]\)\?;\n\s+pass\(env, returned\)\.map_err\(Thrown::Binding\)\n\s+\};\n\s+call\(\)\.map_err\(thrown\)\n\s+\};/);
+  // The exception of the function leaves the environment and is held, so the machine goes on with none pending, and
+  // failure_error throws the held value again: the caller gets the same object.
+  assert.match(lib, /let status = unsafe \{ napi::sys::napi_call_function\(env\.raw\(\), receiver\.raw\(\), function\.raw\(\), raw\.len\(\), raw\.as_ptr\(\), &mut returned\) \};/);
+  assert.match(lib, /napi::sys::napi_get_and_clear_last_exception\(env\.raw\(\), &mut exception\)[\s\S]*?Ok\(held\) => Err\(Thrown::Held\(held\)\),/);
+  assert.match(lib, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
+  assert.match(lib, /fn thrown_again\(exception: &Owned\) -> Fail \{[\s\S]*?napi::sys::napi_throw\(env\.raw\(\), value\.raw\(\)\)[\s\S]*?Fail \{ thrown: Some\(napi::Error::new\(napi::Status::PendingException, String::new\(\)\)\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \}\n\}/);
+  // A value of any type is held as the one element of an array, which a reference of Node-API version 8 takes.
+  assert.match(lib, /fn boxed\(env: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{\n {8}Self::new\(env, out_tuple\(env, vec!\[value\]\)\?\)\n {4}\}/);
+  assert.match(lib, /fn unboxed<'env>\(&self, env: &'env Env\) -> Result<Unknown<'env>, Fail> \{\n {8}let \[value\] = in_tuple\(self\.value\(env\)\?, "a held value"\)\?;\n {8}Ok\(value\)\n {4}\}/);
+  // A contract without a callback that a machine owns has no dead method of Owned, and one with it has the method.
+  const owned = (crate: string): string => crate.slice(crate.indexOf('struct Owned {'), crate.indexOf('impl Drop for Owned'));
+  assert.match(owned(lib), /fn object</);
+  const alone = text(scopedSample(['node'], (c) => { for (const unit of c.units) unit.members = (unit.members ?? []).filter((m: any) => m.id !== 'sample.resolve_driven'); c.cases = c.cases.filter((k: any) => k.member !== 'sample.resolve_driven'); }), 'packages/ts/generated/lib.rs');
+  assert.match(owned(alone), /fn boxed\(/);
+  assert.doesNotMatch(owned(alone), /fn object</);
+  // The machine takes a clone of the value of the instance, which the call borrows from its guard, and the closure.
+  assert.match(lib, /let receiver = self\.inner\.read\("Store", &\[\]\)\.map_err\(binding_error\)\?;\n\s+let receiver = &\*receiver;\n\s+let mut machine = binding_core::machine::Driving::new\(polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work\)\);/);
+  // B-3: the table of the values, its release function, and the result that leaves the table unchanged.
+  assert.match(lib, /static PASSED: RefCell<BTreeMap<u64, Owned>> = const \{ RefCell::new\(BTreeMap::new\(\)\) \};/);
+  assert.match(lib, /fn pass\(env: &Env, value: Unknown<'_>\) -> Result<binding_core::Passthrough, Fail> \{\n {4}let held = Owned::boxed\(env, value\)\?;\n {4}let handle = NEXT_PASSED\.fetch_add\(1, Ordering::Relaxed\);\n {4}PASSED\.with_borrow_mut\(\|map\| map\.insert\(handle, held\)\);\n {4}Ok\(binding_core::Passthrough::from_generated\(binding_core::Handle::new\(handle\), release_passed\)\)\n\}/);
+  assert.match(lib, /fn release_passed\(handle: binding_core::Handle\) \{\n {4}let gone = PASSED\.try_with\(\|map\| map\.borrow_mut\(\)\.remove\(&handle\.raw\(\)\)\);\n {4}drop\(gone\);\n\}/);
+  // A result whose handle names no value is kind internal.
+  assert.match(lib, /fn out_passed<'env>\(env: &'env Env, value: binding_core::Passthrough\) -> Result<Unknown<'env>, Fail> \{\n {4}let handle = value\.into_handle\(\);\n {4}let held = PASSED\n {8}\.with_borrow_mut\(\|map\| map\.remove\(&handle\.raw\(\)\)\)\n {8}\.ok_or_else\(\|\| binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: the value of the passthrough is gone"\) \}\)\)\?;\n {4}held\.unboxed\(env\)\n\}/);
+  // Await: an advance takes the outcome of the value that the machine awaited, only after that value, gives it to the
+  // machine before it resumes, and returns the step of what it stops at: a wait (0), an awaited value (1), the end (2).
+  assert.match(lib, /let mut awaiting = false;\n\s+Driven::start\(env, advancing\(move \|env, settled\| \{\n\s+match \(awaiting, outcome_of\(env, settled\)\?\) \{\n\s+\(true, Some\(outcome\)\) => machine\.settle\(outcome\),\n\s+\(false, None\) => \{\}\n\s+\(true, None\) \| \(false, Some\(_\)\) => \{\n\s+return Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: store\.transaction takes the outcome of an awaited value after that value, and at no other advance"\) \}\)\);\n\s+\}\n\s+\}\n\s+awaiting = false;/);
+  assert.match(lib, /Ok\(\(0, promise\)\)\n\s+\}\n\s+binding_core::machine::Next::Await\(value\) => \{\n\s+awaiting = true;\n\s+Ok\(\(1, out_passed\(env, value\)\?\)\)\n\s+\}\n\s+binding_core::machine::Next::Done\(result\) => \{\n\s+let result = result\.map_err\(failure_error\)\?;\n\s+Ok\(\(2, out_passed\(env, result\)\?\)\)/);
+  // A fulfilled value enters the table again, and a rejection is held as the exception of the function.
+  assert.match(lib, /fn outcome_of\(env: &Env, settled: Unknown<'_>\) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> \{\n {4}if settled\.get_type\(\)\.map_err\(internal\)\? == ValueType::Undefined \{\n {8}return Ok\(None\);\n {4}\}\n {4}let \[fulfilled, value\] = in_tuple\(settled, "settled"\)\?;\n {4}if in_bool\(fulfilled, "settled"\)\? \{\n {8}return Ok\(Some\(Ok\(pass\(env, value\)\?\)\)\);\n {4}\}\n {4}Ok\(Some\(Err\(raised\(Thrown::Held\(Owned::boxed\(env, value\)\?\)\)\)\)\)\n\}/);
+  assert.match(lib, /pub fn advance<'env>\(&mut self, env: &'env Env, settled: Unknown<'env>\) -> napi::Result<Unknown<'env>> \{\n\s+guard\(\|\| shielded\(\|\| \{\n\s+let \(step, value\) = \(self\.advance\)\(env, settled\)\?;\n\s+out_tuple\(env, vec!\[out_uint\(env, step\)\?, value\]\)/);
+  // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
+  assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
+  const dts = text(out, 'packages/ts/generated/index.d.ts');
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n\}/);
+  assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
+  // A contract without a function parameter has no table, and its machine takes no outcome.
+  const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
+  assert.doesNotMatch(plain, /PASSED|Thrown::Held|fn boxed|outcome_of/);
+});
+
+// GN-6ae: the function drive of a generated JavaScript entry, run against a machine that the test plays: each advance
+// records the outcome that it got and gives the next step of the script.
+function driveOf(entry: string, pattern: RegExp): (...args: unknown[]) => Promise<unknown> {
+  const source = pattern.exec(entry)?.[0];
+  assert.notEqual(source, undefined, 'the entry has the function drive');
+  return new Function(`${source}\nreturn drive;`)() as (...args: unknown[]) => Promise<unknown>;
+}
+
+function played(steps: [number, unknown][]): { advance: (settled: unknown) => [number, unknown]; got: unknown[] } {
+  const got: unknown[] = [];
+  let at = 0;
+  return {
+    got,
+    advance(settled: unknown): [number, unknown] {
+      got.push(settled);
+      const step = steps[at];
+      at += 1;
+      if (step === undefined) throw new Error('the machine was advanced after its end');
+      return step;
+    },
+  };
+}
+
+test('the Node entry awaits what the function returned and tells a rejected wait from a rejected awaited value (GN-6ae)', async () => {
+  const drive = driveOf(text(scopedSample(['node']), 'packages/ts/generated/index.cjs'), /async function drive\(driven\) \{\n[\s\S]*?\n\}\n/);
+  // A wait gives no outcome; a value that is no thenable, a promise and a thenable are awaited, and the next advance
+  // gets [true, value] of each.
+  const kept = { kept: true };
+  const thenable = { then(resolve: (value: unknown) => void): void { resolve('then'); } };
+  const values = played([[0, Promise.resolve('output')], [1, kept], [1, Promise.resolve(7)], [1, thenable], [0, Promise.resolve()], [2, 'done']]);
+  assert.equal(await drive(values), 'done');
+  assert.deepEqual(values.got, [undefined, undefined, [true, kept], [true, 7], [true, 'then'], undefined]);
+  assert.equal((values.got[2] as unknown[])[1], kept);
+  // A rejection of an awaited value is the outcome of the function: the next advance gets [false, the same object],
+  // and what the machine then gives is the result of the call.
+  const reason = new Error('rejected by the function');
+  const rejected = played([[1, Promise.reject(reason)], [0, Promise.resolve()], [2, 'rolled back']]);
+  assert.equal(await drive(rejected), 'rolled back');
+  assert.equal(rejected.got.length, 3);
+  assert.deepEqual(rejected.got[1], [false, reason]);
+  assert.equal((rejected.got[1] as unknown[])[1], reason);
+  // A rejection of the promise of a wait is a failure of the binding: it rejects the call with the same object, and
+  // the machine is not advanced again.
+  const failure = new Error('the wait failed');
+  const failed = played([[0, Promise.reject(failure)], [2, 'never']]);
+  await assert.rejects(() => drive(failed), (error) => error === failure);
+  assert.deepEqual(failed.got, [undefined]);
+  // The same rejected promise at the two steps: the step decides, not the value.
+  const same = (): Promise<never> => Promise.reject(failure);
+  const awaited = played([[1, same()], [2, 'answered']]);
+  assert.equal(await drive(awaited), 'answered');
+  assert.deepEqual(awaited.got, [undefined, [false, failure]]);
+  // A failure that an advance throws rejects the call with the same object.
+  const thrown = new Error('thrown by the advance');
+  await assert.rejects(() => drive({ advance() { throw thrown; } }), (error) => error === thrown);
+});
+
+test('the Node test writes a function fixture, the exception of raises callback and the calls of after (GN-6ae, CK-22)', () => {
+  const tests = text(scopedSample(['node']), 'packages/ts/generated/tests/generated.test.mjs');
+  // A step calls a method on the argument at its position, and the function returns its result, a value of GN-13;
+  // after observes the receiver that the case holds.
+  assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}assert\.deepStrictEqual\(ordered\(\(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); args\[0\]\.get\('a'\); return 'done'; \}\)\)\), ordered\('done'\)\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\('1'\)\);\n\}\);/);
+  // An argument of a function type of a step is again a function fixture, and a function whose step calls a member
+  // that waits is async, so the member awaits the promise that it returns.
+  assert.match(tests, /receiver\.transaction\(async \(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); \(await args\[0\]\.nested\(\(\.\.\.args\) => \{ args\[0\]\.put\('b', '2'\); return null; \}\)\); return 2; \}\)/);
+  // raises "callback": the function throws the exception that the test holds, the caller gets the same object, and
+  // after observes the receiver after the failed call.
+  assert.match(tests, /test\('GN-6ae: Store\.transaction the_entries_of_a_function_that_raises_are_dropped', async \(\) => \{\n {2}const receiver = new pkg\.Store\(\);\n {2}const raised = new Error\('raised by the function of the case'\);\n {2}await assert\.rejects\(async \(\) => \(await receiver\.transaction\(\(\.\.\.args\) => \{ args\[0\]\.put\('a', '1'\); throw raised; \}\)\), \(error\) => error === raised\);\n {2}assert\.deepStrictEqual\(ordered\(receiver\.get\('a'\)\), ordered\(null\)\);\n\}\);/);
+  // A value that is no function is kind invalid_callback.
+  assert.match(tests, /test\('GN-6ae: Store\.transaction refuses a work that is no function', async \(\) => \{\n {2}await assert\.rejects\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(1\)\), \(error\) => error\.constructor === pkg\.SampleTypeError && error\.kind === 'invalid_callback'\);\n\}\);/);
+  // No test of a block that awaits is left a plain function.
+  for (const found of tests.matchAll(/\ntest\('[^\n]*', \(\) => \{\n((?:(?!\n\}\);)[\s\S])*)\n\}\);/g)) assert.doesNotMatch(found[1] ?? '', /\bawait /, found[0]);
+});

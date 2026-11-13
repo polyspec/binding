@@ -50,6 +50,8 @@ function convertOut(model: Model, type: Type, value: string): string {
     if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
     return `${name}(env, ${value})`;
   }
+  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
+  if ('passthrough' in type) return `out_passed(env, ${value})`;
   if ('list' in type) return `out_list(env, ${value}, ${closure(['env', 'item'], convertOut(model, type.list, 'item'))})`;
   // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
   if ('map' in type) return `out_map(env, ${value}, |env, item| ${convertOut(model, type.map, 'item')})`;
@@ -534,6 +536,9 @@ function entryRust(model: Model, fn: Fn): string {
       const recordType = fn.record.unit.core_type ?? '';
       const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
       lines.push(`        let ${variable}: ${recordType} = ${recordType} { ${fields} };`);
+    } else if (typeof parameter.type === 'object' && 'function' in parameter.type) {
+      // GN-6ae: a function parameter is the closure that the machine of the member calls.
+      lines.push(...functionClosure(model, parameter.type, variable, rustString(langName('node', parameter.name, 'variable'))));
     } else {
       const arg = fn.args.find((a) => !a.field && a.name === parameter.name);
       const held = heldParam(model, parameter.type);
@@ -548,7 +553,8 @@ function entryRust(model: Model, fn: Fn): string {
     }
   }
   // GN-6h: a future and the closure of the pool own the guards, so they bind the borrows of the guards inside them.
-  const moved = waitsAsync(fn) || pooled(fn);
+  // GN-6ab: a machine owns clones of what the guards hold, which the call makes on the JavaScript thread.
+  const moved = (waitsAsync(fn) && fn.machine !== true) || pooled(fn);
   lines.push(...locks(model, fn, !moved));
   const borrows = moved ? guardBorrows(model, fn, (p) => rustField(p.name)).map((line) => `${line} `).join('') : '';
   const core = `${fn.corePath}(${coreCallArgs(model, fn, (p) => rustField(p.name), 'self.inner').join(', ')})`;
@@ -559,9 +565,23 @@ function entryRust(model: Model, fn: Fn): string {
     // napi, or its converted result.
     const done = fn.fallible ? `let result = result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
     const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
+    const settles = passes(fn) ? `
+            match (awaiting, outcome_of(env, settled)?) {
+                (true, Some(outcome)) => machine.settle(outcome),
+                (false, None) => {}
+                (true, None) | (false, Some(_)) => {
+                    return Err(binding_error(BindingError::Internal { detail: String::from(${JSON.stringify(`GN-6ae: ${fn.member.id} takes the outcome of an awaited value after that value, and at no other advance`)}) }));
+                }
+            }
+            awaiting = false;` : '';
+    const awaited = passes(fn) ? `binding_core::machine::Next::Await(value) => {
+                    awaiting = true;
+                    Ok((1, out_passed(env, value)?))
+                }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
-        let given = std::sync::Arc::new(std::sync::Mutex::new(None));
-        Driven::start(env, advancing(move |env| {
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
+        Driven::start(env, advancing(move |env, ${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
             if let Some(output) = output {
                 machine.give(output);
@@ -570,11 +590,11 @@ function entryRust(model: Model, fn: Fn): string {
                 binding_core::machine::Next::Wait(io) => {
                     let given = std::sync::Arc::clone(&given);
                     let promise = driving(env, ${wait}, |env, ()| out_none(env))?;
-                    Ok((false, promise))
+                    Ok((0, promise))
                 }
-                ${awaitsNone(fn)}
+                ${awaited}
                 binding_core::machine::Next::Done(result) => {
-                    ${done}Ok((true, ${convertOut(model, fn.returns, 'result')}?))
+                    ${done}Ok((2, ${convertOut(model, fn.returns, 'result')}?))
                 }
             }
         }))`);
@@ -675,26 +695,28 @@ where
 // GN-6ab: the state machine of a member with wait async_driver that reaches language code, which the JavaScript entry
 // advances.
 const MACHINE = `
-/// GN-6ab: one advance of the state machine of a call: whether it ended, and its result or the promise of its wait.
-type Advance = Box<dyn for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail>>;
+/// GN-6ab, GN-6ae: one advance of the state machine of a call, which takes the outcome of the value that the machine
+/// awaited: its step, and the promise of its wait (0), the value that it awaits (1) or its result (2).
+type Advance = Box<dyn for<'env> FnMut(&'env Env, Unknown<'env>) -> Result<(u64, Unknown<'env>), Fail>>;
 
 /// GN-6ab: gives a closure the type of an advance, so that its result borrows the environment of its call.
 fn advancing<F>(advance: F) -> F
 where
-    F: for<'env> FnMut(&'env Env) -> Result<(bool, Unknown<'env>), Fail> + 'static,
+    F: for<'env> FnMut(&'env Env, Unknown<'env>) -> Result<(u64, Unknown<'env>), Fail> + 'static,
 {
     advance
 }
 
 /// GN-6ab: the state machine of a call, which the JavaScript entry advances until it ends. Each advance makes the calls
-/// of the machine on the JavaScript thread and gives [false, the promise of its wait] or [true, its result].
+/// of the machine on the JavaScript thread and gives [0, the promise of its wait], [1, the value that it awaits]
+/// (GN-6ae) or [2, its result].
 #[napi]
 pub struct Driven {
     advance: Advance,
 }
 
 impl Driven {
-    fn start<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env) -> Result<(bool, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
+    fn start<'env>(env: &'env Env, advance: impl for<'e> FnMut(&'e Env, Unknown<'e>) -> Result<(u64, Unknown<'e>), Fail> + 'static) -> Result<Unknown<'env>, Fail> {
         ToNapiValue::into_unknown(Self { advance: Box::new(advance) }, env).map_err(internal)
     }
 }
@@ -702,10 +724,10 @@ impl Driven {
 #[napi]
 impl Driven {
     #[napi]
-    pub fn advance<'env>(&mut self, env: &'env Env) -> napi::Result<Unknown<'env>> {
+    pub fn advance<'env>(&mut self, env: &'env Env, settled: Unknown<'env>) -> napi::Result<Unknown<'env>> {
         guard(|| {
-            let (ended, value) = (self.advance)(env)?;
-            out_tuple(env, vec![out_bool(env, ended)?, value])
+            let (step, value) = (self.advance)(env, settled)?;
+            out_tuple(env, vec![out_uint(env, step)?, value])
         })
         .map_err(|fail| throw(env, fail))
     }
@@ -863,6 +885,134 @@ impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {${methods}
 ${recognizing}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 }
 
+// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
+const passes = (fn: Fn): boolean => fn.params.some((p) => typeof p.type === 'object' && 'function' in p.type) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
+const passesAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes);
+
+// GN-6ae: the lines that make the closure of a function parameter from a JavaScript function. The machine owns the
+// function (Owned), and its closure runs in Machine::call, on the JavaScript thread: each call makes the JavaScript
+// value of each argument, a class argument as a new instance of its class, and gives what the function returned as a
+// Passthrough, or its exception as a Raised.
+function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
+  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  return [
+    `        let ${name} = in_function(env, ${name}, ${subject})?;`,
+    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    `            let env = &Env::from_raw(${name}.env);`,
+    '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
+    ...parts.map((part, i) => `                let arg${i} = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
+    `                let returned = called(env, &${name}, &[${parts.map((_part, i) => `arg${i}`).join(', ')}])?;`,
+    '                pass(env, returned).map_err(Thrown::Binding)',
+    '            };',
+    '            call().map_err(thrown)',
+    '        };',
+  ];
+}
+
+// GN-6ae, B-3: the table of the values that the functions of JavaScript code returned, each under the handle of its
+// Passthrough; the check of a function that enters and its call; the outcome of an awaited value; and the exception of
+// a function, thrown again.
+function passingRust(model: Model): string {
+  if (!passesAny(model)) return '';
+  return `
+thread_local! {
+    /// GN-6ae, B-3: the values that the functions of JavaScript code returned, each until its Passthrough ends.
+    static PASSED: RefCell<BTreeMap<u64, Owned>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+static NEXT_PASSED: AtomicU64 = AtomicU64::new(1);
+
+/// GN-6ae: holds a JavaScript value in the table, which the core moves and never reads.
+fn pass(env: &Env, value: Unknown<'_>) -> Result<binding_core::Passthrough, Fail> {
+    let held = Owned::boxed(env, value)?;
+    let handle = NEXT_PASSED.fetch_add(1, Ordering::Relaxed);
+    PASSED.with_borrow_mut(|map| map.insert(handle, held));
+    Ok(binding_core::Passthrough::from_generated(binding_core::Handle::new(handle), release_passed))
+}
+
+/// GN-6ae: removes the value of a Passthrough that the core dropped, whose reference is deleted after the table is
+/// released; a thread that ends holds no table.
+fn release_passed(handle: binding_core::Handle) {
+    let gone = PASSED.try_with(|map| map.borrow_mut().remove(&handle.raw()));
+    drop(gone);
+}
+
+/// GN-6ae: the value of a result passthrough, or of a value that the machine awaits, which leaves the table unchanged.
+fn out_passed<'env>(env: &'env Env, value: binding_core::Passthrough) -> Result<Unknown<'env>, Fail> {
+    let handle = value.into_handle();
+    let held = PASSED
+        .with_borrow_mut(|map| map.remove(&handle.raw()))
+        .ok_or_else(|| binding_error(BindingError::Internal { detail: String::from("GN-6ae: the value of the passthrough is gone") }))?;
+    held.unboxed(env)
+}
+
+/// GN-6ae: a function parameter takes a function (kind invalid_callback), which the machine owns.
+fn in_function(env: &Env, value: Unknown<'_>, subject: &str) -> Result<Owned, Fail> {
+    if value.get_type().map_err(internal)? != ValueType::Function {
+        return Err(binding_error(BindingError::InvalidCallback { subject: subject.to_owned(), member: String::new() }));
+    }
+    Owned::new(env, value)
+}
+
+/// GN-6ae: calls a function of JavaScript code with the receiver undefined. Its exception is taken out of the
+/// environment and held, because the machine goes on after the call and the caller gets the same object at its end.
+fn called<'env>(env: &'env Env, function: &Owned, args: &[Unknown<'env>]) -> Result<Unknown<'env>, Thrown> {
+    let function = function.value(env).map_err(Thrown::Binding)?;
+    let receiver = out_none(env).map_err(Thrown::Binding)?;
+    let mut raw = Vec::with_capacity(args.len());
+    for arg in args {
+        raw.push(arg.raw());
+    }
+    let mut returned = std::ptr::null_mut();
+    // SAFETY: the function, its receiver and its arguments are values of env, on the thread of env.
+    let status = unsafe { napi::sys::napi_call_function(env.raw(), receiver.raw(), function.raw(), raw.len(), raw.as_ptr(), &mut returned) };
+    if status == napi::sys::Status::napi_ok {
+        // SAFETY: returned is the value that the function returned, a value of env.
+        return Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), returned) });
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the function ran on the thread of env, which holds the exception that it threw.
+    if status != napi::sys::Status::napi_pending_exception || unsafe { napi::sys::napi_get_and_clear_last_exception(env.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return Err(Thrown::Binding(binding_error(BindingError::Internal { detail: String::from("GN-6ae: a function of JavaScript code could not be called") })));
+    }
+    // SAFETY: exception is the value that the function threw, a value of env.
+    match Owned::boxed(env, unsafe { Unknown::from_raw_unchecked(env.raw(), exception) }) {
+        Ok(held) => Err(Thrown::Held(held)),
+        Err(fail) => Err(Thrown::Binding(fail)),
+    }
+}
+
+/// GN-6ae: the outcome of the value that a machine awaited, which the JavaScript entry gives to the next advance:
+/// undefined when the machine awaited none, [true, the value] of a value or of a fulfilled promise, which enters the
+/// table again, and [false, the rejection] of a rejected promise, which is held as the exception of the function.
+fn outcome_of(env: &Env, settled: Unknown<'_>) -> Result<Option<Result<binding_core::Passthrough, binding_core::Raised>>, Fail> {
+    if settled.get_type().map_err(internal)? == ValueType::Undefined {
+        return Ok(None);
+    }
+    let [fulfilled, value] = in_tuple(settled, "settled")?;
+    if in_bool(fulfilled, "settled")? {
+        return Ok(Some(Ok(pass(env, value)?)));
+    }
+    Ok(Some(Err(raised(Thrown::Held(Owned::boxed(env, value)?)))))
+}
+
+/// GN-6ae: throws again the exception that a function of a machine raised, so that the caller gets the same object.
+fn thrown_again(exception: &Owned) -> Fail {
+    let env = Env::from_raw(exception.env);
+    let value = match exception.unboxed(&env) {
+        Ok(value) => value,
+        Err(fail) => return fail,
+    };
+    // SAFETY: value is a value of env, on the thread of env.
+    if unsafe { napi::sys::napi_throw(env.raw(), value.raw()) } != napi::sys::Status::napi_ok {
+        return binding_error(BindingError::Internal { detail: String::from("GN-6ae: the exception of the function could not be thrown again") });
+    }
+    Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
+}
+`;
+}
+
 // GN-6ab: the callback units that a parameter of a member with machine takes, which the machine owns.
 const ownsCallback = (model: Model, cb: CallbackUnit): boolean =>
   [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true && fn.params.some((p) => ownedCallback(model, p.type) === cb));
@@ -911,7 +1061,7 @@ impl ${cb.unit.core ?? ''} for Owned${struct} {${methods}
 
 // GN-6ab: a JavaScript value that a machine owns across the advances of its call: a reference of napi, which is deleted
 // when its owner drops it on the JavaScript thread, where the Driven object of the machine ends.
-const OWNED = `
+const owned = (callbacks: boolean, passing: boolean): string => `
 /// GN-6ab: a JavaScript value that a machine owns across the advances of its call.
 struct Owned {
     env: napi::sys::napi_env,
@@ -937,12 +1087,24 @@ impl Owned {
         // SAFETY: value is a value of env.
         Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), value) })
     }
-
+${callbacks ? `
     fn object<'env>(&self, env: &'env Env) -> Result<Object<'env>, Fail> {
         // SAFETY: the reference holds the object that the check of the callback found.
         unsafe { self.value(env)?.cast() }.map_err(internal)
     }
-}
+` : ''}${passing ? `
+    /// GN-6ae: holds any value, as the one element of an array: Node-API version 8 makes a reference only to an object, a
+    /// function or a symbol, and a function of JavaScript code returns and throws any value.
+    fn boxed(env: &Env, value: Unknown<'_>) -> Result<Self, Fail> {
+        Self::new(env, out_tuple(env, vec![value])?)
+    }
+
+    /// GN-6ae: the value that boxed holds.
+    fn unboxed<'env>(&self, env: &'env Env) -> Result<Unknown<'env>, Fail> {
+        let [value] = in_tuple(self.value(env)?, "a held value")?;
+        Ok(value)
+    }
+` : ''}}
 
 impl Drop for Owned {
     fn drop(&mut self) {
@@ -990,11 +1152,14 @@ export function traitParam(model: Model, type: Type): string {
 function failureRust(model: Model): string {
   if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const passing = passesAny(model);
   return `
 /// U-3: an exception of the JavaScript code, or a failure of the binding in a callback.
 enum Thrown {
     Js(napi::Error),
-    Binding(Fail),
+    Binding(Fail),${passing ? `
+    /// GN-6ae: an exception of a function of a machine, taken out of the environment and held until the member ends.
+    Held(Owned),` : ''}
 }
 
 thread_local! {
@@ -1003,10 +1168,14 @@ thread_local! {
 
 static NEXT_THROWN: AtomicU64 = AtomicU64::new(1);
 
-fn thrown(error: Thrown) -> ${failure} {
+fn raised(error: Thrown) -> binding_core::Raised {
     let handle = NEXT_THROWN.fetch_add(1, Ordering::Relaxed);
     THROWN.with_borrow_mut(|map| map.insert(handle, error));
-    binding_core::Failure::Raised(binding_core::Raised::from_generated(binding_core::Handle::new(handle)))
+    binding_core::Raised::from_generated(binding_core::Handle::new(handle))
+}
+
+fn thrown(error: Thrown) -> ${failure} {
+    binding_core::Failure::Raised(raised(error))
 }
 
 fn failure_error(failure: ${failure}) -> Fail {
@@ -1014,7 +1183,8 @@ fn failure_error(failure: ${failure}) -> Fail {
         binding_core::Failure::Kind(error) => core_error(error),
         binding_core::Failure::Raised(raised) => match THROWN.with_borrow_mut(|map| map.remove(&raised.handle().raw())) {
             Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },
-            Some(Thrown::Binding(fail)) => fail,
+            Some(Thrown::Binding(fail)) => fail,${passing ? `
+            Some(Thrown::Held(exception)) => thrown_again(&exception),` : ''}
             None => binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
         },
         binding_core::Failure::Callback(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
@@ -1189,7 +1359,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => ownsCallback(model, c)) ? OWNED : '') + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
+    model.callbacks.map((c) => callbackRust(model, c)).join('') + (model.callbacks.some((c) => ownsCallback(model, c)) || passesAny(model) ? owned(model.callbacks.some((c) => ownsCallback(model, c)), passesAny(model)) : '') + passingRust(model) + (model.callbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + failureRust(model) + foreignFailureNode(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
@@ -1370,11 +1540,21 @@ pub fn fault_left(env: &Env, id: i64) -> napi::Result<Vec<String>> {
 
 // ---- JavaScript and declarations ----
 
+// GN-6ae: the type parameters of a member, one per name of a passthrough of its parameters and of its result.
+const typeParameters = (fn: Fn): string => {
+  const names = [...new Set([...JSON.stringify([fn.params.map((p) => p.type), fn.returns]).matchAll(/\{"passthrough":"([^"]+)"\}/g)].map((found) => found[1] ?? ''))];
+  return names.length === 0 ? '' : `<${names.join(', ')}>`;
+};
+
 function tsType(model: Model, type: Type, input: boolean): string {
   if (typeof type === 'string') {
     const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', none: 'void', never: 'never' };
     return map[type] ?? 'unknown';
   }
+  // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of
+  // the member.
+  if ('function' in type) return `(${type.function.parameters.map((part, i) => `arg${i}: ${tsType(model, part, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)}`;
+  if ('passthrough' in type) return type.passthrough;
   if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
   if ('map' in type) return `ReadonlyMap<string, ${tsType(model, type.map, input)}>`;
   if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
@@ -1523,12 +1703,25 @@ ${classes}${units === '' ? '' : `\n${units}`}
 addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class'))].join(', ')}]);
 
 ${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
-// promise of each of its waits, which this function awaits.
+// promise of each of its waits (step 0), which this function awaits; a rejection of it is a failure of the binding and
+// ends the call.
+// GN-6ae: a value that the machine awaits (step 1) is what a function of the caller returned, a promise or any other
+// value: its value or its rejection is the outcome that the next advance takes, and only the machine answers it.
 async function drive(driven) {
+  let settled;
   for (;;) {
-    const [ended, value] = driven.advance();
-    if (ended) return value;
-    await value;
+    const [step, value] = driven.advance(settled);
+    settled = undefined;
+    if (step === 2) return value;
+    if (step === 0) {
+      await value;
+      continue;
+    }
+    try {
+      settled = [true, await value];
+    } catch (reason) {
+      settled = [false, reason];
+    }
   }
 }
 
@@ -1597,7 +1790,11 @@ function indexDts(model: Model): string {
     return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
   };
   // GN-6m: a member that waits returns a Promise of its result.
-  const returned = (fn: Fn): string => (awaits(fn) ? `Promise<${tsType(model, fn.returns, false)}>` : tsType(model, fn.returns, false));
+  // GN-6ae: the promise of the entry takes the state of a result passthrough that is a thenable.
+  const returned = (fn: Fn): string => {
+    const result = typeof fn.returns === 'object' && 'passthrough' in fn.returns ? `Awaited<${fn.returns.passthrough}>` : tsType(model, fn.returns, false);
+    return awaits(fn) ? `Promise<${result}>` : result;
+  };
   const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
@@ -1633,7 +1830,7 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
 }`).join('\n');
   const fns = model.functions.map((fn) => {
     const params = fn.params.map((p) => param(fn, p));
-    return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}(${params.join(', ')}): ${returned(fn)};`;
+    return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}${typeParameters(fn)}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
   const constants = model.constants.map((c) => `export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
   const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
@@ -1641,14 +1838,14 @@ ${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ 
     const lines = o.members.map((fn) => {
       const name = memberName('node', fn);
       if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}(${params(fn)}): ${returned(fn)};`;
+      if (fn.kind === 'static') return `  static ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
       if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
       if (fn.kind === 'iterate') {
         const yields = fn.yields ?? { value: 'none' };
         const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
         return `  [Symbol.iterator](): IterableIterator<${item}>;`;
       }
-      return `  ${name}(${params(fn)}): ${returned(fn)};`;
+      return `  ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
     });
     if (!o.constructible) lines.unshift('  private constructor();');
     return `

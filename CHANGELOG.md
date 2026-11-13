@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- The Node binding refused a member with a parameter of a function type or a result `passthrough` by name. It now
+  generates the member (GN-6ae): the machine owns the function as a reference of napi and calls it on the JavaScript
+  thread with a new instance of the class of each class argument; the value that the function returned is held in a
+  thread-local table under a handle that is never given again and leaves it unchanged as the result; an exception of
+  the function is taken out of the environment, held, and thrown again at the end of the member, so the caller gets
+  the same object. `advance(settled)` of the `Driven` object returns `[0, promise]` for a wait, `[1, value]` for a
+  value that the machine awaits and `[2, result]` at the end, and `drive` of the JavaScript entry awaits the value of
+  step `1`, a promise or any other value, and gives `[true, value]` or `[false, rejection]` to the next advance; a
+  rejection of the promise of a wait rejects the call and is not given to the machine. The declarations name each
+  `passthrough` as a type parameter, `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`. The Node test
+  writes the function fixture, the case of `raises: "callback"` with the same exception object, the calls of `after`,
+  and a test that a value that is no function is kind `invalid_callback`. Verified by `npm test` in `packages/ts`: the
+  three tests of the Node closure, of `drive` run against a played machine (a value, a promise, a thenable, a
+  rejected awaited value and a rejected wait) and of the Node test pass; the 21 tests that generate the sample for
+  Python, Go or WASM still fail with the refusal of those targets.
 - The tests of Python, Node, Go and WASM would have left out a case with `after` or `raises: "callback"` without a
   word once their target generates a function parameter, because only the PHP test writes them. Each of those test
   generators now refuses such a case by name, "after and raises "callback" are not written in the test of <Target>

@@ -1,11 +1,23 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2a0879c37d10cd0010de3281bfe4474a3fe5e2c70f4458b84b5656fb3ad156c9 -->
+<!-- source-sha256: 0a062171404e82808afdad8145dc1fce15af4cb0f4f3b235c9f23a6ff6026fc0 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Node binding은 함수 타입의 parameter나 결과 `passthrough`가 있는 member를 이름을 대고 거부했다. 이제 그 member를
+  생성한다(GN-6ae). machine은 함수를 napi 참조로 소유하고, JavaScript 스레드에서 각 class 인자의 class의 새 인스턴스와
+  함께 함수를 부른다. 함수가 돌려준 값은 다시 주지 않는 handle 아래 thread-local table에 쥐었다가 결과로 그대로
+  내보낸다. 함수의 예외는 환경에서 꺼내 쥐었다가 member의 끝에서 다시 던지므로 호출자는 같은 객체를 받는다. `Driven`
+  객체의 `advance(settled)`는 기다림에 `[0, promise]`, machine이 기다리는 값에 `[1, value]`, 끝에 `[2, result]`를
+  돌려주고, JavaScript 진입의 `drive`는 step `1`의 값을 promise든 다른 값이든 기다려 `[true, value]`나
+  `[false, rejection]`을 다음 advance에 준다. 기다림의 promise의 거부는 호출을 reject하고 machine에 주지 않는다. 선언은
+  각 `passthrough`를 타입 parameter로 이름한다. `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`다.
+  Node 시험은 함수 fixture, 같은 예외 객체를 요구하는 `raises: "callback"` case, `after`의 호출, 함수가 아닌 값이 kind
+  `invalid_callback`이라는 시험을 쓴다. `packages/ts`의 `npm test`로 검증했다. Node closure의 시험, 시험이 연기하는
+  machine에 대고 돌린 `drive`의 시험(값, promise, thenable, 거부된 기다리는 값, 거부된 기다림), Node 시험의 시험 세
+  개가 통과한다. Python, Go, WASM에 대해 sample을 생성하는 21개 시험은 그 target의 거부로 여전히 실패한다.
 - Python, Node, Go, WASM의 시험은 그 target이 함수 parameter를 생성하게 되면 `after`나 `raises: "callback"`이 있는
   case를 말없이 빼놓았을 것이다. 그것을 쓰는 것은 PHP 시험뿐이기 때문이다. 그 시험 생성기는 이제 그런 case를 쓰게 될
   때까지 "after and raises "callback" are not written in the test of <Target> yet"라는 이름으로 거부한다(GN-6ae,

@@ -702,10 +702,11 @@ the design ids are those of the binding design.
     GIL on the thread that drives the machine, which GN-6q allows, because a Python reference is bound to the GIL and
     not to a thread.
   - Node: the entry makes the machine on the JavaScript thread and returns a `Driven` object of the addon, and the
-    JavaScript entry, an async function, calls its `advance()` until the machine ends. Each `advance()` gives the output
-    of the last wait to the machine, makes its calls on the JavaScript thread and returns `[false, promise]` for an Io
-    future, which runs on the tokio runtime of napi and which the entry awaits, or `[true, result]` at the end, converted
-    on the JavaScript thread. A failure of the member throws from `advance()` and rejects the promise of the entry.
+    JavaScript entry, an async function, calls its `advance(settled)` until the machine ends. Each advance gives the
+    output of the last wait to the machine, makes its calls on the JavaScript thread and returns `[step, value]`:
+    `[0, promise]` for an Io future, which runs on the tokio runtime of napi and which the entry awaits, `[1, value]`
+    for a value that the machine awaits (GN-6ae), or `[2, result]` at the end, converted on the JavaScript thread. A
+    failure of the member throws from the advance and rejects the promise of the entry.
     The machine outlives the call that made it, so a callback that it owns is the generated struct
     `Owned<Callback>`, which holds a reference of napi (`napi_ref`) to the object and the environment of the
     JavaScript thread, makes the borrowed callback struct from them at each call, and deletes the reference when it
@@ -756,10 +757,33 @@ the design ids are those of the binding design.
     `Raised` of U-3, so `failure_error` throws the same object again. The table of the values is a thread-local map
     from a handle to a `Zval`; the release function takes the value out of the table and ends it after the table is
     released, because the destructor of a PHP value may run PHP code that enters the binding again.
+  - Node: the parameter takes a function (a value whose `typeof` is `function`; any other value is kind
+    `invalid_callback`), and the declarations name each `passthrough` as a type parameter of the member,
+    `transaction<T>(work: (arg0: Scope) => T): Promise<Awaited<T>>`: the entry is an async function, so its promise
+    takes the state of a result that is a thenable. The machine owns the function as an `Owned` (GN-6ab), whose
+    reference of napi is deleted on the JavaScript thread, where the `Driven` object ends, and the closure calls it
+    with `napi_call_function` and the receiver `undefined`. An `Owned` of a value of the table and of an exception
+    holds its value as the one element of an array, because Node-API version 8 makes a reference only to an object, a
+    function or a symbol, while a function returns and throws any value. An exception of the
+    function is taken out of the environment (`napi_get_and_clear_last_exception`) and held as such an `Owned` under
+    the handle of its `Raised`, because the machine goes on after the call and no promise of an Io future can be made
+    while an exception is pending; `failure_error` throws the held value again (`napi_throw`), so the caller gets the
+    same object. The table of the values is a thread-local map from a handle to an `Owned`; the release function
+    removes the entry, and its drop deletes the reference.
+    Await: `[1, value]` of an advance is the value of a `Step::Await`, which leaves the table. The function `drive`
+    of the JavaScript entry awaits it, a value that is no thenable included, and gives the outcome to the next advance
+    as `settled`, `[true, <value>]` or `[false, <rejection>]`: that advance stores the value in the table again, or
+    holds the rejection as a `Raised`, and calls `Driving::settle` before the machine resumes. `settled` is
+    `undefined` at the start and after a wait, and an advance that gets an outcome while its machine awaits no value,
+    or none while it awaits one, is kind `internal`. `drive` tells the promise of an Io future from an awaited value
+    by the step of the advance that returned it and never by the value: a rejection of the promise of step `0` is a
+    failure of the binding (a panic of a poll, kind `internal`), which `drive` does not catch, so it rejects the
+    promise of the entry and the machine is not advanced again; a rejection of the value of step `1` is the outcome
+    of the function, which goes to the machine, and the core decides what it means.
   - `async_allowed: true`: the function may return an awaitable, which `Step::Await(Passthrough)` of the machine gives
     to the driver after its call; the driver gives the outcome to `Machine::settle(Result<Passthrough, Raised>)` before
-    the next `resume`. Node and WASM: `advance()` returns `[false, value]` and the entry awaits it as a promise, a
-    value that is no thenable included, and gives its value or its rejection to the next `advance()`. Python: `a<name>`
+    the next `resume`. Node awaits the value in its JavaScript entry, as its item below states, and WASM is not
+    generated yet. Python: `a<name>`
     awaits a coroutine or another awaitable on the event loop of the caller with `asyncio.run_coroutine_threadsafe`
     from its worker thread, and `<name>` gives an awaitable result kind `invalid_callback` with the message that names
     `a<name>`, because no event loop of the caller runs. PHP and Go have no awaitable: the driver settles the value at
@@ -771,11 +795,14 @@ the design ids are those of the binding design.
     `"raise": "exception"`, raises an exception of the language, which the case expects by `raises: "callback"`.
     `after` (CK-22) observes the receiver after the call, so a case shows a commit, a rollback after a raise and a
     nested scope.
-  Not generated yet (G-4): Python, Node, Go and WASM refuse a member with a parameter of a function type or a result
+  Not generated yet (G-4): Python, Go and WASM refuse a member with a parameter of a function type or a result
   `passthrough` by name, "a parameter of a function type and a result passthrough are not generated for <Target>
-  yet"; PHP generates the member. The PHP test writes the function fixture, the test of a case with `raises:
-  "callback"`, which requires the same exception object, the calls of `after`, and a test that a value that is no
-  callable is kind `invalid_callback`; the test of another target does not yet. The contract of the end-to-end sample
+  yet"; PHP and Node generate the member. The PHP test and the Node test write the function fixture, the test of a
+  case with `raises: "callback"`, which requires the same exception object, the calls of `after`, and a test that a
+  value that is no callable, in Node no function, is kind `invalid_callback`; the test of another target does not
+  yet. The function of a Node fixture is an arrow function, an async one when a step of it calls a member that waits,
+  so the nested case of the sample runs the awaited step with a promise and its other cases with a value that is no
+  thenable. The contract of the end-to-end sample
   holds `store` and `scope`, so the end-to-end check of the sample names each target that refuses them as failed
   until that target generates them (GN-14c).
   The end-to-end sample has the class `store`, whose `transaction` takes a function of a `scope` and returns
