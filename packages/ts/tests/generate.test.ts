@@ -1968,8 +1968,14 @@ test('a raise row of a callback fixture throws an instance of its error unit wit
   assert.match(text(out, pythonTests), /pkg\.AbsentError\("G-5: absent", "absent"\)/);
   assert.match(text(out, nodeTests), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
   assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new pkg\.AbsentError\('G-5: absent', 'absent'\)/);
-  // PHP code sets the kind in the scope of the class of its category, which declares it.
-  assert.match(text(out, phpTests), /\$error = new \\Polyspec\\Consumer\\AbsentError\("G-5: absent"\); \(static fn \(\) => \$error->kind = "absent"\)->bindTo\(null, \\Polyspec\\Consumer\\ConsumerValueError::class\)\(\);/);
+  // PHP code makes it by the public constructor of the category class, which takes the kind (GN-10).
+  assert.match(text(out, phpTests), /new \\Polyspec\\Consumer\\AbsentError\("G-5: absent", "absent"\)/);
+  assert.doesNotMatch(text(out, phpTests), /bindTo/);
+  const stub = text(out, 'packages/php-ext/generated/polyspec_consumer.stub.php');
+  assert.match(stub, /class ConsumerValueError extends \\InvalidArgumentException\n    \{\n        public function __construct\(string \$message, string \$kind, \?int \$status = null, \?int \$errno = null\) \{\}\n/);
+  const ext = text(out, 'packages/php-ext/generated/lib.rs');
+  assert.match(ext, /\.method\(\s*FunctionBuilder::new\("__construct", error_construct\)\s*\.arg\(Arg::new\("message", DataType::String\)\)\s*\.arg\(Arg::new\("kind", DataType::String\)\)\s*\.not_required\(\)\s*\.arg\(Arg::new\("status", DataType::Long\)\.allow_null\(\)\.default\("null"\)\)\s*\.arg\(Arg::new\("errno", DataType::Long\)\.allow_null\(\)\.default\("null"\)\),\s*MethodFlags::Public,\s*\)/);
+  assert.match(ext, /extern fn error_construct\(ex: &mut ExecuteData, _retval: &mut Zval\)/);
   assert.match(text(out, 'packages/go/zz_generated_test.go'), /binding\.RaisedAbsentError\("absent", "G-5: absent"\)/);
   assert.match(text(out, 'packages/go/internal/binding/zz_generated_binding.go'), /func RaisedAbsentError\(kind, message string\) \*AbsentError \{/);
 });
