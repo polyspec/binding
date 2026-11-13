@@ -198,6 +198,7 @@ class Checker {
     this.wasmOnly();
     this.awaitableNames();
     this.reservedNames();
+    this.variantTags();
     this.callbacks();
     this.packageNames();
     this.coreBuild();
@@ -1173,10 +1174,11 @@ class Checker {
   // ---- CK-23: reserved words of the target languages (N-2) ----
 
   // N-2: a name that a language reserves where the binding writes it fails the generated code only when it is
-  // compiled or linted, so the check names it first; a naming exception (N-3) gives the language another name.
+  // compiled or linted, so the check names it first; a naming exception (N-3) gives the language another name. The
+  // generator generates no naming exception yet, so the remedy of the finding is the one that works: a rename.
   reservedNames(): void {
-    const report = (lang: Lang, path: string, name: string, what: string): void => {
-      this.report('CK-23', path, `${name}, the ${lang} name of ${what}, is a reserved word of ${lang}; give it a naming exception (N-2, N-3)`);
+    const report = (lang: Lang, path: string, name: string, what: string, symbol: 'unit' | 'member' | 'parameter' | 'field'): void => {
+      this.report('CK-23', path, `${name}, the ${lang} name of ${what}, is a reserved word of ${lang}; rename the ${symbol} in the contract (N-2)`);
     };
     for (const lang of this.contract.targets) {
       const reserved = RESERVED[lang];
@@ -1187,21 +1189,38 @@ class Checker {
         if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');
-        if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`);
+        if (generated && taken(className, 'class')) report(lang, path, className, `the unit ${unit.id}`, 'unit');
         for (const [f, field] of (unit.fields ?? []).entries()) {
           const name = this.langName(lang, unit, field.name, 'variable', undefined, { field: field.name });
-          if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`);
+          if (taken(name, 'field')) report(lang, `${path}${pointer('fields', f)}`, name, `the field ${unit.id}.${convert(field.name, 'rust', 'variable')}`, 'field');
         }
         for (const [m, member] of (unit.members ?? []).entries()) {
           const memberPath = `${path}${pointer('members', m)}`;
           const role = member.kind === 'constant' ? 'constant' : this.memberRole(unit);
           const name = this.langName(lang, unit, member.name, role, member);
           const position: Position = member.kind === 'constant' ? 'constant' : unit.kind === 'functions' ? 'function' : unit.kind === 'record' ? 'field' : 'method';
-          if (taken(name, position)) report(lang, memberPath, name, member.id);
+          if (taken(name, position)) report(lang, memberPath, name, member.id, 'member');
           for (const [p, parameter] of (member.parameters ?? []).entries()) {
             const param = this.langName(lang, unit, parameter.name, 'variable', member, { parameter: parameter.name });
-            if (taken(param, 'parameter')) report(lang, `${memberPath}${pointer('parameters', p)}`, param, `a parameter of ${member.id}`);
+            if (taken(param, 'parameter')) report(lang, `${memberPath}${pointer('parameters', p)}`, param, `a parameter of ${member.id}`, 'parameter');
           }
+        }
+      }
+    }
+  }
+
+  // ---- CK-72: the tag of a variant (T-9) ----
+
+  // T-9, GN-6v: the value of a case is an object whose tag member holds the case value, so a field with the name of
+  // the tag would take its place; the names are compared by their words.
+  variantTags(): void {
+    for (const { value: unit, path } of this.units.values()) {
+      if (unit.kind !== 'variant' || unit.tag === undefined) continue;
+      const tag = convert(unit.tag, 'rust', 'variable');
+      for (const [c, kase] of (unit.cases ?? []).entries()) {
+        for (const [f, field] of kase.fields.entries()) {
+          if (convert(field.name, 'rust', 'variable') !== tag) continue;
+          this.report('CK-72', `${path}${pointer('cases', c, 'fields', f)}`, `the field ${tag} of the case ${kase.value} of ${unit.id} has the name of the tag of the variant; rename the field or the tag (T-9, GN-6v)`);
         }
       }
     }

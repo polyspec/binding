@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- `binding check` has the check CK-72: a field of a case of a variant with the name of the `tag` of the variant,
+  compared by their words, is a finding at that field with the remedy "rename the field or the tag", because the
+  value of a case is an object whose tag member holds the case value (T-9, GN-6v). The finding of CK-23 for a name
+  that a target language reserves named a naming exception as its remedy, which the generator does not generate; it
+  now names the rename of the unit, the member, the parameter or the field in the contract (N-2). Verified by the
+  tests of `packages/ts/tests/contract-check.test.ts`: the two new tests failed without the check and with the old
+  message, and 232 of 232 pass.
 - A field of a case of a variant that holds a unit of another repository was refused by name (`a unit of another
   repository in a case of a variant is not generated yet`). Such a field is now generated in the five targets for a
   record, a value alias and a value class of another repository, also inside a list, an optional, a map, a keyed map

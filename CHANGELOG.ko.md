@@ -1,11 +1,17 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 448d379f2639c2347c14aa5db511f0278a53aa6eebbc2af3fc80e4a8abebe8e4 -->
+<!-- source-sha256: 4f8f550d3dc3aebcbdef3c1c85f35a8a8847fbe5cbd2baba5beb8450153f0eb5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding check`에 검사 CK-72가 생겼다: variant case의 field가 그 variant의 `tag`와 이름이 같으면(단어로 비교) 그
+  field 자리의 finding이고 해결 방법은 "field나 tag의 이름을 바꾼다"다. case의 값은 tag member가 case 값을 담는 객체이기
+  때문이다(T-9, GN-6v). 대상 언어가 예약한 이름에 대한 CK-23의 finding은 해결 방법으로 naming exception을 적었는데
+  생성기는 그것을 생성하지 않는다. 이제 계약에서 그 unit, member, parameter, field의 이름을 바꾸라고 적는다(N-2).
+  `packages/ts/tests/contract-check.test.ts`의 시험으로 확인했다: 새 시험 둘이 검사가 없을 때와 옛 메시지에서 실패했고,
+  232개 중 232개가 통과한다.
 - 다른 레포의 unit을 담는 variant case의 field는 이름을 대고 거부되었다(`a unit of another repository in a case of a
   variant is not generated yet`). 이제 그런 field를 다섯 target에서 생성한다. 다른 레포의 record, 값 alias, value class가
   대상이며 list·optional·map·keyed map·tuple 안에 있어도 된다. variant의 변환이 그 unit의 변환을 부른다. 두 변환은 그

@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: efa4984cc38497d67d1317b169ab6272ddc9ec34cddc121e16d24b2b261d6fa5 -->
+<!-- source-sha256: 07675d3cafe534f4daf639a285734916541ee71bca64e8ec8bf26e640b95d93e -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -148,6 +148,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   언어 코드를 지녀(generator GN-6q) 언어 코드에 닿는 `wait: async_driver` member는 `core` 객체에 `"machine": true`를
   적고, 다른 member는 `machine`을 적지 않는다. 생성 코드는 그런 코어 경로를 state machine으로, 다른 것은 future로 돌리며,
   binding은 둘을 가리려고 Rust 소스를 읽지 않기 때문이다.
+- **CK-72** variant의 tag(T-9, generator GN-6v): variant case의 어떤 field도 그 variant의 `tag`와 이름이 같지 않다. 이름은
+  단어로 비교한다. Node, WASM, case 파일에서 case의 값은 tag member가 case 값을 담는 객체이므로, 그 이름의 field는 tag의
+  자리를 차지하기 때문이다. finding은 그 field와 해결 방법을 적는다: field나 tag의 이름을 바꾼다.
 - **CK-22** 모든 member는 case를 가리킨다(K-1): 오류 unit, callback interface(U-3), host unit(L-2a)이 아닌 public unit의
   constant가 아닌 public member는 `cases` 항목 하나 이상의 `member`다. 그 항목의 file이나 group이 member를 빠뜨리면 G-5가
   e2e를 실패시킨다. `binding check`는 case 파일도 읽는다. `cases`가 가리키는 group은 그 파일에 있고, member는 `raises`의
@@ -179,7 +182,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   그 언어가 예약한 단어가 아니다. PHP는 키워드와 내장 타입 이름을 대소문자 없이 class와 함수에서 예약한다(method, property,
   변수는 쓸 수 있다). Python은 키워드를 모든 자리에서, JavaScript(Node, WASM)는 예약어와 `eval`, `arguments`를 class, 함수,
   parameter에서 예약한다(property는 쓸 수 있다). Go는 모든 이름을 대문자로 시작하므로 키워드와 겹치지 않고, 생성된 Rust는
-  키워드를 escape한다. naming exception(N-3)이 그 언어에 다른 이름을 준다.
+  키워드를 escape한다. naming exception(N-3)이 그 언어에 다른 이름을 주며 검사는 그것이 준 이름을 받아들인다. 생성기는
+  아직 naming exception을 생성하지 않으므로 finding은 생성기에서 통하는 해결 방법을 적는다: 계약에서 그 unit, member,
+  parameter, field의 이름을 바꾼다.
 - **CK-20** 한 릴리스(L-2): 레포의 `Cargo.lock`은 `polyspec-binding-core` 하나를 실행 중인 binding의 버전으로 고정한다. 한
   릴리스가 CLI(npm 패키지 `@polyspec/binding`, bin `binding`)와 crate를 함께 내고 생성 코드는 그 crate에 맞춰 쓰기 때문이다.
   `Cargo.lock`이 없거나, 고정이 없거나, 다른 버전이면 finding이다. git 의존이면 실행 중인 binding의 커밋으로도 고정한다.
