@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- A case that gave an instance value as an item of a list of a class, or as an argument of a class type of the call
+  under test, stopped the generator with "no case value of the type". The value of a class at any place of a case is
+  now an instance value, which each target makes at its place (GN-13f). `tests/e2e/classes` has such cases of
+  `classes.join` and `tag.same`. Verified by `npm test` in `packages/ts`.
 - A member that raises and takes a function, or a callback inside another type, was reported as waiting for a case
   form, so its kinds had no case (CK-22). A case gives a function as `{"function": [<row>]}`, whose `args` are the
   positions of its parameters, and a callback at any place of a callback type as its fixture, or as an instance value

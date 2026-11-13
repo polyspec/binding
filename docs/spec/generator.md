@@ -637,8 +637,8 @@ the design ids are those of the binding design.
   that returns the class: a constructor, a static member, a function, or a method of any class; `from` names a member
   whose result holds the class, and `pick` reaches it by steps: a field name in snake_case, `{"index": n}` of a list
   and `{"tuple": n}` of a tuple. `receiver` is given when the member is a method, and is an instance value itself.
-  `args` holds the parameters of the member by their snake_case keys; a parameter of a class type may be an instance
-  value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
+  `args` holds the parameters of the member by their snake_case keys; the value of a class at any place of a case (a
+  parameter, an item of a list, a field of a record, an `optional`) may be an instance value. Each call of `then` is a method of the class, called on the instance in order, and its result is not
   compared; a call with `"raises": {"kind": <kind>}` must fail with that kind of its member's raises, which the test
   requires before the next step, so a kind that only an instance after a failed call reaches has a case. A test makes every instance of the value as a local of the test, the receivers and the results that a
   pick reads from included, so none is reclaimed before the test ends; the tests that need any receiver (B-2, B-3,

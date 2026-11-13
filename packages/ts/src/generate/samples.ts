@@ -27,6 +27,8 @@ export interface Context {
   callbackNew: (unit: Unit, how: CallbackHow) => string;
   // How the generated test calls a factory of a class (a static member or the constructor) with its arguments (T-5).
   objectNew?: (factory: Fn, args: string) => string;
+  // GN-13f: the expression that makes the instance of an instance value of a case at any place of a class.
+  instanceNew?: (receiver: Receiver) => string;
 }
 
 export type CallbackHow = { returns: 'null' } | { missing: true } | { raise: string } | { returns: 'wrong' };
@@ -165,6 +167,10 @@ export function fromJson(model: Model, ctx: Context, type: Type, value: unknown,
         return fromJson(model, ctx, f.type, fields[key], out);
       }),
     );
+  }
+  // GN-13f: the value of a class is an instance value, at any place of the case.
+  if (objectUnit(model, type) !== undefined && unit !== undefined && isInstanceValue(value) && ctx.instanceNew !== undefined) {
+    return ctx.instanceNew(instanceOf(model, unit.id, value, `a case value of ${unit.id}`));
   }
   throw new Error(`no case value of the type ${shown(type)}`);
 }
