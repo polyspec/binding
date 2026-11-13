@@ -1832,3 +1832,26 @@ test('an error unit in a module is the class of the namespace or the module of i
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /module\.exports = \{[^}]*\bUtf8Error\b/);
   assert.match(text(out, 'packages/ts/wasm/generated/index.mjs'), /export class Utf8Error extends ParseError/);
 });
+
+test('a class parameter gives the core the borrow that its core names, which every crate asserts (GN-6h, I-2)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/classes/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const param = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id).parameters[0];
+  param('classes.shout').core = 'value';
+  param('tag.same').core = '&mut';
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const crate of ['packages/go/internal/ffi/generated/lib.rs', 'packages/ts/wasm/generated/lib.rs', ...LIBS]) {
+    const lib = text(out, crate);
+    // value: a clone of the value under the read guard; &mut: the write borrow of the guard.
+    assert.ok(lib.includes('let result = polyspec_classes::shout((*tag).clone());'), `${crate} gives the core a clone`);
+    assert.ok(lib.includes('let result = polyspec_classes::Tag::same(&receiver, &mut other);'), `${crate} gives the core the write borrow`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(polyspec_classes::Tag) -> _ = polyspec_classes::shout;\n};'), `${crate} asserts the borrow of shout`);
+    assert.ok(lib.includes('const _: () = {\n    let _: fn(&polyspec_classes::Tag, &mut polyspec_classes::Tag) -> _ = polyspec_classes::Tag::same;\n};'), `${crate} asserts the borrows of same`);
+  }
+  // A parameter that names no borrow is asserted by nothing.
+  const plain = generate({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php', 'python', 'node', 'go', 'wasm'] });
+  for (const crate of LIBS) assert.doesNotMatch(text(plain, crate), /let _: fn\(/, crate);
+  // G-4: the borrow of an optional of a class is refused by name.
+  param('classes.shout').type = { optional: { unit: 'tag' } };
+  assert.throws(() => generate({ contract, version: '0.0.0', coreLib: 'polyspec_classes', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python'] }), /classes\.shout\.tag: the borrow of an optional class is not generated yet/);
+});

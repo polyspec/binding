@@ -538,6 +538,17 @@ describe('CK-8 the kinds of an alias (U-7, E-5)', () => {
     fails('CK-8', `${at('value')}/in_raises`, (c) => { unit(c, 'value').in_raises = ['sample::Error::TooLarge']; }));
 });
 
+describe('CK-67 the borrow of a class parameter', () => {
+  test('a borrow of a parameter whose type is no class', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => { member(c, 'forms.parse').parameters[0].core = '&mut'; }));
+  test('a borrow of a list of a class', () =>
+    fails('CK-67', `${at('forms')}/members/0/parameters/0/core`, (c) => {
+      const p = member(c, 'forms.parse').parameters[0];
+      p.type = { list: { unit: 'session' } };
+      p.core = 'value';
+    }));
+});
+
 describe('CK-21 the build of the core and exclusive members', () => {
   test('a core that returns a Result without raises is accepted (E-1c)', () => {
     assert.deepEqual(findings((c) => { const m = member(c, 'forms.parse'); m.raises = []; m.core.result = true; }), []);
