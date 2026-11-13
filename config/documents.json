@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "comment": "Every Markdown document of binding has a Korean twin, the copies PRINCIPLES.md(.ko) of kit among them; the documents of the end-to-end contracts and of the fixtures are read like any other.",
+  "include": ["**/*.md"],
+  "changelogs": ["CHANGELOG.md"],
+  "changelogRules": [
+    "unreleased-first",
+    "unreleased-once",
+    "versions-only",
+    "newest-first",
+    "unreleased-empty-at-release"
+  ]
+}
