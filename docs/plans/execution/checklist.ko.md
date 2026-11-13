@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: fc6775971a9986d8c0e42bb5276b055ee7c827d9a5060b62191a6f2105d738f6 -->
+<!-- source-sha256: 30e8f19c5146acb5329286e0b82fd1b89a31cd5b9dcbc593026753abe492a28d -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -52,5 +52,5 @@
 | B2.138 | 결과 꼴을 가진 record의 기본값 있는 field를 빼도 되고, case 값이 그것을 뺀다(GN-6i, GN-6a, G-5). 생성기는 모든 field가 없는 record의 case 값을 거부하고, 결과 꼴은 모든 field를 받는다(기본값 없는 Python의 keyword와 PHP의 named argument). variant의 case에는 그 규칙이 이미 있다(GN-6v) | `packages/ts/src/generate/`, `packages/ts/tests/generate.test.ts`, `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make test-ts`; 그런 record가 있는 `make e2e REPO=tests/e2e/shapes`, 그 기록이 `evidence: true` | [ ] |
 | B2.139 | checkout이 `@polyspec/kit` 0.0.112를 고정한다. Makefile의 recipe가 실행하는 utility는 모두 그 release에 있고 recipe의 인자를 받으며, binding의 release는 0.0.112에 더는 없는 release 기능을 쓰지 않는다 | `package.json`, `package-lock.json`, `CHANGELOG.md`(.ko) | `make docs-check`; `make release-coverage` | [o] |
 | B2.140 | 생성기 명세가 바인딩의 release를 누가 하는지 적는다(GN-3c, GN-15g). 명세는 공용 도구의 규칙과 release 도구를 적었는데 `@polyspec/kit` 0.0.112에는 그것이 없다. 그 단계는 바인딩을 가진 레포의 recipe이고, release 필드는 napi CLI와 PIE가 읽는다 | `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make docs-check` | [o] |
-| B2.141 | 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). asset 종류마다 레포의 recipe가 실행하는 것, 플랫폼마다의 runner, Go 모듈의 commit과 tag를 만드는 binding의 명령 | `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make docs-check` | [~] |
+| B2.141 | 생성기 명세가 바인딩을 가진 레포의 release를 적는다(GN-19~GN-19g). asset 종류마다 레포의 recipe가 실행하는 것, 플랫폼마다의 runner, Go 모듈의 commit과 tag를 만드는 binding의 명령 | `docs/spec/generator.md`(.ko), `CHANGELOG.md`(.ko) | `make docs-check` | [o] |
 | B2.142 | `binding release-go-module`이 정적 라이브러리를 가진 Go 모듈의 commit과 tag를 만든다(GN-19f, GN-15g). 검사, 실행의 index로 만드는 commit, 소비자 증명, annotated tag, push할 reference. 끝에서 끝까지 확인은 tag, 소비자, debug section, 시험 진입점을 같은 모듈에서 읽는다 | `packages/ts/src/release/go-module.ts`, `packages/ts/src/cli.ts`, `packages/ts/tests/release-go-module.test.ts`, `scripts/e2e.mts`, `scripts/e2e-inputs.mts`, `CHANGELOG.md`(.ko) | `make test-ts`; release tag에 있는 레포에서 실제 Git, Go, toolchain으로 실행한 명령, 그 소비자 시험이 통과; `make e2e REPO=tests/e2e/sample`, 그 기록이 `evidence: true` | [~] |
