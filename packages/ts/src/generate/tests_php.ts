@@ -5,7 +5,7 @@ import type { Unit } from '../contract.ts';
 import { type Model, Unsupported, POISON_ENTRY, errorUnitOfKind, hookCall, langName, unitOf } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { type PhpLayout, phpNamespace } from './php.ts';
-import { type CallbackHow, CaseRefused, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, resultCases, expectedText, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
+import { type CallbackHow, CaseRefused, type Context, type MadeForm, type Receiver, isPlain, madeLines, callArgs, callbackArg, callables, bytesKind, caseValue, isNumber, placeholder, fixtureValues, fixturesOf, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, phpCaseTests, raisingCases, refusedKeyMap, resultCases, expectedText, PHP_TOKENS, samePairs, sampleReceiver, stringCases, textKind, wrapText } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 
@@ -81,6 +81,7 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   };
   let usesOutcome = false;
   let usesSame = false;
+  let usesTokens = false;
   for (const fn of callables(model)) {
     const name = fn.kind === 'function' ? langName('php', fn.member.name, 'callable') : `${langName('php', fn.unit.name, 'class')}${fn.kind === 'constructor' ? 'Construct' : langName('php', fn.member.name, 'class')}`;
     const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
@@ -315,9 +316,14 @@ ${f.values.members.map((member) => `            public function ${member.slice(1
         }), receiverMade.expr);
         const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
         usesSame ||= expected !== undefined && 'text' in expected;
+        usesTokens ||= expected !== undefined && 'tokens' in expected;
         const check = expected === undefined
           ? `\n        ${call};\n        self::addToAssertionCount(1);`
-          : 'refused' in expected ? `\n        self::fail(${phpText(expected.refused)});` : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
+          : 'refused' in expected
+            ? `\n        self::fail(${phpText(expected.refused)});`
+            : 'tokens' in expected
+              ? `\n        self::assertSame(json_decode(${phpText(expected.tokens)}, true, 512, JSON_THROW_ON_ERROR), self::tokens(${call}));`
+              : `\n        self::assertSame(self::same(${expected.text}), self::same(${call}));`;
         methods.push(`
     public function testGn13e${name}${id}(): void
     {${receiverMade.lines}${before}${check}${after}
@@ -484,7 +490,7 @@ final class GeneratedTest extends TestCase
             self::assertSame($line, $error->getLine());
         }
     }
-${methods.join('\n')}${usesSame ? `
+${methods.join('\n')}${usesTokens ? PHP_TOKENS : ''}${usesSame ? `
 
     /**
      * GN-13e: a result in a form that assertSame compares: an object other than an enum case is its class and its

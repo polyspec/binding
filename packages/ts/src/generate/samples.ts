@@ -193,15 +193,241 @@ export class CaseRefused extends Error {}
 
 // GN-13e: the expected result of a case in the language, or the reason why the generator cannot write it, which the
 // test of the case fails with.
-export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { refused: string } {
+export function expectedText(model: Model, ctx: Context, fn: Fn, value: unknown): { text: string } | { tokens: string } | { refused: string } {
   // GN-6m: a property of a value class without core_type gives the value that the language gave its constructor, so
   // the value is written as an argument is, not by the out rows of its alias.
   const kept = fn.kind === 'property' && model.kept.some((k) => k.members.includes(fn));
   try {
+    // GN-13e: a result of a value alias is compared by the tokens of its places, which name the form of each place.
+    const alias = kept ? undefined : aliasOf(model, fn.returns);
+    if (alias !== undefined && alias.unit.out !== undefined) return { tokens: JSON.stringify(aliasTokens(model, ctx.lang, alias.unit, value)) };
     return { text: fromJson(model, ctx, fn.returns, value, !kept) };
   } catch (error) {
     return { refused: `${fn.member.id}: ${error instanceof Error ? error.message : String(error)} (GN-13e)` };
   }
+}
+
+// GN-13e: the result of a member that returns a value alias is compared as the texts of its places in pre-order,
+// depth first, which a loop writes on both sides, so a value nested deeper than a recursion takes is compared too. The
+// generator writes the texts of the case value by the out rows of the alias (the row whose kind and predicate the
+// value has, and its form in the language), and the test writes those of the result by the type of each place
+// (ALIAS_TOKENS of each language). A text names the form: null; bool, true or false; int, its decimal (Python, PHP);
+// number, the hex of the IEEE 754 bits or nan (Node, WASM); bigint, its decimal; float, the hex of the bits or nan
+// (Python, PHP); text and bytes, the hex of the UTF-8 or the bytes (Python, Node, WASM), string in PHP; list n, then
+// its items; map n, then each key and its value; and an instance of a value class of the out rows, a PHP object and a
+// PHP reference, numbered together by their first place: `<unit> #k`, then its field, `php_object #k n`, then its
+// pairs, `php_reference #k`, then its value, and `<form> again k` at a later place.
+export type TokenForm = { unit: string; cls: string; field: string };
+
+// The value classes that the out rows of an alias name as `<unit>.constructor` in a language, with their field.
+export function aliasKept(model: Model, lang: Lang3, alias: Unit): TokenForm[] {
+  const forms: TokenForm[] = [];
+  for (const row of alias.out ?? []) {
+    const make = row.make[lang];
+    if (typeof make !== 'string' || !make.endsWith('.constructor')) continue;
+    const unit = make.slice(0, -'.constructor'.length);
+    if (forms.some((f) => f.unit === unit)) continue;
+    // The class of the form: its constructor takes one value, which a property of the same name gives back.
+    const cls = model.contract.units.find((u) => u.id === unit);
+    const params = cls?.members?.find((m) => m.kind === 'constructor')?.parameters ?? [];
+    const [param] = params;
+    const property = param === undefined ? undefined : cls?.members?.find((m) => m.kind === 'property' && m.name.join('_') === param.name.join('_'));
+    if (cls === undefined || param === undefined || params.length !== 1 || property === undefined) throw new Unsupported(`the out form ${make} of ${alias.id} is no class whose constructor takes one value that a property of its name gives back, with which a result is not compared yet`);
+    forms.push({ unit, cls: langName(lang, cls.name, 'class'), field: langName(lang, param.name, 'variable') });
+  }
+  return forms;
+}
+
+// The bits of a float of a case as the tokens write them.
+function floatBits(number: number): string {
+  if (Number.isNaN(number)) return 'nan';
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, number);
+  return view.getBigUint64(0).toString(16).padStart(16, '0');
+}
+
+// The number of a float or an int of a case: {"float": "nan" | "inf" | "-inf"}, a number, or a decimal text.
+function caseNumber(raw: unknown): number {
+  if (typeof raw === 'object' && raw !== null) return { nan: NaN, inf: Infinity, '-inf': -Infinity }[String((raw as { float?: unknown }).float)] ?? NaN;
+  return Number(raw);
+}
+
+// The bytes of a text or bytes of a case, and of a key that is a text or {"hex"}.
+function caseBytes(raw: unknown): Buffer {
+  if (typeof raw === 'string') return Buffer.from(raw, 'utf8');
+  return Buffer.from(String((raw as { hex?: unknown }).hex), 'hex');
+}
+
+function isUtf8(bytes: Buffer): boolean {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return true;
+  } catch (error) {
+    if (error instanceof TypeError) return false;
+    throw error;
+  }
+}
+
+const SAFE = 2n ** 53n - 1n;
+
+// The tokens of a case value of an alias in a language (GN-13e).
+export function aliasTokens(model: Model, lang: Lang3, alias: Unit, top: unknown): string[] {
+  const rows = alias.out ?? [];
+  const kept = aliasKept(model, lang, alias);
+  const out: string[] = [];
+  class Key {
+    readonly key: unknown;
+    constructor(key: unknown) {
+      this.key = key;
+    }
+  }
+  const stack: unknown[] = [top];
+  const objects = new Map<number, number>();
+  const references = new Map<number, number>();
+  let count = 0;
+  const intToken = (decimal: string): string => {
+    if (lang !== 'node') return `int ${decimal}`;
+    const wide = BigInt(decimal);
+    return wide >= -SAFE && wide <= SAFE ? `number ${floatBits(Number(wide))}` : `bigint ${decimal}`;
+  };
+  const textToken = (bytes: Buffer, text: boolean): string => `${lang === 'php' ? 'string' : text ? 'text' : 'bytes'} ${bytes.toString('hex')}`;
+  const keyToken = (key: unknown, keys: readonly string[]): string => {
+    if (typeof key === 'object' && key !== null && 'int' in key) return intToken(String((key as { int: unknown }).int));
+    const bytes = caseBytes(key);
+    // PHP makes a key that is the decimal text of an integer that integer.
+    if (lang === 'php' && /^(0|-?[1-9][0-9]*)$/.test(bytes.toString('latin1')) && BigInt(bytes.toString('latin1')) >= -(2n ** 63n) && BigInt(bytes.toString('latin1')) < 2n ** 63n) return `int ${bytes.toString('latin1')}`;
+    return textToken(bytes, keys.includes('text') && isUtf8(bytes));
+  };
+  const keyed = (make: unknown): readonly string[] => (typeof make === 'object' && make !== null && 'keyed_map' in make ? (make as { keyed_map: { key: string[] } }).keyed_map.key : ['int', 'text', 'bytes']);
+  const holds = (kind: string, node: Record<string, unknown>, predicate: string): boolean => {
+    const held = node['value'];
+    switch (predicate) {
+      case 'utf8':
+        return kind === 'text' || isUtf8(caseBytes(held));
+      case 'safe_integer':
+        return BigInt(String(held)) >= -SAFE && BigInt(String(held)) <= SAFE;
+      case 'integral_float': {
+        const number = caseNumber(held);
+        return Number.isFinite(number) && Number.isInteger(number);
+      }
+      case 'sequence_keys':
+        return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+      default:
+        throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
+    }
+  };
+  // A case value of the kind list or text is the map or the bytes of an alias whose out rows have no row of the kind.
+  const formOf = (kind: string, node: Record<string, unknown>): unknown => {
+    const own = rows.filter((r) => r.kind === kind);
+    const candidates = own.length > 0 ? own : rows.filter((r) => r.kind === ({ list: 'map', text: 'bytes' } as Record<string, string>)[kind]);
+    const matched = candidates.find((r) => r.when !== undefined && r.when !== 'else' && holds(kind, node, r.when.predicate) === r.when.is)
+      ?? candidates.find((r) => r.when === undefined || r.when === 'else');
+    if (matched === undefined) throw new Unsupported(`no out row of ${alias.id} makes the kind ${kind} of a result`);
+    return matched.make[lang];
+  };
+  const keptOfForm = (form: unknown): TokenForm | undefined => (typeof form === 'string' && form.endsWith('.constructor') ? kept.find((k) => `${k.unit}.constructor` === form) : undefined);
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (item instanceof Key) {
+      out.push(item.key as string);
+      continue;
+    }
+    const node = item as Record<string, unknown>;
+    const kind = String(node['kind']);
+    const held = node['value'];
+    switch (kind) {
+      case 'null':
+        out.push('null');
+        continue;
+      case 'bool':
+        out.push(`bool ${String(held === true)}`);
+        continue;
+      default:
+        break;
+    }
+    const form = formOf(kind, node);
+    const cls = keptOfForm(form);
+    switch (kind) {
+      case 'int':
+        out.push(form === 'bigint' ? `bigint ${String(held)}` : intToken(String(held)));
+        break;
+      case 'float': {
+        const bits = floatBits(caseNumber(held));
+        const token = `${lang === 'node' ? 'number' : 'float'} ${bits}`;
+        if (cls === undefined) out.push(token);
+        else out.push(`${cls.unit} #${String(count++)}`, token);
+        break;
+      }
+      case 'text':
+      case 'bytes': {
+        const bytes = caseBytes(held);
+        out.push(textToken(bytes, form === 'text'));
+        break;
+      }
+      case 'list':
+      case 'map':
+      case 'object': {
+        if (kind === 'object' && !('value' in node)) {
+          out.push(`${cls?.unit ?? 'php_object'} again ${String(objects.get(Number(node['id'])))}`);
+          break;
+        }
+        const repeat = node['repeat'] === undefined ? undefined : Number(node['repeat']);
+        let pairs: [unknown, unknown][];
+        if (kind === 'list') {
+          pairs = repeat === undefined ? (held as unknown[]).map((value, i) => [{ int: i }, value]) : [[{ int: 0 }, repeat > 1 ? { ...node, repeat: repeat - 1 } : held]];
+        } else if (repeat !== undefined) {
+          pairs = [[node['key'], repeat > 1 ? { kind, repeat: repeat - 1, key: node['key'], value: held } : held]];
+        } else {
+          pairs = held as [unknown, unknown][];
+        }
+        const push = (keys: readonly string[]): void => {
+          for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i]?.[1], new Key(keyToken(pairs[i]?.[0], keys)));
+        };
+        if (form === 'list') {
+          out.push(`list ${String(pairs.length)}`);
+          for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i]?.[1]);
+        } else if (form === 'map' || (typeof form === 'object' && form !== null && 'keyed_map' in form)) {
+          out.push(`map ${String(pairs.length)}`);
+          push(form === 'map' ? ['text'] : keyed(form));
+        } else if (form === 'php_object' || cls !== undefined) {
+          const number = count++;
+          if (kind === 'object' && node['id'] !== undefined) objects.set(Number(node['id']), number);
+          if (cls === undefined) {
+            out.push(`php_object #${String(number)} ${String(pairs.length)}`);
+            push(['int', 'bytes']);
+          } else {
+            out.push(`${cls.unit} #${String(number)}`, `map ${String(pairs.length)}`);
+            push(keyedField(model, cls.unit));
+          }
+        } else {
+          throw new Unsupported(`the out form ${shown(form)} of ${alias.id} is not compared yet`);
+        }
+        break;
+      }
+      case 'reference': {
+        const ref = held as Record<string, unknown>;
+        const name = cls?.unit ?? 'php_reference';
+        const id = Number(ref['id']);
+        if (!('value' in ref)) {
+          out.push(`${name} again ${String(references.get(id))}`);
+          break;
+        }
+        references.set(id, count);
+        out.push(`${name} #${String(count++)}`);
+        stack.push(ref['value']);
+        break;
+      }
+      default:
+        throw new Unsupported(`a result of the kind ${kind} of ${alias.id} is not compared yet`);
+    }
+  }
+  return out;
+}
+
+// The key forms of the keyed map that the one field of a value class keeps.
+function keyedField(model: Model, unit: string): readonly string[] {
+  const type = model.contract.units.find((u) => u.id === unit)?.members?.find((m) => m.kind === 'constructor')?.parameters?.[0]?.type;
+  return typeof type === 'object' && 'keyed_map' in type ? type.key : ['int', 'text', 'bytes'];
 }
 
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the value that the built-in form of the kind
@@ -1086,3 +1312,193 @@ export function phpCaseTests(model: Model): CaseTest[] {
   }
   return out;
 }
+
+// GN-13e: the value classes of the out rows of the aliases of the contract, which a result of an alias holds.
+export function tokenForms(model: Model, lang: Lang3): TokenForm[] {
+  const forms: TokenForm[] = [];
+  for (const alias of model.aliases.filter((a) => a.library === undefined && a.unit.out !== undefined)) {
+    for (const form of aliasKept(model, lang, alias.unit)) if (!forms.some((f) => f.unit === form.unit)) forms.push(form);
+  }
+  return forms;
+}
+
+// GN-13e: the tokens of a result in Node and WASM, as aliasTokens writes those of a case value.
+export function nodeTokens(forms: TokenForm[]): string {
+  return `
+// GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
+// a container with its count, and an instance numbered by its first place.
+const KEPT = [${forms.map((f) => `[pkg.${f.cls}, ${jsString(f.unit)}, ${jsString(f.field)}]`).join(', ')}];
+function tokens(top) {
+  const out = [];
+  const stack = [top];
+  const numbers = new Map();
+  const bits = (number) => {
+    if (Number.isNaN(number)) return 'nan';
+    const view = new DataView(new ArrayBuffer(8));
+    view.setFloat64(0, number);
+    return view.getBigUint64(0).toString(16).padStart(16, '0');
+  };
+  const hex = (bytes) => Buffer.from(bytes).toString('hex');
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (value === null) out.push('null');
+    else if (typeof value === 'boolean') out.push(\`bool \${String(value)}\`);
+    else if (typeof value === 'number') out.push(\`number \${bits(value)}\`);
+    else if (typeof value === 'bigint') out.push(\`bigint \${String(value)}\`);
+    else if (typeof value === 'string') out.push(\`text \${hex(new TextEncoder().encode(value))}\`);
+    else if (value instanceof Uint8Array) out.push(\`bytes \${hex(value)}\`);
+    else if (Array.isArray(value)) {
+      out.push(\`list \${value.length}\`);
+      for (let i = value.length - 1; i >= 0; i -= 1) stack.push(value[i]);
+    } else if (value instanceof Map) {
+      const pairs = [...value];
+      out.push(\`map \${pairs.length}\`);
+      for (let i = pairs.length - 1; i >= 0; i -= 1) stack.push(pairs[i][1], pairs[i][0]);
+    } else {
+      const kept = KEPT.find(([cls]) => value instanceof cls);
+      if (kept === undefined) {
+        out.push(\`other \${typeof value}\`);
+      } else if (numbers.has(value)) {
+        out.push(\`\${kept[1]} again \${numbers.get(value)}\`);
+      } else {
+        numbers.set(value, numbers.size);
+        out.push(\`\${kept[1]} #\${numbers.get(value)}\`);
+        stack.push(value[kept[2]]);
+      }
+    }
+  }
+  return out;
+}
+`;
+}
+
+// GN-13e: the tokens of a result in Python, as aliasTokens writes those of a case value.
+export function pythonTokens(forms: TokenForm[]): string {
+  return `
+
+# GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each place,
+# a container with its count, and an instance numbered by its first place.
+_KEPT = (${forms.map((f) => `(pkg.${f.cls}, ${pyString(f.unit)}, ${pyString(f.field)}), `).join('')})
+
+
+def _tokens(top):
+    out = []
+    stack = [top]
+    numbers = {}
+    held = []
+    while stack:
+        value = stack.pop()
+        if value is None:
+            out.append("null")
+        elif isinstance(value, bool):
+            out.append("bool true" if value else "bool false")
+        elif type(value) is int:
+            out.append(f"int {value}")
+        elif type(value) is float:
+            out.append("float nan" if value != value else "float " + struct.pack(">d", value).hex())
+        elif type(value) is str:
+            out.append("text " + value.encode("utf-8", "surrogatepass").hex())
+        elif type(value) is bytes:
+            out.append("bytes " + value.hex())
+        elif type(value) is list:
+            out.append(f"list {len(value)}")
+            stack.extend(reversed(value))
+        elif type(value) is dict:
+            out.append(f"map {len(value)}")
+            for key, item in reversed(list(value.items())):
+                stack.append(item)
+                stack.append(key)
+        else:
+            kept = next((k for k in _KEPT if isinstance(value, k[0])), None)
+            if kept is None:
+                out.append("other " + type(value).__name__)
+            elif id(value) in numbers:
+                out.append(f"{kept[1]} again {numbers[id(value)]}")
+            else:
+                numbers[id(value)] = len(numbers)
+                held.append(value)
+                out.append(f"{kept[1]} #{numbers[id(value)]}")
+                stack.append(getattr(value, kept[2]))
+    return out
+`;
+}
+
+// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, and a
+// place of an array or of an object that is a PHP reference is php_reference before its value.
+export const PHP_TOKENS = `
+
+    /**
+     * GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each
+     * place, a container with its count, and an object or a reference numbered by its first place.
+     *
+     * @return list<string>
+     */
+    private static function tokens(mixed $top): array
+    {
+        $out = [];
+        $stack = [[$top, null]];
+        $numbers = [];
+        $count = 0;
+        while ($stack !== []) {
+            [$value, $place] = array_pop($stack);
+            if ($place === 'key') {
+                $out[] = is_int($value) ? 'int ' . $value : 'string ' . bin2hex($value);
+                continue;
+            }
+            if ($place instanceof \\ReflectionReference) {
+                $id = 'reference ' . $place->getId();
+                if (isset($numbers[$id])) {
+                    $out[] = 'php_reference again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $out[] = 'php_reference #' . $numbers[$id];
+            }
+            if ($value === null) {
+                $out[] = 'null';
+            } elseif (is_bool($value)) {
+                $out[] = 'bool ' . ($value ? 'true' : 'false');
+            } elseif (is_int($value)) {
+                $out[] = 'int ' . $value;
+            } elseif (is_float($value)) {
+                $out[] = 'float ' . (is_nan($value) ? 'nan' : bin2hex(pack('E', $value)));
+            } elseif (is_string($value)) {
+                $out[] = 'string ' . bin2hex($value);
+            } elseif (is_array($value)) {
+                $list = array_is_list($value);
+                $out[] = ($list ? 'list ' : 'map ') . count($value);
+                self::places($value, $list, $stack);
+            } elseif ($value instanceof \\stdClass) {
+                $id = 'object ' . spl_object_id($value);
+                if (isset($numbers[$id])) {
+                    $out[] = 'php_object again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $properties = (array) $value;
+                $out[] = 'php_object #' . $numbers[$id] . ' ' . count($properties);
+                self::places($properties, false, $stack);
+            } else {
+                $out[] = 'other ' . get_debug_type($value);
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * GN-13e: the places of an array on the stack of tokens, each with its key unless the array is a list, and with
+     * the PHP reference that the place is.
+     *
+     * @param array<int|string, mixed> $array
+     * @param list<array{mixed, mixed}> $stack
+     */
+    private static function places(array $array, bool $list, array &$stack): void
+    {
+        foreach (array_reverse(array_keys($array)) as $key) {
+            $stack[] = [$array[$key], \\ReflectionReference::fromArrayElement($array, $key)];
+            if (!$list) {
+                $stack[] = [$key, 'key'];
+            }
+        }
+    }
+`;

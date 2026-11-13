@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+- A result that is a value alias (GN-13e) is compared as the texts of its places in pre-order, which a loop writes on
+  both sides: the generator writes those of the case value by the out rows of the alias, the row whose kind and
+  predicate (`utf8`, `safe_integer`, `integral_float`, `sequence_keys`) the place has and its form in the language,
+  and the test writes those of the result by the type of each place with the helper `tokens` (Node, WASM, PHP) or
+  `_tokens` (Python). A text names the form and the identity: an instance of a class that an out row names as
+  `<unit>.constructor` (its constructor takes one value that a property of its name gives back), a PHP `stdClass` and a
+  PHP reference are numbered by their first place and named again by their number. Before, a result whose out rows
+  make another form than the built-in one of its kind (text for bytes, `bigint`, a value class, a list for a map, a
+  `stdClass`) failed its test as not compared. Verified by `make test-ts` (275 tests), and by PHP: the texts of the
+  value that PHP's own `unserialize` reads from the data of each of the 601 cases of php-serialization that give a
+  result equal the texts that the generator writes.
 - A case value of the language that is no value of a value type is `{"host": <sort>}` of a closed table (G-5, GN-13):
   `callable`, `date` and `object`, which Python makes as `lambda: None`, `datetime.date(1970, 1, 1)` and `object()`,
   Node and WASM as `() => null`, `new Date(0)` and `new (class Other {})()`, and PHP as `static fn (): null => null`,

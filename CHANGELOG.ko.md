@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- 값 alias인 결과(GN-13e)는 그 자리들을 전위 순서로 적은 텍스트로 비교하며, 양쪽 모두 반복문이 쓴다. 생성기는 case 값의
+  텍스트를 alias의 out 행으로 쓴다. 자리의 kind와 predicate(`utf8`, `safe_integer`, `integral_float`, `sequence_keys`)에
+  맞는 행과 그 언어 형태다. 시험은 결과의 텍스트를 각 자리의 타입으로 helper `tokens`(Node, WASM, PHP)나
+  `_tokens`(Python)로 쓴다. 텍스트는 형태와 동일성을 적는다. out 행이 `<unit>.constructor`로 적는 class(생성자가 값 하나를
+  받고 그 이름의 property가 그것을 돌려준다)의 인스턴스, PHP `stdClass`, PHP reference는 첫 자리로 번호를 받고 뒤에서는 그
+  번호로 다시 적힌다. 전에는 out 행이 그 kind의 내장 형태가 아닌 형태(bytes에 text, `bigint`, 값 class, map에 list,
+  `stdClass`)를 만드는 결과는 비교하지 않는다는 이유로 시험이 실패했다. `make test-ts`(시험 275개)로 확인했고, PHP로도
+  확인했다. 결과를 주는 php-serialization의 case 601개 각각의 data를 PHP 자신의 `unserialize`가 읽은 값의 텍스트가 생성기가
+  쓰는 텍스트와 같다.
 - 값 타입의 값이 아닌 언어의 case 값은 닫힌 표의 `{"host": <종류>}`다(G-5, GN-13). 종류는 `callable`, `date`, `object`이며,
   Python은 `lambda: None`, `datetime.date(1970, 1, 1)`, `object()`로, Node와 WASM은 `() => null`, `new Date(0)`,
   `new (class Other {})()`로, PHP는 `static fn (): null => null`, `new \DateTimeImmutable('@0')`, `new class {}`로
