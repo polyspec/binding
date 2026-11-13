@@ -44,7 +44,7 @@ export class Refusals {
   }
 }
 
-// GN-6p, U-1: a unit of visibility internal is no public API of its package.
+// GN-6r, U-1: a unit of visibility internal is no public API of its package.
 export const isInternal = (unit: Unit): boolean => unit.visibility === 'internal';
 
 export interface Arg {
@@ -64,7 +64,7 @@ export interface CallbackUnit {
   members: CallbackMember[];
   // thread owner: a call from another thread is kind wrong_thread.
   owner: boolean;
-  // GN-6q: a callback unit of another repository, whose trait methods return the failure of that repository's core
+  // GN-6s: a callback unit of another repository, whose trait methods return the failure of that repository's core
   // error; its types name that repository's units with their library.
   library?: string;
   error?: string;
@@ -229,7 +229,7 @@ export interface Model {
   foreign: ReadonlyMap<string, Contract>;
   objects: ObjectClass[];
   callbacks: CallbackUnit[];
-  // GN-6q: the callback units of other repositories that a parameter takes; the owning package declares them.
+  // GN-6s: the callback units of other repositories that a parameter takes; the owning package declares them.
   foreignCallbacks: CallbackUnit[];
   aliases: ValueAlias[];
   classes: ErrorClass[];
@@ -270,8 +270,8 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   }
   if ('unit' in type && type.library === undefined) {
     const unit = units.get(type.unit);
-    // GN-6o: the binding converts only the types that it generates, and it generates nothing of a host unit.
-    if (unit?.origin === 'host') throw new Unsupported(`${where}: a host unit ${unit.id} in a type of a generated unit is not generated (GN-6o)`);
+    // GN-6q: the binding converts only the types that it generates, and it generates nothing of a host unit.
+    if (unit?.origin === 'host') throw new Unsupported(`${where}: a host unit ${unit.id} in a type of a generated unit is not generated (GN-6q)`);
     if (unit?.kind === 'enum' || unit?.kind === 'record') return;
     if (unit?.kind === 'class' && (unit.origin === 'generated' || unit.origin === 'value')) return;
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object') return;
@@ -280,7 +280,7 @@ function supportedType(type: Type, units: Map<string, Unit>, where: string, fore
   if ('unit' in type && type.library !== undefined) {
     const unit = foreign.get(type.library)?.units.find((u) => u.id === type.unit);
     if (unit?.kind === 'record' && (unit.fields ?? []).every((f) => typeof f.type === 'string')) return;
-    // GN-6q: a callback unit of another repository as a parameter, which collectModel wraps.
+    // GN-6s: a callback unit of another repository as a parameter, which collectModel wraps.
     if (unit?.kind === 'interface' && unit.origin === 'callback' && where.includes('#parameter')) return;
     // T-3, U-7 (a'): a value alias of another repository, whose core functions this binding calls.
     if (unit?.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object' && unit.core_type !== undefined) return;
@@ -327,14 +327,14 @@ export function collectModel(
   const callbacks: CallbackUnit[] = [];
   const aliases: ValueAlias[] = [];
   const errorUnits: ErrorUnit[] = [];
-  // GN-6q: the callback units of other repositories that parameters take, each wrapped once. A unit of the owning
+  // GN-6s: the callback units of other repositories that parameters take, each wrapped once. A unit of the owning
   // contract that a member names without a library is that repository's unit.
   const foreignCallbacks: CallbackUnit[] = [];
   const foreignCallback = (id: string, library: string, where: string): boolean => {
     const owner = foreign.get(library);
     const unit = owner?.units.find((u) => u.id === id);
     if (owner === undefined || unit?.kind !== 'interface' || unit.origin !== 'callback') return false;
-    if (units.has(id)) throw new Unsupported(`${where}: the callback unit ${id} of ${library} has the name of a unit of this contract (GN-6q)`);
+    if (units.has(id)) throw new Unsupported(`${where}: the callback unit ${id} of ${library} has the name of a unit of this contract (GN-6s)`);
     if (foreignCallbacks.some((c) => c.unit.id === id && c.library === library)) return true;
     const resolved = resolveNamedTypes(owner).units.find((u) => u.id === id) ?? unit;
     const qualify = (type: Type): Type => {
@@ -461,13 +461,13 @@ export function collectModel(
     if (refusals.found.length > before) refusedUnits.add(unit.id);
   }
   function collectUnit(unit: Unit): void {
-    // GN-6o, I-1: a host unit is code of the repository whose source is its declaration; the binding writes nothing of it.
+    // GN-6q, I-1: a host unit is code of the repository whose source is its declaration; the binding writes nothing of it.
     if (unit.origin === 'host') return;
-    // GN-6p: an internal unit is generated as a public one and marked by each target; a member of a public unit has
+    // GN-6r: an internal unit is generated as a public one and marked by each target; a member of a public unit has
     // one form in every language, so an internal one is refused.
     if (unit.visibility === 'public') {
       const hidden = (unit.members ?? []).filter((m) => m.visibility !== 'public');
-      if (hidden.length > 0) throw new Unsupported(hidden.map((m) => `${m.id}: an internal member of a public unit is not generated yet (GN-6p)`));
+      if (hidden.length > 0) throw new Unsupported(hidden.map((m) => `${m.id}: an internal member of a public unit is not generated yet (GN-6r)`));
     }
     if (unit.only !== undefined || unit.native !== undefined) throw new Unsupported(`${unit.id}: only and native are not generated yet`);
     if (unit.kind === 'enum') {

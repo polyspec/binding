@@ -1347,7 +1347,7 @@ ${docs.length > 0 ? `${indent} *\n${docs.join('\n')}\n` : ''}${fn.kind === 'cons
 ${indent}${prefix} ${name}(${params.join(', ')})${returns} {}
 `;
   };
-  // GN-6p: the docblock of a declaration of an internal unit holds @internal.
+  // GN-6r: the docblock of a declaration of an internal unit holds @internal.
   const doc = (unit: Unit, line: string | undefined, indent: string): string => {
     if (!isInternal(unit)) return line === undefined ? '' : `${indent}/** ${line} */\n`;
     return line === undefined ? `${indent}/** @internal */\n` : `${indent}/**\n${indent} * ${line}\n${indent} *\n${indent} * @internal\n${indent} */\n`;

@@ -11,7 +11,7 @@ the design ids are those of the binding design.
 
 - **GN-1** The generator writes PHP (ext-php-rs 0.16.4), Python (PyO3 0.30.1, abi3-py314), Node (napi 3.16.2), Go
   (cgo over a C ABI static library, GN-15) and WASM (wasm-bindgen 0.2.130, GN-18) for public and internal units
-  (GN-6p), and nothing for a host unit (GN-6o):
+  (GN-6r), and nothing for a host unit (GN-6q):
   functions units, class units (constructor, static members, methods and properties with the receiver `&self` or `&mut self` (GN-6h), and
   the members of kind `iterate`, `stringify` and `to_json`, GN-6f, GN-6g),
   records (as parameters and in their result form, also of another repository), value aliases (also of another
@@ -483,7 +483,7 @@ the design ids are those of the binding design.
   A member with `async_driver` is refused by name where GN-6m refuses a member that waits.
   Why: a core that speaks a network protocol is async, and a future that borrows nothing of the caller can run on any
   thread of a runtime, while the caller of each language waits in the form that its language has.
-- **GN-6p** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
+- **GN-6r** An internal unit (U-1, `visibility: "internal"`) is generated as a public unit of its kind is, with the
   same conversions, refusals and generated tests, and each language marks it as no public API:
   - PHP: the docblock of each of its declarations in the stub holds the tag `@internal`.
   - Python: its names are in no `__all__`, so `<root>` does not re-export them. The names of the root module are in
@@ -498,7 +498,7 @@ the design ids are those of the binding design.
   internal unit as those of a public one (CK-23), because the generated code declares them. Why: the code of the
   repository (its hosts, its command tool and its cases) calls an internal unit through the binding as it calls a
   public one, while a user of a package reads it as no API (U-1, P-3).
-- **GN-6o** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
+- **GN-6q** A unit of origin `host` (U-1: a class, a functions unit or a record) is code that the repository writes by
   hand, and its source is its declaration (I-1, L-3). The generator writes nothing of it in any target: no entry
   point, conversion, declaration, re-export or generated test, and the contract check requires no case of it (CK-22).
   The host package exports it with its own entry (L-2a). A host unit takes a generated unit as a parameter (U-2 of the
@@ -506,7 +506,7 @@ the design ids are those of the binding design.
   names a host unit in a type is refused by name (G-4), because the binding converts only the types that it
   generates. Why: the host code calls the binding and the binding never calls the host code, so a generated copy of a
   host unit would be a second declaration that could differ from its source.
-- **GN-6q** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
+- **GN-6s** A callback unit of another repository as a parameter (T-3, U-3): the binding wraps the language object as
   an implementation of the core trait of that unit (its `core`), as it wraps a callback unit of this repository: the
   members are checked when the object enters (kind `invalid_callback`), `thread: owner` holds, and each trait method
   calls the method of the language object through the API of its language, so the binding never takes the native

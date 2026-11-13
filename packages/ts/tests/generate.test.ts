@@ -929,7 +929,7 @@ const looking = (contract: any): void => {
   });
 };
 
-test('a callback unit of another repository is wrapped as its core trait, and the owning package declares its type (GN-6q, T-3)', () => {
+test('a callback unit of another repository is wrapped as its core trait, and the owning package declares its type (GN-6s, T-3)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract);
   const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['php', 'python', 'node'] });
@@ -953,16 +953,16 @@ test('a callback unit of another repository is wrapped as its core trait, and th
   assert.doesNotMatch(stub, /interface Lookup/);
 });
 
-test('a callback unit of another repository is refused by name in Go and WASM, and where its name is a unit of the contract (GN-6q, G-4)', () => {
+test('a callback unit of another repository is refused by name in Go and WASM, and where its name is a unit of the contract (GN-6s, G-4)', () => {
   const { contract, caseFiles, foreign } = consumerSample();
   looking(contract);
   for (const target of ['go', 'wasm'] as const) {
-    assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), /consumer\.look\.lookup: a callback unit lookup of sample is not generated yet in (go|wasm) \(GN-6q\)/, target);
+    assert.throws(() => generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: [target] }), /consumer\.look\.lookup: a callback unit lookup of sample is not generated yet in (go|wasm) \(GN-6s\)/, target);
   }
   const named = structuredClone(contract);
   named.units.find((u: any) => u.id === 'holder').id = 'lookup';
   named.units.find((u: any) => u.id === 'lookup').name = ['lookup'];
-  assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6q\)/);
+  assert.throws(() => generateTargets({ contract: named, version: '0.0.0', coreLib: 'polyspec_consumer', caseFiles, foreign, targets: ['node'] }), /consumer\.look\.lookup: the callback unit lookup of sample has the name of a unit of this contract \(GN-6s\)/);
 });
 
 test('an error unit extends its parent, and what is not generated is refused by name (E-2, P-4, G-4, GN-7a)', () => {
@@ -1230,7 +1230,7 @@ const internal = (contract: any): void => {
   unitOf(contract, 'buffer').module = 'store';
 };
 
-test('an internal unit is generated in every target and marked as no public API (GN-6p, U-1)', () => {
+test('an internal unit is generated in every target and marked as no public API (GN-6r, U-1)', () => {
   const out = shaped(internal);
   // PHP: the docblock of each declaration holds @internal.
   const stub = text(out, 'packages/php-ext/generated/polyspec_shapes.stub.php');
@@ -1278,7 +1278,7 @@ const hosted = (contract: any): void => {
     { id: 'app', name: ['app'], module: '', kind: 'class', visibility: 'public', origin: 'host', constructible: false, final: true, members: [] },
     {
       id: 'app_options', name: ['app', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'host',
-      fields: [{ name: ['around'], type: { optional: { passthrough: 'Request' } }, default: { literal: null }, reason: 'GN-6o' }],
+      fields: [{ name: ['around'], type: { optional: { passthrough: 'Request' } }, default: { literal: null }, reason: 'GN-6q' }],
     },
     {
       id: 'host', name: ['host'], module: '', kind: 'functions', visibility: 'public', origin: 'host',
@@ -1289,13 +1289,13 @@ const hosted = (contract: any): void => {
           { name: ['buffer'], type: { unit: 'buffer' }, required: true },
           { name: ['options'], type: { unit: 'app_options' }, default: { empty: 'object' } },
         ],
-        returns: 'none', raises: [], wait: 'none', only: { targets: ['node'], reason: 'GN-6o' },
+        returns: 'none', raises: [], wait: 'none', only: { targets: ['node'], reason: 'GN-6q' },
       }],
     },
   );
 };
 
-test('the generator writes nothing of a host unit in any target (GN-6o, I-1)', () => {
+test('the generator writes nothing of a host unit in any target (GN-6q, I-1)', () => {
   const plain = shaped();
   const out = shaped(hosted);
   // The host units add no file and change no byte of the generated ones.
@@ -1303,15 +1303,15 @@ test('the generator writes nothing of a host unit in any target (GN-6o, I-1)', (
   for (const [path, content] of out) assert.equal(String(content), String(plain.get(path)), path);
 });
 
-test('a generated unit that names a host unit in a type is refused by its name (GN-6o, G-4)', () => {
+test('a generated unit that names a host unit in a type is refused by its name (GN-6q, G-4)', () => {
   assert.throws(() => shaped((c) => {
     hosted(c);
     member(c, 'shapes.length').parameters.push({ name: ['app'], type: { unit: 'app' }, required: true });
-  }), /shapes\.length\.app: a host unit app in a type of a generated unit is not generated \(GN-6o\)/);
+  }), /shapes\.length\.app: a host unit app in a type of a generated unit is not generated \(GN-6q\)/);
 });
 
-test('an internal member of a public unit is refused by its name (GN-6p, G-4)', () => {
-  assert.throws(() => shaped((c) => { member(c, 'shapes.length').visibility = 'internal'; }), /shapes\.length: an internal member of a public unit is not generated yet \(GN-6p\)/);
+test('an internal member of a public unit is refused by its name (GN-6r, G-4)', () => {
+  assert.throws(() => shaped((c) => { member(c, 'shapes.length').visibility = 'internal'; }), /shapes\.length: an internal member of a public unit is not generated yet \(GN-6r\)/);
 });
 
 test('a member that writes its receiver takes a source and a default in one call (GN-6h, GN-6i, GN-6j)', () => {

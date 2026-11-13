@@ -177,7 +177,7 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   value of a function type is `{"function": [<row>]}`, whose rows have no key but `args`, `result` and `once` and
   give in `args` the positions of the parameters, `"0"`, `"1"` and so on; a function that takes an object of the
   language has no row.
-- **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6p), a member, a parameter or a field is
+- **CK-23** Reserved words (N-2): the name that a target language gives a public or internal unit (GN-6r), a member, a parameter or a field is
   not a word that the language reserves where the binding writes the name: PHP its keywords and built-in type names,
   case-insensitively, for a class and a function (a method, a property and a variable may take them); Python its
   keywords everywhere; JavaScript (Node, WASM) its reserved words and `eval` and `arguments` for a class, a function

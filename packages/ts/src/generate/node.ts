@@ -1087,7 +1087,7 @@ function tsType(model: Model, type: Type, input: boolean): string {
   if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
   if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
   const unit = unitOf(model, type);
-  // GN-6q: a callback unit of another repository is the interface that its package declares.
+  // GN-6s: a callback unit of another repository is the interface that its package declares.
   const library = libraryOf(type);
   if (unit?.origin === 'callback' && library !== undefined) {
     return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
@@ -1289,7 +1289,7 @@ export const { ${exports.join(', ')} } = entry;
 }
 
 function indexDts(model: Model): string {
-  // GN-6p: the JSDoc of a declaration of an internal unit holds @internal.
+  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
   const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
   // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
   const shown = (a: Arg | undefined): string => {

@@ -10,7 +10,7 @@
   코어 trait 구현으로 감싸고, 그 method는 `binding_core::Failure<<소유 레포 오류>>`를 돌려준다. 선언은 소유 패키지의 타입을
   적는다. PHP는 소유 namespace의 interface, Python은 소유 패키지에서 가져온 Protocol, TypeScript는
   `import("<소유 npm>").<이름>`이다. Go와 WASM은 그런 parameter를 이름으로 거부하고, id가 이 계약의 unit과 같은 callback unit도
-  거부한다(GN-6q). `make test-ts`로 검증했다.
+  거부한다(GN-6s). `make test-ts`로 검증했다.
 - 코어가 의존 레포의 kind를 그대로 전달하는 계약(E-1b (a))은 어떤 target도 생성되지 않았다. `errors.kinds`의 그런 행마다 "a kind of
   another library (E-1b (a)) is not generated yet"으로 거부되었기 때문이다. 이제 그런 행은 `<바깥>/<안쪽>`을 적는다. 바깥은 그
   라이브러리의 오류를 담은 코어 오류의 variant이고 안쪽은 그 오류의 variant이며, member는 `raises`에 같은 경로를 적는다. 모든
@@ -21,12 +21,12 @@
 - origin이 `host`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. host class와 host functions unit은 "a host class unit is not
   generated yet"과 "a host functions unit is not generated yet"으로 거부되었고, host record의 field는 생성 record의 것처럼
   판정되었다. 이제 생성기는 어느 target에도 host unit을 쓰지 않는다. 그 소스가 선언이고 host 패키지가 그것을 내보내기 때문이다.
-  타입에 host unit을 적는 생성 unit은 그 이유로 거부한다(GN-6o). `packages/ts`의 `npm test`로 검증했다.
+  타입에 host unit을 적는 생성 unit은 그 이유로 거부한다(GN-6q). `packages/ts`의 `npm test`로 검증했다.
 - visibility가 `internal`인 unit이 있는 계약은 어떤 target도 생성되지 않았다. 그런 unit마다 "an internal unit is not generated
   yet"으로 거부되었기 때문이다. 이제 internal unit은 같은 kind의 public unit처럼 생성되고 공개 API가 아니라고 표시된다. PHP stub과
   Node·WASM 선언에는 `@internal`이 있고, Python 이름은 어느 `__all__`에도 없으며(루트 module은 `<root>._root`에, 다른 module `m`은
   `<root>._m`에 둔다), Go doc comment에는 U-1의 문장이 있다. 생성기가 public처럼 생성하던 public unit의 internal member는 이름을 대고
-  거부하며, 계약 검사는 internal unit의 예약어를 판정한다(CK-23)(GN-6p). `packages/ts`의 `npm test`로 검증했다.
+  거부하며, 계약 검사는 internal unit의 예약어를 판정한다(CK-23)(GN-6r). `packages/ts`의 `npm test`로 검증했다.
 - `wait: async_driver`인 member는 모든 target이 거부했다("wait async_driver is not generated yet"). 그래서 tokio 위의
   코어가 가진 `async fn` member에는 binding이 없었다. 이제 생성기는 그런 member의 future를 tokio runtime에서 돌린다
   (GN-6n). PHP는 `binding_core::driver::block_on`에서 막히고, Python은 그것을 `py.detach`에서 돌리며 `a<name>`을 더하고,

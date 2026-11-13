@@ -11,7 +11,7 @@
   `binding_core::Failure<<owner error>>`, and the declarations name the type of the owning package: the PHP interface
   in the owner namespace, the Python Protocol imported from the owner package, and `import("<owner npm>").<Name>` in
   TypeScript. Go and WASM refuse such a parameter by name, and a callback unit whose id is a unit of this contract is
-  refused (GN-6q). Verified by `make test-ts`.
+  refused (GN-6s). Verified by `make test-ts`.
 - A contract whose core passes on the kinds of a dependency (E-1b (a)) generated no target: every such row of
   `errors.kinds` was refused with "a kind of another library (E-1b (a)) is not generated yet". Such a row now names
   `<outer>/<inner>`, the variant of the core error that holds the error of the library and the variant of that error,
@@ -24,13 +24,13 @@
   with "a host class unit is not generated yet" and "a host functions unit is not generated yet", and the fields of a
   host record were judged as those of a generated one. The generator now writes nothing of a host unit in any
   target, because its source is its declaration and the host package exports it, and a generated unit that names a
-  host unit in a type is refused with that reason (GN-6o). Verified by `npm test` in `packages/ts`.
+  host unit in a type is refused with that reason (GN-6q). Verified by `npm test` in `packages/ts`.
 - A contract with a unit of visibility `internal` generated no target: every such unit was refused with "an internal
   unit is not generated yet". An internal unit is now generated as a public unit of its kind and marked as no public
   API: `@internal` in the PHP stub and in the Node and WASM declarations, its Python names in no `__all__` (the root
   module keeps them in `<root>._root`, another module `m` in `<root>._m`), and a sentence of U-1 in its Go doc comment.
   An internal member of a public unit, which the generator generated as a public one, is refused by name, and the
-  contract check judges the reserved words of an internal unit (CK-23) (GN-6p). Verified by `npm test` in
+  contract check judges the reserved words of an internal unit (CK-23) (GN-6r). Verified by `npm test` in
   `packages/ts`.
 - A member with `wait: async_driver` was refused by every target ("wait async_driver is not generated yet"), so the
   `async fn` members of a core of tokio had no binding. The generator now runs the future of such a member on a tokio

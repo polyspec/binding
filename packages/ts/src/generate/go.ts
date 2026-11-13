@@ -484,7 +484,7 @@ ${lines.join('\n')}
 `;
 }
 
-// GN-6p: the doc comment of a declaration of an internal unit ends with the sentence that it is no public API, because
+// GN-6r: the doc comment of a declaration of an internal unit ends with the sentence that it is no public API, because
 // Go has no marker of an exported name that only one module uses.
 const internalDoc = (model: Model, unit: Unit): string => (isInternal(unit) ? `\n// It is internal to ${model.contract.library} (U-1) and is no public API.` : '');
 

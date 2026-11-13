@@ -12,7 +12,7 @@
 - **GN-1** 생성기는 functions unit, class unit(생성자, static member, receiver `&self`·`&mut self`인 메서드와 property(GN-6h), kind `iterate`·`stringify`·`to_json` member, GN-6f, GN-6g), record(parameter와
   결과 형태, 다른 레포의 것 포함), 값 alias(다른 레포의 것 포함, GN-6k), enum, 상수, 오류 클래스, 오류 unit(GN-7a)에 대해, 그리고 Python·Node·PHP·WASM은 parameter의 타입 `source`(GN-6j)와
   parameter와 record field의 기본값(GN-6i)에 대해 PHP(ext-php-rs 0.16.4), Python(PyO3 0.30.1, abi3-py314),
-  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6p), host unit은 아무것도 쓰지 않는다(GN-6o). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
+  Node(napi 3.16.2), Go(C ABI 정적 라이브러리 위의 cgo, GN-15), WASM(wasm-bindgen 0.2.130, GN-18)을 쓴다. public unit과 internal unit을 모두 쓰고(GN-6r), host unit은 아무것도 쓰지 않는다(GN-6q). callback interface(U-3, receiver를 `core.receiver`에 적은 동기 member)도 쓴다. 그 밖의 항목(비동기나
   recognize가 있는 callback, 함수 타입, value unit, `none`, `blocking_io`(GN-6m), `async_driver`(GN-6n)가 아닌 wait, GN-6i가 적지 않은 기본값, `cleanup`, receiver
   `self`, unit의 `only`, `native`, 이름 예외, 바깥 variant가 없는 다른 라이브러리의 kind(GN-7c), parameter가 아닌 자리의 타입 `source`, public unit의 internal member)은 그 target의 무엇을 쓰기 전에 이름으로 거부한다(G-4, P-4, GN-1c). Go는 class unit, callback unit, 값 alias(다른 레포의 것 포함), 타입 `source`, 기본값, 오류 unit을 GN-15a~GN-15e대로 생성하고, 다른 레포의 record, 다른 module의 class·callback unit은 거부한다(GN-15a). WASM은 class unit을 GN-18a대로, 값 alias(다른 레포의 것 포함)와 callback unit을 GN-18b와 GN-18c대로 생성한다.
 - **GN-1a** 생성기는 실패하기 전에 계약 전체를 읽는다: 거부하는 항목을 모두 한 줄에 하나씩 이름한 뒤 거부된 target의 것은 아무것도
@@ -402,7 +402,7 @@
   GN-6m이 기다리는 member를 거부하는 자리에서는 `async_driver`인 member도 이름을 대고 거부한다.
   이유: 네트워크 protocol을 쓰는 코어는 async이고, 호출자의 것을 빌리지 않는 future는 runtime의 어느 스레드에서도 돌 수
   있다. 그동안 각 언어의 호출자는 자기 언어의 꼴로 기다린다.
-- **GN-6p** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 테스트로 생성하고,
+- **GN-6r** internal unit(U-1, `visibility: "internal"`)은 같은 kind의 public unit과 같은 변환, 거부, 생성 테스트로 생성하고,
   각 언어는 그것을 공개 API가 아니라고 표시한다.
   - PHP: stub에 있는 그 선언마다 docblock에 태그 `@internal`을 둔다.
   - Python: 그 이름은 어느 `__all__`에도 없으므로 `<root>`가 다시 내보내지 않는다. 루트 module의 이름은 `<root>._root`에,
@@ -414,13 +414,13 @@
   그 꼴이 언어마다 다르고 아직 그런 member를 가진 계약이 없기 때문이다. 계약 검사는 internal unit의 이름을 public unit의
   이름처럼 판정한다(CK-23). 생성된 코드가 그 이름을 선언하기 때문이다. 이유: 레포의 코드(host, 명령 도구, case)는
   internal unit을 public unit처럼 바인딩으로 부르고, 패키지 사용자는 그것을 API가 아니라고 읽는다(U-1, P-3).
-- **GN-6o** origin이 `host`인 unit(U-1: class, functions unit, record)은 레포가 손으로 쓰는 코드이고, 그 소스가 선언이다(I-1, L-3).
+- **GN-6q** origin이 `host`인 unit(U-1: class, functions unit, record)은 레포가 손으로 쓰는 코드이고, 그 소스가 선언이다(I-1, L-3).
   생성기는 어느 target에도 그것을 쓰지 않는다. 진입점, 변환, 선언, 다시 내보내기, 생성 테스트가 없고, 계약 검사는 그 case를
   요구하지 않는다(CK-22). host 패키지가 자기 진입점으로 그것을 내보낸다(L-2a). host unit은 생성 unit을 parameter로 받는다(설계의
   U-2: 생성 unit에 대한 host 동작은 host functions unit의 함수다). 타입에 host unit을 적는 생성 unit은 이름을 대고 거부한다(G-4).
   바인딩은 자기가 생성하는 타입만 변환하기 때문이다. 이유: host 코드가 바인딩을 부르고 바인딩은 host 코드를 부르지 않으므로,
   host unit을 생성한 사본은 그 소스와 달라질 수 있는 두 번째 선언이 된다.
-- **GN-6q** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
+- **GN-6s** parameter인 다른 레포의 callback unit(T-3, U-3): 바인딩은 이 레포의 callback unit처럼 언어 객체를 그 unit의 코어
   trait(그 `core`)의 구현으로 감싼다. 객체가 들어올 때 member를 확인하고(kind `invalid_callback`), `thread: owner`가 적용되며, 각
   trait method는 그 언어의 API로 언어 객체의 method를 부르므로, 바인딩은 다른 바인딩의 native 객체를 꺼내지 않는다. trait
   method는 소유 레포 코어 오류의 실패(`binding_core::Failure<<소유 오류>>`, 소유 계약 `errors.kinds`의 오류 enum 하나)를 돌려주고,

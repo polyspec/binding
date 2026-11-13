@@ -1138,7 +1138,7 @@ class Checker {
       if (reserved === undefined) continue;
       const taken = (name: string, position: Position): boolean => reserved.positions.includes(position) && reserved.words.has(reserved.caseless ? name.toLowerCase() : name);
       for (const { value: unit, path } of this.units.values()) {
-        // GN-6p: the generated code declares the names of an internal unit as those of a public one.
+        // GN-6r: the generated code declares the names of an internal unit as those of a public one.
         if (unit.origin === 'host') continue;
         const generated = unit.kind !== 'functions' && unit.kind !== 'alias' && unit.kind !== 'variant';
         const className = this.langName(lang, unit, unit.name, 'class');

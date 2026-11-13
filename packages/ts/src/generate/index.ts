@@ -89,14 +89,14 @@ export function generate(inputs: Inputs): Files {
     if (!isWhole) refusals.refuse(`${place.id}: a map<T> or keyed_map<T> inside another type is not generated for ${js.join(', ')} yet (GN-12)`);
     else if (typeof base === 'object' && 'keyed_map' in base && base.key.includes('bytes')) refusals.refuse(`${place.id}: a keyed_map<T> with byte string keys is not generated for ${js.join(', ')} (a Map compares a Uint8Array key by identity, GN-12)`);
   }
-  // GN-6q: Go and WASM do not wrap a callback unit of another repository yet.
+  // GN-6s: Go and WASM do not wrap a callback unit of another repository yet.
   for (const target of targets.filter((t) => t === 'go' || t === 'wasm')) {
     const forTarget = membersFor(model, target);
     for (const fn of [...forTarget.functions, ...forTarget.objects.flatMap((o) => o.members)]) {
       for (const arg of fn.args) {
         const library = libraryOf(arg.type);
         if (library !== undefined && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === (arg.type as { unit: string }).unit)) {
-          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6q)`);
+          refusals.refuse(`${fn.member.id}.${arg.name.join('_')}: a callback unit ${(arg.type as { unit: string }).unit} of ${library} is not generated yet in ${target} (GN-6s)`);
         }
       }
     }

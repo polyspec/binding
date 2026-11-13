@@ -27,9 +27,9 @@ export function pythonLayout(model: Model): PythonLayout {
 }
 
 const moduleOf = (layout: PythonLayout, module: string): string => (module === '' ? layout.module : `${layout.module}.${module.replaceAll('/', '.')}`);
-// GN-6p: the module of the internal names of a contract module: _root for the root module, _<module> for another.
+// GN-6r: the module of the internal names of a contract module: _root for the root module, _<module> for another.
 export const internalModule = (module: string): string => (module === '' ? '_root' : `_${module.replaceAll('/', '.')}`);
-// The Python module that holds a unit of the module: internal units are in internalModule (GN-6p).
+// The Python module that holds a unit of the module: internal units are in internalModule (GN-6r).
 const unitModule = (layout: PythonLayout, unit: Unit): string => (isInternal(unit) ? `${layout.module}.${internalModule(unit.module)}` : moduleOf(layout, unit.module));
 
 // ---- Rust: conversion of one contract type ----
@@ -999,7 +999,7 @@ function foreignImports(model: Model): string[] {
     const module = (r.contract.packages['python'] as { module: string }).module;
     byModule.set(module, [...(byModule.get(module) ?? []), langName('python', r.unit.name, 'class')]);
   }
-  // GN-6q: a callback unit of another repository is the Protocol that its package declares.
+  // GN-6s: a callback unit of another repository is the Protocol that its package declares.
   for (const c of model.foreignCallbacks) {
     const module = (model.foreign.get(c.library ?? '')?.packages['python'] as { module: string }).module;
     byModule.set(module, [...(byModule.get(module) ?? []), langName('python', c.unit.name, 'class')]);
@@ -1044,7 +1044,7 @@ __all__ = [${names.join(', ')}]${enums}${records}${callbacks}
 `;
 }
 
-// The names of a Python module file: the public names of the module, or with internal its internal names (GN-6p); the
+// The names of a Python module file: the public names of the module, or with internal its internal names (GN-6r); the
 // file of the root module holds both, and its __all__ only the public ones.
 function modulePy(model: Model, module: string, internal: boolean): string {
   const held = (unit: Unit): boolean => unit.module === module && (module === '' && !internal ? true : isInternal(unit) === internal);
@@ -1067,7 +1067,7 @@ function modulePy(model: Model, module: string, internal: boolean): string {
   ].filter((l) => l !== '');
   const values = constants.map((c) => `${langName('python', c.member.name, 'constant')}: Final = ${JSON.stringify(c.member.value)}`);
   return `${pyHeader()}
-"""The ${internal ? 'internal names of the ' : ''}module ${module === '' ? '(root)' : module} of ${model.contract.library} (P-2${internal ? ', GN-6p' : ''})."""
+"""The ${internal ? 'internal names of the ' : ''}module ${module === '' ? '(root)' : module} of ${model.contract.library} (P-2${internal ? ', GN-6r' : ''})."""
 
 ${imports.join('\n')}
 
@@ -1125,7 +1125,7 @@ ${fns.join('\n')}
 ${classes.join('')}`;
 }
 
-// The units of the module files of the package, each with its module; an internal unit is in no __all__ (GN-6p).
+// The units of the module files of the package, each with its module; an internal unit is in no __all__ (GN-6r).
 const moduleUnits = (model: Model): Unit[] => [
   ...model.functions.map((f) => f.unit), ...model.objects.map((o) => o.unit), ...model.enums, ...model.resultRecords,
   ...model.callbacks.map((c) => c.unit), ...model.constants.map((c) => c.unit), ...model.errorUnits.map((u) => u.unit),

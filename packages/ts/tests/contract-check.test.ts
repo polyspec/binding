@@ -834,7 +834,7 @@ describe('CK-23 reserved words of the target languages (N-2)', () => {
     fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['from']; }));
   test('a JavaScript parameter named function', () =>
     fails('CK-23', `${at('forms')}/members/0/parameters/0`, (c) => { member(c, 'forms.parse').parameters[0].name = ['function']; }));
-  test('a PHP class named List of an internal unit, which the generator declares too (GN-6p)', () =>
+  test('a PHP class named List of an internal unit, which the generator declares too (GN-6r)', () =>
     fails('CK-23', at('session'), (c) => {
       unit(c, 'session').visibility = 'internal';
       unit(c, 'session').name = ['list'];
