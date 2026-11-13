@@ -148,7 +148,13 @@ the design ids are those of the binding design.
   the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
   `polyspec-<library>` alone), and the development checkout
   resolves it through its development links and its development install. No form of the line stops `scaffold`, `generate` or `check`;
-  `binding check --release` reports each development form (CK-70). A tracked package that `scaffold` cannot write,
+  `binding check --release` reports each development form (CK-70). The dependency line of each binding crate on
+  `polyspec-binding-core` follows the line of the core on it in the same way: `scaffold` writes the source that the
+  core names (its `git` with its `branch` or `tag`, its `version`, or its `path`, which climbs to the place of the
+  binding crate) with the features that the binding crate needs, and pins none by itself, so a core that names the
+  tag of a release of binding gives binding crates of that release. Only for a core that names no line on
+  `polyspec-binding-core` does `scaffold` write the development line of binding, its Git repository at the branch
+  `v1/rust-core`, which the check of a release reports in each binding crate. A tracked package that `scaffold` cannot write,
   such as the Go module of a contract that names a record of a library without a Go module, is named with its reason:
   `scaffold` writes the other packages and then fails with status 1, `check` reports it as a finding of CK-19 and
   compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a

@@ -115,7 +115,11 @@
   `vX.Y.Z`, GN-15f; `pyproject.toml`은 의존 `polyspec-<library>==X.Y.Z`). 그 밖의 줄(path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
   레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만), 개발
   checkout은 그것을 개발 링크와 개발 설치로 해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
-  보고한다(CK-70). Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
+  보고한다(CK-70). 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
+  적은 출처(`git`과 그 `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`)를 바인딩 crate에 필요한
+  feature와 함께 쓰고, 스스로 무엇도 고정하지 않는다. 그래서 binding의 release tag를 적은 코어는 그 release의 바인딩 crate를
+  준다. 코어가 `polyspec-binding-core` 줄을 적지 않은 때에만 `scaffold`는 binding의 개발 줄, 곧 그 Git 저장소의 branch
+  `v1/rust-core`를 쓰며, release의 검사가 그것을 바인딩 crate마다 보고한다. Go module이 없는 라이브러리의 record를 이름하는 계약의 Go module처럼 `scaffold`가 쓸 수 없는 추적
   package는 그 이유와 함께 이름한다. `scaffold`는 다른 package를 쓴 뒤 상태 1로 실패하고, `check`는 그것을 CK-19의 finding으로
   보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
   manifest의 문제이므로 다른 target을 멈추지 않으며, release가 담으면 안 되는 것은 그 줄을 이름하는 finding이고, 던진 오류는

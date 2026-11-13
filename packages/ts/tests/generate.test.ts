@@ -1173,9 +1173,14 @@ test('a branch dependency of the core generates every target, and only the check
     assert.equal(release.status, 1);
     assert.match(release.stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-points names the branch main, a development form, and a release names the version =X\.Y\.Z or the tag vX\.Y\.Z \(GN-3e\)\n/);
     assert.doesNotMatch(release.stderr, /CK-19|\n {4}at /);
-    // A tag is the release form, which CK-70 passes.
-    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('branch = "main"', 'tag = "v0.1.2"'));
+    // CK-70: the line on polyspec-binding-core of the core and of each binding crate, which follows the core's.
+    for (const crate of ['rust', 'python', 'ts', 'ts/wasm', 'php-ext', 'go/internal/ffi']) {
+      assert.match(release.stderr, new RegExp(`plot/packages/${crate}/Cargo\\.toml: CK-70 the dependency line of polyspec-binding-core names the branch v1/rust-core, a development form, and a release names the version =X\\.Y\\.Z or the tag vX\\.Y\\.Z \\(GN-3e\\)\\n`), crate);
+    }
+    // A tag is the release form, which CK-70 passes; the binding crates take the tag of binding that the core names.
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('branch = "main"', 'tag = "v0.1.2"').replace('branch = "v1/rust-core"', 'tag = "v0.3.0"'));
     assert.equal(run('scaffold', '--root', join(root, 'plot')).status, 0);
+    assert.match(readFileSync(join(root, 'plot/packages/python/Cargo.toml'), 'utf8'), /\npolyspec-binding-core = \{ git = "https:\/\/github\.com\/polyspec\/binding\.git", tag = "v0\.3\.0", features = \["construct", "lock"\] \}\n/);
     assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
     assert.doesNotMatch(run('check', contract, '--release').stderr, /CK-70/);
     // An option that check does not know is an error of the command line.
@@ -1183,6 +1188,20 @@ test('a branch dependency of the core generates every target, and only the check
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('the line of a binding crate on polyspec-binding-core follows the line of the core (GN-3e)', () => {
+  const contract = load().contract;
+  const line = (spec: unknown, path = 'packages/python/Cargo.toml', of = contract): string => /\npolyspec-binding-core = [^\n]*\n/.exec(String(trackedPackages(of, '0.0.0', spec === undefined ? new Map() : new Map([['polyspec-binding-core', spec]])).get(path)))?.[0] ?? '';
+  const git = 'https://github.com/polyspec/binding.git';
+  assert.equal(line({ git, tag: 'v0.3.0' }), `\npolyspec-binding-core = { git = "${git}", tag = "v0.3.0", features = ["construct", "lock"] }\n`);
+  assert.equal(line({ git, branch: 'next', features: ['fault-test'], optional: true }), `\npolyspec-binding-core = { git = "${git}", branch = "next", features = ["construct", "lock"] }\n`);
+  assert.equal(line('=0.3.0'), '\npolyspec-binding-core = { version = "=0.3.0", features = ["construct", "lock"] }\n');
+  // A path climbs to the place of the binding crate: the Go crate is two directories below the level of the core.
+  assert.equal(line({ path: '../../../binding/packages/core/rust' }), '\npolyspec-binding-core = { path = "../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
+  assert.equal(line({ path: '../../../binding/packages/core/rust' }, 'packages/go/internal/ffi/Cargo.toml', { ...contract, targets: [...contract.targets, 'go'] }), '\npolyspec-binding-core = { path = "../../../../../binding/packages/core/rust", features = ["construct", "lock"] }\n');
+  // A core without the line: the development line of binding.
+  assert.equal(line(undefined), `\npolyspec-binding-core = { git = "${git}", branch = "v1/rust-core", features = ["construct", "lock"] }\n`);
 });
 
 test('a tracked package that scaffold cannot write is named, and the other packages are written and compared (GN-3e, CK-19)', () => {

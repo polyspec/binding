@@ -145,8 +145,9 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   `<core crate> = { path = ".", features = ["fault-test"] }`로 둔다. 그래서 flag 없는 코어의 `cargo test`가 지점을 장전한다.
   그렇지 않으면 `binding check`가 코어 manifest를 보고한다(GN-5).
 - **CK-70** release의 의존(generator GN-3e), `binding check --release`만 실행한다: 계약이 타입을 이름하거나 case가 실패 주입점을
-  장전하는 `polyspec-<library>`마다 코어의 의존 줄은 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않는다. 개발
-  꼴(path, branch, commit, 버전 범위)은 코어 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
+  장전하는 `polyspec-<library>`마다 코어의 의존 줄은 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적고 branch나 commit을 적지 않는다. 코어의
+  `polyspec-binding-core` 의존 줄(있을 때)과 추적하는 바인딩 crate 각각의 그 줄도 그렇다. 개발
+  꼴(path, branch, commit, 버전 범위)은 그 줄의 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
   manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
 - **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의
