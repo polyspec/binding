@@ -1170,7 +1170,7 @@ function rustUsed(model: Model): string {
     ...model.objects.map((o) => objectHelpers(model, o)),
     ...model.aliases.map((a) => aliasRust(model, a)),
   ].join('\n');
-  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, `${code}${testEntryUses(model)}`);
+  return usedHelpers(`${RUST_HELPERS}\n${WIDEN}\n${units}\n${tupleReaders(model)}`, code, testEntryUses(model));
 }
 
 // T-2, GN-16: a reader of a tuple of each arity of the model, its parts in order; the helpers that no conversion
@@ -1201,9 +1201,13 @@ ${names.map((t, i) => `    part${i}: impl FnOnce(&mut &'a [u8]) -> Result<${t}, 
   }).join('\n\n');
 }
 
-// The helpers that the test entry points use, which count as uses, as the entry points compile with their features.
-const testEntryUses = (model: Model): string =>
-  `${model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : ''} ${model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : ''} ${aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' ')}`;
+// GN-4: the helpers that the test entry points of each feature use; a helper that only they use is compiled under
+// their features.
+const testEntryUses = (model: Model): Record<string, string> => ({
+  'panic-test': model.objects.some((o) => poisoned(model, o)) ? 'in_uint' : '',
+  'fault-test': model.faults.length > 0 ? 'in_uint out_uint in_text out_text out_list' : '',
+  'codec-test': aliasesWithKinds(model).filter((a) => a.library === undefined).map((a) => `in_${aliasFn(a)}`).join(' '),
+});
 
 export function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
