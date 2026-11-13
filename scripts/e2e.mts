@@ -21,9 +21,8 @@
 // binding scaffold and the commit of binding_core in Cargo.lock. A defect of the repository is a named failure and is
 // not repaired in the copy: a workspace without the binding crates (GN-4), a case file whose keys or record values do
 // not follow the case convention of G-5, a core that does not implement Kinds or names the crate of binding by
-// another name (the compiler names it), an error class of another name (CK-10). A raising case that lacks the
-// arguments of its member is left out and printed, and a run that left a case out fails at its end, after every step
-// ran.
+// another name (the compiler names it), an error class of another name (CK-10). Every case runs: a case that a target
+// cannot write is a refusal of that target (GN-14c), never a case left out.
 //
 // Each target generates, builds and tests on its own to its end (GN-14c), so a refusal or a failure of one target does
 // not stop another. The run ends with each target, a lint and the tests apart, and the causes of each failed target: a
@@ -239,20 +238,15 @@ function prepare(checkout: string): Prepared {
   }
   runBinding(['check', join(copy, 'packages/rust/interface.json')], copy);
 
-  step(`${library}: the cases in the convention of G-5 (a case left out is printed)`);
+  step(`${library}: the cases in the convention of G-5`);
   const caseFiles = checkCases(contract, copy);
 
   return { contract, copy, caseFiles };
 }
 
-// The cases that were left out because they do not follow G-5; a run that left one out fails at its end, because a
-// case that does not run is a test that was dropped without a word.
-let leftOut = 0;
-
 // G-5: a case file of the repository follows the case convention: its keys are the parameter names in snake_case and a
 // record is an object of its fields. A case that does not is a defect of the repository, which the run names, one line
-// per group with the keys and the record values that differ, and does not rewrite. A raising case that lacks the
-// arguments of its member in the form of their types, or of a factory of its class, is left out of the copy and printed.
+// per group with the keys and the record values that differ, and does not rewrite.
 function checkCases(contract: Contract, copy: string): string[] {
   const units = new Map(contract.units.map((u) => [u.id, u]));
   const snake = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -277,23 +271,7 @@ function checkCases(contract: Contract, copy: string): string[] {
       records(fields.get(snake(key)), item, `${at}.${key}`, found);
     }
   };
-  // Whether a value has the shape of its type, as far as the generated tests write it.
-  const fits = (type: Type, value: unknown): boolean => {
-    if (value === null) return true;
-    // G-5: bytes and a source are {"hex": ...}, a float that JSON cannot write is {"float": ...}.
-    if (typeof type === 'string') return typeof value !== 'object' || ['bytes', 'source', 'float'].includes(type);
-    if ('optional' in type) return fits(type.optional, value);
-    if ('list' in type) return Array.isArray(value) && value.every((item) => fits(type.list, item));
-    const unit = 'unit' in type && type.library === undefined ? units.get(type.unit) : undefined;
-    if (unit?.kind === 'record') return typeof value === 'object' && !Array.isArray(value);
-    return true;
-  };
   const memberById = new Map(contract.units.flatMap((u) => (u.members ?? []).map((m) => [m.id, { unit: u, member: m }] as const)));
-  // T-5: the parameters of the factories of a class, one of which a case of a method gives.
-  const factories = (unit: Unit): string[][] =>
-    (unit.members ?? [])
-      .filter((m) => m.kind === 'constructor' || (m.kind === 'static' && JSON.stringify(m.returns) === JSON.stringify({ unit: unit.id })))
-      .map((m) => (m.parameters ?? []).map((p) => p.name.join('_')));
   const files = new Set<string>();
   const defects: string[] = [];
   for (const row of contract.cases) {
@@ -314,23 +292,6 @@ function checkCases(contract: Contract, copy: string): string[] {
       }
     }
     if (differ.length > 0) defects.push(`${row.file}#${row.group}${row.member === undefined ? '' : ` of ${row.member}`}: ${[...new Set(differ)].join(', ')}`);
-    const kept = group.filter((kase) => {
-      if (kase['raises'] === undefined) return true;
-      // U-2: a case that has no key of a parameter with a default leaves it out.
-      const lacks = parameters
-        .filter((p) => (p.name.join('_') in kase ? !fits(p.type, kase[p.name.join('_')]) : p.default === undefined))
-        .map((p) => p.name.join('_'));
-      const receiver = typeof found?.member.core === 'object' && found.member.core.receiver !== undefined;
-      const noFactory = receiver && found !== undefined && !factories(found.unit).some((names) => names.every((n) => n in kase));
-      if (lacks.length === 0 && !noFactory) return true;
-      leftOut += 1;
-      process.stdout.write(`change: the case ${row.file}#${row.group}/${String(kase['id'])} of ${row.member} gives ${lacks.length > 0 ? `no ${lacks.join(', ')} in the form of its type` : 'no arguments of a factory'} (G-5); left out here\n`);
-      return false;
-    });
-    if (kept.length !== group.length) {
-      document[row.group] = kept;
-      writeFileSync(file, `${JSON.stringify(document, null, 2)}\n`);
-    }
   }
   if (defects.length > 0) throw new Error(`the cases do not follow the case convention of G-5 (keys are the parameter names in snake_case, a record is the object of its fields): ${defects.join('; ')}`);
   return [...files];
@@ -718,10 +679,6 @@ for (const [t, o] of results) {
 const failedTargets = [...results].filter(([, o]) => o.causes.length > 0).map(([t]) => t);
 if (failedTargets.length > 0) {
   process.stdout.write(`\nthe target${failedTargets.length === 1 ? '' : 's'} ${failedTargets.join(', ')} failed, each with its causes above: the run fails (GN-14c)\n`);
-  process.exit(1);
-}
-if (leftOut > 0) {
-  process.stdout.write(`\nevery target passed, but ${leftOut} case${leftOut === 1 ? ' was' : 's were'} left out (each printed as a change above): the run fails (G-5)\n`);
   process.exit(1);
 }
 process.stdout.write('\nevery target passed\n');

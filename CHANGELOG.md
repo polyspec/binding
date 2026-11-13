@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- The end-to-end run left out a raising case that gave its receiver as an instance value (GN-13f) or whose
+  arguments did not have the shape of their types, and failed only at its end; so the classes contract failed CK-22.
+  Every case of the repository now runs, and a case that a target cannot write is a refusal of that target. The
+  scaffold wrote the core path of the WASM crate of a host Node package (`packages/ts/native/wasm`) as `../../rust`,
+  one directory short, and the WASM and Go crates did not depend on the cores of the other libraries whose types the
+  contract names; each binding crate now names those cores with its path climbed by its depth below the core (L-2a,
+  T-3). Verified by `npm test` in `packages/ts`.
 - A case could make the receiver of a method only by a constructor or a static member of its own class, so a kind that
   only a receiver of earlier calls reaches had no case, and `binding check` refused the contract (CK-22). A case now
   gives its receiver as an instance value: the member that makes it (`new`), or the member whose result holds it with

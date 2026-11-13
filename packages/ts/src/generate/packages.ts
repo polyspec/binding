@@ -55,14 +55,17 @@ export function namedLibraries(contract: Contract): string[] {
   return [...found].sort();
 }
 
-function foreignCrates(contract: Contract, dependencies: CoreDependencies, host = false): string[] {
+// T-3: the dependency lines of the cores of the libraries whose types the contract names, as the core names them.
+// depth counts the directories that the binding crate sits below the level of the core: a relative path climbs as many
+// more (L-2a: a native crate one; the WASM crate packages/ts/wasm one, two in native; the Go crate packages/go/internal/
+// ffi two).
+function foreignCrates(contract: Contract, dependencies: CoreDependencies, depth: number): string[] {
   return namedLibraries(contract).map((library) => {
     const crate = `polyspec-${library}`;
     const spec = dependencies.get(crate);
     if (spec === undefined) throw new Error(`${contract.core.path}/Cargo.toml does not depend on ${crate}, whose types the contract names (T-3)`);
-    // L-2a: a native crate sits one directory deeper than the core, so a relative path climbs once more.
-    const deeper = host && typeof spec === 'object' && spec !== null && typeof (spec as { path?: unknown }).path === 'string' && !(spec as { path: string }).path.startsWith('/')
-      ? { ...(spec as Record<string, unknown>), path: `../${(spec as { path: string }).path}` }
+    const deeper = depth > 0 && typeof spec === 'object' && spec !== null && typeof (spec as { path?: unknown }).path === 'string' && !(spec as { path: string }).path.startsWith('/')
+      ? { ...(spec as Record<string, unknown>), path: `${'../'.repeat(depth)}${(spec as { path: string }).path}` }
       : spec;
     return `${crate} = ${tomlValue(deeper)}`;
   });
@@ -159,7 +162,9 @@ export const extensionName = (contract: Contract): string => `polyspec_${contrac
 
 export function trackedPackages(contract: Contract, version: string, coreDependencies: CoreDependencies = new Map()): Files {
   const files: Files = new Map();
-  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang));
+  const foreignOf = (lang: 'php' | 'python' | 'node'): string[] => foreignCrates(contract, coreDependencies, isHost(contract, lang) ? 1 : 0);
+  // L-2a: the WASM crate is wasm/ of the Node package, native/wasm/ of a host Node package.
+  const wasmDepth = isHost(contract, 'node') ? 2 : 1;
   // L-2a: a host package's language manifest is the host's, which check only reads (hostRequirements).
   const languageManifest = (lang: 'php' | 'python' | 'node', path: string, text: string): void => {
     if (!isHost(contract, lang)) files.set(path, text);
@@ -203,10 +208,10 @@ python-source = "generated/python"
     // into packages/ts/wasm/generated beside the generated entry.
     // T-3: the WASM crate depends on the core of each library whose records the contract names, as Node does.
     files.set('packages/ts/wasm/Cargo.toml', manifest(contract, version, 'wasm', `${extensionName(contract)}_wasm`, [
-      ...foreignCrates(contract, coreDependencies),
+      ...foreignCrates(contract, coreDependencies, wasmDepth),
       `wasm-bindgen = "=${WASM_BINDGEN}"`,
       'js-sys = "=0.3.107"',
-    ], '', false, { type: 'cdylib', core: '../../rust' }));
+    ], '', false, { type: 'cdylib', core: `${'../'.repeat(wasmDepth + 1)}rust` }));
     files.set('packages/ts/wasm/src/lib.rs', entry(`The WebAssembly module of ${(contract.packages['node'] as { package: string }).package}.`, [MANY]));
   }
   if (contract.targets.includes('php')) {
@@ -235,7 +240,7 @@ python-source = "generated/python"
     // L-1, P-2: the Go module is packages/go; the C ABI crate of the Go binding is packages/go/internal/ffi, a folder
     // without Go files, so Go sees no package there, and inside internal, so no contract module takes its place (CK-14).
     files.set('packages/go/go.mod', `${header('//')}\nmodule ${module}\n\ngo ${GO_VERSION}\n`);
-    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, [], '', false, { type: 'staticlib', core: '../../../rust' })
+    files.set('packages/go/internal/ffi/Cargo.toml', manifest(contract, version, 'go', `${extensionName(contract)}_go`, foreignCrates(contract, coreDependencies, 2), '', false, { type: 'staticlib', core: '../../../rust' })
       // GW-4, T-2: the test entry points that give back a value through the conversions, for the round-trip tests.
       .replace('panic-test = []\n', 'panic-test = []\ncodec-test = []\n'));
     files.set('packages/go/internal/ffi/src/lib.rs', entry(`The C ABI of the Go binding of ${contract.library}, a static library that the Go package links (B-8).`, [
