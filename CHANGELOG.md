@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- `binding check` did not read the licence of the hand-written manifest of a host package (L-2a), so a host package
+  could name another licence than its core or none. It now reads the licence of the core as an item of the host's
+  manifest (GN-3f, CK-19): `project.license` of the host's `pyproject.toml`, and `license` of the host's `package.json`
+  and of the host library's `composer.json`; a missing or different value is a finding with the value it must have.
+  A host package adds the licence of its core to these manifests. Verified by `make test-ts`: the changed test of
+  L-2a failed before the change (1 of 400), and 400 of 400 pass with it.
 - `binding scaffold` wrote the dependency line of every binding crate on `polyspec-binding-core` as a fixed value, the
   Git repository of binding at the branch `v1/rust-core`, whatever the core named. The line now follows the line of
   the core on `polyspec-binding-core` (GN-3e): its `git` with its `branch` or `tag`, its `version`, or its `path`,

@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 4f06762c792288f99ebd0236966b3324dc18b7df5acce9f8530e1e6276d6eff5 -->
+<!-- source-sha256: 3637f2867d92b4c7f641309c71326774a28cee0638aa536785406fd7f0e2ff47 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding check`는 host 패키지(L-2a)의 손으로 쓴 manifest의 licence를 읽지 않았다. 그래서 host 패키지가 코어와 다른
+  licence를 적거나 적지 않을 수 있었다. 이제 코어의 licence를 host manifest의 항목으로 읽는다(GN-3f, CK-19). host의
+  `pyproject.toml`의 `project.license`, host의 `package.json`과 host 라이브러리의 `composer.json`의 `license`다. 없거나 다른
+  값은 가져야 할 값과 함께 finding이다. host 패키지는 이 manifest들에 코어의 licence를 적는다. `make test-ts`로 확인했다.
+  L-2a의 바뀐 시험은 변경 전에 실패했고(400개 중 1개), 변경 뒤 400개 중 400개가 통과한다.
 - `binding scaffold`는 모든 바인딩 crate의 `polyspec-binding-core` 의존 줄을 코어가 무엇을 적든 고정 값, 곧 binding의 Git
   저장소의 branch `v1/rust-core`로 썼다. 이제 그 줄은 코어의 `polyspec-binding-core` 줄을 따른다(GN-3e). 코어의 `git`과 그
   `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`를 바인딩 crate의 feature와 함께 쓴다. 그 줄이

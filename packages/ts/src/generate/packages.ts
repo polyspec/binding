@@ -548,13 +548,16 @@ export interface HostRequirement {
   found: (manifest: string) => unknown;
 }
 
-export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown): HostRequirement[] {
+// license: the licence of the core, which the host's manifest names too (GN-3f); a core without one asks for none, and
+// CK-71 reports the core.
+export function hostRequirements(contract: Contract, parseToml: (text: string) => unknown, license?: string): HostRequirement[] {
   const out: HostRequirement[] = [];
   const toml = (text: string): Record<string, any> => parseToml(text) as Record<string, any>;
   const json = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>;
   if (contract.targets.includes('python') && isHost(contract, 'python')) {
     const python = contract.packages['python'] as { module: string };
     const path = `${componentBase(contract)}/python/pyproject.toml`;
+    if (license !== undefined) out.push({ path, item: 'project.license', want: license, found: (t) => toml(t)['project']?.['license'] });
     out.push({ path, item: 'build-system.build-backend', want: 'maturin', found: (t) => toml(t)['build-system']?.['build-backend'] });
     out.push({ path, item: 'tool.maturin.manifest-path', want: 'native/Cargo.toml', found: (t) => toml(t)['tool']?.['maturin']?.['manifest-path'] });
     out.push({ path, item: 'tool.maturin.python-source', want: 'src', found: (t) => toml(t)['tool']?.['maturin']?.['python-source'] });
@@ -567,6 +570,7 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const npm = (contract.packages['node'] as { package: string }).package;
     const path = `${componentBase(contract)}/ts/package.json`;
     out.push({ path, item: 'name', want: npm, found: (t) => json(t)['name'] });
+    if (license !== undefined) out.push({ path, item: 'license', want: license, found: (t) => json(t)['license'] });
     // GN-3b: the host package is the package of a release, which reads the fields of GN-3c.
     out.push({ path, item: 'type', want: 'module', found: (t) => json(t)['type'] });
     out.push({ path, item: 'napi.binaryName', want: npm.slice(npm.indexOf('/') + 1), found: (t) => json(t)['napi']?.['binaryName'] });
@@ -582,6 +586,7 @@ export function hostRequirements(contract: Contract, parseToml: (text: string) =
     const path = `${componentBase(contract)}/php/composer.json`;
     const extension = `ext-${extensionName(contract)}`;
     out.push({ path, item: `require.${extension}`, want: '*', found: (t) => json(t)['require']?.[extension] });
+    if (license !== undefined) out.push({ path, item: 'license', want: license, found: (t) => json(t)['license'] });
   }
   return out;
 }

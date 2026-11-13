@@ -290,7 +290,7 @@ if (command === 'check') {
     }
   }
   // L-2a: a host package's manifest holds what its native module and its release need (GN-3b).
-  for (const requirement of names ? [] : hostRequirements(checked, parse)) {
+  for (const requirement of names ? [] : hostRequirements(checked, parse, coreLicense)) {
     const full = join(root, requirement.path);
     let found: unknown;
     try {
@@ -300,7 +300,7 @@ if (command === 'check') {
     }
     if (!isDeepStrictEqual(found, requirement.want)) {
       differs = true;
-      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module and its release need (L-2a)\n`);
+      process.stderr.write(`${full}: CK-19 ${requirement.item} is ${found === undefined ? 'missing' : JSON.stringify(found)}, not ${JSON.stringify(requirement.want)}, which the native module and its release need (L-2a, GN-3f)\n`);
     }
   }
   process.exit(differs || findings.length > 0 ? 1 : 0);
