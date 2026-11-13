@@ -445,7 +445,7 @@ python-source = "generated/python"
       ...(license === undefined ? {} : { license }),
       // GN-3e: the extensions and the packages of the other libraries whose classes the extension makes and reads.
       require: { php: '>=8.4', ...composerRequires(contract, coreDependencies, foreign) },
-      // GN-3c, kit K1189: PIE installs the binary of the release for the PHP and the platform of the machine.
+      // GN-3c: PIE installs the binary of the release for the PHP and the platform of the machine.
       'php-ext': { 'extension-name': extensionName(contract), 'download-url-method': ['pre-packaged-binary'] },
     }, null, 2)}\n`);
   });
@@ -568,7 +568,7 @@ function npmManifest(contract: Contract, core: Core, coreDependencies: CoreDepen
       ...(node ? ['generated/index.cjs', 'generated/index.mjs', 'generated/index.d.ts'] : []),
       ...(wasm ? ['wasm/generated/*.mjs', 'wasm/generated/*.js', 'wasm/generated/*.d.ts', 'wasm/generated/*.wasm'] : []),
     ],
-    // GN-3c, kit K1189: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
+    // GN-3c: the napi CLI of a release names the addon <binaryName>.<platform>.node, the file that the entry
     // loads, and builds it for the Rust triples of the platforms.
     ...(node ? { napi: { binaryName: npm.package.slice(npm.package.indexOf('/') + 1), targets: NODE_PLATFORMS.map((p) => p.triple) } } : {}),
     // GN-3e: the packages of the other libraries that the entries import.

@@ -653,7 +653,7 @@ test('the PHP extension registers under the extension-name of its composer.json 
   }
 });
 
-test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19, kit K1189)', () => {
+test('the scaffolded manifests name the napi configuration, the module type and the PIE download method of a release (GN-3c, CK-19)', () => {
   const contract = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
   contract.targets.push('wasm');
   const out = trackedPackages(contract, '0.0.0');
