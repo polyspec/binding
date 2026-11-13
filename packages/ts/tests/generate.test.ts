@@ -3770,7 +3770,11 @@ test('a receiver self takes the value of its object, and a class with cleanup wa
   assert.ok(goTests.includes(`func TestGN6oLeaseReleaseConsumesItsObject(t *testing.T) {`), 'Go tests the consumed object');
   assert.match(goTests, /failure\.Kind\(\) != "consumed"/);
   assert.ok(goTests.includes(`func TestB10LeaseWarnsWithoutRelease(t *testing.T) {`), 'Go tests the warning');
-  assert.match(goTests, /log\.SetOutput\(warned\)\n[\s\S]*?runtime\.GC\(\)\n\tif got := strings\.TrimSuffix\(<-warned, "\\n"\); !strings\.HasSuffix\(got, "Lease was destroyed without Release\(\), so its destructor released it \(B-10\)"\) \{/);
+  // B-10: the test fails at once when the collection left the object, and reads the messages of the logger, which never
+  // blocks its writer, until the warning of its class; no time orders them.
+  assert.match(goTests, /warned := newWarnings\(\)\n\tlog\.SetOutput\(warned\)\n\tdefer log\.SetOutput\(os\.Stderr\)\n\tgone := func\(\) weak\.Pointer\[Lease\] \{\n[\s\S]*?\t\treturn weak\.Make\([^\n]+\)\n\t\}\(\)\n\truntime\.GC\(\)\n\tif gone\.Value\(\) != nil \{\n\t\tt\.Fatalf\("B-10: the collection left the object, so its cleanup does not run"\)\n\t\}\n\twarned\.await\("Lease was destroyed without Release\(\), so its destructor released it \(B-10\)"\)\n\}/);
+  assert.ok(goTests.includes('func (w *warnings) Write(message []byte) (int, error) {\n\tw.lock.Lock()\n\tw.messages = append(w.messages, string(message))\n\tw.lock.Unlock()\n\tselect {\n\tcase w.written <- struct{}{}:\n\tdefault:\n\t}\n\treturn len(message), nil\n}'), 'the writer of the Go logger does not block');
+  assert.match(goTests, /import \([^)]*\t"testing"\n\t"weak"\n/);
   // WASM: the same in the module, and the callback of the FinalizationRegistry warns as Node does, or with console.warn.
   const wasmOut = classes(() => undefined, ['wasm']);
   const wasmLib = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');

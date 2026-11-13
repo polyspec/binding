@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 636adea3ed585dac2cac86bd188b6b299c9aee2f430f0e09d5b66f4e5995a077 -->
+<!-- source-sha256: f66c24e2c9ef4916ba79952aa64f04585a9f8419028c1bca320b396c1284b2d0 -->
 # 생성기
 
 [English](generator.md)
@@ -725,8 +725,11 @@
   PHP와 Python에서는 정리 member를 부르고 객체를 버린 뒤 경고가 없음을 요구하는 시험도 생성한다. PHP는 error handler
   아래에서 객체를 unset하고, Python은 `warnings.catch_warnings(record=True)` 아래에서 지우며, Node는 `gc()`를 켜고
   (`v8.setFlagsFromString('--expose-gc')`와 `vm.runInNewContext('gc')`) 그것을 부른 뒤 process의 `warning` event를
-  기다린다. WASM은 자기 시험 실행의 `gc()`로 같은 일을 한다. Go는 표준 logger의 출력을 각 메시지를 channel로 보내는
-  writer로 정하고, `runtime.GC()`를 부른 뒤 channel에서 경고를 받는다. Node, WASM, Go에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
+  기다린다. WASM은 자기 시험 실행의 `gc()`로 같은 일을 한다. Go는 표준 logger의 출력을 각 메시지를 간직하고 결코 막히지
+  않는 writer로 정한다. logger가 쓰는 동안 자기 lock을 쥐기 때문이다. 시험은 객체의 `weak.Pointer`를 얻고 `runtime.GC()`를
+  한 번 부른 뒤, weak pointer가 여전히 객체를 주면 곧바로 실패한다. 수거가 남긴 객체의 cleanup은 돌지 않기 때문이다.
+  그다음 자기 class의 경고가 나올 때까지 메시지를 읽는다. 그 경고는 수거된 객체의 cleanup이 쓰며, 앞선 시험의 객체들이
+  그보다 먼저 경고할 수 있다. Node, WASM, Go에는 경고가 없음을 보는 시험이 없다. event가 없다는 것은 시간 제한으로만 볼 수 있기 때문이다. 소멸자가 읽는
   잠금의 `taken`은 binding_core에서 시험한다. 이유: 호출자가 닫지 않은 자원도 놓이고, 경고는 호출자가 빠뜨린 호출을 알려 준다.
 - **GN-6q** parameter의 타입이나 receiver의 class가 언어 코드를 지니면(GN-6h) `wait: blocking_io`인 member는 언어 코드에
   닿는다. 호출 중에 코어가 callback(U-3)을 부르거나 언어 코드 값의 `Native`를 만질 수 있다는 뜻이다. 코어는 호출을 실행하는

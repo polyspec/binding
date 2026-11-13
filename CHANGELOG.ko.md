@@ -1,11 +1,18 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 64b7045484b72d9185b0a570c3341d7b5725339cf3d85d048da2914538d5211c -->
+<!-- source-sha256: e973036e4def83903b7c8ff87573af40dbea7bdd8f00b7110a0defe7f83112b3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 Go의 B-10 시험은 `runtime.GC()` 뒤에 표준 logger의 메시지 하나를 channel에서 받았다. 수거가 남긴 객체는 그
+  시험을 끝없이 기다리게 했고, 앞선 시험의 객체가 낸 경고는 그 시험을 실패시켰으며, 두 번째 메시지는 쓰는 동안 자기 lock을
+  쥐는 logger를 막았다. 이제 시험은 자기 객체의 `weak.Pointer`를 얻어 수거가 객체를 남기면 곧바로 실패하고, writer는
+  모든 메시지를 간직하며 결코 막히지 않고, 시험은 자기 class의 경고가 나올 때까지 메시지를 읽는다(GN-6p). cleanup 함수가
+  경고 없이 돌았다면 시험은 여전히 기다린다. 그 함수는 생성기의 단위 시험이 읽는다. binding_core lock의 `clean`과
+  `cleaned`를 넣은 상태에서 `make test-rust`와 `make lint-rust`가 통과한다. `make test-ts`로 검증했다. 생성된 Go 시험을
+  읽는 시험은 변경 전에 실패했다.
 - 계약 검사가 생성기가 거부하는 것보다 적게 보고했다. 그리고 기다리는 constructor, 생성할 수 있는 class, variant의 코어
   enum, 객체를 남기는 cleanup의 검사는 id CK-73, CK-74, CK-75, CK-76을 갖는다. CK-73은 이제 host unit도 판정한다. host
   unit의 `constructor`, `property`, `iterate`, hook이 `none`이 아닌 `wait`를 가지면 finding이다. 손으로 쓰는 코드에도

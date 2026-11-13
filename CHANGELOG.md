@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- The generated Go test of B-10 received one message of the standard logger from a channel after `runtime.GC()`: an
+  object that the collection left made it wait without an end, a warning of an object of an earlier test failed
+  it, and a second message blocked the logger, which holds its lock while it writes. The test now takes a
+  `weak.Pointer` of its object and fails at once when the collection left the object, the writer keeps every
+  message and never blocks, and the test reads the messages until the warning of its class (GN-6p). A cleanup
+  function that ran without its warning would still leave the test waiting; the unit test of the generator reads
+  that function. `make test-rust` and `make lint-rust` pass with `clean` and `cleaned` of the locks of
+  binding_core. Verified by `make test-ts`: the test of the generated Go test failed before the change.
 - The contract check reported less than the generator refused, and the checks of the waiting constructor, of a
   constructible class, of the core enum of a variant and of a cleanup that leaves its object have the ids CK-73,
   CK-74, CK-75 and CK-76. CK-73 now judges a host unit too: a `constructor`, a `property`, an `iterate` or a hook of

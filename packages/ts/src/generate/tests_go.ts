@@ -854,27 +854,60 @@ ${indent(b.lines, 1)}
     out.warns = true;
     out.main.push(`
 func TestB10${name}WarnsWithout${goMemberName(cleanup)}(t *testing.T) {
-	warned := make(warnings, 1)
+	warned := newWarnings()
 	log.SetOutput(warned)
 	defer log.SetOutput(os.Stderr)
-	func() {
-${indent([...b.lines, `_ = ${held}`], 2)}
+	gone := func() weak.Pointer[${name}] {
+${indent([...b.lines, `return weak.Make(${held})`], 2)}
 	}()
 	runtime.GC()
-	if got := strings.TrimSuffix(<-warned, "\\n"); !strings.HasSuffix(got, ${goString(cleanupWarning(name, goMemberName(cleanup)))}) {
-		t.Fatalf("B-10: %q", got)
+	if gone.Value() != nil {
+		t.Fatalf("B-10: the collection left the object, so its cleanup does not run")
 	}
+	warned.await(${goString(cleanupWarning(name, goMemberName(cleanup)))})
 }`);
   }
 }
 
 const WARNINGS = `
-// warnings is the output of the standard logger in a B-10 test: it sends each message to the test.
-type warnings chan string
+// warnings is the output of the standard logger in a B-10 test. Write keeps each message and never blocks, because
+// the logger holds its lock while it writes; written tells the test that a message came.
+type warnings struct {
+	lock     sync.Mutex
+	messages []string
+	written  chan struct{}
+}
 
-func (w warnings) Write(message []byte) (int, error) {
-	w <- string(message)
+func newWarnings() *warnings {
+	return &warnings{written: make(chan struct{}, 1)}
+}
+
+func (w *warnings) Write(message []byte) (int, error) {
+	w.lock.Lock()
+	w.messages = append(w.messages, string(message))
+	w.lock.Unlock()
+	select {
+	case w.written <- struct{}{}:
+	default:
+	}
 	return len(message), nil
+}
+
+// await returns when a message of the logger ends with the warning. The object of the test was collected, so the
+// runtime runs its cleanup; the objects of earlier tests may warn before it.
+func (w *warnings) await(warning string) {
+	for {
+		<-w.written
+		w.lock.Lock()
+		messages := w.messages
+		w.messages = nil
+		w.lock.Unlock()
+		for _, message := range messages {
+			if strings.HasSuffix(strings.TrimSuffix(message, "\\n"), warning) {
+				return
+			}
+		}
+	}
 }
 `;
 
@@ -903,8 +936,9 @@ func ptr[T any](value T) *T { return &value }
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope): string {
-  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'strings', 'sync', 'syscall'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['errors', 'fmt', 'log', 'math', 'os', 'path/filepath', 'reflect', 'runtime', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   std.push('"testing"');
+  std.sort();
   const own = [
     ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
     ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),

@@ -881,8 +881,11 @@ the design ids are those of the binding design.
   member, drops the object and requires no warning: PHP unsets the object under an error handler; Python deletes it
   under `warnings.catch_warnings(record=True)`; Node turns on `gc()` (`v8.setFlagsFromString('--expose-gc')` and
   `vm.runInNewContext('gc')`), calls it and awaits the `warning` event of the process, and WASM does the same with
-  the `gc()` of its test run; Go sets the output of the standard logger to a writer that sends each message to a
-  channel, calls `runtime.GC()` and receives the warning from the channel. Node, WASM and Go have no test of the absent
+  the `gc()` of its test run; Go sets the output of the standard logger to a writer that keeps each message and
+  never blocks, because the logger holds its lock while it writes, takes a `weak.Pointer` of the object, calls
+  `runtime.GC()` once and fails at once when the weak pointer still gives the object, because the cleanup of an
+  object that the collection left never runs; then it reads the messages until the warning of its class, which the
+  cleanup of the collected object writes, the objects of earlier tests warning before it. Node, WASM and Go have no test of the absent
   warning, because the absence of an event is seen only by a time limit; `taken` of the lock, which the destructor
   reads, is tested in binding_core. Why: a resource that the caller forgot to close is still released, and the warning
   names the call that the caller left out.
