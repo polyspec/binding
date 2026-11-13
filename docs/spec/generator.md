@@ -1786,7 +1786,10 @@ the design ids are those of the binding design.
   `{"cancel": "open"}`, one that does not fire (CK-22), which the generated test gives as GN-6aq states.
   The end-to-end check fails a run in which a case was left out. A `keyed_map` parameter whose contract does not list
   every key kind is tested with a key of a missing kind as kind `invalid_argument_type`; a case gives a keyed map as
-  that array of `[key, value]`. The members of a
+  that array of `[key, value]`. A case gives a `map<T>` as an object of its entries, or as an array of `[key, value]`
+  whose keys are texts: an object of JSON gives a key that is an integer before its other keys, so a case whose order
+  matters gives the array, and the test makes the entries in that order; an entry of another form is refused by name
+  (G-4), and `binding check` judges the items of both forms (CK-64). The members of a
   class have the same tests; a method or property is called on an instance that a factory of the class (a static
   member or the constructor that returns it) makes from the case's keys of that factory's parameters, and the B-2, B-3
   and G-7 tests of a method use the factory arguments of the first case of the class that does not raise. A value

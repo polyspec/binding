@@ -27,7 +27,7 @@ import {
   nativeRoundTrip,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, type Receiver, aliasCases, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps,
+  type Fixture, type RaisingCase, type Receiver, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, memberById, raisesException, keptOf, type ForeignStep, foreignSteps,
 } from './samples.ts';
 
 interface Values {
@@ -165,7 +165,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
     return mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, type.keyed_map)}]`, sets);
   }
   if ('map' in type) {
-    const sets = Object.entries(json as Record<string, unknown>).map(([key, item]) => `${goString(key)}, ${value(v, b, type.map, item)}`);
+    const sets = mapEntries(json).map(([key, item]) => `${goString(key)}, ${value(v, b, type.map, item)}`);
     return mapLocal(b, b.lines, `binding.Map[${typeName(v, type.map)}]`, sets);
   }
   const alias = aliasOf(v.model, type);

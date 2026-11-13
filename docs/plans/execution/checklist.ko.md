@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: cda41187f3d03e6a1dbaffd8cc462b60890bcbe6af466681f65a858d8fb6e347 -->
+<!-- source-sha256: 566dee63748e09cae851cf1b1f275809c536f74404befd57b8b03ccb55a3cee9 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -39,3 +39,4 @@
 | B2.121 | 다른 저장소의 value class의 instance를 담은 결과를 그 case의 결과와 비교한다(GN-13e, GN-6x). 그런 case의 생성된 시험은 그 instance와 비교할 case 값이 없다는 이유로 실패한다. 시험은 그 instance를 owner의 in 행의 member(`by`, `read`)로 읽어 내용을 case 값과 비교한다 | `packages/ts/src/generate/samples.ts`, 다섯 시험 작성기, `packages/ts/tests/generate.test.ts` | `make test-ts`; 결과를 적은 `carry`의 case를 둔 `make e2e REPO=tests/e2e/relay` | [ ] |
 | B2.130 | case가 다섯 target에서 다른 라이브러리의 실패 주입 지점을 장전한다(G-5, GN-5). 생성기는 그것을 "the point <point> of another library is not armed yet"로 거부했다. 그 지점은 crate의 진입점을 통해 member의 장전으로 장전하며, crate의 `fault-test`가 그 라이브러리의 코어를 적는다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/samples.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 의존 라이브러리의 지점을 장전하는 case가 있는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
 | B2.131 | 다른 레포의 값 alias의 행이 owner의 class를 이름한다(GN-6ar, GN-6k). 생성기는 constructor로 만드는 `out` 행을 "a <target> make by a member is not generated yet"로 거부했고 class의 `in` 행을 읽지 않았다. Python과 Node는 owner의 package로 인스턴스를 만들고 읽으며, WASM, Go, PHP는 그 행을 이름을 대고 거부한다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/alias_shared.ts`, `alias_python.ts`, `alias_node.ts`, `alias_wasm.ts`, `alias_php.ts`, `go_rust.ts`, `packages.ts`, `packages/ts/tests/generate.test.ts`, `CHANGELOG.md`(.ko) | `make test-ts`; 그런 alias를 주고받는 계약의 `make e2e`, 그 기록이 `evidence: true` | [v] |
+| B2.132 | case가 다섯 target에서 `map<T>`를 `[key, value]`의 배열로 준다(G-5, CK-64). 생성기는 그 배열을 객체로 읽어 생성된 시험이 엉뚱한 이유로 실패했고, 검사는 그 항목을 판단하지 않았다 | `docs/spec/generator.md`(.ko), `packages/ts/src/generate/samples.ts`, `packages/ts/src/generate/tests_go.ts`, `packages/ts/src/check.ts`, `packages/ts/tests/`, `CHANGELOG.md`(.ko) | `make test-ts` | [v] |

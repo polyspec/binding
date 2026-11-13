@@ -1480,6 +1480,12 @@ describe('CK-64 integers of a case (T-1)', () => {
       outside(`/cases/${row} the case ${id} of shapes.total`, 'the result result', 'uint'),
     ]);
   });
+  test('an item of a map that a case gives as an array of [key, value]', () => {
+    const big = 9223372036854775807n;
+    const id: string = read('contracts/cases.json').split_counts[0].id;
+    const row: number = read('packages/rust/interface.json').cases.findIndex((c: any) => c.member === 'shapes.split_counts');
+    assert.deepEqual(run((c) => { c.split_counts[0].counts = [['a', 1], ['b', big]]; }), [outside(`/cases/${row} the case ${id} of shapes.split_counts`, 'the argument counts.b', 'uint')]);
+  });
 });
 
 describe('CK-22 values of the type cancel (GN-13)', () => {

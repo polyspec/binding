@@ -249,8 +249,8 @@ function valueForm(model: Model, ctx: Context, type: Type, value: unknown, out: 
     return `[${items.join(', ')}]`;
   }
   if ('map' in type) {
-    // G-5: a case gives a map as an object of its entries in order.
-    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+    // G-5: a case gives a map as an object of its entries, or as an array of [key, value] in order.
+    const entries = mapEntries(value).map(([key, item]) => {
       const k = fromJson(model, ctx, 'text', key);
       const v = fromJson(model, ctx, type.map, item, out);
       return ctx.lang === 'python' ? `${k}: ${v}` : ctx.lang === 'php' ? `${k} => ${v}` : `[${k}, ${v}]`;
@@ -1472,6 +1472,16 @@ export function primitiveCases(model: Model, ctx: Context, fn: Fn): { id: string
     out.push({ id: String(record['id']), receiver, result: 'result' in record ? fromJson(model, ctx, fn.returns, record['result'], true) : undefined });
   }
   return out;
+}
+
+// G-5: the entries of a case value of a map<T>: an object of JSON gives them in the order of its keys, which puts a key
+// that is an integer before the others, and an array of [key, value] gives them in the order of the case.
+export function mapEntries(value: unknown): [string, unknown][] {
+  if (!Array.isArray(value)) return Object.entries(value as Record<string, unknown>);
+  return value.map((entry: unknown): [string, unknown] => {
+    if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') throw new Unsupported(`a case value of a map is an object of its entries or an array of [key, value] whose keys are texts, not ${shown(value)}`);
+    return [entry[0], entry[1]];
+  });
 }
 
 export function raisingCases(model: Model, fn: Fn): RaisingCase[] {

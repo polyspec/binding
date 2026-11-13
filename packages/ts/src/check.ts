@@ -1514,6 +1514,8 @@ class Checker {
       } else if ('map' in type || 'keyed_map' in type) {
         const item = 'map' in type ? type.map : type.keyed_map;
         if (typeof value === 'object' && value !== null && !Array.isArray(value)) for (const [k, entry] of Object.entries(value)) walk(item, entry, `${what}.${k}`);
+        // G-5: a map given as an array of [key, value], whose order the case keeps.
+        else if ('map' in type && Array.isArray(value)) for (const entry of value) if (Array.isArray(entry) && entry.length === 2) walk(item, entry[1], `${what}.${String(entry[0])}`);
       }
     };
     for (const parameter of found.member.parameters ?? []) {

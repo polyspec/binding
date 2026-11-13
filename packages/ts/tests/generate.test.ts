@@ -2994,6 +2994,27 @@ test('a variant is an interface of Go and a struct of each case, which the C ABI
   assert.match(tests, /Back: ptr\[Figure\]\(FigureGroup\{/);
 });
 
+test('a case gives a map as an object of its entries or as an array of [key, value], whose order the test keeps (G-5)', () => {
+  const pairs = (counts: unknown, targets: Lang[]): Map<string, string | Buffer> => {
+    const { contract, caseFiles } = shapes();
+    const cases = caseFiles.get('contracts/cases.json') as any;
+    cases.split_counts[0].counts = counts;
+    cases.split_counts[0].result = [[['10', 1]], [['2', 2]]];
+    return generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets });
+  };
+  // The keys 10 and 2 of an object of JSON come in the order 2, 10; the array keeps the order of the case.
+  const given = [['10', 1], ['2', 2]];
+  assert.match(text(pairs(given, ['python']), pythonTests), /\{"10": 1, "2": 2\}/);
+  assert.match(text(pairs(given, ['node']), nodeTests), /new Map\(\[\['10', 1\], \['2', 2\]\]\)/);
+  assert.match(text(pairs(given, ['php']), phpTests), /\["10" => 1, "2" => 2\]/);
+  assert.match(text(pairs(given, ['wasm']), 'packages/ts/wasm/generated/tests/generated.test.mjs'), /new Map\(\[\['10', 1\], \['2', 2\]\]\)/);
+  assert.match(text(pairs(given, ['go']), 'packages/go/zz_generated_test.go'), /\.Set\("10", [^\n]*\n[^\n]*\.Set\("2", /);
+  // An entry that is no [key, value] with a text key is named.
+  const refusal = (counts: unknown): string => [...pairs(counts, ['python']).values()].map(String).join('\n');
+  assert.match(refusal([['10', 1], ['2']]), /a case value of a map is an object of its entries or an array of \[key, value\] whose keys are texts, not \[\[\\"10\\",1\],\[\\"2\\"\]\]/);
+  assert.match(refusal([[10, 1]]), /a case value of a map is an object of its entries or an array of \[key, value\] whose keys are texts, not \[\[10,1\]\]/);
+});
+
 test('a case value of a variant whose tag names no case is named with the value of a case, as the contract states it (G-5, GN-6v)', () => {
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/variants/packages/rust/interface.json', import.meta.url), 'utf8'));
   const cases = readFileSync(new URL('../../../tests/e2e/variants/contracts/cases.json', import.meta.url), 'utf8');

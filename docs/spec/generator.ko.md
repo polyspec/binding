@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 868969be24acfcdfa51b6920de803bf0f7b7ecea405336dcdd731650ae52c060 -->
+<!-- source-sha256: 9368bce255227d1547f61a190c9f892e9980b79a4d4ed43c38227b7e06bc8b40 -->
 # 생성기
 
 [English](generator.md)
@@ -1458,7 +1458,7 @@
   않는다. 타입 `cancel`의 값은 호출 전에 발동한
   취소인 `{"cancel": "fired"}`이거나 발동하지 않는 취소인 `{"cancel": "open"}`이다(CK-22). 생성된 테스트는 GN-6aq가 말하는 대로 그것을 준다. 끝에서 끝까지 확인은 case를 뺀
   실행을 실패로 끝낸다. 계약이 모든 key 종류를 적지 않은 `keyed_map` parameter는 빠진 종류의 key로 kind
-  `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
+  `invalid_argument_type`을 시험하고, case는 keyed map을 그 `[key, value]` 배열로 준다. case는 `map<T>`를 entry의 객체로 주거나 key가 text인 `[key, value]`의 배열로 준다. JSON의 객체는 정수인 key를 다른 key보다 먼저 주므로, 순서가 뜻을 갖는 case는 배열로 주고 시험은 그 순서로 entry를 만든다. 다른 꼴의 entry는 이름을 대고 거부하며(G-4), `binding check`는 두 꼴의 항목을 모두 판단한다(CK-64). class의 member도 같은 시험을 가진다. 메서드와 property는 그 클래스의 factory(클래스를 돌려주는 static member나
   생성자)가 case의 factory parameter 키로 만든 인스턴스에서 부르고, 메서드의 B-2, B-3, G-7 시험은 실패하지 않는 그 클래스의 첫
   case의 factory 인자를 쓴다. `core_type`이 없는 value class(GN-6af)도 Python, Node, WASM에서 그런 class다. 그 생성자와
   property는 이 시험을 가지며, property는 생성자가 case의 parameter 키로 만든 인스턴스에서 읽는다. Go는 GN-15c가 적은 대로

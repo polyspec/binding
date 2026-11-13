@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- A case that gives a `map<T>` as an array of `[key, value]` was read as an object, so its generated test failed
+  with "a case value of the type text is a text or {"ill_formed": "<text>"}, not [<key>, <value>]", and `binding
+  check` did not judge its items. An object of JSON gives a key that is an integer before its other keys, so only the
+  array keeps the order of such a map. A case now gives a `map<T>` as an object or as that array in the five targets,
+  an entry of another form is refused by name, and CK-64 judges the items of both forms (G-5, row B2.132). Verified
+  by `npm test` in `packages/ts`: the new test of the generator and the new test of CK-64 failed before the change.
 - A value alias of another repository whose `out` row makes by the constructor of a class of its owner was refused
   in every target as "<alias>: a <target> make by a member (<member>) is not generated yet", and an instance of such
   a class that an `in` row names entered as an object that the owner's core does not take, without a refusal. Python

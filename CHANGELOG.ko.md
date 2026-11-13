@@ -1,11 +1,16 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 39f531ab042f3a3c77456f8387c6c7085c971d0e222046159ad8957335a4af72 -->
+<!-- source-sha256: 37ef117596a2c5e4389f530eb26c6a77eaf38eba9ceabe8c237370bd9508bde1 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `map<T>`를 `[key, value]`의 배열로 주는 case를 객체로 읽었다. 그래서 생성된 시험은 "a case value of the type text is a
+  text or {"ill_formed": "<text>"}, not [<key>, <value>]"로 실패했고, `binding check`는 그 항목을 판단하지 않았다. JSON의
+  객체는 정수인 key를 다른 key보다 먼저 주므로, 그런 map의 순서는 배열만 지킨다. 이제 case는 다섯 target에서 `map<T>`를
+  객체나 그 배열로 주고, 다른 꼴의 entry는 이름을 대고 거부하며, CK-64는 두 꼴의 항목을 판단한다(G-5, 행 B2.132).
+  `packages/ts`의 `npm test`로 검증했다. 생성기의 새 시험과 CK-64의 새 시험은 변경 전에 실패했다.
 - `out` 행이 owner의 class의 constructor로 만드는 다른 레포의 값 alias를 모든 target이 "<alias>: a <target> make by a
   member (<member>) is not generated yet"로 거부했고, `in` 행이 이름하는 그런 class의 인스턴스는 거부 없이 owner의 코어가
   받지 않는 객체로 들어갔다. 이제 Python과 Node는 owner의 package로 인스턴스를 만들고 읽는다(GN-6ar, 행 B2.131).
