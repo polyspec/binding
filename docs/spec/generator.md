@@ -233,7 +233,9 @@ the design ids are those of the binding design.
   fails with kind `busy`, because the core cannot get `&mut` of a value together with another borrow of it. The core
   gets `&*guard` for a read place and `&mut *guard` for a write place, which the generated code binds under the name of
   the place once every lock is taken, so a core path of a trait (`std::string::ToString::to_string`), which takes `&T`
-  of any `T` and therefore does not deref a borrow of the guard, gets the value as well. A parameter of a class gives
+  of any `T` and therefore does not deref a borrow of the guard, gets the value as well. Where the core call runs in a future or a
+  closure that the call moves to another thread (Node: `driving` of GN-6n and the pool of GN-6m), the guards move into
+  it and the borrows are bound inside it, because a borrow of a local of the call lives no longer than the call. A parameter of a class gives
   the core `CoreForm::core_form` of that borrow (GN-6b): the type of the core parameter selects the borrow where the
   core takes `&T` and a copy where it takes `T` (`OrderedMap::insert(&mut self, key: Value, value: Value)`), as the
   contract does not name the form. A value of the class inside another type (an
